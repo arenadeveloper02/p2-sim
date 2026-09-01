@@ -18,13 +18,14 @@ export const ARENA_GENERATIVE_CAPABILITIES = [
   'date-range',
   'refresh',
   'drill-down',
-  'selection',
-  'detail',
-  'detail-drawer',
+  'select',
+  'inspect',
   'analyze',
+  'generate',
   'drawer',
   'modal',
   'create',
+  'complete',
   'edit',
   'delete',
   'back',
@@ -38,10 +39,13 @@ export type ArenaGenerativeCapability = (typeof ARENA_GENERATIVE_CAPABILITIES)[n
 const CAPABILITY_SET = new Set<string>(ARENA_GENERATIVE_CAPABILITIES)
 
 /** Planned tags the planner may emit; host inference can still append wait/pagination. */
-export const ARENA_GENERATIVE_PLANNED_CAPABILITY_LIMIT = 5
+export const ARENA_GENERATIVE_PLANNED_CAPABILITY_LIMIT = 12
 
 const CAPABILITY_ALIASES: Record<string, ArenaGenerativeCapability> = {
   editable: 'edit',
+  selection: 'select',
+  detail: 'inspect',
+  'detail-drawer': 'inspect',
 }
 
 const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
@@ -79,7 +83,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   pagination: [
     'CAPABILITY: PAGINATION',
-    'Load more only when the binding declares pagination. Button showWhen "hasMore" reuses the same actionId. Do not invent a second next-page action.',
+    'Load more only when the binding declares pagination. Button showWhen "hasMore" reuses the same actionId. Do not invent a second next-page action. Without binding.pagination the host pages Table and Repeat locally from the loaded rows.',
   ].join('\n'),
   grouping: [
     'CAPABILITY: GROUPING',
@@ -97,25 +101,25 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
     'CAPABILITY: DRILL-DOWN',
     'A dashboard or collection module opens a more specific page or same-page detail. Use Button.navigateTo / NavLink.to with the row id, or selectItem when the row already has prose. Do not fetch the same record twice.',
   ].join('\n'),
-  selection: [
-    'CAPABILITY: SELECTION',
+  select: [
+    'CAPABILITY: SELECT',
     'Opening a row that already has prose is Button selectItem true with no actionId. Stay on the list (showWhen selectedId / clearItem Back) or navigateTo a results page with no onLoad of that row. Do not fetch the same item twice.',
   ].join('\n'),
-  detail: [
-    'CAPABILITY: DETAIL',
-    'Open one entity. Choose from context: keep-the-list-visible → Drawer (prefer this when DETAIL-DRAWER is also set); a record that needs its own onLoad → navigateTo a detail page with ?id=; a small focused view → Modal; a row that already has prose → selectItem inline. Do not fetch the same record twice.',
-  ].join('\n'),
-  'detail-drawer': [
-    'CAPABILITY: DETAIL-DRAWER',
-    'Keep the collection visible. Open is Button selectItem true; show the record in Drawer showWhen "selectedId". Close with a ghost Button clearItem true. Do not navigate away and do not onLoad the same row.',
+  inspect: [
+    'CAPABILITY: INSPECT',
+    'Open one entity. Presentation is renderer-owned: keep-the-list-visible uses Workspace inspector or Drawer (Button selectItem true, showWhen selectedId, ghost clearItem); a substantial record may navigateTo a detail page with ?id=; a small focused view may use Modal; a row that already has prose may stay inline. Do not encode drawer vs page as a second capability. Do not fetch the same record twice.',
   ].join('\n'),
   analyze: [
     'CAPABILITY: ANALYZE',
-    'The primary CTA produces analysis or generated output. Wire that binding. Destination is a results page (onSuccess.navigate) or a page module named for the analysis. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
+    'The primary CTA produces analysis or generated output. Wire the declared binding when one exists; dummy/local source uses onSuccess.setState to seed the report. Destination is a results page (onSuccess.navigate) when the blueprint has one. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
+  ].join('\n'),
+  generate: [
+    'CAPABILITY: GENERATE',
+    'The primary CTA produces generated output. Same wiring as ANALYZE. Seed dummy report prose with onSuccess.setState when there is no binding. Do not invent SWOT, metrics, or extra modules the blueprint omitted.',
   ].join('\n'),
   drawer: [
     'CAPABILITY: DRAWER',
-    'Contextual secondary chrome that must keep the page visible. Drawer showWhen uses the same clause language as form fields. Close with clearItem or a ghost Button. Not a full record page that needs its own onLoad — that is a Detail page or DETAIL-DRAWER.',
+    'Contextual secondary chrome that must keep the page visible. Drawer showWhen uses the same clause language as form fields. Close with clearItem or a ghost Button. Not a full record page that needs its own onLoad — that is INSPECT on a detail page.',
   ].join('\n'),
   modal: [
     'CAPABILITY: MODAL',
@@ -123,7 +127,11 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   create: [
     'CAPABILITY: CREATE',
-    'A primary action that adds a record. Use Form + SubmitButton wired to the create binding, or a Task page. Not a Modal for a multi-field create unless the brief asked for a small add-in-place.',
+    'A primary action that adds a record. Use Form + SubmitButton wired to the create action. Dummy/local source appends via onSuccess.setState — do not invent an API key. Stay on this page unless the blueprint named a create page. Not a Modal for a multi-field create unless the brief asked for a small add-in-place.',
+  ].join('\n'),
+  complete: [
+    'CAPABILITY: COMPLETE',
+    'Toggle done on the selected row. Stay on the collection — do not navigate. Dummy/local source flips a completed/done field via onSuccess.setState. Do not invent a second complete page.',
   ].join('\n'),
   edit: [
     'CAPABILITY: EDIT',

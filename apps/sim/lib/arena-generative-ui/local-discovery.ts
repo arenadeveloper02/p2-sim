@@ -35,7 +35,10 @@ function asString(value: unknown, fallback = ''): string {
 }
 
 function normalizeDiscoveryKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[\s_-]+/g, '')
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
 }
 
 /** Empty, placeholder, or "All / All Categories" options do not constrain the collection. */
@@ -171,7 +174,10 @@ export function collectLocalDiscoveryQuery(options: {
   }
 
   return {
-    search: searches.filter((value) => value.length > 0).join(' ').trim(),
+    search: searches
+      .filter((value) => value.length > 0)
+      .join(' ')
+      .trim(),
     filters,
   }
 }
@@ -256,4 +262,40 @@ export function filterStaticTableRows(
     }
     return itemMatchesLocalDiscovery(record, query)
   })
+}
+
+/** Rows shown per Table/Repeat page when the binding has no pagination API. */
+export const LOCAL_COLLECTION_PAGE_SIZE = 20
+
+export interface PaginatedCollection<T> {
+  items: T[]
+  page: number
+  pageCount: number
+  total: number
+  from: number
+  to: number
+}
+
+/**
+ * One page of an already-loaded collection. Out-of-range `page` clamps.
+ */
+export function paginateCollection<T>(
+  items: readonly T[],
+  page: number,
+  pageSize = LOCAL_COLLECTION_PAGE_SIZE
+): PaginatedCollection<T> {
+  const total = items.length
+  const size = pageSize > 0 ? Math.trunc(pageSize) : LOCAL_COLLECTION_PAGE_SIZE
+  const pageCount = Math.max(1, Math.ceil(total / size) || 1)
+  const safePage = Number.isFinite(page) ? Math.min(Math.max(Math.trunc(page), 1), pageCount) : 1
+  const start = total === 0 ? 0 : (safePage - 1) * size
+  const sliced = items.slice(start, start + size)
+  return {
+    items: sliced,
+    page: safePage,
+    pageCount,
+    total,
+    from: sliced.length === 0 ? 0 : start + 1,
+    to: start + sliced.length,
+  }
 }

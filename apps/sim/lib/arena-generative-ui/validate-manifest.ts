@@ -421,36 +421,13 @@ export function validateArenaGenerativeManifest(
 
   const bindingKeys = new Set(options.apiBindings.map((binding) => binding.key))
   const actions: ArenaGenerativeAppManifest['actions'] = {}
-  const navigationOnly = bindingKeys.size === 0
   const reachabilityActions: ArenaGenerativeAppManifest['actions'] = {}
   for (const [actionId, value] of Object.entries(actionsRaw)) {
-    if (navigationOnly) {
-      if (value && typeof value === 'object') {
-        const onSuccess = (value as Record<string, unknown>).onSuccess
-        const navigate =
-          onSuccess && typeof onSuccess === 'object'
-            ? asString((onSuccess as Record<string, unknown>).navigate)
-            : ''
-        if (navigate && pages[splitNavTarget(navigate).path]) {
-          reachabilityActions[actionId] = { apiKey: actionId, onSuccess: { navigate } }
-        }
-      }
-      continue
-    }
     if (!value || typeof value !== 'object') {
       return { success: false, error: `Action "${actionId}" is invalid` }
     }
     const action = value as Record<string, unknown>
     const apiKey = asString(action.apiKey)
-    if (!apiKey) {
-      return { success: false, error: `Action "${actionId}" is missing apiKey` }
-    }
-    if (!bindingKeys.has(apiKey)) {
-      return {
-        success: false,
-        error: `Action "${actionId}" references unknown API key "${apiKey}"`,
-      }
-    }
     const onSuccess =
       action.onSuccess && typeof action.onSuccess === 'object'
         ? (action.onSuccess as Record<string, unknown>)
@@ -462,8 +439,8 @@ export function validateArenaGenerativeManifest(
         error: `Action "${actionId}" onSuccess.navigate "${navigate}" is not a page`,
       }
     }
-    actions[actionId] = {
-      apiKey,
+    const parsedAction: ArenaGenerativeAppManifest['actions'][string] = {
+      ...(apiKey ? { apiKey } : {}),
       inputMapping:
         action.inputMapping && typeof action.inputMapping === 'object'
           ? (action.inputMapping as Record<string, string>)
@@ -496,7 +473,23 @@ export function validateArenaGenerativeManifest(
             }
           : undefined,
     }
+    if (!apiKey) {
+      actions[actionId] = parsedAction
+      if (navigate && pages[splitNavTarget(navigate).path]) {
+        reachabilityActions[actionId] = parsedAction
+      }
+      continue
+    }
+    if (!bindingKeys.has(apiKey)) {
+      if (bindingKeys.size === 0) continue
+      return {
+        success: false,
+        error: `Action "${actionId}" references unknown API key "${apiKey}"`,
+      }
+    }
+    actions[actionId] = parsedAction
   }
+  const navigationOnly = bindingKeys.size === 0 && Object.keys(actions).length === 0
 
   for (const [path, page] of Object.entries(pages)) {
     for (const target of collectNavTargets(page.spec)) {

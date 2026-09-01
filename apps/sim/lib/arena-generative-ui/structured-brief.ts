@@ -11,7 +11,7 @@ import {
   isCapability,
   plannedCapabilities,
 } from '@/lib/arena-generative-ui/capabilities'
-import { ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT } from '@/lib/arena-generative-ui/catalog'
+import { PLANNER_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/planner-contract'
 import {
   type ArenaGenerativeDesignIntent,
   parseArenaGenerativeDesignIntent,
@@ -25,6 +25,7 @@ import { isProcessingPattern } from '@/lib/arena-generative-ui/processing-patter
 import {
   ARENA_GENERATIVE_REPRESENTATIONS,
   type ArenaGenerativeRepresentation,
+  ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT,
   parseArenaGenerativeRepresentation,
 } from '@/lib/arena-generative-ui/representation'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
@@ -51,6 +52,7 @@ export const ARENA_GENERATIVE_ARCHETYPES = [
   'dashboard',
   'workflow',
   'content',
+  'workspace',
 ] as const
 
 export type ArenaGenerativeArchetype = (typeof ARENA_GENERATIVE_ARCHETYPES)[number]
@@ -60,10 +62,29 @@ export const ARENA_GENERATIVE_ARCHETYPE_ALIASES = {
   'list-detail': 'collection',
   'form-result': 'task',
   wizard: 'workflow',
-  workspace: 'collection',
 } as const
 
-export const ARENA_GENERATIVE_SHELL_NAVIGATIONS = ['none', 'tabs', 'sidebar'] as const
+export const ARENA_GENERATIVE_COMPLEXITIES = ['micro', 'simple', 'moderate', 'complex'] as const
+
+export type ArenaGenerativeComplexity = (typeof ARENA_GENERATIVE_COMPLEXITIES)[number]
+
+export const ARENA_GENERATIVE_DATA_MODES = [
+  'dummy',
+  'local',
+  'remote',
+  'generated',
+  'hybrid',
+] as const
+
+export type ArenaGenerativeDataMode = (typeof ARENA_GENERATIVE_DATA_MODES)[number]
+
+export const ARENA_GENERATIVE_SHELL_NAVIGATIONS = [
+  'minimal',
+  'none',
+  'tabs',
+  'sidebar',
+  'workspace',
+] as const
 
 export type ArenaGenerativeShellNavigation = (typeof ARENA_GENERATIVE_SHELL_NAVIGATIONS)[number]
 
@@ -123,44 +144,93 @@ const structuredBriefShellSchema = z.object({
   breadcrumbs: z.boolean().optional(),
 })
 
+const pageRegionSchema = z.object({
+  archetype: pageShapeSchema,
+  entity: briefProse(80).optional(),
+  representation: representationSchema.optional(),
+  purpose: briefProse(400).optional(),
+})
+
+const pageRegionsSchema = z.object({
+  navigator: pageRegionSchema.optional(),
+  primary: pageRegionSchema.optional(),
+  inspector: pageRegionSchema.optional(),
+  auxiliary: pageRegionSchema.optional(),
+})
+
+const pageInteractionSchema = z.object({
+  selection: z.string().min(1).max(64).optional(),
+  inspect: z.string().min(1).max(64).optional(),
+  execution: z.string().min(1).max(64).optional(),
+  completion: z.string().min(1).max(64).optional(),
+  editing: z.string().min(1).max(64).optional(),
+})
+
 const structuredBriefPageSchema = z.object({
   path: pagePathSchema,
   title: briefProse(80),
   purpose: briefProse(400),
-  /** How the page gets its data: onLoad, CTA navigation, or static. */
+  /** How the page gets its data: onLoad, CTA navigation, static, or dummy. */
   data: briefProse(400),
-  actions: z.array(z.string().min(1).max(64)).max(8).default([]),
+  dataMode: z.enum(ARENA_GENERATIVE_DATA_MODES).optional(),
+  actions: z
+    .array(z.string().min(1).max(64))
+    .default([])
+    .transform((values) => values.slice(0, 16)),
   emptyCopy: briefProse(200).optional(),
   /** Structural shape of this page. Defaults to the app archetype. */
   archetype: pageShapeSchema.optional(),
+  entity: briefProse(80).optional(),
   /** Collection-body representation. Defaults to the app representation or auto. */
   representation: representationSchema.optional(),
+  capabilities: z
+    .array(z.string())
+    .max(12)
+    .default([])
+    .transform((values) => plannedCapabilities(values)),
+  interaction: z
+    .union([pageInteractionSchema, z.string().transform(() => undefined)])
+    .optional(),
+  regions: pageRegionsSchema.optional(),
   /** Domain sections on this page. Not peer archetypes. */
   modules: z.array(z.string().min(1).max(64)).max(MAX_PAGE_MODULES).optional(),
 })
 
 const structuredBriefActionSchema = z.object({
   id: z.string().min(1).max(64),
-  apiKey: z.string().min(1).max(64),
-  fromPage: pagePathSchema,
   purpose: briefProse(400),
+  source: z.string().min(1).max(80).optional(),
+  target: z.string().max(80).optional(),
+  apiKey: z.string().min(1).max(64).optional(),
+  fromPage: pagePathSchema.optional(),
   onSuccessNavigate: z.string().max(80).nullable().optional(),
+})
+
+const structuredBriefEntitySchema = z.object({
+  id: z.string().min(1).max(64),
+  type: z.string().min(1).max(64),
+  relationships: z.array(z.string().min(1).max(64)).max(8).optional(),
 })
 
 const structuredBriefSchema = z.object({
   title: briefProse(80),
   purpose: briefProse(400),
   audience: briefProse(200),
+  complexity: z.enum(ARENA_GENERATIVE_COMPLEXITIES).optional(),
   archetype: pageShapeSchema,
   /** Domain noun the collection or record is about (competitor, order). */
   entity: briefProse(80).optional(),
   /** App-default collection representation. Pages may override. */
   representation: representationSchema.optional(),
-  /** Persistent chrome. Omitted means navigation none. */
+  /** Persistent chrome. Omitted or minimal means no product chrome. */
   shell: structuredBriefShellSchema.optional(),
   entryPath: pagePathSchema,
+  entities: z.array(structuredBriefEntitySchema).max(12).optional(),
   pages: z.array(structuredBriefPageSchema).min(1).max(8),
-  actions: z.array(structuredBriefActionSchema).max(16).default([]),
+  actions: z
+    .array(structuredBriefActionSchema)
+    .default([])
+    .transform((values) => values.slice(0, 16)),
   capabilities: z
     .array(z.string())
     .max(12)
@@ -174,6 +244,7 @@ const structuredBriefSchema = z.object({
   emptyCopy: briefProse(200).optional(),
   errorCopy: briefProse(200).optional(),
   intent: arenaGenerativeIntentSchema.optional(),
+  design: z.unknown().optional(),
   designIntent: z.unknown().optional(),
   informationHierarchy: z.unknown().optional(),
   interactionModel: z.unknown().optional(),
@@ -245,10 +316,6 @@ function inferPageArchetype(
   rawAppArchetype: unknown,
   appArchetype: ArenaGenerativeArchetype
 ): ArenaGenerativeArchetype {
-  if (page.archetype === 'workspace') {
-    const fromPrimary = primaryRegionArchetype(page.regions)
-    return fromPrimary ?? 'collection'
-  }
   const declared = canonicalizeArchetype(page.archetype)
   if (declared) return declared
   const path = typeof page.path === 'string' ? page.path : ''
@@ -260,11 +327,6 @@ function inferPageArchetype(
   }
   if (rawAppArchetype === 'wizard') return 'workflow'
   return appArchetype
-}
-
-function primaryRegionArchetype(value: unknown): ArenaGenerativeArchetype | undefined {
-  if (!isRecord(value) || !isRecord(value.primary)) return undefined
-  return canonicalizeArchetype(value.primary.archetype)
 }
 
 function sanitizeModules(value: unknown): string[] | undefined {
@@ -316,12 +378,74 @@ function sanitizeShell(value: unknown): ArenaGenerativeShell | undefined {
 function liftShell(value: unknown, forceSidebar: boolean): ArenaGenerativeShell | undefined {
   const parsed = sanitizeShell(value)
   if (parsed) {
-    if (forceSidebar && parsed.navigation === 'none') {
+    if (forceSidebar && (parsed.navigation === 'none' || parsed.navigation === 'minimal')) {
       return { ...parsed, navigation: 'sidebar' }
     }
     return parsed
   }
   return forceSidebar ? { navigation: 'sidebar' } : undefined
+}
+
+function liftDataMode(value: unknown): ArenaGenerativeDataMode | undefined {
+  return asClosedEnum(value, ARENA_GENERATIVE_DATA_MODES)
+}
+
+function liftPageData(page: Record<string, unknown>): {
+  data: unknown
+  dataMode?: ArenaGenerativeDataMode
+} {
+  const declaredMode = liftDataMode(page.dataMode)
+  if (isRecord(page.data) && typeof page.data.mode === 'string') {
+    const mode = liftDataMode(page.data.mode)
+    const description =
+      typeof page.data.description === 'string' && page.data.description.trim()
+        ? page.data.description
+        : mode
+    return { data: description ?? 'static', dataMode: mode ?? declaredMode }
+  }
+  if (typeof page.data === 'string') {
+    const lowered = page.data.toLowerCase()
+    const inferred =
+      declaredMode ??
+      (/\bdummy\b|\bmock\b|\bsample\b/.test(lowered)
+        ? 'dummy'
+        : /\bonload\b|\bfetch\b/.test(lowered)
+          ? 'remote'
+          : undefined)
+    return { data: page.data, dataMode: inferred }
+  }
+  return { data: page.data ?? 'static', dataMode: declaredMode }
+}
+
+function liftActionSource(action: Record<string, unknown>): Record<string, unknown> {
+  const source = typeof action.source === 'string' ? action.source.trim() : ''
+  if (source.startsWith('binding:')) {
+    const key = source.slice('binding:'.length).trim()
+    return {
+      ...action,
+      source,
+      ...(key && !action.apiKey ? { apiKey: key } : {}),
+    }
+  }
+  return action
+}
+
+function sanitizeRegions(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined
+  const regions: Record<string, unknown> = {}
+  for (const key of ['navigator', 'primary', 'inspector', 'auxiliary'] as const) {
+    const region = value[key]
+    if (!isRecord(region)) continue
+    const archetype = canonicalizeArchetype(region.archetype)
+    if (!archetype || archetype === 'workspace') continue
+    const next: Record<string, unknown> = { archetype }
+    if (typeof region.entity === 'string' && region.entity.trim()) next.entity = region.entity
+    const representation = liftRepresentation(region.representation)
+    if (representation) next.representation = representation
+    if (typeof region.purpose === 'string' && region.purpose.trim()) next.purpose = region.purpose
+    regions[key] = next
+  }
+  return Object.keys(regions).length > 0 ? regions : undefined
 }
 
 function liftRepresentation(value: unknown): ArenaGenerativeRepresentation | undefined {
@@ -332,6 +456,24 @@ function liftRepresentation(value: unknown): ArenaGenerativeRepresentation | und
 function liftSnakeCasePlanFields(value: unknown): unknown {
   if (!isRecord(value)) return value
   const next: Record<string, unknown> = { ...value }
+  if (isRecord(next.app)) {
+    if (next.title == null && next.app.title != null) next.title = next.app.title
+    if (next.complexity == null && next.app.complexity != null) {
+      next.complexity = next.app.complexity
+    }
+    if (next.shell == null && next.app.shell != null) next.shell = next.app.shell
+    if (next.archetype == null && next.app.archetype != null) next.archetype = next.app.archetype
+    if (next.pages == null && next.app.pages != null) next.pages = next.app.pages
+    if (next.entities == null && next.app.entities != null) next.entities = next.app.entities
+  }
+  if (isRecord(next.pages) && !Array.isArray(next.pages)) {
+    next.pages = Object.entries(next.pages).map(([path, page]) =>
+      isRecord(page) ? { path: typeof page.path === 'string' ? page.path : path, ...page } : page
+    )
+  }
+  if (next.designIntent == null && next.design != null) {
+    next.designIntent = next.design
+  }
   if (next.informationHierarchy == null && next.information_hierarchy != null) {
     next.informationHierarchy = next.information_hierarchy
   }
@@ -339,40 +481,49 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
     next.interactionModel = next.interaction_model
   }
   const rawAppArchetype = next.archetype
-  const pagesAreWorkspace =
-    Array.isArray(next.pages) &&
-    next.pages.some((page) => isRecord(page) && page.archetype === 'workspace')
-  const storedWorkspace = rawAppArchetype === 'workspace' || pagesAreWorkspace
   let appArchetype = canonicalizeArchetype(rawAppArchetype)
-  if (rawAppArchetype === 'workspace') {
-    const entryPath = typeof next.entryPath === 'string' ? next.entryPath : undefined
-    const entryPage = Array.isArray(next.pages)
-      ? (next.pages.find((page) => isRecord(page) && page.path === entryPath) ?? next.pages[0])
-      : undefined
-    const fromPrimary = isRecord(entryPage) ? primaryRegionArchetype(entryPage.regions) : undefined
-    appArchetype = fromPrimary ?? 'collection'
-  }
   if (appArchetype) next.archetype = appArchetype
-  const shell = liftShell(next.shell, storedWorkspace)
+  const shell = liftShell(next.shell, false)
   let liftedPlan = shell ? { ...next, shell } : omit(next, ['shell'])
   const appRepresentation = liftRepresentation(liftedPlan.representation)
   liftedPlan = appRepresentation
     ? { ...liftedPlan, representation: appRepresentation }
     : omit(liftedPlan, ['representation'])
-  if (Array.isArray(liftedPlan.pages) && appArchetype) {
+  if (Array.isArray(liftedPlan.actions)) {
+    liftedPlan = {
+      ...liftedPlan,
+      actions: liftedPlan.actions.map((action) =>
+        isRecord(action) ? liftActionSource(action) : action
+      ),
+    }
+  }
+  if (Array.isArray(liftedPlan.pages)) {
     liftedPlan = {
       ...liftedPlan,
       pages: liftedPlan.pages.map((page) => {
         if (!isRecord(page)) return page
-        const pageArchetype = inferPageArchetype(page, rawAppArchetype, appArchetype)
-        let lifted: Record<string, unknown> = { ...page, archetype: pageArchetype }
+        const pageArchetype = appArchetype
+          ? inferPageArchetype(page, rawAppArchetype, appArchetype)
+          : canonicalizeArchetype(page.archetype)
+        const { data, dataMode } = liftPageData(page)
+        let lifted: Record<string, unknown> = { ...page, data }
+        if (pageArchetype) lifted.archetype = pageArchetype
+        else lifted = omit(lifted, ['archetype'])
+        if (dataMode) lifted.dataMode = dataMode
+        if (typeof page.interaction === 'string') {
+          lifted = omit(lifted, ['interaction'])
+        }
         const pageRepresentation = liftRepresentation(page.representation)
         lifted = pageRepresentation
           ? { ...lifted, representation: pageRepresentation }
           : omit(lifted, ['representation'])
-        const modules = modulesFromLegacyComposition(page)
+        const regions = sanitizeRegions(page.regions)
+        lifted = regions ? { ...lifted, regions } : omit(lifted, ['regions', 'secondary'])
+        const modules = regions
+          ? sanitizeModules(page.modules)
+          : modulesFromLegacyComposition(page)
         lifted = modules ? { ...lifted, modules } : omit(lifted, ['modules'])
-        return omit(lifted, ['regions', 'secondary'])
+        return omit(lifted, ['secondary'])
       }),
     }
   }
@@ -420,7 +571,7 @@ export function parseArenaGenerativeInteractionModel(
 
 export type ArenaGenerativeStructuredBrief = Omit<
   z.output<typeof structuredBriefSchema>,
-  'designIntent' | 'informationHierarchy' | 'interactionModel'
+  'designIntent' | 'informationHierarchy' | 'interactionModel' | 'design'
 > & {
   designIntent?: ArenaGenerativeDesignIntent
   informationHierarchy?: ArenaGenerativeInformationHierarchy
@@ -430,96 +581,74 @@ export type ArenaGenerativeStructuredBrief = Omit<
 function withParsedPlanClassifiers(
   brief: z.output<typeof structuredBriefSchema>
 ): ArenaGenerativeStructuredBrief {
-  const designIntent = parseArenaGenerativeDesignIntent(brief.designIntent)
+  const designIntent = parseArenaGenerativeDesignIntent(brief.designIntent ?? brief.design)
   const informationHierarchy = parseArenaGenerativeInformationHierarchy(brief.informationHierarchy)
   const interactionModel = parseArenaGenerativeInteractionModel(brief.interactionModel)
+  const pageCapabilities = brief.pages.flatMap((page) => page.capabilities)
+  const capabilities = plannedCapabilities([...brief.capabilities, ...pageCapabilities])
   return {
-    ...omit(brief, ['designIntent', 'informationHierarchy', 'interactionModel']),
+    ...omit(brief, ['designIntent', 'informationHierarchy', 'interactionModel', 'design']),
+    capabilities,
     ...(designIntent ? { designIntent } : {}),
     ...(informationHierarchy ? { informationHierarchy } : {}),
     ...(interactionModel ? { interactionModel } : {}),
   }
 }
 
-const PLANNER_SYSTEM_PROMPT = [
-  'You plan the sitemap for a multi-page Arena app. Output one JSON object. No markdown fences, no explanation.',
-  'Application architecture is SHELL + SITEMAP. Design System is host-owned — not a planner job. Each page is PRIMARY ARCHETYPE + 0–5 CAPABILITIES + MODULES. Extra jobs are extra sitemap pages — never detail + results + dashboard as peer jobs on one page.',
-  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the app archetype, per-page shapes, shell, modules, representation, capabilities, designIntent, informationHierarchy, and interactionModel that implement that intent.',
-  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, page shapes, shell, modules, representation, capabilities, designIntent, informationHierarchy, and interactionModel.',
-  'Archetype is the job of a page, not the visual layout and not the app chrome. Pick exactly one app-level archetype (the entry job). Each page also declares pages[].archetype. Mixed sitemaps are normal.',
-  '- collection: How do I browse/manage many things?',
-  '- detail: How do I understand one thing?',
-  '- task: How do I provide information to accomplish something?',
-  '- results: How do I consume/analyze generated output?',
-  '- dashboard: How do I monitor many important signals?',
-  '- workflow: How do I complete a multi-stage task?',
-  '- content: How do I read/create/edit substantial content?',
-  'Disambiguate from the job, not from how complete the brief is. Scan many modules on arrival → dashboard. Find/act on a list → collection. One entity → detail. Provide input to do a thing → task. Sequential stages → workflow. Output of generate/analyze → results. Read/edit a document as the product → content. Mixed briefs: pick the entry verb; extra destinations are extra pages with their own shape.',
-  'Shell is app chrome, not a page job. Ask: does this product need persistent navigation / header / breadcrumbs? Emit optional shell { navigation: none | tabs | sidebar, header?, breadcrumbs? }. Default is omit or none — a typical one-job Arena app has no fake SaaS chrome. sidebar only when a list and a record (or inspector) must stay visible together. tabs only for three or more peer top-level views. workspace is not a page archetype; do not emit it.',
-  'Modules are domain sections on that page (firmographics, marketing, competitors, ai-analysis, activity) — kebab or short nouns, at most eight. Bind them to brief nouns and layoutPlan hostKeys. Do not invent modules the schema cannot fill. Do not treat a module as a second page archetype.',
-  'Representation is how a collection body is shown — not an archetype and not a capability. Emit representation (app default) and optional pages[].representation: auto | table | cards | list | kanban | timeline. auto lets BindingLayoutPlan decide. Do not emit kanban or timeline as capabilities. There is no Kanban, Timeline, or List catalog type.',
-  'Optional entity is the domain noun (competitor, order). purpose stays one prose sentence.',
-  'Set capabilities to at most five tags that apply: long-running, streaming, multi-step, cancellable, progress, search, filter, sort, pagination, grouping, date-range, refresh, drill-down, selection, detail, detail-drawer, analyze, drawer, modal, create, edit, delete, back, skip, review, chat. Combine them. A workflow binding is long-running; stream: true is streaming; binding.pagination is pagination; binding.chatProtocol.input is chat; a single prominent query is search; Toolbar narrowing is filter; a date window is date-range; opening one entity is detail (Drawer when the list must stay visible — also set detail-drawer); an analyze/generate CTA is analyze (destination is a results page, or a module named for the analysis). Destination pages stay pages[].archetype. Search and filter are still valid with no bindings — they filter the on-page collection locally; do not invent actionIds for them. Omit tags the job does not need. Do not emit "short", "editable", "export", "generate", "table", "chart", "kanban", "share", or "comments".',
-  'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; task or results → workflow / comfortable / task; collection → crm / comfortable / discovery; workflow → workflow / comfortable / task; content → content / comfortable / narrative / content; shell.sidebar → saas / comfortable / discovery. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
-  'Also emit informationHierarchy { dominant, supporting? } and interactionModel { navigation, selection, wait }. Honour Design Notes first. Else derive from page shapes: dashboard → metrics; collection → collection; task → form; results or content → prose; workflow → wizard-step; shell.sidebar → collection with supporting navigator/inspector. dominant is form | collection | metrics | prose | document | wizard-step. supporting is zero or more of filters, history, sidebar, detail, stats, navigator, inspector. navigation is search-hero | tabs | list-detail | wizard | workspace | single-page. selection is none | same-page | navigate. wait is none | working-card — working-card only when a wait capability is set. Classification only — not component props. interactionModel.navigation workspace does not set shell.',
-  'Shape: { "title", "purpose", "audience", "archetype", "entity"?, "representation"?, "shell"?, "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"?, "archetype"?, "representation"?, "modules"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: string[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
-  'title is the product name. purpose is the job in one sentence (copy intent.task when present). audience is a real role — never "users".',
-  'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
-  '1–6 pages. Infer the smallest sitemap that completes the job: task that produces an answer has a results page plus Back; collection that opens a record has a detail page, or same-page Open / detail / detail-drawer when the row already carries prose; a second binding that is a list/history is a collection page with onLoad, not a second submit. A sidebar shell is usually one page with modules, not a second archetype. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
-  'data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
-  'A dashboard, collection, report, detail, or content page names onLoad in data when it fetches on arrival. A task form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
-  'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. The Start field named input is an optional constant prefix, not a form control. chatProtocol (input, conversationId, files) is Chat for follow-ups; the first form CTA composes input from that prefix plus name: value. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
-  'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys. When layoutPlan or outputSchema names a collection, plan Repeat/Table/Stat against those host keys, not invented ones.',
-  'emptyCopy is the zero-result sentence for that page\'s collection (becomes emptyText) — name the collection in the domain, not generic "No results". errorCopy is the failure sentence for this job.',
-  'Give an onLoad action no onSuccessNavigate.',
-  'Plan sitemap, data, actions, and capabilities — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
-  ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT,
-].join('\n')
+const PLANNER_SYSTEM_PROMPT = PLANNER_CONTRACT_PROMPT
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   collection: [
     'ARCHETYPE RECIPE: collection',
     'Purpose: Display and operate on a collection of entities.',
-    'Structure: Header → Toolbar → Collection → optional modules.',
-    'Rules: Choose the collection representation from data shape and user task (see REPRESENTATION). Bind collection data when bindings exist; static Table rows are allowed when there are none. Search/filter belong in the Toolbar or Filter. When no search/filter API exists, omit actionId — the host filters visible rows locally. Name Filter Selects after columns. Entity actions stay on the entity. Use selection/bulk only when the task needs them. Opening a record is CAPABILITY detail (navigate, drawer, modal, or inline). Modules are domain sections, not a second page job. Loading, empty, and error are host — set emptyText.',
+    'Structure: Header → Toolbar (only if CAPABILITY search/filter/sort is selected) → Collection.',
+    'Rules: Honour pages[].representation (list / table / cards). Bind collection data when bindings exist; dummy/local mode seeds 4–8 static Table rows or Repeat items. Do not add search, filter, stats, or a detail page unless the blueprint listed them. Entity actions stay on the entity. Inspect is CAPABILITY inspect. Loading, empty, and error are host — set emptyText.',
   ].join('\n'),
   detail: [
     'ARCHETYPE RECIPE: detail',
     'Purpose: Understand one entity.',
-    'Structure: Header → primary facts → modules → related → actions.',
-    'Rules: Modules come from the data model and layoutPlan, not a fixed template. Bind the record; never hard-code fields. Related collections use REPRESENTATION. When opened with ?id=, onLoad that record unless selectItem already copied it. Back to the collection. emptyText names the entity. Do not emit results or dashboard as peer archetypes on this page.',
+    'Structure: Header → primary facts → related → actions.',
+    'Rules: Bind the record; never hard-code fields unless data.mode is dummy. When opened with ?id=, onLoad that record unless selectItem already copied it. Back to the collection. emptyText names the entity. Do not emit results or dashboard as peer jobs on this page.',
   ].join('\n'),
   task: [
     'ARCHETYPE RECIPE: task',
     'Purpose: Collect input to accomplish something.',
     'Structure: Header → optional context → Form or SearchField → one primary action.',
-    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Results are optional — add a results page only when the CTA produces an answer (CAPABILITY analyze). Same-page saves stay here; the host toasts.',
+    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Do not add a results or history page unless the blueprint listed it. Same-page saves stay here; the host toasts.',
   ].join('\n'),
   results: [
     'ARCHETYPE RECIPE: results',
     'Purpose: Consume or analyze generated output.',
-    'Structure: Context → summary → primary result → supporting → actions.',
-    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name), never "field.content". Structured hostKeys use Repeat, Stat, or KeyValue. Echo form names ({targetKeyword}, inputs.targetKeyword). emptyText lives here. Wait chrome is CAPABILITY.',
+    'Structure: Context → primary result → actions.',
+    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name). Structured hostKeys use Repeat, Stat, or KeyValue only when the blueprint or layoutPlan named them. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
   ].join('\n'),
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',
     'Purpose: Monitor many important signals on arrival.',
-    'Structure: Header → Filters → KPI/summary → primary module → supporting → activity.',
-    'Rules: Module count and types follow layoutPlan / outputSchema — never a fixed widget set. Bind every metric and collection. A single collection with no other modules is collection, not dashboard. onLoad fetches the scan. Filters and date-range belong in the Toolbar.',
+    'Structure: Header → Filters (only if selected) → KPI/summary → primary module → supporting.',
+    'Rules: Module count and types follow the blueprint and layoutPlan — never a fixed widget set. Bind every metric and collection. A single collection with no other modules is collection, not dashboard.',
   ].join('\n'),
   workflow: [
     'ARCHETYPE RECIPE: workflow',
     'Purpose: Complete a multi-stage task.',
     'Structure: Progress → current step (inputs + actions) → navigation.',
-    'Rules: Not automatically one page per step. Two or three short stages can be one page of Sections. Named review/launch can be pages. Progress is a Stepper, not Tabs. Early stages use Next; the last is the only SubmitButton. Back, skip, and review are CAPABILITY.',
+    'Rules: Not automatically one page per step. Two or three short stages can be one page of Sections. Progress is a Stepper, not Tabs. Early stages use Next; the last is the only SubmitButton.',
   ].join('\n'),
   content: [
     'ARCHETYPE RECIPE: content',
     'Purpose: Read or lightly edit substantial content.',
     'Structure: Header → metadata → main body → optional related → actions.',
-    'Rules: Main body is DataText markdown. Metadata stays muted. Related collections only when layoutPlan has one. Not results (no WorkingCard unless a wait capability is set). Not detail (no entity firmographics when the job is a document).',
+    'Rules: Main body is DataText markdown. Metadata stays muted. Related collections only when layoutPlan has one.',
+  ].join('\n'),
+  workspace: [
+    'ARCHETYPE RECIPE: workspace',
+    'Purpose: Keep coordinated regions visible together.',
+    'Structure: catalog Workspace — navigator, primary, optional inspector / auxiliary.',
+    'Rules: Honour pages[].regions. Each region independently uses that region\'s archetype recipe (collection, detail, …). Sync via selectedId. Inspector may use showWhen "selectedId". Do not invent a new region archetype. Do not emit a second page for a region the blueprint placed here.',
   ].join('\n'),
 }
+
+export const WORKSPACE_RECIPE = ARCHETYPE_RECIPES.workspace
 
 /**
  * App chrome recipe. Not an eighth page job — appended when shell.navigation
@@ -528,17 +657,25 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
 export const SHELL_RECIPE = [
   'SHELL RECIPE',
   'App chrome is not a page job. Honour brief.shell.',
-  'sidebar: emit catalog Workspace — navigator, primary, optional inspector. Sync via selectedId. Inspector may use showWhen "selectedId". No Tabs for these regions. Host collapses inspector, then navigator.',
+  'sidebar: emit catalog Workspace or a persistent nav column for top-level destinations. Sync via selectedId when regions exist. No Tabs for workspace regions. Host collapses inspector, then navigator.',
+  'workspace: persistent multi-region chrome. Honour pages[].regions. Same catalog Workspace as the workspace page recipe.',
   'tabs: emit Tabs as Label|path. Not sequential steps (those are Stepper).',
-  'none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
+  'minimal / none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
   'header / breadcrumbs: emit PageHeader and breadcrumb NavLinks only when those flags are true.',
 ].join('\n')
 
-/** Prompt fragment for a non-none shell. Empty when chrome is omitted. */
+const MINIMAL_SHELL = new Set<ArenaGenerativeShellNavigation>(['minimal', 'none'])
+
+/** Prompt fragment for a non-minimal shell. Empty when chrome is omitted. */
 export function shellRecipe(shell?: ArenaGenerativeShell): string {
-  if (!shell || shell.navigation === 'none') return ''
+  if (!shell || MINIMAL_SHELL.has(shell.navigation)) return ''
   return SHELL_RECIPE
 }
+
+export const ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT = [
+  'DUMMY / LOCAL DATA',
+  'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows (Table.rows or Repeat children). CTAs the blueprint named (create, complete, analyze, …) stay in manifest.actions with no apiKey (or source dummy/local). Use onSuccess.setState to append, toggle done, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
+].join('\n')
 
 export interface PlanStructuredBriefParams {
   userInput: string
@@ -559,21 +696,46 @@ export function archetypeRecipe(archetype: ArenaGenerativeArchetype): string {
 }
 
 /**
- * Recipes for the app archetype plus every page job (and shell chrome when
- * navigation is not none) so a mixed sitemap is not generated as if every
- * page were the entry shape.
+ * Recipes for every page job, region job, shell, capability, and representation
+ * the blueprint actually uses. Unused archetypes stay out of the spec prompt.
  */
-export function archetypeRecipesForBrief(brief: ArenaGenerativeStructuredBrief): string {
+export function recipesForBlueprint(brief: ArenaGenerativeStructuredBrief): string {
   const shapes = new Set<ArenaGenerativeArchetype>([brief.archetype])
-  for (const page of brief.pages) {
+  const representations = new Set<ArenaGenerativeRepresentation>()
+  if (brief.representation) representations.add(brief.representation)
+  for (const page of brief.pages ?? []) {
     if (page.archetype) shapes.add(page.archetype)
+    if (page.representation) representations.add(page.representation)
+    if (page.regions) {
+      for (const region of Object.values(page.regions)) {
+        if (region?.archetype) shapes.add(region.archetype)
+        if (region?.representation) representations.add(region.representation)
+      }
+    }
   }
   const recipes = ARENA_GENERATIVE_ARCHETYPES.filter((shape) => shapes.has(shape)).map(
     (shape) => ARCHETYPE_RECIPES[shape]
   )
   const chrome = shellRecipe(brief.shell)
   if (chrome) recipes.push(chrome)
-  return recipes.join('\n\n')
+  const usedBodies = [...representations].some(
+    (value) => value === 'list' || value === 'table' || value === 'cards'
+  )
+  if (usedBodies) recipes.push(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT)
+  const dummy = (brief.pages ?? []).some(
+    (page) => page.dataMode === 'dummy' || page.dataMode === 'local' || /\bdummy\b/i.test(page.data)
+  )
+  if (dummy) recipes.push(ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT)
+  return recipes.filter((section) => section.length > 0).join('\n\n')
+}
+
+/**
+ * Recipes for the app archetype plus every page job (and shell chrome when
+ * navigation is not none) so a mixed sitemap is not generated as if every
+ * page were the entry shape.
+ */
+export function archetypeRecipesForBrief(brief: ArenaGenerativeStructuredBrief): string {
+  return recipesForBlueprint(brief)
 }
 
 /**
@@ -597,7 +759,7 @@ export function pageHintsFromStructuredBrief(
 export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBrief): string {
   const appRepresentation = brief.representation ?? 'auto'
   const entity = brief.entity ? `Entity: ${brief.entity}` : ''
-  const navigation = brief.shell?.navigation ?? 'none'
+  const navigation = brief.shell?.navigation ?? 'minimal'
   const shellFlags = [
     brief.shell?.header ? 'header' : '',
     brief.shell?.breadcrumbs ? 'breadcrumbs' : '',
@@ -605,15 +767,27 @@ export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBri
     .filter((flag) => flag.length > 0)
     .join(' ')
   const shell = `Shell: navigation=${navigation}${shellFlags ? ` ${shellFlags}` : ''}`
+  const complexity = brief.complexity ? `Complexity: ${brief.complexity}` : ''
   const lines = brief.pages.map((page) => {
     const shape = page.archetype ?? brief.archetype
     const representation = page.representation ?? appRepresentation
     const modules = page.modules?.length ? ` modules: ${page.modules.join(', ')}` : ''
-    return `- ${page.path}: ${shape} representation=${representation}${modules}`
+    const capabilities = page.capabilities.length
+      ? ` capabilities: ${page.capabilities.join(', ')}`
+      : ''
+    const dataMode = page.dataMode ? ` data.mode: ${page.dataMode}` : ''
+    const regions = page.regions
+      ? ` regions: ${Object.entries(page.regions)
+          .filter(([, region]) => region)
+          .map(([name, region]) => `${name}=${region?.archetype}`)
+          .join(', ')}`
+      : ''
+    return `- ${page.path}: ${shape} representation=${representation}${dataMode}${capabilities}${regions}${modules}`
   })
   return [
     'Page shapes (emit each page using that recipe; do not treat every page as the app archetype):',
-    'Each page is one primary archetype + capabilities + modules. Do not emit detail + results + dashboard as peer jobs on one page.',
+    'Each page is one primary archetype + capabilities + optional regions. Do not emit detail + results + dashboard as peer jobs on one page. Do not add pages, history, stats, or modules the blueprint omitted.',
+    complexity,
     shell,
     entity,
     ...lines,
@@ -630,7 +804,7 @@ export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructur
     'Structured brief (implement this information architecture; emit exactly these page paths as object keys):',
     JSON.stringify(brief, null, 2),
     formatPageShapesForGenerator(brief),
-    "Honour onLoad vs CTA as each page's data field describes. Use that page's emptyCopy as emptyText on its collection. Keep this sitemap and wiring; fill in labels, grouping, and Back links a senior engineer would not skip.",
+    "Honour this sitemap and capabilities. Do not add pages, history, stats, or modules the blueprint omitted. Honour onLoad vs CTA as each page's data field describes. Dummy/local data.mode seeds static rows and local actions — do not drop manifest.actions. Use that page's emptyCopy as emptyText on its collection.",
   ].join('\n')
 }
 
@@ -643,6 +817,28 @@ export function formatStructuredBriefForEdit(brief: ArenaGenerativeStructuredBri
     'Original structured brief (context only — already implemented. Do not re-apply the sitemap, archetype, or copy unless the change request asks.):',
     JSON.stringify(brief, null, 2),
   ].join('\n')
+}
+
+/**
+ * Legacy `processing` wait tags become `capabilities` so old drafts still edit.
+ */
+function isLocalBriefAction(action: {
+  apiKey?: string
+  source?: string
+}): boolean {
+  const source = action.source?.trim() ?? ''
+  if (source === 'dummy' || source === 'local') return true
+  if (source.startsWith('binding:')) return false
+  return !action.apiKey
+}
+
+/**
+ * True when any page is dummy/local data so the generator must keep local actions.
+ */
+export function briefHasDummyOrLocalData(brief: ArenaGenerativeStructuredBrief): boolean {
+  return (brief.pages ?? []).some(
+    (page) => page.dataMode === 'dummy' || page.dataMode === 'local' || /\bdummy\b/i.test(page.data)
+  )
 }
 
 /**
@@ -694,6 +890,7 @@ function normalizePagePath(value: unknown): unknown {
   const normalized = value
     .trim()
     .toLowerCase()
+    .replace(/:[^/]+/g, 'detail')
     .replace(/^\/+|\/+$/g, '')
     .replace(/[\s_/]+/g, '-')
     .replace(/-{2,}/g, '-')
@@ -762,17 +959,22 @@ export function parseArenaGenerativeStructuredBrief(
 ): ArenaGenerativeStructuredBrief | null {
   const parsed = structuredBriefSchema.safeParse(normalizeBriefPaths(value))
   if (!parsed.success) {
+    logger.warn('Arena Generative UI structured brief failed schema validation', {
+      issues: parsed.error.issues.slice(0, 8).map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      })),
+    })
     return null
   }
   let brief = parsed.data
   const bindingKeys = new Set(options.apiBindings.map((binding) => binding.key).filter(Boolean))
-  if (bindingKeys.size === 0) {
-    brief = { ...brief, actions: [] }
-  } else {
-    const actions = brief.actions.filter((action) => bindingKeys.has(action.apiKey))
-    if (actions.length !== brief.actions.length) {
-      brief = { ...brief, actions }
-    }
+  const actions = brief.actions.filter((action) => {
+    if (isLocalBriefAction(action)) return true
+    return Boolean(action.apiKey && bindingKeys.has(action.apiKey))
+  })
+  if (actions.length !== brief.actions.length) {
+    brief = { ...brief, actions }
   }
   const hints = options.pageHints?.filter((hint) => hint.path.trim().length > 0) ?? []
   if (hints.length > 0) {
@@ -808,6 +1010,7 @@ function reconcileBriefWithPageHints(
       purpose: hint.purpose?.trim() || `Show ${hint.title.trim() || hint.path}`,
       data: 'static',
       actions: [] as string[],
+      capabilities: [] as ArenaGenerativeCapability[],
       archetype: brief.archetype,
     }
   })
@@ -823,7 +1026,7 @@ function reconcileBriefWithPageHints(
     ...brief,
     pages,
     entryPath: nextEntry,
-    actions: brief.actions.filter((action) => allowed.has(action.fromPage)),
+    actions: brief.actions.filter((action) => !action.fromPage || allowed.has(action.fromPage)),
   }
 }
 
@@ -848,10 +1051,10 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
     pageHints.length > 0
       ? `Requested pages (use exactly these paths):\n${JSON.stringify(pageHints, null, 2)}`
-      : 'No explicit page list. Infer a small coherent sitemap from the brief — include destination and collection pages the job needs even if the user only named the starting screen.',
+      : 'No explicit page list. Infer the smallest sitemap the request needs — do not add history, stats, detail, or extra pages unless required.',
     bindingKeys.length > 0
-      ? `Declared API bindings (actions may only use these keys; inputSchema is the form, outputSchema/layoutPlan is the result):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. actions must be an empty array. Navigation and static content only.',
+      ? `Declared API bindings (remote actions use source "binding:<key>"; inputSchema is the form, outputSchema/layoutPlan is the result):\n${JSON.stringify(bindingsSummary, null, 2)}`
+      : 'No API bindings. Bindings are the remote data contract. When none are declared, data.mode may be dummy or local and actions are still required for requested mutations — use source dummy or local, never invent API keys.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     `User request:\n${params.userInput.trim()}`,
   ]
@@ -860,7 +1063,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
 }
 
 const BRIEF_REPAIR_USER_MESSAGE =
-  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, shell?, entryPath, pages[] with modules?, actions[], capabilities?, designIntent?, informationHierarchy?, interactionModel?). Do not emit a manifest.'
+  'That was not a valid structured brief. Return one JSON object in the planner blueprint shape (title, purpose, audience, complexity, archetype, shell?, entryPath, entities?, pages[] with archetype, data.mode, capabilities?, regions?, actions[] with source dummy|local|binding:<key>, design?). Do not emit a manifest.'
 
 export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null

@@ -5,8 +5,6 @@ import { describe, expect, it } from 'vitest'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
   GOLD_EXAMPLE_API_KEY,
-  GOLD_EXAMPLE_LOAD_API_KEY,
-  GOLD_EXAMPLE_RUN_API_KEY,
   goldExampleManifest,
   goldExampleOutput,
   goldExamplePromptForArchetype,
@@ -32,21 +30,9 @@ import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/valid
 const bindings: ArenaGenerativeApiBinding[] = [
   {
     key: GOLD_EXAMPLE_API_KEY,
-    label: 'Search companies',
+    label: 'Analyze company',
     kind: 'workflow',
     workflowId: 'wf_gold',
-  },
-  {
-    key: GOLD_EXAMPLE_RUN_API_KEY,
-    label: 'Run analysis',
-    kind: 'workflow',
-    workflowId: 'wf_gold_run',
-  },
-  {
-    key: GOLD_EXAMPLE_LOAD_API_KEY,
-    label: 'Company overview',
-    kind: 'workflow',
-    workflowId: 'wf_gold_metrics',
   },
 ]
 
@@ -66,12 +52,7 @@ describe('gold example', () => {
 
   it('keeps every page reachable from the entry path', () => {
     const result = validateExample()
-    expect(Object.keys(result.manifest?.pages ?? {})).toEqual([
-      'home',
-      'results',
-      'progress',
-      'overview',
-    ])
+    expect(Object.keys(result.manifest?.pages ?? {})).toEqual(['home', 'results'])
     expect(result.manifest?.entryPath).toBe('home')
   })
 
@@ -79,14 +60,12 @@ describe('gold example', () => {
     const result = validateExample()
     const source = JSON.stringify(goldExampleManifest)
     expect(source).toContain('"gap":"sm"')
-    expect(source).toContain('"gap":"md"')
-    expect(source).toContain('"gap":"lg"')
     expect(source).toContain('"padding":"lg"')
     expect(source).toContain('"variant":"default"')
     expect(source).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
     expect(source).not.toMatch(/"padding":"(?:8|12|16|24)px"/)
 
-    for (const path of ['home', 'results', 'progress', 'overview'] as const) {
+    for (const path of ['home', 'results'] as const) {
       const authored = goldExampleManifest.pages[path].spec
       const normalized = result.manifest?.pages[path].spec
       expect(normalized?.root).toBe(authored.root)
@@ -96,64 +75,49 @@ describe('gold example', () => {
     }
     const resolved = JSON.stringify(result.manifest?.pages.home.spec)
     expect(resolved).toContain('var(--gui-space-sm')
-    expect(resolved).toContain('var(--gui-space-lg')
-    expect(JSON.stringify(result.manifest?.pages.results.spec)).toContain('var(--gui-space-md')
+    expect(JSON.stringify(result.manifest?.pages.results.spec)).toContain('var(--gui-space-lg')
   })
 
   it('demonstrates the layout primitives the rules ask for', () => {
     const serialized = JSON.stringify(goldExampleManifest)
-    for (const type of [
-      'PageHeader',
-      'SearchField',
-      'Chip',
-      'Icon',
-      'Avatar',
-      'EntityHeader',
-      'Grid',
-      'Stat',
-      'Card',
-      'Repeat',
-      'Tabs',
-      'DataText',
-      'WorkingCard',
-    ]) {
+    for (const type of ['PageHeader', 'SearchField', 'Chip', 'Card', 'DataText', 'WorkingCard']) {
       expect(serialized).toContain(`"${type}"`)
     }
     expect(serialized).toContain('"type":"DataText"')
     expect(serialized).toContain('"type":"WorkingCard"')
     expect(serialized).not.toContain('"type":"ProgressSteps"')
     expect(serialized).not.toContain('"type":"ProgressBar"')
+    expect(serialized).not.toContain('"type":"Tabs"')
+    expect(serialized).not.toContain('Watchtower')
     expect(serialized).toContain('"align":"center"')
-    expect(serialized).toContain('"size":"display"')
     expect(serialized).toContain('"brandColor":"#1A73E8"')
   })
 
-  it('teaches onLoad on the page that fetches its own data, not the search hero', () => {
+  it('teaches onLoad stays off the form and the CTA destination', () => {
     const result = validateExample()
 
     expect(result.manifest?.pages.home.onLoad).toBeUndefined()
-    expect(result.manifest?.pages.overview.onLoad).toEqual(['load_overview'])
-    expect(JSON.stringify(goldExampleManifest.pages.overview.spec)).toContain(
-      '"statePath":"revenue"'
+    expect(result.manifest?.pages.results.onLoad).toBeUndefined()
+    expect(JSON.stringify(goldExampleManifest.pages.results.spec)).toContain(
+      '"statePath":"content"'
     )
   })
 
-  it('teaches Repeat inside a Grid with per-item title and logo placeholders', () => {
-    const results = JSON.stringify(goldExampleManifest.pages.results.spec)
-    expect(results).toContain('"type":"Repeat"')
-    expect(results).toContain('"statePath":"companies"')
-    expect(results).toContain('{item.name}')
-    expect(results).toContain('{item.logo}')
-    expect(results).toContain('Query: {query}')
-    expect(results).toContain('No matching companies.')
-    expect(results.indexOf('"type":"Grid"')).toBeLessThan(results.indexOf('"type":"Repeat"'))
+  it('does not teach a history page, SWOT modules, or result-card Repeat', () => {
+    const serialized = JSON.stringify(goldExampleManifest)
+    expect(serialized).not.toContain('history')
+    expect(serialized).not.toContain('overview')
+    expect(serialized).not.toContain('SWOT')
+    expect(serialized).not.toContain('"type":"Repeat"')
+    expect(serialized).not.toContain('companies')
   })
 
   it('embeds the framing and the serialized manifest in the prompt section', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('GOLD STANDARD REFERENCE LAYOUT')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('company_search')
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_RUN_API_KEY)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('two screens')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('four screens')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('spacing tokens')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('Card.variant')
@@ -181,6 +145,9 @@ describe('per-archetype gold examples', () => {
     expect(
       goldExamplePromptForArchetype('collection', { shell: { navigation: 'sidebar' } })
     ).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(goldExamplePromptForArchetype('workspace')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
+    )
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
@@ -272,6 +239,7 @@ describe('per-archetype gold examples', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('not a page archetype')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('Honour pages[].regions')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).not.toContain('not a page archetype')
   })
 })

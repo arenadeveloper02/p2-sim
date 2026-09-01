@@ -1305,6 +1305,43 @@ describe('runDeployedAppAction', () => {
       expect.any(String)
     )
   })
+
+  it('applies unbound dummy actions locally without HTTP', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        actions: {
+          complete_todo: {
+            onSuccess: {
+              setState: { done: true },
+              navigate: 'home',
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'complete_todo',
+      values: { title: 'Buy milk' },
+      requestId: 'req-dummy',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      data: { title: 'Buy milk', done: true },
+      navigate: 'home',
+      setState: { title: 'Buy milk', done: true },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mockExecuteWorkflow).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
 })
 
 function utf8Stream(parts: string[]): ReadableStream<Uint8Array> {

@@ -78,7 +78,9 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).not.toContain('scalar fields under inputs')
   })
 
-  it('describes EmptyState’s default slot as the next useful action', () => {
-    expect(prompt).toContain('The default slot is one primary next action')
+  it('tells the spec the host pages Table and Repeat when there is no pagination API', () => {
+    expect(prompt).toContain('the host pages long tables locally')
+    expect(prompt).toContain('the host pages long lists locally')
+    expect(prompt).toContain('do not emit a Load more Button')
   })
 })

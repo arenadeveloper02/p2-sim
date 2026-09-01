@@ -882,9 +882,20 @@ export async function runGenerativeAppAction(
     return { ok: false, error: `Unknown action "${options.actionId}"` }
   }
 
-  const binding = options.apiBindings.find((item) => item.key === action.apiKey)
-  if (!binding) {
-    return { ok: false, error: `Unknown API binding "${action.apiKey}"` }
+  const binding = action.apiKey
+    ? options.apiBindings.find((item) => item.key === action.apiKey)
+    : undefined
+  if (!action.apiKey || !binding) {
+    const setState = {
+      ...(options.values ?? {}),
+      ...(action.onSuccess?.setState ?? {}),
+    }
+    return {
+      ok: true,
+      data: setState,
+      navigate: action.onSuccess?.navigate,
+      setState,
+    }
   }
 
   /**

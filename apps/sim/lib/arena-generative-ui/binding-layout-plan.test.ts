@@ -6,6 +6,7 @@ import {
   actionHiddenInputsFrom,
   actionHostKeysFrom,
   actionStateFromPlan,
+  collectionUsesApiPagination,
   hostStateRoot,
   isActionControlPending,
   isBoundPathPending,
@@ -345,6 +346,23 @@ describe('hostStateRoot', () => {
     expect(hostStateRoot('articles[].title')).toBe('articles')
     expect(hostStateRoot('item.keyword')).toBe('')
     expect(hostStateRoot(undefined as unknown as string)).toBe('')
+  })
+})
+
+describe('collectionUsesApiPagination', () => {
+  it('is true when the collection writer exposes hasMore', () => {
+    expect(
+      collectionUsesApiPagination('articles', { load_list: ['articles', 'items', 'hasMore'] })
+    ).toBe(true)
+    expect(collectionUsesApiPagination('articles', { load_list: ['articles', 'items'] })).toBe(
+      false
+    )
+    expect(
+      collectionUsesApiPagination('articles[].title', { load_list: ['articles', 'hasMore'] })
+    ).toBe(true)
+    expect(
+      collectionUsesApiPagination(undefined as unknown as string, { load_list: ['hasMore'] })
+    ).toBe(false)
   })
 })
 

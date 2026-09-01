@@ -3,10 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  ARENA_GENERATIVE_CONTENT_TYPES,
-  ARENA_GENERATIVE_EMPHASES,
   ARENA_GENERATIVE_INTENT_DENSITIES,
-  ARENA_GENERATIVE_PRODUCT_TYPES,
   ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
   ARENA_GENERATIVE_VISUAL_TONES,
   normalizeDesignIntentDensity,
@@ -16,24 +13,15 @@ import {
 describe('ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT', () => {
   it('names the layer, every axis, and forbids component props', () => {
     expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('DESIGN INTENT')
-    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('productType')
     expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('density')
-    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('visualTone')
-    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('contentType')
-    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('emphasis')
-    for (const value of ARENA_GENERATIVE_PRODUCT_TYPES) {
-      expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain(value)
-    }
+    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('tone')
+    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('visualPriority')
+    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('interactionStyle')
+    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).not.toContain('productType')
     for (const value of ARENA_GENERATIVE_INTENT_DENSITIES) {
       expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain(value)
     }
     for (const value of ARENA_GENERATIVE_VISUAL_TONES) {
-      expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain(value)
-    }
-    for (const value of ARENA_GENERATIVE_CONTENT_TYPES) {
-      expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain(value)
-    }
-    for (const value of ARENA_GENERATIVE_EMPHASES) {
       expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain(value)
     }
     expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('not emit them as component props')
@@ -56,8 +44,10 @@ describe('parseArenaGenerativeDesignIntent', () => {
       productType: 'analytics',
       density: 'compact',
       visualTone: 'technical',
+      tone: 'technical',
       contentType: 'data-heavy',
       emphasis: 'data',
+      visualPriority: 'data',
     })
   })
 
@@ -74,8 +64,10 @@ describe('parseArenaGenerativeDesignIntent', () => {
       productType: 'crm',
       density: 'roomy',
       visualTone: 'premium',
+      tone: 'premium',
       contentType: 'workflow',
       emphasis: 'discovery',
+      visualPriority: 'discovery',
     })
   })
 

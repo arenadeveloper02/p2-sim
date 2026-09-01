@@ -499,7 +499,7 @@ function planActions(
     plan[actionId] = {
       kind: inferAsyncKind({
         usedOnLoad: onLoadIds.has(actionId),
-        binding: byKey.get(action.apiKey),
+        binding: action.apiKey ? byKey.get(action.apiKey) : undefined,
       }),
       confirm: confirmIds.has(actionId),
       retry: !confirmIds.has(actionId),

@@ -160,7 +160,8 @@ export interface ArenaGenerativePageManifest {
 }
 
 export interface ArenaGenerativeActionManifest {
-  apiKey: string
+  /** Declared binding key. Omitted for dummy/local actions. */
+  apiKey?: string
   inputMapping?: Record<string, string>
   /**
    * State keys whose arrays concatenate on this action even on page 1.
@@ -691,7 +692,7 @@ export function streamingActionIdsFrom(
   )
   if (streamingKeys.size === 0) return []
   return Object.entries(manifest.actions)
-    .filter(([, action]) => streamingKeys.has(action.apiKey))
+    .filter(([, action]) => Boolean(action.apiKey && streamingKeys.has(action.apiKey)))
     .map(([actionId]) => actionId)
 }
 
@@ -699,8 +700,8 @@ export function streamingActionIdsFrom(
 export const MAX_PAGE_ON_LOAD_ACTIONS = 6
 
 /**
- * Most items a `Repeat` will render. Caps a large payload so a generated page
- * cannot mount thousands of Cards from one response.
+ * Historical Repeat render cap. The host pages Repeat locally
+ * (`LOCAL_COLLECTION_PAGE_SIZE`) instead of silently truncating.
  */
 export const MAX_REPEAT_ITEMS = 48
 

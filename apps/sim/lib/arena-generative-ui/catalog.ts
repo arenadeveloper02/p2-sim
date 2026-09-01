@@ -72,7 +72,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) inside Repeat. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list while a same-page Open detail is showing.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) inside Repeat. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list while a same-page Open detail is showing. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button.',
     },
     Columns: {
       props: z.object({
@@ -186,7 +186,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         emptyText: z.string().nullable(),
       }),
       description:
-        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. A bound table with no rows shows emptyText (default "No results").',
+        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. When the binding has no pagination the host pages long tables locally; do not emit a Load more Button. A bound table with no rows shows emptyText (default "No results").',
     },
     Stat: {
       props: z.object({
@@ -685,7 +685,7 @@ export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
 
 /** Added to the generator prompt only when at least one API binding is declared. */
 export const ARENA_GENERATIVE_UI_PAGINATION_RULE = [
-  'Pagination: when a binding declares pagination, the host injects limit and cursor/offset, writes hasMore plus nextCursor (cursor mode) or offset (offset mode) into state, and appends the items array on page 2+ so Load more does not replace the list. Put a Button with the same actionId, showWhen "hasMore", and inputMapping that sends state nextCursor (cursor: "nextCursor") or offset (offset: "offset"). Do not invent a second action for the next page.',
+  'Pagination: when a binding declares pagination, the host injects limit and cursor/offset, writes hasMore plus nextCursor (cursor mode) or offset (offset mode) into state, and appends the items array on page 2+ so Load more does not replace the list. Put a Button with the same actionId, showWhen "hasMore", and inputMapping that sends state nextCursor (cursor: "nextCursor") or offset (offset: "offset"). Do not invent a second action for the next page. When the binding has no pagination, the host pages Table and Repeat locally from the loaded rows — do not emit showWhen "hasMore" or a Load more actionId.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */

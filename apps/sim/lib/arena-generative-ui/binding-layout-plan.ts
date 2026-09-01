@@ -411,6 +411,10 @@ export function actionHostKeysFrom(
   const byKey = new Map(bindings.map((binding) => [binding.key, binding]))
   const result: Record<string, string[]> = {}
   for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (!action.apiKey) {
+      result[actionId] = []
+      continue
+    }
     const binding = byKey.get(action.apiKey) ?? {
       key: action.apiKey,
       label: action.apiKey,
@@ -433,6 +437,7 @@ export function actionChatProtocolFrom(
   const byKey = new Map(bindings.map((binding) => [binding.key, binding]))
   const result: Record<string, NonNullable<ArenaGenerativeApiBinding['chatProtocol']>> = {}
   for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (!action.apiKey) continue
     const protocol = byKey.get(action.apiKey)?.chatProtocol
     if (protocol) result[actionId] = protocol
   }
@@ -450,6 +455,7 @@ export function actionHiddenInputsFrom(
   const byKey = new Map(bindings.map((binding) => [binding.key, binding]))
   const result: Record<string, string[]> = {}
   for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (!action.apiKey) continue
     const binding = byKey.get(action.apiKey)
     if (!binding) continue
     const hidden = layoutPlanForBinding(binding).hiddenInputFields
@@ -470,6 +476,22 @@ export function hostStateRoot(statePath: string): string {
   const bracket = trimmed.indexOf('[')
   const separator = [dot, bracket].filter((index) => index >= 0).sort((a, b) => a - b)[0]
   return separator == null ? trimmed : trimmed.slice(0, separator)
+}
+
+/**
+ * True when a bound collection is filled by an API that declared `pagination`.
+ * Those lists keep host `hasMore` / Load more and must not be sliced locally.
+ */
+export function collectionUsesApiPagination(
+  statePath: string,
+  actionHostKeys: Record<string, readonly string[]> | undefined
+): boolean {
+  const root = hostStateRoot(statePath)
+  if (!root || !actionHostKeys) return false
+  for (const keys of Object.values(actionHostKeys)) {
+    if (keys.includes(root) && keys.includes('hasMore')) return true
+  }
+  return false
 }
 
 /**

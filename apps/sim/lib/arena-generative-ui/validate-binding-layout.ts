@@ -68,7 +68,7 @@ export function validateManifestBindingLayout(
 
     for (const [actionId, action] of Object.entries(manifest.actions)) {
       if (!pageSubmitsAction(elements, actionId)) continue
-      const plan = planByKey.get(action.apiKey)
+      const plan = action.apiKey ? planByKey.get(action.apiKey) : undefined
       if (!plan) continue
       const formError = formFieldsError(path, actionId, elements, plan)
       if (formError) return formError
@@ -164,7 +164,7 @@ function chatElementsError(
     if (!action) {
       return `Page "${pagePath}" Chat "${id}" action "${actionId}" is not in manifest.actions.`
     }
-    const plan = planByKey.get(action.apiKey)
+    const plan = action.apiKey ? planByKey.get(action.apiKey) : undefined
     if (!hasChatProtocolInput(plan?.chatProtocol)) {
       return `Page "${pagePath}" Chat "${id}" action "${actionId}" has no chat protocol. Bind a workflow Start that includes input.`
     }
@@ -178,7 +178,7 @@ function chatOnlyBindingError(
 ): string | undefined {
   const chatActionIds = chatActionIdsFrom(manifest)
   for (const [actionId, action] of Object.entries(manifest.actions)) {
-    const plan = plans.find((item) => item.key === action.apiKey)
+    const plan = action.apiKey ? plans.find((item) => item.key === action.apiKey) : undefined
     if (!plan || !hasChatProtocolInput(plan.chatProtocol)) continue
     if (plan.formFields.length > 0) continue
     if (chatActionIds.has(actionId)) continue
@@ -208,7 +208,7 @@ function streamChatSurfaceError(
   plans: BindingLayoutPlan[]
 ): string | undefined {
   for (const [actionId, action] of Object.entries(manifest.actions)) {
-    const plan = plans.find((item) => item.key === action.apiKey)
+    const plan = action.apiKey ? plans.find((item) => item.key === action.apiKey) : undefined
     if (!plan?.stream || !hasChatProtocolInput(plan.chatProtocol)) continue
     const destPath = splitNavTarget(action.onSuccess?.navigate).path
     const destPages = destPath ? [destPath] : pagesThatWireAction(manifest, actionId)

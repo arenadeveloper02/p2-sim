@@ -9,6 +9,8 @@ import {
   filterStaticTableRows,
   isLocalDiscoveryPassthrough,
   itemMatchesLocalDiscovery,
+  LOCAL_COLLECTION_PAGE_SIZE,
+  paginateCollection,
 } from '@/lib/arena-generative-ui/local-discovery'
 
 const headers = ['TASK', 'CATEGORY', 'PRIORITY', 'STATUS']
@@ -99,10 +101,7 @@ describe('itemMatchesLocalDiscovery', () => {
 
   it('aligns filter names to headers with different case and spacing', () => {
     expect(
-      itemMatchesLocalDiscovery(
-        { STATUS: 'Active' },
-        { search: '', filters: { status: 'Active' } }
-      )
+      itemMatchesLocalDiscovery({ STATUS: 'Active' }, { search: '', filters: { status: 'Active' } })
     ).toBe(true)
   })
 
@@ -134,6 +133,42 @@ describe('filterStaticTableRows / filterCollectionItems', () => {
     expect(filterCollectionItems(items, { search: '', filters: { status: 'Completed' } })).toEqual([
       { title: 'Second', status: 'Completed' },
     ])
+  })
+})
+
+describe('paginateCollection', () => {
+  const items = Array.from({ length: 25 }, (_, index) => index + 1)
+
+  it('returns the first page and clamps out-of-range pages', () => {
+    expect(paginateCollection(items, 1)).toEqual({
+      items: items.slice(0, LOCAL_COLLECTION_PAGE_SIZE),
+      page: 1,
+      pageCount: 2,
+      total: 25,
+      from: 1,
+      to: 20,
+    })
+    expect(paginateCollection(items, 2).items).toEqual([21, 22, 23, 24, 25])
+    expect(paginateCollection(items, 2).from).toBe(21)
+    expect(paginateCollection(items, 2).to).toBe(25)
+    expect(paginateCollection(items, 99).page).toBe(2)
+    expect(paginateCollection(items, 0).page).toBe(1)
+  })
+
+  it('returns an empty page for an empty list', () => {
+    expect(paginateCollection([], 1)).toEqual({
+      items: [],
+      page: 1,
+      pageCount: 1,
+      total: 0,
+      from: 0,
+      to: 0,
+    })
+  })
+
+  it('honors an explicit page size', () => {
+    expect(paginateCollection(items, 3, 10).items).toEqual([21, 22, 23, 24, 25])
+    expect(paginateCollection(items, 3, 10).pageCount).toBe(3)
   })
 })
 

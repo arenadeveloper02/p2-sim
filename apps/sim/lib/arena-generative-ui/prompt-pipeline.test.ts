@@ -41,7 +41,6 @@ describe('buildGeneratorSystemPrompt', () => {
       'ARCHETYPE RECIPE',
       'COMPONENT SELECTION RULES',
       'ARCHETYPE RECIPE: dashboard',
-      'REPRESENTATION',
       'CAPABILITY: FILTER',
       'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
       'COMPONENT RULES',
@@ -89,12 +88,10 @@ describe('buildGeneratorSystemPrompt', () => {
       isScopedEdit: false,
     })
     const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: task')
-    const representationAt = headingIndex(prompt, 'REPRESENTATION')
     const longAt = headingIndex(prompt, 'CAPABILITY: LONG-RUNNING')
     const cancelAt = headingIndex(prompt, 'CAPABILITY: CANCELLABLE')
     const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (task)')
-    expect(representationAt).toBeGreaterThan(recipeAt)
-    expect(longAt).toBeGreaterThan(representationAt)
+    expect(longAt).toBeGreaterThan(recipeAt)
     expect(cancelAt).toBeGreaterThan(longAt)
     expect(goldAt).toBeGreaterThan(cancelAt)
     expect(prompt).not.toContain('CAPABILITY: SEARCH')
@@ -171,5 +168,37 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
       'Choose density from DESIGN INTENT / manifest.theme'
     )
+  })
+
+  it('omits dashboard gold, SWOT, and productType from a micro collection prompt', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'collection',
+      recipes: 'ARCHETYPE RECIPE: collection\n\nDUMMY / LOCAL DATA',
+      hasDummyData: true,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('ARCHETYPE RECIPE: collection')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
+    expect(prompt).not.toContain('SWOT')
+    expect(prompt).not.toContain('productType')
+    expect(prompt).not.toContain('Watchtower')
+  })
+
+  it('includes the workspace recipe and sidebar-shell gold for a workspace prompt', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'workspace',
+      recipes: 'ARCHETYPE RECIPE: workspace\n\nSHELL RECIPE',
+      shell: { navigation: 'sidebar' },
+      needsWorkspace: true,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('ARCHETYPE RECIPE: workspace')
+    expect(prompt).toContain('SHELL RECIPE')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
   })
 })

@@ -28,7 +28,28 @@ vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
   planArenaGenerativeStructuredBrief: mockPlanBrief,
   archetypeRecipe: (archetype: string) => `ARCHETYPE RECIPE: ${archetype}`,
   shellRecipe: (shell?: { navigation?: string }) =>
-    shell?.navigation && shell.navigation !== 'none' ? 'SHELL RECIPE' : '',
+    shell?.navigation && shell.navigation !== 'none' && shell.navigation !== 'minimal'
+      ? 'SHELL RECIPE'
+      : '',
+  recipesForBlueprint: (brief: {
+    archetype: string
+    pages?: Array<{ archetype?: string }>
+    shell?: { navigation?: string }
+  }) => {
+    const shapes = new Set<string>([brief.archetype])
+    for (const page of brief.pages ?? []) {
+      if (page.archetype) shapes.add(page.archetype)
+    }
+    const recipes = [...shapes].map((shape) => `ARCHETYPE RECIPE: ${shape}`)
+    if (
+      brief.shell?.navigation &&
+      brief.shell.navigation !== 'none' &&
+      brief.shell.navigation !== 'minimal'
+    ) {
+      recipes.push('SHELL RECIPE')
+    }
+    return recipes.join('\n\n')
+  },
   archetypeRecipesForBrief: (brief: {
     archetype: string
     pages?: Array<{ archetype?: string }>
@@ -39,11 +60,24 @@ vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
       if (page.archetype) shapes.add(page.archetype)
     }
     const recipes = [...shapes].map((shape) => `ARCHETYPE RECIPE: ${shape}`)
-    if (brief.shell?.navigation && brief.shell.navigation !== 'none') {
+    if (
+      brief.shell?.navigation &&
+      brief.shell.navigation !== 'none' &&
+      brief.shell.navigation !== 'minimal'
+    ) {
       recipes.push('SHELL RECIPE')
     }
     return recipes.join('\n\n')
   },
+  briefHasDummyOrLocalData: (brief?: { pages?: Array<{ data?: string; dataMode?: string }> }) =>
+    Boolean(
+      brief?.pages?.some(
+        (page) =>
+          page.dataMode === 'dummy' ||
+          page.dataMode === 'local' ||
+          (typeof page.data === 'string' && /\bdummy\b/i.test(page.data))
+      )
+    ),
   formatStructuredBriefForGenerator: (brief: { title: string }) =>
     `Structured brief (implement this information architecture; emit exactly these page paths as object keys):\n${JSON.stringify(brief, null, 2)}`,
   formatStructuredBriefForEdit: (brief: { title: string; archetype: string }) =>
@@ -356,6 +390,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('!selectedId')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')
+    expect(system).toContain('host pages Table and Repeat locally')
 
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('articles[].title')

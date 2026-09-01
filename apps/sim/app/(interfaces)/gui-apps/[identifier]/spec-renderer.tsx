@@ -36,6 +36,7 @@ import {
   type RunGenerativeAppActionMeta,
 } from '@/lib/arena-generative-ui/action-runtime'
 import {
+  collectionUsesApiPagination,
   isActionControlPending,
   isBoundPathPending,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
@@ -63,6 +64,9 @@ import {
   collectLocalDiscoveryQuery,
   filterCollectionItems,
   filterStaticTableRows,
+  LOCAL_COLLECTION_PAGE_SIZE,
+  type PaginatedCollection,
+  paginateCollection,
 } from '@/lib/arena-generative-ui/local-discovery'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
@@ -72,7 +76,6 @@ import {
   collectionFromBoundValue,
   displayTextFromActionData,
   interpolateElementProps,
-  MAX_REPEAT_ITEMS,
   parseTabItems,
   type RepeatItemScope,
   readScopedStatePath,
@@ -296,6 +299,55 @@ const BUTTON_SIZE_CLASSES = {
   sm: 'h-8 px-3 text-sm',
   md: 'h-10 px-4 text-base',
 } as const
+
+function collectionPageKey(elementId: string, scope?: RepeatItemScope): string {
+  return scope ? `${elementId}:${scope.index}` : elementId
+}
+
+function CollectionPageChrome({
+  paged,
+  onPageChange,
+}: {
+  paged: PaginatedCollection<unknown>
+  onPageChange: (page: number) => void
+}) {
+  if (paged.total <= LOCAL_COLLECTION_PAGE_SIZE) return null
+  return (
+    <div className='col-span-full mt-3 flex w-full flex-wrap items-center justify-between gap-3'>
+      <p className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+        Showing {paged.from}–{paged.to} of {paged.total}
+      </p>
+      <div className='flex gap-2'>
+        <button
+          type='button'
+          aria-label='Previous page'
+          disabled={paged.page <= 1}
+          className={cn(
+            BUTTON_BASE_CLASS,
+            BUTTON_VARIANT_CLASSES.secondary,
+            BUTTON_SIZE_CLASSES.sm
+          )}
+          onClick={() => onPageChange(paged.page - 1)}
+        >
+          Previous
+        </button>
+        <button
+          type='button'
+          aria-label='Next page'
+          disabled={paged.page >= paged.pageCount}
+          className={cn(
+            BUTTON_BASE_CLASS,
+            BUTTON_VARIANT_CLASSES.secondary,
+            BUTTON_SIZE_CLASSES.sm
+          )}
+          onClick={() => onPageChange(paged.page + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  )
+}
 
 /**
  * `secondary` is the default so a page that names no emphasis still reads as a
@@ -1477,6 +1529,7 @@ export function SpecRenderer({
   })
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [localPages, setLocalPages] = useState<Record<string, number>>({})
   const knownActionIds = collectKnownActionIds(
     actionHostKeys,
     actionHiddenInputs,
@@ -1488,6 +1541,22 @@ export function SpecRenderer({
     elements,
     knownActionIds,
   })
+  const discoverySignature = `${localDiscovery.search}\u0000${JSON.stringify(localDiscovery.filters)}`
+  const collectionLengthSignature = Object.entries(elements)
+    .filter(([, element]) => element.type === 'Table' || element.type === 'Repeat')
+    .map(([id, element]) => {
+      const statePath = asString(element.props?.statePath)
+      if (!statePath || statePath === 'item' || statePath.startsWith('item.')) {
+        return `${id}:static`
+      }
+      const raw = collectionFromBoundValue(readStatePath(state, statePath))
+      return `${id}:${raw?.length ?? 0}`
+    })
+    .join('|')
+  const pageResetSignature = `${discoverySignature}\u0001${collectionLengthSignature}`
+  useEffect(() => {
+    setLocalPages({})
+  }, [pageResetSignature])
   const selectedIdSet = isTruthyFieldValue(state[ARENA_GENERATIVE_SELECTED_ID_KEY])
   const hideListForSelection = selectedIdSet && specHasSamePageSelectItem(spec, currentPath)
 
@@ -1551,6 +1620,34 @@ export function SpecRenderer({
       return
     }
     onNavigate(target)
+  }
+
+  function pageCollection<T>(
+    elementId: string,
+    items: readonly T[],
+    statePath: string,
+    itemScope?: RepeatItemScope
+  ): { visible: readonly T[]; chrome: ReactNode } {
+    const apiOwned = statePath.length > 0 && collectionUsesApiPagination(statePath, actionHostKeys)
+    if (apiOwned || items.length <= LOCAL_COLLECTION_PAGE_SIZE) {
+      return { visible: items, chrome: null }
+    }
+    const key = collectionPageKey(elementId, itemScope)
+    const paged = paginateCollection(items, localPages[key] ?? 1)
+    return {
+      visible: paged.items,
+      chrome: (
+        <CollectionPageChrome
+          paged={paged}
+          onPageChange={(page) =>
+            setLocalPages((current) => ({
+              ...current,
+              [key]: page,
+            }))
+          }
+        />
+      ),
+    }
   }
 
   /**
@@ -1706,18 +1803,21 @@ export function SpecRenderer({
         if (items.length === 0) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
-        const visibleItems = items.slice(0, MAX_REPEAT_ITEMS)
+        const { visible: visibleItems, chrome } = pageCollection(id, items, statePath, scope)
         const refetching = Boolean(statePath && boundPending(statePath))
         return (
-          <div className='contents' aria-busy={refetching || undefined}>
-            {visibleItems.map((item, index) => (
-              <Fragment key={repeatItemKey(item, index)}>
-                {childIds.map((childId) => (
-                  <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
-                ))}
-              </Fragment>
-            ))}
-          </div>
+          <>
+            <div className='contents' aria-busy={refetching || undefined}>
+              {visibleItems.map((item, index) => (
+                <Fragment key={repeatItemKey(item, index)}>
+                  {childIds.map((childId) => (
+                    <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
+                  ))}
+                </Fragment>
+              ))}
+            </div>
+            {chrome}
+          </>
         )
       }
       case 'Columns': {
@@ -1901,13 +2001,17 @@ export function SpecRenderer({
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
         if (collection && collection.length > 0) {
+          const { visible, chrome } = pageCollection(id, collection, statePath, scope)
           return (
-            <StateTable
-              value={collection}
-              columns={asString(props.columns)}
-              style={styleFromProps(props)}
-              busy={Boolean(statePath && boundPending(statePath))}
-            />
+            <div className='flex w-full flex-col'>
+              <StateTable
+                value={visible}
+                columns={asString(props.columns)}
+                style={styleFromProps(props)}
+                busy={Boolean(statePath && boundPending(statePath))}
+              />
+              {chrome}
+            </div>
           )
         }
         if (stateValue === undefined) {
@@ -1928,44 +2032,48 @@ export function SpecRenderer({
           if (rows.length === 0) {
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
           }
+          const { visible, chrome } = pageCollection(id, rows, '', scope)
           return (
-            <div
-              className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
-              style={styleFromProps(props)}
-            >
-              <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
-                {headers.length > 0 ? (
-                  <thead>
-                    <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
-                      {headers.map((header) => (
-                        <th
-                          key={header}
-                          className='px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
-                        >
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                ) : null}
-                <tbody>
-                  {rows.map((row, rowIndex) => (
-                    <tr
-                      key={`row-${rowIndex}`}
-                      className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
-                    >
-                      {row.map((cell, cellIndex) => (
-                        <td
-                          key={`cell-${cellIndex}`}
-                          className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
-                        >
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className='flex w-full flex-col'>
+              <div
+                className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
+                style={styleFromProps(props)}
+              >
+                <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
+                  {headers.length > 0 ? (
+                    <thead>
+                      <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
+                        {headers.map((header) => (
+                          <th
+                            key={header}
+                            className='px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
+                          >
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                  ) : null}
+                  <tbody>
+                    {visible.map((row, rowIndex) => (
+                      <tr
+                        key={`row-${rowIndex}`}
+                        className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
+                      >
+                        {row.map((cell, cellIndex) => (
+                          <td
+                            key={`cell-${cellIndex}`}
+                            className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
+                          >
+                            {cell}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {chrome}
             </div>
           )
         }

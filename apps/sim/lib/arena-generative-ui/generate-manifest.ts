@@ -26,11 +26,14 @@ import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
-import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pipeline'
+import {
+  buildGeneratorSystemPrompt,
+  generatorPromptOptionsFromBrief,
+} from '@/lib/arena-generative-ui/prompt-pipeline'
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
   type ArenaGenerativeStructuredBrief,
-  archetypeRecipesForBrief,
+  briefHasDummyOrLocalData,
   formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
@@ -511,9 +514,10 @@ export async function generateArenaGenerativeManifest(
   }
 
   const systemPrompt = buildGeneratorSystemPrompt({
-    archetype: intentBrief?.archetype,
-    recipes: intentBrief ? archetypeRecipesForBrief(intentBrief) : undefined,
-    shell: intentBrief?.shell,
+    ...generatorPromptOptionsFromBrief(intentBrief, {
+      hasBindings: params.apiBindings.length > 0,
+      hasStreamingBinding,
+    }),
     capabilities: resolveCapabilities({
       planned: [...(intentBrief?.capabilities ?? []), ...(intentBrief?.processing ?? [])],
       bindings: params.apiBindings,
@@ -551,7 +555,9 @@ export async function generateArenaGenerativeManifest(
   const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. Navigation and static content only.',
+      : structuredBrief && briefHasDummyOrLocalData(structuredBrief)
+        ? 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed static collection rows and use onSuccess.setState / navigate. Do not invent API keys.'
+        : 'No API bindings. Navigation and static content only unless the structured brief named dummy/local actions.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     isPreserveEdit && params.existingBrief?.trim()
       ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`

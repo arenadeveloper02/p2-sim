@@ -24,6 +24,8 @@ vi.mock('@/providers/utils', () => ({
   supportsTemperature: () => true,
 }))
 
+import { PLANNER_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/planner-contract'
+import { buildGeneratorSystemPrompt, generatorPromptOptionsFromBrief } from '@/lib/arena-generative-ui/prompt-pipeline'
 import {
   ARENA_GENERATIVE_ARCHETYPES,
   type ArenaGenerativeStructuredBrief,
@@ -36,6 +38,7 @@ import {
   parseArenaGenerativeStructuredBrief,
   parseStoredStructuredBrief,
   planArenaGenerativeStructuredBrief,
+  recipesForBlueprint,
 } from '@/lib/arena-generative-ui/structured-brief'
 
 const listDetailBrief: ArenaGenerativeStructuredBrief = {
@@ -53,6 +56,7 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
       actions: ['load_orders'],
       emptyCopy: 'No orders yet.',
       archetype: 'collection',
+      capabilities: [],
     },
     {
       path: 'detail',
@@ -61,6 +65,7 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
       data: 'onLoad load_order into the record from ?id',
       actions: ['load_order'],
       archetype: 'detail',
+      capabilities: [],
     },
   ],
   actions: [
@@ -127,8 +132,10 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       productType: 'crm',
       density: 'roomy',
       visualTone: 'professional',
+      tone: 'professional',
       contentType: 'workflow',
       emphasis: 'discovery',
+      visualPriority: 'discovery',
     })
   })
 
@@ -258,25 +265,38 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.pages[0]?.archetype).toBe('workflow')
   })
 
-  it('aliases stored workspace onto the primary region plus sidebar shell and folds regions into modules', () => {
+  it('keeps workspace pages and regions instead of folding them away', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
-        title: 'CRM',
-        purpose: 'Accounts and notes together.',
-        audience: 'Reps',
+        title: 'Projects',
+        purpose: 'See tasks alongside the project list.',
+        audience: 'Leads',
+        complexity: 'moderate',
         archetype: 'workspace',
+        shell: { navigation: 'sidebar' },
         entryPath: 'home',
         pages: [
           {
             path: 'home',
-            title: 'Accounts',
-            purpose: 'Shell',
-            data: 'onLoad load_accounts into accounts',
-            actions: ['load_accounts'],
+            title: 'Projects',
+            purpose: 'Navigator, tasks, and inspector together',
+            data: { mode: 'dummy' },
+            actions: [],
+            archetype: 'workspace',
             regions: {
-              navigator: { archetype: 'workspace', purpose: 'Nested shell', data: 'static' },
-              primary: { archetype: 'detail', purpose: 'Record', data: 'selected account' },
-              inspector: { archetype: 'results', purpose: 'Notes', data: 'selected notes' },
+              navigator: {
+                archetype: 'collection',
+                representation: 'list',
+                entity: 'project',
+                purpose: 'Project list',
+              },
+              primary: {
+                archetype: 'collection',
+                representation: 'list',
+                entity: 'task',
+                purpose: 'Tasks in the selected project',
+              },
+              inspector: { archetype: 'detail', entity: 'task', purpose: 'Selected task' },
             },
           },
         ],
@@ -284,12 +304,65 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       },
       { apiBindings: [] }
     )
-    expect(parsed?.archetype).toBe('detail')
+    expect(parsed?.archetype).toBe('workspace')
     expect(parsed?.shell).toEqual({ navigation: 'sidebar' })
-    expect(parsed?.pages[0]?.archetype).toBe('detail')
-    expect(parsed?.pages[0]?.modules).toEqual(['navigator', 'inspector'])
-    expect(parsed?.pages[0]?.regions).toBeUndefined()
-    expect(parsed?.pages[0]?.secondary).toBeUndefined()
+    expect(parsed?.pages[0]?.archetype).toBe('workspace')
+    expect(parsed?.pages[0]?.regions?.navigator?.archetype).toBe('collection')
+    expect(parsed?.pages[0]?.regions?.primary?.archetype).toBe('collection')
+    expect(parsed?.pages[0]?.regions?.inspector?.archetype).toBe('detail')
+    expect(parsed?.pages[0]?.dataMode).toBe('dummy')
+  })
+
+  it('drops a prose interaction string instead of failing the brief', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Todos',
+        purpose: 'Track tasks.',
+        audience: 'Anyone',
+        complexity: 'micro',
+        archetype: 'collection',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Todos',
+            purpose: 'List',
+            data: { mode: 'dummy' },
+            actions: [],
+            interaction: 'create and complete on the list',
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.interaction).toBeUndefined()
+    expect(parsed?.complexity).toBe('micro')
+  })
+
+  it('clamps an oversized page actions list instead of rejecting the brief', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'CRM',
+        purpose: 'Customers',
+        audience: 'Reps',
+        complexity: 'moderate',
+        archetype: 'collection',
+        entryPath: 'customers',
+        pages: [
+          {
+            path: 'customers',
+            title: 'Customers',
+            purpose: 'Table',
+            data: { mode: 'dummy' },
+            actions: Array.from({ length: 20 }, (_, index) => `action-${index + 1}`),
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.actions).toHaveLength(16)
   })
 
   it('keeps entity, representation, modules, and a declared sidebar shell', () => {
@@ -474,12 +547,12 @@ describe('structured brief helpers', () => {
       expect(recipe).not.toContain('one Card')
     }
     expect(archetypeRecipe('task')).toContain('SearchField')
-    expect(archetypeRecipe('task')).toContain('Results are optional')
-    expect(archetypeRecipe('results')).toContain('never "field.content"')
+    expect(archetypeRecipe('task')).toContain('Do not add a results or history page unless')
+    expect(archetypeRecipe('results')).toContain('DataText "content"')
     expect(archetypeRecipe('results')).toContain('No onLoad of the CTA')
-    expect(archetypeRecipe('results')).toContain('inputs.targetKeyword')
-    expect(archetypeRecipe('collection')).toContain('REPRESENTATION')
-    expect(archetypeRecipe('collection')).toContain('CAPABILITY detail')
+    expect(archetypeRecipe('results')).toContain('Do not invent SWOT')
+    expect(archetypeRecipe('collection')).toContain('pages[].representation')
+    expect(archetypeRecipe('collection')).toContain('CAPABILITY inspect')
     expect(archetypeRecipe('collection')).not.toContain('Table when every row')
     expect(archetypeRecipe('detail')).toContain('Understand one entity')
     expect(archetypeRecipe('dashboard')).toContain('Module count')
@@ -487,7 +560,8 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('workflow')).toContain('Stepper')
     expect(archetypeRecipe('workflow')).not.toContain('One page per step')
     expect(archetypeRecipe('content')).toContain('DataText markdown')
-    expect(ARENA_GENERATIVE_ARCHETYPES).not.toContain('workspace')
+    expect(archetypeRecipe('workspace')).toContain('Honour pages[].regions')
+    expect(ARENA_GENERATIVE_ARCHETYPES).toContain('workspace')
   })
 
   it('composes recipes and page-shape lines for mixed sitemaps', () => {
@@ -498,9 +572,9 @@ describe('structured brief helpers', () => {
     expect(recipes).not.toContain('SHELL RECIPE')
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain('home: collection representation=auto')
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain('detail: detail representation=auto')
-    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('Shell: navigation=none')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('Shell: navigation=minimal')
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
-      'one primary archetype + capabilities + modules'
+      'one primary archetype + capabilities + optional regions'
     )
   })
 
@@ -532,7 +606,7 @@ describe('structured brief helpers', () => {
     expect(formatted).toContain('Structured brief')
     expect(formatted).toContain('"archetype": "collection"')
     expect(formatted).toContain('emptyCopy as emptyText')
-    expect(formatted).toContain('senior engineer would not skip')
+    expect(formatted).toContain('Do not add pages, history, stats, or modules')
   })
 
   it('serialises the stored brief as edit context without pinning the sitemap', () => {
@@ -567,7 +641,10 @@ describe('structured brief helpers', () => {
       ...listDetailBrief,
       designIntent: { productType: 'finance', density: 'spacious' },
     })
-    expect(stored?.designIntent).toEqual({ productType: 'finance', density: 'roomy' })
+    expect(stored?.designIntent).toEqual({
+      productType: 'finance',
+      density: 'roomy',
+    })
   })
 
   it('keeps stored informationHierarchy and interactionModel', () => {
@@ -607,30 +684,19 @@ describe('planArenaGenerativeStructuredBrief', () => {
       expect.objectContaining({
         model: 'claude-sonnet-4-6',
         max_tokens: 4_096,
-        system: expect.stringContaining('Pick exactly one app-level archetype'),
+        system: PLANNER_CONTRACT_PROMPT,
       })
     )
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('Plan sitemap, data, actions, and capabilities')
-    expect(system).toContain('the host compiles those')
+    expect(system).toContain('SCOPE BUDGET')
+    expect(system).toContain('source dummy or local')
+    expect(system).toContain('WORKSPACE REGIONS')
+    expect(system).toContain('Do not add dashboards, statistics, history')
+    expect(system).toContain('/add-customer is not automatically required')
     expect(system).toContain('When Analyzed intent is present')
-    expect(system).toContain('entry verb')
-    expect(system).toContain('never "users"')
-    expect(system).toContain('Bindings are the data contract')
-    expect(system).toContain('must not onLoad that same action')
-    expect(system).toContain('How do I monitor many important signals')
-    expect(system).toContain('PRIMARY ARCHETYPE')
-    expect(system).toContain('MODULES')
-    expect(system).toContain('workspace is not a page archetype')
-    expect(system).toContain('representation')
-    expect(system).toContain('Set capabilities to at most five tags that apply')
-    expect(system).toContain('Also emit designIntent')
-    expect(system).toContain('spacious means roomy')
-    expect(system).toContain('informationHierarchy')
-    expect(system).toContain('interactionModel')
-    expect(system).toContain('Surfaces are exactly two')
-    expect(system).toContain('do not emit hex, fonts, CSS, catalog component types')
-    expect(system).not.toContain('nested ProgressSteps')
+    expect(system).not.toContain('workspace is not a page archetype')
+    expect(system).not.toContain('actions must be []')
+    expect(system).not.toContain('Pick exactly one app-level archetype')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')
     expect(userMessage).toContain('No analyzed intent')
@@ -711,5 +777,243 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(userMessage).toContain('use exactly these paths')
     expect(userMessage).toContain('"path": "home"')
     expect(userMessage).toContain('Requested entryPath: home')
+    expect(userMessage).toContain('actions are still required for requested mutations')
+  })
+})
+
+describe('target blueprint fixtures', () => {
+  it('parses the micro todo blueprint and selects collection plus dummy recipes', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Todos',
+        purpose: 'Track a personal task list.',
+        audience: 'Anyone keeping a short list',
+        complexity: 'micro',
+        archetype: 'collection',
+        shell: { navigation: 'minimal' },
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Todos',
+            purpose: 'List and complete todos',
+            archetype: 'collection',
+            representation: 'list',
+            capabilities: ['create', 'complete'],
+            data: { mode: 'dummy' },
+            actions: ['add_todo', 'complete_todo'],
+          },
+        ],
+        actions: [
+          { id: 'add_todo', purpose: 'Create a todo', source: 'dummy' },
+          { id: 'complete_todo', purpose: 'Toggle done', source: 'dummy' },
+        ],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.complexity).toBe('micro')
+    expect(parsed?.shell?.navigation).toBe('minimal')
+    expect(parsed?.pages.map((page) => page.path)).toEqual(['home'])
+    expect(parsed?.pages[0]?.archetype).toBe('collection')
+    expect(parsed?.pages[0]?.capabilities).toEqual(['create', 'complete'])
+    expect(parsed?.pages[0]?.dataMode).toBe('dummy')
+    expect(parsed?.actions.map((action) => action.id)).toEqual(['add_todo', 'complete_todo'])
+    const recipes = recipesForBlueprint(parsed!)
+    expect(recipes).toContain('ARCHETYPE RECIPE: collection')
+    expect(recipes).toContain('DUMMY / LOCAL DATA')
+    expect(recipes).not.toContain('ARCHETYPE RECIPE: detail')
+    expect(recipes).not.toContain('ARCHETYPE RECIPE: dashboard')
+    expect(recipes).not.toContain('SHELL RECIPE')
+    const prompt = buildGeneratorSystemPrompt({
+      ...generatorPromptOptionsFromBrief(parsed, {
+        hasBindings: false,
+        hasStreamingBinding: false,
+      }),
+      capabilities: parsed!.capabilities,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
+    expect(prompt).not.toContain('SWOT')
+    expect(prompt).not.toContain('productType')
+  })
+
+  it('parses the CRM blueprint without an add-customer page', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'CRM',
+        purpose: 'Manage customers, contacts, and opportunities.',
+        audience: 'Sales reps',
+        complexity: 'moderate',
+        archetype: 'collection',
+        shell: { navigation: 'sidebar' },
+        entryPath: 'customers',
+        pages: [
+          {
+            path: 'customers',
+            title: 'Customers',
+            purpose: 'Customer table',
+            archetype: 'collection',
+            representation: 'table',
+            data: { mode: 'dummy' },
+            actions: [],
+          },
+          {
+            path: 'customer-detail',
+            title: 'Customer',
+            purpose: 'One customer',
+            archetype: 'detail',
+            data: { mode: 'dummy' },
+            actions: [],
+          },
+          {
+            path: 'contacts',
+            title: 'Contacts',
+            purpose: 'Contact table',
+            archetype: 'collection',
+            representation: 'table',
+            data: { mode: 'dummy' },
+            actions: [],
+          },
+          {
+            path: 'opportunities',
+            title: 'Opportunities',
+            purpose: 'Opportunity table',
+            archetype: 'collection',
+            representation: 'table',
+            data: { mode: 'dummy' },
+            actions: [],
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.complexity).toBe('moderate')
+    expect(parsed?.shell?.navigation).toBe('sidebar')
+    expect(parsed?.pages.map((page) => page.path)).toEqual([
+      'customers',
+      'customer-detail',
+      'contacts',
+      'opportunities',
+    ])
+    expect(parsed?.pages.some((page) => page.path === 'add-customer')).toBe(false)
+    const recipes = recipesForBlueprint(parsed!)
+    expect(recipes).toContain('ARCHETYPE RECIPE: collection')
+    expect(recipes).toContain('ARCHETYPE RECIPE: detail')
+    expect(recipes).toContain('SHELL RECIPE')
+  })
+
+  it('parses competitor analysis as task plus results with no history page', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Competitor analysis',
+        purpose: 'Enter a company and receive a report.',
+        audience: 'Analysts',
+        complexity: 'moderate',
+        archetype: 'task',
+        shell: { navigation: 'minimal' },
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Analyze',
+            purpose: 'Company input',
+            archetype: 'task',
+            capabilities: ['analyze'],
+            data: { mode: 'dummy' },
+            actions: ['analyze-company'],
+          },
+          {
+            path: 'report',
+            title: 'Report',
+            purpose: 'Generated analysis',
+            archetype: 'results',
+            data: { mode: 'dummy' },
+            actions: [],
+          },
+        ],
+        actions: [
+          {
+            id: 'analyze-company',
+            purpose: 'Run the analysis',
+            source: 'dummy',
+            target: 'report',
+          },
+        ],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.complexity).toBe('moderate')
+    expect(parsed?.shell?.navigation).toBe('minimal')
+    expect(parsed?.pages.map((page) => page.path)).toEqual(['home', 'report'])
+    expect(parsed?.pages.some((page) => page.path === 'history')).toBe(false)
+    expect(parsed?.actions.map((action) => action.id)).toEqual(['analyze-company'])
+    const recipes = recipesForBlueprint(parsed!)
+    expect(recipes).toContain('ARCHETYPE RECIPE: task')
+    expect(recipes).toContain('ARCHETYPE RECIPE: results')
+    expect(recipes).not.toContain('ARCHETYPE RECIPE: dashboard')
+    expect(recipes).not.toContain('SHELL RECIPE')
+  })
+
+  it('parses project management as one workspace page with three regions', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Projects',
+        purpose: 'See task details alongside the task list.',
+        audience: 'Project leads',
+        complexity: 'moderate',
+        archetype: 'workspace',
+        shell: { navigation: 'sidebar' },
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Workspace',
+            purpose: 'Projects, tasks, and inspector',
+            archetype: 'workspace',
+            capabilities: ['select', 'inspect'],
+            data: { mode: 'dummy' },
+            regions: {
+              navigator: {
+                archetype: 'collection',
+                representation: 'list',
+                entity: 'project',
+              },
+              primary: { archetype: 'collection', representation: 'list', entity: 'task' },
+              inspector: { archetype: 'detail', entity: 'task' },
+            },
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.complexity).toBe('moderate')
+    expect(parsed?.shell?.navigation).toBe('sidebar')
+    expect(parsed?.pages).toHaveLength(1)
+    expect(parsed?.pages[0]?.archetype).toBe('workspace')
+    expect(parsed?.pages[0]?.regions?.navigator?.entity).toBe('project')
+    expect(parsed?.pages[0]?.regions?.primary?.entity).toBe('task')
+    expect(parsed?.pages[0]?.regions?.inspector?.archetype).toBe('detail')
+    const recipes = recipesForBlueprint(parsed!)
+    expect(recipes).toContain('ARCHETYPE RECIPE: workspace')
+    expect(recipes).toContain('ARCHETYPE RECIPE: collection')
+    expect(recipes).toContain('ARCHETYPE RECIPE: detail')
+    expect(recipes).toContain('SHELL RECIPE')
+    const prompt = buildGeneratorSystemPrompt({
+      ...generatorPromptOptionsFromBrief(parsed, {
+        hasBindings: false,
+        hasStreamingBinding: false,
+      }),
+      capabilities: parsed!.capabilities,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('ARCHETYPE RECIPE: workspace')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
   })
 })

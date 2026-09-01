@@ -830,6 +830,120 @@ describe('SpecRenderer', () => {
     expect(rows).toEqual([['Prepare Q3 budget report'], ['Review pull requests']])
   })
 
+  it('pages a bound Table locally when there is no pagination API', () => {
+    const items = Array.from({ length: 25 }, (_, index) => ({
+      title: `Row ${index + 1}`,
+      score: index + 1,
+    }))
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['table'] },
+        table: {
+          type: 'Table',
+          props: { columns: 'title, score', statePath: 'items' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { items } })
+    const cellText = () =>
+      Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+        Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+      )
+    expect(cellText()).toHaveLength(20)
+    expect(cellText()[0]).toEqual(['Row 1', '1'])
+    expect(cellText()[19]).toEqual(['Row 20', '20'])
+    expect(container.textContent).toContain('Showing 1–20 of 25')
+    const next = container.querySelector('[aria-label="Next page"]') as HTMLButtonElement
+    expect(next).toBeTruthy()
+    expect(container.querySelector('[aria-label="Previous page"]')).toHaveProperty('disabled', true)
+    act(() => {
+      next.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(cellText()).toEqual([
+      ['Row 21', '21'],
+      ['Row 22', '22'],
+      ['Row 23', '23'],
+      ['Row 24', '24'],
+      ['Row 25', '25'],
+    ])
+    expect(container.textContent).toContain('Showing 21–25 of 25')
+    expect(container.querySelector('[aria-label="Next page"]')).toHaveProperty('disabled', true)
+  })
+
+  it('hides the local Table pager when a filter leaves a short list', () => {
+    const items = [
+      ...Array.from({ length: 22 }, (_, index) => ({
+        title: `Active ${index + 1}`,
+        status: 'Active',
+      })),
+      { title: 'Done A', status: 'Completed' },
+      { title: 'Done B', status: 'Completed' },
+      { title: 'Done C', status: 'Completed' },
+    ]
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['filters', 'table'] },
+        filters: { type: 'Filter', props: {}, children: ['status'] },
+        status: {
+          type: 'Select',
+          props: { name: 'status', label: 'Status', options: 'All,Active,Completed' },
+          children: [],
+        },
+        table: {
+          type: 'Table',
+          props: { columns: 'title, status', statePath: 'items' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { items } })
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(20)
+    expect(container.querySelector('[aria-label="Next page"]')).toBeTruthy()
+    const select = container.querySelector('select[name="status"]') as HTMLSelectElement
+    act(() => {
+      select.value = 'Completed'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([
+      ['Done A', 'Completed'],
+      ['Done B', 'Completed'],
+      ['Done C', 'Completed'],
+    ])
+    expect(container.querySelector('[aria-label="Next page"]')).toBeNull()
+    expect(container.textContent).not.toContain('Showing')
+  })
+
+  it('does not locally page a Table when actionHostKeys include hasMore', () => {
+    const items = Array.from({ length: 25 }, (_, index) => ({
+      title: `Row ${index + 1}`,
+    }))
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['table'] },
+        table: {
+          type: 'Table',
+          props: { columns: 'title', statePath: 'items' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { items, hasMore: true },
+      actionHostKeys: { load_list: ['items', 'hasMore'] },
+    })
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(25)
+    expect(container.querySelector('[aria-label="Next page"]')).toBeNull()
+    expect(container.textContent).not.toContain('Showing')
+  })
+
   describe('Repeat', () => {
     const articles = [
       { id: 'a1', title: 'First', score: 9, url: 'https://example.com/a' },
@@ -871,6 +985,32 @@ describe('SpecRenderer', () => {
       expect(cards[1]?.querySelector('h2')?.textContent).toBe('Second')
       expect(container.textContent).toContain('9')
       expect(container.textContent).toContain('4')
+    })
+
+    it('pages locally when there is no pagination API', () => {
+      const manyArticles = Array.from({ length: 25 }, (_, index) => ({
+        id: `a${index + 1}`,
+        title: `Card ${index + 1}`,
+        score: index + 1,
+        url: `https://example.com/${index + 1}`,
+      }))
+      const { container } = render({ spec: repeatSpec, state: { articles: manyArticles } })
+      const grid = container.querySelector('.grid') as HTMLElement
+      const wrapper = grid.firstElementChild as HTMLElement
+      expect(Array.from(wrapper.children)).toHaveLength(20)
+      expect(wrapper.children[0]?.querySelector('h2')?.textContent).toBe('Card 1')
+      expect(wrapper.children[19]?.querySelector('h2')?.textContent).toBe('Card 20')
+      expect(container.textContent).toContain('Showing 1–20 of 25')
+      const next = container.querySelector('[aria-label="Next page"]') as HTMLButtonElement
+      act(() => {
+        next.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      const pagedWrapper = (container.querySelector('.grid') as HTMLElement)
+        .firstElementChild as HTMLElement
+      expect(Array.from(pagedWrapper.children)).toHaveLength(5)
+      expect(pagedWrapper.children[0]?.querySelector('h2')?.textContent).toBe('Card 21')
+      expect(pagedWrapper.children[4]?.querySelector('h2')?.textContent).toBe('Card 25')
+      expect(container.textContent).toContain('Showing 21–25 of 25')
     })
 
     it('interpolates the row id into in-app navigation so onLoad can fetch that record', () => {
@@ -1221,7 +1361,7 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('h2')?.textContent).toBe('Dental Implants')
     })
 
-    it('caps a large array so the page cannot mount thousands of Cards', () => {
+    it('pages a large array so the page cannot mount thousands of Cards', () => {
       const items = Array.from({ length: 60 }, (_, index) => ({
         id: `n${index}`,
         title: `Item ${index}`,
@@ -1235,7 +1375,9 @@ describe('SpecRenderer', () => {
         },
       }
       const { container } = render({ spec, state: { items } })
-      expect(container.querySelectorAll('h2')).toHaveLength(48)
+      expect(container.querySelectorAll('h2')).toHaveLength(20)
+      expect(container.textContent).toContain('Showing 1–20 of 60')
+      expect(container.querySelector('[aria-label="Next page"]')).toBeTruthy()
     })
 
     it('lets an inner Repeat bind to item.comments on the outer row', () => {

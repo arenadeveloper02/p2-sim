@@ -30,11 +30,17 @@ describe('capabilityRecipePrompt', () => {
     )
   })
 
-  it('composes detail and analyze recipes', () => {
-    const prompt = capabilityRecipePrompt(['detail', 'analyze'])
-    expect(prompt).toContain('CAPABILITY: DETAIL')
+  it('tells pagination recipes the host pages locally without binding.pagination', () => {
+    expect(capabilityRecipePrompt(['pagination'])).toContain(
+      'Without binding.pagination the host pages Table and Repeat locally'
+    )
+  })
+
+  it('composes inspect and analyze recipes', () => {
+    const prompt = capabilityRecipePrompt(['inspect', 'analyze'])
+    expect(prompt).toContain('CAPABILITY: INSPECT')
     expect(prompt).toContain('CAPABILITY: ANALYZE')
-    expect(prompt.indexOf('DETAIL')).toBeLessThan(prompt.indexOf('ANALYZE'))
+    expect(prompt.indexOf('INSPECT')).toBeLessThan(prompt.indexOf('ANALYZE'))
   })
 })
 
@@ -45,6 +51,9 @@ describe('isCapability', () => {
     expect(isCapability('editable')).toBe(true)
     expect(isCapability('date-range')).toBe(true)
     expect(isCapability('detail')).toBe(true)
+    expect(isCapability('detail-drawer')).toBe(true)
+    expect(isCapability('inspect')).toBe(true)
+    expect(isCapability('complete')).toBe(true)
     expect(isCapability('analyze')).toBe(true)
     expect(isCapability('short')).toBe(false)
     expect(isCapability('nope')).toBe(false)
@@ -52,11 +61,16 @@ describe('isCapability', () => {
 })
 
 describe('plannedCapabilities', () => {
-  it('aliases editable, drops unknown tags, and caps at five', () => {
+  it('aliases editable, detail-drawer, and selection, and drops unknown tags', () => {
     expect(plannedCapabilities(['editable', 'nope', 'filter', 'search'])).toEqual([
       'search',
       'filter',
       'edit',
+    ])
+    expect(plannedCapabilities(['detail-drawer', 'selection', 'complete'])).toEqual([
+      'select',
+      'inspect',
+      'complete',
     ])
     expect(
       plannedCapabilities([
@@ -68,7 +82,7 @@ describe('plannedCapabilities', () => {
         'selection',
         'edit',
       ])
-    ).toEqual(['search', 'filter', 'sort', 'pagination', 'grouping'])
+    ).toEqual(['search', 'filter', 'sort', 'pagination', 'grouping', 'select', 'edit'])
   })
 })
 
@@ -83,7 +97,7 @@ describe('resolveCapabilities', () => {
         planned: ['selection', 'nope', 'filter'],
         bindings: [],
       })
-    ).toEqual(['filter', 'selection'])
+    ).toEqual(['filter', 'select'])
   })
 
   it('infers streaming from a stream binding', () => {
