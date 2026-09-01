@@ -88,11 +88,11 @@ export function mustFixCriticIssues(
 
 export function formatCriticRepairError(issues: ArenaGenerativeCriticIssue[]): string {
   return issues
-    .map((issue) => {
+    .map((issue, index) => {
       const page = issue.page ? `page "${issue.page}"` : 'app'
-      return `UI critic must-fix (${issue.category}) on ${page}: ${issue.message} ${issue.fixHint}`
+      return `${index + 1}. UI critic must-fix (${issue.category}) on ${page}: ${issue.message} ${issue.fixHint}`
     })
-    .join(' ')
+    .join('\n')
 }
 
 function criticUserPayload(params: CritiqueManifestParams): string {

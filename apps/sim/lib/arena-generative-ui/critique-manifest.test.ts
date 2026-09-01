@@ -57,7 +57,33 @@ describe('parseArenaGenerativeCritique', () => {
     expect(mustFixCriticIssues(critique ?? { pass: true, issues: [] })).toHaveLength(1)
     expect(
       formatCriticRepairError(mustFixCriticIssues(critique ?? { pass: true, issues: [] }))
-    ).toContain('UI critic must-fix (ux) on page "results"')
+    ).toContain('1. UI critic must-fix (ux) on page "results"')
+  })
+
+  it('numbers every must-fix for one repair turn', () => {
+    expect(
+      formatCriticRepairError([
+        {
+          category: 'ux',
+          severity: 'must-fix',
+          page: 'home',
+          message: 'Primary task is buried.',
+          fixHint: 'Add a PageHeader.',
+        },
+        {
+          category: 'visual',
+          severity: 'must-fix',
+          page: 'results',
+          message: 'Hierarchy is flat.',
+          fixHint: 'Promote the score.',
+        },
+      ])
+    ).toBe(
+      [
+        '1. UI critic must-fix (ux) on page "home": Primary task is buried. Add a PageHeader.',
+        '2. UI critic must-fix (visual) on page "results": Hierarchy is flat. Promote the score.',
+      ].join('\n')
+    )
   })
 
   it('rejects an invalid reply', () => {

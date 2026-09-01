@@ -44,7 +44,7 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
-import { hostCriticManifest, hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
+import { hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
@@ -75,12 +75,35 @@ const ASSUMED_PAGE_COUNT = 4
 /** Repair turns allowed after the first reply fails validation. */
 export const MAX_REPAIR_ATTEMPTS = 3
 
+/** Host-critic issues packed into one repair turn. Remaining issues wait for the next scan. */
+export const HOST_CRITIC_REPAIR_ISSUE_CAP = 8
+
 /** Shown when the model reply is truncated or is not a JSON object. User Input is prose. */
 export const MODEL_JSON_PARSE_ERROR =
   'The generator returned invalid JSON. User Input can be plain language — retry the run.'
 
 const PAGES_RETRY_USER_MESSAGE =
   'Return the same app as one JSON object; manifest.pages must be a non-empty object keyed by path (home, …).'
+
+function hasNumberedRepairIssues(error: string): boolean {
+  return /(?:^|\n)\d+\. /.test(error)
+}
+
+/**
+ * Numbered host-critic list for one repair turn. Extra issues are named so the
+ * next scan can pick them up if budget remains.
+ */
+export function formatHostCriticRepairError(
+  issues: string[],
+  cap = HOST_CRITIC_REPAIR_ISSUE_CAP
+): string {
+  const shown = issues.slice(0, cap)
+  const lines = shown.map((issue, index) => `${index + 1}. ${issue}`)
+  if (issues.length > cap) {
+    lines.push(`Showing the first ${cap} of ${issues.length} issues.`)
+  }
+  return lines.join('\n')
+}
 
 /**
  * Follow-up for a reply that parsed but failed validation. Naming the failing
@@ -90,15 +113,24 @@ function repairUserMessage(error: string, scopedPaths: string[]): string {
   if (error === GENERATOR_OMITTED_PAGES_ERROR) {
     return PAGES_RETRY_USER_MESSAGE
   }
+  const numbered = hasNumberedRepairIssues(error)
+  const subject = scopedPaths.length > 0 ? 'reply' : 'manifest'
+  const intro = numbered
+    ? `That ${subject} failed validation:\n${error}`
+    : `That ${subject} failed validation: ${error}`
   if (scopedPaths.length > 0) {
+    const fix = numbered ? 'Fix every numbered issue.' : 'Fix only what the error names.'
     return [
-      `That reply failed validation: ${error}`,
-      `Return one complete JSON object again, with manifest.pages containing only these page keys and their full specs: ${scopedPaths.join(', ')}. Fix only what the error names.`,
+      intro,
+      `Return one complete JSON object again, with manifest.pages containing only these page keys and their full specs: ${scopedPaths.join(', ')}. ${fix}`,
     ].join('\n\n')
   }
+  const fix = numbered
+    ? 'Fix every numbered issue and keep every other page, element, prop, and copy string identical.'
+    : 'Fix only what the error names and keep every other page, element, prop, and copy string identical.'
   return [
-    `That manifest failed validation: ${error}`,
-    'Return the corrected app as one complete JSON object in the same shape. Fix only what the error names and keep every other page, element, prop, and copy string identical.',
+    intro,
+    `Return the corrected app as one complete JSON object in the same shape. ${fix}`,
   ].join('\n\n')
 }
 
@@ -214,11 +246,11 @@ function evaluateGeneratedCandidate(
   if (!validation.success || !validation.manifest) {
     return validation
   }
-  const hostError = hostCriticManifest(validation.manifest, {
+  const hostIssues = hostCriticManifestIssues(validation.manifest, {
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
-  if (hostError) {
-    return { success: false, error: hostError }
+  if (hostIssues.length > 0) {
+    return { success: false, error: formatHostCriticRepairError(hostIssues) }
   }
   return validation
 }

@@ -65,16 +65,18 @@ vi.mock('@/lib/arena-generative-ui/critique-manifest', () => ({
     issues: Array<{ category: string; page?: string; message: string; fixHint: string }>
   ) =>
     issues
-      .map((issue) => {
+      .map((issue, index) => {
         const page = issue.page ? `page "${issue.page}"` : 'app'
-        return `UI critic must-fix (${issue.category}) on ${page}: ${issue.message} ${issue.fixHint}`
+        return `${index + 1}. UI critic must-fix (${issue.category}) on ${page}: ${issue.message} ${issue.fixHint}`
       })
-      .join(' '),
+      .join('\n'),
 }))
 
 import {
   EDIT_PRESERVATION_INSTRUCTION,
+  formatHostCriticRepairError,
   generateArenaGenerativeManifest,
+  HOST_CRITIC_REPAIR_ISSUE_CAP,
   MAX_REPAIR_ATTEMPTS,
   MODEL_JSON_PARSE_ERROR,
   REPLAN_GENERATE_INSTRUCTION,
@@ -1373,6 +1375,21 @@ describe('generateArenaGenerativeManifest', () => {
       manifest: twoPageManifest,
     })
 
+    it('caps host-critic repair issues and names the remainder', () => {
+      const issues = Array.from({ length: HOST_CRITIC_REPAIR_ISSUE_CAP + 2 }, (_, index) => {
+        return `issue ${index + 1}`
+      })
+      const formatted = formatHostCriticRepairError(issues)
+      expect(formatted).toContain('1. issue 1')
+      expect(formatted).toContain(
+        `${HOST_CRITIC_REPAIR_ISSUE_CAP}. issue ${HOST_CRITIC_REPAIR_ISSUE_CAP}`
+      )
+      expect(formatted).not.toContain(`${HOST_CRITIC_REPAIR_ISSUE_CAP + 1}. issue`)
+      expect(formatted).toContain(
+        `Showing the first ${HOST_CRITIC_REPAIR_ISSUE_CAP} of ${issues.length} issues.`
+      )
+    })
+
     function hostCriticExhaustionManifest() {
       const missingBack = manifestMissingResultsBack()
       const homeSpec = structuredClone(twoPageManifest.pages.home.spec)
@@ -1478,7 +1495,43 @@ describe('generateArenaGenerativeManifest', () => {
       }
       expect(repairTurn.role).toBe('user')
       expect(repairTurn.content).toContain('failed validation')
+      expect(repairTurn.content).toContain('1. ')
+      expect(repairTurn.content).toContain('Fix every numbered issue')
       expect(repairTurn.content).toContain('onSuccess.navigate target')
+      expect(result.content).toContain('UI critic: passed')
+    })
+
+    it('sends every host-critic issue from the first spec in one repair turn', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(
+          textMessage(
+            JSON.stringify({
+              title: 'Lead qualifier',
+              content: 'ok',
+              manifest: hostCriticExhaustionManifest(),
+            })
+          )
+        )
+        .mockResolvedValueOnce(textMessage(validReply))
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+      const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+        role: string
+        content: string
+      }
+      expect(repairTurn.content).toContain('1. ')
+      expect(repairTurn.content).toContain('2. ')
+      expect(repairTurn.content).toContain('nested inside another Card')
+      expect(repairTurn.content).toContain('onSuccess.navigate target')
+      expect(repairTurn.content).toContain('Fix every numbered issue')
       expect(result.content).toContain('UI critic: passed')
     })
 
@@ -1513,8 +1566,61 @@ describe('generateArenaGenerativeManifest', () => {
         role: string
         content: string
       }
-      expect(repairTurn.content).toContain('UI critic must-fix')
+      expect(repairTurn.content).toContain('1. UI critic must-fix')
       expect(repairTurn.content).toContain('Primary task is buried')
+      expect(repairTurn.content).toContain('Fix every numbered issue')
+      expect(result.content).toContain('UI critic: repaired')
+    })
+
+    it('numbers every LLM critic must-fix in one repair turn', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(textMessage(validReply))
+        .mockResolvedValueOnce(textMessage(validReply))
+      mockCritique.mockResolvedValue({
+        pass: false,
+        issues: [
+          {
+            category: 'ux',
+            severity: 'must-fix',
+            page: 'home',
+            message: 'Primary task is buried.',
+            fixHint: 'Add a PageHeader.',
+          },
+          {
+            category: 'visual',
+            severity: 'must-fix',
+            page: 'results',
+            message: 'Hierarchy is flat.',
+            fixHint: 'Promote the score.',
+          },
+          {
+            category: 'ux',
+            severity: 'should-fix',
+            page: 'home',
+            message: 'Subtitle is long.',
+            fixHint: 'Shorten it.',
+          },
+        ],
+      })
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockCritique).toHaveBeenCalledTimes(1)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+      const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+        role: string
+        content: string
+      }
+      expect(repairTurn.content).toContain('1. UI critic must-fix (ux) on page "home"')
+      expect(repairTurn.content).toContain('2. UI critic must-fix (visual) on page "results"')
+      expect(repairTurn.content).not.toContain('Subtitle is long')
+      expect(repairTurn.content).toContain('Fix every numbered issue')
       expect(result.content).toContain('UI critic: repaired')
     })
 
