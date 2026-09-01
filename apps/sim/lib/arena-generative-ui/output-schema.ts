@@ -201,16 +201,17 @@ export function prefixOutputSchemaFields(
   fields: ArenaGenerativeSchemaField[],
   prefix: string
 ): ArenaGenerativeSchemaField[] {
+  const named = namedSchemaFields(fields)
   const trimmed = prefix.trim()
-  if (!trimmed) return fields
-  return fields.map((field) => ({
+  if (!trimmed) return named
+  return named.map((field) => ({
     ...field,
     name: joinSchemaPath(trimmed, field.name),
   }))
 }
 
 function joinSchemaPath(prefix: string, child: string): string {
-  const name = child.trim()
+  const name = typeof child === 'string' ? child.trim() : ''
   if (!name || name === 'result') return prefix
   if (name.startsWith('result[]')) {
     return `${prefix}[]${name.slice('result[]'.length)}`

@@ -271,6 +271,18 @@ describe('parseApiBindings', () => {
     expect(binding.outputSchema).toEqual([{ name: 'plan', type: 'string' }])
   })
 
+  it('drops blank schema field names', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'lookup',
+        kind: 'http',
+        http: { method: 'POST', url: 'https://api.example.com/lookup' },
+        outputSchema: [{ name: '  ' }, { name: 'score', type: 'number' }],
+      },
+    ])
+    expect(binding.outputSchema).toEqual([{ name: 'score', type: 'number' }])
+  })
+
   it('keeps inputSchema descriptions', () => {
     const [binding] = parseApiBindings([
       {

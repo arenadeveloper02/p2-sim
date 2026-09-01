@@ -951,9 +951,13 @@ export function pageParamsFromQuery(
 /**
  * Splits a navigation target such as `order?id=ord_9` into its page path and
  * raw query string. Navigation targets carry params so a page's `onLoad` has
- * something to fetch by; only the path half identifies a page.
+ * something to fetch by; only the path half identifies a page. Same-page Chat
+ * actions omit navigate — callers must not throw on a missing target.
  */
-export function splitNavTarget(target: string): { path: string; query: string } {
+export function splitNavTarget(target: string | null | undefined): { path: string; query: string } {
+  if (typeof target !== 'string') {
+    return { path: '', query: '' }
+  }
   const separator = target.indexOf('?')
   if (separator < 0) {
     return { path: target.trim(), query: '' }

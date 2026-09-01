@@ -22,14 +22,17 @@ const EXECUTE_PROTOCOL_INPUT_NAMES = new Set(['stream', 'includethinking', 'incl
  * optional first-message prefix; Chat and the host stamp the rest.
  */
 export function isReservedStartInputName(name: string): boolean {
-  return RESERVED_START_INPUT_NAMES.has(name.trim().toLowerCase())
+  if (typeof name !== 'string') return false
+  const trimmed = name.trim()
+  if (!trimmed) return false
+  return RESERVED_START_INPUT_NAMES.has(trimmed.toLowerCase())
 }
 
 /**
  * Start field `input` — optional prefix in Add-an-API, never a visitor control.
  */
 export function isChatInputPrefixName(name: string): boolean {
-  return name.trim().toLowerCase() === 'input'
+  return typeof name === 'string' && name.trim().toLowerCase() === 'input'
 }
 
 /**

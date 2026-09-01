@@ -1668,6 +1668,51 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.error).toContain('results')
     })
 
+    it('accepts a same-page streamed Chat without onSuccess.navigate', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Chat', backgroundColor: null },
+            children: ['chat'],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'ask', placeholder: 'Ask a question' },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Chat', path: 'home', spec },
+          },
+          actions: {
+            ask: { apiKey: 'chat_api' },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              key: 'chat_api',
+              label: 'Chat',
+              kind: 'workflow',
+              workflowId: 'wf-chat',
+              stream: true,
+              chatProtocol: { input: true, conversationId: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
     it('accepts stream plus chat protocol when Chat is on the destination', () => {
       const spec: Spec = {
         root: 'page',

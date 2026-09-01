@@ -24,6 +24,7 @@ import {
   scrollGenerativeAppToTop,
   selectedItemHostState,
   specHasSamePageSelectItem,
+  splitNavTarget,
   submittedInputsState,
   unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
@@ -188,6 +189,18 @@ describe('pageParamsFromQuery', () => {
     expect(pageParamsFromQuery({ id: ['first', 'second'], q: '', missing: undefined })).toEqual({
       id: 'first',
     })
+  })
+})
+
+describe('splitNavTarget', () => {
+  it('returns an empty path when navigate is omitted instead of throwing', () => {
+    expect(splitNavTarget(undefined)).toEqual({ path: '', query: '' })
+    expect(splitNavTarget(null)).toEqual({ path: '', query: '' })
+  })
+
+  it('splits a path from its query string', () => {
+    expect(splitNavTarget('order?id=ord_9')).toEqual({ path: 'order', query: 'id=ord_9' })
+    expect(splitNavTarget('home')).toEqual({ path: 'home', query: '' })
   })
 })
 

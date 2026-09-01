@@ -145,7 +145,10 @@ export function outputSchemaFromWorkflowFields(
     seen.add(name)
     schema.push({
       name,
-      type: field.type?.trim() || DEFAULT_INPUT_TYPE,
+      type:
+        typeof field.type === 'string' && field.type.trim()
+          ? field.type.trim()
+          : DEFAULT_INPUT_TYPE,
     })
   }
   return schema.length > 0 ? schema : undefined

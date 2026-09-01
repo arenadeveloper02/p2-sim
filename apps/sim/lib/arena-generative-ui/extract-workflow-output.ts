@@ -106,7 +106,7 @@ function schemaFromAgentBlock(
     .filter(hasSchemaFieldName)
     .map((field) => ({
       name: field.name.trim(),
-      type: field.type?.trim() || 'string',
+      type: typeof field.type === 'string' && field.type.trim() ? field.type.trim() : 'string',
     }))
 }
 

@@ -329,7 +329,10 @@ function schemaFields(
       ) {
         return false
       }
-      const name = (field as { name: string }).name
+      const name = (field as { name: string }).name.trim()
+      if (!name) {
+        return false
+      }
       if (
         options?.input &&
         isOmittedGenerativeInputField({
@@ -347,7 +350,7 @@ function schemaFields(
     })
     .map((field) => {
       const mapped: ArenaGenerativeInputSchemaField = {
-        name: field.name,
+        name: field.name.trim(),
         type: typeof field.type === 'string' ? field.type : 'string',
       }
       const description =

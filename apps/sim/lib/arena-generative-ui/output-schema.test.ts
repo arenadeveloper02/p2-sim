@@ -190,6 +190,19 @@ describe('prefixOutputSchemaFields', () => {
       { name: 'history[].keyword', type: 'string' },
     ])
   })
+
+  it('drops nameless rows instead of throwing', () => {
+    expect(
+      prefixOutputSchemaFields(
+        [
+          { type: 'object' } as { name: string; type: string },
+          { name: undefined as unknown as string, type: 'string' },
+          { name: 'score', type: 'number' },
+        ],
+        'run_data'
+      )
+    ).toEqual([{ name: 'run_data.score', type: 'number' }])
+  })
 })
 
 describe('outputLayoutFromSample', () => {
