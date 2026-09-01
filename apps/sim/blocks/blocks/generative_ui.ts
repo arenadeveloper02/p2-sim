@@ -19,6 +19,12 @@ export const GenerativeUiBlock: BlockConfig<GenerativeUiGenerateHtmlResponse> = 
   integrationType: IntegrationType.AI,
   bgColor: '#0F172A',
   icon: GenerativeUiIcon,
+  /**
+   * Superseded by Arena Generative UI. Left registered so placed instances keep
+   * executing; it is only removed from the toolbar, search, and mentions.
+   */
+  hideFromToolbar: true,
+  sunset: { status: 'legacy', replacedBy: 'arena_generative_ui' },
   subBlocks: [
     {
       id: 'mode',
