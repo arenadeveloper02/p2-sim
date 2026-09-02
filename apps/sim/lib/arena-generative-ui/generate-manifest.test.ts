@@ -388,6 +388,8 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('selectItem')
     expect(system).toContain('clearItem')
     expect(system).toContain('!selectedId')
+    expect(system).toContain('Same-page History')
+    expect(system).toContain('Cross-page History')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')
     expect(system).toContain('host pages Table and Repeat locally')

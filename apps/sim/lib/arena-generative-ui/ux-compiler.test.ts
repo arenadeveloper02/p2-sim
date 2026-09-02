@@ -15,6 +15,7 @@ import {
   compileGenerativeUx,
   inferAsyncKind,
   injectSamePageSelectChrome,
+  stripListHiddenWithoutSamePageSelect,
   specHasLoadingSurface,
   UX_COMPILER_SELECT_BACK_KEY,
   UX_COMPILER_STATUS_KEY,
@@ -294,6 +295,10 @@ describe('compileGenerativeUx', () => {
     )
     expect(homeTypes).not.toContain('WorkingCard')
     expect(resultsTypes).toContain('WorkingCard')
+    expect(
+      (compiled.pages.results.spec.elements?.working as { props?: { actionId?: string } }).props
+        ?.actionId
+    ).toBe('submit_lead')
   })
 
   it('keeps ProgressSteps on a same-page submit', () => {
@@ -537,6 +542,50 @@ describe('injectSamePageSelectChrome', () => {
     const once = injectSamePageSelectChrome(brokenSamePageHistorySpec(), 'history')
     const twice = injectSamePageSelectChrome(once, 'history')
     expect(twice).toEqual(once)
+  })
+
+  it('does not hide a view-gated History list with !selectedId', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['history', 'generator'] },
+        history: {
+          type: 'Stack',
+          props: { showWhen: 'activeView=history' },
+          children: ['repeat'],
+        },
+        repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+        generator: {
+          type: 'Stack',
+          props: { showWhen: 'activeView!=history' },
+          children: ['body'],
+        },
+        body: { type: 'DataText', props: { statePath: 'content' }, children: [] },
+      },
+    }
+    expect(injectSamePageSelectChrome(spec, 'home')).toEqual(structuredClone(spec))
+  })
+
+  it('strips !selectedId from a list-only History page whose Open navigates away', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list'] },
+        list: { type: 'Stack', props: { showWhen: '!selectedId' }, children: ['repeat'] },
+        repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: {
+          type: 'Button',
+          props: { label: 'Open', selectItem: true, navigateTo: 'home' },
+          children: [],
+        },
+      },
+    }
+    const compiled = injectSamePageSelectChrome(spec, 'history')
+    expect(
+      (compiled.elements?.list as { props?: { showWhen?: string } }).props?.showWhen
+    ).toBeUndefined()
+    expect(stripListHiddenWithoutSamePageSelect(spec, 'history')).toEqual(compiled)
   })
 })
 

@@ -298,10 +298,20 @@ export function selectedItemHostState(item: unknown, index: number): Record<stri
  */
 export function clearedSelectedItemHostState(): Record<string, unknown> {
   return {
+    ...clearedSelectedIdHostState(),
+    [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: undefined,
+  }
+}
+
+/**
+ * Drops `selected` / `selectedId` without wiping generate `content`, so a
+ * History tab or Chip view-switch can show the list while the article remains.
+ */
+export function clearedSelectedIdHostState(): Record<string, unknown> {
+  return {
     ...clearedActionErrorState(),
     [ARENA_GENERATIVE_SELECTED_KEY]: undefined,
     [ARENA_GENERATIVE_SELECTED_ID_KEY]: undefined,
-    [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: undefined,
   }
 }
 

@@ -10,8 +10,10 @@ import { eq } from 'drizzle-orm'
 import {
   actionStateFromPlan,
   layoutPlanForBinding,
+  proseAliasKeysFromPlans,
   proseContentFromPlanState,
   shouldBindActionContent,
+  withAliasedProseState,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import {
   type ArenaGenerativeActionSurface,
@@ -973,12 +975,15 @@ export async function runGenerativeAppAction(
     display && shouldBindActionContent(plan, display, streamedContent)
       ? display
       : proseContentFromPlanState(fromData, plan)
-  const setState: Record<string, unknown> = {
-    ...(action.onSuccess?.setState ?? {}),
-    ...fromData,
-    ...paginationPatch,
-    ...(boundContent ? { content: boundContent } : {}),
-  }
+  const setState: Record<string, unknown> = withAliasedProseState(
+    {
+      ...(action.onSuccess?.setState ?? {}),
+      ...fromData,
+      ...paginationPatch,
+      ...(boundContent ? { content: boundContent } : {}),
+    },
+    proseAliasKeysFromPlans([plan])
+  )
   const schemaWarning = outputSchemaWarning(binding.outputSchema, setState)
   if (schemaWarning) {
     logger.warn('Generative app outputSchema drift', {

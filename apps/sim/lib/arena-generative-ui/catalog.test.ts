@@ -84,6 +84,13 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).not.toContain('scalar fields under inputs')
   })
 
+  it('teaches both same-page and cross-page History patterns', () => {
+    expect(prompt).toContain('Same-page History')
+    expect(prompt).toContain('Cross-page History')
+    expect(prompt).toContain('never use `!selectedId` on the list')
+    expect(prompt).toContain('distinct manifest page path')
+  })
+
   it('tells the spec the host pages Table and Repeat when there is no pagination API', () => {
     expect(prompt).toContain('the host pages long tables locally')
     expect(prompt).toContain('the host pages long lists locally')

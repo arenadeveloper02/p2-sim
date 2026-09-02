@@ -516,21 +516,127 @@ function planActions(
   return plan
 }
 
+function ancestorHasForeignShowWhen(
+  id: string,
+  elements: Record<string, SpecElement>,
+  parents: Map<string, string>
+): boolean {
+  for (const chainId of [id, ...ancestorIds(id, parents)]) {
+    const clauses = parseShowWhen(elements[chainId]?.props?.showWhen)
+    if (clauses.some((clause) => clause.name !== ARENA_GENERATIVE_SELECTED_ID_KEY)) {
+      return true
+    }
+  }
+  return false
+}
+
+function formatShowWhen(
+  clauses: Array<{ name: string; op: string; value?: string }>
+): string {
+  return clauses
+    .map((clause) => {
+      if (clause.op === 'falsy') return `!${clause.name}`
+      if (clause.op === 'eq') return `${clause.name}=${clause.value ?? ''}`
+      if (clause.op === 'neq') return `${clause.name}!=${clause.value ?? ''}`
+      return clause.name
+    })
+    .join(',')
+}
+
+function dropSelectedIdListHidden(element: SpecElement): SpecElement {
+  const clauses = parseShowWhen(element.props?.showWhen).filter(
+    (clause) => !(clause.op === 'falsy' && clause.name === ARENA_GENERATIVE_SELECTED_ID_KEY)
+  )
+  if (clauses.length === parseShowWhen(element.props?.showWhen).length) return element
+  const props = { ...element.props }
+  if (clauses.length === 0) {
+    delete props.showWhen
+  } else {
+    props.showWhen = formatShowWhen(clauses)
+  }
+  return { ...element, props }
+}
+
+/**
+ * Removes `showWhen: "!selectedId"` from a list-only page so a dedicated History
+ * list stays visible after Open navigates away.
+ */
+export function stripListHiddenWithoutSamePageSelect(spec: Spec, pagePath: string): Spec {
+  if (specHasSamePageSelectItem(spec, pagePath)) return spec
+  const cloned = structuredClone(spec)
+  const elements = specElements(cloned)
+  let changed = false
+  for (const [id, element] of Object.entries(elements)) {
+    const next = dropSelectedIdListHidden(element)
+    if (next === element) continue
+    elements[id] = next
+    changed = true
+  }
+  return changed ? { ...cloned, elements } : cloned
+}
+
+function formActionIdFromSpec(spec: Spec): string {
+  for (const element of Object.values(specElements(spec))) {
+    if (element.type !== 'Form' && element.type !== 'SearchField') continue
+    const actionId = asString(element.props?.actionId)
+    if (actionId) return actionId
+  }
+  return ''
+}
+
+function incomingGenerateActionId(
+  pagePath: string,
+  manifest: ArenaGenerativeAppManifest,
+  onLoadIds: Set<string>
+): string {
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (onLoadIds.has(actionId)) continue
+    if (navigatePath(action.onSuccess?.navigate) === pagePath) return actionId
+  }
+  return ''
+}
+
+function stampPendingLoaderActionIds(spec: Spec, actionId: string): Spec {
+  if (!actionId) return spec
+  const elements = specElements(spec)
+  let changed = false
+  const next: Record<string, SpecElement> = { ...elements }
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'WorkingCard' && element.type !== 'ProgressSteps') continue
+    if (asString(element.props?.actionId)) continue
+    next[id] = {
+      ...element,
+      props: { ...element.props, actionId },
+    }
+    changed = true
+  }
+  return changed ? { ...spec, elements: next } : spec
+}
+
 /**
  * Fills missing same-page Open chrome: hide the list while a row is selected,
  * show content DataText only then, and add a ghost clearItem Back if none exists.
  * No-op when the spec has no same-page selectItem, or when those props are already set.
- * Never invents a DataText.
+ * Never invents a DataText. Does not inject list-hide onto a view-gated History
+ * region (`showWhen: "activeView=history"`) or a dedicated History page.
  */
 export function injectSamePageSelectChrome(spec: Spec, pagePath: string): Spec {
   const cloned = structuredClone(spec)
-  if (!specHasSamePageSelectItem(cloned, pagePath)) return cloned
+  if (!specHasSamePageSelectItem(cloned, pagePath)) {
+    return stripListHiddenWithoutSamePageSelect(cloned, pagePath)
+  }
   const elements = specElements(cloned)
   const parents = parentByChild(elements)
   const repeatIds = repeatIdsWithSamePageSelect(elements, parents, pagePath)
   if (repeatIds.size === 0) return cloned
 
+  const viewGated = [...repeatIds].every((id) =>
+    ancestorHasForeignShowWhen(id, elements, parents)
+  )
+  if (viewGated) return cloned
+
   for (const repeatId of repeatIds) {
+    if (ancestorHasForeignShowWhen(repeatId, elements, parents)) continue
     const chain = [repeatId, ...ancestorIds(repeatId, parents)]
     if (
       chain.some((id) =>
@@ -616,11 +722,15 @@ export function compileGenerativeUx(
 ): CompileGenerativeUxResult {
   const needed = pagesNeedingPendingChrome(manifest)
   const relocated = relocateNavigateFirstLoaders(manifest.pages, manifest.actions)
+  const onLoadIds = onLoadActionIds(manifest)
   const fallbackLoading: Record<string, ArenaGenerativeFallbackLoading> = {}
   const pages: Record<string, ArenaGenerativePageManifest> = {}
   for (const [path, page] of Object.entries(relocated)) {
     const withSelectChrome = injectSamePageSelectChrome(page.spec, path)
-    const compiled = compileGenerativePageSpec(withSelectChrome, {
+    const loaderActionId =
+      incomingGenerateActionId(path, manifest, onLoadIds) || formActionIdFromSpec(withSelectChrome)
+    const stamped = stampPendingLoaderActionIds(withSelectChrome, loaderActionId)
+    const compiled = compileGenerativePageSpec(stamped, {
       needsPendingChrome: needed.has(path),
     })
     pages[path] = {

@@ -99,11 +99,11 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   'drill-down': [
     'CAPABILITY: DRILL-DOWN',
-    'A dashboard or collection module opens a more specific page or same-page detail. Use Button.navigateTo / NavLink.to with the row id, or selectItem when the row already has prose. Do not fetch the same record twice.',
+    'A dashboard or collection module opens a more specific page or same-page detail. Use Button.navigateTo / NavLink.to with the row id, or selectItem when the row already has prose. Same-page Open uses showWhen !selectedId; cross-page Open (navigateTo or Chip view switch) keeps the list visible. Do not fetch the same record twice.',
   ].join('\n'),
   select: [
     'CAPABILITY: SELECT',
-    'Opening a row that already has prose is Button selectItem true with no actionId. Stay on the list (showWhen selectedId / clearItem Back) or navigateTo a results page with no onLoad of that row. Do not fetch the same item twice.',
+    'Opening a row that already has prose is Button selectItem true with no actionId. Same-page: stay on the list (showWhen !selectedId / selectedId / clearItem Back). Cross-page: navigateTo a results page with no onLoad of that row and never hide the History list with !selectedId. Do not fetch the same item twice.',
   ].join('\n'),
   inspect: [
     'CAPABILITY: INSPECT',

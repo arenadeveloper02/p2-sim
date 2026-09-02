@@ -6,6 +6,8 @@ import {
   actionChatProtocolFrom,
   actionHiddenInputsFrom,
   actionHostKeysFrom,
+  layoutPlansFromBindings,
+  proseAliasKeysFromPlans,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import {
   ARENA_ACCESS_DENIED_MESSAGE,
@@ -71,6 +73,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     actionNavigate: actionNavigateFrom(deployment.manifest),
     pageOnLoad: pageOnLoadFrom(deployment.manifest),
     actionHostKeys: actionHostKeysFrom(deployment.manifest, deployment.apiBindings),
+    proseAliasKeys: proseAliasKeysFromPlans(layoutPlansFromBindings(deployment.apiBindings)),
     actionHiddenInputs: actionHiddenInputsFrom(deployment.manifest, deployment.apiBindings),
     actionChatProtocol: actionChatProtocolFrom(deployment.manifest, deployment.apiBindings),
     theme: parseArenaGenerativeTheme(deployment.manifest.theme),

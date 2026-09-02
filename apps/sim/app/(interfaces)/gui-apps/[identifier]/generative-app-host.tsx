@@ -12,6 +12,7 @@ import {
   actionErrorFrom,
   actionSchemaWarningFrom,
   clearedActionErrorState,
+  clearedSelectedIdHostState,
   clearedSelectedItemHostState,
   isJsonRenderSpec,
   navigationHref,
@@ -193,6 +194,7 @@ export function GenerativeAppHost({
           pending={pendingActionIds.size > 0}
           pendingActionIds={pendingActionIds}
           actionHostKeys={config?.actionHostKeys ?? {}}
+          proseAliasKeys={config?.proseAliasKeys ?? []}
           actionHiddenInputs={config?.actionHiddenInputs ?? {}}
           actionChatProtocol={config?.actionChatProtocol ?? {}}
           conversationStorageKey={config?.id ? `deployed:${config.id}` : undefined}
@@ -211,6 +213,11 @@ export function GenerativeAppHost({
               mergeState(clearedSelectedItemHostState())
             })
             scrollGenerativeAppToTop()
+          }}
+          onClearSelection={() => {
+            flushSync(() => {
+              mergeState(clearedSelectedIdHostState())
+            })
           }}
           onCancelPending={runtime.cancelPending}
         />

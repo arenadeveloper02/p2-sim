@@ -10,7 +10,9 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import { chatDeploymentPasswordSchema } from '@/lib/api/contracts/chats'
+import { layoutPlansFromBindings } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { buildHttpAllowlist } from '@/lib/arena-generative-ui/http-allowlist'
+import { validateManifestBindingLayout } from '@/lib/arena-generative-ui/validate-binding-layout'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   type ArenaGenerativeApiBinding,
@@ -159,6 +161,14 @@ export async function performGenerativeAppDeploy(
   const allowlist = buildHttpAllowlist(apiBindings, { allowHttp: isDev })
   if (!allowlist.ok) {
     return { success: false, error: allowlist.error }
+  }
+
+  const layoutError = validateManifestBindingLayout(
+    manifest,
+    layoutPlansFromBindings(apiBindings)
+  )
+  if (layoutError) {
+    return { success: false, error: layoutError }
   }
 
   let encryptedPassword: string | null = null

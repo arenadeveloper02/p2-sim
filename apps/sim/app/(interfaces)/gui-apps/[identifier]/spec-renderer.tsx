@@ -42,6 +42,7 @@ import {
   collectionUsesApiPagination,
   isActionControlPending,
   isBoundPathPending,
+  withAliasedProseState,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import {
   type ArenaGenerativeChatProtocol,
@@ -113,6 +114,8 @@ interface SpecRendererProps {
   pendingActionIds?: ReadonlySet<string>
   /** Host keys each action writes. Required for per-action bound-region pending. */
   actionHostKeys?: Record<string, readonly string[]>
+  /** Markdown keys that alias `content` for showWhen and DataText. */
+  proseAliasKeys?: readonly string[]
   /** visitorEmail / constant input names the host stamps; those fields never render. */
   actionHiddenInputs?: Record<string, readonly string[]>
   /** Reserved Start protocol each action may bind through Chat. */
@@ -133,6 +136,8 @@ interface SpecRendererProps {
   onSelectItem?: (item: unknown, index: number) => void
   /** Drops the copied Repeat row so an in-page detail can return to the list. */
   onClearItem?: () => void
+  /** Drops selectedId without wiping generate content (tab / Chip view switch). */
+  onClearSelection?: () => void
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -1669,10 +1674,11 @@ function CatalogToastView({ text, tone }: { text: string; tone: unknown }) {
  */
 export function SpecRenderer({
   spec,
-  state,
+  state: rawState,
   pending,
   pendingActionIds,
   actionHostKeys,
+  proseAliasKeys,
   actionHiddenInputs,
   actionChatProtocol,
   conversationStorageKey,
@@ -1682,8 +1688,10 @@ export function SpecRenderer({
   onRunAction,
   onSelectItem,
   onClearItem,
+  onClearSelection,
   onCancelPending,
 }: SpecRendererProps) {
+  const state = withAliasedProseState(rawState, proseAliasKeys ?? [])
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
   const suppressBoundSkeleton = Object.values(elements).some((element) => {
     if (element.type !== 'WorkingCard') return false
@@ -1736,6 +1744,11 @@ export function SpecRenderer({
     return isActionControlPending(actionId, pendingActionIds, pending)
   }
 
+  const loaderPending = (actionId: string) => {
+    if (!actionId) return pending
+    return isActionControlPending(actionId, pendingActionIds, pending)
+  }
+
   const confirmAction = (actionId: string, fallbackDestructive = false) => {
     if (!actionId) return false
     const plan = uxPlan?.actions[actionId]
@@ -1776,11 +1789,14 @@ export function SpecRenderer({
     return onRunAction(actionId, next)
   }
 
-  const requestNavigate = (target: string) => {
+  const requestNavigate = (target: string, options?: { keepSelection?: boolean }) => {
     const path = splitNavTarget(target).path
     if (currentPath && path === currentPath && selectedIdSet) {
       onClearItem?.()
       return
+    }
+    if (path !== currentPath && !options?.keepSelection) {
+      onClearSelection?.()
     }
     onNavigate(target)
   }
@@ -2473,6 +2489,7 @@ export function SpecRenderer({
           if (setValue) {
             const parsed = parseChipSetValue(setValue)
             setNamedValue(parsed.name || firstSearchFieldName(elements), parsed.value)
+            onClearSelection?.()
           }
           if (navigateTo) requestNavigate(navigateTo)
           if (actionId) void dispatchAction(actionId, actionValues)
@@ -2755,7 +2772,7 @@ export function SpecRenderer({
         const steps = parseProgressStepLines(asString(props.steps))
         return (
           <ProgressStepsView
-            pending={pending}
+            pending={loaderPending(asString(props.actionId))}
             steps={steps}
             durationMs={asPositiveNumber(props.durationMs, DEFAULT_PROGRESS_DURATION_MS)}
           />
@@ -2774,7 +2791,7 @@ export function SpecRenderer({
         const showSkeleton = props.skeleton !== false
         return (
           <WorkingCardView
-            pending={pending}
+            pending={loaderPending(asString(props.actionId))}
             title={asString(props.title)}
             estimate={asString(props.estimate)}
             tip={asString(props.tip)}
@@ -3344,7 +3361,7 @@ export function SpecRenderer({
                 applyOverlayPatch(overlayPatch)
                 return
               }
-              if (navigateTo) requestNavigate(navigateTo)
+              if (navigateTo) requestNavigate(navigateTo, { keepSelection: asBoolean(props.selectItem) })
               if (actionId) void dispatchAction(actionId, actionValues)
             }}
           >

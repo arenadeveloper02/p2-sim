@@ -545,6 +545,113 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.error).toMatch(/unknown path "ghost"/)
   })
 
+  it('rejects Tabs items that share a page path', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'Home', backgroundColor: null },
+                  children: ['tabs'],
+                },
+                tabs: {
+                  type: 'Tabs',
+                  props: { items: 'Generator|home\nHistory|home', activePath: 'home' },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/repeats path "home"/)
+  })
+
+  it('rejects a list-only History page gated on !selectedId', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'Home', backgroundColor: null },
+                  children: ['heading', 'to-history'],
+                },
+                heading: {
+                  type: 'Heading',
+                  props: { text: 'Home', level: 'h1', color: null },
+                  children: [],
+                },
+                'to-history': {
+                  type: 'NavLink',
+                  props: { label: 'History', to: 'history' },
+                  children: [],
+                },
+              },
+            },
+          },
+          history: {
+            title: 'History',
+            path: 'history',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'History', backgroundColor: null },
+                  children: ['list'],
+                },
+                list: {
+                  type: 'Repeat',
+                  props: { statePath: 'history', showWhen: '!selectedId' },
+                  children: ['open'],
+                },
+                open: {
+                  type: 'Button',
+                  props: {
+                    label: 'Open',
+                    href: null,
+                    navigateTo: 'home',
+                    actionId: null,
+                    selectItem: true,
+                    clearItem: null,
+                    setValue: null,
+                    variant: null,
+                    size: null,
+                    shape: null,
+                    showWhen: null,
+                  },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/dedicated History list/)
+  })
+
   it('accepts layout and display components from the widened catalog', () => {
     const result = validateArenaGenerativeManifest(
       {

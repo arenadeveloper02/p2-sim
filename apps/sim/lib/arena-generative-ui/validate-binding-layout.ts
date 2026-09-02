@@ -9,8 +9,11 @@ import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
 import { isFormFieldType, parseShowWhen } from '@/lib/arena-generative-ui/form-fields'
 import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import {
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   type ArenaGenerativeAppManifest,
+  parseTabItems,
+  specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
 
@@ -68,6 +71,12 @@ export function validateManifestBindingLayout(
     const navigateError = navigateFirstOnLoadError(path, page.onLoad, manifest.actions)
     if (navigateError) return navigateError
 
+    const tabError = duplicateTabPathError(path, specElements(page.spec))
+    if (tabError) return tabError
+
+    const listHiddenError = listHiddenWithoutSamePageSelectError(path, page.spec)
+    if (listHiddenError) return listHiddenError
+
     for (const [actionId, action] of Object.entries(manifest.actions)) {
       if (!pageSubmitsAction(elements, actionId)) continue
       const plan = action.apiKey ? planByKey.get(action.apiKey) : undefined
@@ -122,6 +131,63 @@ function generateBindingKeys(manifest: ArenaGenerativeAppManifest): Set<string> 
     }
   }
   return keys
+}
+
+function duplicateTabPathError(
+  pagePath: string,
+  elements: Record<string, SpecElement>
+): string | undefined {
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Tabs') continue
+    const seen = new Set<string>()
+    for (const item of parseTabItems(element.props?.items)) {
+      const tabPath = splitNavTarget(item.path).path
+      if (!tabPath) continue
+      if (seen.has(tabPath)) {
+        return `Page "${pagePath}" Tabs "${id}" repeats path "${tabPath}". Each tab must be a distinct page path.`
+      }
+      seen.add(tabPath)
+    }
+  }
+  return undefined
+}
+
+function listHiddenWithoutSamePageSelectError(pagePath: string, spec: Spec): string | undefined {
+  if (specHasSamePageSelectItem(spec, pagePath)) return undefined
+  const elements = specElements(spec)
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Repeat' && element.type !== 'Table') continue
+    if (showWhenHidesOnSelectedId(element.props?.showWhen)) {
+      return `Page "${pagePath}" ${element.type} "${id}" uses showWhen "!selectedId" but Open is not same-page. Keep a dedicated History list visible.`
+    }
+    for (const ancestorId of collectionAncestors(elements, id)) {
+      if (!showWhenHidesOnSelectedId(elements[ancestorId]?.props?.showWhen)) continue
+      return `Page "${pagePath}" ${element.type} "${id}" is hidden by showWhen "!selectedId" but Open is not same-page. Keep a dedicated History list visible.`
+    }
+  }
+  return undefined
+}
+
+function showWhenHidesOnSelectedId(showWhen: unknown): boolean {
+  return parseShowWhen(showWhen).some(
+    (clause) => clause.op === 'falsy' && clause.name === ARENA_GENERATIVE_SELECTED_ID_KEY
+  )
+}
+
+function collectionAncestors(elements: Record<string, SpecElement>, childId: string): string[] {
+  const parents = new Map<string, string>()
+  for (const [id, element] of Object.entries(elements)) {
+    for (const child of element.children ?? []) {
+      parents.set(child, id)
+    }
+  }
+  const ids: string[] = []
+  let current = parents.get(childId)
+  while (current) {
+    ids.push(current)
+    current = parents.get(current)
+  }
+  return ids
 }
 
 const COPY_DOWNLOAD_LABEL =

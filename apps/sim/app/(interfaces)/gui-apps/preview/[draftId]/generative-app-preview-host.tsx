@@ -9,6 +9,8 @@ import {
   actionChatProtocolFrom,
   actionHiddenInputsFrom,
   actionHostKeysFrom,
+  layoutPlansFromBindings,
+  proseAliasKeysFromPlans,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
@@ -23,6 +25,7 @@ import {
   actionNavigateFrom,
   actionSchemaWarningFrom,
   clearedActionErrorState,
+  clearedSelectedIdHostState,
   clearedSelectedItemHostState,
   isJsonRenderSpec,
   navigationHref,
@@ -98,6 +101,9 @@ export function GenerativeAppPreviewHost({
 
   const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
   const actionHostKeys = manifest ? actionHostKeysFrom(manifest, apiBindings ?? []) : {}
+  const proseAliasKeys = manifest
+    ? proseAliasKeysFromPlans(layoutPlansFromBindings(apiBindings ?? []))
+    : []
   const actionHiddenInputs = manifest ? actionHiddenInputsFrom(manifest, apiBindings ?? []) : {}
   const actionChatProtocol = manifest ? actionChatProtocolFrom(manifest, apiBindings ?? []) : {}
 
@@ -232,6 +238,7 @@ export function GenerativeAppPreviewHost({
             pending={pending}
             pendingActionIds={pendingActionIds}
             actionHostKeys={actionHostKeys}
+            proseAliasKeys={proseAliasKeys}
             actionHiddenInputs={actionHiddenInputs}
             actionChatProtocol={actionChatProtocol}
             conversationStorageKey={`preview:${draftId}`}
@@ -250,6 +257,11 @@ export function GenerativeAppPreviewHost({
                 mergeState(clearedSelectedItemHostState())
               })
               scrollGenerativeAppToTop()
+            }}
+            onClearSelection={() => {
+              flushSync(() => {
+                mergeState(clearedSelectedIdHostState())
+              })
             }}
             onCancelPending={runtime.cancelPending}
           />

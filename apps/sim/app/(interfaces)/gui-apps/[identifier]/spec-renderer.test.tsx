@@ -117,6 +117,7 @@ describe('SpecRenderer', () => {
     pending?: boolean
     pendingActionIds?: ReadonlySet<string>
     actionHostKeys?: Record<string, readonly string[]>
+    proseAliasKeys?: readonly string[]
     actionHiddenInputs?: Record<string, readonly string[]>
     actionChatProtocol?: Record<string, ArenaGenerativeChatProtocol>
     uxPlan?: ArenaGenerativeUxPlan
@@ -125,12 +126,14 @@ describe('SpecRenderer', () => {
     onRunAction?: ReturnType<typeof vi.fn>
     onSelectItem?: ReturnType<typeof vi.fn>
     onClearItem?: ReturnType<typeof vi.fn>
+    onClearSelection?: ReturnType<typeof vi.fn>
     onCancelPending?: ReturnType<typeof vi.fn>
   }) {
     const onNavigate = options?.onNavigate ?? vi.fn()
     const onRunAction = options?.onRunAction ?? vi.fn().mockResolvedValue(undefined)
     const onSelectItem = options?.onSelectItem ?? vi.fn()
     const onClearItem = options?.onClearItem ?? vi.fn()
+    const onClearSelection = options?.onClearSelection ?? vi.fn()
     const onCancelPending = options?.onCancelPending ?? vi.fn()
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     const container = document.createElement('div')
@@ -144,6 +147,7 @@ describe('SpecRenderer', () => {
           pending={options?.pending ?? false}
           pendingActionIds={options?.pendingActionIds}
           actionHostKeys={options?.actionHostKeys}
+          proseAliasKeys={options?.proseAliasKeys}
           actionHiddenInputs={options?.actionHiddenInputs}
           actionChatProtocol={options?.actionChatProtocol}
           uxPlan={options?.uxPlan}
@@ -152,6 +156,7 @@ describe('SpecRenderer', () => {
           onRunAction={onRunAction}
           onSelectItem={onSelectItem}
           onClearItem={onClearItem}
+          onClearSelection={onClearSelection}
           onCancelPending={onCancelPending}
         />
       )
@@ -162,7 +167,15 @@ describe('SpecRenderer', () => {
       })
       container.remove()
     }
-    return { container, onNavigate, onRunAction, onSelectItem, onClearItem, onCancelPending }
+    return {
+      container,
+      onNavigate,
+      onRunAction,
+      onSelectItem,
+      onClearItem,
+      onClearSelection,
+      onCancelPending,
+    }
   }
 
   it('navigates when a NavLink is clicked', () => {
@@ -1590,7 +1603,11 @@ describe('SpecRenderer', () => {
         },
       },
     }
-    const { container, onNavigate } = render({ spec })
+    const { container, onNavigate, onClearSelection } = render({
+      spec,
+      currentPath: 'home',
+      state: { selectedId: 'run_1', content: '# Kept' },
+    })
     const buttons = Array.from(container.querySelectorAll('nav button'))
     expect(buttons.map((button) => button.textContent)).toEqual(['Home', 'Reports'])
     expect(buttons[0]?.className).toContain('font-medium')
@@ -1599,6 +1616,7 @@ describe('SpecRenderer', () => {
     act(() => {
       buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(onClearSelection).toHaveBeenCalled()
     expect(onNavigate).toHaveBeenCalledWith('reports')
   })
 
@@ -2339,6 +2357,56 @@ describe('SpecRenderer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows DataText content from an aliased string field', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: {
+          type: 'Stack',
+          props: { showWhen: 'artical_data' },
+          children: ['body'],
+        },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: '' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { content: '# Root Canal Treatment' },
+      proseAliasKeys: ['content', 'artical_data'],
+    })
+    expect(container.textContent).toContain('Root Canal Treatment')
+  })
+
+  it('hides WorkingCard when a different action is pending', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['working'] },
+        working: {
+          type: 'WorkingCard',
+          props: {
+            title: 'Working on it…',
+            steps: 'Connecting…\nDrafting…',
+            actionId: 'generate',
+            cancelTo: 'home',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      pending: true,
+      pendingActionIds: new Set(['fetch_history']),
+    })
+    expect(container.querySelector('[data-testid="working-card"]')).toBeNull()
   })
 
   it('hides WorkingCard when idle', () => {

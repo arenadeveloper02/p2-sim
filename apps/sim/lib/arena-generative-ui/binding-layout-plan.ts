@@ -174,7 +174,7 @@ export function actionStateFromPlan(
 
   const next: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(heuristic)) {
-    if (omitFromPlanState(plan, key)) continue
+    if (omitFromPlanState(plan, key, value)) continue
     next[key] = value
   }
   for (const key of [...plan.hostKeys, ...plan.aliasKeys]) {
@@ -184,6 +184,46 @@ export function actionStateFromPlan(
     }
   }
   return next
+}
+
+/**
+ * Host keys that show the same markdown body. `content` and a named string
+ * field (`artical_data`) are interchangeable for showWhen and DataText.
+ */
+export function proseAliasKeysFromPlans(plans: BindingLayoutPlan[]): string[] {
+  return uniqueStrings([
+    'content',
+    ...plans.flatMap((plan) => plan.stringFieldNames),
+    ...plans.flatMap((plan) => plan.prosePaths),
+  ])
+}
+
+/**
+ * Copies the first real prose string onto every empty alias key so showWhen
+ * `artical_data` and DataText `content` see the same body.
+ */
+export function withAliasedProseState(
+  state: Record<string, unknown>,
+  aliasKeys: readonly string[]
+): Record<string, unknown> {
+  if (aliasKeys.length === 0) return state
+  let prose: string | undefined
+  for (const key of aliasKeys) {
+    const candidate = proseString(state[key])
+    if (candidate) {
+      prose = candidate
+      break
+    }
+  }
+  if (!prose) return state
+  const next: Record<string, unknown> = { ...state }
+  let changed = false
+  for (const key of aliasKeys) {
+    if (proseString(next[key])) continue
+    next[key] = prose
+    changed = true
+  }
+  return changed ? next : state
 }
 
 /**
@@ -210,24 +250,28 @@ export function proseContentFromPlanState(
   state: Record<string, unknown>,
   plan: BindingLayoutPlan
 ): string | undefined {
-  for (const name of plan.stringFieldNames) {
-    const value = state[name]
-    if (typeof value !== 'string') continue
-    const trimmed = value.trim()
-    if (!trimmed || parseJsonLiteral(trimmed) !== undefined) continue
-    return trimmed
+  for (const name of uniqueStrings(['content', ...plan.stringFieldNames])) {
+    const candidate = proseString(state[name])
+    if (candidate) return candidate
   }
   return undefined
 }
 
-function omitFromPlanState(plan: BindingLayoutPlan, key: string): boolean {
+function proseString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed || parseJsonLiteral(trimmed) !== undefined) return undefined
+  return trimmed
+}
+
+function omitFromPlanState(plan: BindingLayoutPlan, key: string, value: unknown): boolean {
   if (plan.collections.some((collection) => collection.wrapperKeys.includes(key))) {
     return true
   }
   if (plan.recordKeys.includes(key) || plan.stringFieldNames.includes(key)) {
     return false
   }
-  if (key === 'content') return true
+  if (key === 'content') return proseString(value) === undefined
   return DISPLAY_ENVELOPE_KEYS.has(key) && plan.collections.length > 0
 }
 

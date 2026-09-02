@@ -39,7 +39,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Content section. width defaults to wide (fills up to 1280px); use narrow only for a focused single-column form, full to span the viewport. Leave maxWidth unset unless you need an exact cap. showWhen uses the same clause syntax as form fields — hide a markdown region until selectedId is set (`selectedId`) or hide the list while it is set (`!selectedId`).',
+        'Content section. width defaults to wide (fills up to 1280px); use narrow only for a focused single-column form, full to span the viewport. Leave maxWidth unset unless you need an exact cap. showWhen uses the same clause syntax as form fields. Same-page History Open hides the list with `!selectedId` and shows markdown with `selectedId`. Cross-page History (Open + navigateTo another path, or Chip view switch) must never use `!selectedId` on the list — the list page stays visible.',
     },
     Stack: {
       props: z.object({
@@ -52,7 +52,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Flex stack for vertical or horizontal layout. Use justify to distribute a horizontal row and wrap so it reflows on narrow screens. For collections of equal items use Grid instead. showWhen uses the same clause syntax as form fields — wrap a History list in showWhen "!selectedId" so Open can swap to a detail view.',
+        'Flex stack for vertical or horizontal layout. Use justify to distribute a horizontal row and wrap so it reflows on narrow screens. For collections of equal items use Grid instead. showWhen uses the same clause syntax as form fields. Wrap a same-page History list in showWhen "!selectedId" only when Open stays on this path. Cross-page History and Chip view-switch lists stay visible — never `!selectedId`.',
     },
     Grid: {
       props: z.object({
@@ -73,7 +73,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) inside Repeat. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list while a same-page Open detail is showing. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) inside Repeat. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page Open (no navigateTo). Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button.',
     },
     Columns: {
       props: z.object({
@@ -162,7 +162,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         activePath: z.string().nullable(),
       }),
       description:
-        'Top-level navigation across pages. items is newline-separated "Label|path" where each path is a manifest page path. activePath marks the current page.',
+        'Top-level navigation across pages. items is newline-separated "Label|path" where each path is a distinct manifest page path — never two tabs with the same path. activePath marks the current page. Do not fake tabs with Chip setValue on one page when the destinations are separate pages.',
     },
     Card: {
       props: z.object({
@@ -354,6 +354,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         steps: z.string(),
         durationMs: z.union([z.number(), z.string()]).nullable().optional(),
+        actionId: z.string().nullable(),
       }),
       description:
         'Legacy step list. Do not emit — use WorkingCard when the brief names a generate wait. Existing specs still render.',
@@ -369,9 +370,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         cancelTo: z.string().nullable(),
         cancelLabel: z.string().nullable(),
         skeleton: z.boolean().nullable(),
+        actionId: z.string().nullable(),
       }),
       description:
-        'Long-run wait while a CTA is pending. Visible only while pending; hides when the answer arrives. steps is newline-separated status copy from the brief. The host rotates one current step every intervalMs (default 2500) and fills a thin bar in lockstep — one increment per step, no independent loop, no wrap. title and tip interpolate form fields (`Working on \'{targetKeyword}\' for {clientBrand}...`). estimate is duration copy such as "Usually takes 90–150s"; the host appends elapsed. cancelTo is the form page path — Cancel abandons the in-flight CTA and navigates there. skeleton defaults true and draws a document-outline placeholder under the card. Put this on the destination of a navigate-first generate, or below SubmitButton when the brief stays on the form. Do not also emit ProgressBar, ProgressSteps, or Spinner.',
+        'Long-run wait while a generate CTA is pending. Visible only while that actionId is in flight; hides when the answer arrives. The host stamps actionId when omitted. steps is newline-separated status copy from the brief. The host rotates one current step every intervalMs (default 2500) and fills a thin bar in lockstep — one increment per step, no independent loop, no wrap. title and tip interpolate form fields (`Working on \'{targetKeyword}\' for {clientBrand}...`). estimate is duration copy such as "Usually takes 90–150s"; the host appends elapsed. cancelTo is the form page path — Cancel abandons the in-flight CTA and navigates there. skeleton defaults true and draws a document-outline placeholder under the card. Put this on the destination of a navigate-first generate, or below SubmitButton when the brief stays on the form. Do not also emit ProgressBar, ProgressSteps, or Spinner. Do not reuse this card for History onLoad or other CTAs — those use the control spinner.',
     },
     ProgressBar: {
       props: z.object({
@@ -747,7 +749,7 @@ export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'Submitted form fields land in host state under "inputs" immediately on click — before the API returns. Echo them on the destination with Chip or DataText statePath "inputs.targetKeyword", or "{targetKeyword}" in Chip/Text/Heading/PageHeader. Use the home form name ({targetKeyword}, {clientBrand}), not History row keys ({keyword}, {client}) — those are Repeat item.keyword / item.client only. Field name is camelCase; labels may have spaces. Do not hope the API echoes those fields, and do not write "{Target Keyword}" expecting the label to bind unless it matches the field name after ignoring spaces and case.',
   'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names, or Repeat inside a Grid when each item needs its own Card, link, or action; a single number or string becomes Stat or KeyValue; a markdown string becomes DataText on that name or "content", never "field.content"; only fall back to DataText statePath="content" for unstructured prose or when the binding declares no outputSchema. showWhen on the results chrome must use that same key as the DataText (content or the string field), not one key for the toolbar and another for the article. Copy Markdown and Download PDF must not bind the generate API.',
   'When a binding has no outputSchema and no outputHint, do not invent Table columns or Stat metrics. Bind DataText to "content" (or Repeat/Table only if the brief names the exact collection keys). Prefer a results page of prose until an output sample is provided.',
-  'When list items already include a prose field (history[].output, items[].content), Open is Button selectItem true with no actionId; the host copies that field to content and selected, not inputs. Do not invent a second fetch for a field already on the row. Generate still navigates to Results, which echoes form names. A same-page History Open hides the list with showWhen "!selectedId" and shows the markdown with showWhen "selectedId" plus Back clearItem true. The host compiles those showWhen and clearItem props if they are missing — still emit them.',
+  'When list items already include a prose field (history[].output, items[].content), Open is Button selectItem true with no actionId; the host copies that field to content and selected, not inputs. Do not invent a second fetch for a field already on the row. Generate still navigates to Results, which echoes form names. Same-page History: Open stays on this path (no navigateTo); hide the list with showWhen "!selectedId" and show markdown with showWhen "selectedId" plus Back clearItem true — the host compiles those props if missing. Cross-page History: Open is selectItem plus navigateTo the generator or results path; the History page is always a list — never showWhen "!selectedId". Tabs Label|history and Label|home must be distinct paths. Chip view-switch History on the same page also keeps the list visible.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */

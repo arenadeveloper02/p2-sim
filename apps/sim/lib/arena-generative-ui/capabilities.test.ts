@@ -36,6 +36,13 @@ describe('capabilityRecipePrompt', () => {
     )
   })
 
+  it('splits same-page and cross-page History on select', () => {
+    const prompt = capabilityRecipePrompt(['select'])
+    expect(prompt).toContain('Same-page')
+    expect(prompt).toContain('Cross-page')
+    expect(prompt).toContain('never hide the History list')
+  })
+
   it('tells create to open a Modal with Button setValue', () => {
     expect(capabilityRecipePrompt(['create'])).toContain('setValue "creating=true"')
     expect(capabilityRecipePrompt(['create'])).toContain('Modal showWhen "creating"')

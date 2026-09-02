@@ -10,6 +10,8 @@ export {
   layoutPlanForBinding,
   layoutPlansFromBindings,
   planHasStructuredSchema,
+  proseAliasKeysFromPlans,
+  withAliasedProseState,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 export {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,

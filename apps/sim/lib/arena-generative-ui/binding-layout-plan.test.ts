@@ -11,8 +11,10 @@ import {
   isActionControlPending,
   isBoundPathPending,
   layoutPlanForBinding,
+  proseAliasKeysFromPlans,
   proseContentFromPlanState,
   resultLayoutFromPlan,
+  withAliasedProseState,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 
@@ -313,6 +315,33 @@ describe('actionStateFromPlan', () => {
     expect(state).not.toHaveProperty('assistantContent')
     expect(state).not.toHaveProperty('content')
     expect(state).not.toHaveProperty('tokens')
+  })
+
+  it('keeps a markdown content string even when outputSchema is structured', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [{ name: 'content', type: 'string' }],
+      })
+    )
+    const state = actionStateFromPlan({ content: '# Root Canal Treatment' }, plan)
+    expect(state.content).toBe('# Root Canal Treatment')
+  })
+
+  it('aliases content and a named string field onto each other', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [{ name: 'artical_data', type: 'string' }],
+      })
+    )
+    expect(proseAliasKeysFromPlans([plan])).toEqual(expect.arrayContaining(['content', 'artical_data']))
+    expect(withAliasedProseState({ artical_data: '# Body' }, ['content', 'artical_data'])).toEqual({
+      artical_data: '# Body',
+      content: '# Body',
+    })
+    expect(withAliasedProseState({ content: '# Body' }, ['content', 'artical_data'])).toEqual({
+      content: '# Body',
+      artical_data: '# Body',
+    })
   })
 })
 

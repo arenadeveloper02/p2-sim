@@ -6,6 +6,7 @@ import type { Spec } from '@json-render/core'
 import { describe, expect, it, vi } from 'vitest'
 import {
   actionStateFromData,
+  clearedSelectedIdHostState,
   clearedSelectedItemHostState,
   displayTextFromActionData,
   interpolateBindingTemplate,
@@ -378,6 +379,16 @@ describe('Repeat item scope', () => {
       selectedId: undefined,
       content: undefined,
     })
+  })
+
+  it('clears selectedId without wiping generate content', () => {
+    expect(clearedSelectedIdHostState()).toEqual({
+      error: undefined,
+      schemaWarning: undefined,
+      selected: undefined,
+      selectedId: undefined,
+    })
+    expect(clearedSelectedIdHostState()).not.toHaveProperty('content')
   })
 
   it('detects same-page selectItem when navigateTo is omitted or is this page', () => {
