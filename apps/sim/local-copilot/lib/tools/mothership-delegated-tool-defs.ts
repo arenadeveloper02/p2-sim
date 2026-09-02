@@ -40,7 +40,9 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Live web search via Exa (same keys as the Exa block: workspace EXA_API_KEY, BYOK, or hosted). Call this FIRST for real-world factual / current questions (who/what/when/where, news, prices, weather) — do not answer from memory. For citation-heavy Q&A you may use invoke_integration_tool with exa_answer instead. REQUIRED: query and toolTitle.',
   enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
-    'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
+    'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools. DEFAULT-FIRST: omit sandboxId unless a required npm/PyPI/apt package or managed CLI is missing from the default Function image.',
+  manage_sandbox:
+    'Creates, lists, updates, or deletes a persistent Sim sandbox (custom E2B image with npm/PyPI deps, Debian packages, and managed CLIs). Use add when function_execute fails because a third-party package is missing, then pass the returned sandboxId to function_execute. Required: operation (add|edit|list|delete). add also needs name and language (javascript|python).',
   edit_content:
     'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — never require/import. PPTX: SLIDE_W/MARGIN/CONTENT_W, title + bullets, one idea per slide. DOCX: __docxDocOptions + HeadingLevel + addSection (never docx.addSection). PDF: LETTER pages, margins, wrapped text. Markdown: finished GFM. Never a single unstyled dump. Never emit in the same batch as workspace_file.',
   deploy_chat:
@@ -162,6 +164,7 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'search_online',
   'enrichment_run',
   'function_execute',
+  'manage_sandbox',
   'edit_content',
   'deploy_chat',
   'get_block_outputs',

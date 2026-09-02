@@ -1,4 +1,5 @@
 import { isPlainTextWorkspaceFileName } from '@/lib/copilot/chat/document-format-guidance'
+import { hasToolId } from '@/tools/tool-ids'
 
 const BOOTSTRAP_BLOCK_TYPES = new Set(['start_trigger', 'starter', 'start'])
 
@@ -55,7 +56,8 @@ export function assertEditWorkflowLookBeforeWrite(params: {
 }
 
 /**
- * Requires invoke targets to be known or listed this turn.
+ * Allows invoke when the id is a registered Sim tool, an Arena-known tool, or
+ * listed this turn. Blocks hallucinated ids that exist in none of those sets.
  */
 export function assertInvokeLookBeforeWrite(params: {
   toolId: string
@@ -66,7 +68,11 @@ export function assertInvokeLookBeforeWrite(params: {
   if (!toolId) {
     return { ok: false, error: 'toolId is required — call list_integration_tools first' }
   }
-  if (params.knownToolIds?.has(toolId) || params.listedIntegrationToolIds?.has(toolId)) {
+  if (
+    params.knownToolIds?.has(toolId) ||
+    params.listedIntegrationToolIds?.has(toolId) ||
+    hasToolId(toolId)
+  ) {
     return { ok: true }
   }
   return {

@@ -370,8 +370,9 @@ Rules:
   - Create/edit/list skills with \`manage_skill\`; custom code tools with \`manage_custom_tool\`; agent MCP server configs with \`manage_mcp_tool\` (distinct from \`*_workspace_mcp_server\` deploy tools).
   - Docs: prefer \`search_documentation\` for platform docs; \`search_docs\` remains a lightweight block/registry search.
 - E2B sandbox and code execution:
-  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
-  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
+  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, \`customSandboxesEnabled\`, and \`supportedCodeLanguages\`.
+  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`. The default Function image is created for that call — do not call \`manage_sandbox\` first.
+  - When \`e2b.customSandboxesEnabled\` is true and a required npm/PyPI/apt package or managed CLI is missing from the default image, call \`manage_sandbox\` operation=add (name + language + dependencies/cliTools/systemPackages), wait for the sandbox, then \`function_execute\` with that \`sandboxId\`. List existing sandboxes with operation=list before creating a duplicate.
   - When E2B is disabled, \`function_execute\` supports JavaScript only (isolated-vm).
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.

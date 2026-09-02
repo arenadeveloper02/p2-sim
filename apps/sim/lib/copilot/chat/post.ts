@@ -5,7 +5,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
@@ -75,7 +75,10 @@ import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
-import { resolveLocalCopilotRequestCatalogId } from '@/local-copilot/lib/model-catalog'
+import {
+  remapLegacyLocalCopilotCatalogId,
+  resolveLocalCopilotRequestCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
@@ -558,6 +561,33 @@ async function resolveAgentContexts(params: {
   }
 
   return agentContexts
+}
+
+/**
+ * Existing Local chats created under the hosted Opus default still store
+ * `claude-opus-4-8`. Rewrite that leftover onto the generic Claude picker id
+ * so follow-up turns and `copilot_messages.model` stop carrying the old id.
+ */
+async function migrateLegacyLocalCopilotChatModel(
+  chatId: string,
+  userId: string
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ model: copilotChats.model })
+    .from(copilotChats)
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+    .limit(1)
+
+  const storedModel = row?.model ?? undefined
+  const remapped = remapLegacyLocalCopilotCatalogId(storedModel)
+  if (!remapped) return storedModel
+
+  await db
+    .update(copilotChats)
+    .set({ model: remapped, updatedAt: new Date() })
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+
+  return storedModel
 }
 
 async function persistUserMessage(params: {
@@ -1094,7 +1124,14 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     let localCatalogId: string | undefined
     if (copilotBackend === 'local') {
-      localCatalogId = resolveLocalCopilotRequestCatalogId(body.model?.trim(), defaultModel)
+      const storedChatModel = body.chatId
+        ? await migrateLegacyLocalCopilotChatModel(body.chatId, authenticatedUserId)
+        : undefined
+      localCatalogId = resolveLocalCopilotRequestCatalogId(
+        body.model?.trim(),
+        defaultModel,
+        storedChatModel
+      )
     }
 
     const userMetadata = {
