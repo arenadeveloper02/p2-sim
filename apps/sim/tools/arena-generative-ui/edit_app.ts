@@ -50,7 +50,8 @@ export const arenaGenerativeUiEditTool: ToolConfig<
       type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Updated API bindings; omit to keep the previous list',
+      description:
+        'Updated API bindings; Copilot may send stubs [{ key, kind, workflowId }] or [{ key, kind: "http", curl }]',
     },
     designNotes: {
       type: 'string',

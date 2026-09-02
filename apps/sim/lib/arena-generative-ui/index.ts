@@ -41,6 +41,10 @@ export {
   inspectHttpBindingUrl,
   isHttpUrlAllowlisted,
 } from '@/lib/arena-generative-ui/http-allowlist'
+export {
+  hydrateApiBindingsForCopilot,
+  hydrateArenaGenerativeUiApiBindingsInOperations,
+} from '@/lib/arena-generative-ui/hydrate-api-bindings'
 export type { ArenaGenerativeIntent } from '@/lib/arena-generative-ui/intent-analyzer'
 export {
   analyzeArenaGenerativeIntent,
@@ -54,12 +58,6 @@ export {
   parsePageHints,
 } from '@/lib/arena-generative-ui/parse-inputs'
 export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
-export type { ArenaGenerativeVisualBrief } from '@/lib/arena-generative-ui/visual-brief'
-export {
-  formatVisualBriefMatchNotes,
-  parseArenaGenerativeVisualBrief,
-  parseStoredVisualBrief,
-} from '@/lib/arena-generative-ui/visual-brief'
 export {
   checkGenerativeAppActionRateLimit,
   GENERATIVE_APP_ACTION_IP_RATE_LIMIT,
@@ -95,3 +93,9 @@ export {
   compileGenerativeUx,
 } from '@/lib/arena-generative-ui/ux-compiler'
 export { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'
+export type { ArenaGenerativeVisualBrief } from '@/lib/arena-generative-ui/visual-brief'
+export {
+  formatVisualBriefMatchNotes,
+  parseArenaGenerativeVisualBrief,
+  parseStoredVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'

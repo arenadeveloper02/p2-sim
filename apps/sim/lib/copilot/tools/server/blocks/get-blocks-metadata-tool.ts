@@ -27,6 +27,7 @@ interface CopilotSubblockMetadata {
   required?: boolean
   description?: string
   placeholder?: string
+  tooltip?: string
   layout?: string
   mode?: string
   hidden?: boolean
@@ -515,6 +516,13 @@ function extractInputs(metadata: CopilotBlockMetadata): {
       description,
     }
 
+    if (schema.tooltip) {
+      input.tooltip = schema.tooltip
+    }
+    if (schema.placeholder) {
+      input.placeholder = schema.placeholder
+    }
+
     if (schema.options && schema.options.length > 0) {
       input.options = schema.options.map((opt) => opt.id || opt.label)
     }
@@ -702,6 +710,7 @@ function processSubBlock(sb: any): CopilotSubblockMetadata {
     required: sb.required,
     description: sb.description,
     placeholder: sb.placeholder,
+    tooltip: sb.tooltip,
     layout: sb.layout,
     mode: sb.mode,
     hidden: sb.hidden,

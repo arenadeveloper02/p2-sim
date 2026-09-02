@@ -96,6 +96,7 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     )
     expect(apiBindings?.importHelper).toBe('arena-api-binding')
     expect(apiBindings?.readOnly).toBe(true)
+    expect(apiBindings?.copilotWritable).toBe(true)
     expect(apiBindings?.maxHeight).toBe(96)
   })
 

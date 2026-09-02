@@ -7,6 +7,7 @@ import {
   SANDBOX_CLI_TOOLS,
   SANDBOX_SELECTABLE_CLI_TOOL_IDS,
 } from '@/lib/execution/remote-sandbox/cli-tools'
+import { ArenaGenerativeUiBlock } from '@/blocks/blocks/arena-generative-ui'
 import type { BlockConfig } from '@/blocks/types'
 import { hostedKeyEnabledWhen } from '@/tools/hosting'
 import type { ToolConfig } from '@/tools/types'
@@ -374,6 +375,18 @@ describe('hosted-key VFS metadata', () => {
 
     expect(schema.subBlocks.map((subBlock: { id: string }) => subBlock.id)).toEqual(['prompt'])
     expect(schema.inputs).toEqual({ prompt: { type: 'string' } })
+  })
+
+  it('does not mark Arena Generative UI apiBindings read-only and keeps the tooltip', () => {
+    const schema = JSON.parse(serializeBlockSchema(ArenaGenerativeUiBlock))
+    const apiBindings = schema.subBlocks.find(
+      (subBlock: { id: string }) => subBlock.id === 'apiBindings'
+    )
+
+    expect(apiBindings.readOnly).toBeUndefined()
+    expect(apiBindings.tooltip).toContain('qualify_lead')
+    expect(apiBindings.placeholder).toContain('qualify_lead')
+    expect(schema.inputs.apiBindings.description).toContain('workflowId')
   })
 })
 

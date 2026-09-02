@@ -331,6 +331,11 @@ Rules:
 - Other deployment surfaces:
   - API endpoint: \`deploy_api\` (versionName + versionDescription required on deploy; returns endpoint + curl examples — share them). Update an existing API deployment with \`redeploy\`.
   - MCP tool: \`list_workspace_mcp_servers\` first; \`create_workspace_mcp_server\` when none fits; then \`deploy_mcp\` with the serverId. The workflow must be deployed as API first.
+  - GUI apps (Arena Generative UI):
+    - Place \`arena_generative_ui\`, then call get_blocks_metadata once including that type.
+    - If CTAs should call other workflows, \`deploy_api\` those backends first (versionName + versionDescription required).
+    - Set \`apiBindings\` via edit_workflow as stubs: \`[{ "key": "qualify_lead", "kind": "workflow", "workflowId": "<id>", "stream": true }]\` or \`[{ "key": "search", "kind": "http", "curl": "curl -X POST https://…" }]\`. The host hydrates inputSchema from the deployed Start block (visitorEmail for userEmail/loggedInEmail; a field named email stays a form lead address) or from the curl. Name those same keys in \`userInput\`. Do not invent keys the user did not name. Leave bindings blank only for navigation-only apps. Do not set \`inputMapping: { email: "arenaEmailId" }\`. Do not add an email field to the brief unless it is a lead/contact address.
+    - Run the block to generate a draft. There is no Copilot tool to publish a GUI app — tell the user to open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
   - Versions: \`get_deployment_log\` lists versions; \`promote_to_live\` promotes a numeric version (confirm with the user first unless explicitly requested); \`load_deployment\` loads a past version (or "live") into the draft; \`update_deployment_version\` edits version name/description.
 - Workflow management:
   - \`rename_workflow\` (workflowId + name), \`move_workflow\` / \`delete_workflow\` (workflowIds arrays), \`manage_folder\` for folder create/rename/move/delete.

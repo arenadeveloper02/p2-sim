@@ -356,6 +356,11 @@ export interface SubBlockConfig {
    */
   password?: boolean
   readOnly?: boolean
+  /**
+   * When true, Copilot may set this field even if `readOnly` (the editor is
+   * owned by an import helper, not a display-only computed value).
+   */
+  copilotWritable?: boolean
   showCopyButton?: boolean
   connectionDroppable?: boolean
   hidden?: boolean

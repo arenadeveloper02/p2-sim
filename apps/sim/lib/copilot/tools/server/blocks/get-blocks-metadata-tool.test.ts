@@ -21,7 +21,9 @@ import {
   computeBlockLevelInputs,
   getBlocksMetadataServerTool,
 } from '@/lib/copilot/tools/server/blocks/get-blocks-metadata-tool'
+import { ArenaGenerativeUiBlock } from '@/blocks/blocks/arena-generative-ui'
 import { MothershipBlock } from '@/blocks/blocks/mothership'
+import { getBlock } from '@/blocks/registry'
 
 describe('get blocks metadata', () => {
   beforeEach(() => {
@@ -47,5 +49,37 @@ describe('get blocks metadata', () => {
     expect(result.metadata).toHaveProperty('loop')
     expect(result.metadata).toHaveProperty('slack')
     expect(result.metadata).not.toHaveProperty('notion')
+  })
+
+  it('surfaces Arena Generative UI apiBindings tooltip and Copilot stub contract', async () => {
+    vi.mocked(getBlock).mockImplementation((type: string) =>
+      type === 'arena_generative_ui' ? ArenaGenerativeUiBlock : undefined
+    )
+
+    expect(computeBlockLevelInputs(ArenaGenerativeUiBlock).apiBindings.description).toContain(
+      'workflowId'
+    )
+
+    const result = await getBlocksMetadataServerTool.execute(
+      { blockIds: ['arena_generative_ui'] },
+      { userId: 'user-1' }
+    )
+
+    const metadata = result.metadata.arena_generative_ui
+    expect(metadata).toBeDefined()
+    expect(metadata.bestPractices).toContain('edit_workflow')
+    expect(metadata.bestPractices).toContain('stubs')
+    expect(metadata.bestPractices).toContain('Deploy → GUI App')
+
+    const apiBindings = [
+      ...(metadata.inputs?.optional ?? []),
+      ...(metadata.inputs?.required ?? []),
+    ].find((field: { name: string }) => field.name === 'apiBindings')
+    expect(apiBindings).toBeDefined()
+    expect(apiBindings.readOnly).toBeUndefined()
+    expect(apiBindings.description).toContain('workflowId')
+    expect(apiBindings.description).toContain('visitorEmail')
+    expect(apiBindings.tooltip).toContain('qualify_lead')
+    expect(apiBindings.tooltip).toContain('outputSchema')
   })
 })

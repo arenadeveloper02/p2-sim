@@ -175,6 +175,22 @@ const genericWebhookBlockConfig = {
   ],
 }
 
+const arenaGenerativeUiBlockConfig = {
+  type: 'arena_generative_ui',
+  name: 'Arena Generative UI',
+  outputs: {},
+  subBlocks: [
+    {
+      id: 'apiBindings',
+      type: 'code',
+      readOnly: true,
+      copilotWritable: true,
+      importHelper: 'arena-api-binding',
+    },
+    { id: 'userInput', type: 'long-input' },
+  ],
+}
+
 const mothershipBlockConfig = {
   type: 'mothership',
   name: 'Sim Chat',
@@ -242,6 +258,7 @@ const blockConfigsByType: Record<string, unknown> = {
   throw_selector_block: throwSelectorBlockConfig,
   generic_webhook: genericWebhookBlockConfig,
   mothership: mothershipBlockConfig,
+  arena_generative_ui: arenaGenerativeUiBlockConfig,
 }
 
 vi.mock('@/blocks/registry', () => ({
@@ -250,6 +267,8 @@ vi.mock('@/blocks/registry', () => ({
 
 vi.mock('@/blocks/utils', () => ({
   getModelOptions: mockGetModelOptions,
+  getAgentModelOptions: mockGetModelOptions,
+  getPiModelOptions: mockGetModelOptions,
 }))
 
 vi.mock('@/tools/utils', () => ({
@@ -407,6 +426,19 @@ describe('validateInputsForBlock', () => {
     expect(result.validInputs.webhookUrlDisplay).toBeUndefined()
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]?.error).toContain('read-only')
+  })
+
+  it('accepts Copilot writes to arena_generative_ui apiBindings despite UI readOnly', () => {
+    const bindings = '[{"key":"qualify_lead","kind":"workflow","workflowId":"wf-1"}]'
+    const result = validateInputsForBlock(
+      'arena_generative_ui',
+      { apiBindings: bindings, userInput: 'Submit calls qualify_lead' },
+      'gui-1'
+    )
+
+    expect(result.errors).toHaveLength(0)
+    expect(result.validInputs.apiBindings).toBe(bindings)
+    expect(result.validInputs.userInput).toBe('Submit calls qualify_lead')
   })
 
   it('rejects server-only Sim Chat secret-mount policy inputs', () => {

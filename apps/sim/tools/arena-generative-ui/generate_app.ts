@@ -44,7 +44,8 @@ export const arenaGenerativeUiGenerateTool: ToolConfig<
       type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Named workflow or HTTP APIs CTAs may call',
+      description:
+        'Named CTA backends. Prefer stubs [{ "key", "kind": "workflow", "workflowId", "stream"? }] or [{ "key", "kind": "http", "curl" }]; the host fills inputSchema. Leave blank for navigation-only.',
     },
     designNotes: {
       type: 'string',

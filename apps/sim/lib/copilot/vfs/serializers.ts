@@ -575,6 +575,9 @@ function serializeSubBlock(sb: SubBlockConfig): Record<string, unknown> {
   }
   if (sb.title) result.title = sb.title
   if (sb.required === true) result.required = true
+  if (sb.description) result.description = sb.description
+  if (sb.placeholder) result.placeholder = sb.placeholder
+  if (sb.tooltip) result.tooltip = sb.tooltip
   if (sb.defaultValue !== undefined) result.defaultValue = sb.defaultValue
   if (sb.mode) result.mode = sb.mode
   if (sb.canonicalParamId) result.canonicalParamId = sb.canonicalParamId

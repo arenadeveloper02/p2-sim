@@ -38,6 +38,14 @@ import type {
 import { SELECTOR_TYPES } from './types'
 
 const validationLogger = createLogger('EditWorkflowValidation')
+
+/**
+ * `readOnly` locks the editor (computed display, or an import helper). Copilot
+ * may still write import-helper fields that are the source of truth.
+ */
+function isCopilotWritableReadOnly(subBlock: SubBlockConfig): boolean {
+  return subBlock.copilotWritable === true || subBlock.importHelper === 'arena-api-binding'
+}
 const agentToolLintLogger = createLogger('EditWorkflowAgentToolLint')
 
 /**
@@ -231,7 +239,8 @@ export function validateInputsForBlock(
 
     // Display-only fields (e.g. webhookUrlDisplay, samplePayload) are computed or
     // static in the UI; a written value would be dead state the UI never shows.
-    if (subBlockConfig.readOnly === true) {
+    // Import-helper fields stay readOnly in the editor but Copilot may set them.
+    if (subBlockConfig.readOnly === true && !isCopilotWritableReadOnly(subBlockConfig)) {
       errors.push({
         blockId,
         blockType,

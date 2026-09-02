@@ -7,6 +7,7 @@ import {
 } from '@sim/platform-authz/workflow'
 import { toError } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
+import { hydrateArenaGenerativeUiApiBindingsInOperations } from '@/lib/arena-generative-ui/hydrate-api-bindings'
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
 import { getBlockVisibilityForCopilot } from '@/lib/copilot/block-visibility'
 import { EditWorkflow } from '@/lib/copilot/generated/tool-catalog-v1'
@@ -166,6 +167,20 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
       )
       operationsToApply = filteredOperations
       credentialErrors.push(...credErrors)
+    }
+
+    const { warnings: apiBindingWarnings } = await hydrateArenaGenerativeUiApiBindingsInOperations(
+      operationsToApply,
+      {
+        workspaceId,
+        existingBlocks: workflowState.blocks,
+      }
+    )
+    if (apiBindingWarnings.length > 0) {
+      logger.warn('Hydrated Copilot API bindings with warnings', {
+        workflowId,
+        warnings: apiBindingWarnings,
+      })
     }
 
     // Apply operations directly to the workflow state
@@ -431,6 +446,10 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
       ...(sanitizationWarnings && {
         sanitizationWarnings,
         sanitizationMessage: `${sanitizationWarnings.length} field(s) were automatically sanitized: ${sanitizationWarnings.join('; ')}`,
+      }),
+      ...(apiBindingWarnings.length > 0 && {
+        apiBindingWarnings,
+        apiBindingMessage: apiBindingWarnings.join(' '),
       }),
     }
   },

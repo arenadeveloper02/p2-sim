@@ -30,10 +30,12 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   - User Input describes the app: pages, copy, which API, navigation, empty states. Do not ask for loaders, toasts, or confirm dialogs — the host compiles those.
   - Or upload Screenshots of the UI to match. Arena approximates layout, copy, and regions with catalog components — it will not clone pixels or custom widgets.
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
-  - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
-  - Use "Add an API" rather than writing bindings by hand: pick a workflow and Sim fills inputSchema from its deployed start block, or paste a curl for an HTTP endpoint.
-  - Every CTA input carries arenaEmailId, the visitor's Arena email. It is NOT verified, so never use it to decide what a user may see. HTTP bindings only receive it when the binding opts in.
-  - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
+  - Set apiBindings when CTAs should call a deployed workflow or HTTP URL. Copilot should write a JSON array of stubs — [{ "key": "qualify_lead", "kind": "workflow", "workflowId": "<id>", "stream": true }] or [{ "key": "search", "kind": "http", "curl": "curl -X POST https://…" }]. The host fills inputSchema from the deployed Start block (and HTTP from the curl). Leave it blank only for navigation-only apps; do not invent keys the user did not name. Name those same keys in User Input (e.g. "Submit calls qualify_lead").
+  - Set "stream": true to stream tokens into DataText. Do not add inputMapping { "email": "arenaEmailId" } — that is redundant and must not drop form fields.
+  - Visitor email is host-stamped onto Start fields named userEmail / loggedInEmail / visitorEmail. Do not put an email field in the brief unless it is a lead/contact address (a field named email).
+  - Humans use Add an API in the editor; Copilot must set apiBindings on the block via edit_workflow (the JSON textarea stays locked in the UI).
+  - After a successful run, tell the user to open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}. There is no Copilot tool to publish a GUI app.
+  - Backend workflows should be deploy_api'd before GUI App publish. Copilot can deploy those workflows first.
   - Use Edit mode with an existing draft to change pages, copy, or CTA wiring. Put only the delta in Requested Changes — the draft already carries the original brief, and anything you do not mention is kept as-is.
   - Name the page you mean in Requested Changes ("on the results page, ..."). Edits are scoped to the pages your request names, so a page it never mentions is left byte-identical and costs nothing to re-emit.
   - As an Agent tool: attach Arena Generative UI, pick Generate or Edit, then preview/launch from Deploy → GUI App on this workflow.
@@ -175,6 +177,7 @@ Return ONLY the specification text.`,
       language: 'json',
       importHelper: 'arena-api-binding',
       readOnly: true,
+      copilotWritable: true,
       maxHeight: 96,
       placeholder:
         '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify","stream":true}]',
@@ -231,13 +234,20 @@ Return ONLY the specification text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'generate or edit' },
-    userInput: { type: 'string', description: 'App brief (Generate). Optional when screenshots are set.' },
+    userInput: {
+      type: 'string',
+      description: 'App brief (Generate). Optional when screenshots are set.',
+    },
     screenshots: { type: 'json', description: 'UI screenshots to match (UserFile[])' },
     editInstructions: { type: 'string', description: 'Requested changes only (Edit)' },
     existingDraftId: { type: 'string', description: 'Draft to edit' },
     pages: { type: 'json', description: 'Optional page sitemap' },
     entryPath: { type: 'string', description: 'Opening page path' },
-    apiBindings: { type: 'json', description: 'Named CTA backends' },
+    apiBindings: {
+      type: 'json',
+      description:
+        'Named CTA backends. Copilot writes a JSON array of stubs: [{ "key", "kind": "workflow", "workflowId", "stream"? }] or [{ "key", "kind": "http", "curl" }]. The host hydrates inputSchema from the deployed Start block (visitorEmail for userEmail/loggedInEmail; a field named email stays a form lead address) or from the curl. Use the same key in User Input. Leave blank for navigation-only. Do not invent keys. Do not set inputMapping email→arenaEmailId.',
+    },
     designNotes: { type: 'string', description: 'Optional design notes' },
   },
   outputs: {
