@@ -116,7 +116,7 @@ export const ARENA_COMPARISON_SECTIONS: ComparisonSection[] = [
     title: 'Features',
     rows: [
       {
-        label: 'Sim Mailer (Inbox)',
+        label: 'Mailer (Inbox)',
         values: [true, true, true],
       },
       {
