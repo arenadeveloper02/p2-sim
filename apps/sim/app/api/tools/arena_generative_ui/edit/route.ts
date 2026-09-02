@@ -2,11 +2,11 @@ import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { arenaGenerativeEditContract } from '@/lib/api/contracts/arena-generative-apps'
-import { parseRequest } from '@/lib/api/server'
 import { runArenaGenerativeUi } from '@/lib/arena-generative-ui/run-generate'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { parseArenaGenerativeUiRequest } from '@/app/api/tools/arena_generative_ui/parse-request'
 import { mapArenaGenerativeResultToToolResponse } from '@/tools/arena-generative-ui/map-response'
 
 const logger = createLogger('ArenaGenerativeUiEditAPI')
@@ -29,7 +29,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
   }
 
-  const parsed = await parseRequest(arenaGenerativeEditContract, request, {})
+  const parsed = await parseArenaGenerativeUiRequest(arenaGenerativeEditContract, request)
   if (!parsed.success) return parsed.response
 
   const result = await runArenaGenerativeUi({

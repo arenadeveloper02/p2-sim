@@ -94,22 +94,25 @@ export const arenaGenerativeApiBindingSchema = z
       z.array(z.string().min(1).max(400)).max(4).optional()
     ),
     stream: z.boolean().optional(),
-    pagination: z
-      .object({
-        mode: z.enum(['cursor', 'offset']),
-        items: z
-          .string()
-          .min(1, 'pagination.items is required')
-          .max(64)
-          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'pagination.items must be a top-level array key'),
-        cursor: z.string().min(1).max(64).optional(),
-        cursorParam: z.string().min(1).max(64).optional(),
-        offsetParam: z.string().min(1).max(64).optional(),
-        limitParam: z.string().min(1).max(64).optional(),
-        limit: z.number().int().min(1).max(100).optional(),
-        hasMore: z.string().min(1).max(64).optional(),
-      })
-      .optional(),
+    pagination: z.preprocess(
+      omitEmptyOptionalJson,
+      z
+        .object({
+          mode: z.enum(['cursor', 'offset']),
+          items: z
+            .string()
+            .min(1, 'pagination.items is required')
+            .max(64)
+            .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'pagination.items must be a top-level array key'),
+          cursor: z.string().min(1).max(64).optional(),
+          cursorParam: z.string().min(1).max(64).optional(),
+          offsetParam: z.string().min(1).max(64).optional(),
+          limitParam: z.string().min(1).max(64).optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+          hasMore: z.string().min(1).max(64).optional(),
+        })
+        .optional()
+    ),
   })
   .superRefine((binding, ctx) => {
     if (binding.kind === 'workflow' && !binding.workflowId) {

@@ -1,5 +1,6 @@
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import { mapArenaGenerativeResultToToolResponse } from '@/tools/arena-generative-ui/map-response'
+import { arenaGenerativeToolRequestBody } from '@/tools/arena-generative-ui/request-body'
 import type {
   ArenaGenerativeUiParams,
   ArenaGenerativeUiResponse,
@@ -65,18 +66,7 @@ export const arenaGenerativeUiEditTool: ToolConfig<
     method: 'POST',
     timeout: ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS,
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      editInstructions: params.editInstructions,
-      existingDraftId: params.existingDraftId,
-      screenshots: params.screenshots,
-      pages: params.pages,
-      entryPath: params.entryPath,
-      apiBindings: params.apiBindings,
-      designNotes: params.designNotes,
-      workspaceId: params._context?.workspaceId,
-      workflowId: params._context?.workflowId,
-      executionId: params._context?.executionId,
-    }),
+    body: (params) => arenaGenerativeToolRequestBody(params),
   },
   transformResponse: async (response) => {
     const data = await response.json()
