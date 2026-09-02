@@ -6,11 +6,13 @@ import {
   ChevronDown,
   Chip,
   ChipCombobox,
+  ChipInput,
   ChipSwitch,
   CollapsibleCard,
   cn,
   FieldDivider,
   Label,
+  OverflowText,
   Tooltip,
 } from '@sim/emcn'
 import { ArrowRight } from '@sim/emcn/icons'
@@ -32,10 +34,17 @@ import {
   forkBlockerResolution,
 } from '@/ee/workspace-forking/components/fork-sync/cleared-refs-list'
 import { forkRefKey } from '@/ee/workspace-forking/components/fork-sync/copy-reconciliation'
+import {
+  CUSTOM_BLOCK_UNSUPPORTED_HINT,
+  customBlockBooleanOptions,
+  forkDependentControl,
+} from '@/ee/workspace-forking/components/fork-sync/custom-block-input-control'
+import { CustomBlockInputField } from '@/ee/workspace-forking/components/fork-sync/custom-block-input-field'
 import { DependentFieldSelector } from '@/ee/workspace-forking/components/fork-sync/dependent-field-selector'
 import {
   applyDependentRepick,
   type DependentConfigurationState,
+  type DependentReconfigState,
   dependentKey,
   effectiveCopyDependentValue,
   effectiveDependentValue,
@@ -109,7 +118,7 @@ interface WorkflowDependents {
 function groupDependentsByWorkflow(
   workflows: ForkResourceUsage['workflows'],
   dependents: ForkDependentReconfig[],
-  reconfig: Record<string, string>,
+  reconfig: DependentReconfigState,
   state: DependentConfigurationState,
   showConfigured: boolean
 ): WorkflowDependents[] {
@@ -181,8 +190,8 @@ interface DependentSelectorProps {
   copying: boolean
   workspaceId: string
   sourceWorkspaceId: string
-  reconfig: Record<string, string>
-  setReconfig: Dispatch<SetStateAction<Record<string, string>>>
+  reconfig: DependentReconfigState
+  setReconfig: Dispatch<SetStateAction<DependentReconfigState>>
 }
 
 /**
@@ -204,10 +213,72 @@ function DependentSelector({
   reconfig,
   setReconfig,
 }: DependentSelectorProps) {
-  const effectiveValue = (f: ForkDependentReconfig) =>
-    copying
-      ? effectiveCopyDependentValue(f, reconfig)
-      : effectiveDependentValue(f, reconfig, parentChanged)
+  // `effectiveDependentValue` owns the custom-block carve-out, so the value shown here is the
+  // same one the Sync gate and the submitted payload see.
+  const isCustomBlockInput = field.parentKind === 'custom-block'
+  const effectiveValueIn = (f: ForkDependentReconfig, state: DependentReconfigState) =>
+    copying && !isCustomBlockInput
+      ? effectiveCopyDependentValue(f, state)
+      : effectiveDependentValue(f, state, parentChanged)
+  const baselineValueFor = (f: ForkDependentReconfig) => effectiveValueIn(f, {})
+  const effectiveValue = (f: ForkDependentReconfig) => effectiveValueIn(f, reconfig)
+  // A dependent with no selector has no parent resource to browse and no options to fetch —
+  // just a value to type. That is every custom-block input, and also a plain text field under
+  // a remapped credential (a Jira issue type, a Notion block id), which the sync clears on
+  // every push and so must be re-settable here.
+  if (!field.selectorKey) {
+    // Renders a BARE control, like `DependentFieldSelector` does — the row wrapper above
+    // already draws the field's label and required marker, so a labelled `ChipModalField`
+    // printed the title twice.
+    const setValue = (value: string) =>
+      setReconfig((current) => ({ ...current, [dependentKey(field)]: value }))
+    const value = effectiveValue(field)
+    switch (forkDependentControl(field)) {
+      case 'switch':
+        return (
+          <ChipSwitch
+            options={customBlockBooleanOptions(field.required)}
+            // Passed through unmapped: an unset field is `''`, which matches neither segment,
+            // so the switch renders with nothing selected. Coercing it to False would show a
+            // required flag as configured while the Sync gate still reads it as empty.
+            value={value}
+            onChange={setValue}
+            aria-label={field.title}
+          />
+        )
+      case 'textarea':
+        return (
+          <CustomBlockInputField
+            field={field}
+            value={value}
+            onChange={setValue}
+            targetWorkspaceId={workspaceId}
+            multiline
+          />
+        )
+      case 'unsupported':
+        return (
+          <ChipInput
+            className='w-full'
+            value=''
+            onChange={() => {}}
+            disabled
+            placeholder={CUSTOM_BLOCK_UNSUPPORTED_HINT}
+            aria-label={field.title}
+          />
+        )
+      default:
+        return (
+          <CustomBlockInputField
+            field={field}
+            value={value}
+            onChange={setValue}
+            targetWorkspaceId={workspaceId}
+          />
+        )
+    }
+  }
+
   const { providedValues, providedContextKeys } = blockChainState(block, field, effectiveValue)
   // Disabled until every in-block parent it depends on has a value, so a child never queries
   // a stale upstream value.
@@ -225,12 +296,19 @@ function DependentSelector({
         ...providedValues,
         // Owning workspace, for workspace-scoped selectors like table.columns.
         workspaceId: copying ? sourceWorkspaceId : workspaceId,
-        [field.parentContextKey]: parentValue,
+        ...(field.parentContextKey ? { [field.parentContextKey]: parentValue } : {}),
       }}
       enabled={parentValue !== '' && ready}
       value={effectiveValue(field)}
       onChange={(value) =>
-        setReconfig((current) => applyDependentRepick(current, field, block.fields, value))
+        setReconfig((current) =>
+          // The pre-pick value comes from the state being updated, so re-selecting the value
+          // already shown is recognised as the no-op it is and leaves descendants intact.
+          applyDependentRepick(current, field, block.fields, value, {
+            previousValue: effectiveValueIn(field, current),
+            baselineValueFor,
+          })
+        )
       }
       title={field.title}
     />
@@ -246,8 +324,8 @@ interface DependentWorkflowCardProps {
   copying: boolean
   workspaceId: string
   sourceWorkspaceId: string
-  reconfig: Record<string, string>
-  setReconfig: Dispatch<SetStateAction<Record<string, string>>>
+  reconfig: DependentReconfigState
+  setReconfig: Dispatch<SetStateAction<DependentReconfigState>>
 }
 
 /**
@@ -405,7 +483,9 @@ function MappingEntry({ controller, group, entry }: MappingEntryProps) {
     <div className='flex flex-col gap-2'>
       <div className='flex flex-col gap-1'>
         <div className='flex items-center justify-between gap-4'>
-          <Label className='min-w-0 truncate'>{entry.sourceLabel}</Label>
+          <Label className='min-w-0'>
+            <OverflowText label={entry.sourceLabel} />
+          </Label>
           <div className={MAPPING_TARGET_TRIGGER_CLASS}>
             <ChipCombobox
               className='w-full'
@@ -447,8 +527,8 @@ function MappingEntry({ controller, group, entry }: MappingEntryProps) {
         {entry.sourceDeleted ? (
           <p className='text-[var(--text-muted)] text-small'>
             Deleted in the source — its name can't be shown. Map it to an existing{' '}
-            {FORK_RESOURCE_KIND_LABEL[entry.kind] ?? 'resource'} in the target, or fix the reference
-            in the source and redeploy.
+            {FORK_RESOURCE_KIND_LABEL[entry.kind] ?? 'resource'} in {controller.targetWorkspaceName}
+            , or fix the reference in the source and redeploy.
           </p>
         ) : null}
         {entry.candidatesTruncated ? (
@@ -536,7 +616,7 @@ function MappingKindRow({ controller, group, summary }: MappingKindRowProps) {
         onClick={() => setOpen((value) => !value)}
         className='flex w-full items-center gap-2 text-left text-[var(--text-body)] text-sm transition-colors hover:text-[var(--text-primary)]'
       >
-        <span className='min-w-0 flex-1 truncate'>{group.label}</span>
+        <OverflowText label={group.label} className='flex-1' />
         <Badge variant={badge.variant} size='sm' dot>
           {badge.label}
         </Badge>
@@ -656,14 +736,11 @@ function TriggerMappingRow({ controller, mapping }: TriggerMappingRowProps) {
   return (
     <div className='flex flex-col gap-1'>
       <div className='flex items-center justify-between gap-4'>
-        {/* One inner span, so the name and its "in <workflow>" suffix share a normal inline flow:
-            `Label` is inline-flex, and a flex container DISCARDS whitespace-only children, which
-            eats the separating space (and leaves `truncate` with no text run to clip). */}
         <Label className='min-w-0'>
-          <span className='min-w-0 truncate'>
+          <OverflowText label={`${mapping.blockName} in ${mapping.workflowName}`}>
             {mapping.blockName}{' '}
             <span className='text-[var(--text-muted)]'>in {mapping.workflowName}</span>
-          </span>
+          </OverflowText>
         </Label>
         <div className={MAPPING_TARGET_TRIGGER_CLASS}>
           {decidable ? (
@@ -949,9 +1026,20 @@ export function ForkSyncView({ controller, onDirectionChange }: ForkSyncViewProp
                   className='flex min-w-0 items-start justify-between gap-3 text-[var(--text-secondary)] text-small'
                 >
                   <span className='min-w-0'>
-                    <span className='text-[var(--text-body)]'>{ref.blockLabel}</span> would lose{' '}
-                    <span className='text-[var(--text-body)]'>{ref.fieldLabel}</span> in{' '}
-                    {ref.workflowName} — {forkBlockerResolution(ref)}
+                    <span className='text-[var(--text-body)]'>{ref.blockLabel}</span>
+                    {/* A custom block blocks for the opposite reason to everything else here:
+                        nothing is lost, the block keeps invoking the SOURCE environment. Saying
+                        "would lose" would contradict its own resolution line. */}
+                    {ref.kind === 'custom-block' ? (
+                      <> in {ref.workflowName} </>
+                    ) : (
+                      <>
+                        {' '}
+                        would lose <span className='text-[var(--text-body)]'>{ref.fieldLabel}</span>{' '}
+                        in {ref.workflowName} —{' '}
+                      </>
+                    )}
+                    {forkBlockerResolution(ref, controller.targetWorkspaceName)}
                   </span>
                   {/* Only a source-deleted reference can be dropped: an unmapped copyable can still
                       be copied and a missing workflow can still be deployed, so neither is a dead

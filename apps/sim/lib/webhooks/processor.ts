@@ -1,3 +1,4 @@
+import { type ExternalUserSubject, serializePrincipal } from '@sim/auth/principal'
 import { db, webhook, webhookPathClaim, workflow, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
@@ -26,6 +27,7 @@ import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { WEBHOOK_MAX_BODY_BYTES } from '@/lib/webhooks/constants'
 import { deliverableWebhookPredicate } from '@/lib/webhooks/delivery-predicate'
+import { createWebhookExecutionPrincipal } from '@/lib/webhooks/execution-principal'
 import {
   getPendingWebhookVerification,
   matchesPendingWebhookVerificationProbe,
@@ -63,6 +65,8 @@ export interface WebhookProcessorOptions {
   receivedAt?: number
   /** Epoch ms of the originating provider interaction (e.g. Slack x-slack-request-timestamp). */
   triggerTimestampMs?: number
+  /** Provider-authenticated external actor. Never derived from workflow input. */
+  subject?: ExternalUserSubject
 }
 
 export interface WebhookPreprocessingResult {
@@ -76,6 +80,32 @@ export interface WebhookPreprocessingResult {
 }
 
 const WEBHOOK_BODY_LABEL = 'Webhook request body'
+const MAX_WEBHOOK_TARGETS_PER_LOOKUP = 1_000
+
+/**
+ * Flattens a `multipart/form-data` body into the plain object shape provider handlers
+ * already receive from JSON and urlencoded bodies. Jotform posts submissions this way,
+ * and every field it sends is text.
+ *
+ * Parsing the decoded body rather than the original bytes is safe here because the parts
+ * are delimited by an ASCII boundary and an uploaded part is reduced to its filename —
+ * its bytes are never read, so re-encoding cannot corrupt anything we keep. Discarding
+ * them also stops a stray upload from inflating the execution input.
+ */
+async function parseMultipartBody(
+  rawBody: string,
+  contentType: string
+): Promise<Record<string, unknown>> {
+  const formData = await new Response(rawBody, {
+    headers: { 'content-type': contentType },
+  }).formData()
+
+  const fields: Record<string, unknown> = {}
+  for (const [key, value] of formData.entries()) {
+    fields[key] = typeof value === 'string' ? value : value.name
+  }
+  return fields
+}
 
 export async function parseWebhookBody(
   request: NextRequest,
@@ -121,6 +151,8 @@ export async function parseWebhookBody(
       } else {
         body = Object.fromEntries(formData.entries())
       }
+    } else if (contentType.includes('multipart/form-data')) {
+      body = await parseMultipartBody(rawBody, contentType)
     } else {
       body = JSON.parse(rawBody)
     }
@@ -139,6 +171,8 @@ export async function parseWebhookBody(
 /** Providers that implement challenge/verification handling, checked before webhook lookup. */
 const CHALLENGE_PROVIDERS = ['monday', 'slack', 'microsoft-teams', 'whatsapp', 'zoom'] as const
 
+const DEFAULT_CHALLENGE_METHODS = ['POST'] as const
+
 export async function handleProviderChallenges(
   body: unknown,
   request: NextRequest,
@@ -148,11 +182,19 @@ export async function handleProviderChallenges(
 ): Promise<NextResponse | null> {
   for (const provider of CHALLENGE_PROVIDERS) {
     const handler = getProviderHandler(provider)
-    if (handler.handleChallenge) {
-      const response = await handler.handleChallenge(body, request, requestId, path, rawBody)
-      if (response) {
-        return response
-      }
+    if (!handler.handleChallenge) continue
+
+    /**
+     * Challenge handlers run before the webhook lookup and match on payload shape alone, so one
+     * that answers on a method its provider never uses will intercept another provider's
+     * delivery to the same path. `POST` is the default because every handshake but Meta's is one.
+     */
+    const allowedMethods = handler.challengeMethods ?? DEFAULT_CHALLENGE_METHODS
+    if (!allowedMethods.includes(request.method)) continue
+
+    const response = await handler.handleChallenge(body, request, requestId, path, rawBody)
+    if (response) {
+      return response
     }
   }
   return null
@@ -342,6 +384,13 @@ export async function findAllWebhooksForPath(
         )
       )
     )
+    .limit(MAX_WEBHOOK_TARGETS_PER_LOOKUP + 1)
+
+  if (results.length > MAX_WEBHOOK_TARGETS_PER_LOOKUP) {
+    throw new Error(
+      `Webhook path resolves more than ${MAX_WEBHOOK_TARGETS_PER_LOOKUP} active webhooks`
+    )
+  }
 
   if (results.length === 0) {
     logger.warn(`[${options.requestId}] No active webhooks found for path: ${options.path}`)
@@ -440,6 +489,13 @@ export async function findWebhooksByRoutingKey(
         )
       )
     )
+    .limit(MAX_WEBHOOK_TARGETS_PER_LOOKUP + 1)
+
+  if (results.length > MAX_WEBHOOK_TARGETS_PER_LOOKUP) {
+    throw new Error(
+      `Routing key resolves more than ${MAX_WEBHOOK_TARGETS_PER_LOOKUP} active ${provider} webhooks`
+    )
+  }
 
   if (results.length === 0) {
     logger.warn(`[${requestId}] No active ${provider} webhooks for routing key`)
@@ -654,6 +710,7 @@ async function queueWebhookExecutionWithResult(
     }
 
     const credentialId = getCredentialId(providerConfig)
+    const query = Object.fromEntries(new URL(request.url).searchParams)
 
     const actorUserId = options.actorUserId
     const billingAttribution = options.billingAttribution
@@ -687,6 +744,15 @@ async function queueWebhookExecutionWithResult(
     const payload = {
       webhookId: foundWebhook.id,
       workflowId: foundWorkflow.id,
+      principal: serializePrincipal(
+        createWebhookExecutionPrincipal({
+          webhookId: foundWebhook.id,
+          workflowId: foundWorkflow.id,
+          workspaceId,
+          provider: foundWebhook.provider,
+          ...(options.subject ? { subject: options.subject } : {}),
+        })
+      ),
       userId: actorUserId,
       billingAttribution,
       executionId,
@@ -695,6 +761,8 @@ async function queueWebhookExecutionWithResult(
       provider: foundWebhook.provider,
       body,
       headers,
+      method: request.method,
+      ...(Object.keys(query).length > 0 ? { query } : {}),
       path: options.path || foundWebhook.path || '',
       blockId: foundWebhook.blockId ?? undefined,
       ...(foundWebhook.deploymentVersionId
@@ -980,6 +1048,14 @@ export async function processPolledWebhookEvent(
     const payload = {
       webhookId: foundWebhook.id,
       workflowId: foundWorkflow.id,
+      principal: serializePrincipal(
+        createWebhookExecutionPrincipal({
+          webhookId: foundWebhook.id,
+          workflowId: foundWorkflow.id,
+          workspaceId,
+          provider,
+        })
+      ),
       userId: actorUserId,
       billingAttribution,
       executionId,

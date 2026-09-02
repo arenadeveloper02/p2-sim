@@ -7,6 +7,7 @@ import { Loader, TableX } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import type { TableCellSelection } from '@sim/realtime-protocol/table-presence'
 import { getErrorMessage } from '@sim/utils/errors'
+import { assessTextPaste, formatPasteLimit, PASTE_LIMITS } from '@sim/utils/paste'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
@@ -28,6 +29,7 @@ import { columnTypeOf } from '@/lib/table/column-types'
 import { TABLE_LIMITS } from '@/lib/table/constants'
 import { cellValueFilterConditions } from '@/lib/table/query-builder/cell-filter'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
+import { FindBar } from '@/app/workspace/[workspaceId]/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { RemoteTableSelection } from '@/app/workspace/[workspaceId]/tables/[tableId]/hooks/use-table-room'
 import type { BlockedTableAction } from '@/app/workspace/[workspaceId]/tables/[tableId]/lock-copy'
@@ -63,7 +65,7 @@ import { ADD_COL_WIDTH, COL_WIDTH, SELECTION_TINT_BG } from './constants'
 import { DataRow } from './data-row'
 import { ColumnHeaderMenu, WorkflowGroupMetaCell } from './headers'
 import { RemoteSelectionOverlay } from './remote-selection-overlay'
-import { TableFind } from './table-find'
+import { exceedsTablePasteRowLimit, parseBoundedTsv } from './table-paste'
 import { AddRowButton, SelectAllCheckbox, TableColGroup } from './table-primitives'
 import type { DisplayColumn } from './types'
 import {
@@ -3588,15 +3590,28 @@ export function TableGrid({
       const text = e.clipboardData?.getData('text/plain')
       if (!text) return
 
-      const pasteRows = text
-        .split(/\r?\n/)
-        .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
-        .map((line) => line.split('\t'))
-
-      if (pasteRows.length === 0) return
+      const admission = assessTextPaste({
+        pastedText: text,
+        maxPastedBytes: PASTE_LIMITS.STRUCTURED_BYTES,
+      })
+      if (!admission.accepted) {
+        toast.warning('Paste is too large for the table editor', {
+          description: `Paste up to ${formatPasteLimit(PASTE_LIMITS.STRUCTURED_BYTES)} at once, or use CSV import for larger datasets.`,
+        })
+        return
+      }
+      if (exceedsTablePasteRowLimit(text, TABLE_LIMITS.MAX_BATCH_INSERT_SIZE)) {
+        toast.warning('Paste has too many rows', {
+          description: `Paste up to ${TABLE_LIMITS.MAX_BATCH_INSERT_SIZE.toLocaleString()} rows at once, or use CSV import for larger datasets.`,
+        })
+        return
+      }
 
       const currentCols = columnsRef.current
       const currentRows = rowsRef.current
+      const parsedPaste = parseBoundedTsv(text, currentCols.length - currentAnchor.colIndex)
+      const pasteRows = parsedPaste.rows
+      if (pasteRows.length === 0) return
 
       const undoCells: Array<{ rowId: string; data: Record<string, unknown> }> = []
       const updateBatch: Array<{ rowId: string; data: Record<string, unknown> }> = []
@@ -3687,10 +3702,12 @@ export function TableGrid({
         )
       }
 
-      const maxPasteCols = Math.max(...pasteRows.map((pr) => pr.length))
       setSelectionFocus({
         rowIndex: currentAnchor.rowIndex + pasteRows.length - 1,
-        colIndex: Math.min(currentAnchor.colIndex + maxPasteCols - 1, currentCols.length - 1),
+        colIndex: Math.min(
+          currentAnchor.colIndex + parsedPaste.maxColumns - 1,
+          currentCols.length - 1
+        ),
       })
     }
 
@@ -4589,10 +4606,15 @@ export function TableGrid({
   }
 
   return (
-    <div ref={containerRef} className='flex h-full flex-col overflow-hidden'>
+    <div
+      ref={containerRef}
+      data-paste-max-bytes={PASTE_LIMITS.STRUCTURED_BYTES}
+      className='flex h-full flex-col overflow-hidden'
+    >
       <div className='relative flex min-h-0 flex-1'>
         {findOpen && (
-          <TableFind
+          <FindBar
+            ariaLabel='Find in table'
             query={findQuery}
             onQueryChange={setFindQuery}
             onNext={handleFindNext}

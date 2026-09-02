@@ -19,6 +19,7 @@ import {
   ExpandableContent,
   handleKeyboardActivation,
   Info,
+  OverflowText,
 } from '@sim/emcn'
 import { ChevronDown, Search } from '@sim/emcn/icons'
 import clsx from 'clsx'
@@ -35,13 +36,9 @@ import { useToolbarItemInteractions } from '@/app/workspace/[workspaceId]/w/[wor
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
 import { ParallelTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/parallel/parallel-config'
 import { BlockTile } from '@/blocks/block-tile'
-import {
-  buildCustomBlockConfig,
-  CUSTOM_BLOCK_TILE_COLOR,
-  isCustomBlockType,
-} from '@/blocks/custom/build-config'
+import { buildCustomBlockConfig, isCustomBlockType } from '@/blocks/custom/build-config'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
-import { getCustomBlockIcon } from '@/blocks/custom/custom-block-icon'
+import { getCustomBlockTile } from '@/blocks/custom/custom-block-icon'
 import { getCanonicalBlocksByCategory } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
@@ -174,7 +171,7 @@ const ToolbarItem = memo(function ToolbarItem({
         bgColor={item.bgColor}
         data-toolbar-item-icon=''
       />
-      <span className='min-w-0 flex-1 truncate text-[var(--text-body)]'>{item.name}</span>
+      <OverflowText label={item.name} className='flex-1 text-[var(--text-body)]' />
     </div>
   )
 })
@@ -520,10 +517,7 @@ export const Toolbar = memo(
       return customBlocksData
         .filter((cb) => cb.enabled && cb.workflowId !== currentWorkflowId)
         .map((cb) => {
-          const icon = getCustomBlockIcon(cb.iconUrl, fallbackIconUrl)
-          // An image (uploaded or whitelabel) renders on a transparent tile; the
-          // default glyph keeps the neutral tile so it stays visible.
-          const tileColor = cb.iconUrl || fallbackIconUrl ? 'transparent' : CUSTOM_BLOCK_TILE_COLOR
+          const { icon, bgColor } = getCustomBlockTile(cb.iconUrl, fallbackIconUrl)
           return {
             name: cb.name,
             type: cb.type,
@@ -536,10 +530,10 @@ export const Toolbar = memo(
                 exposedOutputs: cb.exposedOutputs,
               },
               cb.inputFields,
-              { icon, bgColor: tileColor }
+              { icon, bgColor }
             ),
             icon,
-            bgColor: tileColor,
+            bgColor,
           } satisfies BlockItem
         })
         .sort((a, b) => a.name.localeCompare(b.name))

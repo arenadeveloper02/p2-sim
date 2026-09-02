@@ -1,3 +1,4 @@
+import type { HostedApiKeySupport } from '@/tools/hosted-api-key'
 import type { ToolConfig } from '@/tools/types'
 
 const HOSTED_API_KEY_NOTE = '<note>API key is hosted by Arena.</note>'
@@ -10,10 +11,18 @@ const GOOGLE_DOCS_GFM_NOTE =
   '<important>google_docs_create accepts GitHub Flavored Markdown (GFM) in content — use it to store or import markdown. Pass GFM directly; Drive converts headings, tables, bold, lists, and code blocks automatically. When importing from a workspace file, pass the exact GFM from read() output without rewriting.</important>'
 const GOOGLE_DOCS_GFM_TOOL_IDS = new Set(['google_docs_create'])
 
+/**
+ * `hostedApiKey` is an option rather than a field read off `tool` because the
+ * two sources that can answer it differ: an executable `ToolConfig` carries the
+ * `hosting` closure (project it with `deriveHostedApiKeySupport`), while the
+ * generated tool metadata carries the derived answer directly. Taking it as an
+ * argument keeps one branch here and lets either source supply it.
+ */
 export function getCopilotToolDescription(
-  tool: Pick<ToolConfig, 'description' | 'hosting' | 'id' | 'name'>,
+  tool: Pick<ToolConfig, 'description' | 'id' | 'name'>,
   options?: {
     isHosted?: boolean
+    hostedApiKey?: HostedApiKeySupport
     fallbackName?: string
     appendEmailTagline?: boolean
   }
@@ -21,13 +30,16 @@ export function getCopilotToolDescription(
   const baseDescription = tool.description || tool.name || options?.fallbackName || ''
   const notes: string[] = []
 
+  const hostedApiKey = options?.hostedApiKey ?? 'none'
   if (
     options?.isHosted &&
-    tool.hosting &&
+    hostedApiKey !== 'none' &&
     !baseDescription.includes(HOSTED_API_KEY_NOTE) &&
     !baseDescription.includes(CONDITIONAL_HOSTED_API_KEY_NOTE)
   ) {
-    notes.push(tool.hosting.enabled ? CONDITIONAL_HOSTED_API_KEY_NOTE : HOSTED_API_KEY_NOTE)
+    notes.push(
+      hostedApiKey === 'conditional' ? CONDITIONAL_HOSTED_API_KEY_NOTE : HOSTED_API_KEY_NOTE
+    )
   }
 
   if (

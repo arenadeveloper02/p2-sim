@@ -19,6 +19,10 @@ vi.mock('@/lib/logs/execution/trace-store', () => ({
   materializeExecutionDataForDisplay: mocks.materializeExecutionData,
 }))
 
+vi.mock('@/lib/logs/execution/hydrate-child-traces', () => ({
+  hydrateChildTraces: vi.fn(),
+}))
+
 vi.mock('@/lib/logs/execution-origin', () => ({
   workflowExecutionOriginSql: () => ({ as: () => ({}) }),
 }))

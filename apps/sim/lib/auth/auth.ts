@@ -70,7 +70,6 @@ import { handleAbandonedCheckout } from '@/lib/billing/webhooks/checkout'
 import { handleChargeDispute, handleDisputeClosed } from '@/lib/billing/webhooks/disputes'
 import { handleManualEnterpriseSubscription } from '@/lib/billing/webhooks/enterprise'
 import {
-  handleInvoiceFinalized,
   handleInvoicePaymentFailed,
   handleInvoicePaymentSucceeded,
 } from '@/lib/billing/webhooks/invoices'
@@ -95,6 +94,7 @@ import {
   isSsoEnabled,
 } from '@/lib/core/config/env-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
+import { trustedProxies } from '@/lib/core/utils/request'
 import {
   getBaseUrl,
   getLoginRedirectUrl,
@@ -210,17 +210,6 @@ function resolveArenaHubTrustedOrigin(): string | null {
 
 const arenaHubTrustedOrigin = resolveArenaHubTrustedOrigin()
 /**
- * Reverse-proxy hops trusted for forwarded-IP resolution. When configured,
- * Better Auth walks the x-forwarded-for chain right to left, skips these
- * hops, and records the first untrusted address as the session client IP —
- * preventing header spoofing behind multi-hop proxies.
- */
-const trustedProxies = (env.AUTH_TRUSTED_PROXIES ?? '')
-  .split(',')
-  .map((entry) => entry.trim())
-  .filter(Boolean)
-
-/**
  * Resolves the org's API instance URL for a freshly linked Salesforce account.
  *
  * The token response never carries `instance_url`, but `/services/oauth2/userinfo`
@@ -314,40 +303,18 @@ export const auth = betterAuth({
     },
   },
   user: {
+    /**
+     * Account deletion runs through `POST /api/users/me/deletion`, which owns the
+     * whole procedure — the blocker preflight, the storage purge, and the
+     * constraint-ordered teardown that a bare `DELETE FROM "user"` cannot
+     * express. Better Auth's endpoint stays off, and `beforeDelete` refuses
+     * unconditionally so that flipping `enabled` can never route a deletion
+     * around any of it.
+     */
     deleteUser: {
       enabled: false,
-      beforeDelete: async (deletingUser) => {
-        const { isSoleOwnerOfPaidOrganization } = await import(
-          '@/lib/billing/organizations/membership'
-        )
-        const check = await isSoleOwnerOfPaidOrganization(deletingUser.id)
-        if (check.isBlocker) {
-          throw new Error(
-            `You are the owner of ${check.organizationName ?? 'an active paid organization'}. Transfer ownership before deleting your account.`
-          )
-        }
-
-        const { reassignBilledAccountForUser, reassignOwnedWorkspacesForUser } = await import(
-          '@/lib/workspaces/utils'
-        )
-        const { unresolved } = await reassignBilledAccountForUser(deletingUser.id)
-        if (unresolved.length > 0) {
-          throw new Error(
-            `Your account is the billing account for ${unresolved.length} workspace${unresolved.length === 1 ? '' : 's'} with no other admin to take it over. Add another admin to ${unresolved.length === 1 ? 'that workspace' : 'those workspaces'} or delete ${unresolved.length === 1 ? 'it' : 'them'} before deleting your account.`
-          )
-        }
-
-        // Reassign workspace ownership BEFORE deletion so the `workspace.owner_id`
-        // ON DELETE CASCADE can never silently nuke workspaces this user owns
-        // (e.g. org workspaces they created but are billed to the org owner).
-        const { unresolved: ownedUnresolved } = await reassignOwnedWorkspacesForUser(
-          deletingUser.id
-        )
-        if (ownedUnresolved.length > 0) {
-          throw new Error(
-            `Your account owns ${ownedUnresolved.length} workspace${ownedUnresolved.length === 1 ? '' : 's'} with no other admin to take over ownership. Add another admin to ${ownedUnresolved.length === 1 ? 'that workspace' : 'those workspaces'} or delete ${ownedUnresolved.length === 1 ? 'it' : 'them'} before deleting your account.`
-          )
-        }
+      beforeDelete: async () => {
+        throw new Error('Account deletion runs through POST /api/users/me/deletion')
       },
     },
   },
@@ -1616,10 +1583,6 @@ export const auth = betterAuth({
                   }
                   case 'invoice.payment_failed': {
                     await handleInvoicePaymentFailed(event)
-                    break
-                  }
-                  case 'invoice.finalized': {
-                    await handleInvoiceFinalized(event)
                     break
                   }
                   case 'customer.subscription.created':

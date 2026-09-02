@@ -492,6 +492,9 @@ function UnsupportedToolBadge({ message }: { message: string }) {
   )
 }
 
+const EMPTY_COMBOBOX_GROUPS: ComboboxOptionGroup[] = []
+const EMPTY_COMBOBOX_OPTIONS: ComboboxOption[] = []
+
 export const ToolInput = memo(function ToolInput({
   blockId,
   subBlockId,
@@ -545,7 +548,7 @@ export const ToolInput = memo(function ToolInput({
   // subBlock): shown in the picker but greyed out with a tooltip instead of added.
   const blockType = useWorkflowStore(useCallback((state) => state.blocks[blockId]?.type, [blockId]))
   const unsupportedToolTypes = useMemo<readonly ('mcp' | 'custom-tool')[]>(() => {
-    const block = getAllBlocks().find((b) => b.type === blockType)
+    const block = blockType ? getBlock(blockType) : undefined
     return block?.subBlocks.find((sb) => sb.id === subBlockId)?.unsupportedToolTypes ?? []
   }, [blockType, subBlockId])
   const mcpUnsupported = unsupportedToolTypes.includes('mcp')
@@ -554,10 +557,11 @@ export const ToolInput = memo(function ToolInput({
   // Look up credential type for reactive condition filtering (e.g. service account detection).
   // Uses canonical resolution so the active field (basic vs advanced) is respected.
   const toolCredentialId = useMemo(() => {
-    const allBlocks = getAllBlocks()
     for (const [toolIndex, tool] of selectedTools.entries()) {
-      const blockConfig = allBlocks.find((b: { type: string }) => b.type === tool.type)
+      const blockConfig = tool.type ? getBlock(tool.type) : undefined
       if (!blockConfig?.subBlocks) continue
+      // canonical-index-unscoped: a nested tool resolves against `tool.params`, which only ever
+      // holds action-surface values — a tool is never invoked in trigger mode.
       const toolCanonical = buildCanonicalIndex(blockConfig.subBlocks)
       const scopedOverrides = scopeCanonicalModesForTool(
         canonicalModeOverrides,
@@ -1450,6 +1454,7 @@ export const ToolInput = memo(function ToolInput({
    * @returns Array of option groups for the combobox component
    */
   const toolGroups = useMemo((): ComboboxOptionGroup[] => {
+    if (!open) return EMPTY_COMBOBOX_GROUPS
     const groups: ComboboxOptionGroup[] = []
 
     // MCP Server drill-down: when navigated into a server, show only its tools
@@ -1728,6 +1733,7 @@ export const ToolInput = memo(function ToolInput({
 
     return groups
   }, [
+    open,
     mcpServerDrilldown,
     customTools,
     availableMcpTools,
@@ -1752,7 +1758,7 @@ export const ToolInput = memo(function ToolInput({
   return (
     <div className='w-full space-y-2'>
       <Combobox
-        options={[]}
+        options={EMPTY_COMBOBOX_OPTIONS}
         groups={toolGroups}
         placeholder='Add tool...'
         /* Every list this picker offers — blocks, operations, MCP and custom
@@ -1821,7 +1827,8 @@ export const ToolInput = memo(function ToolInput({
               : null
 
           const toolCanonicalIndex: CanonicalIndex | null = toolBlock?.subBlocks
-            ? buildCanonicalIndex(toolBlock.subBlocks)
+            ? // canonical-index-unscoped: nested tool params are always the action surface
+              buildCanonicalIndex(toolBlock.subBlocks)
             : null
 
           const toolContextValues = toolCanonicalIndex

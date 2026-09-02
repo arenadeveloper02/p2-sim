@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Button, ChipInput, cn, Label, Loader, toast } from '@sim/emcn'
 import { ImageUp as ImageIcon, X } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import Image from 'next/image'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import { isEnterprise } from '@/lib/billing/plan-helpers'
 import { HEX_COLOR_REGEX } from '@/lib/branding'
+import type { OrganizationWhitelabelSettings } from '@/lib/branding/types'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import {
   CHIP_FIELD_INPUT,
@@ -116,80 +117,50 @@ interface WhitelabelingSettingsProps {
   organizationId: string
 }
 
-export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSettingsProps) {
-  const { data: organizationBillingData } = useOrganizationBilling(orgId)
-  const { data: savedSettings, isLoading } = useWhitelabelSettings(orgId)
+interface WhitelabelingFormProps {
+  initialSettings: OrganizationWhitelabelSettings
+  orgId: string
+}
+
+function WhitelabelingForm({ initialSettings, orgId }: WhitelabelingFormProps) {
   const updateSettings = useUpdateWhitelabelSettings()
 
-  const hasEnterprisePlan = isEnterprise(organizationBillingData?.data?.subscriptionPlan)
-
-  const [brandName, setBrandName] = useState('')
-  const [primaryColor, setPrimaryColor] = useState('')
-  const [primaryHoverColor, setPrimaryHoverColor] = useState('')
-  const [accentColor, setAccentColor] = useState('')
-  const [accentHoverColor, setAccentHoverColor] = useState('')
-  const [supportEmail, setSupportEmail] = useState('')
-  const [documentationUrl, setDocumentationUrl] = useState('')
-  const [termsUrl, setTermsUrl] = useState('')
-  const [privacyUrl, setPrivacyUrl] = useState('')
-  const [logoUrl, setLogoUrl] = useState<string | null>(null)
-  const [wordmarkUrl, setWordmarkUrl] = useState<string | null>(null)
-  const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
-  const formInitializedRef = useRef<string | null>(null)
-  const [savedBrandName, setSavedBrandName] = useState('')
-  const [savedPrimaryColor, setSavedPrimaryColor] = useState('')
-  const [savedPrimaryHoverColor, setSavedPrimaryHoverColor] = useState('')
-  const [savedAccentColor, setSavedAccentColor] = useState('')
-  const [savedAccentHoverColor, setSavedAccentHoverColor] = useState('')
-  const [savedSupportEmail, setSavedSupportEmail] = useState('')
-  const [savedDocumentationUrl, setSavedDocumentationUrl] = useState('')
-  const [savedTermsUrl, setSavedTermsUrl] = useState('')
-  const [savedPrivacyUrl, setSavedPrivacyUrl] = useState('')
-  const [savedLogoUrl, setSavedLogoUrl] = useState<string | null>(null)
-  const [savedWordmarkUrl, setSavedWordmarkUrl] = useState<string | null>(null)
-  const [savedFaviconUrl, setSavedFaviconUrl] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!savedSettings || !orgId) return
-    if (formInitializedRef.current === orgId) return
-    const brand = savedSettings.brandName ?? ''
-    const primary = savedSettings.primaryColor ?? ''
-    const primaryHover = savedSettings.primaryHoverColor ?? ''
-    const accent = savedSettings.accentColor ?? ''
-    const accentHover = savedSettings.accentHoverColor ?? ''
-    const support = savedSettings.supportEmail ?? ''
-    const docs = savedSettings.documentationUrl ?? ''
-    const terms = savedSettings.termsUrl ?? ''
-    const privacy = savedSettings.privacyUrl ?? ''
-    const logo = savedSettings.logoUrl ?? null
-    const wordmark = savedSettings.wordmarkUrl ?? null
-    const favicon = savedSettings.faviconUrl ?? null
-    setBrandName(brand)
-    setPrimaryColor(primary)
-    setPrimaryHoverColor(primaryHover)
-    setAccentColor(accent)
-    setAccentHoverColor(accentHover)
-    setSupportEmail(support)
-    setDocumentationUrl(docs)
-    setTermsUrl(terms)
-    setPrivacyUrl(privacy)
-    setLogoUrl(logo)
-    setWordmarkUrl(wordmark)
-    setFaviconUrl(favicon)
-    setSavedBrandName(brand)
-    setSavedPrimaryColor(primary)
-    setSavedPrimaryHoverColor(primaryHover)
-    setSavedAccentColor(accent)
-    setSavedAccentHoverColor(accentHover)
-    setSavedSupportEmail(support)
-    setSavedDocumentationUrl(docs)
-    setSavedTermsUrl(terms)
-    setSavedPrivacyUrl(privacy)
-    setSavedLogoUrl(logo)
-    setSavedWordmarkUrl(wordmark)
-    setSavedFaviconUrl(favicon)
-    formInitializedRef.current = orgId
-  }, [savedSettings, orgId])
+  const [brandName, setBrandName] = useState(initialSettings.brandName ?? '')
+  const [primaryColor, setPrimaryColor] = useState(initialSettings.primaryColor ?? '')
+  const [primaryHoverColor, setPrimaryHoverColor] = useState(
+    initialSettings.primaryHoverColor ?? ''
+  )
+  const [accentColor, setAccentColor] = useState(initialSettings.accentColor ?? '')
+  const [accentHoverColor, setAccentHoverColor] = useState(initialSettings.accentHoverColor ?? '')
+  const [supportEmail, setSupportEmail] = useState(initialSettings.supportEmail ?? '')
+  const [documentationUrl, setDocumentationUrl] = useState(initialSettings.documentationUrl ?? '')
+  const [termsUrl, setTermsUrl] = useState(initialSettings.termsUrl ?? '')
+  const [privacyUrl, setPrivacyUrl] = useState(initialSettings.privacyUrl ?? '')
+  const [logoUrl, setLogoUrl] = useState<string | null>(initialSettings.logoUrl ?? null)
+  const [wordmarkUrl, setWordmarkUrl] = useState<string | null>(initialSettings.wordmarkUrl ?? null)
+  const [faviconUrl, setFaviconUrl] = useState<string | null>(initialSettings.faviconUrl ?? null)
+  const [savedBrandName, setSavedBrandName] = useState(initialSettings.brandName ?? '')
+  const [savedPrimaryColor, setSavedPrimaryColor] = useState(initialSettings.primaryColor ?? '')
+  const [savedPrimaryHoverColor, setSavedPrimaryHoverColor] = useState(
+    initialSettings.primaryHoverColor ?? ''
+  )
+  const [savedAccentColor, setSavedAccentColor] = useState(initialSettings.accentColor ?? '')
+  const [savedAccentHoverColor, setSavedAccentHoverColor] = useState(
+    initialSettings.accentHoverColor ?? ''
+  )
+  const [savedSupportEmail, setSavedSupportEmail] = useState(initialSettings.supportEmail ?? '')
+  const [savedDocumentationUrl, setSavedDocumentationUrl] = useState(
+    initialSettings.documentationUrl ?? ''
+  )
+  const [savedTermsUrl, setSavedTermsUrl] = useState(initialSettings.termsUrl ?? '')
+  const [savedPrivacyUrl, setSavedPrivacyUrl] = useState(initialSettings.privacyUrl ?? '')
+  const [savedLogoUrl, setSavedLogoUrl] = useState<string | null>(initialSettings.logoUrl ?? null)
+  const [savedWordmarkUrl, setSavedWordmarkUrl] = useState<string | null>(
+    initialSettings.wordmarkUrl ?? null
+  )
+  const [savedFaviconUrl, setSavedFaviconUrl] = useState<string | null>(
+    initialSettings.faviconUrl ?? null
+  )
 
   const logoUpload = useProfilePictureUpload({
     currentImage: logoUrl,
@@ -216,20 +187,18 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
   })
 
   const hasChanges =
-    Boolean(orgId) &&
-    formInitializedRef.current === orgId &&
-    (brandName !== savedBrandName ||
-      primaryColor !== savedPrimaryColor ||
-      primaryHoverColor !== savedPrimaryHoverColor ||
-      accentColor !== savedAccentColor ||
-      accentHoverColor !== savedAccentHoverColor ||
-      supportEmail !== savedSupportEmail ||
-      documentationUrl !== savedDocumentationUrl ||
-      termsUrl !== savedTermsUrl ||
-      privacyUrl !== savedPrivacyUrl ||
-      (logoUpload.previewUrl || null) !== savedLogoUrl ||
-      (wordmarkUpload.previewUrl || null) !== savedWordmarkUrl ||
-      (faviconUpload.previewUrl || null) !== savedFaviconUrl)
+    brandName !== savedBrandName ||
+    primaryColor !== savedPrimaryColor ||
+    primaryHoverColor !== savedPrimaryHoverColor ||
+    accentColor !== savedAccentColor ||
+    accentHoverColor !== savedAccentHoverColor ||
+    supportEmail !== savedSupportEmail ||
+    documentationUrl !== savedDocumentationUrl ||
+    termsUrl !== savedTermsUrl ||
+    privacyUrl !== savedPrivacyUrl ||
+    (logoUpload.previewUrl || null) !== savedLogoUrl ||
+    (wordmarkUpload.previewUrl || null) !== savedWordmarkUrl ||
+    (faviconUpload.previewUrl || null) !== savedFaviconUrl
 
   useSettingsUnsavedGuard({ isDirty: hasChanges })
 
@@ -301,33 +270,18 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
     setFaviconUrl(savedFaviconUrl)
   }
 
-  if (isBillingEnabled) {
-    if (!hasEnterprisePlan) {
-      return (
-        <SettingsEmptyState>
-          Whitelabeling is available on Enterprise plans only.
-        </SettingsEmptyState>
-      )
-    }
-  }
-
-  if (isLoading) {
-    return null
-  }
-
   const isUploading =
     logoUpload.isUploading || wordmarkUpload.isUploading || faviconUpload.isUploading
+  const actions = saveDiscardActions({
+    dirty: hasChanges,
+    saving: updateSettings.isPending,
+    saveDisabled: isUploading,
+    onSave: handleSave,
+    onDiscard: handleDiscard,
+  })
 
   return (
-    <SettingsPanel
-      actions={saveDiscardActions({
-        dirty: hasChanges,
-        saving: updateSettings.isPending,
-        saveDisabled: isUploading,
-        onSave: handleSave,
-        onDiscard: handleDiscard,
-      })}
-    >
+    <SettingsPanel actions={actions}>
       <SettingsSection label='Brand Identity'>
         <div className='flex flex-col gap-5'>
           <SettingRow
@@ -364,6 +318,7 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
                         src={logoUpload.previewUrl}
                         alt='Logo'
                         fill
+                        sizes='64px'
                         className='object-contain p-1'
                         unoptimized
                       />
@@ -413,6 +368,7 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
                         src={faviconUpload.previewUrl}
                         alt='Favicon'
                         fill
+                        sizes='64px'
                         className='object-contain p-1'
                         unoptimized
                       />
@@ -561,4 +517,40 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
       </SettingsSection>
     </SettingsPanel>
   )
+}
+
+export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSettingsProps) {
+  const { data: organizationBillingData, isPending: organizationBillingLoading } =
+    useOrganizationBilling(orgId, { enabled: isBillingEnabled })
+  const { data: savedSettings, error: settingsError, isLoading } = useWhitelabelSettings(orgId)
+
+  if (isLoading || (isBillingEnabled && organizationBillingLoading)) {
+    return (
+      <SettingsPanel
+        actions={saveDiscardActions({
+          dirty: false,
+          saving: false,
+          saveDisabled: true,
+          onSave: () => undefined,
+          onDiscard: () => undefined,
+        })}
+      />
+    )
+  }
+
+  if (!savedSettings) {
+    return (
+      <SettingsEmptyState tone='error'>
+        {getErrorMessage(settingsError, 'Failed to load whitelabeling settings')}
+      </SettingsEmptyState>
+    )
+  }
+
+  if (isBillingEnabled && !isEnterprise(organizationBillingData?.data?.subscriptionPlan)) {
+    return (
+      <SettingsEmptyState>Whitelabeling is available on Enterprise plans only.</SettingsEmptyState>
+    )
+  }
+
+  return <WhitelabelingForm key={orgId} initialSettings={savedSettings} orgId={orgId} />
 }

@@ -158,7 +158,10 @@ const FOLLOW_UP_FIELD_KEYS = [
  * Copies mandatory-follow-up flags onto an artifact stub so offload cannot
  * drop `create_workflow` populate (or other required next tools).
  */
-function copyFollowUpFields(source: unknown, stub: Record<string, unknown>): Record<string, unknown> {
+function copyFollowUpFields(
+  source: unknown,
+  stub: Record<string, unknown>
+): Record<string, unknown> {
   const record = asRecord(source)
   const next = { ...stub }
   for (const key of FOLLOW_UP_FIELD_KEYS) {
@@ -510,7 +513,7 @@ export function formatToolResultForLlm(
     ) {
       // Keep the create payload small so populate flags are not lost to artifact
       // offload. The model already has workflowId + startBlockId.
-      delete next.copilotSanitizedWorkflowState
+      next.copilotSanitizedWorkflowState = undefined
       next.needsFollowUpPopulate = true
       next.followUpHint =
         'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
@@ -589,7 +592,6 @@ function detectMandatoryFollowUpFromRecord(
   toolName: string,
   parsed: Record<string, unknown>
 ): MandatoryFollowUp | null {
-
   const hint =
     typeof parsed.followUpHint === 'string' && parsed.followUpHint.trim()
       ? parsed.followUpHint.trim()

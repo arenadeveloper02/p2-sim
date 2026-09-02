@@ -25,25 +25,34 @@ const {
   mockLoadDeploymentVersionState,
   mockGetProviderHandler,
   mockSetResolvedSecretTraceRegistry,
-} = vi.hoisted(() => ({
-  mockResolveWebhookRecordProviderConfig: vi.fn(),
-  mockExecuteWorkflowCore: vi.fn(),
-  mockWasExecutionFinalizedByCore: vi.fn(),
-  mockExecuteWithIdempotency: vi.fn(),
-  mockRefreshExecutionSlotExpiry: vi.fn().mockResolvedValue(true),
-  mockReleaseExecutionSlot: vi.fn(),
-  mockGetProviderHandler: vi.fn(() => ({})),
-  mockSetResolvedSecretTraceRegistry: vi.fn(),
-  mockLoadDeploymentVersionState: vi.fn(
-    async (_workflowId: string, deploymentVersionId: string) => ({
-      blocks: {},
-      edges: [],
-      loops: {},
-      parallels: {},
-      deploymentVersionId,
-    })
-  ),
-}))
+  mockExecutionSnapshot,
+  mockEnqueue,
+  mockGetJobQueue,
+} = vi.hoisted(() => {
+  const mockEnqueue = vi.fn()
+  return {
+    mockResolveWebhookRecordProviderConfig: vi.fn(),
+    mockExecuteWorkflowCore: vi.fn(),
+    mockWasExecutionFinalizedByCore: vi.fn(),
+    mockExecuteWithIdempotency: vi.fn(),
+    mockRefreshExecutionSlotExpiry: vi.fn().mockResolvedValue(true),
+    mockReleaseExecutionSlot: vi.fn(),
+    mockGetProviderHandler: vi.fn(() => ({})),
+    mockSetResolvedSecretTraceRegistry: vi.fn(),
+    mockExecutionSnapshot: vi.fn(),
+    mockLoadDeploymentVersionState: vi.fn(
+      async (_workflowId: string, deploymentVersionId: string) => ({
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        deploymentVersionId,
+      })
+    ),
+    mockEnqueue,
+    mockGetJobQueue: vi.fn(async () => ({ enqueue: mockEnqueue })),
+  }
+})
 
 const mockGetEffectiveEnvironmentSnapshot =
   environmentUtilsMockFns.mockGetEffectiveEnvironmentSnapshot
@@ -105,6 +114,11 @@ vi.mock('@/lib/core/execution-limits', () => ({
   getExecutionDeadlineAt: vi.fn(() => new Date(Date.now() + 120_000)),
   getTimeoutErrorMessage: vi.fn(() => 'timed out'),
   RESERVATION_TTL_BUFFER_MS: 300_000,
+  toTriggerMaxDurationSeconds: vi.fn(() => undefined),
+}))
+
+vi.mock('@/lib/core/async-jobs', () => ({
+  getJobQueue: mockGetJobQueue,
 }))
 
 vi.mock('@/lib/workflows/executor/pause-persistence', () => ({
@@ -120,7 +134,7 @@ vi.mock('@/lib/oauth/credential-service', () => ({
 }))
 
 vi.mock('@/executor/execution/snapshot', () => ({
-  ExecutionSnapshot: class {},
+  ExecutionSnapshot: mockExecutionSnapshot,
 }))
 
 vi.mock('@/tools/safe-assign', () => ({ safeAssign: vi.fn() }))
@@ -132,6 +146,7 @@ vi.mock('@/triggers', () => ({
   isTriggerValid: vi.fn(() => false),
 }))
 
+import { isRetryableSetupError } from '@/lib/core/errors/retryable-infrastructure'
 import {
   executeWebhookJob,
   resolveWebhookExecutionProviderConfig,
@@ -216,6 +231,17 @@ describe('executeWebhookJob fault vs error handling', () => {
   const payload: WebhookExecutionPayload = {
     webhookId: 'webhook-1',
     workflowId: 'workflow-1',
+    principal: {
+      version: 1,
+      principal: {
+        kind: 'system',
+        serviceId: 'webhook',
+        webhookId: 'webhook-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        provider: 'gmail',
+      },
+    },
     userId: 'user-1',
     billingAttribution,
     executionId: 'execution-1',
@@ -225,6 +251,19 @@ describe('executeWebhookJob fault vs error handling', () => {
     headers: {},
     path: '/webhook',
     workspaceId: 'workspace-1',
+  }
+  const legacyPayload = {
+    webhookId: payload.webhookId,
+    workflowId: payload.workflowId,
+    userId: payload.userId,
+    billingAttribution: payload.billingAttribution,
+    executionId: payload.executionId,
+    requestId: payload.requestId,
+    provider: payload.provider,
+    body: payload.body,
+    headers: payload.headers,
+    path: payload.path,
+    workspaceId: payload.workspaceId,
   }
 
   beforeEach(() => {
@@ -242,6 +281,7 @@ describe('executeWebhookJob fault vs error handling', () => {
       }
     })
     mockGetProviderHandler.mockReturnValue({})
+    mockEnqueue.mockResolvedValue('run_retry')
     mockExecuteWithIdempotency.mockImplementation(
       (_provider: string, _key: string, operation: () => Promise<unknown>) => operation()
     )
@@ -268,6 +308,65 @@ describe('executeWebhookJob fault vs error handling', () => {
       decryptionFailures: [],
     })
     dbChainMockFns.limit.mockResolvedValue([{ id: 'webhook-1' }])
+  })
+
+  it('restores a legacy queued webhook as its canonical system principal', async () => {
+    mockExecuteWorkflowCore.mockResolvedValueOnce({
+      success: true,
+      status: 'completed',
+      output: {},
+      logs: [],
+      executionState: {
+        blockStates: {},
+        executedBlocks: [],
+        blockLogs: [],
+        decisions: {},
+        completedLoops: [],
+        activeExecutionPath: [],
+      },
+    })
+
+    await executeWebhookJob(legacyPayload)
+
+    expect(mockExecutionSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        principal: {
+          kind: 'system',
+          serviceId: 'webhook',
+          webhookId: 'webhook-1',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+          provider: 'gmail',
+        },
+      }),
+      expect.anything(),
+      expect.anything(),
+      expect.any(Object),
+      expect.any(Array)
+    )
+  })
+
+  it('persists the reconstructed legacy principal on setup retries', async () => {
+    executionPreprocessingMockFns.mockPreprocessExecution.mockResolvedValueOnce({
+      success: false,
+      error: {
+        message: 'Internal error while fetching workflow',
+        statusCode: 500,
+        retryable: true,
+        cause: { code: 'CONNECT_TIMEOUT' },
+      },
+    })
+
+    await expect(executeWebhookJob(legacyPayload)).resolves.toMatchObject({
+      success: false,
+      requeued: true,
+    })
+
+    expect(mockEnqueue).toHaveBeenCalledTimes(1)
+    expect(mockEnqueue.mock.calls[0][1]).toMatchObject({
+      principal: payload.principal,
+      infraRetryCount: 1,
+    })
   })
 
   it('completes the run (does not throw) when the failure was finalized by core', async () => {
@@ -542,5 +641,135 @@ describe('executeWebhookJob fault vs error handling', () => {
     ).rejects.toThrow('Billing attribution snapshot must be an object')
 
     expect(executionPreprocessingMockFns.mockPreprocessExecution).not.toHaveBeenCalled()
+  })
+
+  it('requeues the delivery when preprocessing fails on retryable infrastructure', async () => {
+    executionPreprocessingMockFns.mockPreprocessExecution.mockResolvedValueOnce({
+      success: false,
+      error: {
+        message: 'Internal error while fetching workflow',
+        statusCode: 500,
+        retryable: true,
+        cause: { code: 'CONNECT_TIMEOUT' },
+      },
+    })
+
+    const result = await executeWebhookJob(payload)
+
+    expect(result).toMatchObject({
+      success: false,
+      requeued: true,
+      workflowId: 'workflow-1',
+      executionId: 'execution-1',
+    })
+    expect(executionPreprocessingMockFns.mockPreprocessExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ suppressRetryableFailureLogs: true })
+    )
+    expect(mockEnqueue).toHaveBeenCalledTimes(1)
+    const [jobType, retryPayload, options] = mockEnqueue.mock.calls[0]
+    expect(jobType).toBe('webhook-execution')
+    expect(retryPayload).toMatchObject({
+      webhookId: 'webhook-1',
+      workflowId: 'workflow-1',
+      executionId: 'execution-1',
+      requestId: 'request-1',
+      infraRetryCount: 1,
+    })
+    expect(options.delayMs).toBeGreaterThan(0)
+    // Database backend executes only through an in-process runner; trigger.dev ignores it.
+    expect(options.runner).toBeTypeOf('function')
+    expect(mockReleaseExecutionSlot).toHaveBeenCalledWith('execution-1')
+    expect(mockExecuteWorkflowCore).not.toHaveBeenCalled()
+    // No terminal failure row for an attempt that will be retried.
+    expect(loggingSessionMockFns.mockSafeCompleteWithError).not.toHaveBeenCalled()
+  })
+
+  it('requeues on retryable infrastructure errors thrown by setup reads', async () => {
+    dbChainMockFns.limit.mockRejectedValueOnce(
+      Object.assign(new Error('write CONNECT_TIMEOUT'), { code: 'CONNECT_TIMEOUT' })
+    )
+
+    const result = await executeWebhookJob(payload)
+
+    expect(result).toMatchObject({ success: false, requeued: true })
+    expect(mockEnqueue).toHaveBeenCalledTimes(1)
+    expect(mockExecuteWorkflowCore).not.toHaveBeenCalled()
+    expect(loggingSessionMockFns.mockSafeCompleteWithError).not.toHaveBeenCalled()
+  })
+
+  it('faults the run without requeueing once the retry budget is exhausted', async () => {
+    executionPreprocessingMockFns.mockPreprocessExecution.mockResolvedValueOnce({
+      success: false,
+      error: {
+        message: 'Internal error while fetching workflow',
+        statusCode: 500,
+        retryable: true,
+      },
+    })
+
+    await expect(executeWebhookJob({ ...payload, infraRetryCount: 5 })).rejects.toSatisfy(
+      (error: unknown) => isRetryableSetupError(error)
+    )
+
+    expect(executionPreprocessingMockFns.mockPreprocessExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ suppressRetryableFailureLogs: false })
+    )
+    expect(mockEnqueue).not.toHaveBeenCalled()
+    expect(mockReleaseExecutionSlot).toHaveBeenCalledWith('execution-1')
+  })
+
+  it('does not requeue non-retryable preprocessing failures', async () => {
+    executionPreprocessingMockFns.mockPreprocessExecution.mockResolvedValueOnce({
+      success: false,
+      error: { message: 'Usage limit exceeded', statusCode: 402 },
+    })
+
+    await expect(executeWebhookJob(payload)).rejects.toSatisfy(
+      (error: unknown) =>
+        !isRetryableSetupError(error) && (error as Error).message === 'Usage limit exceeded'
+    )
+
+    expect(mockEnqueue).not.toHaveBeenCalled()
+  })
+
+  it('never reclassifies infrastructure errors after the workflow core started', async () => {
+    const infraError = Object.assign(new Error('Connection terminated unexpectedly'), {
+      code: 'CONNECTION_CLOSED',
+    })
+    mockExecuteWorkflowCore.mockRejectedValue(infraError)
+    mockWasExecutionFinalizedByCore.mockReturnValue(false)
+
+    await expect(executeWebhookJob(payload)).rejects.toBe(infraError)
+
+    expect(mockEnqueue).not.toHaveBeenCalled()
+    // Post-core failures keep recording the terminal row.
+    expect(loggingSessionMockFns.mockSafeCompleteWithError).toHaveBeenCalled()
+  })
+
+  it('faults the run and restores the terminal log row when the requeue enqueue itself fails', async () => {
+    executionPreprocessingMockFns.mockPreprocessExecution.mockResolvedValueOnce({
+      success: false,
+      error: {
+        message: 'Internal error while fetching workflow',
+        statusCode: 500,
+        retryable: true,
+      },
+    })
+    mockEnqueue.mockRejectedValueOnce(new Error('trigger api unavailable'))
+
+    await expect(executeWebhookJob(payload)).rejects.toThrow(
+      'Internal error while fetching workflow'
+    )
+
+    // The retry-bound attempt suppressed its failure row; a failed requeue means
+    // no retry will run, so the terminal row must be written before faulting.
+    expect(loggingSessionMockFns.mockSafeStart).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', workspaceId: 'workspace-1' })
+    )
+    expect(loggingSessionMockFns.mockSafeCompleteWithError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({ message: 'Internal error while fetching workflow' }),
+      })
+    )
   })
 })

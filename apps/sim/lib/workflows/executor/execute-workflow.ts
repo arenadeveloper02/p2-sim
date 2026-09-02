@@ -1,3 +1,4 @@
+import type { WorkflowExecutionPrincipal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import {
@@ -15,6 +16,7 @@ import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata, SerializableExecutionState } from '@/executor/execution/types'
 import type { ExecutionResult, StreamingExecution } from '@/executor/types'
 import type { ResolvedSecretTraceProvenanceV1 } from '@/executor/utils/resolved-secret-trace-registry'
+import type { CoreTriggerType } from '@/stores/logs/filters/types'
 
 const logger = createLogger('WorkflowExecution')
 
@@ -73,9 +75,10 @@ async function resolveExecutionBillingAttribution(params: {
 
 export interface ExecuteWorkflowOptions {
   enabled: boolean
+  principal: WorkflowExecutionPrincipal
   selectedOutputs?: string[]
   isSecureMode?: boolean
-  workflowTriggerType?: 'api' | 'chat' | 'copilot' | 'table'
+  workflowTriggerType?: CoreTriggerType | 'table'
   /**
    * If set, the executor enters the workflow at this block instead of resolving a Start block.
    * Use for trigger-originated runs (webhooks, table triggers, schedules) where the entry point
@@ -175,6 +178,10 @@ export async function executeWorkflow(
     actorUserId,
     streamConfig,
   })
+  if (!streamConfig?.principal) {
+    throw new Error('Workflow execution principal is required')
+  }
+  const principal = streamConfig.principal
   if (
     billingAttribution.actorUserId !== actorUserId ||
     billingAttribution.workspaceId !== workspaceId
@@ -216,6 +223,7 @@ export async function executeWorkflow(
       workflowId,
       workspaceId,
       userId: actorUserId,
+      principal,
       billingAttribution,
       workflowUserId: workflow.userId,
       sessionUserId,

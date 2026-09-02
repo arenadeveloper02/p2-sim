@@ -47,6 +47,10 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'https://www.googleapis.com/auth/admin.directory.group.readonly': 'View Google Workspace groups',
   'https://www.googleapis.com/auth/admin.directory.group.member.readonly':
     'View Google Workspace group memberships',
+  'https://www.googleapis.com/auth/chat.spaces.readonly':
+    'View Google Chat spaces you are a member of',
+  'https://www.googleapis.com/auth/chat.messages.readonly':
+    'View messages in Google Chat spaces you are a member of',
   'https://www.googleapis.com/auth/meetings.space.created':
     'Create and manage Google Meet meeting spaces',
   'https://www.googleapis.com/auth/meetings.space.readonly':
@@ -253,6 +257,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'Calendars.ReadWrite': 'Read and manage Outlook calendar events',
   'Files.Read': 'Read OneDrive files',
   'Files.ReadWrite': 'Read and write OneDrive files',
+  'Files.Read.All': 'Read files shared with you, including SharePoint libraries',
+  'Files.ReadWrite.All': 'Read and write files you have access to, including SharePoint libraries',
   'Tasks.ReadWrite': 'Read and manage Planner tasks',
   'Sites.Read.All': 'Read Sharepoint sites',
   'Sites.ReadWrite.All': 'Read and write Sharepoint sites',
@@ -476,12 +482,41 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'me:read': 'Read your user profile',
 }
 
+/** Scope labels that cannot be keyed by scope alone because providers reuse names. */
+const PROVIDER_SCOPE_DESCRIPTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  /**
+   * Word documents are ordinary drive items, so the integration asks for the
+   * generic Files permissions. The shared labels name OneDrive specifically,
+   * which reads as the wrong product on the Word consent screen and omits the
+   * SharePoint libraries the same scopes cover.
+   */
+  'microsoft-word': {
+    'Files.Read': 'Read your Word documents in OneDrive',
+    'Files.ReadWrite': 'Read, create, and edit your Word documents in OneDrive',
+    'Files.Read.All': 'Read Word documents shared with you, including SharePoint libraries',
+    'Files.ReadWrite.All':
+      'Read, create, and edit Word documents you have access to, including SharePoint libraries',
+  },
+  bitbucket: {
+    account: 'View your Bitbucket account and workspace memberships',
+    repository: 'View repositories and source code',
+    'repository:write': 'Create and modify repositories, branches, and source code',
+    pullrequest: 'View pull requests, comments, approvals, and statuses',
+    'pullrequest:write': 'Create, update, approve, decline, and merge pull requests',
+    pipeline: 'View pipelines, steps, and logs',
+    'pipeline:write': 'Run and stop pipelines',
+    webhook: 'Manage repository webhooks',
+  },
+}
+
 /**
  * Get a human-readable description for a scope.
  * Falls back to the raw scope string if no description is found.
  */
-export function getScopeDescription(scope: string): string {
-  return SCOPE_DESCRIPTIONS[scope] || scope
+export function getScopeDescription(scope: string, providerId?: string): string {
+  return (
+    PROVIDER_SCOPE_DESCRIPTIONS[providerId ?? '']?.[scope] || SCOPE_DESCRIPTIONS[scope] || scope
+  )
 }
 
 /**

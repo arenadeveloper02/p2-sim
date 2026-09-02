@@ -1,4 +1,8 @@
-import type { Principal, WorkflowExecutionDelegatedPrincipal } from '@sim/auth/principal'
+import {
+  type BoundWorkflowExecutionDelegatedPrincipal,
+  type Principal,
+  requirePrincipalSubjectUserId,
+} from '@sim/auth/principal'
 import { db, dbFor } from '@sim/db'
 import { uploadSession } from '@sim/db/schema'
 import { safeCompare } from '@sim/security/compare'
@@ -46,6 +50,14 @@ import type {
 
 export const UPLOAD_SESSION_PUT_MAX_BYTES = 50 * 1024 * 1024
 export const UPLOAD_SESSION_PART_SIZE = 8 * 1024 * 1024
+/**
+ * Single-PUT ceiling for the `local` provider. A local PUT is proxied through an app route
+ * rather than sent to object storage, so it must stay under the route's body limit; anything
+ * larger goes multipart, whose parts are already sized to fit. Kept equal to
+ * {@link UPLOAD_SESSION_PART_SIZE} but named separately so tuning part size for cloud
+ * throughput cannot silently move the local proxy threshold.
+ */
+export const UPLOAD_SESSION_LOCAL_PUT_MAX_BYTES = UPLOAD_SESSION_PART_SIZE
 export const UPLOAD_SESSION_MAX_PART_URLS = 100
 export const UPLOAD_SESSION_TTL_MS = 24 * 60 * 60 * 1000
 export const UPLOAD_SESSION_ASSET_MAX_BYTES = 5 * 1024 * 1024
@@ -133,11 +145,11 @@ export class UploadSessionError extends OrchestrationError {
 
 function isExecutorWorkflowExecutionPrincipal(
   principal: Principal
-): principal is WorkflowExecutionDelegatedPrincipal {
+): principal is BoundWorkflowExecutionDelegatedPrincipal {
   if (
     principal.kind !== 'delegated' ||
     principal.serviceId !== 'executor' ||
-    !('delegationContext' in principal)
+    !principal.delegationContext
   ) {
     return false
   }
@@ -212,11 +224,6 @@ export async function createUploadSession(
     })
   }
   const { storageContext, finalKey } = resolveUploadStorage(params, id)
-  const method: UploadTransferMethod =
-    params.fileSize <= UPLOAD_SESSION_PUT_MAX_BYTES ? 'put' : 'multipart'
-  const partSize = method === 'multipart' ? UPLOAD_SESSION_PART_SIZE : null
-  const partCount =
-    method === 'multipart' ? Math.ceil(params.fileSize / UPLOAD_SESSION_PART_SIZE) : null
 
   if (requiresStorageQuota(params.purpose)) {
     if (!workspaceId) throw new Error(`${params.purpose} upload is missing workspaceId`)
@@ -228,6 +235,12 @@ export async function createUploadSession(
   }
 
   const provider = uploadStorageProvider()
+  const putMaxBytes =
+    provider === 'local' ? UPLOAD_SESSION_LOCAL_PUT_MAX_BYTES : UPLOAD_SESSION_PUT_MAX_BYTES
+  const method: UploadTransferMethod = params.fileSize <= putMaxBytes ? 'put' : 'multipart'
+  const partSize = method === 'multipart' ? UPLOAD_SESSION_PART_SIZE : null
+  const partCount =
+    method === 'multipart' ? Math.ceil(params.fileSize / UPLOAD_SESSION_PART_SIZE) : null
   if (provider === 'local') await maybeCleanupLocalUploadArtifacts()
   const objectMetadata = uploadSessionObjectMetadata({
     id,
@@ -452,7 +465,7 @@ export function createUploadSessionAuthBinding(
         principal: {
           kind: principal.kind,
           serviceId: principal.serviceId,
-          subjectUserId: principal.subjectUserId,
+          subjectUserId: requirePrincipalSubjectUserId(principal),
           audience: principal.audience,
           workflowId: principal.delegationContext.workflowId,
           ...(principal.delegationContext.executionId
@@ -466,6 +479,8 @@ export function createUploadSessionAuthBinding(
         'forbidden',
         'Credential Group enrollment principals cannot create uploads'
       )
+    case 'system':
+      throw new UploadSessionError('forbidden', 'System principals cannot create uploads')
   }
 }
 
@@ -632,14 +647,14 @@ export async function completeUploadSession<T>(params: {
       if (claimed.method === 'put') {
         throw new UploadSessionError('conflict', 'Uploaded object not found')
       }
-      const parts = await listMultipartProviderParts({
+      const providerParts = await listMultipartProviderParts({
         provider: claimed.storageProvider,
         providerUploadId: claimed.providerUploadId,
         uploadId: claimed.id,
         key: claimed.finalKey,
         context: claimed.storageContext,
       })
-      validateProviderParts(claimed, parts)
+      const parts = validatedSortedProviderParts(claimed, providerParts)
       try {
         await completeMultipartProviderUpload({
           provider: claimed.storageProvider,
@@ -1041,7 +1056,10 @@ async function claimSession(
   return sessionFromRow(row, '')
 }
 
-function validateProviderParts(session: UploadSessionRecord, parts: CompletedUploadPart[]): void {
+function validatedSortedProviderParts(
+  session: UploadSessionRecord,
+  parts: CompletedUploadPart[]
+): CompletedUploadPart[] {
   if (!session.partCount) throw new Error('Multipart upload is missing partCount')
   if (parts.length !== session.partCount) {
     throw new UploadSessionError(
@@ -1072,6 +1090,7 @@ function validateProviderParts(session: UploadSessionRecord, parts: CompletedUpl
       )
     }
   }
+  return sorted
 }
 
 function assertObjectIdentity(

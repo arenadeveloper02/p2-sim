@@ -1,7 +1,7 @@
 'use client'
 
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, PlayOutline, Skeleton, Tooltip, toast } from '@sim/emcn'
+import { Button, OverflowText, PlayOutline, Skeleton, Tooltip, toast } from '@sim/emcn'
 import {
   Download,
   FileX,
@@ -103,9 +103,6 @@ interface ResourceContentProps {
   isAgentResponding?: boolean
   genericResourceData?: GenericResourceData
   previewContextKey?: string
-  /** Resolved server-side by the home page — the embedded table can't read
-   *  AppConfig itself, so the flag is threaded down rather than looked up. */
-  tableViewsEnabled?: boolean
   onNotFound?: (resourceId: string) => void
   /**
    * Whether this resource is the one on screen. Only the persistent panels
@@ -178,7 +175,6 @@ export const ResourceContent = memo(function ResourceContent({
   isAgentResponding,
   genericResourceData,
   previewContextKey,
-  tableViewsEnabled,
   onNotFound,
   visible = true,
   onBrowserOverlayControllerChange,
@@ -256,7 +252,7 @@ export const ResourceContent = memo(function ResourceContent({
           workspaceId={workspaceId}
           tableId={resource.id}
           embedded
-          viewsEnabled={tableViewsEnabled}
+          initialViewId={resource.viewId}
         />
       )
 
@@ -798,7 +794,7 @@ function EmbeddedFolder({ workspaceId, folderId }: EmbeddedFolderProps) {
               className='flex items-center gap-2 rounded-[6px] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-4)]'
             >
               <WorkflowIcon className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-              <span className='truncate text-[13px] text-[var(--text-primary)]'>{w.name}</span>
+              <OverflowText label={w.name} className='text-[var(--text-primary)] text-small' />
             </button>
           ))}
         </div>

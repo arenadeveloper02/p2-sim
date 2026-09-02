@@ -11,37 +11,7 @@ import {
   getMainCSPPolicy,
   getWorkflowExecutionCSPPolicy,
 } from './lib/core/security/csp'
-
-/**
- * Marketing routes (`app/(landing)/**`, plus the root) exempted from COEP.
- *
- * COEP is a *document* header and is inherited across client-side `<Link>`
- * navigations, so `/demo`'s own exemption only applies on a direct load. Any
- * landing page left isolated soft-navigates into `/demo` still credentialless,
- * where the Cal.com booker iframe loads uncredentialed and hangs forever.
- * Every route under `app/(landing)` must be listed here.
- */
-const LANDING_ROUTES = [
-  'blog',
-  'careers',
-  'changelog',
-  'comparisons',
-  'contact',
-  'demo',
-  'enterprise',
-  'files',
-  'integrations',
-  'knowledge',
-  'library',
-  'logs',
-  'models',
-  'pricing',
-  'privacy',
-  'solutions',
-  'tables',
-  'terms',
-  'workflows',
-] as const
+import { LANDING_ROUTES } from './lib/landing/routes'
 
 /**
  * Dev-only escape hatch: when `SIM_DEV_MINIMAL_REGISTRY=1` (`bun run dev:minimal`),
@@ -280,21 +250,15 @@ const nextConfig: NextConfig = {
      * it lives. Restoring across commits is separately undocumented-as-supported
      * (vercel/next.js#87283 reports stale HTML from a cache built elsewhere).
      *
-     * Pinned explicitly rather than left to the Next default: upstream already
-     * flips this default to true in canary/preview builds (vercel/next.js#94616),
-     * so relying on the default would let a version bump silently re-enable a
-     * config we measured as harmful. Always off for Docker/CI too — the cache
-     * itself adds RSS under BuildKit's tight cgroup.
-     * Keep the explicit pin even while we sit on 16.2.12: 16.3.0 flips this
-     * default to true for stable (vercel/next.js#94616), so dropping it would
-     * silently re-enable the slower cache the next time we take that bump.
+     * The explicit pin is load-bearing: 16.3.0 flipped this default to true for
+     * stable (vercel/next.js#94616), so dropping it re-enables the slower cache.
      */
     turbopackFileSystemCacheForBuild: false,
     /**
      * TypeScript 7 ships no JavaScript compiler API until 7.1, so Next's default
      * checker cannot load it — this shells out to the project-local `tsc` instead.
      * Pinned because the failure mode is not slower type checking but none at all:
-     * without it 16.2.12 skips the stage silently in 138ms.
+     * 16.2.12 skipped the stage silently in 138ms.
      */
     useTypeScriptCli: true,
     preloadEntriesOnStart: false,
@@ -399,7 +363,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/api/v2/workflows/:id/execute',
+        source: '/api/v2/workflows/:workflowId/execute',
         headers: [
           { key: 'Cross-Origin-Embedder-Policy', value: 'unsafe-none' },
           { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },

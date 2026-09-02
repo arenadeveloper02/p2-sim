@@ -826,9 +826,7 @@ export async function* runLocalCopilotAgent(
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
     turnMutations: createTurnMutations(),
-    ...(relevantSkills.message
-      ? { relevantSkillGuidance: relevantSkills.message.content }
-      : {}),
+    ...(relevantSkills.message ? { relevantSkillGuidance: relevantSkills.message.content } : {}),
   }
 
   if (resolvedWorkflowId) {

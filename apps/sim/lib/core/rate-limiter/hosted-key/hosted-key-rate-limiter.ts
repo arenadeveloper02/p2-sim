@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-import { sleep } from '@sim/utils/helpers'
 import { generateShortId } from '@sim/utils/id'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
@@ -96,6 +95,9 @@ function pushLegacyEnvKeys(names: string[], prefix: string): void {
  * For backward compatibility with older self-hosted env files, when `_COUNT`
  * is unset or zero we also fall back to singular and `_1..3` names.
  * Google-hosted image tools additionally accept the Gemini key namespace.
+ * Resolves env var names for a hosted-key prefix. Numbered pools use a
+ * `{PREFIX}_COUNT` env var. Deployments that still provide one legacy singular
+ * `{PREFIX}` key remain supported when no count is configured.
  */
 function resolveEnvKeys(prefix: string): string[] {
   const count = Number.parseInt(process.env[`${prefix}_COUNT`] || '0', 10)

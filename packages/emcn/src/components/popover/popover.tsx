@@ -56,6 +56,7 @@ import { createPortal } from 'react-dom'
 import { Check, ChevronLeft, ChevronRight, Search } from '../../icons'
 import { cn } from '../../lib/cn'
 import { chipActiveSurfaceClass, chipHoverSurfaceClass } from '../chip/chip-chrome'
+import { TOOLTIP_MAX_WIDTH_PX, TOOLTIP_SURFACE_CLASS } from '../tooltip/tooltip-styles'
 
 type PopoverSize = 'sm' | 'md'
 type PopoverColorScheme = 'default' | 'inverted'
@@ -363,8 +364,8 @@ interface PopoverContentProps
   disablePortal?: boolean
   /** Maximum height in pixels */
   maxHeight?: number
-  /** Maximum width in pixels. Enables text truncation when set. */
-  maxWidth?: number
+  /** Maximum width in pixels or as a CSS length. Enables text truncation when set. */
+  maxWidth?: number | string
   /** Minimum width in pixels */
   minWidth?: number
   /**
@@ -389,6 +390,11 @@ interface PopoverContentProps
    * @default false
    */
   border?: boolean
+  /**
+   * Applies a semantic platform surface treatment.
+   * @default 'default'
+   */
+  appearance?: 'default' | 'tooltip'
   /**
    * Flip to avoid viewport collisions
    * @default true
@@ -429,6 +435,7 @@ const PopoverContent = React.forwardRef<
       sideOffset,
       collisionPadding = 8,
       border = false,
+      appearance = 'default',
       avoidCollisions = true,
       showArrow = false,
       arrowClassName,
@@ -529,8 +536,16 @@ const PopoverContent = React.forwardRef<
     // management to avoid conflicts between the popover's internal selection index
     // and the component's custom navigation state.
 
+    const effectiveMaxWidth =
+      maxWidth !== undefined
+        ? typeof maxWidth === 'number'
+          ? `${maxWidth}px`
+          : maxWidth
+        : appearance === 'tooltip'
+          ? `min(${TOOLTIP_MAX_WIDTH_PX}px, calc(100vw - 2rem))`
+          : undefined
     const hasUserWidthConstraint =
-      maxWidth !== undefined ||
+      effectiveMaxWidth !== undefined ||
       minWidth !== undefined ||
       style?.minWidth !== undefined ||
       style?.maxWidth !== undefined ||
@@ -591,6 +606,7 @@ const PopoverContent = React.forwardRef<
           showArrow ? 'overflow-visible' : 'overflow-auto',
           STYLES.colorScheme[colorScheme].content,
           STYLES.content,
+          appearance === 'tooltip' && TOOLTIP_SURFACE_CLASS,
           hasUserWidthConstraint &&
             '[&_.flex-1:not([data-popover-scroll])]:truncate [&_[data-popover-section]]:truncate',
           border && 'border border-[var(--border-1)]',
@@ -598,7 +614,7 @@ const PopoverContent = React.forwardRef<
         )}
         style={{
           maxHeight: `${maxHeight || 400}px`,
-          maxWidth: maxWidth !== undefined ? `${maxWidth}px` : 'calc(100vw - 16px)',
+          maxWidth: effectiveMaxWidth ?? 'calc(100vw - 16px)',
           minWidth:
             minWidth !== undefined
               ? `${minWidth}px`

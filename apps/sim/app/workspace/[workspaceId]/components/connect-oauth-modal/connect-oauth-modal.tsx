@@ -28,6 +28,7 @@ import {
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { getScopeDescription, getServiceConfigByProviderId } from '@/lib/oauth/utils'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
+import { withBrandIcon } from '@/blocks/brand-icon'
 import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOrganization } from '@/hooks/queries/organization'
@@ -54,11 +55,11 @@ function isHiddenScope(scope: string): boolean {
 function resolveService(
   provider: OAuthProvider,
   serviceId: string
-): { providerName: string; ProviderIcon: ServiceIcon } {
+): { providerName: string; ProviderIcon: ServiceIcon | null } {
   const { baseProvider } = parseProvider(provider)
   const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
   let providerName = baseProviderConfig?.name || provider
-  let ProviderIcon: ServiceIcon = baseProviderConfig?.icon || (() => null)
+  let ProviderIcon: ServiceIcon | null = baseProviderConfig?.icon ?? null
   if (baseProviderConfig) {
     for (const [key, service] of Object.entries(baseProviderConfig.services)) {
       if (key === serviceId || service.providerId === provider) {
@@ -116,6 +117,11 @@ interface ConnectOAuthModalReauthorizeProps extends ConnectOAuthModalBaseProps {
   toolName: string
   requiredScopes?: readonly string[]
   newScopes?: readonly string[]
+  reconnectTarget?: {
+    workspaceId: string
+    credentialId: string
+    displayName: string
+  }
   onConnect?: () => Promise<void> | void
 }
 
@@ -340,6 +346,16 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
         handleClose()
         return
       } else {
+        if (props.reconnectTarget) {
+          const draft = await createDraft.mutateAsync({
+            workspaceId: props.reconnectTarget.workspaceId,
+            providerId,
+            credentialId: props.reconnectTarget.credentialId,
+            displayName: props.reconnectTarget.displayName,
+          })
+          draftId = draft.draftId
+        }
+
         logger.info('Reauthorizing OAuth2', {
           providerId,
           requiredScopes,
@@ -365,7 +381,8 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
     }
   }
 
-  const isPending = (isConnect && createDraft.isPending) || connectOAuthService.isPending
+  const createsDraft = isConnect || (!isConnect && Boolean(props.reconnectTarget))
+  const isPending = (createsDraft && createDraft.isPending) || connectOAuthService.isPending
   const customAppBlocked =
     needsCustomApp && (!organizationId || (isOrgAdmin && !customAppConfigured))
   const isDisabled = isConnect
@@ -382,7 +399,10 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
 
   return (
     <ChipModal open={open} onOpenChange={onOpenChange} srTitle={title}>
-      <ChipModalHeader icon={ProviderIcon} onClose={handleClose}>
+      <ChipModalHeader
+        icon={ProviderIcon ? withBrandIcon(ProviderIcon) : null}
+        onClose={handleClose}
+      >
         {title}
       </ChipModalHeader>
       <ChipModalBody>
@@ -439,7 +459,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
                 {displayScopes.map((scope) => (
                   <InfoCardItem key={scope}>
                     <span className='flex items-center gap-2'>
-                      {getScopeDescription(scope)}
+                      {getScopeDescription(scope, providerId)}
                       {!isConnect && newScopesSet.has(scope) && (
                         <Badge variant='amber' size='sm'>
                           New

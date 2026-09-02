@@ -1,3 +1,4 @@
+import type { WorkflowExecutionPrincipal } from '@sim/auth/principal'
 import type { Edge } from 'reactflow'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
@@ -25,6 +26,8 @@ export interface ExecutionMetadata {
   workflowId: string
   workspaceId: string
   userId: string
+  /** Original authenticated caller. Billing and executor user IDs never replace it. */
+  principal: WorkflowExecutionPrincipal
   /** Immutable actor/payer decision captured before execution. */
   billingAttribution?: BillingAttributionSnapshot
   sessionUserId?: string
@@ -252,6 +255,7 @@ export interface ContextExtensions {
   fileKeys?: string[]
   allowLargeValueWorkflowScope?: boolean
   userId?: string
+  principal?: WorkflowExecutionPrincipal
   /** Canonical signed execution identity inherited by regular nested workflows. */
   executorDelegationOrigin?: ExecutorDelegationOrigin
   /**
@@ -345,6 +349,33 @@ export interface ContextExtensions {
    * Each hop appends the current workflow ID before making outgoing requests.
    */
   callChain?: string[]
+
+  /**
+   * The Sim user watching this run's live block stream, when there is exactly one
+   * and they are a known, authenticated workspace member — i.e. an editor/manual
+   * run. Deliberately UNSET on chat deployments, public API, webhook, and schedule
+   * runs, whose stream consumer may be an anonymous external visitor.
+   *
+   * Used to decide whether a custom block may stream the SOURCE workflow's block
+   * events across the invocation boundary: only if this viewer has access to the
+   * source workspace. Absent means the boundary holds, so every surface that does
+   * not opt in is fail-closed by default.
+   */
+  liveTraceViewerUserId?: string
+
+  /**
+   * Block callbacks that ONLY emit to the live stream — they never write the invoking
+   * run's progress markers. `onBlockStart`/`onBlockComplete` above are persist-then-emit
+   * composites: on the invoking run they write block names and I/O into that run's
+   * `LoggingSession` before reaching the stream.
+   *
+   * A custom block's child must reach the emit half and never the persist half. The
+   * stream is gated per viewer against the source workspace, but a persisted marker is
+   * keyed by the PARENT execution and is readable by anyone with parent-workspace access
+   * long after that check — so persisting the source workflow's block names there would
+   * leak them past the boundary the gate exists to hold.
+   */
+  liveStreamCallbacks?: Pick<ExecutionCallbacks, 'onBlockStart' | 'onBlockComplete'>
 }
 
 export interface WorkflowInput {

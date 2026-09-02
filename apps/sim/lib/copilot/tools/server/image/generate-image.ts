@@ -28,6 +28,7 @@ import {
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
 import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 import { MAX_MEDIA_BYTES } from '@/lib/media/falai'
+import { createWorkspaceFileSecretProvenanceFromRegistry } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { fileOperations } from '@/lib/workspace-files/application/operations'
 import { readWorkspaceFileContent } from '@/lib/workspace-files/application/read-workspace-file-content'
 
@@ -131,9 +132,6 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
     params: GenerateImageArgs,
     context?: ServerToolContext
   ): Promise<GenerateImageResult> {
-    const withMessageId = (message: string) =>
-      context?.messageId ? `${message} [messageId:${context.messageId}]` : message
-
     if (!context?.userId) {
       throw new Error('Authentication required')
     }
@@ -238,6 +236,19 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
 
       const generatedFiles: NonNullable<GenerateImageResult['files']> = []
       const count = Math.min(MAX_IMAGES_TO_GENERATE, Math.max(1, imageCount))
+      // Reference images were asserted opaque-egress-safe above, so the prompt
+      // is the only secret-bearing input these files can inherit. Recording its
+      // provenance is what keeps the written file readable by the model later:
+      // a write without a sidecar stamps the file "unknown" and every
+      // content-view read of it is refused.
+      const promptProvenance = await createWorkspaceFileSecretProvenanceFromRegistry(
+        context.resolvedSecretTraceRegistry,
+        prompt,
+        { userId: context.userId, workspaceId }
+      )
+      const secretProvenance = promptProvenance.safe
+        ? promptProvenance.provenance
+        : { status: 'unknown' as const }
 
       for (let index = 0; index < count; index++) {
         const promptForImage = singleImagePrompts?.[index] || singleImagePrompt || prompt
@@ -294,6 +305,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
           },
           buffer: imageBuffer,
           inferredMimeType: mimeType,
+          secretProvenance,
         })
 
         logger.info('Generated image saved', {

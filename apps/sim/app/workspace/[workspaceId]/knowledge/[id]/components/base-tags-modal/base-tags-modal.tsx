@@ -261,6 +261,7 @@ export function BaseTagsModal({
         <ChipModalBody>
           <ChipModalField
             type='custom'
+            submitOnEnter={false}
             title={
               <>
                 Tags:{' '}
@@ -402,6 +403,7 @@ export function BaseTagsModal({
 
         <ChipModalFooter
           onCancel={() => handleClose(false)}
+          defaultAction='none'
           primaryAction={{ label: 'Close', onClick: () => handleClose(false) }}
         />
       </ChipModal>

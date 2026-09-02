@@ -3,7 +3,7 @@
  */
 import { dbChainMockFns, queueTableRows, resetDbChainMock, schemaMock } from '@sim/testing'
 import { inArray } from 'drizzle-orm'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { adapter } = vi.hoisted(() => ({
   adapter: {
@@ -32,6 +32,7 @@ vi.mock('@/lib/credential-groups/provider-registry', () => ({
 
 import {
   completeCredentialGroupEnrollment,
+  createCredentialGroupInvitationLink,
   deleteCredentialGroupEnrollment,
   listCredentialGroupEnrollments,
   resendCredentialGroupEnrollment,
@@ -40,6 +41,23 @@ import { CREDENTIAL_GROUP_PROVIDER_IDS } from '@/lib/credential-groups/providers
 import { sendEmail } from '@/lib/messaging/email/mailer'
 
 const MAX_CONNECTION_SUMMARIES = CREDENTIAL_GROUP_PROVIDER_IDS.length * 3
+
+/**
+ * The invitation fixtures below are dated relative to a fixed point in the enrollment
+ * window, and the code under test compares them against the wall clock. Pinning the
+ * clock keeps those literals meaningful and keeps the suite deterministic — dating the
+ * expiry to a real future instant only moves the failure, it does not remove it.
+ */
+const NOW = new Date('2026-08-11T12:10:00.000Z')
+
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  vi.setSystemTime(NOW)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const ENROLLMENT = {
   id: 'enrollment-1',
@@ -179,6 +197,62 @@ describe('listCredentialGroupEnrollments', () => {
     ).rejects.toMatchObject({ message: 'Enrollment cursor is invalid', status: 400 })
 
     expect(dbChainMockFns.limit).toHaveBeenCalledOnce()
+  })
+})
+
+describe('createCredentialGroupInvitationLink', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+  })
+
+  it('issues a fresh enrollment token without sending email', async () => {
+    const issued = {
+      ...ENROLLMENT,
+      email: 'person@example.com',
+      status: 'invited' as const,
+      sentAt: null,
+      completedAt: null,
+    }
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          workspaceId: 'workspace-1',
+          workspaceName: 'Workspace',
+          groupId: 'group-1',
+          groupName: 'Group',
+          groupStatus: 'active',
+          options: [{ id: 'option-1', status: 'active' }],
+        },
+      ])
+      .mockResolvedValueOnce([])
+    dbChainMockFns.returning.mockResolvedValueOnce([issued])
+
+    const result = await createCredentialGroupInvitationLink(
+      'workspace-1',
+      'group-1',
+      'user-1',
+      ' Person@Example.COM '
+    )
+
+    expect(result.enrollment).toMatchObject({
+      id: ENROLLMENT.id,
+      email: 'person@example.com',
+      status: 'invited',
+      sentAt: null,
+    })
+    expect(new URL(result.invitationLink).pathname).toMatch(
+      /^\/credential-groups\/enroll\/[0-9a-f-]+$/
+    )
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialGroupId: 'group-1',
+        email: 'person@example.com',
+        createdBy: 'user-1',
+        sentAt: null,
+      })
+    )
+    expect(sendEmail).not.toHaveBeenCalled()
   })
 })
 

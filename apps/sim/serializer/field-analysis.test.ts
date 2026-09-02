@@ -215,43 +215,75 @@ describe('extractBlockParams', () => {
     expect(params.manualCredential).toBeUndefined()
   })
 
-  it('falls back to advanced canonical value when basic mode is forced but empty', () => {
-    svcConfig.value = config([
-      {
-        id: 'spreadsheetId',
-        title: 'Spreadsheet',
-        type: 'file-selector',
-        canonicalParamId: 'spreadsheetId',
-        mode: 'basic',
-      },
-      {
-        id: 'manualSpreadsheetId',
-        title: 'Spreadsheet ID',
-        type: 'short-input',
-        canonicalParamId: 'spreadsheetId',
-        mode: 'advanced',
-      },
-      {
-        id: 'range',
-        title: 'Range',
-        type: 'short-input',
-      },
-    ])
-
-    const params = extractBlockParams(
-      block({
-        type: 'svc',
-        data: { canonicalModes: { spreadsheetId: 'basic' } },
-        subBlocks: {
-          spreadsheetId: { value: '' },
-          manualSpreadsheetId: { value: 'spreadsheet-123' },
-          range: { value: 'Sheet1!A1:B2' },
+  describe('legacy advancedMode', () => {
+    /**
+     * `advancedMode` is a block flag the editor stopped writing in #6458, but stored workflows
+     * still carry it. It means "the ADVANCED member of a pair wins", which only has meaning for a
+     * group that has one.
+     */
+    const nonPair = () =>
+      config([
+        {
+          id: 'personalApiKey',
+          title: 'Personal API Key',
+          type: 'short-input',
+          canonicalParamId: 'apiKey',
+          required: true,
         },
-      })
-    )
+      ])
 
-    expect(params.spreadsheetId).toBe('spreadsheet-123')
-    expect(params.manualSpreadsheetId).toBeUndefined()
-    expect(params.range).toBe('Sheet1!A1:B2')
+    it('keeps a canonical group that has no advanced member', () => {
+      svcConfig.value = nonPair()
+
+      const params = extractBlockParams(
+        block({
+          type: 'svc',
+          advancedMode: true,
+          subBlocks: { personalApiKey: { value: 'phx_secret' } },
+        })
+      )
+
+      // Regression: forcing 'advanced' on a group with no advanced member left `chosen`
+      // undefined while the source-id sweep still deleted `personalApiKey`, so the block
+      // serialized with neither key and failed at run time on a field the user had filled.
+      expect(params.apiKey).toBe('phx_secret')
+      expect(params.personalApiKey).toBeUndefined()
+    })
+
+    it('does not report the surviving value as a missing required field', () => {
+      const cfg = nonPair()
+      const state = block({
+        type: 'svc',
+        advancedMode: true,
+        subBlocks: { personalApiKey: { value: 'phx_secret' } },
+      })
+
+      expect(
+        collectBlockFieldIssues(state, cfg, extractBlockParams(state)).missingRequiredFields
+      ).toEqual([])
+    })
+
+    it('still selects the advanced member of a real pair', () => {
+      svcConfig.value = config([
+        { id: 'sel', title: 'Table', type: 'dropdown', canonicalParamId: 'tableId', mode: 'basic' },
+        {
+          id: 'manualId',
+          title: 'Table ID',
+          type: 'short-input',
+          canonicalParamId: 'tableId',
+          mode: 'advanced',
+        },
+      ])
+
+      const params = extractBlockParams(
+        block({
+          type: 'svc',
+          advancedMode: true,
+          subBlocks: { sel: { value: 'basic-value' }, manualId: { value: 'advanced-value' } },
+        })
+      )
+
+      expect(params.tableId).toBe('advanced-value')
+    })
   })
 })

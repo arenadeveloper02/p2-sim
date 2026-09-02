@@ -221,7 +221,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [messages]
   )
 
-  const { isStreamingResponse, stopStreaming, handleStreamedResponse } = useChatStreaming()
+  const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
+    useChatStreaming()
+
+  const handleStopStreaming = useCallback(() => {
+    stopStreaming(setMessages)
+    setIsLoading(false)
+  }, [stopStreaming])
 
   const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
 
@@ -781,8 +787,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setUserHasScrolled(false)
 
     let userMessageId: string | null = null
-    // Create abort controller for request cancellation
+    // One AbortController for fetch + SSE body reads so Stop cancels server work too.
     const abortController = new AbortController()
+    abortControllerRef.current = abortController
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, CHAT_REQUEST_TIMEOUT_MS)
@@ -1624,14 +1631,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                   chatConfig={chatConfig}
                   department={chatDepartment}
                   userName={userName}
-                  isStreaming={isStreamingResponse}
+                  isStreaming={isStreamingResponse || isLoading}
                   isLoading={isLoading}
                   insertText={askInChatText}
                   onInsertConsumed={() => setAskInChatText('')}
                   onSubmit={(value, _isVoiceInput, files) => {
                     void handleSendMessage(value, false, files)
                   }}
-                  onStopStreaming={() => stopStreaming(setMessages)}
+                  onStopStreaming={handleStopStreaming}
                   selectedGeneratedImages={effectiveGeneratedImages}
                   onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                   inputWrapperRef={chatInputWrapperRef}
@@ -1688,7 +1695,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                           void handleSendMessage(value, false, files)
                         }}
                         isStreaming={isLoading || isStreamingResponse}
-                        onStopStreaming={() => stopStreaming(setMessages)}
+                        onStopStreaming={handleStopStreaming}
                         selectedGeneratedImages={effectiveGeneratedImages}
                         onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                       />

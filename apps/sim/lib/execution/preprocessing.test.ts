@@ -256,47 +256,83 @@ describe('preprocessExecution logPreprocessingErrors option', () => {
   })
 })
 
-describe('preprocessExecution schedule actor resolution', () => {
-  const scheduleOptions = {
+describe('preprocessExecution suppressRetryableFailureLogs option', () => {
+  const baseOptions = {
     workflowId: 'workflow-1',
-    userId: 'unknown',
-    triggerType: 'schedule' as const,
+    userId: 'owner-1',
+    triggerType: 'webhook' as const,
     executionId: 'execution-1',
     requestId: 'request-1',
     checkDeployment: false,
     checkRateLimit: false,
-    workflowRecord: {
-      id: 'workflow-1',
-      userId: 'creator-1',
-      workspaceId: 'workspace-1',
-      isDeployed: true,
-    } as any,
+    workspaceId: 'workspace-1',
   }
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockGetScheduleExecutionActorUserId.mockImplementation(
-      async (_workspaceId: string, workflowUserId?: string | null) => workflowUserId ?? null
+  function makeLoggingSession() {
+    return {
+      safeStart: vi.fn().mockResolvedValue(true),
+      safeCompleteWithError: vi.fn().mockResolvedValue(undefined),
+    }
+  }
+
+  it('skips the failure row for a retryable infrastructure failure', async () => {
+    workflowAuthzMockFns.mockGetActiveWorkflowRecord.mockRejectedValueOnce(
+      Object.assign(new Error('write CONNECT_TIMEOUT'), { code: 'CONNECT_TIMEOUT' })
     )
-    mockGetActivelyBannedUserIds.mockResolvedValue([])
-    vi.mocked(getHighestPrioritySubscription).mockResolvedValue({ plan: 'free' } as any)
-    mockCheckAttributedUsageLimits.mockResolvedValue({
-      isExceeded: false,
-      payerUsage: { currentUsage: 1, limit: 10 },
+    const loggingSession = makeLoggingSession()
+
+    const result = await preprocessExecution({
+      ...baseOptions,
+      suppressRetryableFailureLogs: true,
+      loggingSession: loggingSession as any,
     })
+
+    expect(result).toMatchObject({
+      success: false,
+      error: {
+        message: 'Internal error while fetching workflow',
+        statusCode: 500,
+        retryable: true,
+      },
+    })
+    expect(loggingSession.safeStart).not.toHaveBeenCalled()
   })
 
-  it('uses the workflow owner for scheduled runs instead of the billed account', async () => {
-    const result = await preprocessExecution(scheduleOptions)
+  it('still records non-retryable failures while suppression is on', async () => {
+    workflowAuthzMockFns.mockGetActiveWorkflowRecord.mockRejectedValueOnce(
+      new Error('column "unknown" does not exist')
+    )
+    const loggingSession = makeLoggingSession()
 
-    expect(result.success).toBe(true)
-    expect(result.actorUserId).toBe('creator-1')
-    expect(result.executionActor).toEqual({
-      actorUserId: 'creator-1',
-      actorType: 'schedule',
+    const result = await preprocessExecution({
+      ...baseOptions,
+      suppressRetryableFailureLogs: true,
+      loggingSession: loggingSession as any,
     })
-    expect(mockGetScheduleExecutionActorUserId).toHaveBeenCalledWith('workspace-1', 'creator-1')
-    expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { statusCode: 500, retryable: false },
+    })
+    expect(loggingSession.safeStart).toHaveBeenCalled()
+  })
+
+  it('records retryable failures when the option is absent', async () => {
+    workflowAuthzMockFns.mockGetActiveWorkflowRecord.mockRejectedValueOnce(
+      Object.assign(new Error('write CONNECT_TIMEOUT'), { code: 'CONNECT_TIMEOUT' })
+    )
+    const loggingSession = makeLoggingSession()
+
+    const result = await preprocessExecution({
+      ...baseOptions,
+      loggingSession: loggingSession as any,
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { statusCode: 500, retryable: true },
+    })
+    expect(loggingSession.safeStart).toHaveBeenCalled()
   })
 })
 

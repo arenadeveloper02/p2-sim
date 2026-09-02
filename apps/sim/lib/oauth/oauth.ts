@@ -1,12 +1,12 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { truncate } from '@sim/utils/string'
 import {
   AirtableIcon,
   AsanaIcon,
   AtlassianIcon,
   AttioIcon,
   AzureIcon,
+  BitbucketIcon,
   BoxCompanyIcon,
   CalComIcon,
   ClaudeIcon,
@@ -18,6 +18,7 @@ import {
   GoogleAdsIcon,
   GoogleBigQueryIcon,
   GoogleCalendarIcon,
+  GoogleChatIcon,
   GoogleContactsIcon,
   GoogleDocsIcon,
   GoogleDriveIcon,
@@ -27,6 +28,8 @@ import {
   GoogleMeetIcon,
   GoogleSheetsIcon,
   GoogleTasksIcon,
+  GoogleVaultIcon,
+  HarmonicIcon,
   HubspotIcon,
   InstagramIcon,
   JiraIcon,
@@ -40,6 +43,7 @@ import {
   MicrosoftPlannerIcon,
   MicrosoftSharepointIcon,
   MicrosoftTeamsIcon,
+  MicrosoftWordIcon,
   MondayIcon,
   NetSuiteIcon,
   NotionIcon,
@@ -69,6 +73,7 @@ import {
   requireOAuthClientCapability,
 } from '@/lib/core/config/env-capabilities'
 import { isSlackExtendedScopesEnabled } from '@/lib/core/config/env-flags'
+import { redactExactSensitiveValues } from '@/lib/core/security/redaction'
 import {
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseTextWithLimit,
@@ -93,9 +98,11 @@ const logger = createLogger('OAuth')
  * with "unapproved permissions requested" when any requested scope is not on the
  * app's approved list, so these stay out of the default grant.
  */
-const SLACK_APPROVAL_GATED_SCOPES = isSlackExtendedScopesEnabled
-  ? (['assistant:write', 'app_mentions:read', 'im:history'] as const)
-  : ([] as const)
+export function getSlackApprovalGatedScopes(enabled: boolean): readonly string[] {
+  return enabled ? ['assistant:write', 'app_mentions:read', 'im:history'] : []
+}
+
+const SLACK_APPROVAL_GATED_SCOPES = getSlackApprovalGatedScopes(isSlackExtendedScopesEnabled)
 
 export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
   'claude-platform': {
@@ -259,7 +266,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Google Vault',
         description: 'Search, export, and manage matters/holds via Google Vault.',
         providerId: 'google-vault',
-        icon: GoogleIcon,
+        icon: GoogleVaultIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
           'https://www.googleapis.com/auth/userinfo.email',
@@ -287,6 +294,27 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'https://www.googleapis.com/auth/admin.directory.group.member',
         ],
         serviceAccountProviderId: 'google-service-account',
+      },
+      /**
+       * Deliberately declares no `serviceAccountProviderId`, unlike every sibling
+       * Google service. A Google service-account JWT cannot reach user-scoped Chat
+       * data without domain-wide delegation, so offering service-account auth here
+       * would surface a credential path that always fails. Enterprises that
+       * authenticate other Google connectors through a delegated service account must
+       * attach a per-user OAuth credential for Chat.
+       */
+      'google-chat': {
+        name: 'Google Chat',
+        description: 'Read Google Chat spaces and messages the signed-in user can access.',
+        providerId: 'google-chat',
+        icon: GoogleChatIcon,
+        baseProviderIcon: GoogleIcon,
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/chat.spaces.readonly',
+          'https://www.googleapis.com/auth/chat.messages.readonly',
+        ],
       },
       'google-meet': {
         name: 'Google Meet',
@@ -420,6 +448,37 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'offline_access',
           'Files.Read',
           'Sites.Read.All',
+        ],
+      },
+      'microsoft-word': {
+        name: 'Microsoft Word',
+        description: 'Connect to Microsoft Word and manage documents.',
+        providerId: 'microsoft-word',
+        icon: MicrosoftWordIcon,
+        baseProviderIcon: MicrosoftIcon,
+        /**
+         * Word documents are ordinary drive items, so the integration reads and
+         * writes them through the Files permissions rather than a Word-specific
+         * scope — Microsoft Graph exposes no Word API of its own.
+         *
+         * The `.All` variants are what make the SharePoint drive the block
+         * exposes actually work: `Files.ReadWrite` alone covers only the signed-in
+         * user's own OneDrive, so a document library would be rejected for
+         * insufficient privileges. Both are user-consentable, so this does not
+         * push the integration behind admin consent, and neither grants access to
+         * anything the signed-in account could not already open.
+         *
+         * @see https://learn.microsoft.com/en-us/graph/permissions-reference
+         */
+        scopes: [
+          'openid',
+          'profile',
+          'email',
+          'Files.Read',
+          'Files.ReadWrite',
+          'Files.Read.All',
+          'Files.ReadWrite.All',
+          'offline_access',
         ],
       },
       outlook: {
@@ -691,6 +750,30 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
     },
     defaultService: 'airtable',
+  },
+  bitbucket: {
+    name: 'Bitbucket',
+    icon: BitbucketIcon,
+    services: {
+      bitbucket: {
+        name: 'Bitbucket',
+        description: 'Read repositories, collaborate on pull requests, and manage pipelines.',
+        providerId: 'bitbucket',
+        icon: BitbucketIcon,
+        baseProviderIcon: BitbucketIcon,
+        scopes: [
+          'account',
+          'repository',
+          'repository:write',
+          'pullrequest',
+          'pullrequest:write',
+          'pipeline',
+          'pipeline:write',
+          'webhook',
+        ],
+      },
+    },
+    defaultService: 'bitbucket',
   },
   notion: {
     name: 'Notion',
@@ -1231,6 +1314,23 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'hubspot',
   },
+  harmonic: {
+    name: 'Harmonic',
+    icon: HarmonicIcon,
+    services: {
+      harmonic: {
+        name: 'Harmonic',
+        description: 'Search and enrich people with Harmonic data.',
+        providerId: 'harmonic',
+        serviceAccountProviderId: 'harmonic-service-account',
+        icon: HarmonicIcon,
+        baseProviderIcon: HarmonicIcon,
+        scopes: [],
+        authType: 'service_account',
+      },
+    },
+    defaultService: 'harmonic',
+  },
   linkedin: {
     name: 'LinkedIn',
     icon: LinkedInIcon,
@@ -1662,6 +1762,20 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       )
       return {
         tokenEndpoint: 'https://airtable.com/oauth2/v1/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: true,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'bitbucket': {
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'bitbucket',
+        'BITBUCKET_CLIENT_ID',
+        'BITBUCKET_CLIENT_SECRET'
+      )
+      return {
+        tokenEndpoint: 'https://bitbucket.org/site/oauth2/access_token',
         clientId,
         clientSecret,
         useBasicAuth: true,
@@ -2183,6 +2297,13 @@ function extractErrorCode(value: unknown): string | undefined {
   return undefined
 }
 
+function safeOAuthErrorCode(value: unknown, secrets: string[]): string | undefined {
+  const errorCode = extractErrorCode(value)
+  if (!errorCode) return undefined
+  const safeCode = redactExactSensitiveValues(errorCode, secrets).trim().toLowerCase()
+  return /^[a-z0-9][a-z0-9._:-]{0,127}$/.test(safeCode) ? safeCode : undefined
+}
+
 /**
  * Hard deadline on the token-endpoint exchange. This function does not coalesce
  * on its own; its sole production caller (`performCoalescedRefresh` in the OAuth
@@ -2191,6 +2312,22 @@ function extractErrorCode(value: unknown): string | undefined {
  * the undici socket defaults (~5 min) gave up.
  */
 const TOKEN_REFRESH_TIMEOUT_MS = 15_000
+
+function parseOAuthResponse(responseText: string): unknown {
+  try {
+    return JSON.parse(responseText)
+  } catch {
+    return responseText
+  }
+}
+
+function oauthResponseRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+const OAUTH_RESPONSE_OMITTED = '[token endpoint response omitted]'
 
 async function refreshInstagramLongLivedToken(
   config: ProviderAuthConfig,
@@ -2203,6 +2340,7 @@ async function refreshInstagramLongLivedToken(
 
   const response = await fetch(url.toString(), {
     method: 'GET',
+    redirect: 'error',
     signal: AbortSignal.timeout(TOKEN_REFRESH_TIMEOUT_MS),
   })
 
@@ -2210,27 +2348,22 @@ async function refreshInstagramLongLivedToken(
     maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
     label: 'Instagram token refresh response',
   })
-  let responseData: unknown = responseText
-  try {
-    responseData = JSON.parse(responseText)
-  } catch {
-    responseData = responseText
-  }
+  const responseData = parseOAuthResponse(responseText)
 
   if (!response.ok) {
-    const errorSummary = truncate(responseText, 1000)
+    const exactSecrets = [longLivedToken, config.clientSecret ?? '']
+    const errorCode = safeOAuthErrorCode(responseData, exactSecrets)
     logger.error('Instagram long-lived token refresh failed:', {
       status: response.status,
-      statusText: response.statusText,
-      error: errorSummary,
-      parsedError: responseData,
+      error: OAUTH_RESPONSE_OMITTED,
+      errorCode,
       providerId,
       tokenEndpoint: config.tokenEndpoint,
     })
     return {
       ok: false,
-      errorCode: extractErrorCode(responseData),
-      message: `Failed to refresh token: ${response.status} ${errorSummary}`,
+      errorCode,
+      message: `Failed to refresh token: ${response.status} ${OAUTH_RESPONSE_OMITTED}`,
     }
   }
 
@@ -2261,6 +2394,7 @@ export async function refreshOAuthToken(
   organizationId?: string,
   resolveCustomAppCredentials?: CustomOAuthAppCredentialsResolver
 ): Promise<RefreshTokenResult> {
+  const exactSecrets = [refreshToken]
   try {
     const provider =
       providerId === 'zoom-admin'
@@ -2274,6 +2408,7 @@ export async function refreshOAuthToken(
     const config = requiresCustomOAuthApp(provider)
       ? await resolveCustomOAuthAppConfig(provider, organizationId, resolveCustomAppCredentials)
       : getProviderAuthConfig(provider, alias)
+    if (config.clientSecret) exactSecrets.push(config.clientSecret)
 
     if (config.refreshStrategy === 'instagram_long_lived') {
       return await refreshInstagramLongLivedToken(config, refreshToken, providerId)
@@ -2285,28 +2420,23 @@ export async function refreshOAuthToken(
       method: 'POST',
       headers,
       body: useJsonBody ? JSON.stringify(bodyParams) : new URLSearchParams(bodyParams).toString(),
+      redirect: 'error',
       signal: AbortSignal.timeout(TOKEN_REFRESH_TIMEOUT_MS),
     })
 
-    logger.info('Token refresh body:', {
-      body: new URLSearchParams(bodyParams).toString(),
+    const responseText = await readResponseTextWithLimit(response, {
+      maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
+      label: 'OAuth token refresh response',
     })
+    const responseData = parseOAuthResponse(responseText)
 
     if (!response.ok) {
-      const errorText = await response.text()
-      let errorData: unknown = errorText
-
-      try {
-        errorData = JSON.parse(errorText)
-      } catch (_e) {
-        // Not JSON, keep as text
-      }
+      const errorCode = safeOAuthErrorCode(responseData, exactSecrets)
 
       logger.error('Token refresh failed:', {
         status: response.status,
-        statusText: response.statusText,
-        error: errorText,
-        parsedError: errorData,
+        error: OAUTH_RESPONSE_OMITTED,
+        errorCode,
         providerId,
         tokenEndpoint: config.tokenEndpoint,
         hasClientId: !!config.clientId,
@@ -2315,19 +2445,23 @@ export async function refreshOAuthToken(
       })
       return {
         ok: false,
-        errorCode: extractErrorCode(errorData),
-        message: `Failed to refresh token: ${response.status} ${errorText}`,
+        errorCode,
+        message: `Failed to refresh token: ${response.status} ${OAUTH_RESPONSE_OMITTED}`,
       }
     }
 
-    const data = await response.json()
+    const data = oauthResponseRecord(responseData)
+    if (!data) {
+      logger.warn('Invalid OAuth token refresh response', { providerId })
+      return { ok: false, message: 'Invalid OAuth token refresh response' }
+    }
 
-    if (data && typeof data === 'object' && data.ok === false) {
+    if (data.ok === false) {
+      const errorCode = safeOAuthErrorCode(data, exactSecrets)
       logger.error('Token refresh failed:', {
         status: response.status,
-        statusText: response.statusText,
-        error: data.error,
-        parsedError: data,
+        error: OAUTH_RESPONSE_OMITTED,
+        errorCode,
         providerId,
         tokenEndpoint: config.tokenEndpoint,
         hasClientId: !!config.clientId,
@@ -2336,20 +2470,33 @@ export async function refreshOAuthToken(
       })
       return {
         ok: false,
-        errorCode: typeof data.error === 'string' ? data.error : undefined,
-        message: `Failed to refresh token: ${data.error ?? 'unknown'}`,
+        errorCode,
+        message: `Failed to refresh token: ${OAUTH_RESPONSE_OMITTED}`,
       }
     }
 
-    const accessToken = data.access_token
+    const accessToken =
+      typeof data.access_token === 'string' && data.access_token.length > 0
+        ? data.access_token
+        : undefined
 
-    let newRefreshToken = null
-    if (config.supportsRefreshTokenRotation && data.refresh_token) {
+    let newRefreshToken: string | undefined
+    if (
+      config.supportsRefreshTokenRotation &&
+      typeof data.refresh_token === 'string' &&
+      data.refresh_token.length > 0
+    ) {
       newRefreshToken = data.refresh_token
       logger.info(`Received new refresh token from ${provider}`)
     }
 
-    const expiresIn = data.expires_in || data.expiresIn || 3600
+    const rawExpiresIn = data.expires_in ?? data.expiresIn
+    const parsedExpiresIn =
+      typeof rawExpiresIn === 'number' || typeof rawExpiresIn === 'string'
+        ? Number(rawExpiresIn)
+        : Number.NaN
+    const expiresIn =
+      Number.isFinite(parsedExpiresIn) && parsedExpiresIn > 0 ? parsedExpiresIn : 3600
 
     if (!accessToken) {
       // Log only the shape, never `data` itself - on a partial success it can
@@ -2371,14 +2518,19 @@ export async function refreshOAuthToken(
       ok: true,
       accessToken,
       expiresIn,
-      refreshToken: newRefreshToken || refreshToken, // Return new refresh token if available
+      refreshToken: newRefreshToken ?? refreshToken,
     }
   } catch (error) {
-    const message = toError(error).message
-    logger.error('Error refreshing token:', { error: message })
+    const normalized = toError(error)
     if (error instanceof MissingCustomAppError) {
-      return { ok: false, errorCode: 'custom_app_not_configured', message }
+      logger.error('Error refreshing token:', { error: normalized.message })
+      return { ok: false, errorCode: 'custom_app_not_configured', message: normalized.message }
     }
+    const message =
+      normalized.name === 'PayloadSizeLimitError' || normalized.message.startsWith('OAuth client ')
+        ? normalized.message
+        : 'Token refresh failed'
+    logger.error('Error refreshing token', { errorType: normalized.name })
     return { ok: false, message }
   }
 }

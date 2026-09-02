@@ -439,10 +439,7 @@ const MAX_KNOWLEDGE_RESPONSE_PROVENANCE_ROWS = 100
 
 function markKnowledgeResponseProvenanceUnavailable(
   registry: ResolvedSecretTraceRegistry,
-  reason:
-    | 'knowledge-response-capacity-exceeded'
-    | 'knowledge-row-missing'
-    | 'knowledge-row-content-mismatch'
+  reason: 'knowledge-response-capacity-exceeded'
 ): void {
   if (!isDurableSecretProvenanceEnforced('knowledge')) {
     reportUnrecordedDurableProvenance({
@@ -472,6 +469,10 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
     content: string
     value: unknown
   }[]
+  /** Names the workspace in the aggregated unrecorded-read audit entry; legacy KBs have none. */
+  workspaceId?: string
+  /** Whose access authorized the read, for the same entry. */
+  actorUserId?: string
 }): Promise<boolean> {
   const documents = options.documents ?? []
   const chunks = options.chunks ?? []
@@ -486,6 +487,14 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
     return false
   }
 
+  /**
+   * Counted here and reported once at the end of the proceed path, the shape the memory and table
+   * surfaces use: the per-record import knows no workspace, so its report never produced the
+   * workspace-visible audit entry, and it logged once per record. A fault return skips the report —
+   * that read fails closed, so no unvouched record reached anything.
+   */
+  const knowledgeEnforced = isDurableSecretProvenanceEnforced('knowledge')
+  let unrecordedCount = 0
   const documentIds = [...new Set(documents.map((item) => item.id))]
   const chunkIds = [...new Set(chunks.map((item) => item.id))]
   const [documentRows, chunkRows] = await Promise.all([
@@ -504,14 +513,14 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
   const documentById = new Map(documentRows.map((row) => [row.id, row]))
   const chunkById = new Map(chunkRows.map((row) => [row.id, row]))
   if (documentById.size !== documentIds.length || chunkById.size !== chunkIds.length) {
-    markKnowledgeResponseProvenanceUnavailable(options.registry, 'knowledge-row-missing')
+    options.registry.markIncomplete('knowledge-row-missing')
     return false
   }
 
   for (const item of documents) {
     const row = documentById.get(item.id)
     if (!row) {
-      markKnowledgeResponseProvenanceUnavailable(options.registry, 'knowledge-row-missing')
+      options.registry.markIncomplete('knowledge-row-missing')
       return false
     }
     const source = createKnowledgeDocumentSourceValue(row)
@@ -520,15 +529,18 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
       createKnowledgeDocumentSourceValue(item.source)
     )
     if (!actualSourceHash || !expectedSourceHash || actualSourceHash !== expectedSourceHash) {
-      markKnowledgeResponseProvenanceUnavailable(options.registry, 'knowledge-row-content-mismatch')
+      options.registry.markIncomplete('knowledge-row-content-mismatch')
       return false
     }
     const provenance = filterKnowledgeDocumentMetadataSecretProvenance(
       readBoundKnowledgeDocumentSecretProvenance({ ...row, source }),
       source
     )
+    if (provenance.status === 'unknown' && !knowledgeEnforced) unrecordedCount += 1
     if (
-      !(await importDurableSecretProvenance(options.registry, provenance, item.value, 'knowledge'))
+      !(await importDurableSecretProvenance(options.registry, provenance, item.value, 'knowledge', {
+        reportUnrecorded: false,
+      }))
     ) {
       return false
     }
@@ -537,17 +549,29 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
   for (const item of chunks) {
     const row = chunkById.get(item.id)
     if (!row || row.documentId !== item.documentId || row.content !== item.content) {
-      markKnowledgeResponseProvenanceUnavailable(options.registry, 'knowledge-row-content-mismatch')
+      options.registry.markIncomplete('knowledge-row-content-mismatch')
       return false
     }
     const provenance = readBoundKnowledgeEmbeddingSecretProvenance(row)
+    if (provenance.status === 'unknown' && !knowledgeEnforced) unrecordedCount += 1
     if (
-      !(await importDurableSecretProvenance(options.registry, provenance, item.value, 'knowledge'))
+      !(await importDurableSecretProvenance(options.registry, provenance, item.value, 'knowledge', {
+        reportUnrecorded: false,
+      }))
     ) {
       return false
     }
   }
 
+  if (unrecordedCount > 0) {
+    reportUnrecordedDurableProvenance({
+      surface: 'knowledge',
+      cause: 'durable-provenance-unknown',
+      affectedCount: unrecordedCount,
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+      actorUserId: options.actorUserId ?? null,
+    })
+  }
   return !options.registry.isPermanentlyIncomplete()
 }
 
@@ -557,6 +581,13 @@ export async function importKnowledgeSearchResultSecretProvenance(options: {
   results: readonly { id: string; documentId: string; content: string }[]
 }): Promise<{
   imported: boolean
+  /**
+   * Chunks whose stored provenance was unrecorded and whose import proceeded fail-open. The caller
+   * folds this into one read-level audit report — it owns the workspace and the metadata imports
+   * that share the same read, and it reports nothing when the registry latched, since a latched
+   * read never reaches a model.
+   */
+  unrecordedCount: number
   documentMetadata: Record<
     string,
     {
@@ -573,7 +604,9 @@ export async function importKnowledgeSearchResultSecretProvenance(options: {
     }
   >
 }> {
-  if (options.results.length === 0) return { imported: true, documentMetadata: {} }
+  if (options.results.length === 0) {
+    return { imported: true, unrecordedCount: 0, documentMetadata: {} }
+  }
   const embeddingIds = [...new Set(options.results.map((result) => result.id))]
   const documentIds = [...new Set(options.results.map((result) => result.documentId))]
   const [chunks, documents] = await Promise.all([
@@ -588,30 +621,36 @@ export async function importKnowledgeSearchResultSecretProvenance(options: {
     ),
   ])
   const chunkById = new Map(chunks.map((row) => [row.id, row]))
-  if (chunkById.size !== embeddingIds.length) return { imported: false, documentMetadata: {} }
+  if (chunkById.size !== embeddingIds.length) {
+    return { imported: false, unrecordedCount: 0, documentMetadata: {} }
+  }
+  const knowledgeEnforced = isDurableSecretProvenanceEnforced('knowledge')
+  let unrecordedCount = 0
   for (const result of options.results) {
     const row = chunkById.get(result.id)
     if (!row || row.documentId !== result.documentId || row.content !== result.content) {
-      return { imported: false, documentMetadata: {} }
+      return { imported: false, unrecordedCount: 0, documentMetadata: {} }
     }
     const provenance = readBoundKnowledgeEmbeddingSecretProvenance(row)
+    if (provenance.status === 'unknown' && !knowledgeEnforced) unrecordedCount += 1
     if (
       !(await importDurableSecretProvenance(
         options.registry,
         provenance,
         result.content,
-        'knowledge'
+        'knowledge',
+        { reportUnrecorded: false }
       ))
     ) {
-      return { imported: false, documentMetadata: {} }
+      return { imported: false, unrecordedCount: 0, documentMetadata: {} }
     }
   }
   const documentById = new Map(documents.map((row) => [row.id, row]))
   if (documentById.size !== documentIds.length) {
-    return { imported: false, documentMetadata: {} }
+    return { imported: false, unrecordedCount: 0, documentMetadata: {} }
   }
   if (options.results.some((result) => !documentById.has(result.documentId))) {
-    return { imported: false, documentMetadata: {} }
+    return { imported: false, unrecordedCount: 0, documentMetadata: {} }
   }
   const documentMetadata: Record<
     string,
@@ -650,6 +689,7 @@ export async function importKnowledgeSearchResultSecretProvenance(options: {
   }
   return {
     imported: !options.registry.isPermanentlyIncomplete(),
+    unrecordedCount,
     documentMetadata,
   }
 }
