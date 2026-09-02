@@ -4,6 +4,7 @@ import { member, organization, subscription, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, eq, inArray, sql } from 'drizzle-orm'
+import type Stripe from 'stripe'
 import { isArenaStarterProductAccess } from '@/lib/billing/arena/access'
 import { isBlockingOrgSubscription } from '@/lib/billing/arena/checkout-policy'
 import { applyArenaOrganizationSubscriptionPolicy } from '@/lib/billing/arena/subscription-resolution'
@@ -20,6 +21,7 @@ import {
   isTeam as isPlanTeam,
   sqlIsPaid,
 } from '@/lib/billing/plan-helpers'
+import { getCustomerId } from '@/lib/billing/stripe-payment-method'
 import {
   checkEnterprisePlan,
   checkProPlan,
@@ -91,6 +93,45 @@ export async function writeBillingInterval(
       metadata: sql`(COALESCE(metadata::jsonb, '{}'::jsonb) || ${patch}::jsonb)::json`,
     })
     .where(eq(subscription.id, subscriptionId))
+}
+
+/**
+ * Backfills `subscription.stripeCustomerId` from the Stripe subscription when
+ * the DB row is missing it.
+ *
+ * Better Auth sets the customer id only when creating an `incomplete` checkout
+ * row. Arena Starter→paid reuses the existing active Starter row (customer null),
+ * and `checkout.session.completed` updates plan/status/`stripeSubscriptionId`
+ * without writing the customer — leaving invoices/portal/threshold billing blind.
+ *
+ * Idempotent: no-ops when the row already has a customer id, or Stripe has none.
+ * Returns the customer id that should be treated as authoritative afterward.
+ */
+export async function ensureSubscriptionStripeCustomerId(params: {
+  subscriptionId: string
+  currentStripeCustomerId: string | null | undefined
+  stripeSubscription: Pick<Stripe.Subscription, 'customer'>
+}): Promise<string | null> {
+  const { subscriptionId, currentStripeCustomerId, stripeSubscription } = params
+  if (currentStripeCustomerId) return currentStripeCustomerId
+
+  const customerId = getCustomerId(stripeSubscription.customer) ?? null
+  if (!customerId) {
+    logger.warn('Stripe subscription has no customer id to backfill', { subscriptionId })
+    return null
+  }
+
+  await db
+    .update(subscription)
+    .set({ stripeCustomerId: customerId })
+    .where(and(eq(subscription.id, subscriptionId), sql`${subscription.stripeCustomerId} IS NULL`))
+
+  logger.info('Backfilled subscription stripeCustomerId from Stripe', {
+    subscriptionId,
+    stripeCustomerId: customerId,
+  })
+
+  return customerId
 }
 
 /**

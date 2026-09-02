@@ -54,6 +54,7 @@ import {
   resolveCheckoutReferenceId,
 } from '@/lib/billing/checkout-admission'
 import {
+  ensureSubscriptionStripeCustomerId,
   getOrganizationIdForSubscriptionReference,
   syncSubscriptionPlan,
   writeBillingInterval,
@@ -1373,6 +1374,15 @@ export const auth = betterAuth({
                   )
                 }
 
+                const stripeCustomerId = await ensureSubscriptionStripeCustomerId({
+                  subscriptionId: subscription.id,
+                  currentStripeCustomerId: subscription.stripeCustomerId,
+                  stripeSubscription,
+                })
+                if (stripeCustomerId) {
+                  subscription.stripeCustomerId = stripeCustomerId
+                }
+
                 const syncedPlan = await syncSubscriptionPlan(
                   subscription.id,
                   subscription.plan,
@@ -1484,6 +1494,15 @@ export const auth = betterAuth({
                     '[onSubscriptionUpdate] Could not resolve plan from Stripe price — org creation may be skipped for team upgrades',
                     { subscriptionId: subscription.id, dbPlan: subscription.plan }
                   )
+                }
+
+                const stripeCustomerId = await ensureSubscriptionStripeCustomerId({
+                  subscriptionId: subscription.id,
+                  currentStripeCustomerId: subscription.stripeCustomerId,
+                  stripeSubscription,
+                })
+                if (stripeCustomerId) {
+                  subscription.stripeCustomerId = stripeCustomerId
                 }
 
                 const syncedPlan = await syncSubscriptionPlan(

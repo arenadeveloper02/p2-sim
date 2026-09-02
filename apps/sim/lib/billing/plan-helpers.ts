@@ -13,7 +13,7 @@
 import type { AnyColumn } from 'drizzle-orm'
 import { eq, like, or, type SQL } from 'drizzle-orm'
 import { getArenaPlanTypeForLimits } from '@/lib/billing/arena/plan-limits'
-import { isStarterPlan } from '@/lib/billing/arena/starter-plan'
+import { isStarterActive, isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { getArenaPlanTierDollars, isArenaMaxPlan } from '@/lib/billing/arena/tier-config'
 import {
   CREDIT_TIERS,
@@ -59,6 +59,25 @@ export function isEnterprise(plan: string | null | undefined): boolean {
 
 export function isPaid(plan: string | null | undefined): boolean {
   return isPro(plan) || isTeam(plan) || isEnterprise(plan)
+}
+
+/**
+ * Whether an organization subscription may accept members under seat limits.
+ * Includes Stripe-paid org plans and Arena Starter during its active month
+ * (Starter is not {@link isPaid}, but client-org onboarding still enforces seats).
+ */
+export function hasOrganizationSeatEntitlement(sub: {
+  plan: string | null | undefined
+  status?: string | null
+  periodEnd?: Date | null
+}): boolean {
+  if (isPaid(sub.plan)) return true
+  if (!isStarterPlan(sub.plan)) return false
+  return isStarterActive({
+    plan: sub.plan,
+    status: sub.status ?? null,
+    periodEnd: sub.periodEnd ?? null,
+  })
 }
 
 /**

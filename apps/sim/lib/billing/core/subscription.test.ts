@@ -65,6 +65,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
 }))
 
 import {
+  ensureSubscriptionStripeCustomerId,
   getOrganizationCoverageForMember,
   getOrganizationIdForSubscriptionReference,
   hasBlockingOrgCheckoutSubscription,
@@ -178,6 +179,57 @@ describe('syncSubscriptionPlan', () => {
     await expect(syncSubscriptionPlan('sub-1', 'team_6000', null, 'org-1')).resolves.toBe(
       'team_6000'
     )
+    expect(dbChainMockFns.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('ensureSubscriptionStripeCustomerId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns the existing customer id without writing', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: 'cus_existing',
+        stripeSubscription: { customer: 'cus_from_stripe' },
+      })
+    ).resolves.toBe('cus_existing')
+    expect(dbChainMockFns.update).not.toHaveBeenCalled()
+  })
+
+  it('backfills from a string Stripe customer id when the row is missing one', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: null,
+        stripeSubscription: { customer: 'cus_new' },
+      })
+    ).resolves.toBe('cus_new')
+    expect(dbChainMockFns.update).toHaveBeenCalled()
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ stripeCustomerId: 'cus_new' })
+  })
+
+  it('backfills from an expanded Stripe customer object', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: undefined,
+        stripeSubscription: { customer: { id: 'cus_obj' } as never },
+      })
+    ).resolves.toBe('cus_obj')
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ stripeCustomerId: 'cus_obj' })
+  })
+
+  it('returns null without writing when Stripe has no customer', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: null,
+        stripeSubscription: { customer: null },
+      })
+    ).resolves.toBeNull()
     expect(dbChainMockFns.update).not.toHaveBeenCalled()
   })
 })
