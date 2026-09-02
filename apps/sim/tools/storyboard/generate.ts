@@ -7,6 +7,8 @@ export interface StoryboardGenerateParams {
   sceneNumber?: number
   instruction?: string
   stylePrompt?: string
+  referenceImageUrl?: string
+  seed?: number
   conversationId?: string
   planningProvider?: string
   planningModel?: string
@@ -27,6 +29,7 @@ export interface StoryboardGenerateResponse extends ToolResponse {
     falUrls: string[]
     sceneCount: number
     content: string
+    seed?: number
   }
 }
 
@@ -38,8 +41,9 @@ export interface StoryboardGenerateResponse extends ToolResponse {
  * module (db → postgres) breaks the Next.js client build. Execution is wired
  * server-side in `tools/index.ts` via a dynamic import.
  *
- * LLM-facing params are `topic`, `sceneCount` and `stylePrompt`; model and
- * image settings come from the block config via tools.config.params.
+ * LLM-facing params are `topic`, `sceneCount`, `stylePrompt`, `referenceImageUrl`
+ * and `seed`; model and image settings come from the block config via
+ * tools.config.params.
  */
 export const storyboardGenerateTool: ToolConfig<
   StoryboardGenerateParams,
@@ -73,7 +77,7 @@ export const storyboardGenerateTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description:
-        '"scenes" (default): ordered frames of one video, saved for rendering. "concepts": independent ad ideas to pick between — never rendered as a video. "edit": regenerate one frame of the latest storyboard (requires sceneNumber and instruction). "plan": plan and save the scenes without generating any images — returns in seconds. "image": generate the image for one scene of the latest saved storyboard using its saved prompt (requires sceneNumber).',
+        '"scenes" (default): ordered frames of one video, saved for rendering. "concepts": independent ad ideas to pick between — never rendered as a video. "edit": regenerate one frame of the latest storyboard (requires sceneNumber and instruction). "plan": plan and save the scenes without generating any images — returns in seconds. "image": generate the image for one scene of the latest saved storyboard using its saved prompt (requires sceneNumber). Pass referenceImageUrl (frame 1 falUrl) and seed on image/edit so later frames keep the same person.',
     },
     sceneNumber: {
       type: 'number',
@@ -106,6 +110,20 @@ export const storyboardGenerateTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Overall visual style applied to every scene, e.g. "cinematic, warm lighting"',
     },
+    referenceImageUrl: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        "Public image URL to condition this frame on (e.g. frame 1's falUrl). Routes to nano-banana-2 edit so later frames keep the same person instead of inventing a new one. Ignored if empty.",
+    },
+    seed: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Optional image seed. Reuse the seed returned from frame 1 so later frames stay consistent.',
+    },
   },
 
   outputs: {
@@ -125,5 +143,9 @@ export const storyboardGenerateTool: ToolConfig<
     },
     sceneCount: { type: 'number', description: 'Number of scenes generated' },
     content: { type: 'string', description: 'Scene list and reorder instructions for chat' },
+    seed: {
+      type: 'number',
+      description: 'Image seed returned by Fal for the frame just generated (image/edit mode)',
+    },
   },
 }

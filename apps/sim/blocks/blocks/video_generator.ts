@@ -2000,34 +2000,56 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
         params.provider === STORYBOARD_PROVIDER_ID
           ? 'storyboard_render'
           : (VideoGeneratorV2Block.tools.config?.tool?.(params) ?? 'video_falai'),
-      params: (params) =>
-        params.provider === STORYBOARD_PROVIDER_ID
-          ? {
-              conversationId: params.conversationId,
-              // The LLM may fill either the block field (sceneOrder) or the
-              // underlying tool param (order); accept both so the user's chosen
-              // order is never silently dropped.
-              order: params.sceneOrder || params.order,
-              sceneNumber: params.sceneNumber ? Number(params.sceneNumber) : undefined,
-              sourceImageUrl: params.sourceImageUrl,
-              chainFrames: parseOptionalBooleanInput(params.chainFrames),
-              clipUrls: params.clipUrls,
-              audioUrl: params.audioUrl,
-              audioMode: params.audioMode,
-              transition: params.transition,
-              transitionDuration: params.transitionDuration
-                ? Number(params.transitionDuration)
-                : undefined,
-              videoModel: params.storyVideoModel,
-              // Total length wins over seconds-per-scene: the user asks for a
-              // "30 second video", and the render step derives the per-clip
-              // seconds from it.
-              targetDuration: params.targetDuration ? Number(params.targetDuration) : undefined,
-              clipDuration: params.clipDuration ? Number(params.clipDuration) : undefined,
-              resolution: params.storyResolution,
-              generateAudio: parseOptionalBooleanInput(params.storyAudio),
-            }
-          : (VideoGeneratorV2Block.tools.config?.params?.(params) ?? params),
+      params: (params) => {
+        if (params.provider !== STORYBOARD_PROVIDER_ID) {
+          return VideoGeneratorV2Block.tools.config?.params?.(params) ?? params
+        }
+
+        const sceneNumber = params.sceneNumber ? Number(params.sceneNumber) : undefined
+        const clipMode = Number.isFinite(sceneNumber) && (sceneNumber as number) > 0
+
+        // Clip mode: only the params that render one scene. Stray order /
+        // targetDuration / chainFrames / clipUrls from clipAgent must not
+        // leak through — prompt text is not a constraint.
+        if (clipMode) {
+          return {
+            conversationId: params.conversationId,
+            sceneNumber,
+            sourceImageUrl: params.sourceImageUrl,
+            videoModel: params.storyVideoModel,
+            clipDuration: params.clipDuration ? Number(params.clipDuration) : undefined,
+            resolution: params.storyResolution,
+            generateAudio: parseOptionalBooleanInput(params.storyAudio),
+          }
+        }
+
+        const targetDuration = params.targetDuration ? Number(params.targetDuration) : undefined
+        return {
+          conversationId: params.conversationId,
+          order: params.sceneOrder || params.order,
+          sourceImageUrl: params.sourceImageUrl,
+          chainFrames: parseOptionalBooleanInput(params.chainFrames),
+          clipUrls: params.clipUrls,
+          audioUrl: params.audioUrl,
+          audioMode: params.audioMode,
+          transition: params.transition,
+          transitionDuration: params.transitionDuration
+            ? Number(params.transitionDuration)
+            : undefined,
+          videoModel: params.storyVideoModel,
+          targetDuration,
+          // A pinned clipDuration: "4" must not cap a stitch whose plan
+          // already set targetDuration. Clip-only length still applies when
+          // no total length was given (UI dropdown / default).
+          clipDuration: targetDuration
+            ? undefined
+            : params.clipDuration
+              ? Number(params.clipDuration)
+              : undefined,
+          resolution: params.storyResolution,
+          generateAudio: parseOptionalBooleanInput(params.storyAudio),
+        }
+      },
     },
   },
   inputs: {

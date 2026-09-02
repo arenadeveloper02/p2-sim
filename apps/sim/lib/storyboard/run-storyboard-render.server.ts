@@ -435,9 +435,15 @@ export async function runStoryboardRender(
 ): Promise<RunStoryboardRenderResult> {
   const requestId = context.requestId ?? crypto.randomUUID().slice(0, 8)
 
+  // Clip mode (sceneNumber set) must win over stray clipUrls/order/etc. that
+  // clipAgent still emits — those params would otherwise flip this call into
+  // concat or a full stitch.
+  const sceneNumberRaw = Number(params.sceneNumber)
+  const singleScene = Number.isFinite(sceneNumberRaw) && sceneNumberRaw > 0
+
   // Concat mode: join already-generated, user-approved clips in the given
   // order. No storyboard lookup and no model calls — pure final assembly.
-  const clipUrls = parseClipUrls(params.clipUrls)
+  const clipUrls = singleScene ? [] : parseClipUrls(params.clipUrls)
   if (clipUrls.length > 0) {
     // Optional crossfade between consecutive clips. Validated here so a typo
     // fails loudly instead of silently rendering without transitions. Note
@@ -546,9 +552,8 @@ export async function runStoryboardRender(
 
   // Single-scene mode: render ONE scene's clip (the per-frame approval flow).
   // Distinct from `order`, which renders ALL scenes in a given sequence, and
-  // from `clipUrls`, which only joins existing clips.
-  const sceneNumberRaw = Number(params.sceneNumber)
-  const singleScene = Number.isFinite(sceneNumberRaw) && sceneNumberRaw > 0
+  // from `clipUrls`, which only joins existing clips. Already resolved at the
+  // top of this function so stray clipAgent params cannot enter concat first.
   if (singleScene && Math.trunc(sceneNumberRaw) > storyboard.scenes.length) {
     throw new Error(
       `Scene ${Math.trunc(sceneNumberRaw)} does not exist — this storyboard has scenes 1-${storyboard.scenes.length}`
@@ -560,12 +565,16 @@ export async function runStoryboardRender(
     : parseSceneOrder(asString(params.order), storyboard.scenes.length)
   const orderedScenes = order.map((index) => storyboard.scenes[index - 1])
 
-  // A requested total length wins over the per-scene setting: the user asks for
-  // "a 60 second video", not for "8 seconds per scene".
+  // Clip mode uses only clipDuration — a leaked targetDuration would make one
+  // clip the full video length. Full stitch prefers targetDuration so a pinned
+  // clipDuration: "4" cannot cap the plan when a total length is provided.
   const targetDurationRaw = Number(params.targetDuration)
   const clipDurationRaw = Number(params.clipDuration)
-  const requestedClipSeconds =
-    Number.isFinite(targetDurationRaw) && targetDurationRaw > 0
+  const requestedClipSeconds = singleScene
+    ? Number.isFinite(clipDurationRaw) && clipDurationRaw > 0
+      ? clipDurationRaw
+      : DEFAULT_CLIP_DURATION
+    : Number.isFinite(targetDurationRaw) && targetDurationRaw > 0
       ? targetDurationRaw / orderedScenes.length
       : Number.isFinite(clipDurationRaw) && clipDurationRaw > 0
         ? clipDurationRaw
@@ -587,7 +596,7 @@ export async function runStoryboardRender(
   // chainFrames does that automatically for every scene of a full render —
   // motion and composition carry across clip boundaries.
   const sourceImageUrl = asString(params.sourceImageUrl)
-  const chainFrames = params.chainFrames === true || params.chainFrames === 'true'
+  const chainFrames = !singleScene && (params.chainFrames === true || params.chainFrames === 'true')
 
   // Sequential on purpose: each clip is expensive and Fal queues per key;
   // failing fast on clip N beats paying for N parallel failures. Chaining

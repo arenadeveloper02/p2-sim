@@ -54,6 +54,23 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
       description: 'Applied to every scene so the storyboard looks consistent',
     },
     {
+      id: 'referenceImageUrl',
+      title: 'Reference Image URL',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: "https://… — e.g. frame 1's falUrl",
+      description:
+        'Conditions this frame on that image so later frames keep the same person. Leave empty for frame 1.',
+    },
+    {
+      id: 'seed',
+      title: 'Image Seed',
+      type: 'short-input',
+      layout: 'half',
+      placeholder: 'Reuse frame 1 seed',
+      description: 'Optional. Reuse the seed returned from frame 1 for later frames.',
+    },
+    {
       id: 'conversationId',
       title: 'Conversation ID',
       type: 'short-input',
@@ -123,6 +140,8 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
         instruction: params.instruction,
         sceneCount: params.sceneCount,
         stylePrompt: params.stylePrompt,
+        referenceImageUrl: params.referenceImageUrl,
+        seed: params.seed ? Number(params.seed) : undefined,
         conversationId: params.conversationId,
         aspectRatio: params.aspectRatio,
         imageProvider: params.imageProvider,
@@ -147,6 +166,15 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
     instruction: { type: 'string', description: 'Edit mode: the change to apply to that frame' },
     sceneCount: { type: 'number', description: 'How many scenes to generate (1-10)' },
     stylePrompt: { type: 'string', description: 'Overall visual style for every scene' },
+    referenceImageUrl: {
+      type: 'string',
+      description:
+        'Public image URL to condition a frame on (e.g. frame 1 falUrl) so later frames keep the same person',
+    },
+    seed: {
+      type: 'number',
+      description: 'Optional image seed; reuse frame 1 seed for later frames',
+    },
     conversationId: { type: 'string', description: 'Conversation the storyboard belongs to' },
     aspectRatio: { type: 'string', description: 'Aspect ratio of the scene images' },
     imageProvider: { type: 'string', description: 'Image generation provider' },
@@ -171,5 +199,9 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
     conversationId: { type: 'string', description: 'Conversation the storyboard belongs to' },
     topic: { type: 'string', description: 'The video idea used' },
     sceneCount: { type: 'number', description: 'Number of scenes generated' },
+    seed: {
+      type: 'number',
+      description: 'Image seed returned by Fal for the frame just generated',
+    },
   },
 }

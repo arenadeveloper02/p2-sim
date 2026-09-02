@@ -58,6 +58,8 @@ export interface StoryboardScene {
    * Sim session — this is what external UIs should render as the frame preview.
    */
   falUrl?: string
+  /** Fal image seed for this frame, when the provider returned one. */
+  seed?: number
 }
 
 export interface RunStoryboardGenerateResult {
@@ -70,6 +72,7 @@ export interface RunStoryboardGenerateResult {
   falUrls: string[]
   sceneCount: number
   content: string
+  seed?: number
 }
 
 export interface RunStoryboardGenerateContext {
@@ -94,17 +97,26 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function asOptionalInt(value: unknown): number | undefined {
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN
+  if (!Number.isFinite(parsed)) return undefined
+  return Math.trunc(parsed)
+}
+
 /**
  * Keeps only a public http(s) provider URL. Sim serve URLs and data URIs are
  * dropped so an external app never tries to fetch a 401-gated path.
  */
 function asPublicHttpUrl(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const trimmed = value.trim()
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return undefined
-  if (trimmed.includes('/api/files/serve/')) return undefined
-  if (trimmed.startsWith('data:')) return undefined
-  return trimmed
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return undefined
+    if (trimmed.includes('/api/files/serve/')) return undefined
+    if (trimmed.startsWith('data:')) return undefined
+    return trimmed
+  }
+  return undefined
 }
 
 function sceneFromGeneratedImage(options: {
@@ -113,6 +125,7 @@ function sceneFromGeneratedImage(options: {
   description: string
   imageUrl: string
   sourceUrl?: string
+  seed?: number
 }): StoryboardScene {
   const falUrl = asPublicHttpUrl(options.sourceUrl)
   return {
@@ -121,11 +134,43 @@ function sceneFromGeneratedImage(options: {
     description: options.description,
     imageUrl: options.imageUrl,
     ...(falUrl ? { falUrl } : {}),
+    ...(typeof options.seed === 'number' ? { seed: options.seed } : {}),
   }
 }
 
 function falUrlsFromScenes(scenes: StoryboardScene[]): string[] {
   return scenes.map((scene) => scene.falUrl ?? '')
+}
+
+function firstPersistedSeed(scenes: StoryboardScene[]): number | undefined {
+  for (const scene of scenes) {
+    if (typeof scene.seed === 'number' && Number.isFinite(scene.seed)) return scene.seed
+  }
+  return undefined
+}
+
+function buildSceneImageBody(options: {
+  imageProvider: string
+  imageModel: string
+  falApiKey: string
+  prompt: string
+  aspectRatio: string
+  context: RunStoryboardGenerateContext
+  referenceImageUrl?: string
+  seed?: number
+}) {
+  return buildImageToolBodyFromExecutionParams({
+    provider: options.imageProvider,
+    model: options.imageModel,
+    apiKey: options.falApiKey,
+    prompt: options.prompt,
+    aspectRatio: options.aspectRatio,
+    workflowId: options.context.workflowId,
+    workspaceId: options.context.workspaceId,
+    userId: options.context.userId,
+    ...(options.referenceImageUrl ? { inputImageUrl: options.referenceImageUrl } : {}),
+    ...(options.seed !== undefined ? { seed: options.seed } : {}),
+  })
 }
 
 /**
@@ -376,6 +421,9 @@ export async function runStoryboardGenerate(
   const imageModel = asString(params.imageModel) || 'nano-banana-2'
   const aspectRatio = asString(params.aspectRatio) || '16:9'
   const falApiKey = asString(params.falApiKey) || getFalApiKey()
+  const referenceImageUrl =
+    asPublicHttpUrl(params.referenceImageUrl) || asPublicHttpUrl(params.inputImageUrl)
+  const requestedSeed = asOptionalInt(params.seed)
 
   // Edit mode: regenerate ONE frame of the latest storyboard in place. The
   // row is updated (not re-inserted), so the render step's latest-storyboard
@@ -395,11 +443,16 @@ export async function runStoryboardGenerate(
     }
 
     const scene = storyboard.scenes[sceneNumber - 1]
+    // Edit the existing frame when one exists — text-only regen invents a new person.
+    const editReference = referenceImageUrl || asPublicHttpUrl(scene.falUrl)
+    const editSeed = requestedSeed ?? scene.seed
 
     logger.info(`[${requestId}] Editing storyboard frame`, {
       storyboardId: storyboard.id,
       sceneNumber,
       instruction: instruction.slice(0, 120),
+      hasReference: Boolean(editReference),
+      seed: editSeed,
     })
 
     const rewritten = await rewriteScenePrompt({
@@ -411,17 +464,17 @@ export async function runStoryboardGenerate(
       provider: planningProvider,
     })
 
-    const imageBody = buildImageToolBodyFromExecutionParams({
-      provider: imageProvider,
-      model: imageModel,
-      apiKey: falApiKey,
+    const imageBody = buildSceneImageBody({
+      imageProvider,
+      imageModel,
+      falApiKey,
       prompt: stylePrompt
         ? `${rewritten.prompt}\n\nOverall style: ${stylePrompt}`
         : rewritten.prompt,
       aspectRatio,
-      workflowId: context.workflowId,
-      workspaceId: context.workspaceId,
-      userId: context.userId,
+      context,
+      referenceImageUrl: editReference,
+      seed: editSeed,
     })
 
     const image = await runImageToolGeneration(imageBody, {
@@ -437,6 +490,7 @@ export async function runStoryboardGenerate(
             description: rewritten.description,
             imageUrl: image.imageUrl,
             sourceUrl: image.sourceUrl,
+            seed: image.metadata?.seed,
           })
         : s
     )
@@ -464,6 +518,7 @@ export async function runStoryboardGenerate(
       falUrls: falUrlsFromScenes(updatedScenes),
       sceneCount: updatedScenes.length,
       content,
+      seed: image.metadata?.seed,
     }
   }
 
@@ -479,21 +534,24 @@ export async function runStoryboardGenerate(
     }
 
     const scene = storyboard.scenes[sceneNumber - 1]
+    const imageSeed = requestedSeed ?? firstPersistedSeed(storyboard.scenes)
 
     logger.info(`[${requestId}] Generating single storyboard frame`, {
       storyboardId: storyboard.id,
       sceneNumber,
+      hasReference: Boolean(referenceImageUrl),
+      seed: imageSeed,
     })
 
-    const imageBody = buildImageToolBodyFromExecutionParams({
-      provider: imageProvider,
-      model: imageModel,
-      apiKey: falApiKey,
+    const imageBody = buildSceneImageBody({
+      imageProvider,
+      imageModel,
+      falApiKey,
       prompt: stylePrompt ? `${scene.prompt}\n\nOverall style: ${stylePrompt}` : scene.prompt,
       aspectRatio,
-      workflowId: context.workflowId,
-      workspaceId: context.workspaceId,
-      userId: context.userId,
+      context,
+      referenceImageUrl,
+      seed: imageSeed,
     })
 
     const image = await runImageToolGeneration(imageBody, {
@@ -509,6 +567,7 @@ export async function runStoryboardGenerate(
             description: s.description,
             imageUrl: image.imageUrl,
             sourceUrl: image.sourceUrl,
+            seed: image.metadata?.seed,
           })
         : s
     )
@@ -528,6 +587,7 @@ export async function runStoryboardGenerate(
       falUrls: falUrlsFromScenes(updatedScenes),
       sceneCount: updatedScenes.length,
       content: `Frame ${sceneNumber} image generated.`,
+      seed: image.metadata?.seed,
     }
   }
 
@@ -598,7 +658,11 @@ export async function runStoryboardGenerate(
     }
   }
 
-  logger.info(`[${requestId}] Generating scene images via Fal.ai`, { count: planned.length })
+  logger.info(`[${requestId}] Generating scene images via Fal.ai`, {
+    count: planned.length,
+    hasReference: Boolean(referenceImageUrl),
+    seed: requestedSeed,
+  })
 
   // Concurrent on purpose: each image takes ~20s and Fal queues per key, so N
   // sequential scenes cost N×20s while parallel costs roughly one generation.
@@ -606,15 +670,15 @@ export async function runStoryboardGenerate(
   // worse than a failed one.
   const scenes: StoryboardScene[] = await Promise.all(
     planned.map(async (scene, i) => {
-      const imageBody = buildImageToolBodyFromExecutionParams({
-        provider: imageProvider,
-        model: imageModel,
-        apiKey: falApiKey,
+      const imageBody = buildSceneImageBody({
+        imageProvider,
+        imageModel,
+        falApiKey,
         prompt: stylePrompt ? `${scene.prompt}\n\nOverall style: ${stylePrompt}` : scene.prompt,
         aspectRatio,
-        workflowId: context.workflowId,
-        workspaceId: context.workspaceId,
-        userId: context.userId,
+        context,
+        referenceImageUrl,
+        seed: requestedSeed,
       })
 
       const image = await runImageToolGeneration(imageBody, {
@@ -628,6 +692,7 @@ export async function runStoryboardGenerate(
         description: scene.description,
         imageUrl: image.imageUrl,
         sourceUrl: image.sourceUrl,
+        seed: image.metadata?.seed,
       })
     })
   )

@@ -81,7 +81,7 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       required: false,
       visibility: 'user-or-llm',
       description:
-        "Single-scene mode: render ONLY this scene's clip (1-based, e.g. 3). The other scenes are untouched and the storyboard is not marked rendered. Takes priority over order.",
+        "Single-scene (clip) mode: render ONLY this scene's clip (1-based, e.g. 3). Takes priority over order, clipUrls, targetDuration, and chainFrames — those params are ignored when sceneNumber is set.",
     },
     sourceImageUrl: {
       type: 'string',
@@ -144,7 +144,7 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Seconds per scene clip. Ignored when targetDuration is set. Defaults to 4 (5 on MiniMax H3).',
+        'Clip mode: seconds for this one clip. Full stitch: used only when targetDuration is not set. Defaults to 4 (5 on MiniMax H3).',
     },
   },
 
