@@ -318,6 +318,32 @@ describe('Billing payer scope', () => {
     )
     expect(container.querySelector('[data-testid="usage-limit"]')).toBeNull()
     expect(container.querySelector('[role="switch"]')).toBeNull()
+    expect(container.textContent).toContain('Personal credit usage')
+  })
+
+  it('hides credit usage for starter organization plans', async () => {
+    mockOrganizationQuery.current = {
+      data: organizationResponse({
+        subscriptionPlan: 'starter',
+        subscriptionState: 'active',
+        hasSubscription: true,
+        subscriptionStatus: 'active',
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
+    }
+
+    await act(async () => {
+      root.render(
+        <Billing
+          scope='organization'
+          organizationId='org-target'
+          governingWorkspaceName='Starter org'
+        />
+      )
+    })
+
+    expect(container.textContent).not.toContain('Personal credit usage')
   })
 
   it('uses a guaranteed personal payer workspace for account upgrades', async () => {

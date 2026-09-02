@@ -18,6 +18,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
 import { useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
+import { isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import {
@@ -684,9 +685,7 @@ export function Billing({
         </SettingsSection>
       )}
 
-      {!isOrganizationScope && !subscription.isEnterprise && (
-        <CreditUsageSection href={creditUsageHref} />
-      )}
+      {!isStarterPlan(subscription.plan) && <CreditUsageSection href={creditUsageHref} />}
     </SettingsPanel>
   )
 }
