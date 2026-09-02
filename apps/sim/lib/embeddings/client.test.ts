@@ -12,6 +12,7 @@ import {
   embed,
   embedKnowledgeForDeployment,
   embedOpenRouter,
+  isBYOKEmbeddingCredentialRejection,
   isEmbeddingQuotaExhaustion,
   isTransientEmbeddingError,
   MAX_EMBEDDING_SUCCESS_RESPONSE_BYTES,
@@ -341,6 +342,7 @@ describe('embed', () => {
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toMatch(/Embedding API failed: 401/)
     expect((error as Error).message).not.toContain(echoedSecret)
+    expect(isBYOKEmbeddingCredentialRejection(error)).toBe(true)
     // 401 is not retryable, so exactly one attempt is made.
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -457,14 +459,17 @@ describe('embed', () => {
   })
 
   it('retries a rate-limited request and succeeds on a later attempt', async () => {
+    vi.useFakeTimers()
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ error: 'slow down' }, 429))
       .mockResolvedValueOnce(jsonResponse(openAIBody([[7, 8]])))
 
-    const result = await embed(['hello'], {
+    const pending = embed(['hello'], {
       model: 'text-embedding-3-small',
       apiKey: 'sk-test',
     })
+    await vi.runAllTimersAsync()
+    const result = await pending
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(result.embeddings[0].slice(0, 2)).toEqual([7, 8])
@@ -618,16 +623,19 @@ describe('embed', () => {
     })
 
     it('projects once even when the request is retried', async () => {
+      vi.useFakeTimers()
       const projectInputs = vi.fn((values: readonly string[]) => values.map(() => 'projected'))
       fetchMock
         .mockResolvedValueOnce(jsonResponse({ error: 'rate limited' }, 429))
         .mockResolvedValueOnce(jsonResponse(openAIBody([[1]])))
 
-      await embed(['secret'], {
+      const pending = embed(['secret'], {
         model: 'text-embedding-3-small',
         apiKey: 'sk-test',
         projectInputs,
       })
+      await vi.runAllTimersAsync()
+      await pending
 
       expect(fetchMock).toHaveBeenCalledTimes(2)
       expect(projectInputs).toHaveBeenCalledTimes(1)
@@ -992,6 +1000,24 @@ describe('knowledge embedding transport fallback', () => {
     expect(result.isBYOK).toBe(true)
   })
 
+  it('distinguishes workspace credential rejection from a platform credential failure', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'invalid key' }, 401))
+
+    setEnv({ OPENAI_API_KEY: 'platform-openai-test' })
+    const platformError = await embedKnowledgeForDeployment(['hello'], options, true).catch(
+      (error) => error
+    )
+    expect(isBYOKEmbeddingCredentialRejection(platformError)).toBe(false)
+
+    mockGetBYOKKey.mockResolvedValue({ apiKey: 'workspace-openai-test', isBYOK: true })
+    const workspaceError = await embedKnowledgeForDeployment(
+      ['hello'],
+      { ...options, workspaceId: 'workspace-1' },
+      true
+    ).catch((error) => error)
+    expect(isBYOKEmbeddingCredentialRejection(workspaceError)).toBe(true)
+  })
+
   it('does not use OpenRouter for non-OpenAI knowledge models', async () => {
     setEnv({ GEMINI_API_KEY: 'gemini-test', OPENROUTER_API_KEY: 'or-test' })
     fetchMock.mockResolvedValue(
@@ -1348,5 +1374,12 @@ describe('knowledge embedding transport fallback', () => {
     expect(isTransientEmbeddingError(new EmbeddingAPIError('rate limited', 429))).toBe(true)
     expect(isTransientEmbeddingError(new EmbeddingAPIError('invalid key', 401))).toBe(false)
     expect(isTransientEmbeddingError(new DOMException('timed out', 'AbortError'))).toBe(true)
+  })
+
+  it('does not misclassify quota-related BYOK rejections as authentication failures', () => {
+    const error = new EmbeddingAPIError('Embedding API failed: 403', 403, true)
+    error.quotaExhausted = true
+
+    expect(isBYOKEmbeddingCredentialRejection(error)).toBe(false)
   })
 })

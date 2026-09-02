@@ -87,6 +87,7 @@ function buildContext(): CredentialGroupOAuthContext {
   return {
     enrollmentId: 'enrollment-1',
     credentialGroupId: 'group-1',
+    credentialGroupName: 'Credential Group',
     workspaceId: 'workspace-1',
     workspaceName: 'Workspace',
     workspaceOwnerId: 'owner-1',
@@ -295,5 +296,52 @@ describe('standard OAuth Credential Group provider', () => {
       redirectURI: 'https://sim.example.com/api/auth/oauth2/callback/jira',
       codeVerifier: undefined,
     })
+  })
+  it.each(['bearer', 'BEARER'])(
+    'accepts the RFC 6749 case-insensitive %s token type',
+    async (tokenType) => {
+      mockGetToken.mockResolvedValueOnce({
+        tokenType,
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        accessTokenExpiresAt: new Date('2026-08-14T01:00:00Z'),
+      })
+      const context = buildContext()
+      const policy = await adapter.getPolicy(context.option, {
+        workspaceId: context.workspaceId,
+        credentialGroupId: context.credentialGroupId,
+      })
+
+      const grant = await adapter.exchangeAndVerify({
+        context,
+        attempt: buildAttempt(policy.scopeVersion),
+        code: 'code-1',
+        policy,
+      })
+
+      expect(grant.accessToken).toBe('access-1')
+    }
+  )
+
+  it('still rejects a token type that is not bearer at all', async () => {
+    mockGetToken.mockResolvedValueOnce({
+      tokenType: 'mac',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+    })
+    const context = buildContext()
+    const policy = await adapter.getPolicy(context.option, {
+      workspaceId: context.workspaceId,
+      credentialGroupId: context.credentialGroupId,
+    })
+
+    await expect(
+      adapter.exchangeAndVerify({
+        context,
+        attempt: buildAttempt(policy.scopeVersion),
+        code: 'code-1',
+        policy,
+      })
+    ).rejects.toMatchObject({ statusCode: 502 })
   })
 })

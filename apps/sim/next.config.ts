@@ -92,8 +92,6 @@ const nextConfig: NextConfig = {
   output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
   serverExternalPackages: [
     '@1password/sdk',
-    'unpdf',
-    'fluent-ffmpeg',
     'ws',
     'isolated-vm',
     '@e2b/code-interpreter',
@@ -128,7 +126,6 @@ const nextConfig: NextConfig = {
     '@tiptap/extension-highlight',
   ],
   outputFileTracingIncludes: {
-    '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
     // The seed, merge, and persist endpoints all lazily `require('jsdom')` (via the collab-doc
     // converter), which is invisible to the standalone file tracer, so force jsdom (and its transitive
     // deps, followed from its static requires) into the trace — otherwise a Docker/standalone build
@@ -142,7 +139,7 @@ const nextConfig: NextConfig = {
      * No `sharp`/`@img` entries: these globs resolve against apps/sim while both hoist to the
      * monorepo root, so they matched nothing. docker/app.Dockerfile copies them instead.
      */
-    '/*': ['./lib/execution/sandbox/bundles/*.cjs'],
+    '/*': ['./lib/execution/sandbox/bundles/*.cjs', './node_modules/ws/**/*'],
   },
   experimental: {
     /**
@@ -210,7 +207,7 @@ const nextConfig: NextConfig = {
      */
     optimizePackageImports: [
       'framer-motion',
-      'reactflow',
+      '@xyflow/react',
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',
       '@radix-ui/react-popover',
