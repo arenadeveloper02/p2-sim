@@ -384,6 +384,36 @@ describe('arenaGenerativeGenerateBodySchema empty optionals', () => {
     }
   })
 
+  it('treats null screenshots as omitted so an empty file-upload field can generate', () => {
+    const parsed = arenaGenerativeGenerateBodySchema.safeParse({
+      userInput: 'Article Enhancer Agent with Generator and History.',
+      screenshots: null,
+      pages: null,
+      apiBindings: [
+        {
+          key: 'enhance_article',
+          kind: 'workflow',
+          workflowId: '0f016c1a-c322-4d74-b72c-6785c13fd918',
+          inputSchema: null,
+          outputSchema: null,
+          outputSchemaWarnings: null,
+        },
+      ],
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.screenshots).toBeUndefined()
+      expect(parsed.data.pages).toBeUndefined()
+      expect(parsed.data.apiBindings).toEqual([
+        {
+          key: 'enhance_article',
+          kind: 'workflow',
+          workflowId: '0f016c1a-c322-4d74-b72c-6785c13fd918',
+        },
+      ])
+    }
+  })
+
   it('accepts an empty object for API bindings', () => {
     const parsed = arenaGenerativeGenerateBodySchema.safeParse({
       userInput: 'Team directory with home and person.',

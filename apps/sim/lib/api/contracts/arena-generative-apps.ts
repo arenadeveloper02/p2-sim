@@ -22,6 +22,15 @@ export const arenaGenerativePageHintSchema = z.object({
   purpose: z.string().max(500).optional(),
 })
 
+function omitEmptyOptionalJson(value: unknown): unknown {
+  if (value == null) return undefined
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {
+    return undefined
+  }
+  return value
+}
+
 export const arenaGenerativeHttpBindingSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
   url: z.string().url('HTTP binding URL must be valid').max(2048),
@@ -42,39 +51,48 @@ export const arenaGenerativeApiBindingSchema = z
     kind: z.enum(['workflow', 'http']),
     workflowId: z.string().min(1).optional(),
     http: arenaGenerativeHttpBindingSchema.optional(),
-    inputSchema: z
-      .array(
-        z
-          .object({
-            name: z.string().min(1),
+    inputSchema: z.preprocess(
+      omitEmptyOptionalJson,
+      z
+        .array(
+          z
+            .object({
+              name: z.string().min(1),
+              type: z.string().min(1).optional(),
+              description: z.string().max(200).optional(),
+              source: z.enum(['form', 'visitorEmail', 'constant']).optional(),
+              value: z.string().max(500).optional(),
+            })
+            .superRefine((field, ctx) => {
+              if (field.source === 'constant' && !field.value?.trim()) {
+                ctx.addIssue({
+                  code: 'custom',
+                  path: ['value'],
+                  message: 'Constant inputs need a value',
+                })
+              }
+            })
+        )
+        .max(40)
+        .optional()
+    ),
+    outputSchema: z.preprocess(
+      omitEmptyOptionalJson,
+      z
+        .array(
+          z.object({
+            name: z.string().min(1, 'outputSchema field name cannot be empty'),
             type: z.string().min(1).optional(),
-            description: z.string().max(200).optional(),
-            source: z.enum(['form', 'visitorEmail', 'constant']).optional(),
-            value: z.string().max(500).optional(),
           })
-          .superRefine((field, ctx) => {
-            if (field.source === 'constant' && !field.value?.trim()) {
-              ctx.addIssue({
-                code: 'custom',
-                path: ['value'],
-                message: 'Constant inputs need a value',
-              })
-            }
-          })
-      )
-      .max(40)
-      .optional(),
-    outputSchema: z
-      .array(
-        z.object({
-          name: z.string().min(1, 'outputSchema field name cannot be empty'),
-          type: z.string().min(1).optional(),
-        })
-      )
-      .max(40, 'outputSchema is limited to 40 fields')
-      .optional(),
+        )
+        .max(40, 'outputSchema is limited to 40 fields')
+        .optional()
+    ),
     outputHint: z.string().min(1).max(2048).optional(),
-    outputSchemaWarnings: z.array(z.string().min(1).max(400)).max(4).optional(),
+    outputSchemaWarnings: z.preprocess(
+      omitEmptyOptionalJson,
+      z.array(z.string().min(1).max(400)).max(4).optional()
+    ),
     stream: z.boolean().optional(),
     pagination: z
       .object({
@@ -171,15 +189,6 @@ export const arenaGenerativePageSummarySchema = z.object({
   title: z.string(),
 })
 
-function omitEmptyOptionalJson(value: unknown): unknown {
-  if (value == null) return undefined
-  if (typeof value === 'string' && value.trim() === '') return undefined
-  if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {
-    return undefined
-  }
-  return value
-}
-
 function omitEmptyOptionalString(value: unknown): unknown {
   if (value == null) return undefined
   if (typeof value === 'string' && value.trim() === '') return undefined
@@ -201,7 +210,10 @@ function coerceOptionalUserInput(value: unknown): unknown {
 
 const arenaGenerativeSharedBodyShape = {
   userInput: z.preprocess(coerceOptionalUserInput, z.string().max(20_000).optional()),
-  screenshots: z.array(RawFileInputSchema).max(4, 'Upload at most 4 screenshots').optional(),
+  screenshots: z.preprocess(
+    omitEmptyOptionalJson,
+    z.array(RawFileInputSchema).max(4, 'Upload at most 4 screenshots').optional()
+  ),
   pages: z.preprocess(
     omitEmptyOptionalJson,
     z.union([z.array(arenaGenerativePageHintSchema), z.string()]).optional()
