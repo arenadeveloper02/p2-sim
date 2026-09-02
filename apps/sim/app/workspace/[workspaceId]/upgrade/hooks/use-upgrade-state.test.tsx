@@ -156,4 +156,57 @@ describe('useUpgradeState', () => {
       })
     )
   })
+
+  it('exposes checkout and interval pending flags while requests are in flight', async () => {
+    let resolveUpgrade: (() => void) | undefined
+    mockHandleUpgrade.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveUpgrade = resolve
+        })
+    )
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(false)
+    expect(currentState?.isSwitchingInterval).toBe(false)
+
+    let upgradePromise: Promise<void> | undefined
+    await act(async () => {
+      upgradePromise = currentState?.doUpgrade('team', 25000)
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(true)
+
+    await act(async () => {
+      resolveUpgrade?.()
+      await upgradePromise
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(false)
+
+    let resolveSwitch: (() => void) | undefined
+    mockRequestJson.mockImplementationOnce(
+      () =>
+        new Promise<{ success: true }>((resolve) => {
+          resolveSwitch = () => resolve({ success: true })
+        })
+    )
+
+    let switchPromise: Promise<void> | undefined
+    await act(async () => {
+      switchPromise = currentState?.handleSwitchInterval('year')
+    })
+
+    expect(currentState?.isSwitchingInterval).toBe(true)
+
+    await act(async () => {
+      resolveSwitch?.()
+      await switchPromise
+    })
+
+    expect(currentState?.isSwitchingInterval).toBe(false)
+  })
 })

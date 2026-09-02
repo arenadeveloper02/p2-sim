@@ -131,6 +131,8 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
         : 'pro'
   const checkoutTarget = state.subscription.isOrgScoped || state.isArena ? 'team' : 'pro'
 
+  const isPending = state.isSwitchingInterval || state.isStartingCheckout
+
   /**
    * Resolve a card's CTA from the canonical matrix, then bind it to the matching
    * handler. A same-tier "Manage plan" card flips to an interval switch when the
@@ -148,7 +150,10 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
       if (state.wantsIntervalSwitch) {
         return {
           ...cta,
-          label: `Switch to ${state.isAnnual ? 'Annual' : 'Monthly'}`,
+          label: state.isSwitchingInterval
+            ? 'Switching…'
+            : `Switch to ${state.isAnnual ? 'Annual' : 'Monthly'}`,
+          disabled: isPending,
           onClick: () =>
             state
               .handleSwitchInterval(state.isAnnual ? 'year' : 'month')
@@ -159,6 +164,7 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
     }
 
     const onClick = (): void => {
+      if (isPending) return
       switch (cta.intent) {
         case 'sales':
           window.open(SALES_CONTACT_URL, '_blank', 'noopener,noreferrer')
@@ -176,7 +182,12 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
       }
     }
 
-    return { ...cta, onClick }
+    const label =
+      state.isStartingCheckout && (cta.intent === 'upgrade' || cta.intent === 'downgrade')
+        ? 'Redirecting to checkout…'
+        : cta.label
+
+    return { ...cta, label, onClick, disabled: isPending }
   }
 
   const proCta = resolveCta('pro')
@@ -235,7 +246,11 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
               {header}
             </h1>
             {state.showUpgradePlans && (
-              <BillingPeriodToggle isAnnual={state.isAnnual} onChange={state.setIsAnnual} />
+              <BillingPeriodToggle
+                isAnnual={state.isAnnual}
+                onChange={state.setIsAnnual}
+                disabled={isPending}
+              />
             )}
           </div>
 
@@ -320,6 +335,7 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
                     maxPrice={`$${maxPrice}`}
                     isAnnual={state.isAnnual}
                     onIsAnnualChange={state.setIsAnnual}
+                    billingPeriodDisabled={isPending}
                     ctas={comparisonCtas}
                     sections={state.isArena ? ARENA_COMPARISON_SECTIONS : undefined}
                     columns={state.isArena ? ARENA_PLAN_COLUMNS : undefined}

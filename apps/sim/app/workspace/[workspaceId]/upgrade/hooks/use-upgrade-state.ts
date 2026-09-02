@@ -54,6 +54,10 @@ export interface UpgradeState {
   isOnMaxTier: boolean
   isOnStarter: boolean
   wantsIntervalSwitch: boolean
+  /** True while annual/monthly interval switch is in flight. */
+  isSwitchingInterval: boolean
+  /** True while Stripe checkout or in-place plan upgrade is in flight. */
+  isStartingCheckout: boolean
   doUpgrade: (targetPlan: 'pro' | 'team', creditTier: number) => Promise<void>
   handleSwitchInterval: (interval: 'month' | 'year') => Promise<void>
   upgradeOrSwitchToMax: () => Promise<void>
@@ -82,6 +86,8 @@ export function useUpgradeState({
   const stripePaid = ownerBilling.isPaid && !starter
 
   const [isAnnual, setIsAnnual] = useState(!stripePaid || ownerBilling.billingInterval === 'year')
+  const [isSwitchingInterval, setIsSwitchingInterval] = useState(false)
+  const [isStartingCheckout, setIsStartingCheckout] = useState(false)
 
   const subscription = {
     isFree: isFree(ownerBilling.plan) || starter,
@@ -128,6 +134,8 @@ export function useUpgradeState({
 
   const doUpgrade = useCallback(
     async (targetPlan: TargetPlan, creditTier: number) => {
+      if (isStartingCheckout || isSwitchingInterval) return
+      setIsStartingCheckout(true)
       try {
         await handleUpgrade(targetPlan, {
           creditTier,
@@ -138,9 +146,17 @@ export function useUpgradeState({
         })
       } catch (error) {
         toast.error(getErrorMessage(error, 'Unknown error occurred'))
+      } finally {
+        setIsStartingCheckout(false)
       }
     },
-    [handleUpgrade, hostContext.hostOrganizationId, isAnnual]
+    [
+      handleUpgrade,
+      hostContext.hostOrganizationId,
+      isAnnual,
+      isStartingCheckout,
+      isSwitchingInterval,
+    ]
   )
 
   const currentInterval = ownerBilling.billingInterval
@@ -152,12 +168,25 @@ export function useUpgradeState({
           'Interval switching is not available on legacy plans. Please upgrade first.'
         )
       }
-      await requestJson(billingSwitchPlanContract, {
-        body: { targetPlanName: subscription.plan, interval, workspaceId },
-      })
-      await refreshBillingState()
+      if (isSwitchingInterval || isStartingCheckout) return
+      setIsSwitchingInterval(true)
+      try {
+        await requestJson(billingSwitchPlanContract, {
+          body: { targetPlanName: subscription.plan, interval, workspaceId },
+        })
+        await refreshBillingState()
+      } finally {
+        setIsSwitchingInterval(false)
+      }
     },
-    [isLegacyPlan, refreshBillingState, subscription.plan, workspaceId]
+    [
+      isLegacyPlan,
+      isSwitchingInterval,
+      isStartingCheckout,
+      refreshBillingState,
+      subscription.plan,
+      workspaceId,
+    ]
   )
 
   const currentCredits = getPlanTierCredits(subscription.plan)
@@ -180,12 +209,14 @@ export function useUpgradeState({
   const isOnMax = isOnMaxTier && !wantsIntervalSwitch
 
   const upgradeOrSwitchToMax = useCallback(async () => {
+    if (isStartingCheckout || isSwitchingInterval) return
     // Starter has no Stripe subscription — always run a fresh checkout.
     if (starter || !stripePaid) {
       await doUpgrade(subscription.isOrgScoped ? 'team' : 'pro', MAX_TIER.credits)
       return
     }
     const planType = subscription.isTeam ? 'team' : 'pro'
+    setIsStartingCheckout(true)
     try {
       await requestJson(billingSwitchPlanContract, {
         body: {
@@ -197,8 +228,12 @@ export function useUpgradeState({
       await refreshBillingState()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to upgrade'))
+    } finally {
+      setIsStartingCheckout(false)
     }
   }, [
+    isStartingCheckout,
+    isSwitchingInterval,
     starter,
     stripePaid,
     doUpgrade,
@@ -211,6 +246,7 @@ export function useUpgradeState({
   ])
 
   const onUpgradeToOtherTier = useCallback(async () => {
+    if (isStartingCheckout || isSwitchingInterval) return
     if (starter || !stripePaid) {
       await doUpgrade(subscription.isOrgScoped ? 'team' : 'pro', PRO_TIER.credits)
       return
@@ -222,6 +258,7 @@ export function useUpgradeState({
     const targetTier = onMax ? PRO_TIER : MAX_TIER
     const planType = subscription.isTeam ? 'team' : 'pro'
     const targetPlanName = `${planType}_${targetTier.credits}`
+    setIsStartingCheckout(true)
     try {
       await requestJson(billingSwitchPlanContract, {
         body: { targetPlanName, workspaceId },
@@ -229,8 +266,12 @@ export function useUpgradeState({
       await refreshBillingState()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to switch plan'))
+    } finally {
+      setIsStartingCheckout(false)
     }
   }, [
+    isStartingCheckout,
+    isSwitchingInterval,
     starter,
     stripePaid,
     doUpgrade,
@@ -257,6 +298,8 @@ export function useUpgradeState({
     isOnMaxTier,
     isOnStarter: starter,
     wantsIntervalSwitch,
+    isSwitchingInterval,
+    isStartingCheckout,
     doUpgrade,
     handleSwitchInterval,
     upgradeOrSwitchToMax,

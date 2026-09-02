@@ -142,18 +142,8 @@ vi.mock(
 vi.mock(
   '@/app/workspace/[workspaceId]/settings/components/billing/components/prepaid-top-up-section/prepaid-top-up-section',
   () => ({
-    PrepaidTopUpSection: ({
-      creditBalance,
-      canPurchase,
-    }: {
-      creditBalance: number
-      canPurchase: boolean
-    }) => (
-      <div
-        data-testid='prepaid-top-up'
-        data-credit-balance={creditBalance}
-        data-can-purchase={canPurchase}
-      />
+    PrepaidTopUpSection: ({ canPurchase }: { canPurchase: boolean }) => (
+      <div data-testid='prepaid-top-up' data-can-purchase={canPurchase} />
     ),
   })
 )
@@ -308,10 +298,6 @@ describe('Billing payer scope', () => {
     expect(container.textContent).toContain('Access until')
     expect(container.textContent).toContain('Subscription canceled')
     expect(container.textContent).toContain('Restore')
-    expect(container.querySelector('[data-testid="prepaid-top-up"]')).toHaveAttribute(
-      'data-credit-balance',
-      '5'
-    )
     expect(container.querySelector('[data-testid="prepaid-top-up"]')).toHaveAttribute(
       'data-can-purchase',
       'true'

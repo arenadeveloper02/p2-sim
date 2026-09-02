@@ -499,7 +499,6 @@ export function Billing({
 
       {showPrepaidTopUp && (
         <PrepaidTopUpSection
-          creditBalance={creditBalance}
           canPurchase={canManageBilling}
           onManagePaymentMethod={handleOpenBillingPortal}
         />

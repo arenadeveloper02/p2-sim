@@ -49,6 +49,8 @@ export interface ComparisonTableProps {
    * Should point to the same setter as the page-level toggle.
    */
   onIsAnnualChange: (isAnnual: boolean) => void
+  /** Disables the in-table billing-period toggle while a plan action is pending. */
+  billingPeriodDisabled?: boolean
   /**
    * Resolved CTA per plan column, mirroring the upgrade-page plan cards. Plans
    * without an entry (e.g. Free / Starter) render no button.
@@ -141,6 +143,7 @@ export function ComparisonTable({
   maxPrice,
   isAnnual,
   onIsAnnualChange,
+  billingPeriodDisabled = false,
   ctas,
   sections = COMPARISON_SECTIONS,
   columns = PLAN_COLUMNS,
@@ -165,7 +168,11 @@ export function ComparisonTable({
             <span className='text-[var(--text-primary)] text-base'>Compare plans</span>
             <span className='text-[var(--text-muted)] text-small'>Find the right plan for you</span>
           </div>
-          <BillingPeriodToggle isAnnual={isAnnual} onChange={onIsAnnualChange} />
+          <BillingPeriodToggle
+            isAnnual={isAnnual}
+            onChange={onIsAnnualChange}
+            disabled={billingPeriodDisabled}
+          />
         </div>
 
         {columns.map((col) => {
