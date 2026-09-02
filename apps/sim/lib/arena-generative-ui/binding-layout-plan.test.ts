@@ -11,6 +11,7 @@ import {
   isActionControlPending,
   isBoundPathPending,
   layoutPlanForBinding,
+  proseContentFromPlanState,
   resultLayoutFromPlan,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
@@ -185,6 +186,11 @@ describe('layoutPlanForBinding', () => {
     expect(plan.stringFieldNames).toEqual(['artical_data'])
     expect(plan.prosePaths).toEqual(['artical_data', 'content'])
     expect(resultLayoutFromPlan(plan)).toContain('never "field.content"')
+    expect(
+      proseContentFromPlanState({ artical_data: '# Root Canal Treatment' }, plan)
+    ).toBe('# Root Canal Treatment')
+    expect(proseContentFromPlanState({ artical_data: '' }, plan)).toBeUndefined()
+    expect(proseContentFromPlanState({ artical_data: '{"nested":true}' }, plan)).toBeUndefined()
   })
 
   it('omits protocol fields, execute flags, and file[] uploads from formFields', () => {

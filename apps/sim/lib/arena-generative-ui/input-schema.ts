@@ -277,8 +277,8 @@ function chatInputPrefixField(
 /**
  * Writes host-owned inputs onto the CTA payload. Form fields stay as submitted;
  * `visitorEmail` copies the resolved Arena email onto the start-block name;
- * `constant` stamps `value`. Applied on both sides of `inputMapping` so an
- * allowlist cannot drop keys the binding itself owns.
+ * `constant` stamps `value`. Applied on both sides of `inputMapping` so a
+ * remap cannot drop keys the binding itself owns.
  */
 export function applyBindingInputSources(
   values: Record<string, unknown>,

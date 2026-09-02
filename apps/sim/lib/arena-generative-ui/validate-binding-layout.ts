@@ -6,7 +6,7 @@ import {
   planHasStructuredSchema,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
-import { isFormFieldType } from '@/lib/arena-generative-ui/form-fields'
+import { isFormFieldType, parseShowWhen } from '@/lib/arena-generative-ui/form-fields'
 import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import {
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
@@ -60,6 +60,7 @@ export function validateManifestBindingLayout(
       ? new Set(options.authoredPagePaths)
       : null
   const planByKey = new Map(plans.map((plan) => [plan.key, plan]))
+  const generateKeys = generateBindingKeys(manifest)
 
   for (const [path, page] of Object.entries(manifest.pages)) {
     if (authored && !authored.has(path)) continue
@@ -77,6 +78,12 @@ export function validateManifestBindingLayout(
 
     const chatError = chatElementsError(path, elements, manifest, planByKey)
     if (chatError) return chatError
+
+    const copyError = copyDownloadReboundError(path, elements, manifest, generateKeys)
+    if (copyError) return copyError
+
+    const showWhenError = showWhenDataTextMismatchError(path, elements, plans)
+    if (showWhenError) return showWhenError
 
     for (const [id, element] of Object.entries(elements)) {
       const type = element.type ?? ''
@@ -103,6 +110,90 @@ export function validateManifestBindingLayout(
   if (streamChatError) return streamChatError
 
   return unboundHostKeysError(manifest, plans)
+}
+
+function generateBindingKeys(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const keys = new Set<string>()
+  for (const page of Object.values(manifest.pages)) {
+    const elements = specElements(page.spec)
+    for (const [actionId, action] of Object.entries(manifest.actions)) {
+      if (!action.apiKey) continue
+      if (pageSubmitsAction(elements, actionId)) keys.add(action.apiKey)
+    }
+  }
+  return keys
+}
+
+const COPY_DOWNLOAD_LABEL =
+  /^(copy|download)(\s+(markdown|pdf))?$|copy markdown|download pdf|^pdf$/i
+
+function isCopyOrDownloadLabel(label: string): boolean {
+  const trimmed = label.trim()
+  if (!trimmed) return false
+  return COPY_DOWNLOAD_LABEL.test(trimmed)
+}
+
+function chromeLabel(element: SpecElement): string {
+  return asString(element.props?.label) || asString(element.props?.text)
+}
+
+function copyDownloadReboundError(
+  pagePath: string,
+  elements: Record<string, SpecElement>,
+  manifest: ArenaGenerativeAppManifest,
+  generateKeys: Set<string>
+): string | undefined {
+  if (generateKeys.size === 0) return undefined
+  for (const [id, element] of Object.entries(elements)) {
+    const type = element.type ?? ''
+    if (type !== 'Button' && type !== 'Chip') continue
+    const label = chromeLabel(element)
+    if (!isCopyOrDownloadLabel(label)) continue
+    const actionId = asString(element.props?.actionId)
+    if (!actionId) continue
+    const apiKey = manifest.actions[actionId]?.apiKey
+    if (!apiKey || !generateKeys.has(apiKey)) continue
+    return `Page "${pagePath}" ${type} "${id}" labeled "${label}" rebinds generate API "${apiKey}". Copy Markdown and Download PDF must not call the generate workflow.`
+  }
+  return undefined
+}
+
+function proseHostKeys(plans: BindingLayoutPlan[]): Set<string> {
+  const keys = new Set<string>([ARENA_GENERATIVE_STREAM_CONTENT_KEY])
+  for (const plan of plans) {
+    for (const name of plan.stringFieldNames) keys.add(name)
+    for (const path of plan.prosePaths) keys.add(path)
+  }
+  return keys
+}
+
+function showWhenDataTextMismatchError(
+  pagePath: string,
+  elements: Record<string, SpecElement>,
+  plans: BindingLayoutPlan[]
+): string | undefined {
+  const proseKeys = proseHostKeys(plans)
+  for (const [id, element] of Object.entries(elements)) {
+    const showWhen = asString(element.props?.showWhen)
+    const showKeys = parseShowWhen(showWhen)
+      .filter((clause) => clause.op === 'truthy')
+      .map((clause) => clause.name)
+      .filter((name) => proseKeys.has(name))
+    if (showKeys.length === 0) continue
+    const ids =
+      element.type === 'DataText' ? [id, ...descendantsOf(elements, id)] : descendantsOf(elements, id)
+    for (const childId of ids) {
+      const child = elements[childId]
+      if (child?.type !== 'DataText') continue
+      const statePath = asString(child.props?.statePath)
+      if (!statePath) continue
+      const root = statePath.split('.')[0] ?? ''
+      if (!proseKeys.has(root)) continue
+      if (showKeys.includes(root)) continue
+      return `Page "${pagePath}" DataText "${childId}" binds statePath "${statePath}" inside showWhen "${showWhen}". showWhen and DataText must share the same host key.`
+    }
+  }
+  return undefined
 }
 
 function navigateFirstOnLoadError(

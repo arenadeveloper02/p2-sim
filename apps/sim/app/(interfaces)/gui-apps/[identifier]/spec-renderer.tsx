@@ -478,9 +478,36 @@ function alignItemsClass(value: unknown, fallback: keyof typeof ALIGN_ITEMS_CLAS
  */
 function gridTemplateColumns(props: Record<string, unknown>): string {
   const explicit = asString(props.minItemWidth)
-  const fromColumns = GRID_MIN_ITEM_WIDTHS[asString(props.columns)]
+  const fromColumns = GRID_MIN_ITEM_WIDTHS[gridColumnCount(props)]
   const minItemWidth = explicit || fromColumns || DEFAULT_GRID_MIN_ITEM_WIDTH
   return `repeat(auto-fit, minmax(min(100%, ${minItemWidth}), 1fr))`
+}
+
+function gridColumnCount(props: Record<string, unknown>): string {
+  const raw = props.columns
+  if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
+  return asString(raw)
+}
+
+/**
+ * Two-column form grids use equal `1fr` tracks instead of auto-fit min 420px,
+ * which would wrap inside the form measure and leave a narrow column in a wide Card.
+ */
+function isEqualTwoColFormGrid(withinForm: boolean, props: Record<string, unknown>): boolean {
+  return withinForm && gridColumnCount(props) === '2'
+}
+
+function specHasColumnLayout(
+  elements: Record<string, SpecElement>,
+  childIds: string[]
+): boolean {
+  for (const childId of childIds) {
+    const child = elements[childId]
+    if (!child) continue
+    if (child.type === 'Grid' || child.type === 'Columns') return true
+    if (specHasColumnLayout(elements, child.children ?? [])) return true
+  }
+  return false
 }
 
 /** Splits `a | b | c` cells, keeping empty middles so columns stay aligned. */
@@ -862,7 +889,7 @@ function readStatePath(
 }
 
 function displayFromStateValue(value: unknown, fallback: string): string {
-  if (value === undefined || value === null) return fallback
+  if (isEmptyStateValue(value)) return fallback
   const fromAction = displayTextFromActionData(value)
   if (fromAction) return fromAction
   return String(value)
@@ -1920,6 +1947,19 @@ export function SpecRenderer({
       }
       case 'Grid':
         if (!fieldIsVisible(props, visibilityValues)) return null
+        if (isEqualTwoColFormGrid(withinForm, props)) {
+          return (
+            <div
+              className='grid w-full grid-cols-1 md:grid-cols-2'
+              style={{
+                gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+                ...styleFromProps(props),
+              }}
+            >
+              {children}
+            </div>
+          )
+        }
         return (
           <div
             className='grid w-full'
@@ -2878,10 +2918,12 @@ export function SpecRenderer({
             void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
+        const fillWideCard = specHasColumnLayout(elements, element.children ?? [])
         return (
           <form
             className={cn(
-              'flex w-full max-w-[var(--gui-measure,40rem)] flex-col gap-[var(--gui-gap,16px)]',
+              'flex w-full flex-col gap-[var(--gui-gap,16px)]',
+              !fillWideCard && 'max-w-[var(--gui-measure,40rem)]',
               alignItemsClass(props.align, 'stretch')
             )}
             onSubmit={handleSubmit}

@@ -202,6 +202,24 @@ export function shouldBindActionContent(
   return parseJsonLiteral(display) === undefined
 }
 
+/**
+ * Markdown from a named string field (`artical_data`) when `content` was not
+ * bound because the display string looked like a JSON dump.
+ */
+export function proseContentFromPlanState(
+  state: Record<string, unknown>,
+  plan: BindingLayoutPlan
+): string | undefined {
+  for (const name of plan.stringFieldNames) {
+    const value = state[name]
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!trimmed || parseJsonLiteral(trimmed) !== undefined) continue
+    return trimmed
+  }
+  return undefined
+}
+
 function omitFromPlanState(plan: BindingLayoutPlan, key: string): boolean {
   if (plan.collections.some((collection) => collection.wrapperKeys.includes(key))) {
     return true

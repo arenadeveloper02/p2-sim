@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm'
 import {
   actionStateFromPlan,
   layoutPlanForBinding,
+  proseContentFromPlanState,
   shouldBindActionContent,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import {
@@ -304,6 +305,10 @@ function withActorEmail(
   return next
 }
 
+/**
+ * Remap overlay: keep constrained form keys and write mapped targets on top.
+ * A lone `{ email: "arenaEmailId" }` must not drop `keyword` / `client`.
+ */
 function mapActionInput(
   values: Record<string, unknown>,
   inputMapping?: Record<string, string>
@@ -311,7 +316,7 @@ function mapActionInput(
   if (!inputMapping || Object.keys(inputMapping).length === 0) {
     return values
   }
-  const mapped: Record<string, unknown> = {}
+  const mapped: Record<string, unknown> = { ...values }
   for (const [targetKey, sourceKey] of Object.entries(inputMapping)) {
     const value = values[sourceKey] ?? values[targetKey]
     if (value !== undefined) {
@@ -322,8 +327,8 @@ function mapActionInput(
 }
 
 /**
- * `inputMapping` is an allowlist. Chat protocol keys are host-stamped like
- * `arenaEmailId` and must survive it.
+ * Chat protocol keys are host-stamped like `arenaEmailId` and must survive a
+ * mapping that omitted them.
  */
 function withChatProtocolKeys(
   mapped: Record<string, unknown>,
@@ -903,8 +908,8 @@ export async function runGenerativeAppAction(
    * Host-owned keys (`visitorEmail`, `constant`, `arenaEmailId`, chat protocol)
    * are applied on both sides of `mapActionInput`. Constants and visitorEmail
    * are stamped first so form composition can include them. After mapping,
-   * because `inputMapping` is an allowlist and would otherwise drop keys the
-   * binding declared that the form never collected — plus reserved Start keys.
+   * they are stamped again so a remap that omitted a host-owned Start field
+   * still receives it — plus reserved Start keys.
    */
   const withHostInputs = (values: Record<string, unknown>) =>
     withActorEmail(
@@ -964,13 +969,15 @@ export async function runGenerativeAppAction(
     ? paginationStateFromData(binding.pagination, payload, mappedInput)
     : {}
   const display = streamedContent.trim() ? streamedContent : displayTextFromActionData(payload)
+  const boundContent =
+    display && shouldBindActionContent(plan, display, streamedContent)
+      ? display
+      : proseContentFromPlanState(fromData, plan)
   const setState: Record<string, unknown> = {
     ...(action.onSuccess?.setState ?? {}),
     ...fromData,
     ...paginationPatch,
-    ...(display && shouldBindActionContent(plan, display, streamedContent)
-      ? { content: display }
-      : {}),
+    ...(boundContent ? { content: boundContent } : {}),
   }
   const schemaWarning = outputSchemaWarning(binding.outputSchema, setState)
   if (schemaWarning) {

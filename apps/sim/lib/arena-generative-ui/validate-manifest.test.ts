@@ -1310,6 +1310,288 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.error).toContain('artical_data.content')
     })
 
+    it('rejects Copy Markdown that rebinds the generate API', () => {
+      const streamBinding = {
+        key: 'recommend_articles',
+        label: 'Recommend',
+        kind: 'workflow' as const,
+        workflowId: 'wf-rec',
+        stream: true,
+        outputSchema: [{ name: 'artical_data', type: 'string' }],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'copy', 'body'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          copy: {
+            type: 'Button',
+            props: {
+              label: 'Copy Markdown',
+              href: null,
+              navigateTo: null,
+              actionId: 'submit_lead',
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: {
+              statePath: 'content',
+              fallback: '',
+              color: null,
+              size: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'recommend_articles', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: [streamBinding], entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Copy Markdown')
+      expect(result.error).toContain('recommend_articles')
+    })
+
+    it('rejects Download PDF Chip that rebinds the generate API', () => {
+      const streamBinding = {
+        key: 'recommend_articles',
+        label: 'Recommend',
+        kind: 'workflow' as const,
+        workflowId: 'wf-rec',
+        stream: true,
+        outputSchema: [{ name: 'artical_data', type: 'string' }],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'download', 'body'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          download: {
+            type: 'Chip',
+            props: {
+              text: 'Download PDF',
+              tone: null,
+              actionId: 'submit_lead',
+              navigateTo: null,
+              setValue: null,
+            },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: {
+              statePath: 'content',
+              fallback: '',
+              color: null,
+              size: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'recommend_articles', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: [streamBinding], entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Download PDF')
+      expect(result.error).toContain('recommend_articles')
+    })
+
+    it('rejects DataText showWhen on a different prose key than statePath', () => {
+      const streamBinding = {
+        key: 'recommend_articles',
+        label: 'Recommend',
+        kind: 'workflow' as const,
+        workflowId: 'wf-rec',
+        stream: true,
+        outputSchema: [{ name: 'artical_data', type: 'string' }],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'section'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          section: {
+            type: 'Stack',
+            props: {
+              direction: 'vertical',
+              gap: '12px',
+              align: null,
+              showWhen: 'artical_data',
+            },
+            children: ['body'],
+          },
+          body: {
+            type: 'DataText',
+            props: {
+              statePath: 'content',
+              fallback: '',
+              color: null,
+              size: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'recommend_articles', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: [streamBinding], entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('showWhen')
+      expect(result.error).toContain('content')
+    })
+
+    it('accepts DataText showWhen that matches its statePath', () => {
+      const streamBinding = {
+        key: 'recommend_articles',
+        label: 'Recommend',
+        kind: 'workflow' as const,
+        workflowId: 'wf-rec',
+        stream: true,
+        outputSchema: [{ name: 'artical_data', type: 'string' }],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'section'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          section: {
+            type: 'Stack',
+            props: {
+              direction: 'vertical',
+              gap: '12px',
+              align: null,
+              showWhen: 'content',
+            },
+            children: ['body'],
+          },
+          body: {
+            type: 'DataText',
+            props: {
+              statePath: 'content',
+              fallback: '',
+              color: null,
+              size: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'recommend_articles', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: [streamBinding], entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
     it('rejects onLoad of a navigate-first action on the destination page', () => {
       const result = validateArenaGenerativeManifest(
         {

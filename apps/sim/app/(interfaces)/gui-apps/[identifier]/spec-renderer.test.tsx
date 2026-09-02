@@ -411,6 +411,40 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('strong')).toBeNull()
   })
 
+  it('renders the DataText fallback when content is an empty string', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['body'] },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Waiting for a reply…' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { content: '' } })
+    expect(container.textContent).toContain('Waiting for a reply…')
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
+  })
+
+  it('shows a DataText skeleton while pending when content is an empty string', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['body'] },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Waiting for a reply…' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { content: '' }, pending: true })
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeTruthy()
+    expect(container.textContent).not.toContain('Waiting for a reply…')
+  })
+
   describe('Chat live content', () => {
     const chatSpec: Spec = {
       root: 'page',
@@ -716,6 +750,38 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec })
     const grid = container.querySelector('.grid') as HTMLElement
     expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fit, minmax(min(100%, 300px), 1fr))')
+  })
+
+  it('renders a two-column Grid inside Form as equal tracks and drops the form measure', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'generate' }, children: ['grid', 'submit'] },
+        grid: {
+          type: 'Grid',
+          props: { columns: '2' },
+          children: ['keyword', 'client'],
+        },
+        keyword: {
+          type: 'TextInput',
+          props: { name: 'keyword', label: 'Keyword' },
+          children: [],
+        },
+        client: {
+          type: 'TextInput',
+          props: { name: 'client', label: 'Client' },
+          children: [],
+        },
+        submit: { type: 'SubmitButton', props: { label: 'Generate' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const form = container.querySelector('form')
+    expect(form?.className).not.toContain('max-w-[var(--gui-measure')
+    const grid = container.querySelector('.grid') as HTMLElement
+    expect(grid.className).toContain('md:grid-cols-2')
+    expect(grid.style.gridTemplateColumns).toBe('')
   })
 
   it('makes a Card a direct child of a horizontal Stack instead of wrapping it in a span', () => {
