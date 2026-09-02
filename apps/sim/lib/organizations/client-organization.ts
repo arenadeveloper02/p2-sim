@@ -22,7 +22,6 @@ import { generateId } from '@sim/utils/id'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { applySessionPolicyToNewMember } from '@/lib/auth/session-policy'
 import { isArenaBilling, provisionClientOrgStarterBilling } from '@/lib/billing/arena'
-import { isStarterActive, isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import {
@@ -474,11 +473,13 @@ export async function ensureClientOrganizationMember(
       const organizationSubscription = isBillingEnabled
         ? await getOrganizationSubscription(mapping.organizationId, { executor: tx })
         : null
-      const organizationHasFixedSeats =
-        isEnterprise(organizationSubscription?.plan) ||
-        (organizationSubscription != null &&
-          isStarterPlan(organizationSubscription.plan) &&
-          isStarterActive(organizationSubscription))
+      /**
+       * Only Enterprise has a hard seat cap. Arena Starter / flat Team plans are
+       * org-priced (not per-seat); validating against `getEffectiveSeats` would
+       * reject every add because Starter capacity resolves to 0 and Team seats
+       * equal the current member count. Matches admin members + invitation paths.
+       */
+      const organizationHasFixedSeats = isEnterprise(organizationSubscription?.plan)
 
       const membership = await ensureUserInOrganizationTx(tx, {
         userId,

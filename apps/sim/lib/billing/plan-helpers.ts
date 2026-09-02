@@ -64,7 +64,8 @@ export function isPaid(plan: string | null | undefined): boolean {
 /**
  * Whether an organization subscription may accept members under seat limits.
  * Includes Stripe-paid org plans and Arena Starter during its active month
- * (Starter is not {@link isPaid}, but client-org onboarding still enforces seats).
+ * (Starter is not {@link isPaid}). Callers that skip seat validation for
+ * elastic/flat org plans (Team, Arena Starter) never consult this helper.
  */
 export function hasOrganizationSeatEntitlement(sub: {
   plan: string | null | undefined
