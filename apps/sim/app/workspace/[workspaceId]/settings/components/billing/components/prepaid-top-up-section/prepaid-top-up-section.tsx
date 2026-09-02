@@ -14,13 +14,22 @@ import { usePurchaseCredits } from '@/hooks/queries/subscription'
 const PREPAID_TOP_UP_PRESETS = [30, 50, 100] as const
 const PREPAID_TOP_UP_MIN = 10
 const PREPAID_TOP_UP_MAX = 1000
+const PREPAID_TOP_UP_PRESET_SET = new Set<number>(PREPAID_TOP_UP_PRESETS)
 
-type PrepaidAmountSelection = (typeof PREPAID_TOP_UP_PRESETS)[number] | 'custom'
+type PrepaidAmountPreset = (typeof PREPAID_TOP_UP_PRESETS)[number]
+type PrepaidAmountSelection = PrepaidAmountPreset | 'custom'
 
 interface PrepaidTopUpSectionProps {
   creditBalance: number
   canPurchase: boolean
   onManagePaymentMethod: () => void
+}
+
+function parseSelectionValue(value: string): PrepaidAmountSelection | null {
+  if (value === 'custom') return 'custom'
+  const preset = Number(value)
+  if (PREPAID_TOP_UP_PRESET_SET.has(preset)) return preset as PrepaidAmountPreset
+  return null
 }
 
 function parseTopUpAmount(selection: PrepaidAmountSelection, customDraft: string): number | null {
@@ -36,6 +45,13 @@ function parseTopUpAmount(selection: PrepaidAmountSelection, customDraft: string
 
 function isValidTopUpAmount(amount: number | null): amount is number {
   return amount !== null && amount >= PREPAID_TOP_UP_MIN && amount <= PREPAID_TOP_UP_MAX
+}
+
+/** Formats the live top-up amount preview to match whole-dollar screenshot copy. */
+function formatTopUpAmountPreview(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return '$0'
+  if (Number.isInteger(amount)) return `$${amount.toLocaleString()}`
+  return formatDollarAmount(amount)
 }
 
 /**
@@ -54,22 +70,18 @@ export function PrepaidTopUpSection({
     () => parseTopUpAmount(selection, customDraft),
     [selection, customDraft]
   )
-  const customPreviewCredits =
-    selection === 'custom' && selectedAmount !== null && Number.isFinite(selectedAmount)
-      ? dollarsToCredits(selectedAmount)
-      : null
+
+  const displayAmount =
+    selectedAmount !== null && Number.isFinite(selectedAmount) && selectedAmount > 0
+      ? selectedAmount
+      : 0
+  const displayCredits = dollarsToCredits(displayAmount)
+  const canSubmit = canPurchase && isValidTopUpAmount(selectedAmount) && !purchaseCredits.isPending
 
   const balanceCreditsLabel = formatCreditsLabel(dollarsToCredits(creditBalance))
 
   const handleTopUp = async () => {
-    if (!canPurchase) return
-
-    if (!isValidTopUpAmount(selectedAmount)) {
-      toast.error('Invalid amount', {
-        description: `Enter an amount between $${PREPAID_TOP_UP_MIN} and $${PREPAID_TOP_UP_MAX}.`,
-      })
-      return
-    }
+    if (!canSubmit || !isValidTopUpAmount(selectedAmount)) return
 
     try {
       await purchaseCredits.mutateAsync(selectedAmount)
@@ -93,15 +105,6 @@ export function PrepaidTopUpSection({
     }
   }
 
-  const topUpAction = (
-    <Chip
-      disabled={purchaseCredits.isPending || !isValidTopUpAmount(selectedAmount)}
-      onClick={handleTopUp}
-    >
-      {purchaseCredits.isPending ? 'Processing…' : 'Top up'}
-    </Chip>
-  )
-
   return (
     <>
       <SettingsSection label='Prepaid balance'>
@@ -111,50 +114,52 @@ export function PrepaidTopUpSection({
       </SettingsSection>
 
       {canPurchase && (
-        <SettingsSection label='Add prepaid usage' action={topUpAction}>
-          <div className='flex flex-col gap-3'>
+        <SettingsSection label='Add prepaid usage'>
+          <div className='flex flex-col gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-4'>
             <ButtonGroup
               value={String(selection)}
-              onValueChange={(value) => setSelection(value as PrepaidAmountSelection)}
+              onValueChange={(value) => {
+                const next = parseSelectionValue(value)
+                if (next !== null) setSelection(next)
+              }}
             >
               {PREPAID_TOP_UP_PRESETS.map((preset) => (
-                <ButtonGroupItem
-                  key={preset}
-                  value={String(preset)}
-                  className='h-auto flex-col gap-0.5 px-3 py-2'
-                >
-                  <span>${preset}</span>
-                  <span className='text-caption font-normal opacity-80'>
-                    {formatCreditsLabel(dollarsToCredits(preset))}
-                  </span>
+                <ButtonGroupItem key={preset} value={String(preset)}>
+                  ${preset}
                 </ButtonGroupItem>
               ))}
-              <ButtonGroupItem value='custom' className='h-auto px-3 py-2'>
-                Custom
-              </ButtonGroupItem>
+              <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
             </ButtonGroup>
 
             {selection === 'custom' && (
-              <div className='flex items-center gap-3'>
-                <ChipInput
-                  type='number'
-                  inputMode='decimal'
-                  min={PREPAID_TOP_UP_MIN}
-                  max={PREPAID_TOP_UP_MAX}
-                  step='0.01'
-                  value={customDraft}
-                  onChange={(event) => setCustomDraft(event.target.value)}
-                  placeholder={`$${PREPAID_TOP_UP_MIN}–$${PREPAID_TOP_UP_MAX}`}
-                  className='max-w-[160px]'
-                  inputClassName='[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
-                />
-                {customPreviewCredits !== null && (
-                  <span className='text-[var(--text-muted)] text-caption'>
-                    {formatCreditsLabel(customPreviewCredits)}
-                  </span>
-                )}
-              </div>
+              <ChipInput
+                type='number'
+                inputMode='decimal'
+                min={PREPAID_TOP_UP_MIN}
+                max={PREPAID_TOP_UP_MAX}
+                step='0.01'
+                value={customDraft}
+                onChange={(event) => setCustomDraft(event.target.value)}
+                placeholder='Enter amount'
+                className='w-full'
+                inputClassName='[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+              />
             )}
+
+            <div className='flex items-center justify-between gap-3'>
+              <div className='min-w-0'>
+                <p className='font-medium text-[20px] text-[var(--text-primary)] leading-none'>
+                  {formatTopUpAmountPreview(displayAmount)}
+                </p>
+                <p className='mt-1.5 text-[var(--text-muted)] text-small'>
+                  {formatCreditsLabel(displayCredits)}
+                </p>
+              </div>
+
+              <Chip variant='primary' disabled={!canSubmit} onClick={handleTopUp}>
+                {purchaseCredits.isPending ? 'Processing…' : 'Top up'}
+              </Chip>
+            </div>
           </div>
         </SettingsSection>
       )}
