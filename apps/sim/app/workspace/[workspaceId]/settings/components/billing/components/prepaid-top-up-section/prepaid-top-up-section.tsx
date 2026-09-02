@@ -54,8 +54,8 @@ export function PrepaidTopUpSection({
     () => parseTopUpAmount(selection, customDraft),
     [selection, customDraft]
   )
-  const previewCredits =
-    selectedAmount !== null && Number.isFinite(selectedAmount)
+  const customPreviewCredits =
+    selection === 'custom' && selectedAmount !== null && Number.isFinite(selectedAmount)
       ? dollarsToCredits(selectedAmount)
       : null
 
@@ -93,6 +93,15 @@ export function PrepaidTopUpSection({
     }
   }
 
+  const topUpAction = (
+    <Chip
+      disabled={purchaseCredits.isPending || !isValidTopUpAmount(selectedAmount)}
+      onClick={handleTopUp}
+    >
+      {purchaseCredits.isPending ? 'Processing…' : 'Top up'}
+    </Chip>
+  )
+
   return (
     <>
       <SettingsSection label='Prepaid balance'>
@@ -102,47 +111,50 @@ export function PrepaidTopUpSection({
       </SettingsSection>
 
       {canPurchase && (
-        <SettingsSection label='Add prepaid usage'>
-          <div className='flex flex-col gap-4'>
+        <SettingsSection label='Add prepaid usage' action={topUpAction}>
+          <div className='flex flex-col gap-3'>
             <ButtonGroup
               value={String(selection)}
               onValueChange={(value) => setSelection(value as PrepaidAmountSelection)}
             >
               {PREPAID_TOP_UP_PRESETS.map((preset) => (
-                <ButtonGroupItem key={preset} value={String(preset)}>
-                  ${preset}
+                <ButtonGroupItem
+                  key={preset}
+                  value={String(preset)}
+                  className='h-auto flex-col gap-0.5 px-3 py-2'
+                >
+                  <span>${preset}</span>
+                  <span className='text-caption font-normal opacity-80'>
+                    {formatCreditsLabel(dollarsToCredits(preset))}
+                  </span>
                 </ButtonGroupItem>
               ))}
-              <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
+              <ButtonGroupItem value='custom' className='h-auto px-3 py-2'>
+                Custom
+              </ButtonGroupItem>
             </ButtonGroup>
 
             {selection === 'custom' && (
-              <ChipInput
-                type='number'
-                inputMode='decimal'
-                min={PREPAID_TOP_UP_MIN}
-                max={PREPAID_TOP_UP_MAX}
-                step='0.01'
-                value={customDraft}
-                onChange={(event) => setCustomDraft(event.target.value)}
-                placeholder={`$${PREPAID_TOP_UP_MIN}–$${PREPAID_TOP_UP_MAX}`}
-                inputClassName='[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
-              />
+              <div className='flex items-center gap-3'>
+                <ChipInput
+                  type='number'
+                  inputMode='decimal'
+                  min={PREPAID_TOP_UP_MIN}
+                  max={PREPAID_TOP_UP_MAX}
+                  step='0.01'
+                  value={customDraft}
+                  onChange={(event) => setCustomDraft(event.target.value)}
+                  placeholder={`$${PREPAID_TOP_UP_MIN}–$${PREPAID_TOP_UP_MAX}`}
+                  className='max-w-[160px]'
+                  inputClassName='[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+                />
+                {customPreviewCredits !== null && (
+                  <span className='text-[var(--text-muted)] text-caption'>
+                    {formatCreditsLabel(customPreviewCredits)}
+                  </span>
+                )}
+              </div>
             )}
-
-            {previewCredits !== null && (
-              <p className='text-[var(--text-muted)] text-caption'>
-                {formatCreditsLabel(previewCredits)}
-              </p>
-            )}
-
-            <Chip
-              variant='primary'
-              disabled={purchaseCredits.isPending || !isValidTopUpAmount(selectedAmount)}
-              onClick={handleTopUp}
-            >
-              {purchaseCredits.isPending ? 'Processing…' : 'Top up'}
-            </Chip>
           </div>
         </SettingsSection>
       )}

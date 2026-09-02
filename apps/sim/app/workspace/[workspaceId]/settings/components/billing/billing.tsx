@@ -504,7 +504,7 @@ export function Billing({
         />
       )}
 
-      {showUsageLimit && (
+      {false && showUsageLimit && (
         <UsageLimitField
           currentLimit={usageLimitCurrent}
           minimumLimit={usageLimitMinimum}
@@ -516,7 +516,7 @@ export function Billing({
         />
       )}
 
-      {showOnDemand && (
+      {false && showOnDemand && (
         <SettingsSection label='Enable on-demand usage'>
           <div className='flex items-center justify-between'>
             <Label htmlFor='on-demand-usage'>Allow usage to go past included usage</Label>

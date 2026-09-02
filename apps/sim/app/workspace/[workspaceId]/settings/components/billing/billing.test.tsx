@@ -308,10 +308,6 @@ describe('Billing payer scope', () => {
     expect(container.textContent).toContain('Access until')
     expect(container.textContent).toContain('Subscription canceled')
     expect(container.textContent).toContain('Restore')
-    expect(container.querySelector('[data-testid="usage-limit"]')).toHaveAttribute(
-      'data-organization-id',
-      'org-target'
-    )
     expect(container.querySelector('[data-testid="prepaid-top-up"]')).toHaveAttribute(
       'data-credit-balance',
       '5'
@@ -320,17 +316,8 @@ describe('Billing payer scope', () => {
       'data-can-purchase',
       'true'
     )
-
-    const onDemandSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]')
-    expect(onDemandSwitch).toHaveAttribute('aria-checked', 'true')
-    await act(async () => {
-      onDemandSwitch?.click()
-    })
-    expect(mockUpdateOrganizationLimit).toHaveBeenCalledWith({
-      organizationId: 'org-target',
-      limit: 130,
-    })
-    expect(mockUpdateUserLimit).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="usage-limit"]')).toBeNull()
+    expect(container.querySelector('[role="switch"]')).toBeNull()
   })
 
   it('uses a guaranteed personal payer workspace for account upgrades', async () => {
