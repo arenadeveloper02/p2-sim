@@ -64,6 +64,10 @@ export interface FfmpegOptions {
   musicVolume?: number
   loopToVideo?: boolean
   format?: string
+  /** concat: transition between consecutive clips — 'none' (default), 'fade', or 'dissolve'. */
+  transition?: string
+  /** concat: seconds per crossfade (default 0.4). Ignored when transition is 'none'. */
+  transitionDuration?: number
 }
 
 export interface MediaProbe {
@@ -285,7 +289,7 @@ export async function runFfmpegOperation(
       case 'mix_audio':
         return mixAudio(dir, inputPaths, options)
       case 'concat':
-        return concat(dir, inputPaths)
+        return concat(dir, inputPaths, options)
       case 'trim':
         return trim(dir, inputPaths[0], inputs[0], options)
       case 'scale_pad':
@@ -363,7 +367,14 @@ async function mixAudio(
   return readOut(outputPath, 'mp3')
 }
 
-async function concat(dir: string, inputPaths: string[]): Promise<FfmpegResult> {
+/** xfade transition names this concat accepts (both exist in FFmpeg's xfade filter). */
+const CONCAT_TRANSITIONS = new Set(['fade', 'dissolve'])
+
+async function concat(
+  dir: string,
+  inputPaths: string[],
+  options: FfmpegOptions = {}
+): Promise<FfmpegResult> {
   if (inputPaths.length < 2) throw new Error('concat requires at least 2 clips')
   const probes = await Promise.all(inputPaths.map(probeFile))
   probes.forEach((p, i) => {
@@ -376,6 +387,109 @@ async function concat(dir: string, inputPaths: string[]): Promise<FfmpegResult> 
   const width = probes[0].width || 1280
   const height = probes[0].height || 720
   const fps = 30
+
+  // Crossfade path: xfade between consecutive clips (acrossfade for audio).
+  // Strictly additive — 'none'/absent runs the plain concat below, and any
+  // xfade failure falls back to it, so existing callers are never affected.
+  const transition = (options.transition ?? 'none').trim().toLowerCase()
+  if (CONCAT_TRANSITIONS.has(transition)) {
+    const requested =
+      typeof options.transitionDuration === 'number' && options.transitionDuration > 0
+        ? options.transitionDuration
+        : 0.4
+    // xfade offsets need every clip to outlast the fade; clamp to half the
+    // shortest clip so a long fade against a short clip cannot go negative.
+    const shortest = Math.min(...probes.map((p) => p.durationSeconds || 0))
+    const fadeDur = Math.max(0.1, Math.min(requested, shortest > 0 ? shortest / 2 : requested))
+
+    const runXfadeConcat = async (withAudio: boolean): Promise<FfmpegResult> => {
+      const outputPath = path.join(dir, `out-xfade-${withAudio ? 'audio' : 'noaudio'}.mp4`)
+      const cmd = ffmpeg()
+      for (const p of inputPaths) cmd.input(p)
+
+      const filters: string[] = []
+      let extraInputIndex = inputPaths.length
+
+      for (let i = 0; i < inputPaths.length; i++) {
+        filters.push(
+          `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+            `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},` +
+            `format=yuv420p,setpts=PTS-STARTPTS[v${i}]`
+        )
+        if (!withAudio) continue
+
+        if (probes[i].hasAudio) {
+          filters.push(`[${i}:a]aresample=48000,asetpts=PTS-STARTPTS[a${i}]`)
+        } else {
+          cmd
+            .input('anullsrc=channel_layout=stereo:sample_rate=48000')
+            .inputOptions(['-f', 'lavfi', '-t', String(probes[i].durationSeconds || 1)])
+          filters.push(`[${extraInputIndex}:a]asetpts=PTS-STARTPTS[a${i}]`)
+          extraInputIndex++
+        }
+      }
+
+      // Chain: [v0][v1]xfade[x1]; [x1][v2]xfade[x2]; … Each offset is the
+      // cumulative timeline so far minus the overlap already consumed.
+      let videoLabel = 'v0'
+      let audioLabel = 'a0'
+      let offset = 0
+      for (let i = 1; i < inputPaths.length; i++) {
+        offset += (probes[i - 1].durationSeconds || 0) - fadeDur
+        const isLast = i === inputPaths.length - 1
+        const outV = isLast ? 'outv' : `xv${i}`
+        filters.push(
+          `[${videoLabel}][v${i}]xfade=transition=${transition}:duration=${fadeDur}:offset=${Math.max(
+            0,
+            offset
+          ).toFixed(3)}[${outV}]`
+        )
+        videoLabel = outV
+        if (withAudio) {
+          const outA = isLast ? 'outa' : `xa${i}`
+          filters.push(`[${audioLabel}][a${i}]acrossfade=d=${fadeDur}:c1=tri:c2=tri[${outA}]`)
+          audioLabel = outA
+        }
+      }
+
+      cmd
+        .complexFilter(filters)
+        .outputOptions([
+          '-map',
+          '[outv]',
+          ...(withAudio ? ['-map', '[outa]', '-c:a', 'aac', '-b:a', '128k'] : ['-an']),
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '20',
+          '-pix_fmt',
+          'yuv420p',
+          '-movflags',
+          '+faststart',
+        ])
+      await runCommand(cmd, outputPath)
+      return readOut(outputPath, 'mp4')
+    }
+
+    try {
+      return await runXfadeConcat(true)
+    } catch (audioError) {
+      logger.warn('[FFmpeg] xfade concat with audio failed; retrying video-only xfade', {
+        transition,
+        error: audioError instanceof Error ? audioError.message : String(audioError),
+      })
+      try {
+        return await runXfadeConcat(false)
+      } catch (error) {
+        logger.warn('[FFmpeg] xfade concat failed; falling back to plain concat', {
+          transition,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+  }
 
   // One-pass concat FILTER (not the demuxer + stream copy): every clip is
   // normalized to the same size/fps/pixfmt and — critically — gets

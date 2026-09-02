@@ -439,7 +439,27 @@ export async function runStoryboardRender(
   // order. No storyboard lookup and no model calls — pure final assembly.
   const clipUrls = parseClipUrls(params.clipUrls)
   if (clipUrls.length > 0) {
-    logger.info(`[${requestId}] Concat mode: joining ${clipUrls.length} approved clips`)
+    // Optional crossfade between consecutive clips. Validated here so a typo
+    // fails loudly instead of silently rendering without transitions. Note
+    // crossfades shorten the total by (clips - 1) x transitionDuration; the
+    // clip-duration planner is expected to account for that overlap.
+    const transitionRaw = asString(params.transition).toLowerCase()
+    if (transitionRaw && !['none', 'fade', 'dissolve'].includes(transitionRaw)) {
+      throw new Error(
+        `Unsupported transition "${transitionRaw}". Use "none", "fade", or "dissolve".`
+      )
+    }
+    const transition = transitionRaw || 'none'
+    const transitionDurationRaw = Number(params.transitionDuration)
+    const transitionDuration =
+      Number.isFinite(transitionDurationRaw) && transitionDurationRaw > 0
+        ? transitionDurationRaw
+        : 0.4
+
+    logger.info(`[${requestId}] Concat mode: joining ${clipUrls.length} approved clips`, {
+      transition,
+      ...(transition !== 'none' ? { transitionDuration } : {}),
+    })
 
     const buffers = await Promise.all(clipUrls.map(downloadClipBuffer))
     const clips: MediaFile[] = buffers.map((buffer) => ({ buffer, mimeType: 'video/mp4' }))
@@ -448,7 +468,10 @@ export async function runStoryboardRender(
     if (clips.length === 1) {
       finalBuffer = clips[0].buffer
     } else {
-      const stitched = await runFfmpegOperation('concat', clips)
+      const stitched = await runFfmpegOperation('concat', clips, {
+        transition,
+        transitionDuration,
+      })
       if (!stitched.buffer) {
         throw new Error('FFmpeg concat produced no output')
       }

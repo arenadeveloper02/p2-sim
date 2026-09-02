@@ -10,6 +10,8 @@ export interface StoryboardRenderParams {
   clipUrls?: string[] | string
   audioUrl?: string
   audioMode?: string
+  transition?: string
+  transitionDuration?: number
   videoModel?: string
   clipDuration?: number
   targetDuration?: number
@@ -115,6 +117,20 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       visibility: 'user-or-llm',
       description:
         'Concat mode: "duck" (default) lowers the clips\' own audio under the narration; "replace" keeps the narration as the only audio.',
+    },
+    transition: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Concat mode: transition between consecutive clips — "none" (default), "fade", or "dissolve". Crossfades shorten the total video by (clips - 1) x transitionDuration seconds.',
+    },
+    transitionDuration: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Concat mode: seconds per crossfade (default 0.4). Ignored when transition is "none".',
     },
     targetDuration: {
       type: 'number',

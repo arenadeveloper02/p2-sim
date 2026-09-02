@@ -1915,6 +1915,28 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     description: 'Mixed over the joined video when using Clip URLs',
   },
   {
+    id: 'transition',
+    title: 'Clip Transition (Concat Mode)',
+    type: 'dropdown',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    options: [
+      { label: 'None (hard cut)', id: 'none' },
+      { label: 'Fade', id: 'fade' },
+      { label: 'Dissolve', id: 'dissolve' },
+    ],
+    value: () => 'none',
+    description:
+      'Crossfade between clips when using Clip URLs. Shortens the total by (clips - 1) x transition seconds.',
+  },
+  {
+    id: 'transitionDuration',
+    title: 'Transition Seconds (Concat Mode)',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: '0.4',
+    description: 'Seconds per crossfade. Ignored when the transition is None.',
+  },
+  {
     id: 'audioMode',
     title: 'Narration Mix',
     type: 'dropdown',
@@ -1992,6 +2014,10 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
               clipUrls: params.clipUrls,
               audioUrl: params.audioUrl,
               audioMode: params.audioMode,
+              transition: params.transition,
+              transitionDuration: params.transitionDuration
+                ? Number(params.transitionDuration)
+                : undefined,
               videoModel: params.storyVideoModel,
               // Total length wins over seconds-per-scene: the user asks for a
               // "30 second video", and the render step derives the per-clip
@@ -2038,6 +2064,15 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description:
         'Story Mode concat: "duck" (default) mixes narration over clip audio, "replace" keeps narration only',
+    },
+    transition: {
+      type: 'string',
+      description:
+        'Story Mode concat: transition between clips — "none" (default), "fade", or "dissolve"',
+    },
+    transitionDuration: {
+      type: 'number',
+      description: 'Story Mode concat: seconds per crossfade (default 0.4)',
     },
     storyVideoModel: { type: 'string', description: 'Story Mode: image-to-video model' },
     targetDuration: {
