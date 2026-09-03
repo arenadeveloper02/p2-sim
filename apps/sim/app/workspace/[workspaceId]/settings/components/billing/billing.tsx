@@ -13,6 +13,7 @@ import {
   Tooltip,
   toast,
 } from '@sim/emcn'
+import { Loader } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { getErrorMessage } from '@sim/utils/errors'
@@ -147,6 +148,7 @@ export function Billing({
   const openBillingPortal = useOpenBillingPortal()
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
   const [isCancelPending, setIsCancelPending] = useState(false)
+  const [isRestorePending, setIsRestorePending] = useState(false)
 
   const organizationBilling = organizationBillingData?.data
   const upgradeWorkspaceId = isOrganizationScope
@@ -391,6 +393,7 @@ export function Billing({
       return
     }
     if (!betterAuthSubscription.restore) return
+    setIsRestorePending(true)
     try {
       if (subscription.isOrgScoped && !billingOrganizationId) {
         throw new Error(
@@ -406,6 +409,8 @@ export function Billing({
       toast.error("Couldn't restore subscription", {
         description: getErrorMessage(error, 'Please try again in a moment.'),
       })
+    } finally {
+      setIsRestorePending(false)
     }
   }
 
@@ -453,7 +458,11 @@ export function Billing({
   const showUsageLimit = subscription.isPaid && !subscription.isEnterprise
   const showOnDemand = hasUsablePaidAccess && !subscription.isEnterprise
   const showPrepaidTopUp =
-    isOrganizationScope && subscription.isPaid && !subscription.isEnterprise && hasUsablePaidAccess
+    isOrganizationScope &&
+    subscription.isPaid &&
+    !subscription.isEnterprise &&
+    hasUsablePaidAccess &&
+    !isCancelledAtPeriodEnd
 
   const usageLimitCurrent =
     subscription.isOrgScoped && organizationBilling
@@ -614,10 +623,11 @@ export function Billing({
                 {isCancelledAtPeriodEnd ? (
                   <Chip
                     variant='primary'
-                    disabled={!canManageBilling}
+                    disabled={!canManageBilling || isRestorePending}
                     onClick={handleRestoreSubscription}
+                    leftIcon={isRestorePending ? Loader : undefined}
                   >
-                    Restore
+                    {isRestorePending ? 'Restoring...' : 'Restore'}
                   </Chip>
                 ) : (
                   <Chip disabled={!canManageBilling} onClick={() => setCancelModalOpen(true)}>
