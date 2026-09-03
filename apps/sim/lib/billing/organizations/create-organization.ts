@@ -28,6 +28,12 @@ interface CreateOrganizationWithOwnerParams {
   metadata?: Record<string, unknown>
 }
 
+interface CreateOrganizationShellParams {
+  name: string
+  slug: string
+  metadata?: Record<string, unknown>
+}
+
 interface EnsureOrganizationSlugAvailableParams {
   slug: string
   excludeOrganizationId?: string
@@ -36,6 +42,10 @@ interface EnsureOrganizationSlugAvailableParams {
 interface CreateOrganizationWithOwnerResult {
   organizationId: string
   memberId: string
+}
+
+interface CreateOrganizationShellResult {
+  organizationId: string
 }
 
 export function validateOrganizationSlugOrThrow(slug: string): void {
@@ -118,4 +128,40 @@ export async function createOrganizationWithOwnerTx(
   })
 
   return { organizationId, memberId }
+}
+
+/**
+ * Creates an organization row with no members. Used for client migration shells
+ * where the owner is attached later. Callers must hold their own concurrency
+ * control when the slug is derived from an external id.
+ */
+export async function createOrganizationShellTx(
+  tx: DbOrTx,
+  { name, slug, metadata = {} }: CreateOrganizationShellParams
+): Promise<CreateOrganizationShellResult> {
+  validateOrganizationSlugOrThrow(slug)
+
+  const organizationId = `org_${generateId()}`
+  const now = new Date()
+
+  const existingOrganization = await tx
+    .select({ id: organization.id })
+    .from(organization)
+    .where(eq(organization.slug, slug))
+    .limit(1)
+
+  if (existingOrganization.length > 0) {
+    throw new OrganizationSlugTakenError(slug)
+  }
+
+  await tx.insert(organization).values({
+    id: organizationId,
+    name,
+    slug,
+    metadata,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  return { organizationId }
 }

@@ -53,3 +53,36 @@ export type AdminV1EnsureClientOrganizationMemberResult = z.output<
 export type AdminV1EnsureClientOrganizationMemberResponse = ContractJsonResponse<
   typeof adminV1EnsureClientOrganizationMemberContract
 >
+
+export const adminV1CreateClientOrganizationBodySchema = adminV1ClientOrgDetailsSchema
+
+export const adminV1CreateClientOrganizationResultSchema = z.object({
+  clientId: z.string(),
+  clientName: z.string(),
+  organizationId: z.string(),
+  organizationName: z.string(),
+  subscriptionId: z.string(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  action: z.enum(['created', 'already_exists']),
+})
+
+export const adminV1CreateClientOrganizationContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/v1/admin/client-organizations',
+  body: adminV1CreateClientOrganizationBodySchema,
+  response: {
+    mode: 'json',
+    schema: adminV1SingleResponseSchema(adminV1CreateClientOrganizationResultSchema),
+  },
+})
+
+export type AdminV1CreateClientOrganizationBody = z.input<
+  typeof adminV1CreateClientOrganizationBodySchema
+>
+export type AdminV1CreateClientOrganizationResult = z.output<
+  typeof adminV1CreateClientOrganizationResultSchema
+>
+export type AdminV1CreateClientOrganizationResponse = ContractJsonResponse<
+  typeof adminV1CreateClientOrganizationContract
+>

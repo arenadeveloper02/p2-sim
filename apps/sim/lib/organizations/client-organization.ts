@@ -13,6 +13,7 @@ import {
   member,
   organization,
   permissions,
+  subscription as subscriptionTable,
   user,
   workspace,
 } from '@sim/db/schema'
@@ -25,6 +26,7 @@ import { isArenaBilling, provisionClientOrgStarterBilling } from '@/lib/billing/
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import {
+  createOrganizationShellTx,
   createOrganizationWithOwnerTx,
   validateOrganizationSlugOrThrow,
 } from '@/lib/billing/organizations/create-organization'
@@ -61,6 +63,37 @@ export type EnsureClientOrganizationMemberFailureCode =
   | 'workspace-set-changed'
   | 'internal-error'
   | MembershipAdditionFailureCode
+
+export interface CreateClientOrganizationShellParams {
+  clientId: string
+  clientName: string
+  organizationName: string
+}
+
+export type CreateClientOrganizationShellFailureCode =
+  | 'invalid-client-id'
+  | 'invalid-client-name'
+  | 'invalid-organization-name'
+  | 'starter-unavailable'
+  | 'internal-error'
+
+export type CreateClientOrganizationShellResult =
+  | {
+      success: true
+      clientId: string
+      clientName: string
+      organizationId: string
+      organizationName: string
+      subscriptionId: string
+      periodStart: string
+      periodEnd: string
+      action: 'created' | 'already_exists'
+    }
+  | {
+      success: false
+      error: string
+      failureCode: CreateClientOrganizationShellFailureCode
+    }
 
 export interface EnsureClientOrganizationMemberParams {
   clientId: string
@@ -481,10 +514,16 @@ export async function ensureClientOrganizationMember(
        */
       const organizationHasFixedSeats = isEnterprise(organizationSubscription?.plan)
 
+      const [existingOwner] = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(and(eq(member.organizationId, mapping.organizationId), eq(member.role, 'owner')))
+        .limit(1)
+
       const membership = await ensureUserInOrganizationTx(tx, {
         userId,
         organizationId: mapping.organizationId,
-        role: 'member',
+        role: existingOwner ? 'member' : 'owner',
         skipBillingLogic: !isBillingEnabled,
         skipSeatValidation: isBillingEnabled && !organizationHasFixedSeats,
       })
@@ -510,7 +549,7 @@ export async function ensureClientOrganizationMember(
         clientName: resolvedClientName,
         organizationId: mapping.organizationId,
         memberId: membership.memberId,
-        role: 'member' as const,
+        role: (existingOwner ? 'member' : 'owner') as 'owner' | 'admin' | 'member',
         action: 'member_added' as const,
         userName: userRow.name,
         attachedWorkspaceIds: attach.attachedWorkspaceIds,
@@ -626,6 +665,154 @@ export async function ensureClientOrganizationMember(
     return {
       success: false,
       error: getErrorMessage(error, 'Failed to ensure client organization member'),
+      failureCode: 'internal-error',
+    }
+  }
+}
+
+/**
+ * Creates a client-mapped organization with a Starter subscription and no members.
+ * Idempotent on `clientId`: repeats return the existing org + subscription.
+ * Owner and members are attached later (e.g. via ensure-member).
+ */
+export async function createClientOrganizationShell(
+  params: CreateClientOrganizationShellParams
+): Promise<CreateClientOrganizationShellResult> {
+  const clientId = params.clientId.trim()
+  const clientName = params.clientName.trim()
+  const organizationName = params.organizationName.trim()
+
+  if (!clientId) {
+    return { success: false, error: 'clientId is required', failureCode: 'invalid-client-id' }
+  }
+  if (!clientName) {
+    return { success: false, error: 'clientName is required', failureCode: 'invalid-client-name' }
+  }
+  if (!organizationName) {
+    return {
+      success: false,
+      error: 'organizationName is required',
+      failureCode: 'invalid-organization-name',
+    }
+  }
+
+  if (!isBillingEnabled || !isArenaBilling()) {
+    return {
+      success: false,
+      error: 'Starter provisioning requires Arena billing to be enabled',
+      failureCode: 'starter-unavailable',
+    }
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      await acquireClientOrganizationLock(tx, clientId)
+
+      const [mapping] = await tx
+        .select({
+          clientName: clientOrganization.clientName,
+          organizationId: clientOrganization.organizationId,
+        })
+        .from(clientOrganization)
+        .where(eq(clientOrganization.clientId, clientId))
+        .limit(1)
+
+      if (mapping) {
+        const [orgRow] = await tx
+          .select({ id: organization.id, name: organization.name })
+          .from(organization)
+          .where(eq(organization.id, mapping.organizationId))
+          .limit(1)
+
+        if (!orgRow) {
+          throw new Error(`Mapped organization ${mapping.organizationId} no longer exists`)
+        }
+
+        if (clientName !== mapping.clientName) {
+          await tx
+            .update(clientOrganization)
+            .set({ clientName, updatedAt: new Date() })
+            .where(eq(clientOrganization.clientId, clientId))
+        }
+
+        const [existingSubscription] = await tx
+          .select({
+            id: subscriptionTable.id,
+            periodStart: subscriptionTable.periodStart,
+            periodEnd: subscriptionTable.periodEnd,
+          })
+          .from(subscriptionTable)
+          .where(eq(subscriptionTable.referenceId, mapping.organizationId))
+          .limit(1)
+
+        if (!existingSubscription?.periodStart || !existingSubscription.periodEnd) {
+          throw new Error(
+            `Client organization ${clientId} exists without a usable Starter subscription`
+          )
+        }
+
+        return {
+          success: true as const,
+          clientId,
+          clientName,
+          organizationId: orgRow.id,
+          organizationName: orgRow.name,
+          subscriptionId: existingSubscription.id,
+          periodStart: existingSubscription.periodStart.toISOString(),
+          periodEnd: existingSubscription.periodEnd.toISOString(),
+          action: 'already_exists' as const,
+        }
+      }
+
+      const slug = slugFromClientId(clientId)
+      const created = await createOrganizationShellTx(tx, {
+        name: organizationName,
+        slug,
+        metadata: { clientId, clientName },
+      })
+
+      const starter = await provisionClientOrgStarterBilling(tx, {
+        organizationId: created.organizationId,
+        clientId,
+      })
+
+      const now = new Date()
+      await tx.insert(clientOrganization).values({
+        id: generateId(),
+        clientId,
+        clientName,
+        organizationId: created.organizationId,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      logger.info('Created client organization shell with Starter billing', {
+        clientId,
+        organizationId: created.organizationId,
+        subscriptionId: starter.subscriptionId,
+      })
+
+      return {
+        success: true as const,
+        clientId,
+        clientName,
+        organizationId: created.organizationId,
+        organizationName,
+        subscriptionId: starter.subscriptionId,
+        periodStart: starter.periodStart.toISOString(),
+        periodEnd: starter.periodEnd.toISOString(),
+        action: 'created' as const,
+      }
+    })
+  } catch (error) {
+    logger.error('Failed to create client organization shell', {
+      clientId,
+      error,
+    })
+
+    return {
+      success: false,
+      error: getErrorMessage(error, 'Failed to create client organization'),
       failureCode: 'internal-error',
     }
   }
