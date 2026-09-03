@@ -430,7 +430,7 @@ export function Billing({
         ? 'Choose a new plan for this organization'
         : subscription.isEnterprise
           ? 'Custom pricing'
-          : `$${getPlanTierDollars(subscription.plan)} per user/month, ${billingPeriod}`
+          : `$${getPlanTierDollars(subscription.plan)}/month per organization, ${billingPeriod}`
 
   const periodEnd = isOrganizationScope
     ? (organizationBilling?.billingPeriodEnd ?? null)
