@@ -4,9 +4,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyBindingInputSources,
+  applyBriefInputSourcesToBinding,
   applyInputSourceOverrides,
   bindingWithInputOverrides,
+  briefFromGenerativeUiInputs,
   briefHasEmailFormField,
+  explicitInputSourceOverrides,
   constrainBindingInput,
   inferInputFieldSource,
   inputFieldRowNeedsValue,
@@ -371,5 +374,78 @@ describe('inputSourceOverridesForSave', () => {
     ).toEqual({
       type: { source: 'constant', value: 'history' },
     })
+  })
+})
+
+describe('briefFromGenerativeUiInputs', () => {
+  it('joins User Input and Requested Changes', () => {
+    expect(briefFromGenerativeUiInputs('Qualify a lead', 'Make the form denser')).toBe(
+      'Qualify a lead\nMake the form denser'
+    )
+    expect(briefFromGenerativeUiInputs('  ', undefined)).toBe('')
+    expect(briefFromGenerativeUiInputs(undefined, '- email (text)')).toBe('- email (text)')
+  })
+})
+
+describe('explicitInputSourceOverrides', () => {
+  it('keeps only named fields with a real source', () => {
+    expect(
+      explicitInputSourceOverrides([
+        { name: 'email', type: 'string', source: 'visitorEmail' },
+        { name: 'type', source: 'constant', value: 'history' },
+        { name: 'company', type: 'string' },
+        { name: '', source: 'form' },
+      ])
+    ).toEqual({
+      email: { source: 'visitorEmail' },
+      type: { source: 'constant', value: 'history' },
+    })
+  })
+})
+
+describe('applyBriefInputSourcesToBinding', () => {
+  const binding = {
+    key: 'qualify_lead',
+    label: 'Qualify',
+    kind: 'workflow' as const,
+    inputSchema: [
+      { name: 'email', type: 'string' },
+      { name: 'company', type: 'string' },
+    ],
+  }
+
+  it('leaves name-inferred form email when the brief is empty', () => {
+    expect(applyBriefInputSourcesToBinding(binding, '').inputSchema).toEqual([
+      { name: 'email', type: 'string' },
+      { name: 'company', type: 'string' },
+    ])
+  })
+
+  it('stamps visitorEmail when the brief has no email form field', () => {
+    expect(applyBriefInputSourcesToBinding(binding, 'Submit calls qualify_lead').inputSchema).toEqual(
+      [
+        { name: 'email', type: 'string', source: 'visitorEmail' },
+        { name: 'company', type: 'string' },
+      ]
+    )
+  })
+
+  it('keeps form email when the brief declares an email field', () => {
+    expect(
+      applyBriefInputSourcesToBinding(binding, '- email (text)\n- company').inputSchema
+    ).toEqual([
+      { name: 'email', type: 'string' },
+      { name: 'company', type: 'string' },
+    ])
+  })
+
+  it('keeps an explicit Copilot source when the brief is empty', () => {
+    expect(
+      applyBriefInputSourcesToBinding(binding, '', { email: { source: 'visitorEmail' } })
+        .inputSchema
+    ).toEqual([
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+      { name: 'company', type: 'string' },
+    ])
   })
 })

@@ -9,6 +9,11 @@ import {
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
 import { loadLastSuccessfulRunOutputSchema } from '@/lib/arena-generative-ui/last-run-output-schema'
+import {
+  applyBriefInputSourcesToBinding,
+  briefFromGenerativeUiInputs,
+  explicitInputSourceOverrides,
+} from '@/lib/arena-generative-ui/input-schema'
 import { parseApiBindings, parseLooseJsonValue } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
@@ -34,12 +39,13 @@ export interface HydrateApiBindingsResult {
 
 /**
  * Turns Copilot stub `apiBindings` (workflow id or curl) into the same JSON
- * Add-an-API would write. Invalid JSON fails closed. Undeployed backends keep
- * a stub and warn — publish still refuses them.
+ * Add-an-API would write, including brief-driven `visitorEmail` on email-like
+ * Start fields. Invalid JSON fails closed. Undeployed backends keep a stub and
+ * warn — publish still refuses them.
  */
 export async function hydrateApiBindingsForCopilot(
   raw: unknown,
-  options: { workspaceId?: string },
+  options: { workspaceId?: string; brief?: string },
   deps: HydrateApiBindingsDeps = {}
 ): Promise<HydrateApiBindingsResult> {
   if (raw == null || raw === '') {
@@ -85,6 +91,11 @@ interface CopilotEditOperation {
   params?: Record<string, unknown>
 }
 
+interface ExistingGenerativeUiBlock {
+  type?: unknown
+  subBlocks?: Record<string, { value?: unknown } | undefined>
+}
+
 /**
  * Hydrates `apiBindings` on add/edit ops for Arena Generative UI before the
  * sync edit-workflow engine runs. Mutates the operations in place.
@@ -93,7 +104,7 @@ export async function hydrateArenaGenerativeUiApiBindingsInOperations(
   operations: CopilotEditOperation[],
   options: {
     workspaceId?: string
-    existingBlocks?: Record<string, { type?: unknown }>
+    existingBlocks?: Record<string, ExistingGenerativeUiBlock>
   },
   deps: HydrateApiBindingsDeps = {}
 ): Promise<{ warnings: string[] }> {
@@ -107,8 +118,8 @@ export async function hydrateArenaGenerativeUiApiBindingsInOperations(
     }
     const params = operation.params
     if (!params) continue
-    const existingType = options.existingBlocks?.[operation.block_id ?? '']?.type
-    const type = typeof params.type === 'string' ? params.type : existingType
+    const existing = options.existingBlocks?.[operation.block_id ?? '']
+    const type = typeof params.type === 'string' ? params.type : existing?.type
     if (
       type === ARENA_GENERATIVE_UI_TYPE &&
       isRecord(params.inputs) &&
@@ -116,7 +127,10 @@ export async function hydrateArenaGenerativeUiApiBindingsInOperations(
     ) {
       const result = await hydrateApiBindingsForCopilot(
         params.inputs.apiBindings,
-        { workspaceId: options.workspaceId },
+        {
+          workspaceId: options.workspaceId,
+          brief: briefFromBlockInputs(params.inputs, existing),
+        },
         deps
       )
       params.inputs.apiBindings = result.json
@@ -131,7 +145,7 @@ async function hydrateNestedNodes(
   nodes: unknown,
   options: {
     workspaceId?: string
-    existingBlocks?: Record<string, { type?: unknown }>
+    existingBlocks?: Record<string, ExistingGenerativeUiBlock>
   },
   deps: HydrateApiBindingsDeps,
   warnings: string[]
@@ -146,7 +160,10 @@ async function hydrateNestedNodes(
     ) {
       const result = await hydrateApiBindingsForCopilot(
         child.inputs.apiBindings,
-        { workspaceId: options.workspaceId },
+        {
+          workspaceId: options.workspaceId,
+          brief: briefFromBlockInputs(child.inputs),
+        },
         deps
       )
       child.inputs.apiBindings = result.json
@@ -156,6 +173,23 @@ async function hydrateNestedNodes(
   }
 }
 
+function briefFromBlockInputs(
+  inputs: Record<string, unknown>,
+  existing?: ExistingGenerativeUiBlock
+): string {
+  return briefFromGenerativeUiInputs(
+    firstBriefString(inputs.userInput, existing?.subBlocks?.userInput?.value),
+    firstBriefString(inputs.editInstructions, existing?.subBlocks?.editInstructions?.value)
+  )
+}
+
+function firstBriefString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return ''
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -163,7 +197,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function hydrateOneBinding(
   item: unknown,
   index: number,
-  options: { workspaceId?: string },
+  options: { workspaceId?: string; brief?: string },
   deps: HydrateApiBindingsDeps,
   warnings: string[]
 ): Promise<ArenaGenerativeApiBinding | undefined> {
@@ -183,6 +217,12 @@ async function hydrateOneBinding(
       : undefined
   const curl = typeof record.curl === 'string' ? record.curl.trim() : ''
   const kind = record.kind === 'http' ? 'http' : record.kind === 'workflow' ? 'workflow' : null
+  const withBriefSources = (binding: ArenaGenerativeApiBinding) =>
+    applyBriefInputSourcesToBinding(
+      binding,
+      options.brief ?? '',
+      explicitInputSourceOverrides(record.inputSchema)
+    )
 
   if (curl && kind !== 'workflow') {
     const secretName =
@@ -201,7 +241,7 @@ async function hydrateOneBinding(
       if (record.forwardEmailId === true) {
         binding.forwardEmailId = true
       }
-      return binding
+      return withBriefSources(binding)
     } catch (error) {
       throw new Error(`apiBindings[${index}]: ${getErrorMessage(error, 'invalid curl')}`)
     }
@@ -212,22 +252,24 @@ async function hydrateOneBinding(
     if (!workflowId) {
       throw new Error(`apiBindings[${index}].workflowId is required for workflow bindings`)
     }
-    return hydrateWorkflowBinding({
-      index,
-      key,
-      label,
-      workflowId,
-      stream,
-      outputSample,
-      workspaceId: options.workspaceId,
-      deps,
-      warnings,
-    })
+    return withBriefSources(
+      await hydrateWorkflowBinding({
+        index,
+        key,
+        label,
+        workflowId,
+        stream,
+        outputSample,
+        workspaceId: options.workspaceId,
+        deps,
+        warnings,
+      })
+    )
   }
 
   try {
     const [parsed] = parseApiBindings([record])
-    return parsed
+    return parsed ? withBriefSources(parsed) : parsed
   } catch (error) {
     throw new Error(`apiBindings[${index}]: ${getErrorMessage(error, 'invalid binding')}`)
   }

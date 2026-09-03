@@ -141,6 +141,74 @@ export function inputSourceOverridesForSave(
   return next
 }
 
+/**
+ * Joins User Input and Requested Changes the same way Add-an-API Save does.
+ */
+export function briefFromGenerativeUiInputs(
+  userInput: unknown,
+  editInstructions?: unknown
+): string {
+  return [userInput, editInstructions]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+}
+
+const EXPLICIT_INPUT_SOURCES = new Set<ArenaGenerativeInputSource>([
+  'form',
+  'visitorEmail',
+  'constant',
+])
+
+/**
+ * Source overrides Copilot set on a stub `inputSchema`. Invented field names
+ * are still dropped when the binding is rebuilt from Start; these only apply
+ * to fields that survive hydration.
+ */
+export function explicitInputSourceOverrides(
+  rawSchema: unknown
+): Record<string, ArenaGenerativeInputSourceOverride> {
+  if (!Array.isArray(rawSchema)) return {}
+  const next: Record<string, ArenaGenerativeInputSourceOverride> = {}
+  for (const item of rawSchema) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    const name = typeof record.name === 'string' ? record.name.trim() : ''
+    if (!name) continue
+    const source = record.source
+    if (typeof source !== 'string' || !EXPLICIT_INPUT_SOURCES.has(source as ArenaGenerativeInputSource)) {
+      continue
+    }
+    const override: ArenaGenerativeInputSourceOverride = {
+      source: source as ArenaGenerativeInputSource,
+    }
+    if (override.source === 'constant' && typeof record.value === 'string') {
+      override.value = record.value
+    }
+    next[name] = override
+  }
+  return next
+}
+
+/**
+ * Same email-source rules as Add-an-API Save. Empty brief keeps name-inferred
+ * defaults plus any explicit Copilot sources. A brief without an email form
+ * field stamps `visitorEmail` on email-like Start inputs.
+ */
+export function applyBriefInputSourcesToBinding(
+  binding: ArenaGenerativeApiBinding,
+  brief: string,
+  explicitOverrides: Record<string, ArenaGenerativeInputSourceOverride> = {}
+): ArenaGenerativeApiBinding {
+  const fields = binding.inputSchema ?? []
+  if (fields.length === 0 && Object.keys(explicitOverrides).length === 0) {
+    return binding
+  }
+  const overrides = brief.trim()
+    ? inputSourceOverridesForSave(fields, brief, explicitOverrides)
+    : explicitOverrides
+  return bindingWithInputOverrides(binding, overrides)
+}
+
 export interface ArenaGenerativeInputSourceOverride {
   source: ArenaGenerativeInputSource
   value?: string

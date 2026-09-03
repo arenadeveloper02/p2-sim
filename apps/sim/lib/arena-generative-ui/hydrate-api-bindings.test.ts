@@ -61,7 +61,7 @@ describe('hydrateApiBindingsForCopilot', () => {
     ])
   })
 
-  it('ignores Copilot-invented inputSchema on a workflow stub', async () => {
+  it('drops Copilot-invented mapping but keeps an explicit source on a Start field', async () => {
     const result = await hydrateApiBindingsForCopilot(
       [
         {
@@ -82,8 +82,52 @@ describe('hydrateApiBindingsForCopilot', () => {
     )
 
     const [binding] = JSON.parse(result.json)
-    expect(binding.inputSchema).toEqual([{ name: 'email', type: 'string' }])
+    expect(binding.inputSchema).toEqual([
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+    ])
     expect(binding.inputMapping).toBeUndefined()
+  })
+
+  it('stamps visitorEmail on bare email when the brief has no email form field', async () => {
+    const result = await hydrateApiBindingsForCopilot(
+      [{ key: 'qualify_lead', kind: 'workflow', workflowId: WORKFLOW_ID }],
+      { workspaceId: WORKSPACE_ID, brief: 'Submit calls qualify_lead' },
+      {
+        lookupWorkflowWorkspace: async () => WORKSPACE_ID,
+        loadDeployedState: async () => ({
+          blocks: startTriggerBlocks([
+            { name: 'email', type: 'string' },
+            { name: 'company', type: 'string' },
+          ]),
+        }),
+      }
+    )
+
+    expect(JSON.parse(result.json)[0].inputSchema).toEqual([
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+      { name: 'company', type: 'string' },
+    ])
+  })
+
+  it('leaves bare email as a form field when the brief asks for an email input', async () => {
+    const result = await hydrateApiBindingsForCopilot(
+      [{ key: 'qualify_lead', kind: 'workflow', workflowId: WORKFLOW_ID }],
+      { workspaceId: WORKSPACE_ID, brief: '- email (text)\n- company' },
+      {
+        lookupWorkflowWorkspace: async () => WORKSPACE_ID,
+        loadDeployedState: async () => ({
+          blocks: startTriggerBlocks([
+            { name: 'email', type: 'string' },
+            { name: 'company', type: 'string' },
+          ]),
+        }),
+      }
+    )
+
+    expect(JSON.parse(result.json)[0].inputSchema).toEqual([
+      { name: 'email', type: 'string' },
+      { name: 'company', type: 'string' },
+    ])
   })
 
   it('lets a sample override declared output schema', async () => {
@@ -276,6 +320,72 @@ describe('hydrateArenaGenerativeUiApiBindingsInOperations', () => {
     expect(added[0].inputSchema).toEqual([{ name: 'company', type: 'string' }])
     const edited = JSON.parse(String(operations[1].params.inputs.apiBindings))
     expect(edited[0].http.url).toBe('https://example.com/s')
+  })
+
+  it('uses User Input from the same edit to stamp visitorEmail like Add an API', async () => {
+    const operations = [
+      {
+        operation_type: 'add',
+        block_id: 'gui-1',
+        params: {
+          type: 'arena_generative_ui',
+          inputs: {
+            apiBindings: [{ key: 'qualify_lead', kind: 'workflow', workflowId: WORKFLOW_ID }],
+            userInput: 'Submit calls qualify_lead',
+          },
+        },
+      },
+    ]
+
+    await hydrateArenaGenerativeUiApiBindingsInOperations(
+      operations,
+      { workspaceId: WORKSPACE_ID },
+      {
+        lookupWorkflowWorkspace: async () => WORKSPACE_ID,
+        loadDeployedState: async () => ({
+          blocks: startTriggerBlocks([{ name: 'email', type: 'string' }]),
+        }),
+      }
+    )
+
+    const added = JSON.parse(String(operations[0].params.inputs.apiBindings))
+    expect(added[0].inputSchema).toEqual([{ name: 'email', type: 'string', source: 'visitorEmail' }])
+  })
+
+  it('reads User Input from the existing block when the edit only sets apiBindings', async () => {
+    const operations = [
+      {
+        operation_type: 'edit',
+        block_id: 'gui-2',
+        params: {
+          inputs: {
+            apiBindings: [{ key: 'qualify_lead', kind: 'workflow', workflowId: WORKFLOW_ID }],
+          },
+        },
+      },
+    ]
+
+    await hydrateArenaGenerativeUiApiBindingsInOperations(
+      operations,
+      {
+        workspaceId: WORKSPACE_ID,
+        existingBlocks: {
+          'gui-2': {
+            type: 'arena_generative_ui',
+            subBlocks: { userInput: { value: 'Submit calls qualify_lead' } },
+          },
+        },
+      },
+      {
+        lookupWorkflowWorkspace: async () => WORKSPACE_ID,
+        loadDeployedState: async () => ({
+          blocks: startTriggerBlocks([{ name: 'email', type: 'string' }]),
+        }),
+      }
+    )
+
+    const edited = JSON.parse(String(operations[0].params.inputs.apiBindings))
+    expect(edited[0].inputSchema).toEqual([{ name: 'email', type: 'string', source: 'visitorEmail' }])
   })
 
   it('leaves other block types untouched', async () => {
