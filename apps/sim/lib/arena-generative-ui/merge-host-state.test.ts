@@ -75,6 +75,23 @@ describe('mergeHostState', () => {
     expect((second.chatTurns as Array<{ content: string }>)[3].content).toBe('Again')
   })
 
+  it('drops keys whose patch value is undefined so leftover selection does not linger', () => {
+    expect(
+      mergeHostState(
+        {
+          content: '# Article',
+          coverage_gaps: ['A'],
+          history: [{ id: '1' }],
+          selectedId: 'run_1',
+        },
+        { history: undefined, selectedId: undefined }
+      )
+    ).toEqual({
+      content: '# Article',
+      coverage_gaps: ['A'],
+    })
+  })
+
   it('patches the last assistant turn without replacing earlier turns', () => {
     const current = {
       chatTurns: [

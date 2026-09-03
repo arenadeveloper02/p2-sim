@@ -36,7 +36,7 @@ export function mergeHostState(
   }
 
   if (!appendKeys || appendKeys.length === 0) {
-    return next
+    return omitUndefinedPatchKeys(next, patch)
   }
 
   let capped = false
@@ -68,6 +68,20 @@ export function mergeHostState(
   }
   if (capped) {
     next.hasMore = false
+  }
+  return omitUndefinedPatchKeys(next, patch)
+}
+
+/**
+ * `undefined` in a patch means drop the key (`clearItem`, onLoad arrival), not
+ * store an empty slot that `showWhen` still sees.
+ */
+function omitUndefinedPatchKeys(
+  next: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete next[key]
   }
   return next
 }

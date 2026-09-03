@@ -315,6 +315,30 @@ export function clearedSelectedIdHostState(): Record<string, unknown> {
   }
 }
 
+/**
+ * Keys a page `onLoad` must not blank. CTA prose, chat, and form echo have to
+ * survive History / dashboard fetches that share the same host object.
+ */
+const PAGE_LOAD_PRESERVED_KEYS = new Set([
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
+])
+
+/**
+ * First visit to an `onLoad` page: drop that page's bound keys so its regions
+ * skeleton instead of flashing a previous record, keep generate `content` /
+ * `inputs`, and clear leftover selection so a History tab shows the list.
+ */
+export function pageLoadArrivalState(loadHostKeys: readonly string[]): Record<string, unknown> {
+  const patch: Record<string, unknown> = { ...clearedSelectedIdHostState() }
+  for (const key of loadHostKeys) {
+    if (PAGE_LOAD_PRESERVED_KEYS.has(key)) continue
+    patch[key] = undefined
+  }
+  return patch
+}
+
 function buttonSelectNavigateTo(props: Record<string, unknown> | undefined): string {
   return typeof props?.navigateTo === 'string' ? props.navigateTo.trim() : ''
 }

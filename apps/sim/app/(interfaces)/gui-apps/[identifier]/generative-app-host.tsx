@@ -64,7 +64,6 @@ export function GenerativeAppHost({
   const {
     state,
     mergeState,
-    resetState,
     actionPending,
     setActionPending,
     setLoadPending,
@@ -129,7 +128,7 @@ export function GenerativeAppHost({
       return executeAction(actionId, values)
     },
     mergeState,
-    resetState,
+    actionHostKeys: config?.actionHostKeys,
     setLoadPending,
   })
 

@@ -6,7 +6,6 @@ import { mergeHostState } from '@/lib/arena-generative-ui/merge-host-state'
 interface GenerativeAppHostStateValue {
   state: Record<string, unknown>
   mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
-  resetState: () => void
   pendingActionIds: ReadonlySet<string>
   /** True while any user-initiated CTA is in flight (skip destination onLoad). */
   actionPending: boolean
@@ -38,9 +37,6 @@ function useHostStateValue(): GenerativeAppHostStateValue {
     },
     []
   )
-  const resetState = useCallback(() => {
-    setState({})
-  }, [])
   const setActionPending = useCallback((actionId: string, pending: boolean) => {
     setCtaPendingIds((current) => togglePendingId(current, actionId, pending))
   }, [])
@@ -55,7 +51,6 @@ function useHostStateValue(): GenerativeAppHostStateValue {
     () => ({
       state,
       mergeState,
-      resetState,
       pendingActionIds,
       actionPending: ctaPendingIds.length > 0,
       setActionPending,
@@ -65,7 +60,6 @@ function useHostStateValue(): GenerativeAppHostStateValue {
     [
       state,
       mergeState,
-      resetState,
       pendingActionIds,
       ctaPendingIds,
       setActionPending,

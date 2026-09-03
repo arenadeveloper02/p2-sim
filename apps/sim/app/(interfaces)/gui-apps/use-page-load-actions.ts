@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toError } from '@sim/utils/errors'
 import { visitorFacingActionError } from '@/lib/arena-generative-ui/action-runtime'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
-import { clearedActionErrorState } from '@/lib/arena-generative-ui/types'
+import { clearedActionErrorState, pageLoadArrivalState } from '@/lib/arena-generative-ui/types'
 
 interface UsePageLoadActionsOptions {
   /** Page these actions belong to. Arriving at a different page re-runs the load. */
@@ -20,7 +20,8 @@ interface UsePageLoadActionsOptions {
     values: Record<string, string>
   ) => Promise<RunDeployedAppActionResult>
   mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
-  resetState: () => void
+  /** Host keys each onLoad action writes; arrival drops these except prose / inputs. */
+  actionHostKeys?: Record<string, readonly string[]>
   setLoadPending: (actionId: string, pending: boolean) => void
 }
 
@@ -35,13 +36,15 @@ export interface UsePageLoadActionsResult {
  * Runs a page's `onLoad` actions once on arrival so the page can show data before
  * the user interacts with anything.
  *
- * A CTA that already navigated here owns the page: skip onLoad (and do not
- * `resetState`) so an empty refetch cannot wipe `setState`. `onSuccess.navigate`
- * is ignored for a load action — honouring it would bounce the user off the page.
+ * A CTA that already navigated here owns the page: skip onLoad so an empty
+ * refetch cannot wipe `setState`. `onSuccess.navigate` is ignored for a load
+ * action — honouring it would bounce the user off the page.
  *
+ * First visit drops this page's load keys (not generate `content` / `inputs`)
+ * so a detail record does not flash while History still keeps Enhance results.
  * Each load action is pending independently so a stats Stat does not stay
  * skeletoned after its response arrived just because a sibling list is still
- * in flight. `reload` re-runs the same actions without `resetState`.
+ * in flight. `reload` re-runs the same actions without dropping keys.
  */
 export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageLoadActionsResult {
   const optionsRef = useRef(options)
@@ -59,11 +62,11 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
 
   const runLoads = useCallback(async (reset: boolean) => {
     const generation = (generationRef.current += 1)
-    const { actionIds, values, runAction, mergeState, resetState, setLoadPending } =
+    const { actionIds, values, runAction, mergeState, actionHostKeys, setLoadPending } =
       optionsRef.current
     if (actionIds.length === 0) return
 
-    if (reset) resetState()
+    if (reset) mergeState(pageLoadArrivalState(hostKeysForActions(actionIds, actionHostKeys)))
     else mergeState(clearedActionErrorState())
 
     for (const actionId of actionIds) {
@@ -137,4 +140,21 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
   }, [runLoads])
 
   return { reload, canRefresh }
+}
+
+function hostKeysForActions(
+  actionIds: readonly string[],
+  actionHostKeys: Record<string, readonly string[]> | undefined
+): string[] {
+  if (!actionHostKeys) return []
+  const keys: string[] = []
+  const seen = new Set<string>()
+  for (const actionId of actionIds) {
+    for (const key of actionHostKeys[actionId] ?? []) {
+      if (seen.has(key)) continue
+      seen.add(key)
+      keys.push(key)
+    }
+  }
+  return keys
 }

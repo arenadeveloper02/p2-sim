@@ -76,7 +76,6 @@ export function GenerativeAppPreviewHost({
   const {
     state,
     mergeState,
-    resetState,
     actionPending,
     setActionPending,
     setLoadPending,
@@ -153,7 +152,7 @@ export function GenerativeAppPreviewHost({
       return executeAction(actionId, values)
     },
     mergeState,
-    resetState,
+    actionHostKeys,
     setLoadPending,
   })
 

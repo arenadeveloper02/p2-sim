@@ -17,6 +17,7 @@ import {
   navigationHref,
   omitActionTelemetry,
   omitTelemetrySchemaFields,
+  pageLoadArrivalState,
   pageOnLoadFrom,
   pageParamsFromQuery,
   parseJsonLiteral,
@@ -389,6 +390,18 @@ describe('Repeat item scope', () => {
       selectedId: undefined,
     })
     expect(clearedSelectedIdHostState()).not.toHaveProperty('content')
+  })
+
+  it('onLoad arrival drops this page keys but keeps content and inputs', () => {
+    const arrival = pageLoadArrivalState(['history', 'items', 'content', 'hasMore'])
+    expect(arrival).toMatchObject({
+      history: undefined,
+      items: undefined,
+      hasMore: undefined,
+      selectedId: undefined,
+    })
+    expect(arrival).not.toHaveProperty('content')
+    expect(arrival).not.toHaveProperty('inputs')
   })
 
   it('detects same-page selectItem when navigateTo is omitted or is this page', () => {

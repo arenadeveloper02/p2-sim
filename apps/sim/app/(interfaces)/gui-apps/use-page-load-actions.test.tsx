@@ -5,6 +5,7 @@ import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
+import { clearedActionErrorState } from '@/lib/arena-generative-ui/types'
 import {
   type UsePageLoadActionsResult,
   usePageLoadActions,
@@ -12,20 +13,20 @@ import {
 
 interface Harness {
   api: () => UsePageLoadActionsResult
-  resetState: ReturnType<typeof vi.fn>
+  mergeState: ReturnType<typeof vi.fn>
   runAction: ReturnType<typeof vi.fn>
   unmount: () => void
 }
 
 function renderLoads(options?: {
   actionIds?: string[]
+  actionHostKeys?: Record<string, readonly string[]>
   runAction?: () => Promise<RunDeployedAppActionResult>
 }): Harness {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root: Root = createRoot(container)
-  const resetState = vi.fn()
   const mergeState = vi.fn()
   const setLoadPending = vi.fn()
   const runAction =
@@ -41,7 +42,7 @@ function renderLoads(options?: {
       actionPending: false,
       runAction,
       mergeState,
-      resetState,
+      actionHostKeys: options?.actionHostKeys ?? { load_rows: ['rows', 'content'] },
       setLoadPending,
     })
     useEffect(() => {
@@ -56,7 +57,7 @@ function renderLoads(options?: {
 
   return {
     api: () => latest,
-    resetState,
+    mergeState,
     runAction,
     unmount: () => {
       act(() => {
@@ -75,12 +76,19 @@ describe('usePageLoadActions', () => {
     harness = undefined
   })
 
-  it('resets on first visit and reloads without resetState', async () => {
+  it('drops load keys on first visit without wiping generate content, and reloads without dropping keys', async () => {
     harness = renderLoads()
     await act(async () => {
       await Promise.resolve()
     })
-    expect(harness.resetState).toHaveBeenCalledTimes(1)
+    expect(harness.mergeState).toHaveBeenCalledTimes(2)
+    const arrival = harness.mergeState.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(arrival).toMatchObject({
+      rows: undefined,
+      selectedId: undefined,
+    })
+    expect(arrival).not.toHaveProperty('content')
+    expect(harness.mergeState.mock.calls[1]?.[0]).toEqual({ rows: [{ name: 'Ada' }] })
     expect(harness.runAction).toHaveBeenCalledTimes(1)
     expect(harness.api().canRefresh).toBe(true)
 
@@ -88,7 +96,8 @@ describe('usePageLoadActions', () => {
       harness?.api().reload()
       await Promise.resolve()
     })
-    expect(harness.resetState).toHaveBeenCalledTimes(1)
+    expect(harness.mergeState).toHaveBeenCalledTimes(4)
+    expect(harness.mergeState.mock.calls[2]?.[0]).toEqual(clearedActionErrorState())
     expect(harness.runAction).toHaveBeenCalledTimes(2)
   })
 
@@ -98,6 +107,6 @@ describe('usePageLoadActions', () => {
       await Promise.resolve()
     })
     expect(harness.api().canRefresh).toBe(false)
-    expect(harness.resetState).not.toHaveBeenCalled()
+    expect(harness.mergeState).not.toHaveBeenCalled()
   })
 })
