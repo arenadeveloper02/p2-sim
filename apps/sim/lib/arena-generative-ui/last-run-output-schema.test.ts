@@ -111,6 +111,27 @@ describe('loadLastSuccessfulRunOutputSchema', () => {
     expect(names).not.toContain('headers')
   })
 
+  it('walks gap_analysis from a Response data envelope', async () => {
+    queueCompletedRun()
+    mockMaterializeExecutionData.mockResolvedValueOnce({
+      finalOutput: {
+        data: {
+          gap_analysis: { coverage_gaps: [{ id: 'g1' }] },
+          enhanced_article: 'Hi',
+        },
+      },
+    })
+
+    const names = (await loadLastSuccessfulRunOutputSchema('wf-history')).fields.map(
+      (field) => field.name
+    )
+
+    expect(names).toEqual(
+      expect.arrayContaining(['gap_analysis', 'gap_analysis.coverage_gaps', 'enhanced_article'])
+    )
+    expect(names).not.toContain('data')
+  })
+
   it('warns when the run used an older deployment', async () => {
     queueCompletedRun({ deploymentVersionId: 'deploy-old' })
     mockMaterializeExecutionData.mockResolvedValueOnce({ finalOutput: HISTORY_OUTPUT })

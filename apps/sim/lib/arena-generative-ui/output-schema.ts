@@ -35,10 +35,13 @@ const NON_OBJECT_ROOT_PATH = 'result'
 
 const SAMPLE_ENVELOPE_KEYS = new Set(['data', 'status', 'headers'])
 
+const SAMPLE_WRAPPER_KEYS = new Set(['data', 'output', 'result', 'response', 'body'])
+
 /**
- * Strips GUI-app `{ ok, data }` and Response-block `{ data, status, headers }`
- * wrappers so a network-tab paste is walked from the business body
- * (`run_data.history`), not from `data.data.run_data`.
+ * Strips GUI-app `{ ok, data }`, Response-block `{ data, status, headers }`,
+ * and a singleton object wrapper (`output` / `result`) so a network-tab paste
+ * or last-run `finalOutput` is walked from the business body
+ * (`gap_analysis`, `run_data.history`), not from `data.data.output`.
  */
 export function unwrapPastedSample(data: unknown, depth = 0): unknown {
   if (depth > 6) {
@@ -49,16 +52,35 @@ export function unwrapPastedSample(data: unknown, depth = 0): unknown {
   }
   const record = data as Record<string, unknown>
   const keys = Object.keys(record)
-  if (keys.length === 0 || !Object.hasOwn(record, 'data')) {
+  if (keys.length === 0) {
     return data
   }
-  if (typeof record.ok === 'boolean') {
+  if (typeof record.ok === 'boolean' && Object.hasOwn(record, 'data')) {
     return unwrapPastedSample(record.data, depth + 1)
   }
-  if (keys.every((key) => SAMPLE_ENVELOPE_KEYS.has(key))) {
+  if (Object.hasOwn(record, 'data') && keys.every((key) => SAMPLE_ENVELOPE_KEYS.has(key))) {
     return unwrapPastedSample(record.data, depth + 1)
+  }
+  const nested = singletonEnvelopeObject(record)
+  if (nested !== undefined) {
+    return unwrapPastedSample(nested, depth + 1)
   }
   return data
+}
+
+function singletonEnvelopeObject(record: Record<string, unknown>): unknown {
+  const entries = Object.entries(record).filter(([key]) => !isActionTelemetryRoot(key))
+  if (entries.length !== 1) {
+    return undefined
+  }
+  const [key, value] = entries[0]
+  if (!SAMPLE_WRAPPER_KEYS.has(key)) {
+    return undefined
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
+  }
+  return value
 }
 
 /**

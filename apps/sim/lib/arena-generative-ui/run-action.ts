@@ -32,6 +32,7 @@ import {
   collectAppendKeys,
   paginationStateFromData,
 } from '@/lib/arena-generative-ui/pagination'
+import { unwrapPayloadToSchema } from '@/lib/arena-generative-ui/unwrap-to-schema'
 import {
   ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
   ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
@@ -40,7 +41,6 @@ import {
   type ArenaGenerativeHttpBinding,
   displayTextFromActionData,
   streamingActionIdsFrom,
-  unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isDev } from '@/lib/core/config/env-flags'
@@ -964,7 +964,7 @@ export async function runGenerativeAppAction(
     }
   }
 
-  const payload = unwrapResponseBlockEnvelope(result.data)
+  const payload = unwrapPayloadToSchema(result.data, binding.outputSchema)
   const plan = layoutPlanForBinding(binding)
   const fromData = actionStateFromPlan(payload, plan)
   const paginationPatch = binding.pagination
@@ -997,7 +997,7 @@ export async function runGenerativeAppAction(
 
   return {
     ok: true,
-    data: result.data,
+    data: payload,
     navigate: action.onSuccess?.navigate,
     setState,
     appendKeys: appendKeys.length > 0 ? appendKeys : undefined,

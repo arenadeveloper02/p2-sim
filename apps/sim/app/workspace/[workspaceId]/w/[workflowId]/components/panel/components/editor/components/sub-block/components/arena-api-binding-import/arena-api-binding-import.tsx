@@ -32,6 +32,7 @@ import {
 import {
   declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
+  extractResponseOutputSchemaFromBlocks,
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
@@ -292,6 +293,10 @@ export function ArenaApiBindingImportHelper({
     () => extractOutputSchemaFromBlocks(deployedState?.blocks),
     [deployedState?.blocks]
   )
+  const responseFields = useMemo(
+    () => extractResponseOutputSchemaFromBlocks(deployedState?.blocks),
+    [deployedState?.blocks]
+  )
   const sampleOutput = useMemo(
     () => schemaFromSamplePaste(outputSample, streamMode === 'on'),
     [outputSample, streamMode]
@@ -310,7 +315,7 @@ export function ArenaApiBindingImportHelper({
     source === 'workflow' &&
     Boolean(workflowId) &&
     !outputSchemaFromPaste &&
-    declaredOutputSchemaNeedsLastRunFallback(outputFields)
+    declaredOutputSchemaNeedsLastRunFallback(responseFields)
   const lastRunQuery = useLastSuccessfulWorkflowOutputSchema(workflowId || undefined, {
     enabled: lastRunEnabled,
   })

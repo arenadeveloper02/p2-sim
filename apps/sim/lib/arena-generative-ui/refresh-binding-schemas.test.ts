@@ -273,6 +273,47 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
     expect(mockLoadLastSuccessfulRunOutputSchema).not.toHaveBeenCalled()
   })
 
+  it('prefers last-run finalOutput over Agent responseFormat', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      deploymentVersionId: 'deploy-current',
+      blocks: {
+        agent: {
+          type: 'agent',
+          subBlocks: {
+            responseFormat: {
+              value: JSON.stringify({
+                schema: {
+                  type: 'object',
+                  properties: {
+                    content_type: { type: 'string' },
+                    core_theme: { type: 'string' },
+                  },
+                },
+              }),
+            },
+          },
+        },
+      },
+    })
+    const lastRunFields = [
+      { name: 'gap_analysis', type: 'object' },
+      { name: 'gap_analysis.coverage_gaps', type: 'array' },
+      { name: 'enhanced_article', type: 'string' },
+    ]
+    mockLoadLastSuccessfulRunOutputSchema.mockResolvedValue({
+      fields: lastRunFields,
+      warnings: [],
+      found: true,
+    })
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([workflowBinding()])
+
+    expect(refreshed[0]?.outputSchema).toEqual(lastRunFields)
+    expect(mockLoadLastSuccessfulRunOutputSchema).toHaveBeenCalledWith('wf-history', {
+      activeDeploymentVersionId: 'deploy-current',
+    })
+  })
+
   it('uses the last successful run when the workflow is not deployed', async () => {
     mockLoadDeployedWorkflowState.mockRejectedValue(new Error('no active deployment'))
     const lastRunFields = [

@@ -36,13 +36,7 @@ export function extractOutputSchemaFromBlocks(
 ): ArenaGenerativeSchemaField[] {
   if (!blocks) return []
   const blockMap = blocks as Record<string, WorkflowBlockRecord>
-
-  let fromResponse: ArenaGenerativeSchemaField[] = []
-  for (const block of Object.values(blockMap)) {
-    if (block.type !== 'response') continue
-    fromResponse = schemaFromResponseBlock(block, blockMap)
-    if (fromResponse.length > 0) break
-  }
+  const fromResponse = extractResponseOutputSchemaFromBlocks(blockMap)
 
   let fromAgent: ArenaGenerativeSchemaField[] = []
   for (const [blockId, block] of Object.entries(blockMap)) {
@@ -61,6 +55,23 @@ export function extractOutputSchemaFromBlocks(
     return fromResponse
   }
   return fromAgent
+}
+
+/**
+ * Response-block fields only — used to decide whether last-run may replace
+ * Agent `responseFormat`. Nested authored Response still wins over last-run.
+ */
+export function extractResponseOutputSchemaFromBlocks(
+  blocks: Record<string, unknown> | null | undefined
+): ArenaGenerativeSchemaField[] {
+  if (!blocks) return []
+  const blockMap = blocks as Record<string, WorkflowBlockRecord>
+  for (const block of Object.values(blockMap)) {
+    if (block.type !== 'response') continue
+    const fields = schemaFromResponseBlock(block, blockMap)
+    if (fields.length > 0) return fields
+  }
+  return []
 }
 
 function schemaFromResponseBlock(
@@ -416,9 +427,10 @@ function isShallowObjectStub(fields: ArenaGenerativeSchemaField[]): boolean {
 }
 
 /**
- * True when the deployed extract cannot name nested GUI-app paths: nothing
+ * True when last-run `finalOutput` should supply `outputSchema`: nothing
  * declared, a wrapper object (`run_data`), or an array with no item columns.
- * Last-successful-run schema is only used in those cases.
+ * Pass **Response-only** fields so a nested Agent `responseFormat` does not
+ * block the log. Nested authored Response still returns false.
  */
 export function declaredOutputSchemaNeedsLastRunFallback(
   fields: ArenaGenerativeSchemaField[]

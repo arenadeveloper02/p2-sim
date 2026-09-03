@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
+  extractResponseOutputSchemaFromBlocks,
 } from '@/lib/arena-generative-ui/extract-workflow-output'
 
 describe('extractOutputSchemaFromBlocks', () => {
@@ -177,6 +178,23 @@ describe('extractOutputSchemaFromBlocks', () => {
         },
       })
     ).toEqual([{ name: 'summary', type: 'string' }])
+  })
+
+  it('returns no Response fields when only Agent schema exists', () => {
+    expect(
+      extractResponseOutputSchemaFromBlocks({
+        agent: {
+          type: 'agent',
+          subBlocks: {
+            responseFormat: {
+              value: JSON.stringify({
+                schema: { type: 'object', properties: { summary: { type: 'string' } } },
+              }),
+            },
+          },
+        },
+      })
+    ).toEqual([])
   })
 
   it('does not invent fields for a workflow with no declared output', () => {

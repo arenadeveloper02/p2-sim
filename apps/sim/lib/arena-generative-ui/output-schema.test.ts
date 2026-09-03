@@ -134,6 +134,28 @@ describe('outputSchemaFromSample', () => {
     )
   })
 
+  it('strips a singleton output object so last-run fields start at the body', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify({
+        output: {
+          gap_analysis: { coverage_gaps: [{ id: 'g1' }] },
+          enhanced_article: 'Hi',
+        },
+      })
+    ).map((field) => field.name)
+    expect(names).toEqual(
+      expect.arrayContaining(['gap_analysis', 'gap_analysis.coverage_gaps', 'enhanced_article'])
+    )
+    expect(names).not.toContain('output')
+  })
+
+  it('keeps output when it is a string sibling of other keys', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify({ keyword: 'Dental', output: 'saved markdown' })
+    ).map((field) => field.name)
+    expect(names).toEqual(expect.arrayContaining(['keyword', 'output']))
+  })
+
   it('roots an array response under result, matching host state', () => {
     expect(outputSchemaFromSample('[{"title":"First"}]')).toEqual([
       { name: 'result', type: 'array' },

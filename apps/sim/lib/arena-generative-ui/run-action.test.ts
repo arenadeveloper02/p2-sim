@@ -213,6 +213,84 @@ describe('runDeployedAppAction', () => {
     expect(result.setState?.articles).toEqual([{ title: 'One' }])
     expect(result.setState?.count).toBe(1)
     expect(result.setState?.data).toBeUndefined()
+    expect(result.data).toEqual({ articles: [{ title: 'One' }], count: 1 })
+  })
+
+  it('peels a data-only Response envelope so gap_analysis lands in setState', async () => {
+    const body = {
+      gap_analysis: { coverage_gaps: [{ id: 'g1' }] },
+      enhanced_article: 'Hi',
+    }
+    mockExecuteWorkflow.mockResolvedValue({
+      success: true,
+      output: { data: body },
+    })
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Enhance',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            outputSchema: [
+              { name: 'gap_analysis', type: 'object' },
+              { name: 'gap_analysis.coverage_gaps', type: 'array' },
+              { name: 'enhanced_article', type: 'string' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toEqual(body)
+    expect(result.setState?.coverage_gaps).toEqual([{ id: 'g1' }])
+    expect(result.setState?.enhanced_article).toBe('Hi')
+  })
+
+  it('peels a Response envelope that has extra sibling keys', async () => {
+    mockExecuteWorkflow.mockResolvedValue({
+      success: true,
+      output: {
+        data: {
+          gap_analysis: { coverage_gaps: [] },
+          enhanced_article: 'Hi',
+        },
+        success: true,
+      },
+    })
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Enhance',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            outputSchema: [
+              { name: 'gap_analysis', type: 'object' },
+              { name: 'enhanced_article', type: 'string' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.data).toEqual({
+      gap_analysis: { coverage_gaps: [] },
+      enhanced_article: 'Hi',
+    })
+    expect(result.setState?.coverage_gaps).toEqual([])
+    expect(result.setState?.enhanced_article).toBe('Hi')
   })
 
   it('lifts history items from Agent assistantContent so Repeat can bind items', async () => {
@@ -373,7 +451,7 @@ describe('runDeployedAppAction', () => {
 
     expect(result.ok).toBe(true)
     expect(result.setState?.content).toBe('Hi')
-    expect(result.setState).toMatchObject({ output: { content: 'Hi' } })
+    expect(result.data).toEqual({ content: 'Hi' })
     vi.unstubAllGlobals()
   })
 

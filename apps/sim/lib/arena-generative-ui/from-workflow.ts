@@ -20,6 +20,7 @@ import type { WorkflowInputField } from '@/lib/workflows/input-format'
 export {
   declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
+  extractResponseOutputSchemaFromBlocks,
 } from '@/lib/arena-generative-ui/extract-workflow-output'
 
 /** Type a start-block field falls back to when it declares none. */
