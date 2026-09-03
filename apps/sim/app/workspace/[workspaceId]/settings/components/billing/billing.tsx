@@ -620,11 +620,7 @@ export function Billing({
                     Restore
                   </Chip>
                 ) : (
-                  <Chip
-                    variant='destructive'
-                    disabled={!canManageBilling}
-                    onClick={() => setCancelModalOpen(true)}
-                  >
+                  <Chip disabled={!canManageBilling} onClick={() => setCancelModalOpen(true)}>
                     Cancel
                   </Chip>
                 )}
