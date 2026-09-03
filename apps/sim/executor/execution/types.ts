@@ -1,5 +1,5 @@
 import type { WorkflowExecutionPrincipal } from '@sim/auth/principal'
-import type { Edge } from 'reactflow'
+import type { Edge } from '@xyflow/react'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { ExecutionActor } from '@/lib/execution/actor-resolution'
@@ -26,6 +26,15 @@ export interface ExecutionMetadata {
   workflowId: string
   workspaceId: string
   userId: string
+  /**
+   * Person whose permission group gates this run — the gate, separate from
+   * {@link userId}, which is the billing/rate actor and the credential subject.
+   * Spread onto the execution context (and so onto the pause snapshot) so a
+   * trigger with no acting person to charge does not end up gating on the
+   * bystander it bills. Tri-state; see the field of the same name on the
+   * context's `ExecutionMetadata` in `@/executor/types`.
+   */
+  capabilityGovernedUserId?: string | null
   /** Original authenticated caller. Billing and executor user IDs never replace it. */
   principal: WorkflowExecutionPrincipal
   /** Immutable actor/payer decision captured before execution. */
@@ -57,6 +66,7 @@ export interface ExecutionMetadata {
     edges: Edge[]
     loops?: Record<string, any>
     parallels?: Record<string, any>
+    variables?: Record<string, unknown>
     deploymentVersionId?: string
   }
   largeValueExecutionIds?: string[]
@@ -206,6 +216,8 @@ export interface BlockCompletionCallbackData {
   endedAt: string
   /** Per-invocation unique ID linking this workflow block execution to its child block events. */
   childWorkflowInstanceId?: string
+  /** Root or child-workflow-scoped block identity used to match externally selected outputs. */
+  outputBlockId?: string
 }
 
 export interface ExecutionCallbacks {

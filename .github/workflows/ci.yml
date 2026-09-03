@@ -99,7 +99,7 @@ jobs:
   # (/api/desktop/update) starts offering automatically.
   detect-desktop-changes:
     name: Detect Desktop Changes
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 5
     if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/staging')
     outputs:
@@ -245,7 +245,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Only the app image needs a large runner: next build exhausts the free
+          # 16 GB one (exit 137). The others build in <5 min and idle at 12-15%
+          # CPU on 8 vCPU, so they stay on the smaller tiers.
+          #
+          # 16 vCPU on Blacksmith because this build is the critical path to a
+          # deploy — nothing ships until the image is pushed — and its two
+          # dominant steps both scale with cores (`bun install` ~300-400s, `next
+          # build` ~260s). The same `next build` runs on 16 vCPU in the separate
+          # Build App verification job, which does not gate anything; this one
+          # was doing comparable work on half the cores.
+          #
+          # cache_mb is the layer cache the post-job prune retains, and it is the
+          # only reason the sticky disks stay bounded — see docker-build's
+          # action.yml. Rows that omit it take the small-image default there. The
+          # app image overrides because it carries ~34 layers plus apt and bun
+          # cache mounts for the whole monorepo; 100 GB is several builds' worth
+          # of headroom over that working set.
           - dockerfile: ./docker/app.Dockerfile
+            cache_mb: '102400'
             ecr_repo_secret: ECR_APP
           - dockerfile: ./docker/db.Dockerfile
             ecr_repo_secret: ECR_MIGRATIONS
@@ -360,7 +378,7 @@ jobs:
             echo "ERROR: DEV_TRIGGER_ACCESS_TOKEN and TRIGGER_PROJECT_ID repo secrets must both be set" >&2
             exit 1
           fi
-          bunx trigger.dev@4.5.7 deploy --env preview --branch dev-sim
+          bunx trigger.dev@4.5.12 deploy --env preview --branch dev-sim
 
   # Main/staging: build AMD64 images and push to ECR + GHCR
   build-amd64:
@@ -381,6 +399,7 @@ jobs:
         include:
           - dockerfile: ./docker/app.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
+            cache_mb: '102400'
             ecr_repo_secret: ECR_APP
           - dockerfile: ./docker/db.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
@@ -389,7 +408,7 @@ jobs:
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
             ecr_repo_secret: ECR_REALTIME
           - dockerfile: ./docker/pii.Dockerfile
-            ghcr_image: ghcr.io/simstudioai/pii
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-pii
             ecr_repo_secret: ECR_PII
     steps:
       - name: Checkout code
@@ -505,6 +524,7 @@ jobs:
         include:
           - dockerfile: ./docker/app.Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
+            cache_mb: '102400'
           - dockerfile: ./docker/db.Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
           - dockerfile: ./docker/realtime.Dockerfile
@@ -635,7 +655,7 @@ jobs:
         with:
           filters: |
             docs:
-              - 'apps/docs/content/docs/en/**'
+              - 'apps/docs/content/docs/**'
               - 'apps/sim/scripts/process-docs.ts'
               - 'apps/sim/lib/chunkers/**'
 
@@ -682,7 +702,7 @@ jobs:
   # Job-level `if:` cannot read the secrets context, hence the probe job.
   check-desktop-signing:
     name: Check Desktop Signing Secrets
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 2
     needs: [detect-version, detect-desktop-changes]
     # !cancelled(): detect-desktop-changes is skipped on main (and
@@ -731,7 +751,7 @@ jobs:
   # remains testable end to end with a manual download.
   create-desktop-prerelease:
     name: Create Desktop Prerelease
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 5
     needs: [detect-desktop-changes, check-desktop-signing]
     # Requires the signing probe to have actually succeeded (not just "not
@@ -820,7 +840,7 @@ jobs:
   # point of view.
   publish-desktop-prerelease:
     name: Publish Desktop Prerelease
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 5
     needs: [create-desktop-prerelease, desktop-prerelease]
     permissions:
@@ -844,7 +864,7 @@ jobs:
   # are always garbage by this point — the current run's release is published.
   prune-desktop-prereleases:
     name: Prune Desktop Prereleases
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 5
     needs: [publish-desktop-prerelease]
     permissions:

@@ -80,6 +80,8 @@ export function getS3ClientForRegion(region: string): S3Client {
   if (client) return client
   client = new S3Client({
     region,
+    endpoint: S3_CONFIG.endpoint,
+    forcePathStyle: S3_CONFIG.forcePathStyle,
     credentials: getAwsCredentialsFromEnv(),
   })
   _s3ClientsByRegion.set(region, client)
@@ -253,8 +255,16 @@ export async function downloadFromS3(
 
 export async function downloadFromS3(
   key: string,
+  customConfig: S3Config,
+  maxBytes: number | undefined,
+  signal: AbortSignal | undefined
+): Promise<Buffer>
+
+export async function downloadFromS3(
+  key: string,
   customConfig?: S3Config,
-  maxBytes?: number
+  maxBytes?: number,
+  signal?: AbortSignal
 ): Promise<Buffer> {
   const config = customConfig || { bucket: S3_CONFIG.bucket, region: S3_CONFIG.region }
 
@@ -267,7 +277,7 @@ export async function downloadFromS3(
     config.region && config.region !== S3_CONFIG.region
       ? getS3ClientForRegion(config.region)
       : getS3Client()
-  const response = await s3Client.send(command)
+  const response = await s3Client.send(command, { abortSignal: signal })
   if (maxBytes !== undefined && response.ContentLength !== undefined) {
     try {
       assertKnownSizeWithinLimit(response.ContentLength, maxBytes, 'storage download')
@@ -282,6 +292,7 @@ export async function downloadFromS3(
   return readNodeStreamToBufferWithLimit(stream, {
     maxBytes: maxBytes ?? Number.MAX_SAFE_INTEGER,
     label: 'storage download',
+    signal,
   })
 }
 

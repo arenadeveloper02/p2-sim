@@ -6,6 +6,8 @@ import {
   NO_DENIED_OPERATIONS,
   OPERATION_SUBBLOCK_ID,
 } from '@/lib/permission-groups/operation-access'
+import type { SelectorKey } from '@/lib/selectors/manifest'
+import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import { getDependsOnFields } from '@/lib/workflows/subblocks/dependencies'
 import {
   getZoomAdminAccessEpoch,
@@ -20,7 +22,7 @@ import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflow
 import { getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
 import { ResponseBlockHandler } from '@/executor/handlers/response/response-handler'
-import type { SelectorKey } from '@/hooks/selectors/types'
+import { useDebounce } from '@/hooks/use-debounce'
 import { useOperationAccess } from '@/hooks/use-operation-access'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -178,22 +180,36 @@ export const Dropdown = memo(function Dropdown({
     return options ?? EMPTY_OPTIONS
   }, [options, blockValues, zoomAdminAccessEpoch])
 
+  const [selectorSearch, setSelectorSearch] = useState('')
+  const debouncedSelectorSearch = useDebounce(selectorSearch.trim(), SEARCH_DEBOUNCE_MS)
+  const activeSelectorSearch = selectorSearch.trim() === '' ? '' : debouncedSelectorSearch
+
   const {
     fetchedOptions,
     isLoadingOptions,
+    isFetchingMore,
+    isLoadingAll,
+    hasMore,
+    truncated,
     hasLoadedOptions,
     fetchError,
     hydratedOption,
+    hydratedOptions,
     isDynamic,
+    loadMore,
+    loadAll,
     refetch: refetchOptions,
   } = useFetchedOptions({
     blockId,
+    subBlockId,
     dependsOnFields,
     selectorKey,
     selectorExcludeSelf,
     isPreview: Boolean(isPreview),
     disabled: Boolean(disabled),
+    search: activeSelectorSearch,
     valueToHydrate: singleValue,
+    valuesToHydrate: multiValues ?? undefined,
     localOptions: evaluatedOptions,
   })
 
@@ -226,6 +242,13 @@ export const Dropdown = memo(function Dropdown({
       }
     }
 
+    for (const option of [...hydratedOptions].reverse()) {
+      const alreadyPresent = opts.some((existing) =>
+        typeof existing === 'string' ? existing === option.id : existing.id === option.id
+      )
+      if (!alreadyPresent) opts = [option, ...opts]
+    }
+
     // A multi-select can only drop a value by clicking its row; a selection the
     // loaded list no longer carries gets one so it can be removed in place.
     if (multiValues && isDynamic) {
@@ -244,6 +267,7 @@ export const Dropdown = memo(function Dropdown({
     normalizedFetchedOptions,
     evaluatedOptions,
     hydratedOption,
+    hydratedOptions,
     multiValues,
     hasLoadedOptions,
   ])
@@ -546,8 +570,15 @@ export const Dropdown = memo(function Dropdown({
       showAllOption={selectAllOption && multiSelect}
       allOptionLabel='Select All'
       isLoading={isLoadingOptions}
+      isLoadingMore={isFetchingMore}
+      isLoadingAll={isLoadingAll}
+      hasMore={hasMore}
+      truncated={truncated}
+      onLoadMore={loadMore}
+      onLoadAll={loadAll}
       error={fetchError}
       searchable={isSearchable}
+      onSearchChange={setSelectorSearch}
       searchPlaceholder='Search...'
     />
   )

@@ -11,17 +11,16 @@ import {
   buildUnifiedSettingsNavigation,
   canMutateWorkspaceSettingsSection,
   getAccountSettingsHref,
-  getOrganizationSettingsHref,
   getWorkspaceSettingsHref,
   isOrganizationSettingsSectionAvailable,
   ORGANIZATION_PLANE_UNIFIED_SECTIONS,
-  ORGANIZATION_SETTINGS_ITEMS,
-  ORGANIZATION_SETTINGS_PATH_ALIASES,
   parseSettingsPathSection,
   resolveOrganizationSectionAccess,
   resolveWorkspaceNavigation,
   SELFHOST_SETTINGS_ITEMS,
   SETTINGS_SECTION_REGISTRY,
+  UNIFIED_TO_ORGANIZATION_SECTION,
+  UNIFIED_TO_WORKSPACE_SECTION,
   WORKSPACE_SETTINGS_ITEMS,
   WORKSPACE_SETTINGS_PATH_ALIASES,
 } from '@/components/settings/navigation'
@@ -57,6 +56,7 @@ describe('settings navigation boundaries', () => {
       'teammates',
       'organization',
       'oauth-apps',
+      'usage',
       'secrets',
       'credential-groups',
       'custom-tools',
@@ -80,16 +80,7 @@ describe('settings navigation boundaries', () => {
       'api-keys',
       'admin',
     ])
-    expect(SELFHOST_SETTINGS_ITEMS.map(({ id }) => id)).toEqual(['general', 'billing'])
-    expect(ORGANIZATION_SETTINGS_ITEMS.map(({ id }) => id)).toEqual([
-      'members',
-      'billing',
-      'access-control',
-      'audit-logs',
-      'sessions',
-      'data-retention',
-      'whitelabeling',
-    ])
+    expect(SELFHOST_SETTINGS_ITEMS.map(({ id }) => id)).toEqual(['general', 'billing', 'chat-keys'])
     expect(WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id)).toEqual([
       'teammates',
       'secrets',
@@ -194,9 +185,6 @@ describe('settings navigation boundaries', () => {
     const accountIds = SETTINGS_SECTION_REGISTRY.flatMap(({ planes }) =>
       planes?.account ? [planes.account.id] : []
     )
-    const organizationIds = SETTINGS_SECTION_REGISTRY.flatMap(({ planes }) =>
-      planes?.organization ? [planes.organization.id] : []
-    )
     const selfHostIds = SETTINGS_SECTION_REGISTRY.flatMap(({ planes }) =>
       planes?.selfhost ? [planes.selfhost.id] : []
     )
@@ -206,7 +194,6 @@ describe('settings navigation boundaries', () => {
 
     expect(new Set(unifiedIds).size).toBe(unifiedIds.length)
     expect(new Set(accountIds).size).toBe(accountIds.length)
-    expect(new Set(organizationIds).size).toBe(organizationIds.length)
     expect(new Set(selfHostIds).size).toBe(selfHostIds.length)
     expect(new Set(workspaceIds).size).toBe(workspaceIds.length)
     expect([...unifiedIds].sort()).toEqual(
@@ -215,9 +202,6 @@ describe('settings navigation boundaries', () => {
         .sort()
     )
     expect([...accountIds].sort()).toEqual(ACCOUNT_SETTINGS_ITEMS.map(({ id }) => id).sort())
-    expect([...organizationIds].sort()).toEqual(
-      ORGANIZATION_SETTINGS_ITEMS.map(({ id }) => id).sort()
-    )
     expect([...selfHostIds].sort()).toEqual(SELFHOST_SETTINGS_ITEMS.map(({ id }) => id).sort())
     expect([...workspaceIds].sort()).toEqual(WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id).sort())
   })
@@ -230,32 +214,57 @@ describe('settings navigation boundaries', () => {
       'data-retention',
       'organization',
       'sessions',
+      'sso',
+      'usage',
       'whitelabeling',
     ])
   })
 
-  it('shares labels, icons, and docs links across projections', () => {
-    const unifiedAccessControl = buildUnifiedSettingsNavigation().find(
-      ({ id }) => id === 'access-control'
+  it('maps every organization-scoped unified section to its organization counterpart', () => {
+    // The section page reads this map to decide whether to apply the organization
+    // gate at all, so a section missing from it is not "ungated by omission" — it
+    // is a section any workspace member could open.
+    expect(UNIFIED_TO_ORGANIZATION_SECTION).toEqual({
+      organization: 'members',
+      billing: 'billing',
+      'access-control': 'access-control',
+      'audit-logs': 'audit-logs',
+      sso: 'sso',
+      sessions: 'sessions',
+      'data-retention': 'data-retention',
+      'data-drains': 'data-drains',
+      whitelabeling: 'whitelabeling',
+      usage: 'usage',
+    })
+    expect(Object.keys(UNIFIED_TO_ORGANIZATION_SECTION).sort()).toEqual(
+      [...ORGANIZATION_PLANE_UNIFIED_SECTIONS].sort()
     )
-    const organizationAccessControl = ORGANIZATION_SETTINGS_ITEMS.find(
-      ({ id }) => id === 'access-control'
-    )
-
-    expect(unifiedAccessControl?.docsLink).toBeDefined()
-    expect(organizationAccessControl?.label).toBe(unifiedAccessControl?.label)
-    expect(organizationAccessControl?.icon).toBe(unifiedAccessControl?.icon)
-    expect(organizationAccessControl?.docsLink).toBe(unifiedAccessControl?.docsLink)
   })
 
-  it('uses scope-specific labels consistently across settings surfaces', () => {
-    const organizationMembers = ORGANIZATION_SETTINGS_ITEMS.find(({ id }) => id === 'members')
+  it('maps every workspace projection from its unified section', () => {
+    expect(UNIFIED_TO_WORKSPACE_SECTION).toEqual({
+      teammates: 'teammates',
+      secrets: 'secrets',
+      byok: 'byok',
+      sandboxes: 'sandboxes',
+      'credential-groups': 'credential-groups',
+      'custom-tools': 'custom-tools',
+      mcp: 'mcp',
+      'workflow-mcp-servers': 'workflow-mcp-servers',
+      apikeys: 'api-keys',
+      inbox: 'inbox',
+      'recently-deleted': 'recently-deleted',
+      forks: 'forks',
+      'custom-blocks': 'custom-blocks',
+      'self-host': 'self-host',
+    })
+  })
+
+  it('labels the members section consistently', () => {
     const unifiedOrganization = buildUnifiedSettingsNavigation().find(
       ({ id }) => id === 'organization'
     )
 
-    expect(organizationMembers?.label).toBe('Members')
-    expect(organizationMembers?.description).toBe('Manage organization members, roles, and seats.')
     expect(unifiedOrganization?.label).toBe('Members')
   })
 
@@ -291,9 +300,6 @@ describe('settings navigation boundaries', () => {
 
   it('builds canonical settings hrefs across all three planes', () => {
     expect(getAccountSettingsHref('general')).toBe('/account/settings/general')
-    expect(getOrganizationSettingsHref('organization-a', 'members')).toBe(
-      '/organization/organization-a/settings/members'
-    )
     expect(getWorkspaceSettingsHref('workspace-a', 'teammates')).toBe(
       '/workspace/workspace-a/settings/teammates'
     )
@@ -326,20 +332,6 @@ describe('settings navigation boundaries', () => {
     expect(parseAccountPath('/account/settings', 'general')).toBe('general')
   })
 
-  it('parses canonical, aliased, and invalid organization settings paths', () => {
-    const parseOrganizationPath = (path: string) =>
-      parseSettingsPathSection({
-        path,
-        items: ORGANIZATION_SETTINGS_ITEMS,
-        defaultSection: null,
-        aliases: ORGANIZATION_SETTINGS_PATH_ALIASES,
-      })
-
-    expect(parseOrganizationPath('audit-logs')).toBe('audit-logs')
-    expect(parseOrganizationPath('/organization/org-a/settings/organization')).toBe('members')
-    expect(parseOrganizationPath('/organization/org-a/settings/not-a-section')).toBeNull()
-  })
-
   it('parses canonical, aliased, and invalid workspace settings paths', () => {
     const parseWorkspacePath = (path: string) =>
       parseSettingsPathSection({
@@ -357,7 +349,6 @@ describe('settings navigation boundaries', () => {
   it('keeps API keys split between account and workspace settings', () => {
     expect(ACCOUNT_SETTINGS_ITEMS.some(({ id }) => id === 'api-keys')).toBe(true)
     expect(WORKSPACE_SETTINGS_ITEMS.some(({ id }) => id === 'api-keys')).toBe(true)
-    expect(ORGANIZATION_SETTINGS_ITEMS.some(({ id }) => String(id) === 'api-keys')).toBe(false)
   })
 
   it('requires target-organization membership and admin authority', () => {

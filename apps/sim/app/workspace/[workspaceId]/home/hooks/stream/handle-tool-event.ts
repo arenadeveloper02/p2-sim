@@ -1,4 +1,3 @@
-import { isBrowserToolName } from '@sim/browser-protocol'
 import { isTerminalToolName } from '@sim/terminal-protocol'
 import {
   MothershipStreamV1ToolExecutor,

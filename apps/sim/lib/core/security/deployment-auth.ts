@@ -5,6 +5,7 @@ import type { TokenBucketConfig } from '@/lib/core/rate-limiter'
 import { RateLimiter } from '@/lib/core/rate-limiter'
 import {
   type DeploymentAuthKind,
+  type DeploymentAuthResource,
   deploymentAuthCookieName,
   isEmailAllowed,
   validateAuthToken,
@@ -49,18 +50,7 @@ function passwordRateLimitResult(
   }
 }
 
-/**
- * A password/email-gated resource (a deployed chat or a public file share). Only
- * the fields the auth check needs — the `password` is the encrypted secret.
- */
-export interface DeploymentAuthResource {
-  id: string
-  authType: string | null
-  password?: string | null
-  allowedEmails?: unknown
-}
-
-interface DeploymentAuthBody {
+export interface DeploymentAuthBody {
   password?: string
   email?: string
   input?: unknown
@@ -92,13 +82,10 @@ export async function validateDeploymentAuth(
     return { authorized: true }
   }
 
-  if (authType !== 'sso') {
+  if (authType === 'password' || authType === 'email') {
     const authCookie = request.cookies.get(deploymentAuthCookieName(cookiePrefix, resource.id))
 
-    if (
-      authCookie &&
-      validateAuthToken(authCookie.value, resource.id, authType, resource.password)
-    ) {
+    if (authCookie && validateAuthToken({ token: authCookie.value, resource })) {
       return { authorized: true }
     }
   }
@@ -202,7 +189,7 @@ export async function validateDeploymentAuth(
         return { authorized: false, error: 'Email is required' }
       }
 
-      if (isEmailAllowed(email, allowedEmails)) {
+      if (isEmailAllowed(email, resource.allowedEmails)) {
         return { authorized: false, error: 'otp_required' }
       }
 
@@ -231,9 +218,7 @@ export async function validateDeploymentAuth(
         return { authorized: false, error: 'SSO session does not contain email' }
       }
 
-      const allowedEmails = (resource.allowedEmails as string[]) || []
-
-      if (isEmailAllowed(userEmail, allowedEmails)) {
+      if (isEmailAllowed(userEmail, resource.allowedEmails)) {
         return { authorized: true }
       }
 

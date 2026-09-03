@@ -82,44 +82,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         )}
 
-        {/* Theme initialization: set light theme by default, convert 'system' to 'light' */}
-        <script
-          id='theme-initialization'
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function () {
-                try {
-                  var theme = localStorage.getItem('sim-theme');
-                  // Convert 'system' to 'light' and set default to 'light'
-                  if (!theme || theme === 'system') {
-                    localStorage.setItem('sim-theme', 'light');
-                    theme = 'light';
-                  }
-                  // Apply theme class immediately to prevent flash
-                  document.documentElement.classList.remove('light', 'dark');
-                  if (theme === 'light' || theme === 'dark') {
-                    document.documentElement.classList.add(theme);
-                  } else {
-                    document.documentElement.classList.add('light');
-                  }
-                } catch (e) {
-                  // Fallback to light theme
-                  document.documentElement.classList.remove('light', 'dark');
-                  document.documentElement.classList.add('light');
-                }
-              })();
-            `,
-          }}
-        />
-
         {/*
           Workspace layout dimensions: set CSS vars before hydration to avoid layout jump.
           
           IMPORTANT: These hardcoded values must stay in sync with stores/constants.ts
           We cannot use imports here since this is a blocking script that runs before React.
         */}
-        <script
+        <Script
           id='workspace-layout-dimensions'
+          strategy='beforeInteractive'
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
@@ -151,7 +122,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   // Collapse comes from the cookie (independent of localStorage
                   // parsing); the persisted width is read defensively below. Match the
                   // value strictly so 'sidebar_collapsed=10' isn't read as collapsed.
-                  var cookieMatch = document.cookie.match(/(?:^|;\s*)sidebar_collapsed=([^;]*)/);
+                  var cookieMatch = document.cookie.match(/(?:^|;\\s*)sidebar_collapsed=([^;]*)/);
                   var hasCookie = cookieMatch !== null;
                   var collapsed = cookieMatch !== null && cookieMatch[1] === '1';
 

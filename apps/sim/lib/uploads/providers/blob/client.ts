@@ -362,8 +362,16 @@ export async function downloadFromBlob(
 
 export async function downloadFromBlob(
   key: string,
+  customConfig: BlobConfig | undefined,
+  maxBytes: number | undefined,
+  signal: AbortSignal | undefined
+): Promise<Buffer>
+
+export async function downloadFromBlob(
+  key: string,
   customConfig?: BlobConfig,
-  maxBytes?: number
+  maxBytes?: number,
+  signal?: AbortSignal
 ): Promise<Buffer> {
   const { BlobServiceClient, StorageSharedKeyCredential } = await import('@azure/storage-blob')
   let blobServiceClient: BlobServiceClientType
@@ -393,7 +401,9 @@ export async function downloadFromBlob(
   const containerClient = blobServiceClient.getContainerClient(containerName)
   const blockBlobClient = containerClient.getBlockBlobClient(key)
 
-  const downloadBlockBlobResponse = await blockBlobClient.download()
+  const downloadBlockBlobResponse = await blockBlobClient.download(0, undefined, {
+    abortSignal: signal,
+  })
   if (maxBytes !== undefined && downloadBlockBlobResponse.contentLength !== undefined) {
     try {
       assertKnownSizeWithinLimit(
@@ -418,6 +428,7 @@ export async function downloadFromBlob(
     {
       maxBytes: maxBytes ?? Number.MAX_SAFE_INTEGER,
       label: 'storage download',
+      signal,
     }
   )
 

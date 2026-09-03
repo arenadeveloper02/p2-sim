@@ -6,6 +6,7 @@ import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { captureEvent } from '@/lib/posthog/client'
+import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
 import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
@@ -176,6 +177,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
       plane: 'workspace',
       section: effectiveSection,
     })
+    const label = effectiveSection.charAt(0).toUpperCase() + effectiveSection.slice(1)
+    void settingsPageTabSwitchEvent({ Tabs: label })
   }, [effectiveSection, sessionLoading, posthog])
 
   return (

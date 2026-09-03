@@ -1,5 +1,5 @@
 import type { HostedApiKeySupport } from '@/tools/hosted-api-key'
-import type { ToolConfig } from '@/tools/types'
+import type { ToolDefinition } from '@/tools/types'
 
 const HOSTED_API_KEY_NOTE = '<note>API key is hosted by Arena.</note>'
 const CONDITIONAL_HOSTED_API_KEY_NOTE =
@@ -19,7 +19,7 @@ const GOOGLE_DOCS_GFM_TOOL_IDS = new Set(['google_docs_create'])
  * argument keeps one branch here and lets either source supply it.
  */
 export function getCopilotToolDescription(
-  tool: Pick<ToolConfig, 'description' | 'id' | 'name'>,
+  tool: Pick<ToolDefinition, 'description' | 'id' | 'name'>,
   options?: {
     isHosted?: boolean
     hostedApiKey?: HostedApiKeySupport

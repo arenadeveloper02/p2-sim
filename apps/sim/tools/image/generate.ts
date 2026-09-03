@@ -3,20 +3,14 @@ import {
   IMAGE_BLOCK_MODEL_IDS,
   reconcileImageProviderAndModel,
 } from '@/lib/image-generation/block-model-config'
-import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
-import type { ToolConfig, ToolFileData } from '@/tools/types'
+import type { InternalToolConfig, ToolFileData } from '@/tools/types'
 
 interface ImageGenerationRuntimeParams extends ImageGenerationParams {
-  _context?: { workspaceId?: string; workflowId?: string; executionId?: string }
   __usingHostedKey?: boolean
   __skipHostedKeyHandling?: boolean
-  __skipSmartWrapper?: boolean
-  workspaceId?: string
-  workflowId?: string
-  executionId?: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,7 +117,9 @@ function normalizeImagesOutput(
 
 const IMAGE_GENERATE_MODEL_IDS = IMAGE_BLOCK_MODEL_IDS.join(', ')
 
-export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
+type ImageGenerationToolConfig = InternalToolConfig<ImageGenerationParams, ImageGenerationResponse>
+
+export const imageGenerateTool: ImageGenerationToolConfig = {
   id: 'image_generate',
   name: 'Image Generator',
   description: 'Generate images with OpenAI GPT Image, Google Nano Banana, or Fal.ai image models',
@@ -341,63 +337,37 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     },
   },
 
-  request: {
-    url: (params) =>
-      (params as ImageGenerationRuntimeParams).__skipSmartWrapper
-        ? '/api/tools/image'
-        : '/api/tools/image-generation',
+  operation: {
     modelInput: {
       mode: 'project',
       select: (params) => ({ prompt: params.prompt }),
     },
-    method: 'POST',
-    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
-    headers: () => ({
-      'Content-Type': 'application/json',
+    input: (params: ImageGenerationRuntimeParams) => ({
+      provider: params.provider,
+      apiKey: params.apiKey,
+      model: params.model,
+      prompt: params.prompt,
+      size: params.size,
+      aspectRatio: params.aspectRatio,
+      resolution: params.resolution,
+      quality: params.quality,
+      background: params.background,
+      outputFormat: params.outputFormat,
+      moderation: params.moderation,
+      safetyTolerance: params.safetyTolerance,
+      numImages: params.numImages,
+      seed: params.seed,
+      enableSafetyChecker: params.enableSafetyChecker,
+      enableWebSearch: params.enableWebSearch,
+      thinkingLevel: params.thinkingLevel,
+      inputImage: params.inputImage,
+      inputImages: params.inputImages,
+      inputImageUrl: params.inputImageUrl,
+      inputImageUrls: params.inputImageUrls,
+      inputImageMimeType: params.inputImageMimeType,
+      inputImageWarning: params.inputImageWarning,
+      useHostedCostTracking: params.__usingHostedKey === true,
     }),
-    body: (params: ImageGenerationRuntimeParams) => {
-      const requestParams = {
-        provider: params.provider,
-        apiKey: params.apiKey,
-        model: params.model,
-        prompt: params.prompt,
-        size: params.size,
-        aspectRatio: params.aspectRatio,
-        resolution: params.resolution,
-        quality: params.quality,
-        background: params.background,
-        outputFormat: params.outputFormat,
-        moderation: params.moderation,
-        safetyTolerance: params.safetyTolerance,
-        seed: params.seed,
-        enableSafetyChecker: params.enableSafetyChecker,
-        enableWebSearch: params.enableWebSearch,
-        thinkingLevel: params.thinkingLevel,
-        inputImage: params.inputImage,
-        inputImages: params.inputImages,
-        inputImageUrl: params.inputImageUrl,
-        inputImageUrls: params.inputImageUrls,
-        inputImageMimeType: params.inputImageMimeType,
-        inputImageWarning: params.inputImageWarning,
-        workspaceId: params._context?.workspaceId ?? params.workspaceId,
-        workflowId: params._context?.workflowId ?? params.workflowId,
-        executionId: params._context?.executionId ?? params.executionId,
-        _context: params._context,
-        __usingHostedKey: params.__usingHostedKey,
-      }
-
-      if (!params.__skipSmartWrapper) {
-        return {
-          baseToolId: 'image_generate',
-          params: requestParams,
-        }
-      }
-
-      return {
-        ...requestParams,
-        useHostedCostTracking: params.__usingHostedKey === true,
-      }
-    },
   },
 
   transformResponse: async (response: Response) => {
@@ -418,8 +388,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       provider?: string
       model?: string
       metadata?: ImageGenerationResponse['output']['metadata']
+      s3UploadFailed?: boolean
       __falaiCostDollars?: number
       __falaiBilling?: ImageGenerationResponse['output']['__falaiBilling']
+      __imageBilling?: ImageGenerationResponse['output']['__imageBilling']
     }
 
     if (!response.ok || data.error || data.success === false) {
@@ -476,7 +448,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
 
     const contentType = data.contentType || data.metadata?.contentType || 'image/png'
     const image = resolvePrimaryImageFile(data, contentType)
-
     const imageUrl = data.imageUrl || extractImageUrl(image)
     const images = normalizeImagesOutput(undefined, image, contentType)
 
@@ -494,6 +465,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
           provider: data.provider || data.metadata?.provider || '',
           model: data.model || data.metadata?.model || '',
         },
+        s3UploadFailed: data.s3UploadFailed ?? data.metadata?.s3UploadFailed,
         __falaiCostDollars: data.__falaiCostDollars,
         __falaiBilling: data.__falaiBilling,
         __imageBilling: data.__imageBilling,

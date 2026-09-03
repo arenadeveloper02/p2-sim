@@ -4,7 +4,7 @@ import { usageLog, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
 import {
@@ -174,9 +174,12 @@ function scaleUsageLogCosts(entries: UsageEntry[], context: UsageCostLogContext)
 }
 
 /**
- * Usage log category types
+ * Usage log category types.
+ *
+ * `model_unbilled` is reporting-only — see {@link UNBILLED_USAGE_CATEGORIES}. Code
+ * that means "a charge" must not treat it as one.
  */
-export type UsageLogCategory = 'model' | 'fixed' | 'tool' | 'external'
+export type UsageLogCategory = 'model' | 'fixed' | 'tool' | 'external' | 'model_unbilled'
 
 /**
  * Usage log source types
@@ -196,6 +199,26 @@ export const COPILOT_USAGE_SOURCES: UsageLogSource[] = [
   'mcp_copilot',
   'mothership_block',
 ]
+
+/**
+ * Categories that record usage Sim does not charge for. Their `cost` is always `0`
+ * and their value is the token counts in `metadata`, so usage reporting can show
+ * volume that the billing ledger has no reason to know about.
+ *
+ * These are the only categories exempt from {@link recordUsage}'s `cost > 0` filter.
+ * Every billing aggregate over usage_log is `SUM(cost)`, so zero-cost rows leave
+ * every existing total unchanged.
+ */
+export const UNBILLED_USAGE_CATEGORIES = [
+  'model_unbilled',
+] as const satisfies readonly UsageLogCategory[]
+
+const UNBILLED_USAGE_CATEGORY_SET: ReadonlySet<string> = new Set(UNBILLED_USAGE_CATEGORIES)
+
+/** True for a category whose rows are recorded for reporting rather than billing. */
+export function isUnbilledUsageCategory(category: UsageLogCategory): boolean {
+  return UNBILLED_USAGE_CATEGORY_SET.has(category)
+}
 
 /**
  * Metadata for 'model' category charges
@@ -440,6 +463,12 @@ export async function getBillingPeriodUsageCost(
  * Counts distinct workflow executions that produced billable ledger entries in
  * an attributed billing period. Multiple line items for one execution count as
  * one run; executions with no billable usage are intentionally excluded.
+ *
+ * The category filter is what keeps that last clause true now that unbilled rows
+ * exist. A BYOK-only run whose base charge is zero writes nothing but a
+ * `model_unbilled` row, and without this it would newly appear in a count that
+ * feeds the enterprise billing preview — a customer-facing number moving because
+ * of a reporting-only row.
  */
 export async function getBillingPeriodWorkflowRunCount(
   billingEntity: BillingEntity,
@@ -448,8 +477,15 @@ export async function getBillingPeriodWorkflowRunCount(
 ): Promise<number> {
   const [row] = await executor
     .select({
+      /**
+       * The exclusion goes through `notInArray`, not `<> ALL(${array})`. Interpolating
+       * a JavaScript array into a `sql` template emits parenthesized scalar binds —
+       * `ALL(($1))` — which Postgres rejects outright with "op ANY/ALL (array)
+       * requires array on right side". Unit tests cannot catch it, because `@sim/db`
+       * is mocked and no statement is ever rendered.
+       */
       workflowRuns:
-        sql<number>`COUNT(DISTINCT ${usageLog.executionId}) FILTER (WHERE ${usageLog.source} = 'workflow')`.mapWith(
+        sql<number>`COUNT(DISTINCT ${usageLog.executionId}) FILTER (WHERE ${usageLog.source} = 'workflow' AND ${notInArray(usageLog.category, [...UNBILLED_USAGE_CATEGORIES])})`.mapWith(
           Number
         ),
     })
@@ -1189,30 +1225,82 @@ export async function recordCumulativeUsage(
 }
 
 interface UsageLogFilter {
-  source?: UsageLogSource
+  source?: UsageLogSource | UsageLogSource[]
   /** When set, filters to any of these sources (takes precedence over `source`). */
   sources?: UsageLogSource[]
   workspaceId?: string
   startDate?: Date
+  /**
+   * Inclusive by default, which is what the personal credit-usage surfaces have
+   * always meant by it.
+   */
   endDate?: Date
+  /**
+   * Treat {@link endDate} as exclusive instead.
+   *
+   * Analytics windows are half-open `[start, end)` — a billing period's end
+   * instant is the next period's start — so a row stamped exactly on the
+   * boundary belongs to the next window. Without this the event list and the
+   * export counted it while the summary and breakdowns did not, and the two
+   * disagreed by one row at exactly the moment a period rolls over.
+   */
+  endDateExclusive?: boolean
+  /**
+   * Match the stamped billing period instead of a `created_at` range.
+   *
+   * A stripe or default period is what rows are *stamped* with, and that is the
+   * predicate every analytics read uses for it. Filtering the same window on
+   * `created_at` selects a different set — a row created inside the period but
+   * stamped to another, or the reverse — so the event list and the CSV covered
+   * different rows than the totals above them. Mutually exclusive with
+   * {@link startDate}/{@link endDate}; a reporting period and a plain range still
+   * use those, exactly as `buildUsageAnalyticsScope` does.
+   */
+  billingPeriod?: { start: Date; end: Date }
 }
 
-type UsageLogScope = { kind: 'user'; userId: string } | { kind: 'workspace'; workspaceId: string }
+type UsageLogScope =
+  | { kind: 'user'; userId: string }
+  | { kind: 'workspace'; workspaceId: string }
+  /** Every event billed to a payer, regardless of which actor or workspace produced it. */
+  | { kind: 'billingEntity'; entity: BillingEntity }
+
+function scopeCondition(scope: UsageLogScope) {
+  if (scope.kind === 'user') return eq(usageLog.userId, scope.userId)
+  if (scope.kind === 'workspace') return eq(usageLog.workspaceId, scope.workspaceId)
+  return and(
+    eq(usageLog.billingEntityType, scope.entity.type),
+    eq(usageLog.billingEntityId, scope.entity.id)
+  )
+}
 
 function buildUsageLogConditions(scope: UsageLogScope, filter: UsageLogFilter) {
-  const conditions = [
-    scope.kind === 'user'
-      ? eq(usageLog.userId, scope.userId)
-      : eq(usageLog.workspaceId, scope.workspaceId),
-  ]
+  const conditions = [scopeCondition(scope)]
   if (filter.sources && filter.sources.length > 0) {
     conditions.push(inArray(usageLog.source, filter.sources))
   } else if (filter.source) {
-    conditions.push(eq(usageLog.source, filter.source))
+    conditions.push(
+      Array.isArray(filter.source)
+        ? inArray(usageLog.source, filter.source)
+        : eq(usageLog.source, filter.source)
+    )
   }
   if (filter.workspaceId) conditions.push(eq(usageLog.workspaceId, filter.workspaceId))
+  if (filter.billingPeriod) {
+    conditions.push(
+      eq(usageLog.billingPeriodStart, filter.billingPeriod.start),
+      eq(usageLog.billingPeriodEnd, filter.billingPeriod.end)
+    )
+    return conditions
+  }
   if (filter.startDate) conditions.push(gte(usageLog.createdAt, filter.startDate))
-  if (filter.endDate) conditions.push(lte(usageLog.createdAt, filter.endDate))
+  if (filter.endDate) {
+    conditions.push(
+      filter.endDateExclusive
+        ? lt(usageLog.createdAt, filter.endDate)
+        : lte(usageLog.createdAt, filter.endDate)
+    )
+  }
   return conditions
 }
 
@@ -1296,8 +1384,19 @@ export interface GetUsageLogsOptions {
   workspaceId?: string
   /** Start date (inclusive) */
   startDate?: Date
-  /** End date (inclusive) */
+  /** End date (inclusive, unless {@link endDateExclusive}) */
   endDate?: Date
+  /**
+   * Treat {@link endDate} as exclusive, matching a half-open analytics window.
+   * See {@link UsageLogFilter.endDateExclusive}.
+   */
+  endDateExclusive?: boolean
+  /**
+   * Match the stamped billing period instead of a `created_at` range, so a
+   * ledger listing covers the same rows an analytics read of the same window
+   * does. See {@link UsageLogFilter.billingPeriod}.
+   */
+  billingPeriod?: { start: Date; end: Date }
   /** Maximum number of results */
   limit?: number
   /** Cursor for pagination (log ID) */
@@ -1365,6 +1464,8 @@ async function getUsageLogs(
     workspaceId,
     startDate,
     endDate,
+    endDateExclusive,
+    billingPeriod,
     limit = 50,
     cursor,
     cursorCreatedAt,
@@ -1378,6 +1479,8 @@ async function getUsageLogs(
       workspaceId,
       startDate,
       endDate,
+      endDateExclusive,
+      billingPeriod,
     })
 
     if (cursor) {
@@ -1453,6 +1556,8 @@ async function getUsageLogs(
         workspaceId,
         startDate,
         endDate,
+        endDateExclusive,
+        billingPeriod,
       })
 
       const summaryResult = await dbReplica
@@ -1508,6 +1613,20 @@ export function getUserUsageLogs(
   options: GetUsageLogsOptions = {}
 ): Promise<UsageLogsResult> {
   return getUsageLogs({ kind: 'user', userId }, options)
+}
+
+/**
+ * Gets every usage event billed to a payer, regardless of actor or workspace.
+ *
+ * This is the organization-wide ledger the usage panel pages through. It reuses this
+ * module's keyset pagination, cursor handling, and workflow-name join rather than
+ * reimplementing them — the only thing it adds is the scope predicate.
+ */
+export function getBillingEntityUsageLogs(
+  entity: BillingEntity,
+  options: GetUsageLogsOptions = {}
+): Promise<UsageLogsResult> {
+  return getUsageLogs({ kind: 'billingEntity', entity }, options)
 }
 
 /** Gets usage logs attributed to the selected workspace, regardless of actor. */

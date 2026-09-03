@@ -11,7 +11,6 @@ import {
   Folder,
   FolderPlus,
   Loader,
-  OverflowText,
   Pencil,
   Plus,
   Trash,
@@ -70,6 +69,7 @@ import {
   resourceListState,
   selectionLabel,
   timeCell,
+  useFindShortcut,
   useResourceRowSelection,
 } from '@/app/workspace/[workspaceId]/components'
 import type {
@@ -115,9 +115,11 @@ import { FileDocRoomProvider } from '@/app/workspace/[workspaceId]/files/compone
 import { FilesListContextMenu } from '@/app/workspace/[workspaceId]/files/components/files-list-context-menu'
 import { ShareModal } from '@/app/workspace/[workspaceId]/files/components/share-modal'
 import { useWorkspaceFilesRoom } from '@/app/workspace/[workspaceId]/files/hooks/use-workspace-files-room'
+import FilesLoading from '@/app/workspace/[workspaceId]/files/loading'
 import {
   filesFilterParsers,
   filesFilterUrlKeys,
+  filesListPreferenceConfig,
   filesParsers,
   filesSortParams,
   filesUrlKeys,
@@ -152,8 +154,10 @@ import { useContextMenu } from '@/hooks/use-context-menu'
 import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 import { useInlineRename } from '@/hooks/use-inline-rename'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { useResourceListPreferences } from '@/hooks/use-resource-list-preferences'
 import { useSearchFilterValue } from '@/hooks/use-search-filter-value'
 import { useUrlSort } from '@/hooks/use-url-sort'
+import type { ResourceListPreference } from '@/stores/resource-list-preferences'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type FileResourceItem =
@@ -420,21 +424,58 @@ export function Files() {
     sort: sortColumn,
     dir: sortDirection,
     activeSort,
-    onSort,
-    onClear,
+    onSort: applyUrlSort,
   } = useUrlSort(filesSortParams, filesFilterUrlKeys)
 
+  const currentListPreference = useMemo<ResourceListPreference>(
+    () => ({
+      sort: { column: sortColumn, direction: sortDirection },
+      filters: {
+        type: typeFilter,
+        size: sizeFilter,
+        uploadedBy: uploadedByFilter,
+      },
+    }),
+    [sortColumn, sortDirection, typeFilter, sizeFilter, uploadedByFilter]
+  )
+
+  const applyListPreference = useCallback(
+    (preference: ResourceListPreference) => {
+      void setFileFilters({
+        type: [...preference.filters.type],
+        size: [...preference.filters.size],
+        uploadedBy: [...preference.filters.uploadedBy],
+      })
+      applyUrlSort(preference.sort.column, preference.sort.direction)
+    },
+    [applyUrlSort, setFileFilters]
+  )
+
+  const {
+    isReady: isListPreferenceReady,
+    setFilter: setListFilter,
+    clearFilters: clearFileFilters,
+    setSort: setListSort,
+    clearSort: clearListSort,
+  } = useResourceListPreferences({
+    workspaceId,
+    config: filesListPreferenceConfig,
+    preference: currentListPreference,
+    applyPreference: applyListPreference,
+    enabled: fileIdFromRoute === null,
+  })
+
   const setTypeFilter = useCallback(
-    (next: string[]) => setFileFilters({ type: next }),
-    [setFileFilters]
+    (next: string[]) => setListFilter('type', next),
+    [setListFilter]
   )
   const setSizeFilter = useCallback(
-    (next: string[]) => setFileFilters({ size: next }),
-    [setFileFilters]
+    (next: string[]) => setListFilter('size', next),
+    [setListFilter]
   )
   const setUploadedByFilter = useCallback(
-    (next: string[]) => setFileFilters({ uploadedBy: next }),
-    [setFileFilters]
+    (next: string[]) => setListFilter('uploadedBy', next),
+    [setListFilter]
   )
 
   const [creatingFile, setCreatingFile] = useState(false)
@@ -1584,25 +1625,14 @@ export function Files() {
 
   /**
    * Overrides the browser's Cmd/Ctrl+F with the in-list find while the list is
-   * showing. Skipped when a file is open — its editor owns the shortcut there —
-   * and when another surface already claimed the press.
+   * showing. Handed to the open file's editor instead once one is open.
    */
-  useEffect(() => {
-    const handleFindShortcut = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
-      if (e.key.toLowerCase() !== 'f') return
-      if (fileIdFromRouteRef.current) return
-      if (e.defaultPrevented) return
-      e.preventDefault()
-      setFindOpen(true)
-      requestAnimationFrame(() => {
-        findInputRef.current?.focus()
-        findInputRef.current?.select()
-      })
-    }
-    document.addEventListener('keydown', handleFindShortcut)
-    return () => document.removeEventListener('keydown', handleFindShortcut)
-  }, [])
+  const handleFindOpen = useCallback(() => setFindOpen(true), [])
+  useFindShortcut({
+    enabled: !fileIdFromRoute,
+    inputRef: findInputRef,
+    onOpen: handleFindOpen,
+  })
 
   const handleCyclePreviewMode = useCallback(() => {
     setPreviewMode((prev) => {
@@ -1915,10 +1945,10 @@ export function Files() {
         { id: 'owner', label: 'Owner' },
       ],
       active: activeSort,
-      onSort,
-      onClear,
+      onSort: setListSort,
+      onClear: clearListSort,
     }),
-    [activeSort, onSort, onClear]
+    [activeSort, setListSort, clearListSort]
   )
 
   const hasActiveFilters =
@@ -1970,13 +2000,7 @@ export function Files() {
             multiSelectValues={typeFilter}
             onMultiSelectChange={setTypeFilter}
             overlayLabel={typeDisplayLabel}
-            overlayContent={
-              <OverflowText
-                label={typeDisplayLabel}
-                className='block w-full text-[var(--text-primary)]'
-                tooltipEnabled={false}
-              />
-            }
+            overlayContent={typeDisplayLabel}
             showAllOption
             allOptionLabel='All'
             className='w-full'
@@ -1994,13 +2018,7 @@ export function Files() {
             multiSelectValues={sizeFilter}
             onMultiSelectChange={setSizeFilter}
             overlayLabel={sizeDisplayLabel}
-            overlayContent={
-              <OverflowText
-                label={sizeDisplayLabel}
-                className='block w-full text-[var(--text-primary)]'
-                tooltipEnabled={false}
-              />
-            }
+            overlayContent={sizeDisplayLabel}
             showAllOption
             allOptionLabel='All'
             className='w-full'
@@ -2014,11 +2032,8 @@ export function Files() {
               multiSelect
               multiSelectValues={uploadedByFilter}
               onMultiSelectChange={setUploadedByFilter}
-              overlayContent={
-                <span className='truncate text-[var(--text-primary)]'>
-                  {uploadedByDisplayLabel}
-                </span>
-              }
+              overlayLabel={uploadedByDisplayLabel}
+              overlayContent={uploadedByDisplayLabel}
               searchable
               searchPlaceholder='Search members...'
               showAllOption
@@ -2030,11 +2045,7 @@ export function Files() {
         {hasActiveFilters && (
           <Button
             variant='ghost'
-            onClick={() => {
-              setTypeFilter([])
-              setSizeFilter([])
-              setUploadedByFilter([])
-            }}
+            onClick={clearFileFilters}
             className='h-[32px] w-full text-caption hover-hover:bg-[var(--surface-active)]'
           >
             Clear all filters
@@ -2042,7 +2053,18 @@ export function Files() {
         )}
       </div>
     )
-  }, [typeFilter, sizeFilter, uploadedByFilter, memberOptions, membersById, hasActiveFilters])
+  }, [
+    typeFilter,
+    sizeFilter,
+    uploadedByFilter,
+    memberOptions,
+    membersById,
+    hasActiveFilters,
+    setTypeFilter,
+    setSizeFilter,
+    setUploadedByFilter,
+    clearFileFilters,
+  ])
 
   /** Stable identity so the memoized `Resource.Options` can bail; an inline object cannot. */
   const filterConfig = useMemo(() => ({ content: filterContent }), [filterContent])
@@ -2082,7 +2104,15 @@ export function Files() {
       tags.push({ label, onRemove: () => setUploadedByFilter([]) })
     }
     return tags
-  }, [typeFilter, sizeFilter, uploadedByFilter, membersById])
+  }, [
+    typeFilter,
+    sizeFilter,
+    uploadedByFilter,
+    membersById,
+    setTypeFilter,
+    setSizeFilter,
+    setUploadedByFilter,
+  ])
 
   const listState = resourceListState({
     rowCount: rows.length,
@@ -2097,8 +2127,10 @@ export function Files() {
 
   const clearSearchAndFilters = () => {
     setSearchTerm('')
-    void setFileFilters({ type: null, size: null, uploadedBy: null })
+    clearFileFilters()
   }
+
+  if (!isListPreferenceReady) return <FilesLoading />
 
   if (fileIdFromRoute && !selectedFile && isLoading) {
     return (
@@ -2138,6 +2170,7 @@ export function Files() {
               discardRef={discardRef}
               collaborative
               onDeriveTitleFromHeading={handleDeriveTitleFromHeading}
+              enableFind
             />
 
             <ChipConfirmModal

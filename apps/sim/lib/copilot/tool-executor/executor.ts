@@ -91,15 +91,24 @@ export async function executeTool(
       ...(context.resolvedSecretTraceRegistry
         ? { resolvedSecretTraceRegistry: context.resolvedSecretTraceRegistry }
         : {}),
-      ...(context.workflowId
-        ? {
-            internalExecutorDelegation: {
-              subjectUserId: context.userId,
-              workflowId: context.workflowId,
-              ...(context.executionId ? { executionId: context.executionId } : {}),
-            },
-          }
-        : {}),
+      ...(context.abortSignal ? { signal: context.abortSignal } : {}),
+      operationContext: {
+        userId: context.userId,
+        workflowId: context.workflowId,
+        workspaceId: context.workspaceId,
+        executionId: context.executionId,
+        chatId: context.chatId,
+        toolCallId: context.toolCallId,
+        executorDelegationOrigin: {
+          subjectUserId: context.userId,
+          workflowId: context.workflowId,
+          ...(context.executionId ? { executionId: context.executionId } : {}),
+        },
+        copilotToolExecution: context.copilotToolExecution,
+        copilotInteractionMode: context.copilotInteractionMode,
+        billingAttribution: context.billingAttribution,
+        resolvedSecretTraceRegistry: context.resolvedSecretTraceRegistry,
+      },
     }
     try {
       return await (Object.keys(options).length > 0
@@ -167,7 +176,7 @@ function normalizeToolParams(
 /**
  * Records the secrets an integration tool call resolved.
  *
- * `resolveCopilotEnvReferences` in `@/tools` substitutes `{{SECRET}}` into a tool's
+ * `resolveToolEnvReferences` in `@/tools` substitutes `{{SECRET}}` into a tool's
  * `user-only` params — an API key reaching Slack or Stripe is as real a use as one read in
  * sandboxed code, and without this the trail reports "never used" for it. Every tool call
  * gets its own registry (`forkForInputPaths([])` returns one with no active entries), so this

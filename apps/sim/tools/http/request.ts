@@ -98,6 +98,7 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
 
   request: {
     timeout: 600000, // 10 minutes for API block requests
+    allowSameOrigin: true,
     url: (params: RequestParams) => {
       return processUrl(params.url, params.pathParams, params.params)
     },

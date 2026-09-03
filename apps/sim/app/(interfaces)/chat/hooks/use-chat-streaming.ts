@@ -16,7 +16,6 @@ import {
   formatChartsForChat,
 } from '@/lib/chart-generation/echarts-option'
 import {
-  type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
@@ -31,7 +30,11 @@ import {
   isChatThinkingFrame,
   isChatToolFrame,
 } from '@/lib/workflows/streaming/agent-stream-protocol'
-import type { ChatMessage, ChatToolCall } from '@/app/(interfaces)/chat/components/message/message'
+import type {
+  ChatFile,
+  ChatMessage,
+  ChatToolCall,
+} from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
@@ -77,7 +80,7 @@ function extractFilesFromData(
 }
 
 export interface StreamingOptions {
-  outputConfigs?: Array<{ blockId: string; path?: string }>
+  outputConfigs?: Array<{ workflowId?: string; blockId: string; path?: string }>
   /**
    * Shared AbortController for fetch + SSE body reads. When provided (preferred),
    * Stop aborts the in-flight request server-side as well as the reader.

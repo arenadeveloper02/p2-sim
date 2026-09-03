@@ -50,6 +50,8 @@ import {
   TimeInput,
   ToolInput,
   VariablesInput,
+  WorkflowInputMapper,
+  WorkflowOutputSelector,
   WorkflowSelectorInput,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
 import { MODAL_REGISTRY } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/modal-registry'
@@ -69,23 +71,23 @@ import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
 
+/**
+ * Slack channel/user selectors. Custom Bot stores the connected account on
+ * `credential` (or a pasted `botToken`); Sim Bot uses `credential`. The server
+ * adapter reads `authMethod` to pick the user token (`xoxp-`) vs bot token.
+ */
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
-    // v1 gates on authMethod; v2 drops it and uses one credential picker.
-    // Custom Bot (bot_token) still stores the OAuth / custom-bot credential id
-    // in `credential` — only legacy paste / webhook setup writes `botToken`.
-    // Fall back so channel/user selectors fetch for Custom Bot, not only Sim Bot.
-    const authMethod = deps.authMethod as string
+    const authMethod = typeof deps.authMethod === 'string' ? deps.authMethod : undefined
     const oauthCredential =
       authMethod === 'bot_token'
         ? String(deps.botToken || deps.credential || deps.customBotCredential || '')
         : String(deps.credential ?? deps.customBotCredential ?? '')
-    // Custom Bot on a connected Slack account lists with the user token
-    // (`xoxp-`). Pasted `xoxb-` and reusable custom-bot credentials have no
-    // user token — the selector route ignores the flag for those.
-    const useUserToken =
-      authMethod === 'bot_token' && Boolean(oauthCredential) && !oauthCredential.startsWith('xoxb-')
-    return { ...context, oauthCredential, useUserToken }
+    return {
+      ...context,
+      ...(oauthCredential ? { oauthCredential } : {}),
+      ...(authMethod ? { authMethod } : {}),
+    }
   },
 }
 
@@ -1169,6 +1171,18 @@ function SubBlockComponent({
           />
         )
 
+      case 'workflow-input-mapper':
+        return (
+          <WorkflowInputMapper
+            blockId={blockId}
+            subBlock={config}
+            isPreview={isPreview}
+            previewValue={previewValue as string | null | undefined}
+            disabled={isDisabled}
+            contextValues={contextValues}
+          />
+        )
+
       case 'variables-input':
         return (
           <VariablesInput
@@ -1236,6 +1250,18 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as string | null}
+          />
+        )
+
+      case 'workflow-output-selector':
+        return (
+          <WorkflowOutputSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue as string[] | null | undefined}
+            disabled={isDisabled}
+            placeholder={config.placeholder}
           />
         )
 

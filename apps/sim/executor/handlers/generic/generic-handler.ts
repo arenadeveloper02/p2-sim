@@ -11,7 +11,7 @@ import { prepareResolvedSecretProjectedInputs } from '@/executor/utils/resolved-
 import type { ResolvedSecretInputPath } from '@/executor/utils/resolved-secret-trace-registry'
 import type { SerializedBlock } from '@/serializer/types'
 import { executeTool } from '@/tools'
-import type { ToolConfig } from '@/tools/types'
+import { isInternalToolConfig, type ToolConfig } from '@/tools/types'
 import { getTool } from '@/tools/utils'
 
 const logger = createLogger('GenericBlockHandler')
@@ -242,7 +242,8 @@ export class GenericBlockHandler implements BlockHandler {
         }
       }
 
-      const boundary = tool ? selectBlockBoundaryPaths(tool, finalInputs) : undefined
+      const requestTool = tool && !isInternalToolConfig(tool) ? tool : undefined
+      const boundary = requestTool ? selectBlockBoundaryPaths(requestTool, finalInputs) : undefined
       const projectedInputs =
         boundary && boundary.paths.length > 0 && registry?.hasResolvedInputProjections()
           ? registry.projectResolvedInputSelections(inputs)
@@ -253,11 +254,11 @@ export class GenericBlockHandler implements BlockHandler {
         })
       }
 
-      if (projectedInputs?.complete && boundary && tool && registry) {
+      if (projectedInputs?.complete && boundary && requestTool && registry) {
         for (const projection of projectedInputs.values) {
           const preserveFileDescriptorGrammar =
-            isFileBoundaryPath(tool, projection.path) ||
-            boundary.paths.some((path) => isFileBoundaryPath(tool, path))
+            isFileBoundaryPath(requestTool, projection.path) ||
+            boundary.paths.some((path) => isFileBoundaryPath(requestTool, path))
           let projectedFinalInputs = prepareResolvedSecretProjectedInputs(
             projection.value,
             blockConfig?.inputs,
@@ -273,7 +274,7 @@ export class GenericBlockHandler implements BlockHandler {
             }
           } catch (error) {
             const structuredProjection = createStructuredModelProjection(
-              tool,
+              requestTool,
               finalInputs,
               projection.path,
               projection.projectedValue
@@ -295,7 +296,7 @@ export class GenericBlockHandler implements BlockHandler {
               registry.markIncomplete('structural-input-root-unprojected', {
                 detail: {
                   blockType,
-                  tool: tool.id,
+                  tool: requestTool.id,
                   inputPath: projection.path.join('.'),
                   failure: toError(error).name,
                 },

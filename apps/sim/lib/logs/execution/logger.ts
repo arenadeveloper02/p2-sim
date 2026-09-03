@@ -1423,7 +1423,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
         actorUserId,
         billingContext,
         updatedLog.startedAt,
-        this.extractExecutionActor(updatedLog)
+        this.extractExecutionActor(updatedLog),
+        this.extractExecutionLineage(updatedLog),
+        status !== 'pending'
       )
 
       // Best-effort usage-threshold email.
@@ -1477,7 +1479,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
           actorUserId,
           exactBillingContext,
           updatedLog.startedAt,
-          this.extractExecutionActor(updatedLog)
+          this.extractExecutionActor(updatedLog),
+          this.extractExecutionLineage(updatedLog),
+          status !== 'pending'
         )
       } catch (recordError) {
         /* The safety net is the last thing between a completed run and an unbilled
@@ -1585,6 +1589,25 @@ export class ExecutionLogger implements IExecutionLoggerService {
     }
   }
 
+  /**
+   * Reconstructs parent/root lineage from the log so usage_log rows inherit the
+   * same tree as the workflow run (child workflows and copilot-hosted triggers).
+   */
+  private extractExecutionLineage(log: {
+    executionId: string
+    parentExecutionId: string | null
+    rootExecutionId: string | null
+    triggeringChatId: string | null
+    triggeringRunId: string | null
+  }): ExecutionLineage {
+    return {
+      ...(log.parentExecutionId ? { parentExecutionId: log.parentExecutionId } : {}),
+      rootExecutionId: log.rootExecutionId ?? log.executionId,
+      ...(log.triggeringChatId ? { triggeringChatId: log.triggeringChatId } : {}),
+      ...(log.triggeringRunId ? { triggeringRunId: log.triggeringRunId } : {}),
+    }
+  }
+
   /** Extracts the actor from legacy execution data without an attribution snapshot. */
   private extractActorUserId(executionData: unknown): string | null {
     if (!executionData || typeof executionData !== 'object') {
@@ -1689,7 +1712,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
     /** Execution start time stamped onto usage_log.occurred_at. */
     occurredAt?: Date,
     executionActor?: ExecutionActor,
-    executionLineage?: ExecutionLineage
+    executionLineage?: ExecutionLineage,
+    /**
+     * False at a pause boundary. Unbilled (BYOK) lines carry no cost delta to
+     * reconcile across boundaries, so they are written once — at the terminal
+     * boundary, where the summary already holds the run's cumulative tokens.
+     */
+    isTerminalBoundary = true
   ): Promise<number> {
     // The usage ledger (recordUsage below) is written regardless of
     // BILLING_ENABLED so cost is available everywhere (incl. self-hosted).
@@ -1743,7 +1772,18 @@ export class ExecutionLogger implements IExecutionLoggerService {
         quantity?: number
         unit?: string
       }
+      /**
+       * Model usage Sim does not charge for — a call funded by the customer's own
+       * provider key. `notBilledCost()` zeroes the cost but leaves the span's token
+       * counts intact, so these carry real volume with `cost: 0`. Recorded for the
+       * organization usage panel; they are never a charge and never a delta.
+       */
+      type UnbilledLine = {
+        description: string
+        metadata: ModelUsageMetadata
+      }
       const targets: TargetLine[] = []
+      const unbilledLines: UnbilledLine[] = []
       const workflowLedgerModels = costSummary.workflowLedgerModels ?? costSummary.models ?? {}
       const totalModelCost = Object.values(costSummary.models ?? {}).reduce(
         (sum, model) => sum + model.total,
@@ -1764,12 +1804,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       }
 
       for (const [modelName, modelData] of Object.entries(workflowLedgerModels)) {
-        const hasUsage =
-          modelData.total > 0 ||
-          modelData.tokens.total > 0 ||
-          modelData.tokens.input > 0 ||
-          modelData.tokens.output > 0
-        if (hasUsage) {
+        if (modelData.total > 0) {
           targets.push({
             category: 'model',
             description: normalizeUsageModelId(modelName),
@@ -1783,6 +1818,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
                 Object.keys(modelData.embeddedToolCosts).length > 0 && {
                   embeddedToolCosts: modelData.embeddedToolCosts,
                 }),
+            },
+          })
+        } else if (modelData.tokens.input > 0 || modelData.tokens.output > 0) {
+          unbilledLines.push({
+            description: normalizeUsageModelId(modelName),
+            metadata: {
+              inputTokens: modelData.tokens.input,
+              outputTokens: modelData.tokens.output,
             },
           })
         }
@@ -1822,11 +1865,22 @@ export class ExecutionLogger implements IExecutionLoggerService {
         }
       }
 
+      // Unbilled rows are reporting-only, so they must never be the reason a run
+      // demands billing attribution it does not have: a BYOK-only run without
+      // attribution has to bail exactly as it did before unbilled capture existed,
+      // or it starts throwing where it previously succeeded. Terminal-only because
+      // these lines carry no cost delta to reconcile — they are written once, with
+      // the run's cumulative tokens.
+      const canRecordUnbilled =
+        isTerminalBoundary &&
+        unbilledLines.length > 0 &&
+        (!workflowRecord.workspaceId || Boolean(billingContext))
+
       // Bail before requiring billing attribution: a run with no billable target
       // (e.g. a preprocessing-gated run that never executed) writes no ledger row
       // either way, so demanding attribution here would raise a lost-revenue
       // error for a charge that does not exist.
-      if (targets.length === 0) {
+      if (targets.length === 0 && !canRecordUnbilled) {
         logUsageSkip('no_cost_to_record', { workflowId, executionId, trigger })
         return 0
       }
@@ -1919,6 +1973,29 @@ export class ExecutionLogger implements IExecutionLoggerService {
         return entries
       }
 
+      /**
+       * Zero-cost lines for BYOK models not already recorded for this execution.
+       * Unlike the cost path, *presence* — not amount — is the idempotency signal,
+       * because these lines never change value once written. The `eventKey` +
+       * `onConflictDoNothing` is the real guard; this filter only avoids a
+       * pointless insert on a retried terminal boundary.
+       */
+      const buildUnbilledEntries = (recordedKeys: ReadonlySet<string>) =>
+        unbilledLines
+          .filter((line) => !recordedKeys.has(`model_unbilled::${line.description}`))
+          .map((line) => ({
+            category: 'model_unbilled' as const,
+            source: 'workflow' as const,
+            description: line.description,
+            cost: 0,
+            eventKey: stableEventKey({
+              executionId: executionId ?? '',
+              category: 'model_unbilled',
+              description: line.description,
+            }),
+            metadata: line.metadata,
+          }))
+
       if (executionId) {
         await db.transaction(async (tx) => {
           await tx.execute(
@@ -1940,18 +2017,20 @@ export class ExecutionLogger implements IExecutionLoggerService {
             .groupBy(usageLog.category, usageLog.description)
 
           const alreadyBilled = new Map<string, number>()
+          const recordedKeys = new Set<string>()
           for (const row of billedRows) {
-            alreadyBilled.set(
-              `${row.category}::${row.description}`,
-              Number.parseFloat(row.cost ?? '0')
-            )
+            const key = `${row.category}::${row.description}`
+            alreadyBilled.set(key, Number.parseFloat(row.cost ?? '0'))
+            recordedKeys.add(key)
           }
 
           const entries = buildDeltaEntries(alreadyBilled)
-          if (entries.length > 0) {
+          const unbilledEntries = canRecordUnbilled ? buildUnbilledEntries(recordedKeys) : []
+          const allEntries = [...entries, ...unbilledEntries]
+          if (allEntries.length > 0) {
             await recordUsage({
               userId,
-              entries,
+              entries: allEntries,
               workspaceId: workflowRecord.workspaceId ?? undefined,
               workflowId,
               executionId,
@@ -1962,6 +2041,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
               billingEntity: resolvedBillingContext.billingEntity,
               billingPeriod: resolvedBillingContext.billingPeriod,
             })
+            // Billable deltas only: unbilled lines cost 0, and the caller drives
+            // usage-threshold math off this number.
             recordedIncrement = entries.reduce((acc, e) => acc + e.cost, 0)
 
             // Refine cost_total to the EXACT post-reconciliation ledger sum,
@@ -1971,24 +2052,33 @@ export class ExecutionLogger implements IExecutionLoggerService {
             // the prior workflow-source sum plus the deltas just inserted. This
             // supersedes the main-transaction GREATEST baseline except when the
             // display total contains Mothership cost owned by Go update-cost.
-            const ledgerSum =
-              [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
-            const displayedCostTotal =
-              externallyLedgeredModelCost > 0 ? costSummary.totalCost : ledgerSum
-            await tx
-              .update(workflowExecutionLogs)
-              .set({ costTotal: displayedCostTotal.toString() })
-              .where(eq(workflowExecutionLogs.executionId, executionId))
+            //
+            // Gated on billable deltas: a boundary that only wrote zero-cost
+            // unbilled rows has changed no cost, and must not restate cost_total.
+            if (entries.length > 0) {
+              const ledgerSum =
+                [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
+              const displayedCostTotal =
+                externallyLedgeredModelCost > 0 ? costSummary.totalCost : ledgerSum
+              await tx
+                .update(workflowExecutionLogs)
+                .set({ costTotal: displayedCostTotal.toString() })
+                .where(eq(workflowExecutionLogs.executionId, executionId))
+            }
           }
         })
       } else {
         // No execution scope to reconcile/lock against (not expected at a
         // workflow completion): record the full targets directly.
         const entries = buildDeltaEntries(new Map())
-        if (entries.length > 0) {
+        const allEntries = [
+          ...entries,
+          ...(canRecordUnbilled ? buildUnbilledEntries(new Set()) : []),
+        ]
+        if (allEntries.length > 0) {
           await recordUsage({
             userId,
-            entries,
+            entries: allEntries,
             workspaceId: workflowRecord.workspaceId ?? undefined,
             workflowId,
             occurredAt,

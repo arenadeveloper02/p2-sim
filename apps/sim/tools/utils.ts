@@ -12,7 +12,7 @@ import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
 import { environmentKeys } from '@/hooks/queries/environment'
 import { tools } from '@/tools/registry'
-import type { ToolConfig } from '@/tools/types'
+import type { ExecutableToolConfig, InternalToolConfig } from '@/tools/types'
 
 /**
  * Strips version suffix (_v2, _v3, etc.) from a tool ID or name.
@@ -41,9 +41,9 @@ export interface RequestParams {
  * @returns Filtered record containing only the latest version of each tool
  */
 export function getLatestVersionTools(
-  toolsMap: Record<string, ToolConfig>
-): Record<string, ToolConfig> {
-  const latestTools: Record<string, ToolConfig> = {}
+  toolsMap: Record<string, ExecutableToolConfig>
+): Record<string, ExecutableToolConfig> {
+  const latestTools: Record<string, ExecutableToolConfig> = {}
   const baseNameToVersions: Record<string, { toolId: string; version: number }[]> = {}
 
   for (const toolId of Object.keys(toolsMap)) {
@@ -377,7 +377,7 @@ function formatParameterNameForError(paramName: string): string {
  */
 export function validateRequiredParametersAfterMerge(
   toolId: string,
-  tool: ToolConfig | undefined,
+  tool: ExecutableToolConfig | undefined,
   params: Record<string, any>,
   parameterNameMap?: Record<string, string>
 ): void {
@@ -501,8 +501,9 @@ export function createCustomToolRequestBody(customTool: any, isClient = true, wo
 }
 
 // Get a tool by its ID
-export function getTool(toolId: string, _workspaceId?: string): ToolConfig | undefined {
-  const builtInTool = tools[toolId]
+export function getTool(toolId: string, _workspaceId?: string): ExecutableToolConfig | undefined {
+  // Check for built-in tools
+  const builtInTool = tools[resolveToolId(toolId)]
   if (builtInTool) return builtInTool
 
   return undefined
@@ -512,7 +513,7 @@ export function getTool(toolId: string, _workspaceId?: string): ToolConfig | und
 export function createToolConfig(
   customTool: CustomToolDefinition,
   customToolId: string
-): ToolConfig {
+): InternalToolConfig {
   // Create a parameter schema from the custom tool schema
   const params = createParamSchema(customTool)
 
@@ -524,12 +525,8 @@ export function createToolConfig(
     version: '1.0.0',
     params,
 
-    // Request configuration - for custom tools we'll use the execute endpoint
-    request: {
-      url: '/api/function/execute',
-      method: 'POST',
-      headers: () => ({ 'Content-Type': 'application/json' }),
-      body: createCustomToolRequestBody(customTool, true),
+    operation: {
+      input: createCustomToolRequestBody(customTool, true),
     },
 
     // Standard response handling for custom tools

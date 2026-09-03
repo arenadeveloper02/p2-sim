@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Combobox, type ComboboxOptionGroup } from '@sim/emcn'
+import { Chip, Combobox, type ComboboxOptionGroup } from '@sim/emcn'
 import { Key, SquareArrowUpRight } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
@@ -25,6 +25,7 @@ import {
   type ServiceAccountProviderId,
   useServiceAccountConnectTarget,
 } from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
+import { resolveMicrosoftDataverseCredentialPolicy } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/microsoft-dataverse-policy'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
@@ -72,7 +73,6 @@ export function CredentialSelector({
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const [storeValue, setStoreValue] = useSubBlockValue<string | null>(blockId, subBlock.id)
 
-  const requiredScopes = subBlock.requiredScopes || []
   const label = subBlock.placeholder || 'Select credential'
   const serviceId = subBlock.serviceId || ''
   const { canUseZoomAdmin } = useCanUseZoomAdmin(workspaceId)
@@ -83,8 +83,9 @@ export function CredentialSelector({
     return canUseZoomAdmin ? options : []
   }, [subBlock.additionalConnectOptions, canUseZoomAdmin])
   const isAllCredentials = !serviceId
+  const effectiveProviderId = getProviderIdFromServiceId(serviceId) as OAuthProvider
 
-  const { depsSatisfied, dependsOn } = useDependsOnGate(blockId, subBlock, {
+  const { depsSatisfied, dependsOn, dependencyValues } = useDependsOnGate(blockId, subBlock, {
     disabled,
     isPreview,
     previewContextValues,
@@ -96,10 +97,6 @@ export function CredentialSelector({
   const effectiveValue = isPreview && previewValue !== undefined ? previewValue : storeValue
   const selectedId = typeof effectiveValue === 'string' ? effectiveValue : ''
 
-  const effectiveProviderId = useMemo(
-    () => getProviderIdFromServiceId(serviceId) as OAuthProvider,
-    [serviceId]
-  )
   const provider = effectiveProviderId
   const isSharedUnipileWorkspace =
     effectiveProviderId === UNIPILE_LINKEDIN_PROVIDER_ID && isAdminWorkspace(workspaceId)
@@ -250,12 +247,23 @@ export function CredentialSelector({
 
   const displayValue = isEditing ? editingValue : resolvedLabel
 
+  const dataversePolicy = resolveMicrosoftDataverseCredentialPolicy({
+    dependsOn,
+    environmentUrl: dependencyValues.environmentUrl,
+    hasSelectedCredential: Boolean(selectedCredential),
+    providerId: effectiveProviderId,
+    selectedCredentialScopes: selectedCredential?.scopes,
+  })
+  const requiredScopes = dataversePolicy.applies
+    ? dataversePolicy.requiredScopes
+    : (subBlock.requiredScopes ?? [])
+
   const refetch = useCallback(async () => {
     if (isAllCredentials) {
       await refetchAllCredentials()
-      return
+    } else {
+      await refetchCredentials()
     }
-    await refetchCredentials()
     if (isSharedUnipileWorkspace) {
       await refetchUnipileAccountOptions()
     }
@@ -286,11 +294,11 @@ export function CredentialSelector({
   const missingRequiredScopes = hasOAuthSelection
     ? getMissingRequiredScopes(selectedCredential!, scopesForValidation)
     : []
-
   const needsUpdate =
-    hasOAuthSelection &&
     !isServiceAccount &&
-    missingRequiredScopes.length > 0 &&
+    (dataversePolicy.hasInvalidEnvironment ||
+      (hasOAuthSelection &&
+        (missingRequiredScopes.length > 0 || dataversePolicy.requiresSeparateCredential))) &&
     !effectiveDisabled &&
     !isPreview &&
     !credentialsLoading
@@ -737,29 +745,33 @@ export function CredentialSelector({
         <div className='mt-2 flex flex-col gap-1 rounded-sm border bg-[var(--surface-2)] px-2 py-1.5'>
           <div className='flex items-center text-caption'>
             <span className='mr-1.5 inline-block size-[6px] rounded-xs bg-amber-500' />
-            Additional permissions required
+            {dataversePolicy.message}
           </div>
-          <Button
-            variant='active'
-            onClick={() => {
-              writeOAuthReturnContext({
-                origin: 'workflow',
-                workflowId: activeWorkflowId || '',
-                displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
-                providerId: reauthorizeProvider,
-                // Service accounts aren't OAuth connections, so they must not
-                // inflate the count used to detect a newly-connected account.
-                preCount: credentials.filter((c) => c.type !== 'service_account').length,
-                workspaceId,
-                reconnect: true,
-                requestedAt: Date.now(),
-              })
-              setShowOAuthModal(true)
-            }}
-            className='w-full px-2 py-1 text-caption'
-          >
-            Update access
-          </Button>
+          {!dataversePolicy.hasInvalidEnvironment && (
+            <Chip
+              variant='primary'
+              fullWidth
+              onClick={() => {
+                if (dataversePolicy.requiresSeparateCredential) {
+                  setShowConnectModal(true)
+                  return
+                }
+                writeOAuthReturnContext({
+                  origin: 'workflow',
+                  workflowId: activeWorkflowId || '',
+                  displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
+                  providerId: reauthorizeProvider,
+                  preCount: credentials.filter((c) => c.type !== 'service_account').length,
+                  workspaceId,
+                  reconnect: true,
+                  requestedAt: Date.now(),
+                })
+                setShowOAuthModal(true)
+              }}
+            >
+              {dataversePolicy.actionLabel}
+            </Chip>
+          )}
         </div>
       )}
 
@@ -777,9 +789,11 @@ export function CredentialSelector({
           provider={connectModalConfig?.provider ?? provider}
           serviceId={connectServiceId}
           providerId={connectProviderId}
-          requiredScopes={connectRequiredScopes}
+          requiredScopes={dataversePolicy.applies ? requiredScopes : connectRequiredScopes}
           workspaceId={workspaceId}
           workflowId={activeWorkflowId || ''}
+          requireDataverseEnvironment={dataversePolicy.applies}
+          dataverseEnvironmentUrl={dataversePolicy.environmentUrl}
         />
       )}
 
@@ -795,7 +809,7 @@ export function CredentialSelector({
           }}
           provider={reauthorizeProvider}
           toolName={getProviderName(reauthorizeProvider)}
-          requiredScopes={reauthorizeRequiredScopes}
+          requiredScopes={dataversePolicy.applies ? requiredScopes : reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
           serviceId={reauthorizeServiceId}
           // A reauthorize must return to the authorization server that issued
@@ -807,6 +821,8 @@ export function CredentialSelector({
             credentialId: selectedCredential.id,
             displayName: selectedCredential.name,
           }}
+          requireDataverseEnvironment={dataversePolicy.applies}
+          dataverseEnvironmentUrl={dataversePolicy.environmentUrl}
         />
       )}
 

@@ -169,7 +169,11 @@ export async function markExecutionCancelled(
   }
 }
 
-async function readExecutionCancelledStrict(executionId: string): Promise<boolean> {
+/**
+ * Durable cancellation flag: Redis when available, otherwise the process-local
+ * cancellation map. Used by long-running loop continuations as a backstop.
+ */
+export async function isExecutionCancelled(executionId: string): Promise<boolean> {
   const redis = getRedisClient()
   if (!redis) {
     const expiryAt = localCancelledExecutions.get(executionId)
@@ -206,7 +210,7 @@ export async function subscribeToExecutionCancellation(
     readInFlight = (async () => {
       do {
         readAgain = false
-        const cancelled = await readExecutionCancelledStrict(executionId)
+        const cancelled = await isExecutionCancelled(executionId)
         if (cancelled && !disposed) onCancelled()
       } while (readAgain && !disposed)
     })().finally(() => {

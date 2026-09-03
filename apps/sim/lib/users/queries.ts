@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { settings, user } from '@sim/db/schema'
+import { settings, user, userArenaDetails } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { eq, inArray } from 'drizzle-orm'
@@ -157,8 +157,11 @@ export async function getUserProfile(userId: string) {
       email: user.email,
       image: user.image,
       emailVerified: user.emailVerified,
+      userType: userArenaDetails.userType,
+      department: userArenaDetails.department,
     })
     .from(user)
+    .leftJoin(userArenaDetails, eq(userArenaDetails.userIdRef, user.id))
     .where(eq(user.id, userId))
     .limit(1)
 

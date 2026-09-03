@@ -149,8 +149,11 @@ export function buildAdditiveCostLeaves(
  * Lines are folded on `(category, description)` because the ledger records one
  * row per billed event and a run can bill the same model many times; token
  * counts take the maximum rather than the sum, matching how they are reported
- * per call rather than accumulated. Billable cost is preferred when present so
- * the UI matches what the workspace was charged.
+ * per call rather than accumulated.
+ *
+ * Unbilled categories are excluded: this is what the run *cost*, so a BYOK model
+ * — which Sim does not charge for — is not a line here. That usage is reported by
+ * the organization usage panel instead.
  */
 export async function buildCostLedger(
   executionId: string,
@@ -165,7 +168,13 @@ export async function buildCostLedger(
       metadata: usageLog.metadata,
     })
     .from(usageLog)
-    .where(and(eq(usageLog.executionId, executionId), eq(usageLog.source, 'workflow')))
+    .where(
+      and(
+        eq(usageLog.executionId, executionId),
+        eq(usageLog.source, 'workflow'),
+        notInArray(usageLog.category, [...UNBILLED_USAGE_CATEGORIES])
+      )
+    )
 
   if (rows.length === 0) return null
 

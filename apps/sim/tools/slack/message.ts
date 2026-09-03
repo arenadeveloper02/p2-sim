@@ -1,8 +1,8 @@
 import type { SlackMessageParams, SlackMessageResponse } from '@/tools/slack/types'
 import { MESSAGE_OUTPUT_PROPERTIES } from '@/tools/slack/types'
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageResponse> = {
+export const slackMessageTool: InternalToolConfig<SlackMessageParams, SlackMessageResponse> = {
   id: 'slack_message',
   name: 'Slack Message',
   description:
@@ -92,13 +92,8 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     },
   },
 
-  request: {
-    url: '/api/tools/slack/send-message',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: SlackMessageParams) => {
+  operation: {
+    input: (params: SlackMessageParams) => {
       const normalizeId = (value: unknown, keys: string[]): string | undefined => {
         if (typeof value === 'string') {
           const trimmed = value.trim()
@@ -149,7 +144,6 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       })()
 
       const isDM = destinationType === 'dm'
-
       const finalChannel = isDM ? undefined : channel
       const finalUserId = isDM ? dmUserId || userId : undefined
 
@@ -170,9 +164,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
           typeof params.blocks === 'string'
             ? JSON.parse(params.blocks)
             : params.blocks || undefined,
-        // Enable link parsing for proper mention handling
         link_names: true,
-        // Enable unfurling of links
         unfurl_links: true,
         unfurl_media: true,
         files: params.files || null,

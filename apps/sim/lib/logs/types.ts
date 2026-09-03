@@ -1,4 +1,4 @@
-import type { Edge } from 'reactflow'
+import type { Edge } from '@xyflow/react'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import type { PersistedChatAttachment } from '@/lib/chat/history-persistence'

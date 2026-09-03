@@ -195,16 +195,11 @@ const nextConfig: NextConfig = {
     '/api/internal/file-doc/seed': ['./node_modules/jsdom/**/*'],
     '/api/internal/file-doc/merge': ['./node_modules/jsdom/**/*'],
     '/api/internal/file-doc/persist': ['./node_modules/jsdom/**/*'],
-    // sharp@0.35+ needs both `@img/sharp-<platform>` and sibling
-    // `@img/sharp-libvips-<platform>` (the `.so` the addon dlopens). These
-    // globs help non-monorepo / Vercel traces; Docker still has to COPY the
-    // hoisted `/app/node_modules/{sharp,@img}` trees in `docker/app.Dockerfile`
-    // because these paths resolve against `apps/sim` and miss the root hoist.
-    '/*': [
-      './node_modules/sharp/**/*',
-      './node_modules/@img/**/*',
-      './lib/execution/sandbox/bundles/*.cjs',
-    ],
+    /**
+     * No `sharp`/`@img` entries: these globs resolve against apps/sim while both hoist to the
+     * monorepo root, so they matched nothing. docker/app.Dockerfile copies them instead.
+     */
+    '/*': ['./lib/execution/sandbox/bundles/*.cjs', './node_modules/ws/**/*'],
   },
   experimental: {
     /**
@@ -287,7 +282,7 @@ const nextConfig: NextConfig = {
      */
     optimizePackageImports: [
       'framer-motion',
-      'reactflow',
+      '@xyflow/react',
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',
       '@radix-ui/react-popover',

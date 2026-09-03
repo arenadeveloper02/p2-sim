@@ -2,6 +2,10 @@
 
 import { forwardRef } from 'react'
 import { Chip, ChipLink, cn } from '@sim/emcn'
+import {
+  openKnowledgeBasePageEvent,
+  openLogsPageEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { SIDEBAR_RAIL_CHIP_CLASS } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 
 export interface SidebarNavItemData {
@@ -46,15 +50,19 @@ export const SidebarNavChip = forwardRef<HTMLElement, SidebarNavChipProps>(funct
         active={active}
         fullWidth
         className={chipClassName}
-        onClick={
-          item.onClick
-            ? (e) => {
-                if (e.ctrlKey || e.metaKey || e.shiftKey) return
-                e.preventDefault()
-                item.onClick?.()
-              }
-            : undefined
-        }
+        onClick={(e) => {
+          if (item.id === 'logs') {
+            void openLogsPageEvent({})
+          }
+          if (item.id === 'knowledge-base') {
+            void openKnowledgeBasePageEvent({})
+          }
+          if (item.onClick) {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return
+            e.preventDefault()
+            item.onClick()
+          }
+        }}
         {...props}
         /* Radix's menu trigger is a button primitive; its `type` is meaningless on the
              anchor this renders through, so it never reaches the DOM. */

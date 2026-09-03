@@ -6,6 +6,7 @@ import { devtools, type PersistStorage, persist } from 'zustand/middleware'
 import { formatCsvValue, toCsvRow } from '@/lib/core/utils/csv'
 import { saveBlob } from '@/lib/uploads/client/download'
 import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
+import { registerUserDataReset } from '@/stores/user-data-reset-registry'
 import type { ChatMessage, ChatState } from './types'
 import { MAX_CHAT_HEIGHT, MAX_CHAT_WIDTH, MIN_CHAT_HEIGHT, MIN_CHAT_WIDTH } from './utils'
 
@@ -21,6 +22,27 @@ const MAX_MESSAGES = 500
  */
 const DEFAULT_WIDTH = 305
 const DEFAULT_HEIGHT = 286
+
+function createInitialState() {
+  return {
+    isChatOpen: false,
+    chatPosition: null,
+    chatWidth: DEFAULT_WIDTH,
+    chatHeight: DEFAULT_HEIGHT,
+    messages: [],
+    selectedWorkflowOutputs: {},
+    conversationIds: {},
+  } satisfies Pick<
+    ChatState,
+    | 'isChatOpen'
+    | 'chatPosition'
+    | 'chatWidth'
+    | 'chatHeight'
+    | 'messages'
+    | 'selectedWorkflowOutputs'
+    | 'conversationIds'
+  >
+}
 
 /**
  * Safe storage adapter that handles QuotaExceededError gracefully
@@ -109,10 +131,7 @@ export const useChatStore = create<ChatState>()(
   devtools(
     persist(
       (set, get) => ({
-        isChatOpen: false,
-        chatPosition: null,
-        chatWidth: DEFAULT_WIDTH,
-        chatHeight: DEFAULT_HEIGHT,
+        ...createInitialState(),
 
         setIsChatOpen: (open) => {
           set({ isChatOpen: open })
@@ -132,10 +151,6 @@ export const useChatStore = create<ChatState>()(
         resetChatPosition: () => {
           set({ chatPosition: null })
         },
-
-        messages: [],
-        selectedWorkflowOutputs: {},
-        conversationIds: {},
 
         addMessage: (message) => {
           set((state) => {
@@ -303,6 +318,8 @@ export const useChatStore = create<ChatState>()(
             return { messages: newMessages }
           })
         },
+
+        reset: () => set(createInitialState()),
       }),
       {
         name: 'chat-store',
@@ -348,3 +365,5 @@ export const useChatStore = create<ChatState>()(
     )
   )
 )
+
+registerUserDataReset('chat', () => useChatStore.getState().reset())

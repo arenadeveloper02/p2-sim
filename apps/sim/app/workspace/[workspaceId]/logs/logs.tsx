@@ -53,7 +53,12 @@ import {
 } from '@/lib/logs/search-suggestions'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import { DELETED_WORKFLOW_LABEL } from '@/lib/workflows/workflow-labels'
-import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import {
+  logsFilterDropDown,
+  logsPageSearchEvent,
+  logsPageTabSwitchEvent,
+  logsRefreshEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   FilterTag,
   ResourceAction,
@@ -726,6 +731,7 @@ export default function Logs() {
   }, [])
 
   const handleRefresh = useCallback(() => {
+    void logsRefreshEvent({})
     triggerVisualRefresh()
     activeViewRefetchRef.current()
     if (selectedLogIdRef.current && isSidebarOpenRef.current) {
@@ -1240,12 +1246,18 @@ export default function Logs() {
       },
       {
         text: 'Logs',
-        onSelect: () => setViewMode('logs'),
+        onSelect: () => {
+          void logsPageTabSwitchEvent({ Tabs: 'Logs' })
+          setViewMode('logs')
+        },
         active: !isDashboardView,
       },
       {
         text: 'Dashboard',
-        onSelect: () => setViewMode('dashboard'),
+        onSelect: () => {
+          void logsPageTabSwitchEvent({ Tabs: 'Dashboard' })
+          setViewMode('dashboard')
+        },
         active: isDashboardView,
       },
     ],
@@ -1280,8 +1292,8 @@ export default function Logs() {
           filterTags={filterTags}
         />
         {isDashboardView ? (
-          <div className='relative flex min-h-0 flex-1 flex-col overflow-auto'>
-            <div className='flex min-h-0 flex-1 flex-col px-6'>
+          <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden'>
+            <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-6'>
               <Dashboard
                 stats={dashboardStatsQuery.data}
                 isLoading={dashboardStatsQuery.isLoading}
@@ -1360,6 +1372,10 @@ interface LogsFilterPanelProps {
 function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
+
+  useEffect(() => {
+    void logsFilterDropDown({})
+  }, [])
 
   const {
     level,
@@ -1525,11 +1541,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
                   style={{ backgroundColor: selectedStatusColor, width: 8, height: 8 }}
                 />
               )}
-              <OverflowText
-                label={statusDisplayLabel}
-                className='block flex-1'
-                tooltipEnabled={false}
-              />
+              <span className='min-w-0 flex-1'>{statusDisplayLabel}</span>
             </span>
           }
           showAllOption
@@ -1552,11 +1564,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
               {selectedWorkflow && (
                 <Workflow className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
               )}
-              <OverflowText
-                label={workflowDisplayLabel}
-                className='block flex-1'
-                tooltipEnabled={false}
-              />
+              <span className='min-w-0 flex-1'>{workflowDisplayLabel}</span>
             </span>
           }
           searchable
@@ -1576,13 +1584,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           onMultiSelectChange={setFolderIds}
           placeholder='All folders'
           overlayLabel={folderDisplayLabel}
-          overlayContent={
-            <OverflowText
-              label={folderDisplayLabel}
-              className='block w-full text-[var(--text-primary)]'
-              tooltipEnabled={false}
-            />
-          }
+          overlayContent={folderDisplayLabel}
           searchable
           searchPlaceholder='Search folders...'
           showAllOption
@@ -1600,13 +1602,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           onMultiSelectChange={setTriggers}
           placeholder='All triggers'
           overlayLabel={triggerDisplayLabel}
-          overlayContent={
-            <OverflowText
-              label={triggerDisplayLabel}
-              className='block w-full text-[var(--text-primary)]'
-              tooltipEnabled={false}
-            />
-          }
+          overlayContent={triggerDisplayLabel}
           searchable
           searchPlaceholder='Search triggers...'
           showAllOption
@@ -1624,13 +1620,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
             onChange={handleTimeRangeChange}
             placeholder='All time'
             overlayLabel={timeDisplayLabel}
-            overlayContent={
-              <OverflowText
-                label={timeDisplayLabel}
-                className='block w-full text-[var(--text-primary)]'
-                tooltipEnabled={false}
-              />
-            }
+            overlayContent={timeDisplayLabel}
             className='w-full'
             maxHeight={320}
           />

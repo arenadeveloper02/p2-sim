@@ -11,6 +11,7 @@ import { useQueryStates } from 'nuqs'
 import { MAX_KNOWLEDGE_BATCH_ITEMS } from '@/lib/knowledge/constants'
 import type { KnowledgeBaseData } from '@/lib/knowledge/types'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
+import { clickKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   BreadcrumbItem,
   FilterTag,
@@ -73,7 +74,9 @@ import {
   KnowledgeBaseContextMenu,
   KnowledgeListContextMenu,
 } from '@/app/workspace/[workspaceId]/knowledge/components'
+import KnowledgeLoading from '@/app/workspace/[workspaceId]/knowledge/loading'
 import {
+  knowledgeListPreferenceConfig,
   knowledgeParsers,
   knowledgeSortParams,
   knowledgeUrlKeys,
@@ -96,9 +99,11 @@ import { useContextMenu } from '@/hooks/use-context-menu'
 import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 import { useInlineRename } from '@/hooks/use-inline-rename'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { useResourceListPreferences } from '@/hooks/use-resource-list-preferences'
 import { useSearchFilterValue } from '@/hooks/use-search-filter-value'
 import { useUrlSort } from '@/hooks/use-url-sort'
 import type { WorkflowFolder } from '@/stores/folders/types'
+import type { ResourceListPreference } from '@/stores/resource-list-preferences'
 
 const logger = createLogger('Knowledge')
 
@@ -281,21 +286,57 @@ export function Knowledge() {
     sort: sortColumn,
     dir: sortDirection,
     activeSort,
-    onSort: onSortColumn,
-    onClear: onClearSort,
+    onSort: applyUrlSort,
   } = useUrlSort(knowledgeSortParams, knowledgeUrlKeys)
 
+  const currentListPreference = useMemo<ResourceListPreference>(
+    () => ({
+      sort: { column: sortColumn, direction: sortDirection },
+      filters: {
+        connector: connectorFilter,
+        content: contentFilter,
+        owner: ownerFilter,
+      },
+    }),
+    [sortColumn, sortDirection, connectorFilter, contentFilter, ownerFilter]
+  )
+
+  const applyListPreference = useCallback(
+    (preference: ResourceListPreference) => {
+      void setKnowledgeFilters({
+        connector: [...preference.filters.connector],
+        content: [...preference.filters.content],
+        owner: [...preference.filters.owner],
+      })
+      applyUrlSort(preference.sort.column, preference.sort.direction)
+    },
+    [applyUrlSort, setKnowledgeFilters]
+  )
+
+  const {
+    isReady: isListPreferenceReady,
+    setFilter: setListFilter,
+    clearFilters: clearKnowledgeFilters,
+    setSort: setListSort,
+    clearSort: clearListSort,
+  } = useResourceListPreferences({
+    workspaceId,
+    config: knowledgeListPreferenceConfig,
+    preference: currentListPreference,
+    applyPreference: applyListPreference,
+  })
+
   const setConnectorFilter = useCallback(
-    (next: string[]) => setKnowledgeFilters({ connector: next }),
-    [setKnowledgeFilters]
+    (next: string[]) => setListFilter('connector', next),
+    [setListFilter]
   )
   const setContentFilter = useCallback(
-    (next: string[]) => setKnowledgeFilters({ content: next }),
-    [setKnowledgeFilters]
+    (next: string[]) => setListFilter('content', next),
+    [setListFilter]
   )
   const setOwnerFilter = useCallback(
-    (next: string[]) => setKnowledgeFilters({ owner: next }),
-    [setKnowledgeFilters]
+    (next: string[]) => setListFilter('owner', next),
+    [setListFilter]
   )
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -754,6 +795,7 @@ export function Knowledge() {
 
       const kb = knowledgeBasesRef.current.find((k) => k.id === parsed.id)
       if (!kb) return
+      void clickKnowledgeBaseEvent({ 'Knowledge Base Name': kb.name })
       const urlParams = new URLSearchParams({ kbName: kb.name })
       router.push(`/workspace/${workspaceId}/knowledge/${parsed.id}?${urlParams.toString()}`)
     },
@@ -1235,10 +1277,10 @@ export function Knowledge() {
         { id: 'updated', label: 'Last Updated' },
       ],
       active: activeSort,
-      onSort: onSortColumn,
-      onClear: onClearSort,
+      onSort: setListSort,
+      onClear: clearListSort,
     }),
-    [activeSort, onSortColumn, onClearSort]
+    [activeSort, setListSort, clearListSort]
   )
 
   const memberOptions: ChipDropdownOption[] = useMemo(
@@ -1325,7 +1367,15 @@ export function Knowledge() {
         )}
       </div>
     ),
-    [connectorFilter, contentFilter, ownerFilter, memberOptions]
+    [
+      connectorFilter,
+      contentFilter,
+      ownerFilter,
+      memberOptions,
+      setConnectorFilter,
+      setContentFilter,
+      setOwnerFilter,
+    ]
   )
 
   /** Stable identity so the memoized `Resource.Options` can bail; an inline object cannot. */
@@ -1382,7 +1432,15 @@ export function Knowledge() {
       tags.push({ label, onRemove: () => setOwnerFilter([]) })
     }
     return tags
-  }, [connectorFilter, contentFilter, ownerFilter, members])
+  }, [
+    connectorFilter,
+    contentFilter,
+    ownerFilter,
+    members,
+    setConnectorFilter,
+    setContentFilter,
+    setOwnerFilter,
+  ])
 
   const listState = resourceListState({
     rowCount: rows.length,
@@ -1397,8 +1455,10 @@ export function Knowledge() {
 
   const clearSearchAndFilters = () => {
     setSearchQuery('')
-    void setKnowledgeFilters({ connector: null, content: null, owner: null })
+    clearKnowledgeFilters()
   }
+
+  if (!isListPreferenceReady) return <KnowledgeLoading />
 
   return (
     <>

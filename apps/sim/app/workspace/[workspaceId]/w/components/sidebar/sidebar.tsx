@@ -99,6 +99,8 @@ import {
   useWorkflowOperations,
   useWorkspaceLogoUpload,
   useWorkspaceManagement,
+  useWorkspaceWorkflowsRoom,
+  WORKSPACE_LOGO_ACCEPT_ATTRIBUTE,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import {
   compareByOrder,
@@ -593,6 +595,7 @@ export const Sidebar = memo(function Sidebar({
   })
 
   useFolders(workspaceId)
+  useWorkspaceWorkflowsRoom(workspaceId)
   const { data: folderMap = EMPTY_FOLDER_MAP } = useFolderMap(workspaceId)
   const updateWorkflowMutation = useUpdateWorkflow()
 
@@ -1379,7 +1382,7 @@ export const Sidebar = memo(function Sidebar({
       <input
         ref={logoFileInputRef}
         type='file'
-        accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
+        accept={WORKSPACE_LOGO_ACCEPT_ATTRIBUTE}
         className='hidden'
         onChange={handleLogoFileChange}
       />

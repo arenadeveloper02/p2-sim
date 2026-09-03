@@ -10,6 +10,8 @@ export const userProfileSchema = z.object({
   email: z.string(),
   image: z.string().nullable(),
   emailVerified: z.boolean().optional(),
+  userType: z.string().nullable().optional(),
+  department: z.string().nullable().optional(),
 })
 
 export type UserProfileApiUser = z.output<typeof userProfileSchema>

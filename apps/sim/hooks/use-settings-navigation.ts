@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import type { WorkspaceHostContext } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
+import { openSettingsPageEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useOptionalWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 
@@ -121,6 +122,9 @@ export function useSettingsNavigation(): UseSettingsNavigationReturn {
       if (currentPath.startsWith(settingsPrefix)) {
         router.replace(getSettingsHref(options), { scroll: false })
       } else {
+        void openSettingsPageEvent({
+          Section: options?.section || 'general',
+        })
         try {
           sessionStorage.setItem(SETTINGS_RETURN_URL_KEY, currentPath)
         } catch {}

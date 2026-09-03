@@ -152,7 +152,7 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
       type: 'short-input',
       password: true,
       placeholder: 'Enter your BrowserUse API key',
-      required: true,
+      required: false,
       hideWhenHosted: true,
       hideWhenEnvSet: 'NEXT_PUBLIC_BROWSER_USE_CONFIGURED',
     },

@@ -4,7 +4,17 @@
  * Response fixtures are copied verbatim from the Semrush API reference examples
  * at https://developer.semrush.com/api/v3/analytics/.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+/**
+ * Only this service's configs are needed; the full registry is ~6,000 modules.
+ * Registration is asserted through the generated `@/tools/tool-ids`.
+ */
+vi.mock('@/tools/registry', async () => {
+  const { partialToolRegistry } = await import('@sim/testing/mocks/tool-registry.mock')
+  return { tools: partialToolRegistry(await import('@/tools/semrush')) }
+})
+
 import { SemrushBlock } from '@/blocks/blocks/semrush'
 import type { SubBlockConfig } from '@/blocks/types'
 import * as semrushExports from '@/tools/semrush'
@@ -18,6 +28,7 @@ import { semrushOrganicResultsTool } from '@/tools/semrush/organic_results'
 import { semrushReferringDomainsTool } from '@/tools/semrush/referring_domains'
 import { getColumnDef } from '@/tools/semrush/utils'
 import { semrushWinnersAndLosersTool } from '@/tools/semrush/winners_and_losers'
+import { hasToolId } from '@/tools/tool-ids'
 import type { ToolConfig } from '@/tools/types'
 
 const semrushTools = Object.fromEntries(
@@ -408,9 +419,10 @@ describe('semrush registry surface', () => {
   const registered = Object.entries(semrushTools)
 
   it('registers every tool under its own id', () => {
-    expect(registered.length).toBeGreaterThanOrEqual(46)
-    for (const [id, tool] of registered) {
-      expect(tool.id).toBe(id)
+    expect(semrushTools).toHaveLength(44)
+    for (const [id, tool] of semrushTools) {
+      expect((tool as ToolConfig).id).toBe(id)
+      expect(hasToolId(id), `${id} registry`).toBe(true)
     }
   })
 
