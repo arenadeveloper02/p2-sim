@@ -218,30 +218,30 @@ const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 export function getArenaHubAgentsUrl(hostname?: string): string | null {
   const base = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
   if (base) {
-    return `${base.replace(/\/$/, '')}/hub/agents`
+    return `${base.replace(/\/$/, '')}/agents`
   }
 
   const host = hostname ?? (typeof window !== 'undefined' ? window.location.hostname : undefined)
   if (!host) return null
 
   if (isLoopbackHostname(host) || host.includes('localhost')) {
-    return 'http://localhost:3001/hub/agents'
+    return 'http://localhost:3001/agents'
   }
   if (host === 'dev-agent.thearena.ai' || host.includes('dev-agent')) {
-    return 'https://dev.thearena.ai/hub/agents'
+    return 'https://dev.thearena.ai/agents'
   }
   if (
     host === 'test-agent.thearena.ai' ||
     host === 'test-v1-agent.thearena.ai' ||
     host.includes('test-agent')
   ) {
-    return 'https://test.thearena.ai/hub/agents'
+    return 'https://test.thearena.ai/agents'
   }
   if (host === 'sandbox-agent.thearena.ai' || host.includes('sandbox-agent')) {
-    return 'https://sandbox.thearena.ai/hub/agents'
+    return 'https://sandbox.thearena.ai/agents'
   }
   if (host === 'agent.thearena.ai') {
-    return 'https://app.thearena.ai/hub/agents'
+    return 'https://app.thearena.ai/agents'
   }
 
   return null
