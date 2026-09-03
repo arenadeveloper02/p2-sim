@@ -249,6 +249,58 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
 }
 
 /**
+ * Hides chart JSON that is still being streamed. While an agent writes its
+ * trailing ```json/```echarts fence (or a bare option object), the fence is
+ * unterminated / the braces unbalanced, so `stripEChartsJsonFromContent`
+ * cannot remove it and raw JSON would flash in chat until the stream ends.
+ *
+ * Only for in-flight (isStreaming) rendering: it strips an unterminated
+ * trailing fence that looks like JSON, or a trailing bare `{`/`[` segment
+ * whose brackets never balance before the end of the string. Returns the
+ * input unchanged when there is nothing to hide, so finalized messages are
+ * never altered.
+ */
+export function stripIncompleteTrailingChartJson(content: string): string {
+  const fenceCount = (content.match(/```/g) ?? []).length
+  if (fenceCount % 2 === 1) {
+    // Odd fence count: the last ``` opens a block that has not closed yet.
+    const lastOpen = content.lastIndexOf('```')
+    const after = content.slice(lastOpen + 3)
+    const langMatch = after.match(/^([a-zA-Z0-9]*)[ \t]*\r?\n?/)
+    const lang = (langMatch?.[1] ?? '').toLowerCase()
+    const body = after.slice(langMatch?.[0]?.length ?? 0).trimStart()
+    const looksLikeJson =
+      lang === 'json' ||
+      lang === 'echarts' ||
+      // Language tag still streaming ("j", "jso") or bare fence whose body
+      // starts as JSON (or has no body yet).
+      ('json'.startsWith(lang) && (body === '' || body.startsWith('{') || body.startsWith('[')))
+    if (looksLikeJson) {
+      return content.slice(0, lastOpen).replace(/\s+$/, '')
+    }
+    return content
+  }
+
+  // Balanced fences: look for a trailing bare JSON segment that never closes.
+  // Walk line-start `{`/`[` candidates skipping over balanced segments (those
+  // are complete and handled by stripEChartsJsonFromContent).
+  let scanFrom = 0
+  for (const match of content.matchAll(BARE_JSON_LINE_START_REGEX)) {
+    const lineStart = match.index ?? 0
+    if (lineStart < scanFrom) continue
+    const jsonStart = lineStart + match[0].length - 1
+    const end = findBalancedJsonEnd(content, jsonStart)
+    if (end === null) {
+      // Unbalanced through end-of-string: chart JSON still streaming.
+      return content.slice(0, lineStart).replace(/\s+$/, '')
+    }
+    scanFrom = end
+  }
+
+  return content
+}
+
+/**
  * Removes fenced or inline chart/dashboard JSON from mixed assistant text so prose
  * and charts can render separately in deployed chat.
  */
@@ -495,8 +547,7 @@ function applyCartesianLabelLayout(option: EChartsOptionLike): void {
     (max, axis) => (isCategoryAxis(axis) ? Math.max(max, categoryLength(axis)) : max),
     0
   )
-  const dualValueY =
-    yAxes.filter((axis) => axis.type === 'value' || axis.type == null).length >= 2
+  const dualValueY = yAxes.filter((axis) => axis.type === 'value' || axis.type == null).length >= 2
   const hasTitle = isRecord(option.title) && Boolean(option.title.text)
   const hasLegend = option.legend != null
 
@@ -506,7 +557,10 @@ function applyCartesianLabelLayout(option: EChartsOptionLike): void {
     if (grid.containLabel !== false) {
       grid.containLabel = true
     }
-    grid.bottom = atLeastPadding(grid.bottom, hasRotatedCategoryX ? 88 : categoryXCount > 0 ? 56 : 48)
+    grid.bottom = atLeastPadding(
+      grid.bottom,
+      hasRotatedCategoryX ? 88 : categoryXCount > 0 ? 56 : 48
+    )
     if (dualValueY) {
       grid.right = atLeastPadding(grid.right, 64)
     }

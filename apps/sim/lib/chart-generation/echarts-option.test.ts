@@ -13,6 +13,7 @@ import {
   resolveEChartsOptionsFromContent,
   sanitizeEChartsOption,
   stripEChartsJsonFromContent,
+  stripIncompleteTrailingChartJson,
 } from '@/lib/chart-generation/echarts-option'
 
 const validOption = {
@@ -315,5 +316,47 @@ describe('sanitizeEChartsOption', () => {
     const result = sanitizeEChartsOption(pie)
     expect(result.grid).toBeUndefined()
     expect(result.series).toEqual(pie.series)
+  })
+})
+
+describe('stripIncompleteTrailingChartJson', () => {
+  it('hides an unterminated trailing ```json fence while it streams', () => {
+    const streaming = 'CTR improved 12% this week.\n\n```json\n{"title": {"text": "CTR"}, "ser'
+    expect(stripIncompleteTrailingChartJson(streaming)).toBe('CTR improved 12% this week.')
+  })
+
+  it('hides an unterminated ```echarts fence and a partially streamed language tag', () => {
+    expect(stripIncompleteTrailingChartJson('Answer.\n\n```echarts\n{"series"')).toBe('Answer.')
+    expect(stripIncompleteTrailingChartJson('Answer.\n\n```jso')).toBe('Answer.')
+    expect(stripIncompleteTrailingChartJson('Answer.\n\n```')).toBe('Answer.')
+  })
+
+  it('keeps an unterminated fence that is clearly not JSON', () => {
+    const code = 'Here is the query:\n\n```sql\nSELECT * FROM campaigns'
+    expect(stripIncompleteTrailingChartJson(code)).toBe(code)
+  })
+
+  it('hides a trailing bare JSON object whose braces have not balanced yet', () => {
+    const streaming = 'Spend by campaign:\n\n{"title": {"text": "Spend"}, "series": [{"type": "bar"'
+    expect(stripIncompleteTrailingChartJson(streaming)).toBe('Spend by campaign:')
+  })
+
+  it('returns finalized content unchanged (complete fence and balanced bare JSON)', () => {
+    const fenced = `Answer.\n\n\`\`\`json\n${JSON.stringify(validOption)}\n\`\`\``
+    expect(stripIncompleteTrailingChartJson(fenced)).toBe(fenced)
+
+    const bare = `Answer.\n\n${JSON.stringify(validOption)}`
+    expect(stripIncompleteTrailingChartJson(bare)).toBe(bare)
+  })
+
+  it('returns plain prose and markdown tables unchanged', () => {
+    const prose = 'Impressions rose.\n\n| Campaign | CTR |\n| --- | --- |\n| A | 2.1% |'
+    expect(stripIncompleteTrailingChartJson(prose)).toBe(prose)
+  })
+
+  it('keeps completed charts visible while a second chart streams in', () => {
+    const first = JSON.stringify(validOption)
+    const streaming = `Answer.\n\n${first}\n\n{"title": {"text": "Second"}, "ser`
+    expect(stripIncompleteTrailingChartJson(streaming)).toBe(`Answer.\n\n${first}`)
   })
 })

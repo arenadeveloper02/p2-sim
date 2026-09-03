@@ -4,6 +4,7 @@ import { Check, Copy } from 'lucide-react'
 import {
   resolveEChartsOptionsFromContent,
   stripEChartsJsonFromContent,
+  stripIncompleteTrailingChartJson,
 } from '@/lib/chart-generation/echarts-option'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
@@ -216,6 +217,16 @@ export function ChatMessage({
     [message.content]
   )
 
+  // While streaming, hide a trailing chart JSON fence/object that is still
+  // arriving (unterminated / unbalanced) so raw JSON never flashes before the
+  // chart renders; finalized content is returned unchanged.
+  const displayContent = useMemo(() => {
+    if (message.isStreaming && typeof message.content === 'string') {
+      return stripIncompleteTrailingChartJson(message.content)
+    }
+    return message.content
+  }, [message.content, message.isStreaming])
+
   const getGeneratedImageSelectionProps = useCallback(
     (imageUrl?: string) => {
       if (!imageUrl || !onToggleGeneratedImage) {
@@ -287,7 +298,7 @@ export function ChatMessage({
       return null
     }
 
-    if (content === message.content && messageChartOptions) {
+    if (content === displayContent && messageChartOptions) {
       const prose = typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
       return (
         <>
@@ -461,7 +472,7 @@ export function ChatMessage({
     <div className='w-full max-w-full overflow-hidden pl-[2px] opacity-100 transition-opacity duration-200'>
       <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
         {/* <WordWrap text={formattedContent} /> */}
-        {renderContent(message?.content)}
+        {renderContent(displayContent)}
         {message?.isStreaming && <StreamingIndicator className='mt-1 text-[#E8E8E8]' />}
       </div>
       {message.files && message.files.length > 0 && (
