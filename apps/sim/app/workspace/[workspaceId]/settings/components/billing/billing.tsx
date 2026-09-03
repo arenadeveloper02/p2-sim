@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import {
   ArrowRight,
   Badge,
@@ -18,6 +19,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
 import { useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
+import { isArenaBilling } from '@/lib/billing/arena/env'
 import { isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
@@ -44,6 +46,7 @@ import {
 } from '@/lib/billing/subscriptions/utils'
 import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { CancelPlanModal } from '@/app/workspace/[workspaceId]/settings/components/billing/components/cancel-plan-modal/cancel-plan-modal'
 import { CreditUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section'
 import { PrepaidTopUpSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/prepaid-top-up-section/prepaid-top-up-section'
 import { UsageLimitField } from '@/app/workspace/[workspaceId]/settings/components/billing/components/usage-limit-field/usage-limit-field'
@@ -142,6 +145,8 @@ export function Billing({
   const { data: session } = useSession()
   const betterAuthSubscription = useSubscription()
   const openBillingPortal = useOpenBillingPortal()
+  const [cancelModalOpen, setCancelModalOpen] = useState(false)
+  const [isCancelPending, setIsCancelPending] = useState(false)
 
   const organizationBilling = organizationBillingData?.data
   const upgradeWorkspaceId = isOrganizationScope
@@ -357,6 +362,7 @@ export function Billing({
       return
     }
     if (!betterAuthSubscription.cancel) return
+    setIsCancelPending(true)
     try {
       if (subscription.isOrgScoped && !billingOrganizationId) {
         throw new Error(
@@ -366,11 +372,14 @@ export function Billing({
       const referenceId = subscription.isOrgScoped ? billingOrganizationId : session?.user?.id
       const returnUrl = getBaseUrl() + window.location.pathname
       await betterAuthSubscription.cancel({ returnUrl, referenceId: referenceId || '' })
+      setCancelModalOpen(false)
     } catch (error) {
       logger.error('Failed to cancel subscription', { error })
       toast.error("Couldn't cancel subscription", {
         description: getErrorMessage(error, 'Please try again in a moment.'),
       })
+    } finally {
+      setIsCancelPending(false)
     }
   }
 
@@ -614,7 +623,7 @@ export function Billing({
                   <Chip
                     variant='destructive'
                     disabled={!canManageBilling}
-                    onClick={handleCancelSubscription}
+                    onClick={() => setCancelModalOpen(true)}
                   >
                     Cancel
                   </Chip>
@@ -685,6 +694,17 @@ export function Billing({
       )}
 
       {!isStarterPlan(subscription.plan) && <CreditUsageSection href={creditUsageHref} />}
+
+      <CancelPlanModal
+        open={cancelModalOpen}
+        onOpenChange={setCancelModalOpen}
+        planName={planName}
+        isArena={isArenaBilling()}
+        onConfirmCancel={() => {
+          void handleCancelSubscription()
+        }}
+        isConfirming={isCancelPending}
+      />
     </SettingsPanel>
   )
 }

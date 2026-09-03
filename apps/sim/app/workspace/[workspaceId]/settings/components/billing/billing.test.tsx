@@ -42,6 +42,10 @@ vi.mock('@sim/emcn', () => ({
   ChipLink: ({ children, href }: { children: ReactNode; href: string }) => (
     <a href={href}>{children}</a>
   ),
+  ChipModal: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ChipModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ChipModalFooter: () => null,
+  ChipModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Credit: () => <span />,
   Label: ({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
@@ -71,6 +75,14 @@ vi.mock('@sim/emcn', () => ({
   chipVariants: () => '',
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' '),
   toast: { error: vi.fn() },
+}))
+
+vi.mock('@sim/emcn/icons', () => ({
+  CircleX: () => <span />,
+}))
+
+vi.mock('@/lib/billing/arena/env', () => ({
+  isArenaBilling: () => true,
 }))
 
 vi.mock('@tanstack/react-query', () => ({
