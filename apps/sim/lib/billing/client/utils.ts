@@ -68,8 +68,9 @@ export function getSubscriptionAccessState(
     hasPaidEntitlement: hasUsableSubscriptionAccess(status.status, billingBlocked),
   }
   const hasUsableTeamAccess = hasArenaTeamProductAccess(arenaAccessInput)
-  const hasUsableEnterpriseAccess = hasUsablePaidAccess && status.isEnterprise
   const hasUsableMaxAccess = hasArenaMaxProductAccess(arenaAccessInput)
+  const hasUsableEnterpriseAccess =
+    hasUsablePaidAccess && (status.isEnterprise || (status.isTeam && hasUsableMaxAccess))
 
   return {
     ...status,

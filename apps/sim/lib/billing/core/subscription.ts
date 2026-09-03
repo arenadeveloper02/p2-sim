@@ -493,7 +493,16 @@ export async function isEnterpriseOrgAdminOrOwner(userId: string): Promise<boole
 
     const orgSub = await getOrganizationSubscriptionUsable(memberRecord.organizationId)
 
-    const isEnterprise = orgSub && checkEnterprisePlan(orgSub)
+    const isEnterprise =
+      !!orgSub &&
+      (checkEnterprisePlan(orgSub) ||
+        isArenaStarterProductAccess({
+          plan: orgSub.plan,
+          status: orgSub.status,
+          periodEnd: orgSub.periodEnd,
+          billingBlocked: false,
+        }) ||
+        ((checkProPlan(orgSub) || checkTeamPlan(orgSub)) && isMaxTier(orgSub.plan)))
 
     if (isEnterprise) {
       logger.info('User is enterprise org admin/owner', {
@@ -526,7 +535,17 @@ async function resolveOrganizationEnterprisePlan(organizationId: string): Promis
 
     const orgSub = await getOrganizationSubscriptionUsable(organizationId)
 
-    return !!orgSub && checkEnterprisePlan(orgSub)
+    return (
+      !!orgSub &&
+      (checkEnterprisePlan(orgSub) ||
+        isArenaStarterProductAccess({
+          plan: orgSub.plan,
+          status: orgSub.status,
+          periodEnd: orgSub.periodEnd,
+          billingBlocked: false,
+        }) ||
+        ((checkProPlan(orgSub) || checkTeamPlan(orgSub)) && isMaxTier(orgSub.plan)))
+    )
   } catch (error) {
     logger.error('Error checking organization enterprise plan status', { error, organizationId })
     return false
