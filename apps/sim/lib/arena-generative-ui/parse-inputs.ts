@@ -5,7 +5,7 @@ import {
   isOmittedGenerativeInputField,
   lockChatInputPrefixSources,
 } from '@/lib/arena-generative-ui/input-schema'
-import { OUTPUT_HINT_MAX_LENGTH } from '@/lib/arena-generative-ui/output-schema'
+import { OUTPUT_HINT_MAX_LENGTH, storedOutputSample } from '@/lib/arena-generative-ui/output-schema'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
   type ArenaGenerativeApiBinding,
@@ -531,6 +531,12 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     }
     if (typeof record.outputHint === 'string' && record.outputHint.trim()) {
       binding.outputHint = truncate(record.outputHint.trim(), OUTPUT_HINT_MAX_LENGTH)
+    }
+    const outputSample = storedOutputSample(
+      typeof record.outputSample === 'string' ? record.outputSample : undefined
+    )
+    if (outputSample) {
+      binding.outputSample = outputSample
     }
     const pagination = parsePagination(record.pagination, index)
     if (pagination) {

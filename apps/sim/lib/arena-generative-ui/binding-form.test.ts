@@ -56,6 +56,20 @@ describe('formStateFromBinding', () => {
     ).toBe('# Company analysis')
   })
 
+  it('puts stored sample JSON back in Sample response', () => {
+    expect(
+      formStateFromBinding({
+        key: 'run',
+        label: 'run',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [{ name: 'score', type: 'number' }],
+        outputSchemaSource: 'sample',
+        outputSample: '{"score": 91}',
+      }).outputSample
+    ).toBe('{"score": 91}')
+  })
+
   it('rebuilds an HTTP curl the importer can parse', () => {
     const saved: ArenaGenerativeApiBinding = {
       key: 'crm_lookup',
@@ -125,6 +139,25 @@ describe('applyUnchangedOutputLayout', () => {
       ...next,
       outputSchema: history.outputSchema,
       outputSchemaSource: 'sample',
+    })
+  })
+
+  it('keeps the stored sample paste when Sample is left blank on edit', () => {
+    const previous: ArenaGenerativeApiBinding = {
+      ...history,
+      outputSample: '{"history":[]}',
+    }
+    const next: ArenaGenerativeApiBinding = {
+      key: 'run_history',
+      label: 'vij- Run history',
+      kind: 'workflow',
+      workflowId: 'wf-history',
+      outputSchema: [{ name: 'run_data.history', type: 'number' }],
+    }
+    expect(applyUnchangedOutputLayout(next, previous, '')).toMatchObject({
+      outputSchema: previous.outputSchema,
+      outputSchemaSource: 'sample',
+      outputSample: '{"history":[]}',
     })
   })
 

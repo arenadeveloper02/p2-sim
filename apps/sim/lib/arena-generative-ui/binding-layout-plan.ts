@@ -1,6 +1,10 @@
 import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-schema'
-import { namedSchemaFields, outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
+import {
+  layoutOutputSchemaFromBinding,
+  namedSchemaFields,
+  outputSchemaRootName,
+} from '@/lib/arena-generative-ui/output-schema'
 import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
@@ -78,7 +82,7 @@ export interface BindingLayoutPlan {
  * schemas. Generate, the prompt, and validate-manifest share this object.
  */
 export function layoutPlanForBinding(binding: ArenaGenerativeApiBinding): BindingLayoutPlan {
-  const schema = namedSchemaFields(binding.outputSchema)
+  const schema = layoutOutputSchemaFromBinding(binding)
   const collections = collectionsFromSchema(schema)
   const stringFieldNames = topLevelStringFieldNames(schema)
   const metricPaths = metricPathsFromSchema(schema)
@@ -300,9 +304,7 @@ export function resultLayoutFromPlan(plan: BindingLayoutPlan): string {
   }
   const hostKeys = plan.hostKeys.filter((key) => key !== 'content').join(', ')
   const layout = `bind layoutPlan.hostKeys as statePath (${hostKeys || 'content'}); nested arrays (run_data.history) also land as "${plan.collections[0]?.hostKey ?? 'history'}"; a string markdown field binds as that name or "content", never "field.content"`
-  const chartable = plan.collections
-    .map((collection) => chartableHint(collection))
-    .filter(Boolean)
+  const chartable = plan.collections.map((collection) => chartableHint(collection)).filter(Boolean)
   if (chartable.length === 0) return layout
   return `${layout}; chartable collections: ${chartable.join('; ')} — use Chart with those keys, or Table if the job is compare-rows`
 }
@@ -311,7 +313,8 @@ function chartableHint(collection: BindingLayoutCollection): string | undefined 
   const numeric = collection.numericItemFields.filter((field) => !field.includes('.'))
   const numericSet = new Set(collection.numericItemFields)
   const category = collection.itemFields.find(
-    (field) => !field.includes('.') && !numericSet.has(field) && !collection.proseFields.includes(field)
+    (field) =>
+      !field.includes('.') && !numericSet.has(field) && !collection.proseFields.includes(field)
   )
   if (numeric.length === 0 || !category) return undefined
   return `"${collection.hostKey}" categoryField "${category}" series "${numeric.join(',')}"`

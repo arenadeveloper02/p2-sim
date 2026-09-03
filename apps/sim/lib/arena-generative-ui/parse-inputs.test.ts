@@ -164,7 +164,7 @@ describe('parseApiBindings', () => {
   it('round-trips a sample-sourced outputSchema', () => {
     expect(
       parseApiBindings(
-        '[{"key":"run_history","kind":"workflow","workflowId":"wf-1","outputSchema":[{"name":"run_data.history","type":"array"}],"outputSchemaSource":"sample"}]'
+        '[{"key":"run_history","kind":"workflow","workflowId":"wf-1","outputSchema":[{"name":"run_data.history","type":"array"}],"outputSchemaSource":"sample","outputSample":"{\\"history\\":[]}"}]'
       )
     ).toEqual([
       {
@@ -174,6 +174,7 @@ describe('parseApiBindings', () => {
         label: 'run_history',
         outputSchema: [{ name: 'run_data.history', type: 'array' }],
         outputSchemaSource: 'sample',
+        outputSample: '{"history":[]}',
       },
     ])
   })

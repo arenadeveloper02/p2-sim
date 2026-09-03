@@ -3,6 +3,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  effectiveOutputSchema,
+  layoutOutputSchemaFromBinding,
   namedSchemaFields,
   OUTPUT_HINT_MAX_LENGTH,
   outputLayoutFromSample,
@@ -11,6 +13,7 @@ import {
   outputSchemaWarning,
   prefixOutputSchemaFields,
   syntheticExampleFromOutputSchema,
+  unwrapHttpEnvelopeSchemaFields,
 } from '@/lib/arena-generative-ui/output-schema'
 
 describe('namedSchemaFields', () => {
@@ -134,6 +137,47 @@ describe('outputSchemaFromSample', () => {
     )
   })
 
+  it('strips a Response envelope whose data is markdown so fields are prose', () => {
+    expect(
+      outputSchemaFromSample(
+        JSON.stringify({
+          data: '# Digital Camera Guide\n\n## What Is a Digital Camera',
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    ).toEqual([{ name: 'result', type: 'string' }])
+  })
+
+  it('parses a Response data string that is JSON so history fields are visible', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify({
+        data: JSON.stringify({
+          history: [
+            {
+              id: 'run_1',
+              input: { keyword: 'digital camera', client: 'Panasonic' },
+              output: '# Title',
+              createdAt: '2026-09-03T12:05:00.000Z',
+            },
+          ],
+        }),
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    ).map((field) => field.name)
+    expect(names).not.toContain('data')
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'history',
+        'history[].id',
+        'history[].input.keyword',
+        'history[].output',
+        'history[].createdAt',
+      ])
+    )
+  })
+
   it('strips a singleton output object so last-run fields start at the body', () => {
     const names = outputSchemaFromSample(
       JSON.stringify({
@@ -245,6 +289,72 @@ describe('prefixOutputSchemaFields', () => {
         'run_data'
       )
     ).toEqual([{ name: 'run_data.score', type: 'number' }])
+  })
+})
+
+describe('unwrapHttpEnvelopeSchemaFields', () => {
+  it('drops a markdown string inside a Response envelope', () => {
+    expect(
+      unwrapHttpEnvelopeSchemaFields([
+        { name: 'data', type: 'string' },
+        { name: 'status', type: 'number' },
+        { name: 'headers', type: 'object' },
+        { name: 'headers.Content-Type', type: 'string' },
+      ])
+    ).toEqual([])
+  })
+
+  it('peels a history list out of a Response envelope', () => {
+    expect(
+      unwrapHttpEnvelopeSchemaFields([
+        { name: 'data', type: 'object' },
+        { name: 'data.items', type: 'array' },
+        { name: 'data.items[].keyword', type: 'string' },
+        { name: 'status', type: 'number' },
+        { name: 'headers', type: 'object' },
+      ])
+    ).toEqual([
+      { name: 'items', type: 'array' },
+      { name: 'items[].keyword', type: 'string' },
+    ])
+  })
+
+  it('drops an unwrapped scalar result so layout binds content', () => {
+    expect(unwrapHttpEnvelopeSchemaFields([{ name: 'result', type: 'string' }])).toEqual([])
+  })
+})
+
+describe('layoutOutputSchemaFromBinding', () => {
+  it('re-walks Sample so a stored data field is not required', () => {
+    expect(
+      layoutOutputSchemaFromBinding({
+        outputSchema: [{ name: 'data', type: 'string' }],
+        outputSample: JSON.stringify({
+          data: '# Digital Camera Guide',
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      })
+    ).toEqual([])
+  })
+})
+
+describe('effectiveOutputSchema', () => {
+  it('unwraps a stored Response envelope so runtime and generate share history', () => {
+    expect(
+      effectiveOutputSchema({
+        outputSchema: [
+          { name: 'data', type: 'object' },
+          { name: 'data.history', type: 'array' },
+          { name: 'data.history[].id', type: 'string' },
+          { name: 'status', type: 'number' },
+          { name: 'headers', type: 'object' },
+        ],
+      })
+    ).toEqual([
+      { name: 'history', type: 'array' },
+      { name: 'history[].id', type: 'string' },
+    ])
   })
 })
 

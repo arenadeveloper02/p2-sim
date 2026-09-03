@@ -1,10 +1,23 @@
 import { truncate } from '@sim/utils/string'
-import { isActionTelemetryRoot } from '@/lib/arena-generative-ui/types'
+import { isActionTelemetryRoot, parseJsonLiteral } from '@/lib/arena-generative-ui/types'
 
 const MAX_DEPTH = 3
 const MAX_FIELDS = 40
 /** Max characters kept from a streamed prose example in `outputHint`. */
 export const OUTPUT_HINT_MAX_LENGTH = 2000
+/** Max characters kept from Sample response so the modal can show the paste again. */
+export const OUTPUT_SAMPLE_MAX_LENGTH = 16_000
+
+/**
+ * Trims Sample response for storage. Empty pastes are omitted.
+ */
+export function storedOutputSample(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim()
+  if (!trimmed) return undefined
+  return trimmed.length > OUTPUT_SAMPLE_MAX_LENGTH
+    ? trimmed.slice(0, OUTPUT_SAMPLE_MAX_LENGTH)
+    : trimmed
+}
 
 export interface ArenaGenerativeSchemaField {
   name: string
@@ -47,6 +60,13 @@ export function unwrapPastedSample(data: unknown, depth = 0): unknown {
   if (depth > 6) {
     return data
   }
+  if (typeof data === 'string') {
+    const parsed = parseJsonLiteral(data)
+    if (parsed !== undefined) {
+      return unwrapPastedSample(parsed, depth + 1)
+    }
+    return data
+  }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return data
   }
@@ -86,7 +106,9 @@ function singletonEnvelopeObject(record: Record<string, unknown>): unknown {
 /**
  * Derives a flat name/type list from a sample API response so the generator can
  * bind Table/Stat/KeyValue/DataText to real paths. Only names and types are
- * returned — sample values are discarded, so pasted data never leaves the caller.
+ * returned — sample values are not copied into `outputSchema`. The importer
+ * may keep the paste on the binding for the editor; generate uses this list
+ * and a synthetic example.
  *
  * Action/Response envelopes are stripped first. Names are usable as `statePath`
  * values: an object body merges its keys (`run_data.history`, `history[].id`),
@@ -136,6 +158,99 @@ export function outputLayoutFromSample(
     }
     throw new Error('Output format must be valid JSON')
   }
+}
+
+/**
+ * Schema generate, validate, unwrap, and drift warning must share. Re-walks
+ * Sample so a stored Response envelope (`data` + `status` + `headers`) cannot
+ * require host key `data`. A markdown string in that envelope is prose
+ * (`content`), not a list.
+ */
+export function effectiveOutputSchema(binding: {
+  outputSchema?: ArenaGenerativeSchemaField[]
+  outputSample?: string
+  stream?: boolean
+}): ArenaGenerativeSchemaField[] {
+  const fromSample = schemaFromStoredSample(binding.outputSample, binding.stream === true)
+  return unwrapHttpEnvelopeSchemaFields(namedSchemaFields(fromSample ?? binding.outputSchema))
+}
+
+/**
+ * Layout-plan name for {@link effectiveOutputSchema}. Prompt and validate
+ * already call this; runtime unwrap must use the same function.
+ */
+export function layoutOutputSchemaFromBinding(binding: {
+  outputSchema?: ArenaGenerativeSchemaField[]
+  outputSample?: string
+  stream?: boolean
+}): ArenaGenerativeSchemaField[] {
+  return effectiveOutputSchema(binding)
+}
+
+function schemaFromStoredSample(
+  sample: string | undefined,
+  stream: boolean
+): ArenaGenerativeSchemaField[] | undefined {
+  const trimmed = sample?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+  try {
+    return outputLayoutFromSample(trimmed, { stream }).outputSchema
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Drops Response-block envelope rows so layout plans bind the body. A string
+ * `data` (or unwrapped `result`) is omitted — host prose uses `content`.
+ */
+export function unwrapHttpEnvelopeSchemaFields(
+  schema: ArenaGenerativeSchemaField[]
+): ArenaGenerativeSchemaField[] {
+  const named = namedSchemaFields(schema)
+  if (named.length === 0) {
+    return []
+  }
+  if (isHttpEnvelopeOnlySchema(named)) {
+    const dataType = named.find((field) => field.name === 'data')?.type
+    if (!dataType || dataType === 'string') {
+      return []
+    }
+    return named
+      .filter(
+        (field) =>
+          field.name === 'data' || field.name.startsWith('data.') || field.name.startsWith('data[')
+      )
+      .map((field) => ({ ...field, name: renameDataEnvelopeRoot(field.name, dataType) }))
+      .filter((field) => field.name.length > 0)
+  }
+  if (named.length === 1 && named[0].name === 'result' && named[0].type === 'string') {
+    return []
+  }
+  return named
+}
+
+function isHttpEnvelopeOnlySchema(fields: Array<{ name: string }>): boolean {
+  const topLevel = fields.filter((field) => !field.name.includes('.') && !field.name.includes('['))
+  if (topLevel.length === 0 || !topLevel.some((field) => field.name === 'data')) {
+    return false
+  }
+  return topLevel.every((field) => SAMPLE_ENVELOPE_KEYS.has(field.name))
+}
+
+function renameDataEnvelopeRoot(name: string, dataType: string): string {
+  if (name === 'data') {
+    return dataType === 'array' ? NON_OBJECT_ROOT_PATH : ''
+  }
+  if (name.startsWith('data.')) {
+    return name.slice('data.'.length)
+  }
+  if (name.startsWith('data[]')) {
+    return `${NON_OBJECT_ROOT_PATH}${name.slice('data'.length)}`
+  }
+  return name
 }
 
 /**

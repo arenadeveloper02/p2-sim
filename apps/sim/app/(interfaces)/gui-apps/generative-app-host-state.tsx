@@ -1,7 +1,20 @@
 'use client'
 
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { mergeHostState } from '@/lib/arena-generative-ui/merge-host-state'
+
+interface GenerativeAppPageUi {
+  formValues: Record<string, unknown>
+  localPages: Record<string, number>
+}
 
 interface GenerativeAppHostStateValue {
   state: Record<string, unknown>
@@ -12,6 +25,13 @@ interface GenerativeAppHostStateValue {
   setActionPending: (actionId: string, pending: boolean) => void
   loadPending: boolean
   setLoadPending: (actionId: string, pending: boolean) => void
+  /** True after this onLoad key has run once in the session (tab return). */
+  hasVisitedLoad: (loadKey: string) => boolean
+  markLoadVisited: (loadKey: string) => void
+  pageFormValues: (pagePath: string) => Record<string, unknown>
+  setPageFormValues: (pagePath: string, values: Record<string, unknown>) => void
+  pageLocalPages: (pagePath: string) => Record<string, number>
+  setPageLocalPages: (pagePath: string, pages: Record<string, number>) => void
 }
 
 const GenerativeAppHostStateContext = createContext<GenerativeAppHostStateValue | null>(null)
@@ -31,6 +51,8 @@ function useHostStateValue(): GenerativeAppHostStateValue {
   const [state, setState] = useState<Record<string, unknown>>({})
   const [ctaPendingIds, setCtaPendingIds] = useState<string[]>([])
   const [loadPendingIds, setLoadPendingIds] = useState<string[]>([])
+  const visitedLoadKeysRef = useRef(new Set<string>())
+  const [pageUi, setPageUi] = useState<Record<string, GenerativeAppPageUi>>({})
   const mergeState = useCallback(
     (patch: Record<string, unknown>, appendKeys?: readonly string[]) => {
       setState((current) => mergeHostState(current, patch, appendKeys))
@@ -42,6 +64,33 @@ function useHostStateValue(): GenerativeAppHostStateValue {
   }, [])
   const setLoadPending = useCallback((actionId: string, pending: boolean) => {
     setLoadPendingIds((current) => togglePendingId(current, actionId, pending))
+  }, [])
+  const hasVisitedLoad = useCallback((loadKey: string) => visitedLoadKeysRef.current.has(loadKey), [])
+  const markLoadVisited = useCallback((loadKey: string) => {
+    if (!loadKey) return
+    visitedLoadKeysRef.current.add(loadKey)
+  }, [])
+  const pageFormValues = useCallback(
+    (pagePath: string) => pageUi[pagePath]?.formValues ?? {},
+    [pageUi]
+  )
+  const setPageFormValues = useCallback((pagePath: string, values: Record<string, unknown>) => {
+    if (!pagePath) return
+    setPageUi((current) => ({
+      ...current,
+      [pagePath]: { formValues: values, localPages: current[pagePath]?.localPages ?? {} },
+    }))
+  }, [])
+  const pageLocalPages = useCallback(
+    (pagePath: string) => pageUi[pagePath]?.localPages ?? {},
+    [pageUi]
+  )
+  const setPageLocalPages = useCallback((pagePath: string, pages: Record<string, number>) => {
+    if (!pagePath) return
+    setPageUi((current) => ({
+      ...current,
+      [pagePath]: { formValues: current[pagePath]?.formValues ?? {}, localPages: pages },
+    }))
   }, [])
   const pendingActionIds = useMemo(
     () => new Set([...ctaPendingIds, ...loadPendingIds]),
@@ -56,6 +105,12 @@ function useHostStateValue(): GenerativeAppHostStateValue {
       setActionPending,
       loadPending: loadPendingIds.length > 0,
       setLoadPending,
+      hasVisitedLoad,
+      markLoadVisited,
+      pageFormValues,
+      setPageFormValues,
+      pageLocalPages,
+      setPageLocalPages,
     }),
     [
       state,
@@ -65,6 +120,12 @@ function useHostStateValue(): GenerativeAppHostStateValue {
       setActionPending,
       loadPendingIds,
       setLoadPending,
+      hasVisitedLoad,
+      markLoadVisited,
+      pageFormValues,
+      setPageFormValues,
+      pageLocalPages,
+      setPageLocalPages,
     ]
   )
 }

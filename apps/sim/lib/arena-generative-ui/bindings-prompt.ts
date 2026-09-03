@@ -2,7 +2,10 @@ import {
   layoutPlanForBinding,
   resultLayoutFromPlan,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
-import { syntheticExampleFromOutputSchema } from '@/lib/arena-generative-ui/output-schema'
+import {
+  layoutOutputSchemaFromBinding,
+  syntheticExampleFromOutputSchema,
+} from '@/lib/arena-generative-ui/output-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 
 /**
@@ -12,7 +15,7 @@ import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
  */
 export function bindingsSummaryForPrompt(bindings: ArenaGenerativeApiBinding[]) {
   return bindings.map((binding) => {
-    const outputSchema = binding.outputSchema ?? []
+    const outputSchema = layoutOutputSchemaFromBinding(binding)
     const outputExample = syntheticExampleFromOutputSchema(outputSchema)
     const layoutPlan = layoutPlanForBinding(binding)
     return {

@@ -1320,6 +1320,29 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.error).toContain('score')
     })
 
+    it('does not require host key data when History sample is a Response markdown envelope', () => {
+      const envelopeHistory = {
+        key: 'run_history',
+        label: 'History',
+        kind: 'workflow' as const,
+        workflowId: 'wf-history',
+        outputSchema: [
+          { name: 'data', type: 'string' },
+          { name: 'status', type: 'number' },
+          { name: 'headers', type: 'object' },
+        ],
+      }
+      const pages = pagesWithHistory(historyRepeat('items'))
+      pages.pages.history = { ...pages.pages.history, onLoad: ['load_history'] }
+      const result = validateArenaGenerativeManifest(pages, {
+        apiBindings: [...bindings, envelopeHistory],
+        entryPath: 'home',
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
     it('accepts Table and Stat bound to the plan hostKeys', () => {
       const result = validateArenaGenerativeManifest(scoredPages(resultsPlanSpec()), {
         apiBindings: [scoredBinding],

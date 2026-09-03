@@ -293,6 +293,47 @@ describe('runDeployedAppAction', () => {
     expect(result.setState?.enhanced_article).toBe('Hi')
   })
 
+  it('uses the layout-unwrapped schema when the stored outputSchema is a Response envelope', async () => {
+    mockExecuteWorkflow.mockResolvedValue({
+      success: true,
+      output: {
+        data: { history: [{ id: 'r1', keyword: 'Dental' }] },
+        status: 200,
+        headers: {},
+      },
+    })
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'History',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            outputSchema: [
+              { name: 'data', type: 'object' },
+              { name: 'data.history', type: 'array' },
+              { name: 'data.history[].id', type: 'string' },
+              { name: 'status', type: 'number' },
+              { name: 'headers', type: 'object' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.schemaWarning).toBeUndefined()
+    expect(result.setState?.history).toEqual([
+      expect.objectContaining({ id: 'r1', keyword: 'Dental' }),
+    ])
+    expect(result.setState?.data).toBeUndefined()
+  })
+
   it('lifts history items from Agent assistantContent so Repeat can bind items', async () => {
     const items = [{ keyword: 'Dental implants', client: '42 North', date: '2026-08-23' }]
     mockExecuteWorkflow.mockResolvedValue({

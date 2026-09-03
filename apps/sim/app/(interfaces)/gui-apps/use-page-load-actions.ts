@@ -5,6 +5,7 @@ import { toError } from '@sim/utils/errors'
 import { visitorFacingActionError } from '@/lib/arena-generative-ui/action-runtime'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import { clearedActionErrorState, pageLoadArrivalState } from '@/lib/arena-generative-ui/types'
+import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 
 interface UsePageLoadActionsOptions {
   /** Page these actions belong to. Arriving at a different page re-runs the load. */
@@ -40,13 +41,16 @@ export interface UsePageLoadActionsResult {
  * refetch cannot wipe `setState`. `onSuccess.navigate` is ignored for a load
  * action — honouring it would bounce the user off the page.
  *
- * First visit drops this page's load keys (not generate `content` / `inputs`)
- * so a detail record does not flash while History still keeps Enhance results.
+ * First visit in the session drops this page's load keys (not generate
+ * `content` / `inputs`) so a detail record does not flash while History still
+ * keeps Enhance results. Returning via Tabs remounts the page but does not
+ * blank keys that were already loaded.
  * Each load action is pending independently so a stats Stat does not stay
  * skeletoned after its response arrived just because a sibling list is still
  * in flight. `reload` re-runs the same actions without dropping keys.
  */
 export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageLoadActionsResult {
+  const { hasVisitedLoad, markLoadVisited } = useGenerativeAppHostState()
   const optionsRef = useRef(options)
   useEffect(() => {
     optionsRef.current = options
@@ -123,7 +127,9 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
       return
     }
 
-    void runLoads(true)
+    const revisited = hasVisitedLoad(loadKey)
+    markLoadVisited(loadKey)
+    void runLoads(!revisited)
 
     return () => {
       generationRef.current += 1
@@ -132,7 +138,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
         setLoadPending(actionId, false)
       }
     }
-  }, [loadKey, runLoads])
+  }, [loadKey, runLoads, hasVisitedLoad, markLoadVisited])
 
   const reload = useCallback(() => {
     if (!startedKeyRef.current) return

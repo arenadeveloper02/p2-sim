@@ -3,7 +3,7 @@ import {
   inferInputFieldSource,
   isOmittedGenerativeInputField,
 } from '@/lib/arena-generative-ui/input-schema'
-import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
+import { outputLayoutFromSample, storedOutputSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeHttpMethod,
@@ -106,6 +106,10 @@ export function httpBindingFromCurl(input: HttpBindingFromCurlInput): ArenaGener
   }
   if (layout.outputHint) {
     binding.outputHint = layout.outputHint
+  }
+  const outputSample = storedOutputSample(input.outputSample)
+  if (outputSample) {
+    binding.outputSample = outputSample
   }
   if (input.stream === true) {
     binding.stream = true

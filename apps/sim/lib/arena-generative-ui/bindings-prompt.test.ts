@@ -29,6 +29,24 @@ describe('bindingsSummaryForPrompt', () => {
     expect(summary[0]?.resultLayout).toContain('never "field.content"')
   })
 
+  it('does not send Sample paste values to the planner', () => {
+    const summary = bindingsSummaryForPrompt([
+      {
+        key: 'crm_lookup',
+        label: 'Lookup',
+        kind: 'http',
+        outputSchema: [
+          { name: 'email', type: 'string' },
+          { name: 'plan', type: 'string' },
+        ],
+        outputSample: '{"email":"ada@example.com","plan":"enterprise"}',
+      },
+    ])
+    expect(JSON.stringify(summary)).not.toContain('ada@example.com')
+    expect(JSON.stringify(summary)).not.toContain('enterprise')
+    expect(summary[0]).not.toHaveProperty('outputSample')
+  })
+
   it('treats a missing outputSchema as a prose DataText constraint', () => {
     const summary = bindingsSummaryForPrompt([
       { key: 'run', label: 'Run', kind: 'workflow', workflowId: 'wf-1' },
@@ -112,5 +130,27 @@ describe('bindingsSummaryForPrompt', () => {
     expect(summary[0]?.resultLayout).toContain('do not bind item.output')
     expect(summary[0]?.resultLayout).toContain('{targetKeyword}')
     expect(summary[0]?.resultLayout).not.toContain('restamp inputs')
+  })
+
+  it('does not tell the planner to bind envelope key data from a markdown Response sample', () => {
+    const summary = bindingsSummaryForPrompt([
+      {
+        key: 'run_history',
+        label: 'Run history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [{ name: 'data', type: 'string' }],
+        outputSchemaSource: 'sample',
+        outputSample: JSON.stringify({
+          data: '# Digital Camera Guide',
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      },
+    ])
+    expect(summary[0]?.outputSchema).toEqual([])
+    expect(summary[0]?.layoutPlan?.kind).toBe('prose')
+    expect(summary[0]?.layoutPlan?.hostKeys).toEqual(['content'])
+    expect(JSON.stringify(summary)).not.toContain('# Digital Camera Guide')
   })
 })

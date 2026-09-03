@@ -39,7 +39,8 @@ export function emptyBindingFormState(): ArenaApiBindingFormState {
 /**
  * Reconstructs the modal fields for a saved binding so the user can edit it
  * without touching the read-only JSON textarea. HTTP curls are rebuilt from
- * method/url/input names — the original paste is not stored.
+ * method/url/input names — the original curl paste is not stored. Sample
+ * response is stored on the binding and restored here.
  */
 export function formStateFromBinding(binding: ArenaGenerativeApiBinding): ArenaApiBindingFormState {
   if (binding.kind === 'workflow') {
@@ -126,16 +127,20 @@ export function applyUnchangedOutputLayout(
       ? previous.outputSchema
       : next.outputSchema
   const outputHint = previous.outputHint ?? next.outputHint
+  const outputSample = previous.outputSample ?? next.outputSample
   const { outputSchemaWarnings: _dropped, ...rest } = next
   return {
     ...rest,
     ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
     outputSchemaSource: 'sample',
     ...(outputHint ? { outputHint } : {}),
+    ...(outputSample ? { outputSample } : {}),
   }
 }
 
 function sampleFromStoredLayout(binding: ArenaGenerativeApiBinding): string {
+  const stored = binding.outputSample?.trim()
+  if (stored) return stored
   return binding.outputHint?.trim() ?? ''
 }
 

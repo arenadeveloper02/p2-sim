@@ -207,6 +207,7 @@ describe('workflowBindingFromSelection', () => {
     expect(fromRun.outputSchemaWarnings).toEqual(warnings)
     expect(fromSample.outputSchemaWarnings).toBeUndefined()
     expect(fromSample.outputSchemaSource).toBe('sample')
+    expect(fromSample.outputSample).toBe('{"score": 91}')
   })
 
   it('lets a pasted sample override the declared output fields', () => {
@@ -219,6 +220,7 @@ describe('workflowBindingFromSelection', () => {
 
     expect(binding.outputSchema?.map((field) => field.name)).toEqual(['score'])
     expect(binding.outputSchemaSource).toBe('sample')
+    expect(binding.outputSample).toBe('{"score": 91}')
   })
 
   it('omits outputSchema when nothing is declared and no sample is pasted', () => {
@@ -263,6 +265,7 @@ describe('workflowBindingFromSelection', () => {
       expect.arrayContaining(['score', 'reasons'])
     )
     expect(binding.outputSchemaSource).toBe('sample')
+    expect(binding.outputSample).toBe('{"score": 91, "reasons": ["fit"]}')
   })
 
   it('stores stream prose as outputHint instead of throwing', () => {
@@ -274,6 +277,7 @@ describe('workflowBindingFromSelection', () => {
     })
     expect(binding.outputSchema).toBeUndefined()
     expect(binding.outputHint).toBe('# Company analysis')
+    expect(binding.outputSample).toBe('# Company analysis')
   })
 
   it('rejects non-JSON output format when not streaming', () => {

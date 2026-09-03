@@ -15,10 +15,10 @@ describe('suggestionForGenerateFailure', () => {
     )
   })
 
-  it('maps invented API keys to Bindings or User Input', () => {
+  it('maps invented API keys to Add an API or User Input', () => {
     expect(
       suggestionForGenerateFailure('Action "qualify" references unknown API key "invented_key"')
-    ).toContain('API Bindings')
+    ).toContain('Add an API')
   })
 
   it('maps unreachable pages to naming navigation', () => {
@@ -51,6 +51,23 @@ describe('suggestionForGenerateFailure', () => {
     ).toContain('one primary action')
   })
 
+  it('maps a required host key error to pasting a business sample', () => {
+    expect(
+      suggestionForGenerateFailure('Binding "run_history" never binds required host key: data.')
+    ).toContain('Sample response')
+    expect(
+      suggestionForGenerateFailure('Binding "run_history" never binds required host keys: history.')
+    ).toContain('Add an API')
+  })
+
+  it('maps chat protocol errors to adding Chat or form fields', () => {
+    expect(
+      suggestionForGenerateFailure(
+        'Binding "ask" has chat protocol input and no form fields. Add a Chat with an action that uses that binding.'
+      )
+    ).toContain('Chat')
+  })
+
   it('falls back to tightening the brief', () => {
     expect(suggestionForGenerateFailure('Manifest must be an object')).toContain(
       'Tighten User Input'
@@ -72,7 +89,8 @@ describe('formatGenerateFailureForUser', () => {
     expect(text).toContain('invented_key')
     expect(text).toContain('onSuccess.navigate target')
     expect(text).toContain('What you can do:')
-    expect(text).toContain('API Bindings')
+    expect(text).toContain('Add an API')
+    expect(text).toContain('one primary action')
   })
 
   it('uses a fallback issue when the list is empty', () => {

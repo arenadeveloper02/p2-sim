@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import {
   curlHasAuthHeader,
   curlLooksLikeStream,
@@ -174,18 +175,21 @@ describe('httpBindingFromCurl output format', () => {
       { name: 'count', type: 'number' },
     ])
     expect(binding.outputSchemaSource).toBe('sample')
+    expect(binding.outputSample).toBe(
+      '{"articles":[{"title":"First","url":"https://example.com"}],"count":1}'
+    )
   })
 
-  it('stores field names and types but never the sample values', () => {
+  it('keeps sample JSON on the binding and omits those values from the planner summary', () => {
     const binding = httpBindingFromCurl({
       key: 'crm_lookup',
       curl: 'curl -X POST https://api.example.com/lookup',
       outputSample: '{"email":"ada@example.com","plan":"enterprise"}',
     })
-    const serialized = JSON.stringify(binding)
-    expect(serialized).toContain('email')
-    expect(serialized).not.toContain('ada@example.com')
-    expect(serialized).not.toContain('enterprise')
+    expect(binding.outputSample).toContain('ada@example.com')
+    const summary = JSON.stringify(bindingsSummaryForPrompt([binding]))
+    expect(summary).not.toContain('ada@example.com')
+    expect(summary).not.toContain('enterprise')
   })
 
   it('throws when the sample is not valid JSON', () => {
@@ -207,6 +211,7 @@ describe('httpBindingFromCurl output format', () => {
     })
     expect(binding.outputSchema).toBeUndefined()
     expect(binding.outputHint).toBe('# Company analysis\n\n## Summary\nAcme is growing.')
+    expect(binding.outputSample).toBe('# Company analysis\n\n## Summary\nAcme is growing.')
     expect(binding.stream).toBe(true)
   })
 
@@ -220,6 +225,7 @@ describe('httpBindingFromCurl output format', () => {
     expect(binding.outputHint).toBeUndefined()
     expect(binding.outputSchema).toEqual([{ name: 'companies', type: 'array' }])
     expect(binding.outputSchemaSource).toBe('sample')
+    expect(binding.outputSample).toBe('{"companies":[]}')
   })
 
   it('ignores a blank sample', () => {

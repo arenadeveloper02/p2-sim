@@ -136,6 +136,42 @@ describe('layoutPlanForBinding', () => {
     expect(resultLayoutFromPlan(plan)).toContain('do not bind item.output')
   })
 
+  it('does not require host key data for a Response envelope of markdown', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        key: 'run_history',
+        outputSchema: [
+          { name: 'data', type: 'string' },
+          { name: 'status', type: 'number' },
+          { name: 'headers', type: 'object' },
+        ],
+      })
+    )
+    expect(plan.kind).toBe('prose')
+    expect(plan.hostKeys).toEqual(['content'])
+    expect(plan.stringFieldNames).toEqual([])
+    expect(plan.recordKeys).not.toContain('headers')
+    expect(plan.metricPaths).not.toContain('status')
+  })
+
+  it('re-walks outputSample when the stored schema still has data', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        key: 'run_history',
+        outputSchema: [{ name: 'data', type: 'string' }],
+        outputSchemaSource: 'sample',
+        outputSample: JSON.stringify({
+          data: '# H1: Digital Camera Guide',
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      })
+    )
+    expect(plan.kind).toBe('prose')
+    expect(plan.stringFieldNames).not.toContain('data')
+    expect(plan.hostKeys).toEqual(['content'])
+  })
+
   it('maps a score plus an articles array to collection hostKeys', () => {
     const plan = layoutPlanForBinding(
       workflowBinding({
@@ -188,9 +224,9 @@ describe('layoutPlanForBinding', () => {
     expect(plan.stringFieldNames).toEqual(['artical_data'])
     expect(plan.prosePaths).toEqual(['artical_data', 'content'])
     expect(resultLayoutFromPlan(plan)).toContain('never "field.content"')
-    expect(
-      proseContentFromPlanState({ artical_data: '# Root Canal Treatment' }, plan)
-    ).toBe('# Root Canal Treatment')
+    expect(proseContentFromPlanState({ artical_data: '# Root Canal Treatment' }, plan)).toBe(
+      '# Root Canal Treatment'
+    )
     expect(proseContentFromPlanState({ artical_data: '' }, plan)).toBeUndefined()
     expect(proseContentFromPlanState({ artical_data: '{"nested":true}' }, plan)).toBeUndefined()
   })
@@ -333,7 +369,9 @@ describe('actionStateFromPlan', () => {
         outputSchema: [{ name: 'artical_data', type: 'string' }],
       })
     )
-    expect(proseAliasKeysFromPlans([plan])).toEqual(expect.arrayContaining(['content', 'artical_data']))
+    expect(proseAliasKeysFromPlans([plan])).toEqual(
+      expect.arrayContaining(['content', 'artical_data'])
+    )
     expect(withAliasedProseState({ artical_data: '# Body' }, ['content', 'artical_data'])).toEqual({
       artical_data: '# Body',
       content: '# Body',

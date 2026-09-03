@@ -108,6 +108,7 @@ describe('hydrateApiBindingsForCopilot', () => {
     const [binding] = JSON.parse(result.json)
     expect(binding.outputSchema?.map((field: { name: string }) => field.name)).toEqual(['score'])
     expect(binding.outputSchemaSource).toBe('sample')
+    expect(binding.outputSample).toBe('{"score": 91}')
   })
 
   it('saves a stub and warns when the backend is not deployed', async () => {

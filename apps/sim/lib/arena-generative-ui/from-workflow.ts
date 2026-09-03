@@ -9,6 +9,7 @@ import {
   type ArenaGenerativeSchemaField,
   hasSchemaFieldName,
   outputLayoutFromSample,
+  storedOutputSample,
 } from '@/lib/arena-generative-ui/output-schema'
 import {
   type ArenaGenerativeApiBinding,
@@ -111,6 +112,7 @@ export function workflowBindingFromSelection(
   const derivedOutputSchema = outputSchemaFromWorkflowFields(selection.outputFields)
   const outputSchema = layout.outputSchema ?? derivedOutputSchema
   const fromSample = Boolean(layout.outputSchema && layout.outputSchema.length > 0)
+  const outputSample = storedOutputSample(selection.outputSample)
 
   return {
     key,
@@ -125,6 +127,7 @@ export function workflowBindingFromSelection(
       ? { outputSchemaWarnings: selection.outputSchemaWarnings }
       : {}),
     ...(layout.outputHint ? { outputHint: layout.outputHint } : {}),
+    ...(outputSample ? { outputSample } : {}),
     ...(selection.stream ? { stream: true } : {}),
   }
 }

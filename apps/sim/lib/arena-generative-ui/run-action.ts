@@ -26,7 +26,10 @@ import {
   applyBindingInputSources,
   constrainBindingInput,
 } from '@/lib/arena-generative-ui/input-schema'
-import { outputSchemaWarning } from '@/lib/arena-generative-ui/output-schema'
+import {
+  effectiveOutputSchema,
+  outputSchemaWarning,
+} from '@/lib/arena-generative-ui/output-schema'
 import {
   applyPaginationToInput,
   collectAppendKeys,
@@ -964,7 +967,8 @@ export async function runGenerativeAppAction(
     }
   }
 
-  const payload = unwrapPayloadToSchema(result.data, binding.outputSchema)
+  const schema = effectiveOutputSchema(binding)
+  const payload = unwrapPayloadToSchema(result.data, schema)
   const plan = layoutPlanForBinding(binding)
   const fromData = actionStateFromPlan(payload, plan)
   const paginationPatch = binding.pagination
@@ -984,7 +988,7 @@ export async function runGenerativeAppAction(
     },
     proseAliasKeysFromPlans([plan])
   )
-  const schemaWarning = outputSchemaWarning(binding.outputSchema, setState)
+  const schemaWarning = outputSchemaWarning(schema, setState)
   if (schemaWarning) {
     logger.warn('Generative app outputSchema drift', {
       actionId: options.actionId,

@@ -6,7 +6,12 @@ import {
   outputSchemaFromWorkflowFields,
 } from '@/lib/arena-generative-ui/from-workflow'
 import { loadLastSuccessfulRunOutputSchema } from '@/lib/arena-generative-ui/last-run-output-schema'
-import type { ArenaGenerativeSchemaField } from '@/lib/arena-generative-ui/output-schema'
+import {
+  type ArenaGenerativeSchemaField,
+  effectiveOutputSchema,
+  namedSchemaFields,
+  unwrapHttpEnvelopeSchemaFields,
+} from '@/lib/arena-generative-ui/output-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
@@ -20,16 +25,23 @@ interface ResolvedWorkflowOutputSchema {
 }
 
 /**
- * Replaces each workflow binding's `outputSchema`. Sample pastes stay as stored.
- * Otherwise last successful run, then deployed Response, then Agent
- * `responseFormat`. `chatProtocol` always refreshes from Start reserved fields.
+ * Replaces each workflow binding's `outputSchema`. Sample pastes are re-walked
+ * (Response envelopes unwrap) and then kept. Otherwise last successful run,
+ * then deployed Response, then Agent `responseFormat`. `chatProtocol` always
+ * refreshes from Start reserved fields.
  */
 export async function refreshWorkflowBindingOutputSchemas(
   bindings: ArenaGenerativeApiBinding[]
 ): Promise<ArenaGenerativeApiBinding[]> {
+  const withSamples = bindings.map((binding) => {
+    if (binding.outputSchemaSource !== 'sample') {
+      return binding
+    }
+    return { ...binding, outputSchema: effectiveOutputSchema(binding) }
+  })
   const workflowIds = [
     ...new Set(
-      bindings
+      withSamples
         .filter(
           (binding) =>
             binding.kind === 'workflow' &&
@@ -40,7 +52,7 @@ export async function refreshWorkflowBindingOutputSchemas(
     ),
   ]
   if (workflowIds.length === 0) {
-    return bindings
+    return withSamples
   }
 
   const deployedSchemas = new Map<string, ResolvedWorkflowOutputSchema>()
@@ -53,7 +65,7 @@ export async function refreshWorkflowBindingOutputSchemas(
     })
   )
 
-  return bindings.map((binding) => {
+  return withSamples.map((binding) => {
     if (binding.kind !== 'workflow' || !binding.workflowId) {
       return binding
     }
@@ -70,14 +82,14 @@ export async function refreshWorkflowBindingOutputSchemas(
     const { outputSchemaWarnings: _dropped, ...rest } = withProtocol
     return {
       ...rest,
-      outputSchema: resolved.fields,
+      outputSchema: unwrapHttpEnvelopeSchemaFields(namedSchemaFields(resolved.fields)),
       ...(resolved.warnings.length > 0 ? { outputSchemaWarnings: resolved.warnings } : {}),
     }
   })
 }
 
 function hasSampleOutputSchema(binding: ArenaGenerativeApiBinding): boolean {
-  return binding.outputSchemaSource === 'sample' && (binding.outputSchema?.length ?? 0) > 0
+  return binding.outputSchemaSource === 'sample'
 }
 
 async function loadOutputSchema(

@@ -101,6 +101,12 @@ export interface ArenaGenerativeApiBinding {
    */
   outputSchemaWarnings?: string[]
   /**
+   * Sample response paste, kept so Add an API can show it again on edit.
+   * Generate/edit prompts use `outputSchema` and a synthetic example, not this
+   * string.
+   */
+  outputSample?: string
+  /**
    * Truncated example of a streamed prose body. Prompt-only — the runner never
    * sends this upstream. Used when stream is true and Output format is not JSON.
    */

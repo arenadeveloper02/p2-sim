@@ -97,6 +97,7 @@ import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
+import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 
 interface SpecElement {
   type?: string
@@ -1697,10 +1698,34 @@ export function SpecRenderer({
     if (element.type !== 'WorkingCard') return false
     return element.props?.skeleton !== false
   })
-  const [formValues, setFormValues] = useState<Record<string, unknown>>({})
+  const host = useGenerativeAppHostState()
+  const pageKey = currentPath ?? ''
+  const [formValues, setFormValuesState] = useState<Record<string, unknown>>(
+    () => (pageKey ? host.pageFormValues(pageKey) : {})
+  )
   const [overlayFlags, setOverlayFlags] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [localPages, setLocalPages] = useState<Record<string, number>>({})
+  const [localPages, setLocalPagesState] = useState<Record<string, number>>(
+    () => (pageKey ? host.pageLocalPages(pageKey) : {})
+  )
+  const setFormValues = (
+    update: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)
+  ) => {
+    setFormValuesState((current) => {
+      const next = typeof update === 'function' ? update(current) : update
+      if (pageKey) host.setPageFormValues(pageKey, next)
+      return next
+    })
+  }
+  const setLocalPages = (
+    update: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)
+  ) => {
+    setLocalPagesState((current) => {
+      const next = typeof update === 'function' ? update(current) : update
+      if (pageKey) host.setPageLocalPages(pageKey, next)
+      return next
+    })
+  }
   const knownActionIds = collectKnownActionIds(
     actionHostKeys,
     actionHiddenInputs,

@@ -98,15 +98,15 @@ function sampleResponseHint(
     if (hasDeclaredOutput) {
       return stream
         ? 'Optional override. Paste the JSON you see in the network tab (ok/data wrappers are stripped), or markdown if you want streamed text to match a specific shape.'
-        : 'Optional override. Paste the JSON you see in the network tab — ok/data wrappers are stripped. Field names and types are saved; values are discarded.'
+        : 'Optional override. Paste the JSON you see in the network tab — ok/data wrappers are stripped. The paste is kept on this binding so you can edit it later. Generate uses field names and types only.'
     }
     return stream
       ? 'This workflow has no declared output format. Leave blank to show streamed text, or paste an example of the tokens so the generator can match that shape.'
-      : 'This workflow has no declared output format. Paste the JSON you see in the network tab. ok/data wrappers are stripped. Only field names and types are saved.'
+      : 'This workflow has no declared output format. Paste the JSON you see in the network tab. ok/data wrappers are stripped. The paste is kept so you can edit it later.'
   }
   return stream
     ? 'Leave blank, or paste an example of the tokens (markdown is fine) so the generator can match that shape. Paste JSON only if the API also returns a structured object at the end.'
-    : 'Paste the JSON you see in the network tab. Wrappers like ok and data are stripped. Only field names and types are saved — values are discarded.'
+    : 'Paste the JSON you see in the network tab. Wrappers like ok and data are stripped. The paste is kept on this binding so you can edit it later. Generate uses field names and types only.'
 }
 
 function schemaFromSamplePaste(
@@ -782,7 +782,7 @@ export function ArenaApiBindingImportHelper({
               hint={
                 outputSchemaFromPaste
                   ? sampleOutput.fields.length > 0
-                    ? 'Derived from the JSON you pasted. Wrappers like ok and data are ignored. Generate and edit keep this instead of the deployed workflow schema.'
+                    ? 'Derived from the JSON you pasted. Wrappers like ok and data are ignored. Generate and edit keep this instead of the last-run or deployed schema. Reopening this binding shows the paste again.'
                     : 'Saved from the JSON you pasted earlier. Leave Sample blank to keep it, or paste a new body to replace it.'
                   : deployedLoading || lastRunLoading
                     ? lastRunLoading

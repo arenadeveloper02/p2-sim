@@ -90,6 +90,21 @@ describe('unwrapPayloadToSchema', () => {
     expect(unwrapPayloadToSchema(payload, [{ name: 'score', type: 'number' }])).toEqual(payload)
   })
 
+  it('peels a Response envelope whose data is a JSON string of history', () => {
+    const history = {
+      history: [{ id: 'run_1', input: { keyword: 'digital camera' }, output: '# Title' }],
+    }
+    expect(
+      unwrapPayloadToSchema(
+        { data: JSON.stringify(history), status: 200, headers: {} },
+        [
+          { name: 'history', type: 'array' },
+          { name: 'history[].output', type: 'string' },
+        ]
+      )
+    ).toEqual(history)
+  })
+
   it('peels mechanical envelopes when schema is missing', () => {
     expect(unwrapPayloadToSchema({ data: BUSINESS, status: 200, headers: {} })).toEqual(BUSINESS)
     expect(unwrapPayloadToSchema({ ok: true, data: { data: BUSINESS } })).toEqual(BUSINESS)

@@ -127,6 +127,28 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
     expect(mockLoadDeployedWorkflowState).not.toHaveBeenCalled()
   })
 
+  it('rewrites a Response-envelope sample so generate does not require host key data', async () => {
+    const refreshed = await refreshWorkflowBindingOutputSchemas([
+      workflowBinding({
+        outputSchema: [
+          { name: 'data', type: 'string' },
+          { name: 'status', type: 'number' },
+          { name: 'headers', type: 'object' },
+        ],
+        outputSchemaSource: 'sample',
+        outputSample: JSON.stringify({
+          data: '# Digital Camera Guide',
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      }),
+    ])
+
+    expect(refreshed[0]?.outputSchema).toEqual([])
+    expect(refreshed[0]?.outputSchemaSource).toBe('sample')
+    expect(mockLoadDeployedWorkflowState).not.toHaveBeenCalled()
+  })
+
   it('still refreshes a sibling binding that did not come from a sample', async () => {
     mockLoadDeployedWorkflowState.mockResolvedValue({
       blocks: {
@@ -229,6 +251,27 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
     expect(refreshed[0]?.outputSchemaWarnings).toEqual([
       'Schema is from a run of an older deployment.',
     ])
+  })
+
+  it('unwraps a last-run Response envelope so generate and runtime share host keys', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      deploymentVersionId: 'deploy-current',
+      blocks: { start: { type: 'starter', subBlocks: {} } },
+    })
+    mockLoadLastSuccessfulRunOutputSchema.mockResolvedValue({
+      fields: [
+        { name: 'data', type: 'object' },
+        { name: 'data.history', type: 'array' },
+        { name: 'status', type: 'number' },
+        { name: 'headers', type: 'object' },
+      ],
+      warnings: [],
+      found: true,
+    })
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([workflowBinding()])
+
+    expect(refreshed[0]?.outputSchema).toEqual([{ name: 'history', type: 'array' }])
     expect(mockLoadLastSuccessfulRunOutputSchema).toHaveBeenCalledWith('wf-history', {
       activeDeploymentVersionId: 'deploy-current',
     })
