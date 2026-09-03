@@ -81,7 +81,9 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
 
     expect(refreshed[0]?.outputSchema).toEqual(HISTORY_FIELDS)
     expect(mockLoadDeployedWorkflowState).toHaveBeenCalledWith('wf-history')
-    expect(mockLoadLastSuccessfulRunOutputSchema).not.toHaveBeenCalled()
+    expect(mockLoadLastSuccessfulRunOutputSchema).toHaveBeenCalledWith('wf-history', {
+      activeDeploymentVersionId: undefined,
+    })
   })
 
   it('keeps a pasted schema when the deployed workflow declares nothing', async () => {
@@ -270,7 +272,39 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
 
     expect(refreshed[0]?.outputSchema).toEqual(HISTORY_FIELDS)
     expect(refreshed[0]?.outputSchemaWarnings).toBeUndefined()
-    expect(mockLoadLastSuccessfulRunOutputSchema).not.toHaveBeenCalled()
+    expect(mockLoadLastSuccessfulRunOutputSchema).toHaveBeenCalledWith('wf-history', {
+      activeDeploymentVersionId: 'deploy-current',
+    })
+  })
+
+  it('prefers last-run finalOutput over a nested authored Response', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      deploymentVersionId: 'deploy-current',
+      blocks: {
+        respond: {
+          type: 'response',
+          subBlocks: {
+            builderData: {
+              value: [{ name: 'result', type: 'number', value: '' }],
+            },
+          },
+        },
+      },
+    })
+    const lastRunFields = [
+      { name: 'gap_analysis', type: 'object' },
+      { name: 'gap_analysis.coverage_gaps', type: 'array' },
+      { name: 'enhanced_article', type: 'string' },
+    ]
+    mockLoadLastSuccessfulRunOutputSchema.mockResolvedValue({
+      fields: lastRunFields,
+      warnings: [],
+      found: true,
+    })
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([workflowBinding()])
+
+    expect(refreshed[0]?.outputSchema).toEqual(lastRunFields)
   })
 
   it('prefers last-run finalOutput over Agent responseFormat', async () => {

@@ -30,9 +30,7 @@ import {
   httpBindingFromCurl,
 } from '@/lib/arena-generative-ui/from-curl'
 import {
-  declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
-  extractResponseOutputSchemaFromBlocks,
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
@@ -293,10 +291,6 @@ export function ArenaApiBindingImportHelper({
     () => extractOutputSchemaFromBlocks(deployedState?.blocks),
     [deployedState?.blocks]
   )
-  const responseFields = useMemo(
-    () => extractResponseOutputSchemaFromBlocks(deployedState?.blocks),
-    [deployedState?.blocks]
-  )
   const sampleOutput = useMemo(
     () => schemaFromSamplePaste(outputSample, streamMode === 'on'),
     [outputSample, streamMode]
@@ -311,11 +305,7 @@ export function ArenaApiBindingImportHelper({
       editingBinding && !outputSample.trim() && editingBinding.outputSchemaSource === 'sample'
     )
   const lastRunEnabled =
-    open &&
-    source === 'workflow' &&
-    Boolean(workflowId) &&
-    !outputSchemaFromPaste &&
-    declaredOutputSchemaNeedsLastRunFallback(responseFields)
+    open && source === 'workflow' && Boolean(workflowId) && !outputSchemaFromPaste
   const lastRunQuery = useLastSuccessfulWorkflowOutputSchema(workflowId || undefined, {
     enabled: lastRunEnabled,
   })
@@ -796,10 +786,10 @@ export function ArenaApiBindingImportHelper({
                     : 'Saved from the JSON you pasted earlier. Leave Sample blank to keep it, or paste a new body to replace it.'
                   : deployedLoading || lastRunLoading
                     ? lastRunLoading
-                      ? 'The deployed Response only names a wrapper. Reading the last successful run…'
+                      ? 'Reading the last successful run…'
                       : 'Fetched from the deployed Response block or Agent structured output.'
                     : lastRunEnabled && lastRunFields.length > 0
-                      ? 'From the last successful run because the deployed Response does not declare nested fields. Generate and edit re-read this. Field names and types only — run values are discarded.'
+                      ? 'From the last successful run. Generate and edit re-read this. Field names and types only — run values are discarded. Paste a Sample to override.'
                       : displayedOutputSchema.length > 0
                         ? 'Fetched from the deployed Response block or Agent structured output. Generate and edit re-read this so a new deploy is picked up without saving again.'
                         : 'Paste a sample JSON above. The tags here should list collection paths such as run_data.history after a successful paste.'

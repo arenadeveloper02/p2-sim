@@ -18,7 +18,6 @@ import {
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
 
 export {
-  declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
   extractResponseOutputSchemaFromBlocks,
 } from '@/lib/arena-generative-ui/extract-workflow-output'
@@ -33,8 +32,8 @@ export interface WorkflowBindingSelection {
   /** Start-block fields of the **deployed** workflow, which is the version a CTA runs. */
   inputFields?: WorkflowInputField[]
   /**
-   * Declared output fields from a Response block, Agent `responseFormat`, or
-   * last successful run. Used when the user does not paste a sample. A pasted
+   * Declared output fields from last successful run, a Response block, or Agent
+   * `responseFormat`. Used when the user does not paste a sample. A pasted
    * sample always wins.
    */
   outputFields?: ArenaGenerativeSchemaField[]

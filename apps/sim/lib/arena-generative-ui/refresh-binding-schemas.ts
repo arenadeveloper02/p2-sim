@@ -2,9 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { chatProtocolFromWorkflowFields } from '@/lib/arena-generative-ui/chat-protocol'
 import {
-  declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
-  extractResponseOutputSchemaFromBlocks,
   outputSchemaFromWorkflowFields,
 } from '@/lib/arena-generative-ui/from-workflow'
 import { loadLastSuccessfulRunOutputSchema } from '@/lib/arena-generative-ui/last-run-output-schema'
@@ -22,10 +20,9 @@ interface ResolvedWorkflowOutputSchema {
 }
 
 /**
- * Replaces each workflow binding's `outputSchema` with a nested authored
- * Response body when that exists. Otherwise the last successful run wins over
- * Agent `responseFormat`. HTTP bindings and Sample pastes keep the stored schema.
- * `chatProtocol` is always refreshed from the deployed Start reserved fields.
+ * Replaces each workflow binding's `outputSchema`. Sample pastes stay as stored.
+ * Otherwise last successful run, then deployed Response, then Agent
+ * `responseFormat`. `chatProtocol` always refreshes from Start reserved fields.
  */
 export async function refreshWorkflowBindingOutputSchemas(
   bindings: ArenaGenerativeApiBinding[]
@@ -91,13 +88,8 @@ async function loadOutputSchema(
     const chatProtocol = chatProtocolFromWorkflowFields(
       extractInputFieldsFromBlocks(deployed.blocks)
     )
-    const fromResponse = extractResponseOutputSchemaFromBlocks(deployed.blocks)
     const declared =
       outputSchemaFromWorkflowFields(extractOutputSchemaFromBlocks(deployed.blocks)) ?? []
-    if (!declaredOutputSchemaNeedsLastRunFallback(fromResponse) && fromResponse.length > 0) {
-      const fields = outputSchemaFromWorkflowFields(fromResponse) ?? fromResponse
-      return { fields, warnings: [], ...(chatProtocol ? { chatProtocol } : {}) }
-    }
     const merged = await mergeDeclaredWithLastRun(
       workflowId,
       declared,

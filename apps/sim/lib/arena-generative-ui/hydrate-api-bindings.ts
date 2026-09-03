@@ -8,6 +8,7 @@ import {
   extractOutputSchemaFromBlocks,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
+import { loadLastSuccessfulRunOutputSchema } from '@/lib/arena-generative-ui/last-run-output-schema'
 import { parseApiBindings, parseLooseJsonValue } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
@@ -284,6 +285,10 @@ async function hydrateWorkflowBinding(params: {
 
   try {
     const deployed = await loadDeployed(params.workflowId, params.workspaceId)
+    const lastRun = params.outputSample
+      ? undefined
+      : await loadLastSuccessfulRunOutputSchema(params.workflowId).catch(() => undefined)
+    const fromLastRun = (lastRun?.fields.length ?? 0) > 0
     return workflowBindingFromSelection({
       key: params.key,
       workflowId: params.workflowId,
@@ -291,13 +296,33 @@ async function hydrateWorkflowBinding(params: {
       stream: params.stream,
       outputSample: params.outputSample,
       inputFields: extractInputFieldsFromBlocks(deployed.blocks),
-      outputFields: extractOutputSchemaFromBlocks(deployed.blocks),
+      outputFields: fromLastRun ? lastRun?.fields : extractOutputSchemaFromBlocks(deployed.blocks),
+      ...(fromLastRun && (lastRun?.warnings.length ?? 0) > 0
+        ? { outputSchemaWarnings: lastRun?.warnings }
+        : {}),
     })
   } catch (error) {
     if (error instanceof NoActiveDeploymentError) {
       params.warnings.push(
         `API binding "${params.key}" was saved without Start fields because workflow "${params.workflowId}" is not deployed. Deploy it, then set apiBindings again.`
       )
+      if (!params.outputSample) {
+        const lastRun = await loadLastSuccessfulRunOutputSchema(params.workflowId).catch(
+          () => undefined
+        )
+        if (lastRun && lastRun.fields.length > 0) {
+          return workflowBindingFromSelection({
+            key: params.key,
+            workflowId: params.workflowId,
+            label: params.label,
+            stream: params.stream,
+            outputFields: lastRun.fields,
+            ...(lastRun.warnings.length > 0
+              ? { outputSchemaWarnings: lastRun.warnings }
+              : {}),
+          })
+        }
+      }
       return stub
     }
     logger.warn('Could not hydrate workflow binding from deployed state', {

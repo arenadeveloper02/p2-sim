@@ -91,8 +91,8 @@ export interface ArenaGenerativeApiBinding {
   outputSchema?: Array<{ name: string; type: string }>
   /**
    * `sample` means Output schema came from Sample response. Generate/edit keep
-   * those fields instead of replacing them with the deployed Response snapshot.
-   * Omit when the schema was inferred from the workflow or last successful run.
+   * those fields instead of replacing them with the last-run or deployed schema.
+   * Omit when the schema was inferred from the last successful run, Response, or Agent.
    */
   outputSchemaSource?: 'sample'
   /**

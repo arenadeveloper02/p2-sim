@@ -27,8 +27,10 @@ interface WorkflowBlockRecord {
  * save `outputSchema` without a pasted sample.
  *
  * Preference: Response block structured data, then Response JSON editor, then
- * the first Agent `responseFormat`. A Response that only names a wrapper object
- * (`run_data`) is filled from that Agent schema rather than hiding it.
+ * the first Agent `responseFormat`. Last-run `finalOutput` is applied by the
+ * importer and generate/edit refresh, not here. A Response that only names a
+ * wrapper object (`run_data`) is filled from that Agent schema rather than
+ * hiding it.
  * Returns nothing when none of those exist — the importer must not invent fields.
  */
 export function extractOutputSchemaFromBlocks(
@@ -58,8 +60,8 @@ export function extractOutputSchemaFromBlocks(
 }
 
 /**
- * Response-block fields only — used to decide whether last-run may replace
- * Agent `responseFormat`. Nested authored Response still wins over last-run.
+ * Response-block fields only — used when last-run is missing so a nested
+ * authored Response can still beat Agent `responseFormat`.
  */
 export function extractResponseOutputSchemaFromBlocks(
   blocks: Record<string, unknown> | null | undefined
@@ -424,22 +426,6 @@ function isShallowObjectStub(fields: ArenaGenerativeSchemaField[]): boolean {
   const hasNested = named.some((field) => field.name.includes('.') || field.name.includes('['))
   if (hasNested) return false
   return named.some((field) => field.type === 'object')
-}
-
-/**
- * True when last-run `finalOutput` should supply `outputSchema`: nothing
- * declared, a wrapper object (`run_data`), or an array with no item columns.
- * Pass **Response-only** fields so a nested Agent `responseFormat` does not
- * block the log. Nested authored Response still returns false.
- */
-export function declaredOutputSchemaNeedsLastRunFallback(
-  fields: ArenaGenerativeSchemaField[]
-): boolean {
-  const named = namedSchemaFields(fields)
-  if (named.length === 0) return true
-  const hasNested = named.some((field) => field.name.includes('.') || field.name.includes('['))
-  if (hasNested) return false
-  return named.some((field) => field.type === 'object' || field.type === 'array')
 }
 
 function mergeStubResponseWithAgent(
