@@ -84,3 +84,18 @@ export async function releaseCheckoutAdmission(claim: CheckoutAdmissionClaim): P
     })
   }
 }
+
+/**
+ * Reads the checkout admission claim from a Better Auth hook context.
+ *
+ * Returning `{ context: { billingCheckoutAdmissionClaim } }` from a `before`
+ * hook merges onto the **endpoint** context root (`ctx.billingCheckoutAdmissionClaim`),
+ * not AuthContext (`ctx.context`). Prefer the endpoint field; fall back to
+ * AuthContext for older call sites that assigned it there.
+ */
+export function getCheckoutAdmissionClaimFromHookContext(ctx: {
+  billingCheckoutAdmissionClaim?: CheckoutAdmissionClaim
+  context?: { billingCheckoutAdmissionClaim?: CheckoutAdmissionClaim }
+}): CheckoutAdmissionClaim | undefined {
+  return ctx.billingCheckoutAdmissionClaim ?? ctx.context?.billingCheckoutAdmissionClaim
+}

@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
@@ -88,6 +88,9 @@ export function useUpgradeState({
   const [isAnnual, setIsAnnual] = useState(!stripePaid || ownerBilling.billingInterval === 'year')
   const [isSwitchingInterval, setIsSwitchingInterval] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
+  /** Synchronous mutex — React state alone races before the next render. */
+  const checkoutInFlightRef = useRef(false)
+  const intervalInFlightRef = useRef(false)
 
   const subscription = {
     isFree: isFree(ownerBilling.plan) || starter,
@@ -103,6 +106,18 @@ export function useUpgradeState({
   }
 
   const isLegacyPlan = subscription.plan === 'pro' || subscription.plan === 'team'
+
+  const beginCheckout = useCallback(() => {
+    if (checkoutInFlightRef.current || intervalInFlightRef.current) return false
+    checkoutInFlightRef.current = true
+    setIsStartingCheckout(true)
+    return true
+  }, [])
+
+  const endCheckout = useCallback(() => {
+    checkoutInFlightRef.current = false
+    setIsStartingCheckout(false)
+  }, [])
 
   /**
    * Keeps the toggle aligned when the host context refreshes after a plan change.
@@ -134,8 +149,7 @@ export function useUpgradeState({
 
   const doUpgrade = useCallback(
     async (targetPlan: TargetPlan, creditTier: number) => {
-      if (isStartingCheckout || isSwitchingInterval) return
-      setIsStartingCheckout(true)
+      if (!beginCheckout()) return
       try {
         await handleUpgrade(targetPlan, {
           creditTier,
@@ -144,19 +158,13 @@ export function useUpgradeState({
             ? { organizationId: hostContext.hostOrganizationId }
             : {}),
         })
+        // Stripe navigation is in progress — keep CTAs locked until unload.
       } catch (error) {
         toast.error(getErrorMessage(error, 'Unknown error occurred'))
-      } finally {
-        setIsStartingCheckout(false)
+        endCheckout()
       }
     },
-    [
-      handleUpgrade,
-      hostContext.hostOrganizationId,
-      isAnnual,
-      isStartingCheckout,
-      isSwitchingInterval,
-    ]
+    [beginCheckout, endCheckout, handleUpgrade, hostContext.hostOrganizationId, isAnnual]
   )
 
   const currentInterval = ownerBilling.billingInterval
@@ -168,7 +176,8 @@ export function useUpgradeState({
           'Interval switching is not available on legacy plans. Please upgrade first.'
         )
       }
-      if (isSwitchingInterval || isStartingCheckout) return
+      if (intervalInFlightRef.current || checkoutInFlightRef.current) return
+      intervalInFlightRef.current = true
       setIsSwitchingInterval(true)
       try {
         await requestJson(billingSwitchPlanContract, {
@@ -176,17 +185,11 @@ export function useUpgradeState({
         })
         await refreshBillingState()
       } finally {
+        intervalInFlightRef.current = false
         setIsSwitchingInterval(false)
       }
     },
-    [
-      isLegacyPlan,
-      isSwitchingInterval,
-      isStartingCheckout,
-      refreshBillingState,
-      subscription.plan,
-      workspaceId,
-    ]
+    [isLegacyPlan, refreshBillingState, subscription.plan, workspaceId]
   )
 
   const currentCredits = getPlanTierCredits(subscription.plan)
@@ -209,15 +212,14 @@ export function useUpgradeState({
   const isOnMax = isOnMaxTier && !wantsIntervalSwitch
 
   const upgradeOrSwitchToMax = useCallback(async () => {
-    if (isStartingCheckout || isSwitchingInterval) return
     // Starter has no Stripe subscription — always run a fresh checkout.
     if (starter || !stripePaid) {
       await doUpgrade(subscription.isOrgScoped ? 'team' : 'pro', MAX_TIER.credits)
       return
     }
-    const planType = subscription.isTeam ? 'team' : 'pro'
-    setIsStartingCheckout(true)
+    if (!beginCheckout()) return
     try {
+      const planType = subscription.isTeam ? 'team' : 'pro'
       await requestJson(billingSwitchPlanContract, {
         body: {
           targetPlanName: `${planType}_${MAX_TIER.credits}`,
@@ -226,14 +228,14 @@ export function useUpgradeState({
         },
       })
       await refreshBillingState()
+      endCheckout()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to upgrade'))
-    } finally {
-      setIsStartingCheckout(false)
+      endCheckout()
     }
   }, [
-    isStartingCheckout,
-    isSwitchingInterval,
+    beginCheckout,
+    endCheckout,
     starter,
     stripePaid,
     doUpgrade,
@@ -246,32 +248,31 @@ export function useUpgradeState({
   ])
 
   const onUpgradeToOtherTier = useCallback(async () => {
-    if (isStartingCheckout || isSwitchingInterval) return
     if (starter || !stripePaid) {
       await doUpgrade(subscription.isOrgScoped ? 'team' : 'pro', PRO_TIER.credits)
       return
     }
-    const onMax =
-      getPlanTierCredits(subscription.plan) === MAX_TIER.credits ||
-      subscription.plan === 'team' ||
-      isArenaMaxPlan(subscription.plan)
-    const targetTier = onMax ? PRO_TIER : MAX_TIER
-    const planType = subscription.isTeam ? 'team' : 'pro'
-    const targetPlanName = `${planType}_${targetTier.credits}`
-    setIsStartingCheckout(true)
+    if (!beginCheckout()) return
     try {
+      const onMax =
+        getPlanTierCredits(subscription.plan) === MAX_TIER.credits ||
+        subscription.plan === 'team' ||
+        isArenaMaxPlan(subscription.plan)
+      const targetTier = onMax ? PRO_TIER : MAX_TIER
+      const planType = subscription.isTeam ? 'team' : 'pro'
+      const targetPlanName = `${planType}_${targetTier.credits}`
       await requestJson(billingSwitchPlanContract, {
         body: { targetPlanName, workspaceId },
       })
       await refreshBillingState()
+      endCheckout()
     } catch (e) {
       toast.error(getErrorMessage(e, 'Failed to switch plan'))
-    } finally {
-      setIsStartingCheckout(false)
+      endCheckout()
     }
   }, [
-    isStartingCheckout,
-    isSwitchingInterval,
+    beginCheckout,
+    endCheckout,
     starter,
     stripePaid,
     doUpgrade,

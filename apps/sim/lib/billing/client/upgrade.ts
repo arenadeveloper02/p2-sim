@@ -31,6 +31,22 @@ interface UpgradeOptions {
   organizationId?: string
 }
 
+/**
+ * Better Auth returns `{ data, error }` for plugin calls; the Stripe upgrade
+ * body itself also carries `url`. Accept either shape.
+ */
+function resolveCheckoutRedirectUrl(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null
+  const record = result as Record<string, unknown>
+  if (typeof record.url === 'string' && record.url.length > 0) return record.url
+  const data = record.data
+  if (data && typeof data === 'object') {
+    const url = (data as Record<string, unknown>).url
+    if (typeof url === 'string' && url.length > 0) return url
+  }
+  return null
+}
+
 export function useSubscriptionUpgrade() {
   const { data: session } = useSession()
   const betterAuthSubscription = useSubscription()
@@ -166,6 +182,10 @@ export function useSubscriptionUpgrade() {
           referenceId,
           successUrl,
           cancelUrl: currentUrl,
+          // Own the navigation: Better Auth's redirect plugin would set
+          // location.href as soon as the response lands, racing any UI pending
+          // state and making duplicate checkout calls easy to miss.
+          disableRedirect: true,
           ...(targetPlan === 'team' && { seats: CONSTANTS.INITIAL_TEAM_SEATS }),
           ...(annual && { annual: true }),
         } as const
@@ -237,7 +257,13 @@ export function useSubscriptionUpgrade() {
           }
         }
 
+        const checkoutUrl = resolveCheckoutRedirectUrl(upgradeResult)
+        if (!checkoutUrl) {
+          throw new Error('Checkout could not be started. Please try again.')
+        }
+
         logger.info('Subscription upgrade completed successfully', { targetPlan, referenceId })
+        window.location.assign(checkoutUrl)
       } catch (error) {
         logger.error('Failed to initiate subscription upgrade:', error)
 

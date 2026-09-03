@@ -185,7 +185,8 @@ describe('useUpgradeState', () => {
       await upgradePromise
     })
 
-    expect(currentState?.isStartingCheckout).toBe(false)
+    // Stripe redirect leaves pending locked until the page unloads.
+    expect(currentState?.isStartingCheckout).toBe(true)
 
     let resolveSwitch: (() => void) | undefined
     mockRequestJson.mockImplementationOnce(
@@ -194,6 +195,13 @@ describe('useUpgradeState', () => {
           resolveSwitch = () => resolve({ success: true })
         })
     )
+
+    // Simulate a fresh mount after returning from Stripe (refs reset).
+    await act(async () => {
+      root.unmount()
+      root = createRoot(container)
+      root.render(<Harness />)
+    })
 
     let switchPromise: Promise<void> | undefined
     await act(async () => {
@@ -208,5 +216,50 @@ describe('useUpgradeState', () => {
     })
 
     expect(currentState?.isSwitchingInterval).toBe(false)
+  })
+
+  it('ignores overlapping checkout starts while one is already in flight', async () => {
+    let resolveUpgrade: (() => void) | undefined
+    mockHandleUpgrade.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveUpgrade = resolve
+        })
+    )
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    let first: Promise<void> | undefined
+    await act(async () => {
+      first = currentState?.doUpgrade('team', 25000)
+      void currentState?.doUpgrade('team', 25000)
+      void currentState?.doUpgrade('team', 25000)
+    })
+
+    expect(mockHandleUpgrade).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveUpgrade?.()
+      await first
+    })
+
+    expect(mockHandleUpgrade).toHaveBeenCalledTimes(1)
+  })
+
+  it('unlocks checkout CTAs when Stripe checkout fails to start', async () => {
+    mockHandleUpgrade.mockRejectedValueOnce(new Error('Checkout could not be started.'))
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    await act(async () => {
+      await currentState?.doUpgrade('team', 25000)
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(false)
+    expect(mockToastError).toHaveBeenCalledWith('Checkout could not be started.')
   })
 })

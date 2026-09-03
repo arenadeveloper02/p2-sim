@@ -48,8 +48,8 @@ import {
   isPersonalCheckoutRequest,
 } from '@/lib/billing/authorization'
 import {
-  type CheckoutAdmissionClaim,
   claimCheckoutAdmission,
+  getCheckoutAdmissionClaimFromHookContext,
   releaseCheckoutAdmission,
   resolveCheckoutReferenceId,
 } from '@/lib/billing/checkout-admission'
@@ -1158,9 +1158,9 @@ export const auth = betterAuth({
       }
 
       if (isBillingEnabled && ctx.path === '/subscription/upgrade') {
-        const checkoutAdmissionClaim = ctx.context.billingCheckoutAdmissionClaim as
-          | CheckoutAdmissionClaim
-          | undefined
+        // Better Auth merges before-hook `context` onto the endpoint ctx root,
+        // not AuthContext — see getCheckoutAdmissionClaimFromHookContext.
+        const checkoutAdmissionClaim = getCheckoutAdmissionClaimFromHookContext(ctx)
         if (checkoutAdmissionClaim) {
           await releaseCheckoutAdmission(checkoutAdmissionClaim)
         }
