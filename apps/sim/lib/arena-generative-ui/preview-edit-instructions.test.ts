@@ -32,6 +32,21 @@ describe('buildPreviewEditInstructions', () => {
     expect(text).toContain('Add an API')
   })
 
+  it('asks to bind a dropped planner action to Add an API', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'detail',
+      generateWarnings: [
+        {
+          code: 'actions-dropped',
+          message:
+            'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+        },
+      ],
+    })
+    expect(text).toContain('On the "detail" page, bind {user_input} to a key from Add an API')
+    expect(text).toContain('dropped an action')
+  })
+
   it('asks to re-plan when the planner fell open', () => {
     const text = buildPreviewEditInstructions({
       pagePath: 'home',
@@ -44,6 +59,21 @@ describe('buildPreviewEditInstructions', () => {
     })
     expect(text).toContain('Re-plan this app')
     expect(text).toContain(USER_INPUT_PLACEHOLDER)
+  })
+
+  it('asks to bind a dropped planner action to Add an API', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'detail',
+      generateWarnings: [
+        {
+          code: 'actions-dropped',
+          message:
+            'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+        },
+      ],
+    })
+    expect(text).toContain('On the "detail" page, bind {user_input} to a key from Add an API')
+    expect(text).toContain('dropped an action')
   })
 
   it('lets the author pick which primary to keep after a host repair', () => {

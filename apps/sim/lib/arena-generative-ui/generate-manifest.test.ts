@@ -648,7 +648,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
     expect(result.error).toContain('What still needs to be fixed:')
     expect(result.error).toContain('What you can do:')
-    expect(result.error).toContain('API Bindings')
+    expect(result.error).toContain('Add an API')
     expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
   })
 
@@ -1067,6 +1067,57 @@ describe('generateArenaGenerativeManifest', () => {
       ])
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       expect(system).not.toContain('ARCHETYPE RECIPE:')
+    })
+
+    it('warns when the planner kept a sitemap but dropped invented actions', async () => {
+      mockPlanBrief.mockResolvedValue({
+        brief: {
+          ...plannedBrief,
+          pages: [
+            {
+              path: 'home',
+              title: 'Home',
+              purpose: 'Form',
+              data: 'CTA then navigate',
+              actions: [],
+            },
+            {
+              path: 'results',
+              title: 'Results',
+              purpose: 'Score',
+              data: 'bind score',
+              actions: [],
+            },
+          ],
+        },
+        droppedActions: [{ id: 'load_order', apiKey: 'get_order' }],
+      })
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Orders',
+            content: 'ok',
+            manifest: { entryPath: 'home' },
+            pages: twoPageManifest.pages,
+            actions: twoPageManifest.actions,
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Order inbox with a detail page.',
+        apiBindings: [],
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.content).toContain('Dropped load_order (unknown API key)')
+      expect(result.generateWarnings).toEqual([
+        {
+          code: 'actions-dropped',
+          message:
+            'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+        },
+      ])
     })
 
     it('records intent skip and visual interpret errors as generate warnings', async () => {

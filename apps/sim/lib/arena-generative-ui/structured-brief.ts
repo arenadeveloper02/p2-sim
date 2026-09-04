@@ -163,13 +163,99 @@ const pageRegionsSchema = z.object({
   auxiliary: pageRegionSchema.optional(),
 })
 
+const PAGE_INTERACTION_KEYS = [
+  'selection',
+  'inspect',
+  'execution',
+  'completion',
+  'editing',
+] as const
+
+export type ArenaGenerativePageInteraction = {
+  [Key in (typeof PAGE_INTERACTION_KEYS)[number]]?: string
+}
+
+const PAGE_INTERACTION_VALUE_MAX = 64
+const PAGE_INTERACTION_KEY_PATTERN = '(selection|inspect|detail|execution|completion|editing)'
+
 const pageInteractionSchema = z.object({
-  selection: z.string().min(1).max(64).optional(),
-  inspect: z.string().min(1).max(64).optional(),
-  execution: z.string().min(1).max(64).optional(),
-  completion: z.string().min(1).max(64).optional(),
-  editing: z.string().min(1).max(64).optional(),
+  selection: z.string().min(1).max(PAGE_INTERACTION_VALUE_MAX).optional(),
+  inspect: z.string().min(1).max(PAGE_INTERACTION_VALUE_MAX).optional(),
+  execution: z.string().min(1).max(PAGE_INTERACTION_VALUE_MAX).optional(),
+  completion: z.string().min(1).max(PAGE_INTERACTION_VALUE_MAX).optional(),
+  editing: z.string().min(1).max(PAGE_INTERACTION_VALUE_MAX).optional(),
 })
+
+function canonicalizePageInteractionKey(raw: string): keyof ArenaGenerativePageInteraction | undefined {
+  switch (raw.trim().toLowerCase().replace(/_/g, '-')) {
+    case 'selection':
+      return 'selection'
+    case 'inspect':
+    case 'detail':
+      return 'inspect'
+    case 'execution':
+      return 'execution'
+    case 'completion':
+      return 'completion'
+    case 'editing':
+      return 'editing'
+    default:
+      return undefined
+  }
+}
+
+function clampPageInteractionValue(value: string): string | undefined {
+  const trimmed = value.trim().replace(/^[;,\s]+|[;,\s]+$/g, '')
+  if (!trimmed) return undefined
+  return truncate(trimmed, PAGE_INTERACTION_VALUE_MAX, '')
+}
+
+function collectPageInteractionMatches(
+  value: string,
+  pattern: RegExp
+): ArenaGenerativePageInteraction | undefined {
+  const result: ArenaGenerativePageInteraction = {}
+  for (const match of value.matchAll(pattern)) {
+    const key = canonicalizePageInteractionKey(match[1] ?? '')
+    const parsed = clampPageInteractionValue(match[2] ?? '')
+    if (key && parsed && result[key] == null) result[key] = parsed
+  }
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+/**
+ * Planner contract examples are strings (`selection: single`) or compact
+ * phrases (`selection single, detail simultaneous`). Map those onto the
+ * object the generator reads instead of dropping the field.
+ */
+export function parsePageInteraction(value: unknown): ArenaGenerativePageInteraction | undefined {
+  if (typeof value === 'string') {
+    const labeled = collectPageInteractionMatches(
+      value,
+      new RegExp(
+        `${PAGE_INTERACTION_KEY_PATTERN}\\s*[:=]\\s*([\\s\\S]*?)(?=\\s*(?:[;,]\\s*)?${PAGE_INTERACTION_KEY_PATTERN}\\s*[:=]|$)`,
+        'gi'
+      )
+    )
+    if (labeled) return labeled
+    const compact = collectPageInteractionMatches(
+      value,
+      new RegExp(`${PAGE_INTERACTION_KEY_PATTERN}\\s+([^,;\\n]+)`, 'gi')
+    )
+    if (compact) return compact
+    const fallback = clampPageInteractionValue(value)
+    return fallback ? { selection: fallback } : undefined
+  }
+  if (!isRecord(value)) return undefined
+  const result: ArenaGenerativePageInteraction = {}
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = canonicalizePageInteractionKey(rawKey)
+    if (!key || typeof rawValue !== 'string') continue
+    const parsed = clampPageInteractionValue(rawValue)
+    if (parsed && result[key] == null) result[key] = parsed
+  }
+  return Object.keys(result).length > 0 ? result : undefined
+}
 
 const structuredBriefPageSchema = z.object({
   path: pagePathSchema,
@@ -194,8 +280,9 @@ const structuredBriefPageSchema = z.object({
     .default([])
     .transform((values) => plannedCapabilities(values)),
   interaction: z
-    .union([pageInteractionSchema, z.string().transform(() => undefined)])
-    .optional(),
+    .union([pageInteractionSchema, z.string().transform((value) => parsePageInteraction(value))])
+    .optional()
+    .transform((value) => (value && Object.keys(value).length > 0 ? value : undefined)),
   regions: pageRegionsSchema.optional(),
   /** Domain sections on this page. Not peer archetypes. */
   modules: z.array(z.string().min(1).max(64)).max(MAX_PAGE_MODULES).optional(),
@@ -515,9 +602,8 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
         if (pageArchetype) lifted.archetype = pageArchetype
         else lifted = omit(lifted, ['archetype'])
         if (dataMode) lifted.dataMode = dataMode
-        if (typeof page.interaction === 'string') {
-          lifted = omit(lifted, ['interaction'])
-        }
+        const interaction = parsePageInteraction(page.interaction)
+        lifted = interaction ? { ...lifted, interaction } : omit(lifted, ['interaction'])
         const pageRepresentation = liftRepresentation(page.representation)
         lifted = pageRepresentation
           ? { ...lifted, representation: pageRepresentation }
@@ -789,7 +875,12 @@ export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBri
           .map(([name, region]) => `${name}=${region?.archetype}`)
           .join(', ')}`
       : ''
-    return `- ${page.path}: ${shape} representation=${representation}${dataMode}${capabilities}${regions}${modules}`
+    const interaction = page.interaction
+      ? ` interaction: ${PAGE_INTERACTION_KEYS.filter((key) => page.interaction?.[key])
+          .map((key) => `${key}=${page.interaction?.[key]}`)
+          .join(', ')}`
+      : ''
+    return `- ${page.path}: ${shape} representation=${representation}${dataMode}${capabilities}${regions}${modules}${interaction}`
   })
   return [
     'Page shapes (emit each page using that recipe; do not treat every page as the app archetype):',
@@ -952,18 +1043,63 @@ function normalizeBriefPaths(value: unknown): unknown {
   return normalized
 }
 
-/**
- * Validates a model JSON object as a structured brief. Path-shaped fields are
- * normalised to bare kebab-case keys first. Extra keys are stripped.
- */
-export function parseArenaGenerativeStructuredBrief(
+export interface DroppedBriefAction {
+  id: string
+  apiKey?: string
+}
+
+export interface ParsedStructuredBrief {
+  brief: ArenaGenerativeStructuredBrief
+  droppedActions: DroppedBriefAction[]
+}
+
+function partitionBriefActions(
+  actions: ArenaGenerativeStructuredBrief['actions'],
+  bindingKeys: Set<string>
+): {
+  kept: ArenaGenerativeStructuredBrief['actions']
+  dropped: DroppedBriefAction[]
+} {
+  const kept: ArenaGenerativeStructuredBrief['actions'] = []
+  const dropped: DroppedBriefAction[] = []
+  for (const action of actions) {
+    if (isLocalBriefAction(action) || Boolean(action.apiKey && bindingKeys.has(action.apiKey))) {
+      kept.push(action)
+      continue
+    }
+    dropped.push({
+      id: action.id,
+      ...(action.apiKey ? { apiKey: action.apiKey } : {}),
+    })
+  }
+  return { kept, dropped }
+}
+
+function formatDroppedActionNames(dropped: readonly DroppedBriefAction[]): string {
+  return dropped
+    .map((action) => (action.apiKey ? `${action.id} (apiKey "${action.apiKey}")` : action.id))
+    .join(', ')
+}
+
+function droppedActionsRepairMessage(
+  dropped: readonly DroppedBriefAction[],
+  bindingKeys: readonly string[]
+): string {
+  const names = formatDroppedActionNames(dropped)
+  const remap = bindingKeys.length
+    ? `Declared binding keys: ${bindingKeys.join(', ')}. Remap those actions to a declared key or source dummy/local.`
+    : 'No API bindings were declared. Give those actions source dummy or local. Do not invent API keys.'
+  return `That brief invented action(s) ${names}. ${remap} Return one JSON object in the planner blueprint shape.`
+}
+
+function parseStructuredBriefResult(
   value: unknown,
   options: {
     pageHints?: ArenaGenerativePageHint[]
     entryPath?: string
     apiBindings: ArenaGenerativeApiBinding[]
   }
-): ArenaGenerativeStructuredBrief | null {
+): ParsedStructuredBrief | null {
   const parsed = structuredBriefSchema.safeParse(normalizeBriefPaths(value))
   if (!parsed.success) {
     logger.warn('Arena Generative UI structured brief failed schema validation', {
@@ -976,12 +1112,9 @@ export function parseArenaGenerativeStructuredBrief(
   }
   let brief = parsed.data
   const bindingKeys = new Set(options.apiBindings.map((binding) => binding.key).filter(Boolean))
-  const actions = brief.actions.filter((action) => {
-    if (isLocalBriefAction(action)) return true
-    return Boolean(action.apiKey && bindingKeys.has(action.apiKey))
-  })
-  if (actions.length !== brief.actions.length) {
-    brief = { ...brief, actions }
+  const { kept, dropped } = partitionBriefActions(brief.actions, bindingKeys)
+  if (dropped.length > 0) {
+    brief = { ...brief, actions: kept }
   }
   const hints = options.pageHints?.filter((hint) => hint.path.trim().length > 0) ?? []
   if (hints.length > 0) {
@@ -993,7 +1126,27 @@ export function parseArenaGenerativeStructuredBrief(
     if (!first) return null
     brief = { ...brief, entryPath: first.path }
   }
-  return foldProcessingIntoCapabilities(omit(withParsedPlanClassifiers(brief), ['intent']))
+  return {
+    brief: foldProcessingIntoCapabilities(omit(withParsedPlanClassifiers(brief), ['intent'])),
+    droppedActions: dropped,
+  }
+}
+
+/**
+ * Validates a model JSON object as a structured brief. Path-shaped fields are
+ * normalised to bare kebab-case keys first. Extra keys are stripped. Invented
+ * remote apiKeys are dropped; callers that need the list should parse via the
+ * planner, which retries once before warning.
+ */
+export function parseArenaGenerativeStructuredBrief(
+  value: unknown,
+  options: {
+    pageHints?: ArenaGenerativePageHint[]
+    entryPath?: string
+    apiBindings: ArenaGenerativeApiBinding[]
+  }
+): ArenaGenerativeStructuredBrief | null {
+  return parseStructuredBriefResult(value, options)?.brief ?? null
 }
 
 function reconcileBriefWithPageHints(
@@ -1076,6 +1229,7 @@ const BRIEF_REPAIR_USER_MESSAGE =
 export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null
   error?: string
+  droppedActions?: DroppedBriefAction[]
 }
 
 /**
@@ -1113,6 +1267,8 @@ export async function planArenaGenerativeStructuredBrief(
       entryPath: params.entryPath,
       apiBindings: params.apiBindings,
     }
+    const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
+    let usableWithDropped: ParsedStructuredBrief | null = null
 
     for (let attempt = 0; attempt < MAX_BRIEF_ATTEMPTS; attempt += 1) {
       const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
@@ -1120,16 +1276,33 @@ export async function planArenaGenerativeStructuredBrief(
       if (!rawText) {
         continue
       }
-      let brief: ArenaGenerativeStructuredBrief | null = null
+      let parsedBrief: ParsedStructuredBrief | null = null
       try {
         const parsed = parseLlmJsonObject(rawText)
-        brief = parseArenaGenerativeStructuredBrief(parsed, parseOptions)
+        parsedBrief = parseStructuredBriefResult(parsed, parseOptions)
       } catch {
-        brief = null
+        parsedBrief = null
       }
-      if (brief) {
+      if (parsedBrief) {
+        const withIntent = params.intent
+          ? { ...parsedBrief.brief, intent: params.intent }
+          : parsedBrief.brief
+        if (parsedBrief.droppedActions.length > 0 && attempt + 1 < MAX_BRIEF_ATTEMPTS) {
+          usableWithDropped = { brief: withIntent, droppedActions: parsedBrief.droppedActions }
+          messages.push(
+            { role: 'assistant', content: rawText },
+            {
+              role: 'user',
+              content: droppedActionsRepairMessage(parsedBrief.droppedActions, bindingKeys),
+            }
+          )
+          continue
+        }
         return {
-          brief: params.intent ? { ...brief, intent: params.intent } : brief,
+          brief: withIntent,
+          ...(parsedBrief.droppedActions.length > 0
+            ? { droppedActions: parsedBrief.droppedActions }
+            : {}),
         }
       }
       if (attempt + 1 < MAX_BRIEF_ATTEMPTS) {
@@ -1137,6 +1310,13 @@ export async function planArenaGenerativeStructuredBrief(
           { role: 'assistant', content: rawText },
           { role: 'user', content: BRIEF_REPAIR_USER_MESSAGE }
         )
+      }
+    }
+    if (usableWithDropped) {
+      logger.warn('Arena Generative UI planner kept a brief after dropping invented actions')
+      return {
+        brief: usableWithDropped.brief,
+        droppedActions: usableWithDropped.droppedActions,
       }
     }
     logger.warn('Arena Generative UI structured brief was unusable; generating from prose')

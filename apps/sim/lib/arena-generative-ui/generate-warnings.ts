@@ -1,8 +1,10 @@
+import { truncate } from '@sim/utils/string'
 import { z } from 'zod'
 
 export const ARENA_GENERATIVE_GENERATE_WARNING_CODES = [
   'intent-skipped',
   'planner-failed',
+  'actions-dropped',
   'visual-skipped',
   'critic-skipped',
 ] as const
@@ -33,7 +35,28 @@ const ADOPTED_CHANGES_KEY = 'adoptedChanges'
 const PIPELINE_WARNING_CODES = new Set<ArenaGenerativeGenerateWarningCode>([
   'intent-skipped',
   'planner-failed',
+  'actions-dropped',
 ])
+
+const DROPPED_ACTION_WARNING_MAX = 500
+
+/**
+ * Author-visible note when the planner invented remote apiKeys that were
+ * stripped so generate could keep the rest of the sitemap.
+ */
+export function formatDroppedActionsWarning(
+  dropped: ReadonlyArray<{ id: string; apiKey?: string }>
+): string | undefined {
+  if (dropped.length === 0) return undefined
+  const names = dropped
+    .map((action) => (action.apiKey ? `${action.id} (apiKey "${action.apiKey}")` : action.id))
+    .join(', ')
+  return truncate(
+    `Planner dropped action(s) ${names} — not a declared binding. Add the API or remap the CTA.`,
+    DROPPED_ACTION_WARNING_MAX - 3,
+    '...'
+  )
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -46,6 +69,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function collectGenerateWarnings(input: {
   intentError?: string
   plannerError?: string
+  droppedActions?: ReadonlyArray<{ id: string; apiKey?: string }>
   visualBriefError?: string
   criticSkipped?: boolean
   isPreserveEdit?: boolean
@@ -63,6 +87,15 @@ export function collectGenerateWarnings(input: {
       code: 'planner-failed',
       message: `Planner failed (${input.plannerError}); generated from the prose brief.`,
     })
+  }
+  if (!input.isPreserveEdit) {
+    const droppedMessage = formatDroppedActionsWarning(input.droppedActions ?? [])
+    if (droppedMessage) {
+      current.push({
+        code: 'actions-dropped',
+        message: droppedMessage,
+      })
+    }
   }
   if (input.visualBriefError) {
     current.push({

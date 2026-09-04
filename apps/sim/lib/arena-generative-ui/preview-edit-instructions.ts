@@ -67,6 +67,8 @@ function warningLine(
   switch (warning.code) {
     case 'planner-failed':
       return `Re-plan this app. Name the pages and job as ${USER_INPUT_PLACEHOLDER} (kebab-case paths such as home and results). Keep the APIs already in Add an API.`
+    case 'actions-dropped':
+      return `${prefix} bind ${USER_INPUT_PLACEHOLDER} to a key from Add an API. The planner dropped an action that was not a declared binding.`
     case 'intent-skipped':
       return `${prefix} ${USER_INPUT_PLACEHOLDER} (the one job this page should do).`
     case 'visual-skipped':

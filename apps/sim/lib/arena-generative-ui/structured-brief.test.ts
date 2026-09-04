@@ -36,6 +36,7 @@ import {
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
   parseArenaGenerativeStructuredBrief,
+  parsePageInteraction,
   parseStoredStructuredBrief,
   planArenaGenerativeStructuredBrief,
   recipesForBlueprint,
@@ -313,7 +314,70 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.pages[0]?.dataMode).toBe('dummy')
   })
 
-  it('drops a prose interaction string instead of failing the brief', () => {
+  it('parses a labeled pages[].interaction string onto the coordination object', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Projects',
+        purpose: 'Coordinate projects and tasks.',
+        audience: 'PMs',
+        complexity: 'moderate',
+        archetype: 'workspace',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Projects',
+            purpose: 'Navigator, tasks, and inspector',
+            data: { mode: 'dummy' },
+            actions: [],
+            archetype: 'workspace',
+            interaction: 'selection: single; inspect: selected task',
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.interaction).toEqual({
+      selection: 'single',
+      inspect: 'selected task',
+    })
+  })
+
+  it('parses the compact planner interaction phrase list', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Research',
+        purpose: 'Run analysis.',
+        audience: 'Analysts',
+        complexity: 'simple',
+        archetype: 'task',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Research',
+            purpose: 'Submit',
+            data: { mode: 'dummy' },
+            actions: [],
+            interaction:
+              'selection single, detail simultaneous, execution long-running, completion navigate, editing inline',
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.interaction).toEqual({
+      selection: 'single',
+      inspect: 'simultaneous',
+      execution: 'long-running',
+      completion: 'navigate',
+      editing: 'inline',
+    })
+  })
+
+  it('keeps unlabeled interaction prose instead of dropping it', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
         title: 'Todos',
@@ -336,8 +400,39 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       },
       { apiBindings: [] }
     )
-    expect(parsed?.pages[0]?.interaction).toBeUndefined()
+    expect(parsed?.pages[0]?.interaction).toEqual({
+      selection: 'create and complete on the list',
+    })
     expect(parsed?.complexity).toBe('micro')
+  })
+
+  it('maps a detail key on a page interaction object to inspect', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'CRM',
+        purpose: 'Customers',
+        audience: 'Reps',
+        complexity: 'moderate',
+        archetype: 'collection',
+        entryPath: 'customers',
+        pages: [
+          {
+            path: 'customers',
+            title: 'Customers',
+            purpose: 'Table',
+            data: { mode: 'dummy' },
+            actions: [],
+            interaction: { selection: 'single', detail: 'navigate' },
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.interaction).toEqual({
+      selection: 'single',
+      inspect: 'navigate',
+    })
   })
 
   it('clamps an oversized page actions list instead of rejecting the brief', () => {
@@ -594,6 +689,22 @@ describe('structured brief helpers', () => {
     expect(formatPageShapesForGenerator(brief)).toContain('modules: navigator, activity')
   })
 
+  it('includes parsed page interaction in the generator shape lines', () => {
+    const brief: ArenaGenerativeStructuredBrief = {
+      ...listDetailBrief,
+      pages: [
+        {
+          ...listDetailBrief.pages[0],
+          interaction: { selection: 'single', inspect: 'selected task' },
+        },
+        listDetailBrief.pages[1],
+      ],
+    }
+    expect(formatPageShapesForGenerator(brief)).toContain(
+      'interaction: selection=single, inspect=selected task'
+    )
+  })
+
   it('turns planned pages into generator page hints', () => {
     expect(pageHintsFromStructuredBrief(listDetailBrief)).toEqual([
       { path: 'home', title: 'Orders', purpose: 'Collection of open orders' },
@@ -659,6 +770,36 @@ describe('structured brief helpers', () => {
       selection: 'none',
       wait: 'none',
     })
+  })
+
+  it('keeps a stored string pages[].interaction after parse', () => {
+    const stored = parseStoredStructuredBrief({
+      ...listDetailBrief,
+      pages: [
+        {
+          ...listDetailBrief.pages[0],
+          interaction: 'selection: projects.selection drives tasks',
+        },
+        listDetailBrief.pages[1],
+      ],
+    })
+    expect(stored?.pages[0]?.interaction).toEqual({
+      selection: 'projects.selection drives tasks',
+    })
+  })
+})
+
+describe('parsePageInteraction', () => {
+  it('returns undefined for empty or unknown values', () => {
+    expect(parsePageInteraction('')).toBeUndefined()
+    expect(parsePageInteraction('   ')).toBeUndefined()
+    expect(parsePageInteraction(null)).toBeUndefined()
+    expect(parsePageInteraction(12)).toBeUndefined()
+  })
+
+  it('clamps an oversized coordination value instead of dropping the field', () => {
+    const long = `selection: ${'x'.repeat(80)}`
+    expect(parsePageInteraction(long)?.selection).toHaveLength(64)
   })
 })
 
@@ -740,6 +881,98 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(userMessage).toContain('Analyzed intent')
     expect(userMessage).toContain('"task":"Browse orders and open one record."')
     expect(userMessage).not.toContain('No analyzed intent')
+  })
+
+  it('retries once when the first brief invents remote apiKeys', async () => {
+    const remapped = {
+      ...listDetailBrief,
+      actions: [
+        { ...listDetailBrief.actions[0], source: 'dummy', apiKey: undefined },
+        { ...listDetailBrief.actions[1], source: 'dummy', apiKey: undefined },
+      ],
+    }
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
+      .mockResolvedValueOnce(textMessage(JSON.stringify(remapped)))
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox.',
+      apiBindings: [],
+    })
+
+    expect(planned.brief?.actions).toEqual([
+      expect.objectContaining({ id: 'load_orders', source: 'dummy' }),
+      expect.objectContaining({ id: 'load_order', source: 'dummy' }),
+    ])
+    expect(planned.droppedActions).toBeUndefined()
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    const repair = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+      content: string
+    }
+    expect(repair.content).toContain('invented action(s)')
+    expect(repair.content).toContain('load_order')
+    expect(repair.content).toContain('source dummy or local')
+  })
+
+  it('keeps the first brief instead of falling through to prose when the remap reply is unusable', async () => {
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
+      .mockResolvedValueOnce(textMessage('not json'))
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox.',
+      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+    })
+
+    expect(planned.brief?.title).toBe('Orders')
+    expect(planned.brief?.actions.map((action) => action.id)).toEqual(['load_orders'])
+    expect(planned.error).toBeUndefined()
+    expect(planned.droppedActions).toEqual([{ id: 'load_order', apiKey: 'get_order' }])
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries once when the first brief invents remote apiKeys', async () => {
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
+      .mockResolvedValueOnce(
+        textMessage(
+          JSON.stringify({
+            ...listDetailBrief,
+            actions: [listDetailBrief.actions[0]],
+          })
+        )
+      )
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox.',
+      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+    })
+
+    expect(planned.brief?.actions.map((action) => action.apiKey)).toEqual(['list_orders'])
+    expect(planned.droppedActions).toBeUndefined()
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    const repair = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+      content: string
+    }
+    expect(repair.content).toContain('invented action(s) load_order (apiKey "get_order")')
+    expect(repair.content).toContain('Declared binding keys: list_orders')
+  })
+
+  it('keeps the first usable brief when the repair turn is invalid', async () => {
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
+      .mockResolvedValueOnce(textMessage('not json'))
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox.',
+      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+    })
+
+    expect(planned.brief?.title).toBe('Orders')
+    expect(planned.brief?.actions.map((action) => action.apiKey)).toEqual(['list_orders'])
+    expect(planned.droppedActions).toEqual([{ id: 'load_order', apiKey: 'get_order' }])
+    expect(planned.error).toBeUndefined()
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
   })
 
   it('retries once when the first reply is not a brief', async () => {

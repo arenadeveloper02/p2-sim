@@ -21,6 +21,7 @@ describe('collectGenerateWarnings', () => {
       collectGenerateWarnings({
         intentError: 'haiku down',
         plannerError: 'not a valid structured brief',
+        droppedActions: [{ id: 'load_order', apiKey: 'get_order' }],
         visualBriefError: 'vision timeout',
         criticSkipped: true,
       })
@@ -32,6 +33,11 @@ describe('collectGenerateWarnings', () => {
       {
         code: 'planner-failed',
         message: 'Planner failed (not a valid structured brief); generated from the prose brief.',
+      },
+      {
+        code: 'actions-dropped',
+        message:
+          'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
       },
       {
         code: 'visual-skipped',
@@ -55,6 +61,11 @@ describe('collectGenerateWarnings', () => {
             message: 'Planner failed (not a valid structured brief); generated from the prose brief.',
           },
           {
+            code: 'actions-dropped',
+            message:
+              'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+          },
+          {
             code: 'critic-skipped',
             message: 'UI critic: skipped (unavailable)',
           },
@@ -64,6 +75,11 @@ describe('collectGenerateWarnings', () => {
       {
         code: 'planner-failed',
         message: 'Planner failed (not a valid structured brief); generated from the prose brief.',
+      },
+      {
+        code: 'actions-dropped',
+        message:
+          'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
       },
       {
         code: 'critic-skipped',
@@ -78,8 +94,49 @@ describe('collectGenerateWarnings', () => {
         isPreserveEdit: true,
         intentError: 'should not appear',
         plannerError: 'should not appear',
+        droppedActions: [{ id: 'ghost', apiKey: 'invented' }],
       })
     ).toEqual([])
+  })
+
+  it('records invented planner actions that were stripped', () => {
+    expect(
+      collectGenerateWarnings({
+        droppedActions: [{ id: 'load_order', apiKey: 'get_order' }],
+      })
+    ).toEqual([
+      {
+        code: 'actions-dropped',
+        message:
+          'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+      },
+    ])
+  })
+
+  it('keeps a stored actions-dropped note on a preserve edit', () => {
+    expect(
+      collectGenerateWarnings({
+        isPreserveEdit: true,
+        criticSkipped: true,
+        existing: [
+          {
+            code: 'actions-dropped',
+            message:
+              'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+          },
+        ],
+      })
+    ).toEqual([
+      {
+        code: 'actions-dropped',
+        message:
+          'Planner dropped action(s) load_order (apiKey "get_order") — not a declared binding. Add the API or remap the CTA.',
+      },
+      {
+        code: 'critic-skipped',
+        message: 'UI critic: skipped (unavailable)',
+      },
+    ])
   })
 })
 

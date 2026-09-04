@@ -187,11 +187,15 @@ function formatIntentStatus(intent: ArenaGenerativeIntent | null, intentError?: 
 
 function formatPlannerStatus(
   brief: ArenaGenerativeStructuredBrief | null,
-  plannerError?: string
+  plannerError?: string,
+  droppedActions?: ReadonlyArray<{ id: string; apiKey?: string }>
 ): string {
   if (brief) {
     const paths = brief.pages.map((page) => page.path).join(', ')
-    return `Planner: ${brief.archetype} · ${paths}.`
+    const dropped = droppedActions?.length
+      ? ` Dropped ${droppedActions.map((action) => action.id).join(', ')} (unknown API key).`
+      : ''
+    return `Planner: ${brief.archetype} · ${paths}.${dropped}`
   }
   if (plannerError) {
     return `Planner failed (${plannerError}); generated from the prose brief.`
@@ -522,6 +526,7 @@ export async function generateArenaGenerativeManifest(
   const structuredBrief = planned.brief
   const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
   const plannerError = 'error' in planned ? planned.error : undefined
+  const droppedActions = planned.droppedActions ?? []
   if (structuredBrief) {
     logger.info('Planned Arena Generative UI structured brief', {
       archetype: structuredBrief.archetype,
@@ -818,11 +823,12 @@ export async function generateArenaGenerativeManifest(
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
     const criticStatus = formatCriticStatus(critique, criticRepaired)
     const intentStatus = formatIntentStatus(analyzedIntent, intentError)
-    const plannerStatus = formatPlannerStatus(structuredBrief, plannerError)
+    const plannerStatus = formatPlannerStatus(structuredBrief, plannerError, droppedActions)
     const visualStatus = formatVisualBriefStatus(visualBrief ?? null, params.visualBriefError)
     const generateWarnings = collectGenerateWarnings({
       intentError,
       plannerError,
+      droppedActions,
       visualBriefError: params.visualBriefError,
       criticSkipped: Boolean(critique.skipped),
       isPreserveEdit,
