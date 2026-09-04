@@ -35,6 +35,12 @@ function omitEmptyOptionalJson(value: unknown): unknown {
   return value
 }
 
+function omitEmptyOptionalString(value: unknown): unknown {
+  if (value == null) return undefined
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}
+
 export const arenaGenerativeHttpBindingSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
   url: z.string().url('HTTP binding URL must be valid').max(2048),
@@ -173,7 +179,8 @@ export const arenaGenerativeManifestSchema = z.object({
   actions: z.record(
     z.string(),
     z.object({
-      apiKey: z.string(),
+      /** Declared binding key. Dummy/local actions omit this. */
+      apiKey: z.preprocess(omitEmptyOptionalString, z.string().optional()),
       inputMapping: z.record(z.string(), z.string()).optional(),
       append: z.array(z.string().min(1).max(64)).max(8).optional(),
       onSuccess: z
@@ -195,12 +202,6 @@ export const arenaGenerativePageSummarySchema = z.object({
   path: z.string(),
   title: z.string(),
 })
-
-function omitEmptyOptionalString(value: unknown): unknown {
-  if (value == null) return undefined
-  if (typeof value === 'string' && value.trim() === '') return undefined
-  return value
-}
 
 function coerceUserInput(value: unknown): unknown {
   if (typeof value === 'string') return value
