@@ -1324,6 +1324,107 @@ describe('SpecRenderer', () => {
       expect(onRunAction).not.toHaveBeenCalled()
     })
 
+    it('prefills the edit overlay from the selected Repeat row', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat', 'edit_modal'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['edit'] },
+          edit: {
+            type: 'Button',
+            props: { label: 'Edit', setValue: 'editing=true' },
+            children: [],
+          },
+          edit_modal: {
+            type: 'Modal',
+            props: { title: 'Edit item', showWhen: 'editing' },
+            children: ['edit_form'],
+          },
+          edit_form: {
+            type: 'Form',
+            props: { actionId: 'save_item' },
+            children: ['title'],
+          },
+          title: {
+            type: 'TextInput',
+            props: { name: 'title', label: 'Title' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, state: { articles } })
+      const buttons = Array.from(container.querySelectorAll('button')).filter(
+        (button) => button.textContent === 'Edit'
+      )
+      act(() => {
+        buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect((container.querySelector('#field-title') as HTMLInputElement | null)?.value).toBe(
+        'Second'
+      )
+    })
+
+    it('clears the create overlay so it does not keep the last edit', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: {},
+            children: ['repeat', 'new_item', 'edit_modal', 'create_modal'],
+          },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['edit'] },
+          edit: {
+            type: 'Button',
+            props: { label: 'Edit', setValue: 'editing=true' },
+            children: [],
+          },
+          new_item: {
+            type: 'Button',
+            props: { label: 'New', setValue: 'creating=true' },
+            children: [],
+          },
+          edit_modal: {
+            type: 'Modal',
+            props: { title: 'Edit item', showWhen: 'editing' },
+            children: ['edit_title'],
+          },
+          edit_title: {
+            type: 'TextInput',
+            props: { name: 'title', label: 'Title' },
+            children: [],
+          },
+          create_modal: {
+            type: 'Modal',
+            props: { title: 'New item', showWhen: 'creating' },
+            children: ['create_title'],
+          },
+          create_title: {
+            type: 'TextInput',
+            props: { name: 'title', label: 'Title' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, state: { articles } })
+      const editButtons = Array.from(container.querySelectorAll('button')).filter(
+        (button) => button.textContent === 'Edit'
+      )
+      act(() => {
+        editButtons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect((container.querySelector('#field-title') as HTMLInputElement | null)?.value).toBe(
+        'Second'
+      )
+      const newButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'New'
+      )
+      act(() => {
+        newButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect((container.querySelector('#field-title') as HTMLInputElement | null)?.value).toBe('')
+    })
+
     it('hides DataText until showWhen selectedId matches', () => {
       const spec: Spec = {
         root: 'page',

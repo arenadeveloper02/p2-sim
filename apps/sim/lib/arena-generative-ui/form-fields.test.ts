@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 import {
   collectVisibleFieldValues,
   fieldIsVisible,
+  formValuesFromRecord,
   listFormFields,
+  omitFormFieldValues,
   overlayClosePatch,
   overlayOpenPatch,
   overlayShowWhenUsesSelection,
@@ -169,5 +171,31 @@ describe('collectVisibleFieldValues', () => {
       email: 'ada@example.com',
       count: 4,
     })
+  })
+})
+
+describe('formValuesFromRecord', () => {
+  const fields = [{ type: 'TextInput' as const, props: { name: 'title' } }]
+
+  it('copies matching keys and accepts case-insensitive names', () => {
+    expect(formValuesFromRecord({ Title: 'Ship', id: 'i1' }, fields)).toEqual({ title: 'Ship' })
+    expect(formValuesFromRecord({ title: 'Ship', id: 'i1' }, fields)).toEqual({
+      title: 'Ship',
+    })
+  })
+
+  it('does not invent keys the record lacks', () => {
+    expect(formValuesFromRecord({ id: 'i1' }, fields)).toEqual({})
+  })
+})
+
+describe('omitFormFieldValues', () => {
+  it('drops overlay field names and leaves other keys', () => {
+    expect(
+      omitFormFieldValues(
+        { title: 'Ship', query: 'alpha' },
+        [{ type: 'TextInput', props: { name: 'title' } }]
+      )
+    ).toEqual({ query: 'alpha' })
   })
 })

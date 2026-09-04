@@ -74,6 +74,7 @@ export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-dra
 export {
   buildPreviewEditInstructions,
   catalogTypesFromManifest,
+  overlayFlagsFromManifest,
   USER_INPUT_PLACEHOLDER,
 } from '@/lib/arena-generative-ui/preview-edit-instructions'
 export {

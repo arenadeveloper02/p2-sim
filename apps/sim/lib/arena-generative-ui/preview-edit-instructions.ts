@@ -22,6 +22,8 @@ export interface PreviewEditInstructionInput {
   screenshotGaps?: readonly PreviewScreenshotGap[]
   capabilities?: readonly string[]
   appCatalogTypes?: readonly string[]
+  /** Overlay flags (`creating` / `editing`) found on Button setValue or Modal showWhen. */
+  overlayFlags?: readonly string[]
   apiBindingKeys?: readonly string[]
 }
 
@@ -93,11 +95,19 @@ function screenshotLine(gap: PreviewScreenshotGap, pagePath: string): string {
   return `${pagePrefix(pagePath)} do not add a custom "${gap.observed}". Represent it with ${closest}.`
 }
 
+function hasOverlayFlag(
+  overlayFlags: readonly string[] | undefined,
+  flag: string
+): boolean {
+  return Boolean(overlayFlags?.includes(flag))
+}
+
 function capabilityLines(
   capabilities: readonly string[] | undefined,
   appCatalogTypes: readonly string[] | undefined,
   pagePath: string,
-  apiBindingKeys: readonly string[] | undefined
+  apiBindingKeys: readonly string[] | undefined,
+  overlayFlags: readonly string[] | undefined
 ): string[] {
   if (!capabilities?.length) return []
   const lines: string[] = []
@@ -114,9 +124,18 @@ function capabilityLines(
       `${prefix} use a SearchField as the search hero. actionId ${USER_INPUT_PLACEHOLDER} (or omit actionId to filter the table locally).`
     )
   }
-  if (capabilities.includes('create') && !hasType(appCatalogTypes, 'Modal')) {
+  const hasCreateOverlay =
+    overlayFlags !== undefined
+      ? hasOverlayFlag(overlayFlags, 'creating')
+      : hasType(appCatalogTypes, 'Modal')
+  if (capabilities.includes('create') && !hasCreateOverlay) {
     lines.push(
       `${prefix} open create in a Modal (Button setValue creating=true, Modal showWhen creating). SubmitButton label ${USER_INPUT_PLACEHOLDER}.`
+    )
+  }
+  if (capabilities.includes('edit') && overlayFlags !== undefined && !hasOverlayFlag(overlayFlags, 'editing')) {
+    lines.push(
+      `${prefix} open edit in a Modal (row Button setValue editing=true, Modal showWhen editing). Save with editing: false, not creating: false. SubmitButton label ${USER_INPUT_PLACEHOLDER}.`
     )
   }
   return lines
@@ -136,6 +155,43 @@ export function catalogTypesFromManifest(manifest: ArenaGenerativeAppManifest): 
     }
   }
   return [...types]
+}
+
+const OVERLAY_FLAGS = new Set(['creating', 'editing'])
+
+function overlayFlagName(raw: string): string | undefined {
+  const name = raw.replace(/^!/, '').split('=')[0]?.trim()
+  return name && OVERLAY_FLAGS.has(name) ? name : undefined
+}
+
+function collectOverlayFlagsFromProps(props: unknown, flags: Set<string>): void {
+  if (!props || typeof props !== 'object') return
+  const record = props as Record<string, unknown>
+  if (typeof record.showWhen === 'string') {
+    for (const token of record.showWhen.split(/[\s,]+/)) {
+      const name = overlayFlagName(token)
+      if (name) flags.add(name)
+    }
+  }
+  if (typeof record.setValue === 'string') {
+    const name = overlayFlagName(record.setValue)
+    if (name) flags.add(name)
+  }
+}
+
+/**
+ * Overlay flags used anywhere in the generated app. Preview uses this to
+ * tell create from edit when both are Modals.
+ */
+export function overlayFlagsFromManifest(manifest: ArenaGenerativeAppManifest): string[] {
+  const flags = new Set<string>()
+  for (const page of Object.values(manifest.pages)) {
+    if (!isJsonRenderSpec(page.spec)) continue
+    for (const element of Object.values((page.spec as Spec).elements ?? {})) {
+      collectOverlayFlagsFromProps((element as { props?: unknown }).props, flags)
+    }
+  }
+  return [...flags]
 }
 
 /**
@@ -165,7 +221,8 @@ export function buildPreviewEditInstructions(input: PreviewEditInstructionInput)
     input.capabilities,
     input.appCatalogTypes,
     input.pagePath,
-    input.apiBindingKeys
+    input.apiBindingKeys,
+    input.overlayFlags
   )) {
     push(line)
   }

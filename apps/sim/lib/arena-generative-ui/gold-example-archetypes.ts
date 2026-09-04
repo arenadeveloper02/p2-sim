@@ -330,6 +330,22 @@ export const goldListDetailManifest: ArenaGenerativeAppManifest = {
               meta: 'Due next week',
               initials: 'N',
             },
+            {
+              id: 'o3',
+              name: 'Contoso',
+              status: 'Open',
+              summary: 'Support renewal.',
+              meta: 'Due Monday',
+              initials: 'C',
+            },
+            {
+              id: 'o4',
+              name: 'Adventure Works',
+              status: 'Open',
+              summary: 'Pilot kickoff.',
+              meta: 'Due in two weeks',
+              initials: 'AW',
+            },
           ],
         },
       },
@@ -339,7 +355,7 @@ export const goldListDetailManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL = goldPrompt(
   'list-detail',
-  'This sample has a Detail page because the blueprint named one. Collection onLoad setState seeds Repeat inside a 2-column Grid of entity Cards. Open is selectItem plus navigateTo "detail?id={item.id}" so the row is copied; Detail binds selected (EntityHeader + KeyValue) with no onLoad fetch. When list and record bindings were declared, list onLoad uses the list apiKey; Open may omit selectItem; Detail onLoad uses the record apiKey into record. Do not invent API keys. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero. Omit the Detail page when pages[] has no detail.',
+  'This sample has a Detail page because the blueprint named one. Collection onLoad setState seeds 4–8 Repeat rows inside a 2-column Grid of entity Cards. Open is selectItem plus navigateTo "detail?id={item.id}" so the row is copied; Detail binds selected (EntityHeader + KeyValue) with no onLoad fetch. When list and record bindings were declared, list onLoad uses the list apiKey; Open may omit selectItem; Detail onLoad uses the record apiKey into record. Do not invent API keys. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero. Omit the Detail page when pages[] has no detail.',
   {
     title: 'Orders',
     content: 'Browse orders and open one record.',
@@ -358,13 +374,13 @@ const collectionHomeSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'results_grid', 'create_modal'],
+      children: ['header', 'results_grid', 'create_modal', 'edit_modal'],
     },
     header: {
       type: 'PageHeader',
       props: {
         title: 'Items',
-        subtitle: 'Create and complete stay on this page.',
+        subtitle: 'Create, edit, and complete stay on this page.',
         kicker: 'List',
         align: 'start',
       },
@@ -408,11 +424,28 @@ const collectionHomeSpec: Spec = {
         variant: 'default',
         backgroundColor: null,
       },
-      children: ['item_logo', 'complete_item'],
+      children: ['item_logo', 'edit_item', 'complete_item'],
     },
     item_logo: {
       type: 'Avatar',
       props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
+      children: [],
+    },
+    edit_item: {
+      type: 'Button',
+      props: {
+        label: 'Edit',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'editing=true',
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
       children: [],
     },
     complete_item: {
@@ -488,6 +521,63 @@ const collectionHomeSpec: Spec = {
       props: { label: 'Create', actionId: 'create_item', size: null },
       children: [],
     },
+    edit_modal: {
+      type: 'Modal',
+      props: { title: 'Edit item', showWhen: 'editing' },
+      children: ['edit_form'],
+    },
+    edit_form: {
+      type: 'Form',
+      props: { actionId: 'edit_item', align: 'start' },
+      children: ['edit_name', 'edit_actions'],
+    },
+    edit_name: {
+      type: 'TextInput',
+      props: {
+        name: 'name',
+        label: 'Name',
+        required: true,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        placeholder: 'Item name',
+      },
+      children: [],
+    },
+    edit_actions: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['cancel_edit', 'submit_edit'],
+    },
+    cancel_edit: {
+      type: 'Button',
+      props: {
+        label: 'Cancel',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'editing=',
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    submit_edit: {
+      type: 'SubmitButton',
+      props: { label: 'Save', actionId: 'edit_item', size: null },
+      children: [],
+    },
   },
 }
 
@@ -523,11 +613,32 @@ export const goldCollectionManifest: ArenaGenerativeAppManifest = {
               meta: 'Due Friday',
               initials: 'R',
             },
+            {
+              id: 'i3',
+              name: 'Plan',
+              status: 'Open',
+              summary: 'Outline next sprint.',
+              meta: 'Due Monday',
+              initials: 'P',
+            },
+            {
+              id: 'i4',
+              name: 'Design',
+              status: 'Open',
+              summary: 'Update the mockups.',
+              meta: 'Due Wednesday',
+              initials: 'D',
+            },
           ],
         },
       },
     },
     create_item: {},
+    edit_item: {
+      onSuccess: {
+        setState: { editing: false },
+      },
+    },
     complete_item: {
       onSuccess: {
         setState: { done: true },
@@ -538,7 +649,7 @@ export const goldCollectionManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION = goldPrompt(
   'collection',
-  'One collection page. onLoad setState seeds Repeat inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_item, no apiKey) on this page, not an extra page or region. Complete is a row Button (done: true); the host writes onto that row. Edit is a row Button setValue editing=true (the host selects that row); save uses editing: false, not creating: false. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
+  'One collection page. onLoad setState seeds 4–8 Repeat rows inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_item, no apiKey) on this page, not an extra page or region. Complete is a row Button (done: true); the host writes onto that row. Edit is a row Button setValue editing=true (the host selects that row); save uses editing: false, not creating: false. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
   {
     title: 'Items',
     content: 'Browse a list on one page.',
@@ -909,7 +1020,7 @@ const workspaceHomeSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['shell', 'create_modal'],
+      children: ['shell', 'create_modal', 'edit_modal'],
     },
     shell: {
       type: 'Workspace',
@@ -986,7 +1097,7 @@ const workspaceHomeSpec: Spec = {
       type: 'PageHeader',
       props: {
         title: 'Tasks',
-        subtitle: 'Rows include projectId matching the selected project.',
+        subtitle: 'Rows include projectId matching the selected project. Create, edit, and complete stay here.',
         kicker: null,
         align: 'start',
       },
@@ -1025,7 +1136,7 @@ const workspaceHomeSpec: Spec = {
         variant: 'default',
         backgroundColor: null,
       },
-      children: ['open_task', 'complete_task'],
+      children: ['open_task', 'edit_task', 'complete_task'],
     },
     open_task: {
       type: 'Button',
@@ -1034,6 +1145,23 @@ const workspaceHomeSpec: Spec = {
         actionId: null,
         selectItem: true,
         clearItem: null,
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    edit_task: {
+      type: 'Button',
+      props: {
+        label: 'Edit',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'editing=true',
         navigateTo: null,
         href: null,
         variant: 'ghost',
@@ -1146,6 +1274,63 @@ const workspaceHomeSpec: Spec = {
       props: { label: 'Create', actionId: 'create_task', size: null },
       children: [],
     },
+    edit_modal: {
+      type: 'Modal',
+      props: { title: 'Edit task', showWhen: 'editing' },
+      children: ['edit_form'],
+    },
+    edit_form: {
+      type: 'Form',
+      props: { actionId: 'edit_task', align: 'start' },
+      children: ['edit_name', 'edit_actions'],
+    },
+    edit_name: {
+      type: 'TextInput',
+      props: {
+        name: 'name',
+        label: 'Name',
+        required: true,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        placeholder: 'Task name',
+      },
+      children: [],
+    },
+    edit_actions: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['cancel_edit', 'submit_edit'],
+    },
+    cancel_edit: {
+      type: 'Button',
+      props: {
+        label: 'Cancel',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'editing=',
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    submit_edit: {
+      type: 'SubmitButton',
+      props: { label: 'Save', actionId: 'edit_task', size: null },
+      children: [],
+    },
   },
 }
 
@@ -1178,6 +1363,11 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
       },
     },
     create_task: {},
+    edit_task: {
+      onSuccess: {
+        setState: { editing: false },
+      },
+    },
     complete_task: {
       onSuccess: {
         setState: { done: true },
@@ -1188,7 +1378,7 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
   'sidebar-shell',
-  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (parent Repeat), primary (child Repeat), inspector (EntityHeader + KeyValue of selected). Honour pages[].regions and pages[].interaction; this sample\'s projects/tasks are subject matter. Parent and child Open are both selectItem. onLoad setState seeds both arrays — child rows include projectId matching a parent id; the host filters that collection locally. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_task, no apiKey) on this page — the host appends and stamps the selected parent id. Complete is a row Button (done: true); the host writes onto that row. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Do not hide navigator or primary with !selectedId. No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
+  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (parent Repeat), primary (child Repeat), inspector (EntityHeader + KeyValue of selected). Honour pages[].regions and pages[].interaction; this sample\'s projects/tasks are subject matter. Parent and child Open are both selectItem. onLoad setState seeds both arrays — child rows include projectId matching a parent id; the host filters that collection locally. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_task, no apiKey) on this page — the host appends and stamps the selected parent id. Complete is a row Button (done: true); the host writes onto that row. Edit is a row Button setValue editing=true (the host selects that row); save uses editing: false, not creating: false. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Do not hide navigator or primary with !selectedId. No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
   {
     title: 'Projects',
     content: 'Keep the parent list, child list, and selected record visible together.',

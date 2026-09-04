@@ -135,7 +135,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   edit: [
     'CAPABILITY: EDIT',
-    'Edit lives on the existing record as a Form of the fields the binding inputSchema names. Submit updates that record. Dummy/local source writes those fields via onSuccess.setState; the host copies them onto the matching collection item (row id from the action values, or selectedId). Not a second create-flow page and not a Modal for the whole edit.',
+    'Edit the selected row on this page. Honour binding inputSchema field names when a binding exists. Row Button setValue "editing=true" (the host selects that row and prefills the form). Modal showWhen "editing" holds Form + SubmitButton wired to the edit action. Close with a ghost Button setValue "editing=". Dummy/local source onSuccess.setState the changed fields plus editing: false — not creating: false, or the host appends a new row. The host copies those fields onto the matching collection item (selectedId, or row id from the action values). Do not invent an API key. Not a second create-flow page.',
   ].join('\n'),
   delete: [
     'CAPABILITY: DELETE',

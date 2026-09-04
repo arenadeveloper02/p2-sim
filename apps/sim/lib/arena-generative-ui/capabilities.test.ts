@@ -60,9 +60,14 @@ describe('capabilityRecipePrompt', () => {
     expect(capabilityRecipePrompt(['complete'])).toContain(
       'The host writes those fields onto the matching collection item'
     )
-    expect(capabilityRecipePrompt(['edit'])).toContain(
-      'the host copies them onto the matching collection item'
-    )
+    const edit = capabilityRecipePrompt(['edit'])
+    expect(edit).toContain('setValue "editing=true"')
+    expect(edit).toContain('Modal showWhen "editing"')
+    expect(edit).toContain('editing: false')
+    expect(edit).toContain('not creating: false')
+    expect(edit).toContain('The host copies those fields onto the matching collection item')
+    expect(edit).toContain('prefills the form')
+    expect(edit).not.toContain('not a Modal for the whole edit')
   })
 
   it('tells create to open a Modal with Button setValue', () => {

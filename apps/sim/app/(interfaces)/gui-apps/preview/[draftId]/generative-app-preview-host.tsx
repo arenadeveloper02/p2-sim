@@ -16,6 +16,7 @@ import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-
 import {
   buildPreviewEditInstructions,
   catalogTypesFromManifest,
+  overlayFlagsFromManifest,
 } from '@/lib/arena-generative-ui/preview-edit-instructions'
 import { collectRenderDiagnostics, pageEditPrompt } from '@/lib/arena-generative-ui/render-diagnostics'
 import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
@@ -193,6 +194,7 @@ export function GenerativeAppPreviewHost({
     screenshotGaps: draftQuery.data.screenshotGaps ?? [],
     capabilities: draftQuery.data.capabilities ?? [],
     appCatalogTypes: catalogTypesFromManifest(manifest),
+    overlayFlags: overlayFlagsFromManifest(manifest),
     apiBindingKeys: (apiBindings ?? []).map((binding) => binding.key),
   })
   const liveTheme = themeOverride ?? manifest.theme

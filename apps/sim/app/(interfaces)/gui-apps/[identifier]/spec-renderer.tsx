@@ -57,13 +57,16 @@ import {
   asFieldStringList,
   collectVisibleFieldValues,
   fieldIsVisible,
+  formValuesFromRecord,
   isFormFieldType,
   isTruthyFieldValue,
   listFormFields,
+  omitFormFieldValues,
   overlayClosePatch,
   overlayOpenPatch,
   overlayShowWhenUsesSelection,
   parseOptionList,
+  parseShowWhen,
   resolveFieldValue,
   snapshotFormValues,
   validateVisibleFields,
@@ -317,6 +320,19 @@ function overlayClosePatchForAction(
     return Object.keys(patch).length > 0 ? patch : null
   }
   return null
+}
+
+function overlayFormFields(
+  elements: Record<string, SpecElement>,
+  flag: string
+): ArenaGenerativeFormField[] {
+  for (const element of Object.values(elements)) {
+    if (element.type !== 'Modal' && element.type !== 'Drawer') continue
+    const matches = parseShowWhen(element.props?.showWhen).some((clause) => clause.name === flag)
+    if (!matches) continue
+    return listFormFields(elements, element.children ?? [])
+  }
+  return []
 }
 
 const DEFAULT_PROGRESS_DURATION_MS = 150_000
@@ -3417,7 +3433,32 @@ export function SpecRenderer({
               if ((asBoolean(props.selectItem) || parsedSetValue?.name === 'editing') && scope) {
                 onSelectItem?.(scope.item, scope.index)
               }
-              if (parsedSetValue?.name) {
+              if (parsedSetValue?.name === 'editing') {
+                const item = scope?.item ?? state[ARENA_GENERATIVE_SELECTED_KEY]
+                const fields = overlayFormFields(elements, 'editing')
+                const prefills = formValuesFromRecord(
+                  item,
+                  fields.length > 0 ? fields : specFormFields(elements)
+                )
+                if (Object.keys(prefills).length > 0) {
+                  setFormValues((current) => ({ ...current, ...prefills }))
+                }
+              }
+              if (parsedSetValue?.name === 'creating') {
+                const fields = overlayFormFields(elements, 'creating')
+                if (fields.length > 0) {
+                  setFormValues((current) => omitFormFieldValues(current, fields))
+                }
+                applyOverlayPatch({
+                  [parsedSetValue.name]: parsedSetValue.value,
+                  editing: '',
+                })
+              } else if (parsedSetValue?.name === 'editing') {
+                applyOverlayPatch({
+                  [parsedSetValue.name]: parsedSetValue.value,
+                  creating: '',
+                })
+              } else if (parsedSetValue?.name) {
                 applyOverlayPatch({ [parsedSetValue.name]: parsedSetValue.value })
               }
               const navPath = navigateTo ? splitNavTarget(navigateTo).path : ''

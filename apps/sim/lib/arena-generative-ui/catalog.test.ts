@@ -77,6 +77,12 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).not.toMatch(/sample data/i)
   })
 
+  it('names creating and editing overlay flags on Button and Modal', () => {
+    expect(prompt).toContain('creating=true')
+    expect(prompt).toContain('editing=true')
+    expect(prompt).toContain('do not reuse creating for edit')
+  })
+
   it('teaches the same-page History Open swap', () => {
     expect(prompt).toContain('!selectedId')
     expect(prompt).toContain('clearItem')

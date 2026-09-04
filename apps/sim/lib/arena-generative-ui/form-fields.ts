@@ -258,6 +258,52 @@ export function snapshotFormValues(
   return snapshot
 }
 
+const FORM_PREFILL_SKIP = new Set(['creating', 'editing', 'index', 'hasMore', 'nextCursor', 'offset'])
+
+/**
+ * Copies matching record keys onto form field names so an edit overlay opens
+ * with the selected row. Case-insensitive key match. Does not invent values.
+ */
+export function formValuesFromRecord(
+  record: unknown,
+  fields: readonly ArenaGenerativeFormField[]
+): Record<string, unknown> {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return {}
+  const source = record as Record<string, unknown>
+  const byLower = new Map<string, unknown>()
+  for (const [key, value] of Object.entries(source)) {
+    if (FORM_PREFILL_SKIP.has(key) || value === undefined) continue
+    byLower.set(key.toLowerCase(), value)
+  }
+  const result: Record<string, unknown> = {}
+  for (const field of fields) {
+    const name = asString(field.props.name)
+    if (!name) continue
+    const value = Object.prototype.hasOwnProperty.call(source, name)
+      ? source[name]
+      : byLower.get(name.toLowerCase())
+    if (value === undefined) continue
+    result[name] = value
+  }
+  return result
+}
+
+/**
+ * Drops overlay form keys so a create dialog does not keep the last edit.
+ */
+export function omitFormFieldValues(
+  current: Record<string, unknown>,
+  fields: readonly ArenaGenerativeFormField[]
+): Record<string, unknown> {
+  const names = new Set(
+    fields.map((field) => asString(field.props.name)).filter((name) => name.length > 0)
+  )
+  if (names.size === 0) return current
+  const next = { ...current }
+  for (const name of names) delete next[name]
+  return next
+}
+
 export function isEmptyFieldValue(type: ArenaGenerativeFormFieldType, value: unknown): boolean {
   if (type === 'Checkbox' || type === 'Switch') {
     return !isTruthyFieldValue(value)

@@ -194,8 +194,16 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldCollectionManifest)).toContain('creating=true')
     expect(JSON.stringify(goldCollectionManifest)).toContain('"create_item"')
     expect(JSON.stringify(goldCollectionManifest)).toContain('"complete_item"')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('"edit_item"')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('editing=true')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('showWhen":"editing"')
+    expect(JSON.stringify(goldCollectionManifest.actions.edit_item)).toContain('"editing":false')
+    expect(JSON.stringify(goldCollectionManifest.actions.edit_item)).not.toContain('creating')
     expect(JSON.stringify(goldCollectionManifest)).toContain('"statePath":"items"')
     expect(JSON.stringify(goldCollectionManifest.actions.load_items)).not.toContain('apiKey')
+    const items = goldCollectionManifest.actions.load_items.onSuccess?.setState?.items
+    expect(Array.isArray(items) ? items.length : 0).toBe(4)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION).toContain('4–8 Repeat rows')
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"navigateTo": "')
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"Workspace"')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION).toContain('Do not invent API keys')
@@ -214,6 +222,9 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldListDetailManifest)).toContain('detail?id={item.id}')
     expect(JSON.stringify(goldListDetailManifest)).toContain('"statePath":"selected"')
     expect(JSON.stringify(goldListDetailManifest.actions.load_orders)).not.toContain('apiKey')
+    const orders = goldListDetailManifest.actions.load_orders.onSuccess?.setState?.orders
+    expect(Array.isArray(orders) ? orders.length : 0).toBe(4)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL).toContain('4–8 Repeat rows')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL).toContain('Do not invent API keys')
   })
 
@@ -253,6 +264,11 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldWorkspaceManifest)).toContain('creating=true')
     expect(JSON.stringify(goldWorkspaceManifest)).toContain('"create_task"')
     expect(JSON.stringify(goldWorkspaceManifest)).toContain('"complete_task"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"edit_task"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('editing=true')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('showWhen":"editing"')
+    expect(JSON.stringify(goldWorkspaceManifest.actions.edit_task)).toContain('"editing":false')
+    expect(JSON.stringify(goldWorkspaceManifest.actions.edit_task)).not.toContain('creating')
     expect(JSON.stringify(goldWorkspaceManifest)).toContain('"Modal"')
     expect(JSON.stringify(goldWorkspaceManifest.actions.load_projects)).not.toContain('apiKey')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
@@ -262,6 +278,10 @@ describe('per-archetype gold examples', () => {
       'Honour pages[].regions and pages[].interaction'
     )
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('projectId matching a parent id')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('editing=true')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
+      'save uses editing: false, not creating: false'
+    )
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).not.toContain('not a page archetype')
   })
 })
