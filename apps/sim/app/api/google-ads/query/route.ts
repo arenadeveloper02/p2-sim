@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getCachedAdsQuery, setCachedAdsQuery } from '@/lib/ads-query-cache.server'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -96,6 +97,17 @@ export async function POST(request: NextRequest) {
       accountId: accountInfo.id,
       accountName: accountInfo.name,
     })
+
+    // Serve a repeat of the same question on the same account/day from Redis,
+    // skipping both the GAQL-generation LLM call and the Google Ads API call.
+    const cacheParts = { workspaceId, accountKey: resolvedAccountKey, question: query }
+    const cachedResponse = await getCachedAdsQuery('google', cacheParts)
+    if (cachedResponse) {
+      logger.info(`[${requestId}] Serving Google Ads response from cache`, {
+        executionTime: Date.now() - startTime,
+      })
+      return NextResponse.json(cachedResponse)
+    }
 
     // Use smart parsing to generate GAQL query based on the user's question
     const queryResult = await generateSmartGAQL(query, accountInfo.name)
@@ -207,6 +219,9 @@ export async function POST(request: NextRequest) {
           }
         : null,
     })
+
+    // Cache only successful responses; errors never enter the cache.
+    await setCachedAdsQuery('google', cacheParts, response)
 
     return NextResponse.json(response)
   } catch (error) {

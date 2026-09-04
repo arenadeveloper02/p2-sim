@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getCachedAdsQuery, setCachedAdsQuery } from '@/lib/ads-query-cache.server'
 import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
@@ -143,6 +144,31 @@ export async function POST(request: NextRequest) {
       useAdminCredentials,
     })
 
+    // Serve a repeat of the same question on the same account/day from Redis,
+    // skipping both the query-parsing LLM call and the Facebook API call.
+    // Only the admin-credentials path is cached — OAuth requests depend on the
+    // caller's own access token and are never shared.
+    const cacheParts = useAdminCredentials
+      ? {
+          workspaceId,
+          accountKey: accountId,
+          question: query,
+          extra: {
+            date_preset,
+            level,
+            time_range: time_range ? JSON.stringify(time_range) : undefined,
+            fields: fields ? JSON.stringify(fields) : undefined,
+          },
+        }
+      : null
+    if (cacheParts) {
+      const cachedResponse = await getCachedAdsQuery<FacebookAdsResponse>('facebook', cacheParts)
+      if (cachedResponse) {
+        logger.info('Serving Facebook Ads response from cache', { requestId })
+        return NextResponse.json({ ...cachedResponse, requestId, timestamp })
+      }
+    }
+
     const parsedQuery = await parseQueryWithAI(query, accountName)
 
     logger.info('AI parsed query', { parsedQuery })
@@ -188,6 +214,11 @@ export async function POST(request: NextRequest) {
       requestId,
       resultsCount: (result as { data?: unknown[] })?.data?.length || 0,
     })
+
+    // Cache only successful admin-path responses; errors never enter the cache.
+    if (cacheParts) {
+      await setCachedAdsQuery('facebook', cacheParts, response)
+    }
 
     return NextResponse.json(response)
   } catch (error) {
