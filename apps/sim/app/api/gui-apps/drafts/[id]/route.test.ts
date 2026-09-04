@@ -53,6 +53,7 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(body.revisionDiff).toBeNull()
     expect(body.brief).toBeNull()
     expect(body.screenshotMatchNotes).toBeNull()
+    expect(body.generateWarnings).toEqual([])
   })
 
   it('returns the original generate brief when the draft stored one', async () => {
@@ -94,6 +95,35 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.screenshotMatchNotes).toContain('glass cards')
+  })
+
+  it('returns generate warnings stored on the structured-brief jsonb', async () => {
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          ...draftRow,
+          structuredBrief: {
+            title: 'Lead qualifier',
+            generateWarnings: [
+              {
+                code: 'planner-failed',
+                message: 'Planner failed (bad json); generated from the prose brief.',
+              },
+            ],
+          },
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'rev-1' }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/drafts/draft-1')
+    const response = await GET(req, { params: Promise.resolve({ id: 'draft-1' }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.generateWarnings).toEqual([
+      {
+        code: 'planner-failed',
+        message: 'Planner failed (bad json); generated from the prose brief.',
+      },
+    ])
   })
 
   it('summarizes what changed since the previous revision', async () => {

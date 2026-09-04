@@ -310,4 +310,82 @@ describe('runArenaGenerativeUi', () => {
     )
     expect(mockPersistDraft).toHaveBeenCalledWith(expect.objectContaining({ visualBrief }))
   })
+
+  it('passes a visual interpret error into generate and persists warnings', async () => {
+    mockResolveScreenshots.mockResolvedValueOnce([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aa' } },
+    ])
+    mockInterpretVisual.mockResolvedValueOnce({ brief: null, error: 'vision timeout' })
+    mockGenerateManifest.mockResolvedValueOnce({
+      success: true,
+      title: 'Lead qualifier',
+      content: 'ok',
+      manifest: twoPageManifest,
+      generateWarnings: [
+        {
+          code: 'visual-skipped',
+          message: 'Visual skipped (vision timeout); planned from prose.',
+        },
+      ],
+    })
+
+    await runArenaGenerativeUi({
+      body: {
+        ...BASE_BODY,
+        userInput: 'Lead qualifier.',
+        screenshots: [{ name: 'home.png', key: 'uploads/home.png', size: 12 }],
+      },
+      userId: 'user-1',
+      requireExistingDraft: false,
+    })
+
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({ visualBriefError: 'vision timeout' })
+    )
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generateWarnings: [
+          {
+            code: 'visual-skipped',
+            message: 'Visual skipped (vision timeout); planned from prose.',
+          },
+        ],
+      })
+    )
+  })
+
+  it('sends stored generate warnings on edit so preserve can keep planner fallbacks', async () => {
+    queueDraft({
+      structuredBrief: {
+        title: 'Orders',
+        generateWarnings: [
+          {
+            code: 'planner-failed',
+            message: 'Planner failed (bad json); generated from the prose brief.',
+          },
+        ],
+      },
+    })
+
+    await runArenaGenerativeUi({
+      body: {
+        ...BASE_BODY,
+        existingDraftId: 'draft-1',
+        editInstructions: 'Centre the search row.',
+      },
+      userId: 'user-1',
+      requireExistingDraft: true,
+    })
+
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        existingGenerateWarnings: [
+          {
+            code: 'planner-failed',
+            message: 'Planner failed (bad json); generated from the prose brief.',
+          },
+        ],
+      })
+    )
+  })
 })

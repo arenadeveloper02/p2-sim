@@ -33,6 +33,11 @@ export {
   planArenaGenerativeEditScope,
 } from '@/lib/arena-generative-ui/edit-scope'
 export { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
+export type { ArenaGenerativeGenerateWarning } from '@/lib/arena-generative-ui/generate-warnings'
+export {
+  collectGenerateWarnings,
+  parseStoredGenerateWarnings,
+} from '@/lib/arena-generative-ui/generate-warnings'
 export {
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,

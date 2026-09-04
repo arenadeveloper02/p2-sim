@@ -3,6 +3,10 @@ import { generativeAppDraft, generativeAppDraftRevision } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
 import { filterUndefined } from '@sim/utils/object'
 import { eq } from 'drizzle-orm'
+import {
+  applyGenerateWarningsToStoredBrief,
+  type ArenaGenerativeGenerateWarning,
+} from '@/lib/arena-generative-ui/generate-warnings'
 import type { ArenaGenerativeStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type {
   ArenaGenerativeApiBinding,
@@ -28,6 +32,8 @@ export interface PersistDraftInput {
   structuredBrief?: ArenaGenerativeStructuredBrief | null
   /** Screenshot interpretation. Ordinary edits omit this so a prior visual brief is kept. */
   visualBrief?: ArenaGenerativeVisualBrief | null
+  /** Fail-open skips from this run. Ordinary edits still write this so preview stays current. */
+  generateWarnings?: ArenaGenerativeGenerateWarning[]
 }
 
 export interface PersistedDraft {
@@ -41,13 +47,14 @@ export interface PersistedDraft {
  */
 export async function persistGenerativeAppDraft(input: PersistDraftInput): Promise<PersistedDraft> {
   const now = new Date()
-  const storedBrief =
-    input.structuredBrief === undefined && input.visualBrief === undefined
-      ? undefined
-      : packStoredStructuredBrief(
-          input.structuredBrief ? { ...input.structuredBrief } : null,
-          input.visualBrief ?? null
-        )
+  const rewritingBrief =
+    input.structuredBrief !== undefined || input.visualBrief !== undefined
+  const packedBrief = rewritingBrief
+    ? packStoredStructuredBrief(
+        input.structuredBrief ? { ...input.structuredBrief } : null,
+        input.visualBrief ?? null
+      )
+    : null
 
   if (!input.draftId) {
     const draftId = generateId()
@@ -61,7 +68,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
       entryPath: input.entryPath,
       revision: 1,
       brief: input.brief ?? null,
-      structuredBrief: storedBrief ?? null,
+      structuredBrief: applyGenerateWarningsToStoredBrief(packedBrief, input.generateWarnings),
       manifest: input.manifest,
       apiBindings: input.apiBindings,
       createdAt: now,
@@ -84,6 +91,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
     .select({
       id: generativeAppDraft.id,
       revision: generativeAppDraft.revision,
+      structuredBrief: generativeAppDraft.structuredBrief,
     })
     .from(generativeAppDraft)
     .where(eq(generativeAppDraft.id, input.draftId))
@@ -95,6 +103,17 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
 
   const nextRevision = existing.revision + 1
   const revisionId = generateId()
+  const existingPacked =
+    existing.structuredBrief &&
+    typeof existing.structuredBrief === 'object' &&
+    !Array.isArray(existing.structuredBrief)
+      ? { ...(existing.structuredBrief as Record<string, unknown>) }
+      : {}
+  const nextStoredBrief = rewritingBrief
+    ? applyGenerateWarningsToStoredBrief(packedBrief, input.generateWarnings)
+    : input.generateWarnings !== undefined
+      ? applyGenerateWarningsToStoredBrief(existingPacked, input.generateWarnings)
+      : undefined
 
   await db
     .update(generativeAppDraft)
@@ -106,7 +125,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
         manifest: input.manifest,
         apiBindings: input.apiBindings,
         brief: input.brief,
-        structuredBrief: storedBrief,
+        structuredBrief: nextStoredBrief,
         updatedAt: now,
       })
     )

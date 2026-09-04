@@ -262,6 +262,10 @@ Return ONLY the specification text.`,
       description: 'Planner sitemap when generate planning succeeded',
     },
     plannerError: { type: 'string', description: 'Why planning fell back to prose, if it did' },
+    generateWarnings: {
+      type: 'json',
+      description: 'Fail-open skips (intent, planner, visual, critic) when generate still succeeded',
+    },
     editScope: { type: 'json', description: 'Pages rewritten on Edit, theme-only, or replan' },
   },
 }

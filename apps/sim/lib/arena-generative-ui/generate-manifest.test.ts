@@ -1058,8 +1058,50 @@ describe('generateArenaGenerativeManifest', () => {
         'Planner failed (Planner reply was not a valid structured brief)'
       )
       expect(result.plannerError).toBe('Planner reply was not a valid structured brief')
+      expect(result.generateWarnings).toEqual([
+        {
+          code: 'planner-failed',
+          message:
+            'Planner failed (Planner reply was not a valid structured brief); generated from the prose brief.',
+        },
+      ])
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       expect(system).not.toContain('ARCHETYPE RECIPE:')
+    })
+
+    it('records intent skip and visual interpret errors as generate warnings', async () => {
+      mockAnalyzeIntent.mockResolvedValue({ intent: null, error: 'haiku down' })
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'ok',
+            manifest: { entryPath: 'home' },
+            pages: twoPageManifest.pages,
+            actions: twoPageManifest.actions,
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [],
+        visualBriefError: 'vision timeout',
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.content).toContain('Intent skipped (haiku down)')
+      expect(result.content).toContain('Visual skipped (vision timeout)')
+      expect(result.generateWarnings).toEqual([
+        {
+          code: 'intent-skipped',
+          message: 'Intent skipped (haiku down); planner inferred from prose.',
+        },
+        {
+          code: 'visual-skipped',
+          message: 'Visual skipped (vision timeout); planned from prose.',
+        },
+      ])
     })
 
     it('surfaces the planned sitemap on a successful generate', async () => {
@@ -1713,6 +1755,43 @@ describe('generateArenaGenerativeManifest', () => {
       expect(result.manifest?.pages.home).toBeTruthy()
       expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
       expect(result.content).toContain('UI critic: skipped (unavailable)')
+      expect(result.generateWarnings).toEqual([
+        {
+          code: 'critic-skipped',
+          message: 'UI critic: skipped (unavailable)',
+        },
+      ])
+    })
+
+    it('keeps a stored planner warning when an edit skips the critic', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage(validReply))
+      mockCritique.mockRejectedValue(new Error('haiku down'))
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Centre the search row.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+        existingGenerateWarnings: [
+          {
+            code: 'planner-failed',
+            message:
+              'Planner failed (Planner reply was not a valid structured brief); generated from the prose brief.',
+          },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.generateWarnings).toEqual([
+        {
+          code: 'planner-failed',
+          message:
+            'Planner failed (Planner reply was not a valid structured brief); generated from the prose brief.',
+        },
+        {
+          code: 'critic-skipped',
+          message: 'UI critic: skipped (unavailable)',
+        },
+      ])
     })
   })
 })

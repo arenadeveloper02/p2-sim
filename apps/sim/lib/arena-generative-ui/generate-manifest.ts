@@ -18,6 +18,10 @@ import {
 } from '@/lib/arena-generative-ui/edit-scope'
 import { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
 import {
+  collectGenerateWarnings,
+  type ArenaGenerativeGenerateWarning,
+} from '@/lib/arena-generative-ui/generate-warnings'
+import {
   type ArenaGenerativeIntent,
   analyzeArenaGenerativeIntent,
 } from '@/lib/arena-generative-ui/intent-analyzer'
@@ -343,6 +347,10 @@ export interface GenerateArenaGenerativeManifestParams {
   visualBrief?: ArenaGenerativeVisualBrief
   /** Stored screenshot interpretation. Used on re-plan when no new screenshots were uploaded. */
   existingVisualBrief?: ArenaGenerativeVisualBrief
+  /** Screenshot interpretation failed open; generate continues from prose. */
+  visualBriefError?: string
+  /** Stored fail-open warnings. Preserve edits keep intent/planner entries. */
+  existingGenerateWarnings?: ArenaGenerativeGenerateWarning[]
 }
 
 /**
@@ -792,7 +800,15 @@ export async function generateArenaGenerativeManifest(
     const criticStatus = formatCriticStatus(critique, criticRepaired)
     const intentStatus = formatIntentStatus(analyzedIntent, intentError)
     const plannerStatus = formatPlannerStatus(structuredBrief, plannerError)
-    const visualStatus = formatVisualBriefStatus(visualBrief ?? null)
+    const visualStatus = formatVisualBriefStatus(visualBrief ?? null, params.visualBriefError)
+    const generateWarnings = collectGenerateWarnings({
+      intentError,
+      plannerError,
+      visualBriefError: params.visualBriefError,
+      criticSkipped: Boolean(critique.skipped),
+      isPreserveEdit,
+      existing: params.existingGenerateWarnings,
+    })
     const statusLines = isReplan
       ? [
           formatEditScopeStatus(null, false, true),
@@ -817,6 +833,7 @@ export async function generateArenaGenerativeManifest(
           }
         : {}),
       ...(plannerError ? { plannerError } : {}),
+      generateWarnings,
       ...(isReplan
         ? { editScope: { mode: 'replan' as const, pages: [] } }
         : isPreserveEdit

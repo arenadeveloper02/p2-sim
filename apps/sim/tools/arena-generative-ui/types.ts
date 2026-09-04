@@ -1,3 +1,4 @@
+import type { ArenaGenerativeGenerateWarning } from '@/lib/arena-generative-ui/generate-warnings'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import type { ToolResponse, WorkflowToolExecutionContext } from '@/tools/types'
 
@@ -31,6 +32,7 @@ export interface ArenaGenerativeUiResponse extends ToolResponse {
       pages: Array<{ path: string; title: string }>
     }
     plannerError?: string
+    generateWarnings?: ArenaGenerativeGenerateWarning[]
     editScope?: {
       mode: 'pages' | 'global' | 'theme' | 'replan'
       pages: string[]

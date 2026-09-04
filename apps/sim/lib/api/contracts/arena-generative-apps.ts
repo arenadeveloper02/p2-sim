@@ -6,6 +6,7 @@ import {
   toolSuccessResponseSchema,
 } from '@/lib/api/contracts/tool-primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import { arenaGenerativeGenerateWarningSchema } from '@/lib/arena-generative-ui/generate-warnings'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
 import { RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
@@ -264,6 +265,7 @@ export const arenaGenerativeGenerateOutputSchema = z.object({
     })
     .optional(),
   plannerError: z.string().optional(),
+  generateWarnings: z.array(arenaGenerativeGenerateWarningSchema).optional(),
   editScope: z
     .object({
       mode: z.enum(['pages', 'global', 'theme', 'replan']),
@@ -369,6 +371,8 @@ export const getGenerativeAppDraftContract = defineRouteContract({
       brief: z.string().nullable(),
       /** Catalog gaps from a screenshot-matched generate. Null when no visual brief was stored. */
       screenshotMatchNotes: z.string().nullable(),
+      /** Fail-open skips from generate/edit. Empty when every stage ran or none were stored. */
+      generateWarnings: z.array(arenaGenerativeGenerateWarningSchema),
     }),
   },
 })

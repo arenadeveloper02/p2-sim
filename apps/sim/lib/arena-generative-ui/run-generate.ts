@@ -5,6 +5,7 @@ import type {
   ParsedArenaGenerativeGenerateBody,
 } from '@/lib/api/contracts/arena-generative-apps'
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
+import { parseStoredGenerateWarnings } from '@/lib/arena-generative-ui/generate-warnings'
 import { interpretArenaGenerativeVisualBrief } from '@/lib/arena-generative-ui/interpret-visual-brief'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
@@ -36,6 +37,7 @@ export interface ArenaGenerativeToolOutput {
   manifest: ArenaGenerativeAppManifest
   structuredBrief?: ArenaGenerativeGenerateResult['structuredBrief']
   plannerError?: string
+  generateWarnings?: ArenaGenerativeGenerateResult['generateWarnings']
   editScope?: ArenaGenerativeGenerateResult['editScope']
 }
 
@@ -71,6 +73,7 @@ export async function runArenaGenerativeUi(options: {
   let existingBrief: string | undefined
   let existingStructuredBrief: ReturnType<typeof parseStoredStructuredBrief> = null
   let existingVisualBrief: ReturnType<typeof parseStoredVisualBrief> = null
+  let existingGenerateWarnings: ReturnType<typeof parseStoredGenerateWarnings> = []
   let existingRevision = 0
   if (requireExistingDraft || body.existingDraftId) {
     if (!body.existingDraftId) {
@@ -96,6 +99,7 @@ export async function runArenaGenerativeUi(options: {
     existingBrief = draft.brief ?? undefined
     existingStructuredBrief = parseStoredStructuredBrief(draft.structuredBrief)
     existingVisualBrief = parseStoredVisualBrief(draft.structuredBrief)
+    existingGenerateWarnings = parseStoredGenerateWarnings(draft.structuredBrief)
     existingRevision = draft.revision
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
       apiBindings = parseApiBindings(draft.apiBindings)
@@ -104,6 +108,7 @@ export async function runArenaGenerativeUi(options: {
 
   const screenshots = Array.isArray(body.screenshots) ? body.screenshots : []
   let newVisualBrief: ReturnType<typeof parseStoredVisualBrief> = null
+  let visualBriefError: string | undefined
   if (screenshots.length > 0) {
     try {
       const images = await resolveArenaGenerativeScreenshots({
@@ -124,6 +129,7 @@ export async function runArenaGenerativeUi(options: {
         }
       }
       if (!newVisualBrief && interpreted.error) {
+        visualBriefError = interpreted.error
         logger.warn('Arena Generative UI visual interpretation failed open', {
           error: interpreted.error,
         })
@@ -160,6 +166,8 @@ export async function runArenaGenerativeUi(options: {
     ...(existingStructuredBrief ? { existingStructuredBrief } : {}),
     ...(newVisualBrief ? { visualBrief: newVisualBrief } : {}),
     ...(existingVisualBrief ? { existingVisualBrief } : {}),
+    ...(visualBriefError ? { visualBriefError } : {}),
+    ...(existingGenerateWarnings.length > 0 ? { existingGenerateWarnings } : {}),
   })
   logger.info('Generated Arena Generative UI manifest', {
     workspaceId,
@@ -206,6 +214,9 @@ export async function runArenaGenerativeUi(options: {
           ? (newVisualBrief ?? existingVisualBrief ?? null)
           : undefined
         : (newVisualBrief ?? null),
+      ...(generated.generateWarnings !== undefined
+        ? { generateWarnings: generated.generateWarnings }
+        : {}),
     })
     logger.info('Persisted Arena Generative UI draft', {
       workspaceId,
@@ -244,6 +255,9 @@ export async function runArenaGenerativeUi(options: {
         manifest: generated.manifest,
         ...(generated.structuredBrief ? { structuredBrief: generated.structuredBrief } : {}),
         ...(generated.plannerError ? { plannerError: generated.plannerError } : {}),
+        ...(generated.generateWarnings && generated.generateWarnings.length > 0
+          ? { generateWarnings: generated.generateWarnings }
+          : {}),
         ...(generated.editScope ? { editScope: generated.editScope } : {}),
       },
     }

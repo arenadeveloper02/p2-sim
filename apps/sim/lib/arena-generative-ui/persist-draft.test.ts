@@ -123,4 +123,54 @@ describe('persistGenerativeAppDraft', () => {
       })
     )
   })
+
+  it('nests generate warnings on the stored structured-brief jsonb', async () => {
+    await persistGenerativeAppDraft({
+      ...BASE_INPUT,
+      generateWarnings: [
+        {
+          code: 'planner-failed',
+          message: 'Planner failed (bad json); generated from the prose brief.',
+        },
+      ],
+    })
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        structuredBrief: {
+          generateWarnings: [
+            {
+              code: 'planner-failed',
+              message: 'Planner failed (bad json); generated from the prose brief.',
+            },
+          ],
+        },
+      })
+    )
+  })
+
+  it('merges generate warnings into the stored jsonb on an ordinary edit', async () => {
+    queueTableRows(generativeAppDraft, [
+      {
+        id: 'draft-1',
+        revision: 1,
+        structuredBrief: { title: 'Orders', archetype: 'collection' },
+      },
+    ])
+
+    await persistGenerativeAppDraft({
+      ...BASE_INPUT,
+      draftId: 'draft-1',
+      generateWarnings: [
+        { code: 'critic-skipped', message: 'UI critic: skipped (unavailable)' },
+      ],
+    })
+
+    const updated = dbChainMockFns.set.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(updated.structuredBrief).toEqual({
+      title: 'Orders',
+      archetype: 'collection',
+      generateWarnings: [{ code: 'critic-skipped', message: 'UI critic: skipped (unavailable)' }],
+    })
+  })
 })
