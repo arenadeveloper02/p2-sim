@@ -69,6 +69,7 @@ const ACTION_ID_PROP_TYPES = new Set([
   'Chat',
 ])
 const LIST_WRAPPER_TYPES = new Set(['Grid', 'Stack', 'Section'])
+const COLLECTION_VISIBLE_TYPES = new Set(['Workspace', 'Drawer'])
 
 /** Element key for compiler-injected pending status. Must not collide with model keys. */
 export const UX_COMPILER_STATUS_KEY = 'ux-compiler-status'
@@ -558,13 +559,17 @@ function dropSelectedIdListHidden(element: SpecElement): SpecElement {
 }
 
 /**
- * Removes `showWhen: "!selectedId"` from a list-only page so a dedicated History
- * list stays visible after Open navigates away.
+ * True when the page already keeps the collection visible — catalog Workspace
+ * regions or a Drawer inspector. History hide-list chrome must not run.
  */
-export function stripListHiddenWithoutSamePageSelect(spec: Spec, pagePath: string): Spec {
-  if (specHasSamePageSelectItem(spec, pagePath)) return spec
-  const cloned = structuredClone(spec)
-  const elements = specElements(cloned)
+function specKeepsCollectionVisible(spec: Spec): boolean {
+  return Object.values(specElements(spec)).some((element) =>
+    COLLECTION_VISIBLE_TYPES.has(element.type ?? '')
+  )
+}
+
+function stripSelectedIdListHidden(spec: Spec): Spec {
+  const elements = specElements(spec)
   let changed = false
   for (const [id, element] of Object.entries(elements)) {
     const next = dropSelectedIdListHidden(element)
@@ -572,7 +577,16 @@ export function stripListHiddenWithoutSamePageSelect(spec: Spec, pagePath: strin
     elements[id] = next
     changed = true
   }
-  return changed ? { ...cloned, elements } : cloned
+  return changed ? { ...spec, elements } : spec
+}
+
+/**
+ * Removes `showWhen: "!selectedId"` from a list-only page so a dedicated History
+ * list stays visible after Open navigates away.
+ */
+export function stripListHiddenWithoutSamePageSelect(spec: Spec, pagePath: string): Spec {
+  if (specHasSamePageSelectItem(spec, pagePath)) return spec
+  return stripSelectedIdListHidden(structuredClone(spec))
 }
 
 function formActionIdFromSpec(spec: Spec): string {
@@ -618,10 +632,14 @@ function stampPendingLoaderActionIds(spec: Spec, actionId: string): Spec {
  * show content DataText only then, and add a ghost clearItem Back if none exists.
  * No-op when the spec has no same-page selectItem, or when those props are already set.
  * Never invents a DataText. Does not inject list-hide onto a view-gated History
- * region (`showWhen: "activeView=history"`) or a dedicated History page.
+ * region (`showWhen: "activeView=history"`), a dedicated History page, a catalog
+ * Workspace, or a Drawer inspector — those keep the collection visible.
  */
 export function injectSamePageSelectChrome(spec: Spec, pagePath: string): Spec {
   const cloned = structuredClone(spec)
+  if (specKeepsCollectionVisible(cloned)) {
+    return stripSelectedIdListHidden(cloned)
+  }
   if (!specHasSamePageSelectItem(cloned, pagePath)) {
     return stripListHiddenWithoutSamePageSelect(cloned, pagePath)
   }

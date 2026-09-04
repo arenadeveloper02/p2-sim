@@ -752,6 +752,7 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('results')).toContain('Do not invent SWOT')
     expect(archetypeRecipe('collection')).toContain('pages[].representation')
     expect(archetypeRecipe('collection')).toContain('CAPABILITY inspect')
+    expect(archetypeRecipe('collection')).toContain('pages[].regions.inspector')
     expect(archetypeRecipe('collection')).not.toContain('Table when every row')
     expect(archetypeRecipe('detail')).toContain('Understand one entity')
     expect(archetypeRecipe('dashboard')).toContain('Module count')
@@ -759,7 +760,8 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('workflow')).toContain('Stepper')
     expect(archetypeRecipe('workflow')).not.toContain('One page per step')
     expect(archetypeRecipe('content')).toContain('DataText markdown')
-    expect(archetypeRecipe('workspace')).toContain('Honour pages[].regions')
+    expect(archetypeRecipe('workspace')).toContain('Honour pages[].regions and pages[].interaction')
+    expect(archetypeRecipe('workspace')).toContain('do not navigate to a Detail page')
     expect(ARENA_GENERATIVE_ARCHETYPES).toContain('workspace')
   })
 
@@ -775,6 +777,9 @@ describe('structured brief helpers', () => {
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
       'one primary archetype + capabilities + optional regions'
     )
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
+      'Honour pages[].interaction when present'
+    )
   })
 
   it('appends the shell recipe and modules line when chrome is a sidebar', () => {
@@ -789,6 +794,7 @@ describe('structured brief helpers', () => {
     const recipes = archetypeRecipesForBrief(brief)
     expect(recipes).toContain('SHELL RECIPE')
     expect(recipes).toContain('catalog Workspace')
+    expect(recipes).toContain('Honour pages[].regions and pages[].interaction')
     expect(formatPageShapesForGenerator(brief)).toContain('Shell: navigation=sidebar')
     expect(formatPageShapesForGenerator(brief)).toContain('modules: navigator, activity')
   })
@@ -1443,5 +1449,38 @@ describe('target blueprint fixtures', () => {
     expect(prompt).toContain('ARCHETYPE RECIPE: workspace')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
     expect(prompt).not.toContain('COMPOSITION SEMANTICS')
+  })
+
+  it('includes the workspace recipe when a collection page declared named regions', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Projects',
+        purpose: 'See tasks alongside the project list.',
+        audience: 'Leads',
+        complexity: 'moderate',
+        archetype: 'collection',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Projects',
+            purpose: 'Projects and inspector',
+            archetype: 'collection',
+            data: { mode: 'dummy' },
+            actions: [],
+            regions: {
+              primary: { archetype: 'collection', entity: 'project' },
+              inspector: { archetype: 'detail', entity: 'project' },
+            },
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.archetype).toBe('collection')
+    expect(recipesForBlueprint(parsed!)).toContain('ARCHETYPE RECIPE: workspace')
+    expect(recipesForBlueprint(parsed!)).toContain('ARCHETYPE RECIPE: collection')
+    expect(recipesForBlueprint(parsed!)).toContain('ARCHETYPE RECIPE: detail')
   })
 })

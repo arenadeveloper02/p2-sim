@@ -36,10 +36,11 @@ describe('capabilityRecipePrompt', () => {
     )
   })
 
-  it('splits same-page and cross-page History on select', () => {
+  it('keeps Workspace regions visible on select and still teaches History Open', () => {
     const prompt = capabilityRecipePrompt(['select'])
-    expect(prompt).toContain('Same-page')
-    expect(prompt).toContain('Cross-page')
+    expect(prompt).toContain('Honour pages[].interaction.selection')
+    expect(prompt).toContain('keep every named region visible')
+    expect(prompt).toContain('History-style Open')
     expect(prompt).toContain('never hide the History list')
   })
 
@@ -51,6 +52,8 @@ describe('capabilityRecipePrompt', () => {
   it('composes inspect and analyze recipes', () => {
     const prompt = capabilityRecipePrompt(['inspect', 'analyze'])
     expect(prompt).toContain('CAPABILITY: INSPECT')
+    expect(prompt).toContain('Honour pages[].interaction.inspect')
+    expect(prompt).toContain('Do not navigateTo a Detail page and do not invent one')
     expect(prompt).toContain('CAPABILITY: ANALYZE')
     expect(prompt.indexOf('INSPECT')).toBeLessThan(prompt.indexOf('ANALYZE'))
   })

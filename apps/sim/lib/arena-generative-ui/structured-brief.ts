@@ -729,7 +729,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: collection',
     'Purpose: Display and operate on a collection of entities.',
     'Structure: Header → Toolbar (only if CAPABILITY search/filter/sort is selected) → Collection.',
-    'Rules: Honour pages[].representation (list / table / cards). Bind collection data when bindings exist; dummy/local mode seeds 4–8 static Table rows or Repeat items. Do not add search, filter, stats, or a detail page unless the blueprint listed them. Entity actions stay on the entity. Inspect is CAPABILITY inspect. Loading, empty, and error are host — set emptyText.',
+    'Rules: Honour pages[].representation (list / table / cards). Bind collection data when bindings exist; dummy/local mode seeds 4–8 static Table rows or Repeat items. Do not add search, filter, stats, or a detail page unless the blueprint listed them. Entity actions stay on the entity. Inspect is CAPABILITY inspect: same-page when pages[].regions.inspector or interaction.inspect is not navigate; a Detail page only when the sitemap already has one. Loading, empty, and error are host — set emptyText.',
   ].join('\n'),
   detail: [
     'ARCHETYPE RECIPE: detail',
@@ -771,7 +771,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: workspace',
     'Purpose: Keep coordinated regions visible together.',
     'Structure: catalog Workspace — navigator, primary, optional inspector / auxiliary.',
-    'Rules: Honour pages[].regions. Each region independently uses that region\'s archetype recipe (collection, detail, …). Sync via selectedId. Inspector may use showWhen "selectedId". Do not invent a new region archetype. Do not emit a second page for a region the blueprint placed here.',
+    'Rules: Honour pages[].regions and pages[].interaction (selection, inspect, execution). Each region independently uses that region\'s archetype recipe (collection, detail, …). selection: selectItem / selectedId updates the named region (filters another collection or drives inspector). inspect: inspector (showWhen "selectedId") — do not navigate to a Detail page. execution: WorkingCard / results stay in the named region — do not invent a Results page. Sync via selectedId. Do not invent a new region archetype or coordination the blueprint omitted. Do not emit a second page for a region the blueprint placed here.',
   ].join('\n'),
 }
 
@@ -785,7 +785,7 @@ export const SHELL_RECIPE = [
   'SHELL RECIPE',
   'App chrome is not a page job. Honour brief.shell.',
   'sidebar: emit catalog Workspace or a persistent nav column for top-level destinations. Sync via selectedId when regions exist. No Tabs for workspace regions. Host collapses inspector, then navigator.',
-  'workspace: persistent multi-region chrome. Honour pages[].regions. Same catalog Workspace as the workspace page recipe.',
+  'workspace: persistent multi-region chrome. Honour pages[].regions and pages[].interaction. Same catalog Workspace as the workspace page recipe.',
   'tabs: emit Tabs as Label|path. Not sequential steps (those are Stepper).',
   'minimal / none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
   'header: emit AppHeader (icon + product name) as a direct child of Page. breadcrumbs: NavLinks only when that flag is true. PageHeader remains the in-page title inside Section.',
@@ -836,6 +836,7 @@ export function recipesForBlueprint(brief: ArenaGenerativeStructuredBrief): stri
     if (page.archetype) shapes.add(page.archetype)
     if (page.representation) representations.add(page.representation)
     if (page.regions) {
+      shapes.add('workspace')
       for (const region of Object.values(page.regions)) {
         if (region?.archetype) shapes.add(region.archetype)
         if (region?.representation) representations.add(region.representation)
@@ -920,7 +921,7 @@ export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBri
   })
   return [
     'Page shapes (emit each page using that recipe; do not treat every page as the app archetype):',
-    'Each page is one primary archetype + capabilities + optional regions. Do not emit detail + results + dashboard as peer jobs on one page. Do not add pages, history, stats, or modules the blueprint omitted.',
+    'Each page is one primary archetype + capabilities + optional regions. Honour pages[].interaction when present. Do not emit detail + results + dashboard as peer jobs on one page. Do not add pages, history, stats, or modules the blueprint omitted.',
     complexity,
     shell,
     entity,

@@ -966,7 +966,7 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
   'sidebar-shell',
-  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Honour pages[].regions; this sample\'s accounts/notes are subject matter. Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
+  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Honour pages[].regions and pages[].interaction; this sample\'s accounts/notes are subject matter. Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
   {
     title: 'Accounts',
     content: 'Keep the list, record, and notes visible together.',

@@ -1,6 +1,15 @@
-# Arena Generative UI — test input
+# Arena Generative UI — test inputs
 
-One copy-paste set for the **Arena Generative UI** block. Matches the [user-guide example](./arena-generative-ui-user-guide.md#example--article-recommendation-agent). Use **Generate New App**. User Input is prose; only Pages and API Bindings are JSON (leave Pages blank unless you want to pin paths).
+Two copy-paste sets for the **Arena Generative UI** block. Use **Generate New App**. User Input is prose; only Pages and API Bindings are JSON (leave Pages blank unless you want to pin paths).
+
+1. **Navigate** — [Article Recommendation Agent](#article-recommendation-agent-navigate) (task then results). Matches the [user-guide example](./arena-generative-ui-user-guide.md#example--article-recommendation-agent).
+2. **Compose** — [Projects and tasks](#projects-and-tasks-compose) (one Workspace page). Matches [Composition Semantics → WHEN](./arena-generative-ui-composition-semantics.md#6-when--compose-vs-navigate-vs-local).
+
+After each run, open **Deploy → GUI App**, pick the draft, then **Preview**.
+
+---
+
+## Article Recommendation Agent (navigate)
 
 After the run, open **Deploy → GUI App**, pick the draft, then **Preview**.
 
@@ -133,3 +142,57 @@ Calm Arena-like layout. Generator form left-aligned. History cards are compact: 
 If History dumps every `output` or appends markdown below the list, do not regenerate from this set. **Edit Existing Draft** with a page-scoped delta: History cards bind only keyword/client/date; Open is `selectItem` with no `actionId` and no `navigateTo`; hide Repeat with `!selectedId`; Back is `clearItem`.
 
 Do not use identifier `preview` when you later Launch — that name is reserved.
+
+---
+
+## Projects and tasks (compose)
+
+Dummy / local data. Leave **API Bindings** empty. The planner should emit one `home` Workspace page — not `/projects`, `/tasks`, `/tasks/:id`.
+
+### Mode
+
+`Generate New App`
+
+### User Input
+
+```
+Project board. Keep projects, the tasks in the selected project, and the selected
+task visible together — inspect the task without leaving the board.
+
+One page. Dummy data. Create and complete a task on this page (dialog or inline),
+not a create page and not a task-detail page.
+
+Projects on the left. Tasks for the selected project in the middle. Selected task
+on the right. Selecting a project filters the task list. Selecting a task fills
+the inspector.
+```
+
+### Pages
+
+Leave blank.
+
+### Entry Path
+
+```
+home
+```
+
+### API Bindings
+
+Leave blank.
+
+### Design Notes
+
+```
+Comfortable density. Task-oriented. No dashboard, stats, or history.
+```
+
+### What to check in Preview
+
+1. One page. No separate Projects / Tasks / Task detail routes in the sitemap.
+2. Three regions stay visible together. Selecting a project changes the task list. Selecting a task fills the inspector — no navigate to a detail page.
+3. Create / complete is a dialog or inline control, not another page.
+4. Collection rows are dummy (4–8). CTAs still work locally (`onSuccess.setState`).
+5. Block `content` should not say `Uncoordinated regions` — `pages[].interaction` named the flows.
+
+If Preview invented `/tasks` or a Results page, **Edit Existing Draft** with `re-plan` and this User Input again, or a page-scoped delta: keep the three regions on `home`; do not add pages.

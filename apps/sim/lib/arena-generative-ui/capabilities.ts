@@ -99,15 +99,15 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   'drill-down': [
     'CAPABILITY: DRILL-DOWN',
-    'A dashboard or collection module opens a more specific page or same-page detail. Use Button.navigateTo / NavLink.to with the row id, or selectItem when the row already has prose. Same-page Open uses showWhen !selectedId; cross-page Open (navigateTo or Chip view switch) keeps the list visible. Do not fetch the same record twice.',
+    'A dashboard or collection module opens a more specific page or same-page detail. Honour pages[].interaction and pages[].regions. Workspace selection keeps named regions visible — do not hide navigator or primary with !selectedId. History-style Open uses showWhen !selectedId. Cross-page Open (navigateTo or Chip view switch) only to a page the blueprint listed. Do not fetch the same record twice.',
   ].join('\n'),
   select: [
     'CAPABILITY: SELECT',
-    'Opening a row that already has prose is Button selectItem true with no actionId. Same-page: stay on the list (showWhen !selectedId / selectedId / clearItem Back). Cross-page: navigateTo a results page with no onLoad of that row and never hide the History list with !selectedId. Do not fetch the same item twice.',
+    'Honour pages[].interaction.selection and pages[].regions. Opening a row is Button selectItem true with no actionId. Workspace / selection that filters another collection or drives inspector: keep every named region visible — do not hide navigator or primary with showWhen !selectedId. History-style Open (prose already on the row, no inspector region): stay on the list (showWhen !selectedId / selectedId / clearItem Back). Cross-page: navigateTo only a page the blueprint listed, with no onLoad of that row, and never hide the History list with !selectedId. Do not fetch the same item twice.',
   ].join('\n'),
   inspect: [
     'CAPABILITY: INSPECT',
-    'Open one entity. Presentation is renderer-owned: keep-the-list-visible uses Workspace inspector or Drawer (Button selectItem true, showWhen selectedId, ghost clearItem); a substantial record may navigateTo a detail page with ?id=; a small focused view may use Modal; a row that already has prose may stay inline. Do not encode drawer vs page as a second capability. Do not fetch the same record twice.',
+    'Open one entity. Honour pages[].interaction.inspect and pages[].regions.inspector. Same-page inspect (inspector region, or inspect that is not navigate) uses Workspace inspector or Drawer — Button selectItem true, showWhen selectedId, ghost clearItem. Do not navigateTo a Detail page and do not invent one. Inspect that replaces the collection is a Detail page the blueprint already listed (navigateTo with ?id=). A small focused view may use Modal; a row that already has prose may stay inline. Do not encode drawer vs page as a second capability. Do not fetch the same record twice.',
   ].join('\n'),
   analyze: [
     'CAPABILITY: ANALYZE',

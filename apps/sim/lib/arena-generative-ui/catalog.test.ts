@@ -91,6 +91,11 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).toContain('distinct manifest page path')
   })
 
+  it('keeps Workspace and Drawer collections visible on select', () => {
+    expect(prompt).toContain('Workspace and Drawer keep the collection visible')
+    expect(prompt).toContain('do not hide navigator or primary')
+  })
+
   it('tells the spec the host pages Table and Repeat when there is no pagination API', () => {
     expect(prompt).toContain('the host pages long tables locally')
     expect(prompt).toContain('the host pages long lists locally')

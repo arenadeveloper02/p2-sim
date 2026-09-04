@@ -182,6 +182,37 @@ Do not append DataText below an always-visible Repeat.
 
 ---
 
+## Example — Projects and tasks (Workspace)
+
+Use this when the job is **keep both visible** (compose), not **replace the current view** (navigate). Copy-paste set: [test inputs — compose](./arena-generative-ui-test-inputs.md#projects-and-tasks-compose). No API Bindings — dummy data.
+
+**Mode:** Generate New App
+
+**User Input:**
+
+```
+Project board. Keep projects, the tasks in the selected project, and the selected
+task visible together — inspect the task without leaving the board.
+
+One page. Dummy data. Create and complete a task on this page (dialog or inline),
+not a create page and not a task-detail page.
+
+Projects on the left. Tasks for the selected project in the middle. Selected task
+on the right. Selecting a project filters the task list. Selecting a task fills
+the inspector.
+```
+
+**What to check in Preview**
+
+1. One `home` page. No `/projects`, `/tasks`, or task-detail route.
+2. Three regions stay on screen. Project selection filters tasks. Task selection fills the inspector.
+3. Create / complete is local (dialog or inline), not another page.
+4. Planner `content` does not say `Uncoordinated regions`.
+
+“Then go to results” is the other pattern — that is the Article Recommendation Agent above.
+
+---
+
 ## After the first run
 
 1. Open **Preview**. Click through every page and run the CTA once.
@@ -198,7 +229,7 @@ Do not append DataText below an always-visible Repeat.
 - Bound workflows are **deployed** before Preview / Launch.
 - JSON APIs: paste Output format JSON so Results is not a text dump.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
-- User Input names pages, **camelCase field names**, submit label, and “then go to {page}”.
+- User Input names pages, **camelCase field names**, submit label, and “then go to {page}”. To keep two things on screen, say **alongside** / **without leaving** — that is one Workspace page, not extra routes.
 - To show typed values on Results, write `{targetKeyword}` (or the form `name`) there — not History keys like `{keyword}` / `{client}`, and do not wait for the API to echo them.
 - History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`, no `navigateTo`); hide the list with `!selectedId`; Back is `clearItem`. Do not bind `item.output` on the list.
 - Edits are deltas. Do not paste the original brief again.

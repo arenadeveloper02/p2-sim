@@ -3,7 +3,10 @@
  */
 import type { Spec } from '@json-render/core'
 import { describe, expect, it } from 'vitest'
-import { goldListDetailManifest } from '@/lib/arena-generative-ui/gold-example-archetypes'
+import {
+  goldListDetailManifest,
+  goldWorkspaceManifest,
+} from '@/lib/arena-generative-ui/gold-example-archetypes'
 import {
   twoPageApiBindings,
   twoPageHomeSpec,
@@ -544,6 +547,52 @@ describe('injectSamePageSelectChrome', () => {
     expect(twice).toEqual(once)
   })
 
+  it('does not hide Workspace navigator or inject History Back', () => {
+    const spec = structuredClone(goldWorkspaceManifest.pages.home.spec)
+    const compiled = injectSamePageSelectChrome(spec, 'home')
+    expect(compiled).toEqual(spec)
+    const elements = compiled.elements as Record<string, { props?: Record<string, unknown> }>
+    expect(elements.accounts?.props?.showWhen).toBeUndefined()
+    expect(elements.navigator?.props?.showWhen).toBeUndefined()
+    expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
+  })
+
+  it('strips !selectedId from a Workspace list the model hid', () => {
+    const spec = structuredClone(goldWorkspaceManifest.pages.home.spec)
+    const elements = spec.elements as Record<string, { props?: Record<string, unknown> }>
+    elements.accounts = {
+      ...elements.accounts,
+      props: { ...elements.accounts?.props, showWhen: '!selectedId' },
+    }
+    const compiled = injectSamePageSelectChrome(spec, 'home')
+    const next = compiled.elements as Record<string, { props?: Record<string, unknown> }>
+    expect(next.accounts?.props?.showWhen).toBeUndefined()
+    expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
+  })
+
+  it('does not hide a collection that inspects in a Drawer', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['repeat', 'drawer'] },
+        repeat: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+        drawer: {
+          type: 'Drawer',
+          props: { showWhen: 'selectedId' },
+          children: ['body'],
+        },
+        body: { type: 'DataText', props: { statePath: 'content' }, children: [] },
+      },
+    }
+    const compiled = injectSamePageSelectChrome(spec, 'home')
+    expect(compiled).toEqual(structuredClone(spec))
+    expect(
+      (compiled.elements?.repeat as { props?: Record<string, unknown> }).props?.showWhen
+    ).toBeUndefined()
+    expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
+  })
+
   it('does not hide a view-gated History list with !selectedId', () => {
     const spec: Spec = {
       root: 'page',
@@ -657,6 +706,14 @@ describe('compiledPageFromManifest', () => {
     const detail = compiledPageFromManifest(goldListDetailManifest, [], 'detail')
     expect(home?.spec).toEqual(structuredClone(goldListDetailManifest.pages.home.spec))
     expect(detail?.spec).toEqual(structuredClone(goldListDetailManifest.pages.detail.spec))
+  })
+
+  it('leaves the workspace gold page visible after compile', () => {
+    const home = compiledPageFromManifest(goldWorkspaceManifest, [], 'home')
+    expect(home?.spec).toEqual(structuredClone(goldWorkspaceManifest.pages.home.spec))
+    const elements = home?.spec.elements as Record<string, { props?: Record<string, unknown> }>
+    expect(JSON.stringify(elements)).not.toContain('!selectedId')
+    expect(elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
   })
 
   it('compiles same-page Open chrome onto a broken History page', () => {

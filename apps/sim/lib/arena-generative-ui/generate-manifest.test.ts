@@ -389,6 +389,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('clearItem')
     expect(system).toContain('!selectedId')
     expect(system).toContain('Same-page History')
+    expect(system).toContain('Workspace and Drawer keep the collection visible')
     expect(system).toContain('Cross-page History')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')

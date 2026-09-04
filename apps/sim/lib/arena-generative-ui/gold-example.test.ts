@@ -284,7 +284,9 @@ describe('per-archetype gold examples', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('Honour pages[].regions')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
+      'Honour pages[].regions and pages[].interaction'
+    )
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).not.toContain('not a page archetype')
   })
 })
