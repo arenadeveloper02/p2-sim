@@ -4,8 +4,8 @@ import type {
   ArenaGenerativeGenerateWarning,
 } from '@/lib/arena-generative-ui/generate-warnings'
 import type { RenderDiagnostic } from '@/lib/arena-generative-ui/render-diagnostics'
-import { isActionTelemetryRoot, isJsonRenderSpec } from '@/lib/arena-generative-ui/types'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
+import { isActionTelemetryRoot, isJsonRenderSpec } from '@/lib/arena-generative-ui/types'
 
 export const USER_INPUT_PLACEHOLDER = '{user_input}'
 
@@ -95,10 +95,7 @@ function screenshotLine(gap: PreviewScreenshotGap, pagePath: string): string {
   return `${pagePrefix(pagePath)} do not add a custom "${gap.observed}". Represent it with ${closest}.`
 }
 
-function hasOverlayFlag(
-  overlayFlags: readonly string[] | undefined,
-  flag: string
-): boolean {
+function hasOverlayFlag(overlayFlags: readonly string[] | undefined, flag: string): boolean {
   return Boolean(overlayFlags?.includes(flag))
 }
 
@@ -133,7 +130,11 @@ function capabilityLines(
       `${prefix} open create in a Modal (Button setValue creating=true, Modal showWhen creating). SubmitButton label ${USER_INPUT_PLACEHOLDER}.`
     )
   }
-  if (capabilities.includes('edit') && overlayFlags !== undefined && !hasOverlayFlag(overlayFlags, 'editing')) {
+  if (
+    capabilities.includes('edit') &&
+    overlayFlags !== undefined &&
+    !hasOverlayFlag(overlayFlags, 'editing')
+  ) {
     lines.push(
       `${prefix} open edit in a Modal (row Button setValue editing=true, Modal showWhen editing). Save with editing: false, not creating: false. SubmitButton label ${USER_INPUT_PLACEHOLDER}.`
     )

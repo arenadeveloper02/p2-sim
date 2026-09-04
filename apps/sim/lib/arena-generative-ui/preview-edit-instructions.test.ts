@@ -2,9 +2,11 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { goldCollectionManifest } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import {
   buildPreviewEditInstructions,
   catalogTypesFromManifest,
+  overlayFlagsFromManifest,
   USER_INPUT_PLACEHOLDER,
 } from '@/lib/arena-generative-ui/preview-edit-instructions'
 import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
@@ -134,6 +136,39 @@ describe('buildPreviewEditInstructions', () => {
     })
     expect(text).toBe('')
   })
+
+  it('asks for an edit Modal when the planner named edit but the app only has creating', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'home',
+      capabilities: ['create', 'edit'],
+      appCatalogTypes: ['Page', 'Modal', 'Button'],
+      overlayFlags: ['creating'],
+    })
+    expect(text).toContain('open edit in a Modal')
+    expect(text).toContain('editing=true')
+    expect(text).toContain('editing: false, not creating: false')
+    expect(text).not.toContain('open create in a Modal')
+  })
+
+  it('does not ask for edit when the app already has an editing overlay', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'home',
+      capabilities: ['edit'],
+      appCatalogTypes: ['Page', 'Modal'],
+      overlayFlags: ['editing'],
+    })
+    expect(text).toBe('')
+  })
+
+  it('asks for create when overlay flags show no creating, even if a Modal exists', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'home',
+      capabilities: ['create'],
+      appCatalogTypes: ['Page', 'Modal'],
+      overlayFlags: ['editing'],
+    })
+    expect(text).toContain('open create in a Modal')
+  })
 })
 
 describe('catalogTypesFromManifest', () => {
@@ -141,5 +176,17 @@ describe('catalogTypesFromManifest', () => {
     expect(catalogTypesFromManifest(twoPageManifest)).toEqual(
       expect.arrayContaining(['Page', 'Section', 'Form', 'SubmitButton', 'DataText'])
     )
+  })
+})
+
+describe('overlayFlagsFromManifest', () => {
+  it('collects creating and editing from setValue and showWhen', () => {
+    expect(overlayFlagsFromManifest(goldCollectionManifest)).toEqual(
+      expect.arrayContaining(['creating', 'editing'])
+    )
+  })
+
+  it('finds no overlay flags on a form-only app', () => {
+    expect(overlayFlagsFromManifest(twoPageManifest)).toEqual([])
   })
 })

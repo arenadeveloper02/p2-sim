@@ -442,4 +442,16 @@ describe('compactManifestForCritic', () => {
     const compact = compactManifestForCritic(twoPageManifest, ['results'])
     expect(compact.pages.map((page) => page.path)).toEqual(['results'])
   })
+
+  it('keeps the overlay gate so create and edit Modals are distinguishable', () => {
+    const compact = compactManifestForCritic(goldCollectionManifest)
+    const elements = compact.pages[0]?.elements ?? []
+    expect(elements.find((element) => element.id === 'create_modal')?.props.showWhen).toBe(
+      'creating'
+    )
+    expect(elements.find((element) => element.id === 'edit_modal')?.props.showWhen).toBe('editing')
+    expect(elements.find((element) => element.id === 'edit_item')?.props.setValue).toBe(
+      'editing=true'
+    )
+  })
 })

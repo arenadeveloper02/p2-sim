@@ -48,6 +48,7 @@ export const ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT = [
   'Do not flag host-owned loading skeletons, error banners, Retry, Refresh, aria-busy, or confirm dialogs.',
   'Do not restate dead-button, unknown-apiKey, unbound-required-hostKey, or invalid navigate targets — those already failed validation.',
   'Do not flag missing APIs, invented apiKeys, or dummy/local onLoad setState seed rows when there are no API bindings — that is the dummy contract, not hardcoded data.',
+  'Create and edit overlays are a host contract: a Button setValue creating=true or editing=true opens the Modal whose showWhen matches that flag, and the host selects the row and prefills the edit form. Do not flag the create and edit Modal pair as duplication, do not ask for a separate edit page, and do not flag overlay inputs for missing defaultValue or statePath.',
   'Only emit must-fix when a concrete spec change would fix it. Taste nits are should-fix and must not block.',
   'STRUCTURAL is already validated. Ask the remaining questions:',
   'UX — Is the primary task obvious? Is there a loading state (host compiles this — do not flag missing Spinner)? Is there an empty state (emptyText / EmptyState)? Is there an error state (host compiles this)? Can the user recover from errors? Is navigation coherent?',
@@ -111,7 +112,7 @@ function criticUserPayload(params: CritiqueManifestParams): string {
     brief ? `Product brief:\n${JSON.stringify(brief)}` : '',
     bindings.length > 0
       ? `Declared API bindings:\n${JSON.stringify(bindings, null, 2)}`
-      : 'No API bindings. Dummy/local is the data contract: onLoad setState seeds collections; CTAs omit apiKey. Do not flag missing APIs, invent keys, or treat those seed rows as hardcoded data.',
+      : 'No API bindings. Dummy/local is the data contract: onLoad setState seeds collections; CTAs omit apiKey; create closes on creating: false and edit closes on editing: false. Do not flag missing APIs, invent keys, or treat those seed rows as hardcoded data.',
     `Spec under review:\n${JSON.stringify(compact)}`,
   ]
     .filter((section) => section.length > 0)

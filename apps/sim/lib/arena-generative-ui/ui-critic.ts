@@ -30,6 +30,7 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
   'selectItem',
   'clearItem',
   'setValue',
+  'showWhen',
   'cancelTo',
 ] as const
 
@@ -219,7 +220,10 @@ function unboundDynamicErrors(pagePath: string, spec: Spec): string[] {
         `Page "${pagePath}" Sparkline "${id}" hard-codes values and has no statePath. Bind the series.`
       )
     }
-    if (element.type === 'Chart' && (isLiteralValue(props.values) || isLiteralValue(props.categories))) {
+    if (
+      element.type === 'Chart' &&
+      (isLiteralValue(props.values) || isLiteralValue(props.categories))
+    ) {
       issues.push(
         `Page "${pagePath}" Chart "${id}" hard-codes values and has no statePath. Bind the series.`
       )

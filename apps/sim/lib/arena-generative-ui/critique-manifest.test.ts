@@ -101,7 +101,18 @@ describe('ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('DATA —')
     expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('already failed validation')
     expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('dummy contract')
-    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('dummy/local setState is the contract')
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain(
+      'dummy/local setState is the contract'
+    )
+  })
+
+  it('teaches the create and edit overlay contract', () => {
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('creating=true or editing=true')
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('showWhen matches that flag')
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain(
+      'do not ask for a separate edit page'
+    )
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('missing defaultValue or statePath')
   })
 })
 
@@ -152,7 +163,9 @@ describe('critiqueArenaGenerativeManifest', () => {
   })
 
   it('tells the critic dummy/local is the contract when bindings are empty', async () => {
-    mockCreateAnthropicMessage.mockResolvedValue(textMessage(JSON.stringify({ pass: true, issues: [] })))
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(JSON.stringify({ pass: true, issues: [] }))
+    )
 
     await critiqueArenaGenerativeManifest({
       manifest: twoPageManifest,
@@ -163,6 +176,7 @@ describe('critiqueArenaGenerativeManifest', () => {
     expect(userContent).toContain('No API bindings.')
     expect(userContent).toContain('Dummy/local is the data contract')
     expect(userContent).toContain('Do not flag missing APIs')
+    expect(userContent).toContain('edit closes on editing: false')
   })
 
   it('fails open on empty or invalid JSON', async () => {
