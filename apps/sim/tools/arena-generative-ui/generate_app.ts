@@ -46,7 +46,7 @@ export const arenaGenerativeUiGenerateTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Named CTA backends. Prefer stubs [{ "key", "kind": "workflow", "workflowId", "stream"? }] or [{ "key", "kind": "http", "curl" }]; the host fills inputSchema. Leave blank for navigation-only.',
+        'Named CTA backends. Prefer stubs [{ "key", "kind": "workflow", "workflowId", "stream"? }] or [{ "key", "kind": "http", "curl" }]; the host fills inputSchema. Leave blank when there is no backend (dummy/local or navigation-only). Do not invent keys.',
     },
     designNotes: {
       type: 'string',

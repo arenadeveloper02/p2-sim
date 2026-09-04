@@ -1143,7 +1143,7 @@ errorCopy?
 
 `audience` is a real role — never `"users"`. `purpose` copies analyzed intent.task when present.
 
-When analyzed intent is present, honour its task, entities, and job duration — do not rewrite the job. Pick complexity, sitemap, archetypes, shell, regions, capabilities, data mode, and design that implement that intent.
+When analyzed intent is present, honour its task, entities, requested mutations, and job duration — do not rewrite the job. Pick complexity, sitemap, archetypes, shell, regions, capabilities, data mode, and design that implement that intent.
 
 Do not output component-level JSON.
 

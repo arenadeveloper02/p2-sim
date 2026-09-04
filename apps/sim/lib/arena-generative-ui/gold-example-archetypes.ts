@@ -26,9 +26,6 @@ function goldPrompt(
   ].join('\n\n')
 }
 
-/** Binding key the dashboard `onLoad` points at. */
-export const GOLD_DASHBOARD_LOAD_API_KEY = 'fetch_dashboard'
-
 const dashboardHomeSpec: Spec = {
   root: 'page',
   elements: {
@@ -160,13 +157,25 @@ export const goldDashboardManifest: ArenaGenerativeAppManifest = {
     },
   },
   actions: {
-    load_dashboard: { apiKey: GOLD_DASHBOARD_LOAD_API_KEY },
+    load_dashboard: {
+      onSuccess: {
+        setState: {
+          orders: 128,
+          fillRate: '94%',
+          orderVolume: [12, 18, 15, 22, 19, 24, 21, 28, 25, 31, 27, 34],
+          exceptions: [
+            { Order: '1001', Status: 'Late', Age: '2d' },
+            { Order: '1002', Status: 'Hold', Age: '1d' },
+          ],
+        },
+      },
+    },
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD = goldPrompt(
   'dashboard',
-  'Slots: Header, Filters, KPI/summary, primary visualization, supporting activity. Module count follows the bound hostKeys — this example uses two Stats, a Chart, and a Table, not a fixed four-Stat grid. Page onLoad fetches the metrics; every Stat, Chart, and Table bind by statePath. There is no search hero.',
+  'Slots: Header, Filters, KPI/summary, primary visualization, supporting activity. Module count follows the bound hostKeys — this example uses two Stats, a Chart, and a Table, not a fixed four-Stat grid. onLoad setState seeds those hostKeys; every Stat, Chart, and Table bind by statePath. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. There is no search hero.',
   {
     title: 'Operations',
     content: 'Dashboard of weekly operations metrics on arrival.',
@@ -537,9 +546,6 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION = goldPrompt(
   }
 )
 
-/** Binding key the wizard last-step submit points at. */
-export const GOLD_WIZARD_SUBMIT_API_KEY = 'submit_onboarding'
-
 const wizardStepOneSpec: Spec = {
   root: 'page',
   elements: {
@@ -776,22 +782,23 @@ export const goldWizardManifest: ArenaGenerativeAppManifest = {
     confirm: { path: 'confirm', title: 'Confirm', spec: wizardStepThreeSpec },
   },
   actions: {
-    submit_onboarding: { apiKey: GOLD_WIZARD_SUBMIT_API_KEY },
+    submit_onboarding: {
+      onSuccess: {
+        setState: { submitted: true },
+      },
+    },
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD = goldPrompt(
   'workflow',
-  'Sequential stages with a Stepper for Progress. This example uses one page per named stage; two or three short stages may instead be one page of Sections. Early stages use Next Button.navigateTo; the last step is the only SubmitButton. Steps after the first have a Back NavLink. Not Tabs. There is no search hero and no dashboard Stats.',
+  'Sequential stages with a Stepper for Progress. This example uses one page per named stage; two or three short stages may instead be one page of Sections. Early stages use Next Button.navigateTo; the last step is the only SubmitButton (submit_onboarding, no apiKey) — the host toasts. When a binding was declared, use that apiKey. Do not invent API keys. Steps after the first have a Back NavLink. Not Tabs. There is no search hero and no dashboard Stats.',
   {
     title: 'Onboarding',
     content: 'Three-step onboarding that submits on the last page.',
     manifest: goldWizardManifest,
   }
 )
-
-/** Binding key the content page `onLoad` points at. */
-export const GOLD_CONTENT_LOAD_API_KEY = 'fetch_article'
 
 const contentHomeSpec: Spec = {
   root: 'page',
@@ -868,13 +875,22 @@ export const goldContentManifest: ArenaGenerativeAppManifest = {
     },
   },
   actions: {
-    load_article: { apiKey: GOLD_CONTENT_LOAD_API_KEY },
+    load_article: {
+      onSuccess: {
+        setState: {
+          content:
+            '# Voice\n\nWrite like a colleague. Short sentences. No slogans.\n\n## Tone\n\nCalm, direct, and specific.',
+          updatedAt: 'Mar 2026',
+          owner: 'Brand',
+        },
+      },
+    },
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT = goldPrompt(
   'content',
-  'A document: Header, muted metadata chips, and a DataText markdown body. Not Results (no WorkingCard) and not Detail (no EntityHeader firmographics). Related collections only when layoutPlan has one.',
+  'A document: Header, muted metadata chips, and a DataText markdown body. onLoad setState seeds content plus {updatedAt} and {owner}. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Not Results (no WorkingCard) and not Detail (no EntityHeader firmographics). Related collections only when layoutPlan has one.',
   {
     title: 'Brand guidelines',
     content: 'Read the voice and tone guide.',

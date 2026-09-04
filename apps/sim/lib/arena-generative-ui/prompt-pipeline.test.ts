@@ -187,6 +187,9 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('SWOT')
     expect(prompt).not.toContain('productType')
     expect(prompt).not.toContain('Watchtower')
+    expect(prompt).not.toContain('omit manifest.actions')
+    expect(prompt).not.toContain('use navigation only')
+    expect(prompt).toContain('Dummy/local actions omit apiKey')
   })
 
   it('includes the workspace recipe and sidebar-shell gold for a workspace prompt', () => {

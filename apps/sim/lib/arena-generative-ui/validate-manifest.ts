@@ -153,7 +153,7 @@ function unknownActionError(
       : `Page "${path}" references unknown action "${actionId}"`
   const declared = Object.keys(actions)
   if (declared.length === 0) {
-    return `${where}. Add it to manifest.actions with a declared API binding key as apiKey.`
+    return `${where}. Add it to manifest.actions (declared apiKey, or dummy/local with no apiKey).`
   }
   return `${where}. actionId must match a manifest.actions key exactly (${declared.join(', ')}).`
 }

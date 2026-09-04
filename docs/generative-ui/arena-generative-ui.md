@@ -147,7 +147,7 @@ First page after open. Defaults to `home`. Must match a page path.
 
 ### API Bindings (optional JSON)
 
-Named backends that CTAs may call. The model **cannot invent keys**. Leave this empty (or `[]` / `{}`) for a navigation-only app — no workflow/HTTP calls.
+Named backends that CTAs may call. The model **cannot invent keys**. Leave this empty (or `[]` / `{}`) when there is no workflow or HTTP call — dummy/local apps still create, complete, and navigate. Do not invent a key to fill this field.
 
 Two kinds. You rarely need to write either by hand — **Add an API** builds both:
 

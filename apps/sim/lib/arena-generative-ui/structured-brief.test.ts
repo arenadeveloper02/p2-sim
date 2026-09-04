@@ -959,6 +959,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('Do not add dashboards, statistics, history')
     expect(system).toContain('/add-customer is not automatically required')
     expect(system).toContain('When Analyzed intent is present')
+    expect(system).toContain('requested mutations')
     expect(system).not.toContain('workspace is not a page archetype')
     expect(system).not.toContain('actions must be []')
     expect(system).not.toContain('Pick exactly one app-level archetype')

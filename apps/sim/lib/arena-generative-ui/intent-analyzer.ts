@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { omit } from '@sim/utils/object'
 import { truncate } from '@sim/utils/string'
 import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
@@ -58,7 +59,7 @@ const intentDataRequirementSchema = z.object({
 
 const intentActionSchema = z.object({
   id: z.string().min(1).max(64),
-  apiKey: z.string().min(1).max(64),
+  apiKey: z.string().min(1).max(64).optional(),
   purpose: intentProse(400),
 })
 
@@ -75,10 +76,10 @@ export type ArenaGenerativeIntent = z.output<typeof arenaGenerativeIntentSchema>
 
 const INTENT_SYSTEM_PROMPT = [
   'You extract product intent from a job description. Output one JSON object. No markdown fences, no explanation.',
-  'Shape: { "task", "audience", "entities": [{ "name", "kind" }], "dataRequirements": [{ "apiKey", "usedFor" }], "actions": [{ "id", "apiKey", "purpose" }], "workflowComplexity" }',
+  'Shape: { "task", "audience", "entities": [{ "name", "kind" }], "dataRequirements": [{ "apiKey", "usedFor" }], "actions": [{ "id", "purpose", "apiKey"? }], "workflowComplexity" }',
   'task is the job in one sentence. audience is a real role (sales ops, analysts) — never "users".',
   'entities[].kind is collection | record | metric | prose. Name domain nouns (orders, company, score, analysis), not UI widgets.',
-  'dataRequirements and actions may only use declared binding keys. When no bindings were declared, both arrays are [].',
+  'dataRequirements may only use declared binding keys; when none were declared, dataRequirements is []. actions list requested mutations (create, complete, analyze, …). Remote actions use a declared apiKey. Dummy/local actions omit apiKey. When no bindings, omit apiKey — never invent keys, never empty the actions the job needs.',
   'workflowComplexity is short | long-running | multi-step | wizard. A typical search/submit is short; a workflow or generate wait is long-running; a named checklist is multi-step; three or more sequential steps with submit at the end is wizard.',
   'Do not pick an archetype. Do not invent pages, routes, or catalog component types (no SearchField, Table, Card, WorkingCard). Do not emit a sitemap or a manifest.',
 ].join('\n')
@@ -108,6 +109,8 @@ function extractMessageText(message: Anthropic.Messages.Message): string {
 
 /**
  * Drops invented apiKeys so the planner never sees bindings that do not exist.
+ * Dummy/local actions (no apiKey) stay. With no bindings, remote dataRequirements
+ * are cleared and invented keys on actions are stripped rather than dropping the mutation.
  */
 export function parseArenaGenerativeIntent(
   value: unknown,
@@ -117,12 +120,18 @@ export function parseArenaGenerativeIntent(
   if (!parsed.success) return null
   const bindingKeys = new Set(options.apiBindings.map((binding) => binding.key).filter(Boolean))
   if (bindingKeys.size === 0) {
-    return { ...parsed.data, dataRequirements: [], actions: [] }
+    return {
+      ...parsed.data,
+      dataRequirements: [],
+      actions: parsed.data.actions.map((action) => omit(action, ['apiKey'])),
+    }
   }
   return {
     ...parsed.data,
     dataRequirements: parsed.data.dataRequirements.filter((item) => bindingKeys.has(item.apiKey)),
-    actions: parsed.data.actions.filter((action) => bindingKeys.has(action.apiKey)),
+    actions: parsed.data.actions.filter(
+      (action) => !action.apiKey || bindingKeys.has(action.apiKey)
+    ),
   }
 }
 
@@ -133,7 +142,7 @@ function intentUserPayload(params: AnalyzeIntentParams): string {
     'Mode: extract product intent. Do not emit an archetype, pages, catalog types, or a manifest.',
     bindingKeys.length > 0
       ? `Declared API bindings (dataRequirements and actions may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. dataRequirements and actions must be empty arrays.',
+      : 'No API bindings. dataRequirements is []. actions still list requested mutations with no apiKey (dummy/local). Do not invent API keys.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
     `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,

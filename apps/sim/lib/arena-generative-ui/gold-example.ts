@@ -156,7 +156,7 @@ const goldReportSpec: Spec = {
   },
 }
 
-/** Binding key the example's analyze CTA points at. */
+/** Action id the SearchField points at. Not a binding key. */
 export const GOLD_EXAMPLE_API_KEY = 'analyze_company'
 
 export const goldExampleManifest: ArenaGenerativeAppManifest = {
@@ -168,8 +168,13 @@ export const goldExampleManifest: ArenaGenerativeAppManifest = {
   },
   actions: {
     analyze_company: {
-      apiKey: GOLD_EXAMPLE_API_KEY,
-      onSuccess: { navigate: 'results' },
+      onSuccess: {
+        setState: {
+          content:
+            '## Stripe\n\nPayments infrastructure. Strong brand, dense competitor set.',
+        },
+        navigate: 'results',
+      },
     },
   },
 }
@@ -190,7 +195,7 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (task)',
   GOLD_RENDER_CONTRACT,
   'This sample uses two screens (centered company input, report destination) because a task page then a results page is the blueprint. AppHeader is sticky product chrome on Page; Section holds SearchField with nested submit, WorkingCard then DataText bound by statePath. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted.',
-  `Replace the action apiKey ("${GOLD_EXAMPLE_API_KEY}") with a declared API binding key. The SearchField actionId must be that same manifest.actions key — do not paraphrase ${GOLD_EXAMPLE_API_KEY} as company_search. When no bindings were declared, keep the action with no apiKey and use onSuccess.setState / navigate. Do not drop manifest.actions.`,
+  `SearchField actionId is "${GOLD_EXAMPLE_API_KEY}" — do not paraphrase it as company_search. This sample has no apiKey: onSuccess.setState fills content then navigates. When a binding was declared, add that apiKey and omit the dummy content setState. Do not invent API keys. Do not drop manifest.actions.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')
 

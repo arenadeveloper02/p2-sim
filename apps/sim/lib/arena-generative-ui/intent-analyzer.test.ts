@@ -72,10 +72,27 @@ describe('parseArenaGenerativeIntent', () => {
     expect(parsed?.actions.map((action) => action.apiKey)).toEqual(['list_orders'])
   })
 
-  it('clears dataRequirements and actions when no bindings were declared', () => {
+  it('keeps dummy mutations and strips invented keys when no bindings were declared', () => {
     const parsed = parseArenaGenerativeIntent(validIntent, { apiBindings: [] })
     expect(parsed?.dataRequirements).toEqual([])
-    expect(parsed?.actions).toEqual([])
+    expect(parsed?.actions).toEqual([{ id: 'load_orders', purpose: 'Fetch the list' }])
+  })
+
+  it('keeps dummy actions that omit apiKey when bindings exist', () => {
+    const parsed = parseArenaGenerativeIntent(
+      {
+        ...validIntent,
+        actions: [
+          { id: 'load_orders', apiKey: 'list_orders', purpose: 'Fetch' },
+          { id: 'complete_order', purpose: 'Mark done' },
+          { id: 'ghost', apiKey: 'invented', purpose: 'Nope' },
+        ],
+      },
+      {
+        apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+      }
+    )
+    expect(parsed?.actions.map((action) => action.id)).toEqual(['load_orders', 'complete_order'])
   })
 
   it('rejects a sitemap-shaped payload', () => {
@@ -106,7 +123,7 @@ describe('analyzeArenaGenerativeIntent', () => {
       expect.anything(),
       expect.objectContaining({
         model: 'claude-haiku-4-5',
-        system: expect.stringContaining('Do not pick an archetype'),
+        system: expect.stringContaining('never empty the actions the job needs'),
       })
     )
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
@@ -137,6 +154,8 @@ describe('analyzeArenaGenerativeIntent', () => {
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Visual brief from uploaded screenshot')
     expect(userMessage).toContain('Inbox')
+    expect(userMessage).toContain('actions still list requested mutations')
+    expect(userMessage).not.toContain('actions must be empty arrays')
   })
 
   it('fails open on empty or invalid JSON', async () => {

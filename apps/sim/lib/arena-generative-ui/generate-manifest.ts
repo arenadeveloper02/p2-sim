@@ -40,7 +40,6 @@ import {
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
   type ArenaGenerativeStructuredBrief,
-  briefHasDummyOrLocalData,
   formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
@@ -612,9 +611,7 @@ export async function generateArenaGenerativeManifest(
   const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : structuredBrief && briefHasDummyOrLocalData(structuredBrief)
-        ? 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed static collection rows and use onSuccess.setState / navigate. Do not invent API keys.'
-        : 'No API bindings. Navigation and static content only unless the structured brief named dummy/local actions.',
+      : 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed static collection rows and use onSuccess.setState / navigate. Do not invent API keys. Do not drop actions the brief named.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     visualBrief ? formatVisualBriefForGenerator(visualBrief) : '',
     isPreserveEdit && params.existingBrief?.trim()

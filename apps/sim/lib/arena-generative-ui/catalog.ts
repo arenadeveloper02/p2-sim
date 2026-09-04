@@ -392,7 +392,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         submitLabel: z.string().nullable(),
       }),
       description:
-        'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a declared API when this field is not inside a Form; inside a Form the parent submits. suggestions is a comma-separated list of chips that fill the field. Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
+        'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a manifest.actions key (declared apiKey, or dummy/local with no apiKey) when this field is not inside a Form; inside a Form the parent submits. suggestions is a comma-separated list of chips that fill the field. Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
     },
     Chip: {
       props: z.object({
@@ -460,7 +460,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Form wrapper for multi-field forms. actionId must match a manifest actions key that calls a declared API. align controls cross-axis placement of its rows and defaults to stretch. A one-field search uses SearchField on its own instead of Form + TextInput.',
+        'Form wrapper for multi-field forms. actionId must match a manifest.actions key (declared apiKey, or dummy/local with no apiKey). align controls cross-axis placement of its rows and defaults to stretch. A one-field search uses SearchField on its own instead of Form + TextInput.',
     },
     Chat: {
       props: z.object({

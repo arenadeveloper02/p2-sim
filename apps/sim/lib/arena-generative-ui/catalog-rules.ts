@@ -6,7 +6,7 @@
 /** Mechanical JSON envelope — numbered RULES after the catalog reference. */
 export const ARENA_GENERATIVE_UI_ENVELOPE_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
-  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "theme?", "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "append?", "onSuccess?", "onError?" } } } } }',
+  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "theme?", "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey?", "inputMapping?", "append?", "onSuccess?", "onError?" } } } } }',
   'manifest.pages MUST be an object keyed by kebab-case path, never an array. Example: { "home": { "path": "home", "title": "People", "spec": { ... } }, "person": { "path": "person", "title": "Profile", "spec": { ... } } }.',
   'Return one JSON object only. Do not emit a short summary object before the manifest.',
   'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
@@ -16,9 +16,9 @@ export const ARENA_GENERATIVE_UI_ENVELOPE_RULES = [
   'Before finishing a page, walk its tree from root: every key in every children array must exist as its own entry in that page elements map. Add any element you referenced but did not define.',
   'Only use component types from the catalog.',
   'Use NavLink.to or Button.navigateTo for in-app navigation. Never use href for another page in this app.',
-  'CTA forms that call APIs must set Form.actionId or SubmitButton.actionId to a key in manifest.actions.',
-  'Every manifest.actions[actionId].apiKey MUST be one of the declared API binding keys. Do not invent API keys.',
-  'If no API bindings were declared, omit manifest.actions or leave it empty and use navigation only.',
+  'CTA forms must set Form.actionId or SubmitButton.actionId to a key in manifest.actions.',
+  'When an action has apiKey, it MUST be one of the declared API binding keys. Do not invent API keys. Dummy/local actions omit apiKey and use onSuccess.setState / navigate.',
+  'If no API bindings were declared, keep dummy/local actions in manifest.actions with no apiKey. Do not omit create, complete, analyze, or other requested mutations. Navigation-only apps may leave actions empty.',
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths, optionally followed by a query string such as "report?range=30d".',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',

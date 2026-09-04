@@ -11,11 +11,11 @@ import {
 } from '@/lib/arena-generative-ui/gold-example'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
-  GOLD_CONTENT_LOAD_API_KEY,
-  GOLD_DASHBOARD_LOAD_API_KEY,
-  GOLD_WIZARD_SUBMIT_API_KEY,
   goldCollectionManifest,
   goldContentManifest,
   goldDashboardManifest,
@@ -24,22 +24,12 @@ import {
   goldWorkspaceManifest,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import { extractManifestCandidate } from '@/lib/arena-generative-ui/parse-inputs'
-import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'
-
-const bindings: ArenaGenerativeApiBinding[] = [
-  {
-    key: GOLD_EXAMPLE_API_KEY,
-    label: 'Analyze company',
-    kind: 'workflow',
-    workflowId: 'wf_gold',
-  },
-]
 
 /** Runs the example through the same envelope unwrap the generator uses. */
 function validateExample() {
   return validateArenaGenerativeManifest(extractManifestCandidate(goldExampleOutput), {
-    apiBindings: bindings,
+    apiBindings: [],
   })
 }
 
@@ -124,6 +114,8 @@ describe('gold example', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('GOLD STANDARD REFERENCE LAYOUT')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('company_search')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('Do not invent API keys')
+    expect(JSON.stringify(goldExampleManifest.actions.analyze_company)).not.toContain('apiKey')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('two screens')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('four screens')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
@@ -178,14 +170,7 @@ describe('per-archetype gold examples', () => {
 
   it('validates the dashboard gold including Chart', () => {
     const result = validateArenaGenerativeManifest(goldDashboardManifest, {
-      apiBindings: [
-        {
-          key: GOLD_DASHBOARD_LOAD_API_KEY,
-          label: 'Dashboard',
-          kind: 'workflow',
-          workflowId: 'wf_dash',
-        },
-      ],
+      apiBindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
@@ -194,6 +179,8 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Table"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"gap":"md"')
     expect(JSON.stringify(goldDashboardManifest)).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
+    expect(JSON.stringify(goldDashboardManifest.actions.load_dashboard)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD).toContain('Do not invent API keys')
   })
 
   it('validates the one-page collection gold', () => {
@@ -231,32 +218,24 @@ describe('per-archetype gold examples', () => {
 
   it('validates the wizard gold', () => {
     const result = validateArenaGenerativeManifest(goldWizardManifest, {
-      apiBindings: [
-        {
-          key: GOLD_WIZARD_SUBMIT_API_KEY,
-          label: 'Submit',
-          kind: 'workflow',
-          workflowId: 'wf_onboard',
-        },
-      ],
+      apiBindings: [],
     })
+    expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldWizardManifest)).toContain('"Stepper"')
+    expect(JSON.stringify(goldWizardManifest.actions.submit_onboarding)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD).toContain('Do not invent API keys')
   })
 
   it('validates the content gold', () => {
     const result = validateArenaGenerativeManifest(goldContentManifest, {
-      apiBindings: [
-        {
-          key: GOLD_CONTENT_LOAD_API_KEY,
-          label: 'Article',
-          kind: 'workflow',
-          workflowId: 'wf_article',
-        },
-      ],
+      apiBindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
+    expect(JSON.stringify(goldContentManifest.actions.load_article)).not.toContain('apiKey')
+    expect(JSON.stringify(goldContentManifest)).toContain('"statePath":"content"')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT).toContain('Do not invent API keys')
   })
 
   it('validates the workspace gold', () => {

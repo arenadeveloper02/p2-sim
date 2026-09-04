@@ -412,6 +412,9 @@ describe('generateArenaGenerativeManifest', () => {
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).not.toContain('each binding includes layoutPlan')
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('Dummy/local actions stay in manifest.actions')
+    expect(userMessage).not.toContain('Navigation and static content only')
   })
 
   it('passes stream: true into the bindings summary and localized streaming rules', async () => {

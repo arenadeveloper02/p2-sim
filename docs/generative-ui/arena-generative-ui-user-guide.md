@@ -11,13 +11,13 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | Field | What goes here |
 |---|---|
 | **Mode** | **Generate New App** for a first draft. **Edit Existing Draft** later — type only the delta in **Requested Changes**, or say `re-plan` / `rebuild the app` to regenerate the sitemap. |
-| **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each button calls. **Not JSON.** |
+| **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each remote CTA calls (if any). **Not JSON.** |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
-| **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. |
+| **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. Leave empty for dummy/local apps — do not add a fake workflow just to have a key. |
 | **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. A pasted Sample response is kept through generate and edit. |
 | **Design Notes** | Optional. Brand, density, dark mode. Skip unless you care. |
 
-The model **cannot invent API keys**. If User Input says “Submit calls `recommend_articles`”, that key must exist in API Bindings. Leave Bindings empty only for a navigation-only app (no forms that call a backend).
+The model **cannot invent API keys**. If User Input names a key (“Submit calls `recommend_articles`”), that key must exist in API Bindings. Leave Bindings empty for dummy/local apps (todos, boards) and for navigation-only apps — create/complete still work locally. Do not add a fake workflow just to have a key.
 
 Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) produce generic shells.
 
@@ -225,7 +225,7 @@ the inspector.
 
 ## Short checklist
 
-- Same API **key** in User Input and Add an API.
+- Same API **key** in User Input and Add an API. Leave Bindings empty for dummy/local apps; do not invent a workflow key.
 - Bound workflows are **deployed** before Preview / Launch.
 - JSON APIs: paste Output format JSON so Results is not a text dump.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
