@@ -379,6 +379,15 @@ export const getGenerativeAppDraftContract = defineRouteContract({
       generateWarnings: z.array(arenaGenerativeGenerateWarningSchema),
       /** Host auto-repairs applied so generate could succeed. Empty when none. */
       adoptedChanges: z.array(arenaGenerativeAdoptedChangeSchema),
+      /** Planner capability tags stored on the structured brief. Empty when none. */
+      capabilities: z.array(z.string()),
+      /** Catalog gaps from a screenshot-matched generate. Empty when none. */
+      screenshotGaps: z.array(
+        z.object({
+          observed: z.string(),
+          closestCatalogType: z.string().optional(),
+        })
+      ),
     }),
   },
 })

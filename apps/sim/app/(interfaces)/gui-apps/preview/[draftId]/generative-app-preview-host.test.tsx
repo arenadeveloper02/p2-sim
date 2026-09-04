@@ -454,14 +454,14 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     pagePath = 'home'
     renderHost()
     expect(container.querySelector('[data-testid="preview-diagnostics-banner"]')).toBeNull()
-    expect(container.textContent).not.toContain('Unresolved statePath "articles"')
+    expect(container.textContent).not.toContain('bind "table" to {user_input}')
     const open = container.querySelector('[data-testid="preview-view-edit-instructions"]')
     expect(open?.textContent).toContain('View edit instructions')
     act(() => {
       open?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
-      'Unresolved statePath "articles"'
+      'bind "table" to {user_input}'
     )
   })
 
@@ -473,6 +473,7 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
         ...twoPageDraft,
         screenshotMatchNotes:
           'This app approximates the uploaded screenshot using Arena components. Not represented: custom kanban board → Table.',
+        screenshotGaps: [{ observed: 'custom kanban board', closestCatalogType: 'Table' }],
       },
       error: null,
     })
@@ -551,6 +552,22 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     )
     expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
       'Generate fallbacks'
+    )
+    act(() => {
+      container
+        .querySelector('[data-testid="preview-author-notes-close"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    act(() => {
+      container
+        .querySelector('[data-testid="preview-view-edit-instructions"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'Re-plan this app'
+    )
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      '{user_input}'
     )
   })
 

@@ -55,6 +55,8 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(body.screenshotMatchNotes).toBeNull()
     expect(body.generateWarnings).toEqual([])
     expect(body.adoptedChanges).toEqual([])
+    expect(body.capabilities).toEqual([])
+    expect(body.screenshotGaps).toEqual([])
   })
 
   it('returns the original generate brief when the draft stored one', async () => {
@@ -96,6 +98,39 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.screenshotMatchNotes).toContain('glass cards')
+    expect(body.screenshotGaps).toEqual([
+      {
+        observed: 'glass cards',
+        closestCatalogType: 'Card',
+      },
+    ])
+  })
+
+  it('returns planner capabilities stored on the structured brief', async () => {
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          ...draftRow,
+          structuredBrief: {
+            title: 'Orders',
+            purpose: 'Browse orders',
+            audience: 'Ops',
+            archetype: 'collection',
+            entryPath: 'home',
+            pages: [
+              { path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders' },
+            ],
+            actions: [],
+            capabilities: ['search', 'chat'],
+          },
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'rev-1' }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/drafts/draft-1')
+    const response = await GET(req, { params: Promise.resolve({ id: 'draft-1' }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.capabilities).toEqual(['search', 'chat'])
   })
 
   it('returns generate warnings stored on the structured-brief jsonb', async () => {
@@ -126,6 +161,7 @@ describe('Generative app draft GET (two-page app)', () => {
       },
     ])
     expect(body.adoptedChanges).toEqual([])
+    expect(body.capabilities).toEqual([])
   })
 
   it('returns adopted changes stored on the structured-brief jsonb', async () => {

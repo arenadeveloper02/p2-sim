@@ -1,5 +1,6 @@
 import type { Spec } from '@json-render/core'
 import { isArenaGenerativeCatalogType } from '@/lib/arena-generative-ui/catalog'
+import { buildPreviewEditInstructions } from '@/lib/arena-generative-ui/preview-edit-instructions'
 import { isActionTelemetryRoot } from '@/lib/arena-generative-ui/types'
 
 const BOUND_TYPES = new Set([
@@ -97,7 +98,5 @@ export function editInstructionsFromDiagnostics(
   diagnostics: RenderDiagnostic[],
   pagePath: string
 ): string {
-  if (diagnostics.length === 0) return ''
-  const lines = diagnostics.map((item) => `- ${item.message}`)
-  return [`Fix these render problems on page "${pagePath}":`, ...lines].join('\n')
+  return buildPreviewEditInstructions({ pagePath, diagnostics })
 }

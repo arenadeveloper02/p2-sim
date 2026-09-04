@@ -72,6 +72,11 @@ export {
 } from '@/lib/arena-generative-ui/parse-inputs'
 export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
 export {
+  buildPreviewEditInstructions,
+  catalogTypesFromManifest,
+  USER_INPUT_PLACEHOLDER,
+} from '@/lib/arena-generative-ui/preview-edit-instructions'
+export {
   checkGenerativeAppActionRateLimit,
   GENERATIVE_APP_ACTION_IP_RATE_LIMIT,
 } from '@/lib/arena-generative-ui/rate-limit'

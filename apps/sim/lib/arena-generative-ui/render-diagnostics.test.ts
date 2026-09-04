@@ -104,9 +104,10 @@ describe('collectRenderDiagnostics', () => {
 describe('editInstructionsFromDiagnostics', () => {
   it('formats a paste-ready Requested Changes prompt', () => {
     const text = editInstructionsFromDiagnostics(collectRenderDiagnostics(spec, {}, false), 'home')
-    expect(text).toContain('Fix these render problems on page "home":')
-    expect(text).toContain('Unresolved statePath "articles"')
-    expect(text).toContain('Unknown component type "UnknownWidget"')
+    expect(text).toContain('Paste into Requested Changes')
+    expect(text).toContain('On the "home" page, bind "table" to {user_input}')
+    expect(text).toContain('replace "widget" with a catalog type')
+    expect(text).toContain('Do not invent UnknownWidget')
   })
 })
 

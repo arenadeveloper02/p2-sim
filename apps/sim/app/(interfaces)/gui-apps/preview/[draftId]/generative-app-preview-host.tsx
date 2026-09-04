@@ -14,10 +14,10 @@ import {
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
-  collectRenderDiagnostics,
-  editInstructionsFromDiagnostics,
-  pageEditPrompt,
-} from '@/lib/arena-generative-ui/render-diagnostics'
+  buildPreviewEditInstructions,
+  catalogTypesFromManifest,
+} from '@/lib/arena-generative-ui/preview-edit-instructions'
+import { collectRenderDiagnostics, pageEditPrompt } from '@/lib/arena-generative-ui/render-diagnostics'
 import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
@@ -185,7 +185,16 @@ export function GenerativeAppPreviewHost({
       ? [{ kind: 'throw' as const, message: `SpecRenderer threw: ${throwMessage}` }]
       : []),
   ]
-  const editInstructions = editInstructionsFromDiagnostics(diagnostics, pagePath)
+  const editInstructions = buildPreviewEditInstructions({
+    pagePath,
+    diagnostics,
+    generateWarnings: draftQuery.data.generateWarnings ?? [],
+    adoptedChanges: draftQuery.data.adoptedChanges ?? [],
+    screenshotGaps: draftQuery.data.screenshotGaps ?? [],
+    capabilities: draftQuery.data.capabilities ?? [],
+    appCatalogTypes: catalogTypesFromManifest(manifest),
+    apiBindingKeys: (apiBindings ?? []).map((binding) => binding.key),
+  })
   const liveTheme = themeOverride ?? manifest.theme
   const pagePrompt = pageEditPrompt(pagePath)
 

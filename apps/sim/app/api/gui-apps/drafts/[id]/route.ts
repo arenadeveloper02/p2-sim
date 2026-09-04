@@ -13,6 +13,7 @@ import {
 } from '@/lib/arena-generative-ui/generate-warnings'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
+import { parseStoredStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import {
   formatVisualBriefMatchNotes,
@@ -30,6 +31,17 @@ function screenshotMatchNotesFromDraft(storedBrief: unknown): string | null {
   if (!visualBrief) return null
   const notes = formatVisualBriefMatchNotes(visualBrief)
   return notes.trim() ? notes : null
+}
+
+function screenshotGapsFromDraft(
+  storedBrief: unknown
+): Array<{ observed: string; closestCatalogType?: string }> {
+  const visualBrief = parseStoredVisualBrief(storedBrief)
+  if (!visualBrief) return []
+  return visualBrief.unrepresentable.map((gap) => ({
+    observed: gap.observed,
+    ...(gap.closestCatalogType ? { closestCatalogType: gap.closestCatalogType } : {}),
+  }))
 }
 
 export const GET = withRouteHandler(
@@ -112,6 +124,8 @@ export const GET = withRouteHandler(
         screenshotMatchNotes: screenshotMatchNotesFromDraft(draft.structuredBrief),
         generateWarnings: parseStoredGenerateWarnings(draft.structuredBrief),
         adoptedChanges: parseStoredAdoptedChanges(draft.structuredBrief),
+        capabilities: parseStoredStructuredBrief(draft.structuredBrief)?.capabilities ?? [],
+        screenshotGaps: screenshotGapsFromDraft(draft.structuredBrief),
       })
     } catch (error) {
       logger.error('Failed to load generative app draft', { error: getErrorMessage(error) })
