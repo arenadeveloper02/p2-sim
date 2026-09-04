@@ -460,7 +460,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Form wrapper for multi-field forms. actionId must match a manifest.actions key (declared apiKey, or dummy/local with no apiKey). align controls cross-axis placement of its rows and defaults to stretch. A one-field search uses SearchField on its own instead of Form + TextInput.',
+        'Form wrapper for multi-field forms. actionId must match a manifest.actions key (declared apiKey, or dummy/local with no apiKey). align controls cross-axis placement of its rows and defaults to stretch. The host stretches Form to fill its Card and narrows a form-only Section. A one-field search uses SearchField on its own instead of Form + TextInput.',
     },
     Chat: {
       props: z.object({

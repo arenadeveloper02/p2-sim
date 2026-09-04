@@ -751,6 +751,91 @@ describe('SpecRenderer', () => {
     expect(full.container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
   })
 
+  it('narrows a form-only Section and stretches Form to fill its Card', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { width: 'wide' },
+          children: ['header', 'card'],
+        },
+        header: { type: 'PageHeader', props: { title: 'Enhance' }, children: [] },
+        card: { type: 'Card', props: {}, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'enhance' }, children: ['url', 'submit'] },
+        url: {
+          type: 'TextInput',
+          props: { name: 'url', label: 'Article URL' },
+          children: [],
+        },
+        submit: { type: 'SubmitButton', props: { label: 'Enhance' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('section')?.className).toContain('max-w-2xl')
+    expect(container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
+    expect(container.querySelector('form')?.className).not.toContain('max-w-[var(--gui-measure')
+    expect(container.querySelector('form')?.className).toContain('w-full')
+  })
+
+  it('keeps a form-only Section full when width is explicitly full', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: { width: 'full' }, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'save' }, children: ['name'] },
+        name: { type: 'TextInput', props: { name: 'name', label: 'Name' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('section')?.className).toContain('max-w-none')
+  })
+
+  it('does not narrow a Section that also has a Table', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: { width: 'wide' }, children: ['form', 'table'] },
+        form: { type: 'Form', props: { actionId: 'filter' }, children: ['q'] },
+        q: { type: 'TextInput', props: { name: 'q', label: 'Query' }, children: [] },
+        table: {
+          type: 'Table',
+          props: { columns: 'Name', rows: 'Ada' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('section')?.className).toContain('max-w-[1280px]')
+  })
+
+  it('does not narrow the page Section for a Form inside Modal', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: { width: 'wide' }, children: ['open', 'modal'] },
+        open: {
+          type: 'Button',
+          props: { label: 'Create', setValue: 'creating=true' },
+          children: [],
+        },
+        modal: {
+          type: 'Modal',
+          props: { title: 'Create', showWhen: 'creating' },
+          children: ['form'],
+        },
+        form: { type: 'Form', props: { actionId: 'create' }, children: ['name'] },
+        name: { type: 'TextInput', props: { name: 'name', label: 'Name' }, children: [] },
+      },
+    }
+    const { container } = render({ spec, state: { creating: true } })
+    expect(container.querySelector('section')?.className).toContain('max-w-[1280px]')
+  })
+
   it('renders Grid with auto-fit template columns sized from columns', () => {
     const spec: Spec = {
       root: 'page',
@@ -791,6 +876,7 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec })
     const form = container.querySelector('form')
+    expect(form?.className).toContain('w-full')
     expect(form?.className).not.toContain('max-w-[var(--gui-measure')
     const grid = container.querySelector('.grid') as HTMLElement
     expect(grid.className).toContain('md:grid-cols-2')
@@ -3362,7 +3448,8 @@ describe('SpecRenderer', () => {
     const submit = container.querySelector('button[type="submit"]')
     expect(submit?.className).toContain('w-full')
     const form = container.querySelector('form')
-    expect(form?.className).toContain('max-w-[var(--gui-measure')
+    expect(form?.className).toContain('w-full')
+    expect(form?.className).not.toContain('max-w-[var(--gui-measure')
     const input = container.querySelector('input[name="name"]')
     expect(input?.className).toContain('focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)]')
   })

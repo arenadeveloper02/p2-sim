@@ -486,7 +486,8 @@ const HEADING_SIZE_CLASSES = {
   h4: 'text-base leading-6',
 } as const
 
-function sectionWidthClass(value: unknown): string {
+function sectionWidthClass(value: unknown, formOnly = false): string {
+  if (formOnly && asString(value) !== 'full') return SECTION_WIDTHS.narrow
   const width = asString(value, 'wide')
   return SECTION_WIDTHS[width as keyof typeof SECTION_WIDTHS] ?? SECTION_WIDTHS.wide
 }
@@ -524,7 +525,7 @@ function gridColumnCount(props: Record<string, unknown>): string {
 
 /**
  * Two-column form grids use equal `1fr` tracks instead of auto-fit min 420px,
- * which would wrap inside the form measure and leave a narrow column in a wide Card.
+ * which would wrap a stacked field into a single narrow column.
  */
 function isEqualTwoColFormGrid(withinForm: boolean, props: Record<string, unknown>): boolean {
   return withinForm && gridColumnCount(props) === '2'
@@ -541,6 +542,49 @@ function specHasColumnLayout(
     if (specHasColumnLayout(elements, child.children ?? [])) return true
   }
   return false
+}
+
+const WIDE_SECTION_TYPES = new Set([
+  'Table',
+  'Repeat',
+  'Chart',
+  'Sparkline',
+  'Workspace',
+  'Grid',
+  'Columns',
+])
+
+/**
+ * True when this Section's visible job is a stacked Form (no Grid/Columns
+ * inside it, no collection sibling). Generated specs often omit width or set
+ * wide, which stretched the Card to 1280px while Form sat at the 40rem measure.
+ */
+function sectionIsFormOnly(
+  elements: Record<string, SpecElement>,
+  childIds: string[]
+): boolean {
+  let hasSingleColumnForm = false
+  let hasWideContent = false
+
+  const visit = (ids: string[]) => {
+    for (const id of ids) {
+      const child = elements[id]
+      if (!child) continue
+      if (child.type === 'Modal' || child.type === 'Drawer') continue
+      if (child.type === 'Form') {
+        if (specHasColumnLayout(elements, child.children ?? [])) {
+          hasWideContent = true
+        } else {
+          hasSingleColumnForm = true
+        }
+        continue
+      }
+      if (WIDE_SECTION_TYPES.has(child.type)) hasWideContent = true
+      visit(child.children ?? [])
+    }
+  }
+  visit(childIds)
+  return hasSingleColumnForm && !hasWideContent
 }
 
 /** Splits `a | b | c` cells, keeping empty middles so columns stay aligned. */
@@ -1994,7 +2038,7 @@ export function SpecRenderer({
           <section
             className={cn(
               'mx-auto flex w-full flex-col gap-[var(--gui-section-gap,24px)] px-6 py-8',
-              sectionWidthClass(props.width)
+              sectionWidthClass(props.width, sectionIsFormOnly(elements, childIds))
             )}
             style={styleFromProps(props)}
           >
@@ -3023,12 +3067,10 @@ export function SpecRenderer({
             void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
-        const fillWideCard = specHasColumnLayout(elements, element.children ?? [])
         return (
           <form
             className={cn(
               'flex w-full flex-col gap-[var(--gui-gap,16px)]',
-              !fillWideCard && 'max-w-[var(--gui-measure,40rem)]',
               alignItemsClass(props.align, 'stretch')
             )}
             onSubmit={handleSubmit}

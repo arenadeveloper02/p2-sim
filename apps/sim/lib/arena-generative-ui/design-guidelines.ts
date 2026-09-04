@@ -7,11 +7,11 @@
 /** Catalog-grounded page composition. Absorbed from professional-layout.ts. */
 export const ARENA_GENERATIVE_UI_LAYOUT_PROMPT = [
   'LAYOUT',
-  'Use a consistent Page → AppHeader → Section container and alignment. Prefer simple layouts over nested chrome. The host caps PageHeader subtitles and Form width; you choose Section width and grouping.',
+  'Use a consistent Page → AppHeader → Section container and alignment. Prefer simple layouts over nested chrome. The host caps PageHeader subtitles. A stacked Form fills its Card; the host narrows a form-only Section to the readable measure even if width was omitted or wide. You still choose grouping.',
   'container — Every page is Page → AppHeader → Section → PageHeader, then the task. AppHeader is a direct child of Page. Do not put Table, Form, Repeat, or AppHeader as a child of Section.',
   'measure — Readable content uses Section width "narrow" (host max-w-2xl). Do not set maxWidth unless the brief names an exact cap. Never let prose run the full 1280px. Constrain forms and reading-heavy content to a comfortable width.',
   'wide — Dashboards, Table, Repeat collections, Chart, Sparkline: Section width "wide" (up to 1280px). width "full" only when the brief spans the viewport. Not for forms or long DataText. Use full-width layouts only when the content benefits from them.',
-  'forms — Multi-field Form: Section "narrow", left-aligned. SearchField hero may sit on a wide Section. Do not run a form the full 1280px.',
+  'forms — Multi-field Form: Section "narrow", left-aligned. The host enforces that measure on form-only Sections and stretches Form to fill its Card. SearchField hero may sit on a wide Section. Do not run a form the full 1280px.',
   'columns — At most two primary content columns (Columns main+sidebar, or Grid columns 2 for form fields). Grid columns 3 only for a Repeat card collection. Do not use three peer chrome columns except Workspace (navigator + primary + inspector; navigator and inspector are supporting, not second mains).',
   'toolbar — Related filters and secondary actions share one Toolbar above Table/Repeat. Do not scatter Filter, Chip, or Select through the page.',
   'primary — One primary action: PageHeader trailing child, or SubmitButton / SearchField at the end of its task group. Do not put a second prominent Button above the task.',

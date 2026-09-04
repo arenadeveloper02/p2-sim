@@ -90,10 +90,10 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
           'Every page is Page → AppHeader → Section → PageHeader, then the task. AppHeader is a direct child of Page. Do not put Table, Form, Repeat, or AppHeader as a child of Section.',
       },
       {
-        ownership: 'generator',
+        ownership: 'shared',
         text: 'Forms and prose use a readable measure; dashboards, tables, and collections stay wide.',
         prompt:
-          'Multi-field forms and long DataText use Section width "narrow". Dashboards, Table, Repeat collections, Chart, and Sparkline use width "wide". Do not run a form the full 1280px.',
+          'Multi-field forms and long DataText use Section width "narrow". Dashboards, Table, Repeat collections, Chart, and Sparkline use width "wide". Do not wrap a stacked Form in a wide Card — the host stretches Form to fill its Card and narrows a form-only Section. Do not run a form the full 1280px.',
       },
       {
         ownership: 'generator',
