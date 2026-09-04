@@ -771,7 +771,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: workspace',
     'Purpose: Keep coordinated regions visible together.',
     'Structure: catalog Workspace — navigator, primary, optional inspector / auxiliary.',
-    'Rules: Honour pages[].regions and pages[].interaction (selection, inspect, execution). Each region independently uses that region\'s archetype recipe (collection, detail, …). selection: selectItem / selectedId updates the named region (filters another collection or drives inspector). inspect: inspector (showWhen "selectedId") — do not navigate to a Detail page. execution: WorkingCard / results stay in the named region — do not invent a Results page. Sync via selectedId. Do not invent a new region archetype or coordination the blueprint omitted. Do not emit a second page for a region the blueprint placed here.',
+    'Rules: Honour pages[].regions and pages[].interaction (selection, inspect, execution). Each region independently uses that region\'s archetype recipe (collection, detail, …). selection: selectItem / selectedId updates the named region (filters another collection or drives inspector). Child collection rows include a foreign key (projectId) matching the selected row id; the host filters that Repeat/Table locally. inspect: inspector (showWhen "selectedId") — do not navigate to a Detail page. execution: WorkingCard / results stay in the named region — do not invent a Results page. Sync via selectedId. Do not invent a new region archetype or coordination the blueprint omitted. Do not emit a second page for a region the blueprint placed here.',
   ].join('\n'),
 }
 
@@ -801,7 +801,7 @@ export function shellRecipe(shell?: ArenaGenerativeShell): string {
 
 export const ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT = [
   'DUMMY / LOCAL DATA',
-  'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows (Table.rows or Repeat children). CTAs the blueprint named (create, complete, analyze, …) stay in manifest.actions with no apiKey (or source dummy/local). Use onSuccess.setState to append, toggle done, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
+  'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows (Table.rows or Repeat children). When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id; seed both arrays in host state. CTAs the blueprint named (create, complete, analyze, …) stay in manifest.actions with no apiKey (or source dummy/local). Use onSuccess.setState to append, toggle done, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
 ].join('\n')
 
 export interface PlanStructuredBriefParams {

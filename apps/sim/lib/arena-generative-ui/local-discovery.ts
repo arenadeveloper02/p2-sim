@@ -30,6 +30,8 @@ const SEARCH_KEY_ALIASES = new Set(['query', 'q', 'search', 'term'])
 
 const IGNORED_FILTER_KEYS = new Set(['sort', 'order', 'orderby', 'direction'])
 
+const ITEM_IDENTITY_KEYS = new Set(['id', 'key', 'slug'])
+
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
 }
@@ -244,6 +246,61 @@ export function itemMatchesLocalDiscovery(item: unknown, query: LocalDiscoveryQu
 export function filterCollectionItems<T>(items: readonly T[], query: LocalDiscoveryQuery): T[] {
   if (!hasLocalDiscoveryQuery(query)) return [...items]
   return items.filter((item) => itemMatchesLocalDiscovery(item, query))
+}
+
+function itemIdentityId(item: unknown): string {
+  const record = recordFromUnknown(item)
+  if (!record) return ''
+  for (const field of ['id', 'key', 'slug'] as const) {
+    const value = record[field]
+    if (typeof value === 'string' && value) return value
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+function isForeignKeyName(name: string): boolean {
+  const norm = normalizeDiscoveryKey(name)
+  if (!norm || ITEM_IDENTITY_KEYS.has(norm)) return false
+  return /(?:id|key|slug)$/.test(norm)
+}
+
+function collectionHasForeignKeys(items: readonly unknown[]): boolean {
+  return items.some((item) => {
+    const record = recordFromUnknown(item)
+    if (!record) return false
+    return Object.keys(record).some((key) => isForeignKeyName(key))
+  })
+}
+
+function itemMatchesSelectedId(item: unknown, selectedId: string): boolean {
+  const record = recordFromUnknown(item)
+  if (!record) return false
+  return Object.entries(record).some(
+    ([key, value]) => isForeignKeyName(key) && valuesMatchFilter(value, selectedId)
+  )
+}
+
+/**
+ * Workspace selection: leave the source collection (row id === selectedId)
+ * intact; narrow sibling collections that have a foreign key (projectId, …)
+ * to rows pointing at that id. No-op when nothing is selected or the
+ * collection has no FK-shaped fields.
+ */
+export function filterCollectionItemsBySelection<T>(
+  items: readonly T[],
+  selectedId: unknown
+): T[] {
+  const id =
+    typeof selectedId === 'string'
+      ? selectedId.trim()
+      : selectedId == null
+        ? ''
+        : String(selectedId).trim()
+  if (!id || items.length === 0) return [...items]
+  if (items.some((item) => itemIdentityId(item) === id)) return [...items]
+  if (!collectionHasForeignKeys(items)) return [...items]
+  return items.filter((item) => itemMatchesSelectedId(item, id))
 }
 
 export function filterStaticTableRows(

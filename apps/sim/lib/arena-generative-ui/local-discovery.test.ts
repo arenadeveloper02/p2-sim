@@ -6,6 +6,7 @@ import {
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
   filterCollectionItems,
+  filterCollectionItemsBySelection,
   filterStaticTableRows,
   isLocalDiscoveryPassthrough,
   itemMatchesLocalDiscovery,
@@ -133,6 +134,39 @@ describe('filterStaticTableRows / filterCollectionItems', () => {
     expect(filterCollectionItems(items, { search: '', filters: { status: 'Completed' } })).toEqual([
       { title: 'Second', status: 'Completed' },
     ])
+  })
+})
+
+describe('filterCollectionItemsBySelection', () => {
+  const projects = [
+    { id: 'p1', name: 'Alpha' },
+    { id: 'p2', name: 'Beta' },
+  ]
+  const tasks = [
+    { id: 't1', name: 'Ship', projectId: 'p1' },
+    { id: 't2', name: 'Plan', projectId: 'p2' },
+    { id: 't3', name: 'Review', projectId: 'p1' },
+  ]
+
+  it('leaves the source collection intact', () => {
+    expect(filterCollectionItemsBySelection(projects, 'p1')).toEqual(projects)
+  })
+
+  it('narrows a sibling collection by foreign key', () => {
+    expect(filterCollectionItemsBySelection(tasks, 'p1')).toEqual([
+      { id: 't1', name: 'Ship', projectId: 'p1' },
+      { id: 't3', name: 'Review', projectId: 'p1' },
+    ])
+  })
+
+  it('leaves a collection without foreign keys intact', () => {
+    const notes = [{ id: 'n1', body: 'Hello' }]
+    expect(filterCollectionItemsBySelection(notes, 'p1')).toEqual(notes)
+  })
+
+  it('is a no-op without a selected id', () => {
+    expect(filterCollectionItemsBySelection(tasks, '')).toEqual(tasks)
+    expect(filterCollectionItemsBySelection(tasks, undefined)).toEqual(tasks)
   })
 })
 

@@ -71,6 +71,7 @@ import {
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
   filterCollectionItems,
+  filterCollectionItemsBySelection,
   filterStaticTableRows,
   LOCAL_COLLECTION_PAGE_SIZE,
   type PaginatedCollection,
@@ -92,7 +93,10 @@ import {
   specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
-import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
+import {
+  type ArenaGenerativeUxPlan,
+  specKeepsCollectionVisible,
+} from '@/lib/arena-generative-ui/ux-compiler'
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
@@ -1754,7 +1758,10 @@ export function SpecRenderer({
     setLocalPages({})
   }, [pageResetSignature])
   const selectedIdSet = isTruthyFieldValue(state[ARENA_GENERATIVE_SELECTED_ID_KEY])
-  const hideListForSelection = selectedIdSet && specHasSamePageSelectItem(spec, currentPath)
+  const hideListForSelection =
+    selectedIdSet &&
+    specHasSamePageSelectItem(spec, currentPath) &&
+    !specKeepsCollectionVisible(spec)
 
   const boundPending = (statePath: string) => {
     if (suppressBoundSkeleton) return false
@@ -2019,7 +2026,14 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const items = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY]
+              )
+            : discovered
         if (
           statePath &&
           boundPending(statePath) &&
@@ -2247,9 +2261,16 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawCollection = collectionFromBoundValue(stateValue)
-        const collection = rawCollection
+        const discoveredCollection = rawCollection
           ? filterCollectionItems(rawCollection, localDiscovery)
           : undefined
+        const collection =
+          discoveredCollection && specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discoveredCollection,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY]
+              )
+            : discoveredCollection
         const boundEmpty = Boolean(
           statePath && (rawCollection ? rawCollection.length === 0 : isEmptyStateValue(stateValue))
         )

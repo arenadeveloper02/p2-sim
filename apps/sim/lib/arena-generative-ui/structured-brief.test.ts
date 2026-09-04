@@ -762,6 +762,7 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('content')).toContain('DataText markdown')
     expect(archetypeRecipe('workspace')).toContain('Honour pages[].regions and pages[].interaction')
     expect(archetypeRecipe('workspace')).toContain('do not navigate to a Detail page')
+    expect(archetypeRecipe('workspace')).toContain('foreign key (projectId)')
     expect(ARENA_GENERATIVE_ARCHETYPES).toContain('workspace')
   })
 
@@ -1231,6 +1232,7 @@ describe('target blueprint fixtures', () => {
     const recipes = recipesForBlueprint(parsed!)
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('DUMMY / LOCAL DATA')
+    expect(recipes).toContain('foreign key (projectId)')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: dashboard')
     expect(recipes).not.toContain('SHELL RECIPE')

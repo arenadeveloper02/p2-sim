@@ -75,7 +75,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   filter: [
     'CAPABILITY: FILTER',
-    'Narrowing an already-loaded or static collection. Put Filter children (Select, DateInput, Chip) above Table/Repeat. Name each field after a collection column (status, category). When a declared binding owns those params, they submit with onLoad / CTA. When no filter API exists, omit actionId — the host filters the visible rows locally. "All" / "All Categories" is unconstrained. Not a SearchField hero.',
+    'Narrowing an already-loaded or static collection. Put Filter children (Select, DateInput, Chip) above Table/Repeat. Name each field after a collection column (status, category). When a declared binding owns those params, they submit with onLoad / CTA. When no filter API exists, omit actionId — the host filters the visible rows locally. Workspace selection that drives another collection is not Filter chrome: give the child rows a foreign key (projectId) matching the selected row id; the host narrows that Repeat/Table. "All" / "All Categories" is unconstrained. Not a SearchField hero.',
   ].join('\n'),
   sort: [
     'CAPABILITY: SORT',
@@ -103,7 +103,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   select: [
     'CAPABILITY: SELECT',
-    'Honour pages[].interaction.selection and pages[].regions. Opening a row is Button selectItem true with no actionId. Workspace / selection that filters another collection or drives inspector: keep every named region visible — do not hide navigator or primary with showWhen !selectedId. History-style Open (prose already on the row, no inspector region): stay on the list (showWhen !selectedId / selectedId / clearItem Back). Cross-page: navigateTo only a page the blueprint listed, with no onLoad of that row, and never hide the History list with !selectedId. Do not fetch the same item twice.',
+    'Honour pages[].interaction.selection and pages[].regions. Opening a row is Button selectItem true with no actionId. Workspace / selection that filters another collection or drives inspector: keep every named region visible — do not hide navigator or primary with showWhen !selectedId. Child collection rows include a foreign key (projectId) matching the selected row id; the host filters that Repeat/Table locally. History-style Open (prose already on the row, no inspector region): stay on the list (showWhen !selectedId / selectedId / clearItem Back). Cross-page: navigateTo only a page the blueprint listed, with no onLoad of that row, and never hide the History list with !selectedId. Do not fetch the same item twice.',
   ].join('\n'),
   inspect: [
     'CAPABILITY: INSPECT',

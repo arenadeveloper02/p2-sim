@@ -40,8 +40,13 @@ describe('capabilityRecipePrompt', () => {
     const prompt = capabilityRecipePrompt(['select'])
     expect(prompt).toContain('Honour pages[].interaction.selection')
     expect(prompt).toContain('keep every named region visible')
+    expect(prompt).toContain('foreign key (projectId)')
     expect(prompt).toContain('History-style Open')
     expect(prompt).toContain('never hide the History list')
+  })
+
+  it('tells filter that Workspace selection is a foreign key, not Filter chrome', () => {
+    expect(capabilityRecipePrompt(['filter'])).toContain('foreign key (projectId)')
   })
 
   it('tells create to open a Modal with Button setValue', () => {

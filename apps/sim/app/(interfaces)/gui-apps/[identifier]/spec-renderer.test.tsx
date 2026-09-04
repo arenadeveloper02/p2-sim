@@ -1292,6 +1292,112 @@ describe('SpecRenderer', () => {
       expect(detail.container.textContent).toContain('Hidden report')
     })
 
+    it('keeps a Workspace Repeat visible while selectedId is set', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['shell'] },
+          shell: {
+            type: 'Workspace',
+            props: { inspectorWhen: 'selectedId' },
+            children: ['navigator', 'primary', 'inspector'],
+          },
+          navigator: { type: 'Stack', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'projects' }, children: ['open'] },
+          open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+          primary: { type: 'Stack', props: {}, children: ['heading'] },
+          heading: { type: 'Text', props: { text: 'Tasks stay here' }, children: [] },
+          inspector: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: 'Select a project.' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        currentPath: 'home',
+        state: {
+          projects: [{ id: 'p1', name: 'Alpha' }],
+          selectedId: 'p1',
+          content: 'Project notes',
+        },
+      })
+      expect(container.textContent).toContain('Open')
+      expect(container.textContent).toContain('Tasks stay here')
+      expect(container.textContent).toContain('Project notes')
+    })
+
+    it('narrows a Workspace sibling collection to the selected row', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['shell'] },
+          shell: {
+            type: 'Workspace',
+            props: { inspectorWhen: 'selectedId' },
+            children: ['navigator', 'primary'],
+          },
+          navigator: { type: 'Stack', props: {}, children: ['projects'] },
+          projects: { type: 'Repeat', props: { statePath: 'projects' }, children: ['open'] },
+          open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+          primary: { type: 'Stack', props: {}, children: ['tasks'] },
+          tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.name}' }, children: [] },
+        },
+      }
+      const { container } = render({
+        spec,
+        currentPath: 'home',
+        state: {
+          projects: [
+            { id: 'p1', name: 'Alpha' },
+            { id: 'p2', name: 'Beta' },
+          ],
+          tasks: [
+            { id: 't1', name: 'Ship Alpha', projectId: 'p1' },
+            { id: 't2', name: 'Plan Beta', projectId: 'p2' },
+          ],
+          selectedId: 'p1',
+        },
+      })
+      expect(container.textContent).toContain('Open')
+      expect(container.textContent).toContain('Ship Alpha')
+      expect(container.textContent).not.toContain('Plan Beta')
+    })
+
+    it('keeps a Drawer inspect collection visible while selectedId is set', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat', 'drawer'] },
+          repeat: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['open'] },
+          open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+          drawer: {
+            type: 'Drawer',
+            props: { showWhen: 'selectedId' },
+            children: ['body'],
+          },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        currentPath: 'home',
+        state: {
+          tasks: [{ id: 't1', name: 'Ship' }],
+          selectedId: 't1',
+          content: 'Task detail',
+        },
+      })
+      expect(container.textContent).toContain('Open')
+      expect(container.textContent).toContain('Task detail')
+    })
+
     it('compiles a missed same-page Open so markdown is not under the list', () => {
       const authored: Spec = {
         root: 'page',

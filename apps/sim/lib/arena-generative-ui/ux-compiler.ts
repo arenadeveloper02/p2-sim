@@ -562,7 +562,7 @@ function dropSelectedIdListHidden(element: SpecElement): SpecElement {
  * True when the page already keeps the collection visible — catalog Workspace
  * regions or a Drawer inspector. History hide-list chrome must not run.
  */
-function specKeepsCollectionVisible(spec: Spec): boolean {
+export function specKeepsCollectionVisible(spec: Spec): boolean {
   return Object.values(specElements(spec)).some((element) =>
     COLLECTION_VISIBLE_TYPES.has(element.type ?? '')
   )
