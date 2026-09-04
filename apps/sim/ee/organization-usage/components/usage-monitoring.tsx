@@ -18,7 +18,7 @@ import {
   type UsageBreakdownDimension,
 } from '@/lib/api/contracts/organization-usage'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
-import { isAuditLogsEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import {
   ManageCreditsModal,
   type ManageCreditsTarget,
@@ -100,6 +100,7 @@ export function UsageMonitoring({
   auditLogsHref: auditLogsBaseHref,
 }: UsageMonitoringProps) {
   const router = useRouter()
+  const { hosted, features } = useDeploymentShape()
   const { window, tab, workspace, expanded, preset, startDate, endDate, periodLabel, setState } =
     useUsageWindow()
   const [datePickerOpen, setDatePickerOpen] = useState(false)
@@ -125,7 +126,7 @@ export function UsageMonitoring({
    * `requiresHosted` with no self-hosted override — so without this the menu would
    * offer an action that could only fail.
    */
-  const canManageCredits = tab === 'member' && isHosted
+  const canManageCredits = tab === 'member' && hosted
 
   const summary = useOrganizationUsageSummary(organizationId, window)
   /**
@@ -210,9 +211,7 @@ export function UsageMonitoring({
    * periods, so there is no honest mapping for `current-period`.
    */
   const auditLogsHref =
-    isHosted || isAuditLogsEnabled
-      ? serializeAuditLogFilters(auditLogsBaseHref, { workspace })
-      : null
+    hosted || features.auditLogs ? serializeAuditLogFilters(auditLogsBaseHref, { workspace }) : null
 
   /**
    * The drill-down is the same window, in more detail. Without the params it read its
@@ -409,7 +408,7 @@ export function UsageMonitoring({
               void setState({ tab: value as UsageTab, workspace: null, expanded: null })
             }
           />
-          <div className='relative flex-shrink-0'>
+          <div className='relative shrink-0'>
             {/* ChipCombobox (Radix Popover, non-modal), not ChipSelect (Radix
               DropdownMenu, modal by default) — a modal trigger closing in the
               same tick that opens the Calendar popover below traps it behind

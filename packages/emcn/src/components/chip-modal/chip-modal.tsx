@@ -250,7 +250,7 @@ function ChipModal({
       >
         <div
           className={cn(
-            'flex min-h-0 w-full flex-col rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
+            'flex min-h-0 w-full flex-col rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] dark:bg-[var(--surface-5)]',
             className
           )}
         >
@@ -314,7 +314,7 @@ const ChipModalHeader = React.forwardRef<HTMLDivElement, ChipModalHeaderProps>(
             variant='ghost'
             onClick={onClose}
             disabled={closeDisabled || dismissDisabled}
-            className='relative size-[14px] flex-shrink-0 p-0 before:absolute before:inset-[-14px] before:content-[""]'
+            className='relative size-[14px] shrink-0 p-0 before:absolute before:inset-[-14px] before:content-[""]'
           >
             <X className='size-[14px] text-[var(--text-icon)]' />
             <span className='sr-only'>{closeAriaLabel}</span>
@@ -359,11 +359,8 @@ export interface ChipModalTabsProps {
  * content conditionally below.
  *
  * Reusing `ChipSwitch` keeps every tabbed modal visually identical to the
- * segmented toggles elsewhere in the app (e.g. the billing-period switch).
- *
- * Pinned to `w-fit` so the pill always hugs its tabs: dropped directly into a
- * flex column the `inline-flex` trough is otherwise blockified and stretched
- * full-width by `align-items: stretch`. A caller-supplied width class still wins.
+ * segmented toggles elsewhere in the app (e.g. the billing-period switch),
+ * including the `w-fit` trough that hugs its tabs in a flex column.
  *
  * @example
  * ```tsx
@@ -390,7 +387,7 @@ function ChipModalTabs({
       onChange={onChange}
       aria-label={ariaLabel}
       options={tabs.map((tab) => ({ value: tab.value, label: tab.label, icon: tab.icon }))}
-      className={cn('w-fit', className)}
+      className={className}
     />
   )
 }
@@ -414,7 +411,7 @@ const ChipModalBody = React.forwardRef<HTMLDivElement, ChipModalBodyProps>(
       ref={ref}
       className={cn(
         'flex min-h-0 flex-1 flex-col',
-        fullBleed ? 'overflow-hidden' : 'gap-4 overflow-y-auto px-2 pt-4 pb-4.5',
+        fullBleed ? 'overflow-hidden' : 'gap-4 overflow-y-auto overflow-x-hidden px-2 pt-4 pb-4.5',
         className
       )}
       {...props}
@@ -998,7 +995,7 @@ function ChipModalPasswordControl({
             // and "Hide" would leave a focused password on screen.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setRevealed((current) => !current)}
-            className='size-6 flex-shrink-0 p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+            className='size-6 shrink-0 p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             aria-label={revealed ? 'Hide password' : 'Show password'}
           >
             {revealed ? <EyeOff className='size-[14px]' /> : <Eye className='size-[14px]' />}
@@ -1117,7 +1114,7 @@ function ChipModalFileControl({
         if (isInteractive) emitFiles(event.dataTransfer.files)
       }}
       className={cn(
-        'flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border-1)] border-dashed bg-[var(--surface-5)] px-2 py-2.5 text-center outline-none transition-colors hover-hover:border-[var(--surface-7)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[var(--surface-4)]',
+        'flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border-1)] border-dashed bg-[var(--surface-5)] px-2 py-2.5 text-center outline-hidden transition-colors hover-hover:border-[var(--surface-7)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[var(--surface-4)]',
         isDragging && 'border-[var(--surface-7)]'
       )}
     >

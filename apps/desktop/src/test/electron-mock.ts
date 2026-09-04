@@ -19,6 +19,7 @@ export const app = {
   getPath: vi.fn(() => '/tmp/sim-desktop-test'),
   getAppPath: vi.fn(() => '/tmp/sim-desktop-test/app'),
   isReady: vi.fn(() => true),
+  isInApplicationsFolder: vi.fn(() => true),
   on: vi.fn(),
   once: vi.fn(),
   quit: vi.fn(),
@@ -74,6 +75,12 @@ export const nativeTheme = {
   on: vi.fn(),
 }
 
+export const screen = {
+  getDisplayMatching: vi.fn(() => ({
+    workArea: { x: 0, y: 0, width: 1440, height: 900 },
+  })),
+}
+
 export const Menu = {
   buildFromTemplate: vi.fn((template: unknown[]) => ({ popup: vi.fn(), items: template })),
   setApplicationMenu: vi.fn(),
@@ -86,6 +93,12 @@ export const net = {
 
 export const session = {
   fromPartition: vi.fn(),
+}
+
+export const protocol = {
+  registerSchemesAsPrivileged: vi.fn(),
+  handle: vi.fn(),
+  isProtocolHandled: vi.fn(() => false),
 }
 
 export const ipcMain = {

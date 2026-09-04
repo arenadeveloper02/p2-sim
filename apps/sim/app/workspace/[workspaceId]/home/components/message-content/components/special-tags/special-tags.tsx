@@ -21,7 +21,7 @@ import { useSession } from '@/lib/auth/auth-client'
 import { buildHostedUpgradeUrl, HOSTED_BILLING_SETTINGS_URL } from '@/lib/billing/upgrade-reasons'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { isBrowserAgentAvailable, sendBrowserPanelAction } from '@/lib/browser-agent/transport'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { isSafeHttpUrl } from '@/lib/core/utils/urls'
 import { readLatestOAuthChatAttempt } from '@/lib/credentials/oauth-chat-attempt'
 import { getDesktopBridge } from '@/lib/desktop'
@@ -316,6 +316,41 @@ export interface WorkspaceResourceTagData {
   title?: string
 }
 
+/**
+ * A `<source>` tag: one document the reply drew on. The tag contract for
+ * search answers — the model emits it inline, right after the sentence, list
+ * item, or paragraph the document supports, as a JSON body:
+ *
+ * `<source>{"url":"https://docs.github.com/…","siteName":"GitHub Docs"}</source>`
+ *
+ * Each tag renders as its own small chip where it sits (adjacent tags are
+ * never collapsed into a count), and every distinct `url` in the message is
+ * repeated in the footer strip below the reply.
+ */
+export interface SourceTagData {
+  /** Canonical http(s) link to the referenced document. */
+  url: string
+  /** Document title, shown on hover. */
+  title?: string
+  /**
+   * Short chip label — the site or product the document lives in ("GitHub
+   * Docs", "Confluence"). Falls back to the URL's hostname.
+   */
+  siteName?: string
+  /**
+   * Knowledge-base connector the document was synced through
+   * (`CONNECTOR_META_REGISTRY` key). Lends the chip the product's brand mark;
+   * without it the chip shows the site favicon.
+   */
+  connectorType?: string
+  /** The passage the reply relied on; a reply whose sources carry one is listed as result cards. */
+  snippet?: string
+  /** When the source last changed the document, as an ISO timestamp. */
+  updatedAt?: string
+  /** The person behind the document, as the source names them. */
+  author?: string
+}
+
 export type ContentSegment =
   | { type: 'text'; content: string }
   | { type: 'thinking'; content: string }
@@ -325,6 +360,7 @@ export type ContentSegment =
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
   | { type: 'question'; data: QuestionTagData }
+  | { type: 'source'; data: SourceTagData }
 
 export type RuntimeSpecialTagName =
   | 'thinking'
@@ -334,6 +370,7 @@ export type RuntimeSpecialTagName =
   | 'file'
   | 'workspace_resource'
   | 'question'
+  | 'source'
 
 export interface ParsedSpecialContent {
   segments: ContentSegment[]
@@ -348,6 +385,7 @@ const RUNTIME_SPECIAL_TAG_NAMES = [
   'file',
   'workspace_resource',
   'question',
+  'source',
 ] as const
 
 /**
@@ -363,6 +401,7 @@ export const SPECIAL_TAG_NAMES = [
   'mothership-error',
   'workspace_resource',
   'question',
+  'source',
 ] as const
 
 function isOptionsItemData(value: unknown): value is OptionsItemData {
@@ -521,6 +560,33 @@ function isMothershipErrorTagData(value: unknown): value is MothershipErrorTagDa
     (value.code === undefined || typeof value.code === 'string') &&
     (value.provider === undefined || typeof value.provider === 'string')
   )
+}
+
+/**
+ * Only an absolute http(s) URL with a host can be linked; anything else is not
+ * a source. Parsed rather than pattern-matched so a malformed value such as
+ * `https://?` — which a prefix check would accept — never becomes a dead link.
+ */
+export function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || /\s/.test(value)) return false
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0
+  } catch {
+    return false
+  }
+}
+
+function isSourceTagData(value: unknown): value is SourceTagData {
+  if (!isRecordLike(value)) return false
+  if (!isHttpUrl(value.url)) return false
+  if (value.title !== undefined && typeof value.title !== 'string') return false
+  if (value.siteName !== undefined && typeof value.siteName !== 'string') return false
+  if (value.connectorType !== undefined && typeof value.connectorType !== 'string') return false
+  if (value.snippet !== undefined && typeof value.snippet !== 'string') return false
+  if (value.updatedAt !== undefined && typeof value.updatedAt !== 'string') return false
+  if (value.author !== undefined && typeof value.author !== 'string') return false
+  return true
 }
 
 function isWorkspaceResourceTagData(value: unknown): value is WorkspaceResourceTagData {
@@ -713,6 +779,7 @@ function parseSpecialTagData(
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
   | { type: 'question'; data: QuestionTagData }
+  | { type: 'source'; data: SourceTagData }
   | null {
   if (tagName === 'thinking') {
     const content = parseTextTagBody(body)
@@ -742,6 +809,11 @@ function parseSpecialTagData(
   if (tagName === 'workspace_resource') {
     const data = parseJsonTagBody(body, isWorkspaceResourceTagData)
     return data ? { type: 'workspace_resource', data } : null
+  }
+
+  if (tagName === 'source') {
+    const data = parseJsonTagBody(body, isSourceTagData)
+    return data ? { type: 'source', data } : null
   }
 
   if (tagName === 'question') {
@@ -1659,7 +1731,8 @@ interface SpecialTagsProps {
 
 /**
  * Unified renderer for inline special tags: `<options>`, `<usage_upgrade>`, `<credential>`,
- * and `<workspace_resource>`.
+ * and `<workspace_resource>`. A `<source>` never reaches here — the chat renderer
+ * folds it into the surrounding markdown as an inline chip.
  */
 export function SpecialTags({
   segment,
@@ -1692,6 +1765,8 @@ export function SpecialTags({
       return <MothershipErrorDisplay data={segment.data} />
     case 'workspace_resource':
       return <WorkspaceResourceDisplay data={segment.data} onSelect={onWorkspaceResourceSelect} />
+    case 'source':
+      return null
     case 'question':
       return (
         <QuestionDisplay
@@ -1774,7 +1849,7 @@ function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
                     i > 0 && 'border-t'
                   )}
                 >
-                  <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
+                  <div className='flex size-[16px] shrink-0 items-center justify-center'>
                     <span className='text-[var(--text-icon)] text-sm'>{i + 1}</span>
                   </div>
                   <span className='flex-1 text-[var(--text-body)] text-sm'>{title}</span>
@@ -1861,7 +1936,7 @@ export function WorkspaceResourceDisplay({
     <>
       <ContextMentionIcon
         context={context}
-        className='relative top-0.5 size-[12px] flex-shrink-0 text-[var(--text-icon)]'
+        className='relative top-0.5 size-[12px] shrink-0 text-[var(--text-icon)]'
       />
       {resource.title}
     </>
@@ -2915,16 +2990,17 @@ function UsageUpgradeDisplay({ data }: { data: UsageUpgradeTagData }) {
   const { data: session } = useSession()
   const hostContext = useWorkspaceHostContext()
   const { getSettingsHref } = useSettingsNavigation()
+  const { hosted } = useDeploymentShape()
   const buttonLabel = data.action === 'upgrade_plan' ? 'Upgrade Plan' : 'Increase Limit'
 
   // Self-hosted plan and limit both live on the hosted account, so local
   // workspace billing roles say nothing about who may change them.
-  const href = isHosted
+  const href = hosted
     ? getSettingsHref({ section: 'billing' })
     : data.action === 'upgrade_plan'
       ? buildHostedUpgradeUrl()
       : HOSTED_BILLING_SETTINGS_URL
-  const canManageBilling = !isHosted || canManageWorkspaceBilling(hostContext, session?.user?.id)
+  const canManageBilling = !hosted || canManageWorkspaceBilling(hostContext, session?.user?.id)
   const unavailableMessage = hostContext.hostOrganizationId
     ? 'Contact an organization admin to manage this workspace’s usage limits.'
     : 'Only the workspace owner can manage this workspace’s usage limits.'
@@ -2957,13 +3033,13 @@ function UsageUpgradeDisplay({ data }: { data: UsageUpgradeTagData }) {
       {canManageBilling ? (
         <a
           href={href}
-          target={isHosted ? undefined : '_blank'}
-          rel={isHosted ? undefined : 'noopener noreferrer'}
-          aria-label={isHosted ? undefined : `${buttonLabel} (opens in a new tab)`}
+          target={hosted ? undefined : '_blank'}
+          rel={hosted ? undefined : 'noopener noreferrer'}
+          aria-label={hosted ? undefined : `${buttonLabel} (opens in a new tab)`}
           className='mt-2 inline-flex items-center gap-1 text-amber-700 text-small underline decoration-dashed underline-offset-2 transition-colors hover-hover:text-amber-900 dark:text-amber-300 dark:hover-hover:text-amber-200'
         >
           {buttonLabel}
-          {isHosted ? <ArrowRight className='size-3' /> : <SquareArrowUpRight className='size-3' />}
+          {hosted ? <ArrowRight className='size-3' /> : <SquareArrowUpRight className='size-3' />}
         </a>
       ) : (
         <p className='mt-2 text-amber-700 text-small dark:text-amber-300'>{unavailableMessage}</p>

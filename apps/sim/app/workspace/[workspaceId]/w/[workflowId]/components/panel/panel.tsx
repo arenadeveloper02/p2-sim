@@ -41,7 +41,7 @@ import {
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
 import { getWorkspaceUsageLimitAction } from '@/lib/billing/workspace-permissions'
-import { isChatEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import {
   MOTHERSHIP_SEND_MESSAGE_EVENT,
   type MothershipSendMessageDetail,
@@ -138,6 +138,7 @@ export const Panel = memo(function Panel() {
   const routeWorkflowId = params.workflowId as string | undefined
 
   const posthog = usePostHog()
+  const { chatEnabled } = useDeploymentShape()
   const posthogRef = useRef(posthog)
 
   const panelRef = useRef<HTMLElement>(null)
@@ -178,7 +179,7 @@ export const Panel = memo(function Panel() {
    * `hidden`, so a persisted `activeTab: 'copilot'` would hide all three and
    * paint an empty panel — resolve it to the toolbar instead.
    */
-  const isCopilotTabAvailable = isChatEnabled && !permissionConfig.hideCopilot
+  const isCopilotTabAvailable = chatEnabled && !permissionConfig.hideCopilot
   const activeTab: PanelTab =
     storedActiveTab === 'copilot' && !isCopilotTabAvailable ? 'toolbar' : storedActiveTab
   const { isImporting, handleFileChange } = useImportWorkflow({ workspaceId })
@@ -512,6 +513,8 @@ export const Panel = memo(function Panel() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<MothershipSendMessageDetail>).detail
       if (!detail?.message) return
+      /** A mode-bearing send (Ask) belongs to the home chat, which has the mode; left unclaimed, it is stored for that surface. */
+      if (detail.requestMode) return
       e.preventDefault()
       setActiveTab('copilot')
       copilotSendMessage(detail.message, detail.fileAttachments, detail.contexts, {
@@ -712,7 +715,7 @@ export const Panel = memo(function Panel() {
       >
         <div className='flex h-full flex-col border-[var(--border)] border-l pt-3.5'>
           {/* Header */}
-          <div className='flex flex-shrink-0 items-center justify-between px-2'>
+          <div className='flex shrink-0 items-center justify-between px-2'>
             {/* More and Chat */}
             <div className='flex gap-1.5'>
               <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
@@ -801,7 +804,7 @@ export const Panel = memo(function Panel() {
                 leftAdornment={
                   <span
                     aria-hidden='true'
-                    className='inline-flex size-5 flex-shrink-0 items-center justify-center overflow-visible'
+                    className='inline-flex size-5 shrink-0 items-center justify-center overflow-visible'
                   >
                     <ThinkingLoader
                       variant={isExecuting ? undefined : 'play'}
@@ -825,7 +828,7 @@ export const Panel = memo(function Panel() {
           </div>
 
           {/* Tabs */}
-          <div className='flex flex-shrink-0 items-center justify-between px-2 pt-3.5'>
+          <div className='flex shrink-0 items-center justify-between px-2 pt-3.5'>
             <div className='flex gap-1'>
               {isCopilotTabAvailable && (
                 <Button
@@ -882,7 +885,7 @@ export const Panel = memo(function Panel() {
                 data-tab-content='copilot'
               >
                 {/* Copilot Header */}
-                <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
+                <div className='mx-[-1px] flex shrink-0 items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
                   <h2 className='min-w-0 flex-1 truncate text-[var(--text-primary)] text-sm'>
                     {copilotChatTitle || 'New Chat'}
                   </h2>
@@ -923,7 +926,7 @@ export const Panel = memo(function Panel() {
                                       titleClassName='text-small'
                                       actions={
                                         <div
-                                          className={`flex flex-shrink-0 items-center gap-1 ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
+                                          className={`flex shrink-0 items-center gap-1 ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
                                         >
                                           <Button
                                             variant='ghost'

@@ -2,8 +2,9 @@
  * @vitest-environment jsdom
  */
 import { act } from 'react'
+import { resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const desktopMocks = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -31,7 +32,9 @@ vi.mock('@/lib/auth/auth-client', () => ({
 vi.mock('@/lib/billing/workspace-permissions', () => ({
   canViewWorkspaceBillingSettings: () => true,
 }))
-vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
+/** Billing routes the invitations-disabled row to Subscription; read at render time. */
+beforeAll(() => setEnvFlags({ isBillingEnabled: true }))
+afterAll(resetEnvFlagsMock)
 vi.mock('@/lib/workspaces/colors', () => ({ getUserColor: () => '#000000' }))
 vi.mock('@/hooks/use-workspace-invite-policy', () => ({
   useWorkspaceInvitePolicy: () => ({ isInvitationsDisabled: false }),
@@ -175,7 +178,7 @@ describe('SidebarFooter', () => {
     expect(helpTrigger()).toHaveClass('h-[30px]', 'px-2')
     expect(helpTrigger()).not.toHaveClass('bg-[var(--text-primary)]')
     expect(helpTrigger().querySelector('circle')).not.toBeInTheDocument()
-    expect(helpTrigger().querySelector('span')).toHaveClass(
+    expect(helpTrigger().querySelector('div')).toHaveClass(
       'size-[17px]',
       'rounded-full',
       'bg-[var(--text-primary)]'
@@ -193,15 +196,25 @@ describe('SidebarFooter', () => {
     expect(desktopMocks.install).not.toHaveBeenCalled()
   })
 
+  it('uses a collapsed-sidebar-safe element for the update icon', async () => {
+    await renderFooter(
+      { status: 'available', version: '1.4.0' },
+      { isCollapsed: true, showCollapsedTooltips: true }
+    )
+
+    expect(helpTrigger().querySelector('div')).toHaveClass('size-[17px]')
+    expect(helpTrigger().querySelector('span')).toBeNull()
+  })
+
   it('turns the menu action into restart-and-install when the update is ready', async () => {
     await renderFooter({ status: 'idle' })
 
     act(() => {
       desktopMocks.listener?.({ status: 'ready', version: '1.4.0' })
     })
-    expect(helpTrigger().querySelector('span')).toHaveClass('bg-[var(--text-primary)]')
+    expect(helpTrigger().querySelector('div')).toHaveClass('bg-[var(--text-primary)]')
     openHelpMenu()
-    act(() => menuItem('Update').click())
+    act(() => menuItem('Restart to update').click())
 
     expect(desktopMocks.install).toHaveBeenCalledTimes(1)
     expect(desktopMocks.check).not.toHaveBeenCalled()

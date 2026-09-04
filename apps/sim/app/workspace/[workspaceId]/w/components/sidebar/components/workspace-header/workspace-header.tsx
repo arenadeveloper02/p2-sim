@@ -25,7 +25,7 @@ import { MoreHorizontal, PanelLeft, Pin, Search } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { InviteModal } from '@/app/workspace/[workspaceId]/components/invite-modal'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
@@ -160,6 +160,7 @@ function WorkspaceHeaderImpl({
   onExpandSidebar,
 }: WorkspaceHeaderProps) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const { billingEnabled } = useDeploymentShape()
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [isViewInvitationsOpen, setIsViewInvitationsOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -457,7 +458,7 @@ function WorkspaceHeaderImpl({
           onClick={onExpandSidebar}
           className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
         >
-          <div className='relative flex size-[16px] flex-shrink-0 items-center justify-center'>
+          <div className='relative flex size-[16px] shrink-0 items-center justify-center'>
             {activeWorkspaceFull?.logoUrl ? (
               <>
                 <img
@@ -530,11 +531,11 @@ function WorkspaceHeaderImpl({
                   <img
                     src={activeWorkspaceFull.logoUrl}
                     alt={activeWorkspaceFull.name || 'Workspace logo'}
-                    className='size-[16px] flex-shrink-0 rounded-sm object-cover'
+                    className='size-[16px] shrink-0 rounded-sm object-cover'
                   />
                 ) : (
                   <div
-                    className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
+                    className='flex size-[16px] shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
                     style={{
                       backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)',
                     }}
@@ -543,7 +544,7 @@ function WorkspaceHeaderImpl({
                   </div>
                 )
               ) : (
-                <Skeleton className='size-[16px] flex-shrink-0 rounded-sm' />
+                <Skeleton className='size-[16px] shrink-0 rounded-sm' />
               )}
               {!isCollapsed && activeWorkspace?.name && (
                 <>
@@ -660,11 +661,11 @@ function WorkspaceHeaderImpl({
                               <img
                                 src={workspace.logoUrl}
                                 alt={workspace.name || 'Workspace logo'}
-                                className='size-[16px] flex-shrink-0 rounded-sm object-cover'
+                                className='size-[16px] shrink-0 rounded-sm object-cover'
                               />
                             ) : (
                               <div
-                                className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
+                                className='flex size-[16px] shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
                                 style={{
                                   backgroundColor: workspace.color ?? 'var(--brand-accent)',
                                 }}
@@ -712,7 +713,7 @@ function WorkspaceHeaderImpl({
                                 }
                                 setEditingWorkspaceId(null)
                               }}
-                              className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                              className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-hidden focus:outline-hidden focus:ring-0 focus-visible:outline-hidden focus-visible:ring-0 focus-visible:ring-offset-0'
                               maxLength={100}
                               autoComplete='off'
                               autoCorrect='off'
@@ -752,11 +753,11 @@ function WorkspaceHeaderImpl({
                               <img
                                 src={workspace.logoUrl}
                                 alt={workspace.name || 'Workspace logo'}
-                                className='size-[16px] flex-shrink-0 rounded-sm object-cover'
+                                className='size-[16px] shrink-0 rounded-sm object-cover'
                               />
                             ) : (
                               <div
-                                className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
+                                className='flex size-[16px] shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
                                 style={{
                                   backgroundColor: workspace.color ?? 'var(--brand-accent)',
                                 }}
@@ -771,7 +772,7 @@ function WorkspaceHeaderImpl({
                             {/* Pin and options share one fixed slot, as the chat rows do:
                                 the trailing width never changes, so pinning cannot re-truncate
                                 the name under the user's cursor. */}
-                            <div className='relative flex size-[18px] flex-shrink-0 items-center justify-center'>
+                            <div className='relative flex size-[18px] shrink-0 items-center justify-center'>
                               {pinnedWorkspaceIds.has(workspace.id) && (
                                 <Pin
                                   aria-hidden={false}
@@ -840,7 +841,7 @@ function WorkspaceHeaderImpl({
                       onClick={() => {
                         setIsWorkspaceMenuOpen(false)
                         if (isInvitationsDisabled) {
-                          if (isBillingEnabled) navigateToSettings({ section: 'billing' })
+                          if (billingEnabled) navigateToSettings({ section: 'billing' })
                           return
                         }
                         setIsInviteModalOpen(true)
@@ -876,17 +877,17 @@ function WorkspaceHeaderImpl({
             <img
               src={activeWorkspaceFull.logoUrl}
               alt={activeWorkspaceFull.name || 'Workspace logo'}
-              className='size-[16px] flex-shrink-0 rounded-sm object-cover'
+              className='size-[16px] shrink-0 rounded-sm object-cover'
             />
           ) : activeWorkspace ? (
             <div
-              className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
+              className='flex size-[16px] shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
               style={{ backgroundColor: activeWorkspaceFull?.color ?? 'var(--brand-accent)' }}
             >
               {workspaceInitial}
             </div>
           ) : (
-            <Skeleton className='size-[16px] flex-shrink-0 rounded-sm' />
+            <Skeleton className='size-[16px] shrink-0 rounded-sm' />
           )}
           {!isCollapsed && activeWorkspace?.name && (
             <>

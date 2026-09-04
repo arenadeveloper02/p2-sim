@@ -12,20 +12,22 @@ import {
 import { ChevronLeft } from '@sim/emcn/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
-import type { DesktopSettingsSurface } from '@/components/settings/navigation'
-import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
+import {
+  type DesktopSettingsSurface,
+  isSelfHostedOverrideEnabled,
+  ORGANIZATION_PLANE_UNIFIED_SECTIONS,
+} from '@/components/settings/navigation'
 import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
 import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
   allNavigationItems,
-  isBillingEnabled,
   sectionConfig,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { warmSettingsSectionQuery } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/settings-query-warmers'
@@ -105,10 +107,12 @@ export function SettingsSidebar({
 
   const { data: session } = useSession()
   const hostContext = useWorkspaceHostContext()
+  const deployment = useDeploymentShape()
+  const { hosted, billingEnabled } = deployment
   const { data: generalSettings } = useGeneralSettings()
   const { data: inboxConfig } = useInboxConfig(workspaceId)
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
-    enabled: !isHosted,
+    enabled: !hosted,
   })
 
   const { config: permissionConfig } = usePermissionConfig()
@@ -127,18 +131,22 @@ export function SettingsSidebar({
   const isSuperUser = session?.user?.role === 'admin'
 
   const isSSOProviderOwner = useMemo(() => {
-    if (isHosted) return null
+    if (hosted) return null
     if (!userId || isLoadingSSO) return null
     return ssoProvidersData?.providers?.some((p) => p.userId === userId) || false
-  }, [userId, ssoProvidersData?.providers, isLoadingSSO])
+  }, [hosted, userId, ssoProvidersData?.providers, isLoadingSSO])
 
   const navigationItems = useMemo(() => {
     return allNavigationItems.filter((item) => {
+      if (item.requiresSelfHosted && hosted) {
+        return false
+      }
+
       if (item.requiresDesktopSurface && !desktopSurfaces[item.requiresDesktopSurface]) {
         return false
       }
 
-      if (item.hideWhenBillingDisabled && !isBillingEnabled) {
+      if (item.hideWhenBillingDisabled && !billingEnabled) {
         return false
       }
 
@@ -165,6 +173,9 @@ export function SettingsSidebar({
       if (item.id === 'custom-tools' && permissionConfig.disableCustomTools) {
         return false
       }
+      if (item.id === 'sandboxes' && permissionConfig.hideSandboxesTab) {
+        return false
+      }
       if (item.id === 'forks' && !(forkingAvailable && canAdminWorkspace)) {
         return false
       }
@@ -178,7 +189,7 @@ export function SettingsSidebar({
         return false
       }
 
-      if (item.selfHostedOverride && !isHosted) {
+      if (isSelfHostedOverrideEnabled(item.selfHostedOverride, deployment)) {
         /**
          * Org-plane sections route through the organization gate in
          * `settings/[section]/page.tsx` (host organization + org-admin viewer),
@@ -213,7 +224,7 @@ export function SettingsSidebar({
         return false
       }
 
-      if (item.requiresHosted && !isHosted) {
+      if (item.requiresHosted && !hosted) {
         return false
       }
 
@@ -230,6 +241,9 @@ export function SettingsSidebar({
       return true
     })
   }, [
+    deployment,
+    hosted,
+    billingEnabled,
     hasTeamPlan,
     hasEnterprisePlan,
     isEnterprisePlan,
@@ -319,7 +333,7 @@ export function SettingsSidebar({
           SIDEBAR_SECTION_GAP_CLASS,
           SIDEBAR_ITEM_GAP_CLASS,
           SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
-          'flex flex-shrink-0 flex-col px-2'
+          'flex shrink-0 flex-col px-2'
         )}
       >
         <SidebarTooltip label='Back' enabled={showCollapsedTooltips}>
@@ -361,7 +375,7 @@ export function SettingsSidebar({
                 key={key}
                 title={title}
                 railCollapsed={isCollapsed}
-                className={cn(index > 0 && SIDEBAR_SECTION_GAP_CLASS, 'flex-shrink-0')}
+                className={cn(index > 0 && SIDEBAR_SECTION_GAP_CLASS, 'shrink-0')}
               >
                 <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
                   {sectionItems.map((item) => {
@@ -369,7 +383,10 @@ export function SettingsSidebar({
                     const active = activeSection === item.id
                     const section = item.id as SettingsSection
                     const href = getSettingsHref({ section })
-                    const selfHostedUnlocked = Boolean(item.selfHostedOverride && !isHosted)
+                    const selfHostedUnlocked = isSelfHostedOverrideEnabled(
+                      item.selfHostedOverride,
+                      deployment
+                    )
                     const isLocked =
                       !selfHostedUnlocked &&
                       item.requiresMax &&

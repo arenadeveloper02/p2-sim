@@ -4,13 +4,19 @@ import {
   credential,
   credentialGroup,
   credentialGroupEnrollment,
+  knowledgeBase,
+  knowledgeConnector,
+  mcpServers,
 } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import {
   credentialGroupWorkflowAccessPolicyCodec,
   requireDefaultCredentialGroupWorkflowAccessPolicy,
 } from '@/lib/credential-groups/application/workflow-access-policy'
+import { getManagedMcpConnector } from '@/lib/credential-groups/managed-mcp-connectors'
+import { retireManagedMcpServersForGroup } from '@/lib/credential-groups/managed-mcp-service'
 import { credentialGroupScopePolicyVersion } from '@/lib/credential-groups/provider-adapter'
 import { decryptCredentialGroupProviderConfiguration } from '@/lib/credential-groups/provider-configuration'
 import { getCredentialGroupProviderAdapter } from '@/lib/credential-groups/provider-registry'
@@ -18,6 +24,7 @@ import { isCredentialGroupProvider } from '@/lib/credential-groups/providers'
 import { SLACK_MANAGED_USER_SCOPES } from '@/lib/credential-groups/slack-managed-user-scopes'
 import type {
   CreateCredentialGroupInput,
+  CredentialGroupMcpServer,
   CredentialGroupOptionInput,
   CredentialGroupRecord,
   UpdateCredentialGroupInput,
@@ -27,6 +34,44 @@ import {
   deleteResourcePolicyForResource,
   requireResourcePolicy,
 } from '@/lib/resource-policies/repository'
+
+interface CredentialGroupMutationResult {
+  credentialGroup: CredentialGroupRecord
+  retiredMcpConnectionIds: string[]
+}
+
+interface DeleteCredentialGroupResult {
+  deleted: boolean
+  retiredMcpConnectionIds: string[]
+  retiredMcpServerIds: string[]
+}
+
+async function listLinkedMcpServers(
+  credentialGroupId: string,
+  executor: DbOrTx = db
+): Promise<CredentialGroupMcpServer[]> {
+  const rows = await executor
+    .select({
+      id: mcpServers.id,
+      name: mcpServers.name,
+      description: mcpServers.description,
+      authType: mcpServers.authType,
+      enabled: mcpServers.enabled,
+      managedConnectorId: mcpServers.managedConnectorId,
+    })
+    .from(mcpServers)
+    .where(and(eq(mcpServers.credentialGroupId, credentialGroupId), isNull(mcpServers.deletedAt)))
+    .orderBy(asc(mcpServers.name), asc(mcpServers.id))
+  return rows.map((row) => {
+    if (!row.managedConnectorId) {
+      throw new Error(`Credential Group MCP server ${row.id} has no managed connector ID`)
+    }
+    return {
+      ...row,
+      managedConnectorId: getManagedMcpConnector(row.managedConnectorId).id,
+    }
+  })
+}
 
 function scopesEqual(left: string[], right: string[]): boolean {
   const normalizedLeft = [...new Set(left)].sort()
@@ -97,7 +142,8 @@ async function updateOptions(
 }
 
 async function toCredentialGroup(
-  row: typeof credentialGroup.$inferSelect
+  row: typeof credentialGroup.$inferSelect,
+  linkedMcpServers: CredentialGroupMcpServer[]
 ): Promise<CredentialGroupRecord> {
   const providerConfiguration = await decryptCredentialGroupProviderConfiguration(
     row.encryptedProviderConfiguration
@@ -140,6 +186,7 @@ async function toCredentialGroup(
               : ('ready' as const),
       }
     }),
+    mcpServers: linkedMcpServers,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -147,12 +194,42 @@ async function toCredentialGroup(
 }
 
 export async function listCredentialGroups(workspaceId: string): Promise<CredentialGroupRecord[]> {
-  const rows = await db
-    .select()
-    .from(credentialGroup)
-    .where(eq(credentialGroup.workspaceId, workspaceId))
-    .orderBy(desc(credentialGroup.createdAt))
-  return Promise.all(rows.map(toCredentialGroup))
+  const [rows, serverRows] = await Promise.all([
+    db
+      .select()
+      .from(credentialGroup)
+      .where(eq(credentialGroup.workspaceId, workspaceId))
+      .orderBy(desc(credentialGroup.createdAt)),
+    db
+      .select({
+        id: mcpServers.id,
+        name: mcpServers.name,
+        description: mcpServers.description,
+        authType: mcpServers.authType,
+        enabled: mcpServers.enabled,
+        credentialGroupId: mcpServers.credentialGroupId,
+        managedConnectorId: mcpServers.managedConnectorId,
+      })
+      .from(mcpServers)
+      .where(and(eq(mcpServers.workspaceId, workspaceId), isNull(mcpServers.deletedAt)))
+      .orderBy(asc(mcpServers.name), asc(mcpServers.id)),
+  ])
+  const serversByGroupId = new Map<string, CredentialGroupMcpServer[]>()
+  for (const server of serverRows) {
+    if (!server.credentialGroupId) continue
+    const summary = {
+      id: server.id,
+      name: server.name,
+      description: server.description,
+      authType: server.authType,
+      enabled: server.enabled,
+      managedConnectorId: getManagedMcpConnector(server.managedConnectorId ?? '').id,
+    }
+    const current = serversByGroupId.get(server.credentialGroupId)
+    if (current) current.push(summary)
+    else serversByGroupId.set(server.credentialGroupId, [summary])
+  }
+  return Promise.all(rows.map((row) => toCredentialGroup(row, serversByGroupId.get(row.id) ?? [])))
 }
 
 export async function getCredentialGroup(
@@ -164,7 +241,7 @@ export async function getCredentialGroup(
     .from(credentialGroup)
     .where(and(eq(credentialGroup.id, groupId), eq(credentialGroup.workspaceId, workspaceId)))
     .limit(1)
-  return row ? toCredentialGroup(row) : null
+  return row ? toCredentialGroup(row, await listLinkedMcpServers(row.id)) : null
 }
 
 export async function createCredentialGroup(
@@ -206,14 +283,61 @@ export async function createCredentialGroup(
       document: policy.document,
       credentialGroupId: created.id,
     })
-    return toCredentialGroup(created)
+    return toCredentialGroup(created, await listLinkedMcpServers(created.id, tx))
   })
+}
+
+/**
+ * Refuses to remove a group, or the given options of it, while a knowledge
+ * connector syncs per member through one of them: the connector would be left
+ * bound to nothing, and its members' documents dark, without anyone choosing
+ * that. `optionIds` null means the whole group.
+ *
+ * Runs under the caller's `FOR UPDATE` on the group row. Every write that binds
+ * a connector row to an option (`lockCredentialGroupOption`) takes that same
+ * lock and re-checks the option under it, so a binding is either visible here
+ * or refused once this transaction commits; the check reads only the rows.
+ */
+async function refuseIfServingMemberConnectors(
+  executor: DbOrTx,
+  workspaceId: string,
+  groupId: string,
+  optionIds: readonly string[] | null
+): Promise<void> {
+  if (optionIds !== null && optionIds.length === 0) return
+  const serving = await executor
+    .select({
+      knowledgeBaseName: knowledgeBase.name,
+      connectorType: knowledgeConnector.connectorType,
+    })
+    .from(knowledgeConnector)
+    .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
+    .where(
+      and(
+        eq(knowledgeBase.workspaceId, workspaceId),
+        eq(knowledgeConnector.accessMode, 'members'),
+        eq(knowledgeConnector.credentialGroupId, groupId),
+        optionIds === null
+          ? undefined
+          : inArray(knowledgeConnector.credentialGroupOptionId, [...optionIds]),
+        isNull(knowledgeConnector.deletedAt)
+      )
+    )
+    .limit(5)
+  if (serving.length === 0) return
+  const names = serving
+    .map((row) => `the ${row.connectorType} connector in "${row.knowledgeBaseName}"`)
+    .join(', ')
+  throw new OrchestrationError(
+    'conflict',
+    `${optionIds === null ? 'This Credential Group' : 'An option being removed'} is what ${names} ${serving.length === 1 ? 'syncs' : 'sync'} per member through. Switch ${serving.length === 1 ? 'that connector' : 'those connectors'} to another group first.`
+  )
 }
 
 export async function deleteCredentialGroup(
   workspaceId: string,
   groupId: string
-): Promise<boolean> {
+): Promise<DeleteCredentialGroupResult> {
   return db.transaction(async (tx) => {
     const [existing] = await tx
       .select({ id: credentialGroup.id })
@@ -221,8 +345,13 @@ export async function deleteCredentialGroup(
       .where(and(eq(credentialGroup.id, groupId), eq(credentialGroup.workspaceId, workspaceId)))
       .limit(1)
       .for('update')
-    if (!existing) return false
+    if (!existing) {
+      return { deleted: false, retiredMcpConnectionIds: [], retiredMcpServerIds: [] }
+    }
 
+    const retiredMcp = await retireManagedMcpServersForGroup(workspaceId, groupId, tx)
+
+    await refuseIfServingMemberConnectors(tx, workspaceId, groupId, null)
     await deleteResourcePolicyForResource(
       { workspaceId, resourceType: 'credential_group', resourceId: groupId },
       tx
@@ -232,7 +361,11 @@ export async function deleteCredentialGroup(
       .where(and(eq(credentialGroup.id, groupId), eq(credentialGroup.workspaceId, workspaceId)))
       .returning({ id: credentialGroup.id })
     if (deleted.length !== 1) throw new Error('Locked Credential Group delete returned no row')
-    return true
+    return {
+      deleted: true,
+      retiredMcpConnectionIds: retiredMcp.connectionIds,
+      retiredMcpServerIds: retiredMcp.serverIds,
+    }
   })
 }
 
@@ -240,7 +373,7 @@ export async function updateCredentialGroup(
   workspaceId: string,
   groupId: string,
   body: UpdateCredentialGroupInput
-): Promise<CredentialGroupRecord | null> {
+): Promise<CredentialGroupMutationResult | null> {
   return db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -250,6 +383,17 @@ export async function updateCredentialGroup(
       .for('update')
     if (!existing) return null
 
+    if (body.options !== undefined) {
+      const keptOptionIds = new Set(body.options.map((option) => option.id))
+      await refuseIfServingMemberConnectors(
+        tx,
+        workspaceId,
+        groupId,
+        existing.options
+          .filter((option) => !keptOptionIds.has(option.id))
+          .map((option) => option.id)
+      )
+    }
     const nextOptions =
       body.options !== undefined
         ? await updateOptions(workspaceId, groupId, body.options, existing.options, tx)
@@ -302,6 +446,9 @@ export async function updateCredentialGroup(
           )
         )
     }
-    return toCredentialGroup(updated)
+    return {
+      credentialGroup: await toCredentialGroup(updated, await listLinkedMcpServers(updated.id, tx)),
+      retiredMcpConnectionIds: [],
+    }
   })
 }

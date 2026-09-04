@@ -20,7 +20,7 @@ import { Check, TriangleAlert } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { GeneratedPasswordInput } from '@/components/ui'
-import { isSsoEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
 import { validateAllowlistEntry } from '@/lib/messaging/email/validation'
 import { formatInternalOutputSelector } from '@/lib/workflows/streaming/output-selector'
@@ -343,7 +343,7 @@ export function ChatDeploy({
       >
         {errors.general && (
           <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
-            <TriangleAlert className='size-4 flex-shrink-0' />
+            <TriangleAlert className='size-4 shrink-0' />
             <span>{errors.general}</span>
           </div>
         )}
@@ -390,6 +390,7 @@ export function ChatDeploy({
               disabled={chatSubmitting}
               size='md'
               className='w-full'
+              disablePortal
             />
             {errors.outputBlocks && (
               <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>
@@ -695,6 +696,7 @@ function AuthSelector({
   error,
 }: AuthSelectorProps) {
   const revealPasswordMutation = useRevealChatPassword()
+  const { features } = useDeploymentShape()
 
   /**
    * Editing or regenerating the password clears a failed reveal. The mutation
@@ -710,7 +712,7 @@ function AuthSelector({
   const allowedAuthTypes = permissionConfig.allowedChatDeployAuthTypes
 
   const ssoAvailable =
-    isSsoEnabled || savedAuthType === 'sso' || (allowedAuthTypes?.includes('sso') ?? false)
+    features.sso || savedAuthType === 'sso' || (allowedAuthTypes?.includes('sso') ?? false)
   const baseAuthOptions: AuthType[] = ssoAvailable
     ? ['public', 'password', 'email', 'sso']
     : ['public', 'password', 'email']
