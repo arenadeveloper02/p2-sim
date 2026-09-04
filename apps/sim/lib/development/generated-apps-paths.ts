@@ -32,3 +32,12 @@ export function getGeneratedAppsDir(): string {
 export function getGeneratedAppDir(repoName: string): string {
   return join(/*turbopackIgnore: true*/ getGeneratedAppsDir(), repoName)
 }
+
+/**
+ * Join a generated-app directory with a relative path. Ignore both sides so
+ * NFT cannot treat pinned names (`next.config.ts`, `package.json`) as this
+ * app's files — that emits colliding `[root-of-the-server]` chunks.
+ */
+export function joinGeneratedAppFsPath(rootDir: string, relativePath: string): string {
+  return join(/* turbopackIgnore: true */ rootDir, /* turbopackIgnore: true */ relativePath)
+}

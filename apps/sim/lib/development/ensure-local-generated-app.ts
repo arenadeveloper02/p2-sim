@@ -2,10 +2,9 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'fs'
 import { mkdir, rm } from 'fs/promises'
-import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { getGeneratedAppDir } from '@/lib/development/generated-apps-paths'
+import { getGeneratedAppDir, joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
 import { resolveDevelopmentDeployEnv } from '@/lib/development/resolve-development-env'
 
 const logger = createLogger('EnsureLocalGeneratedApp')
@@ -76,7 +75,7 @@ async function runGit(cwd: string, args: string[]): Promise<void> {
 }
 
 async function cloneRepository(remoteUrl: string, outputDir: string): Promise<void> {
-  await mkdir(join(outputDir, '..'), { recursive: true })
+  await mkdir(joinGeneratedAppFsPath(outputDir, '..'), { recursive: true })
   await execFileAsync('git', ['clone', '--depth', '1', remoteUrl, outputDir], {
     encoding: 'utf-8',
     maxBuffer: 10 * 1024 * 1024,
@@ -103,7 +102,7 @@ export async function ensureLocalGeneratedApp(
 
   try {
     if (existsSync(outputDir)) {
-      const gitDir = join(outputDir, '.git')
+      const gitDir = joinGeneratedAppFsPath(outputDir, '.git')
       if (existsSync(gitDir)) {
         try {
           await pullLatestChanges(outputDir)

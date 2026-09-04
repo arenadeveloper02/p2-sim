@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'fs'
-import { join, normalize } from 'path'
+import { normalize } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { env } from '@/lib/core/config/env'
 import { isProd } from '@/lib/core/config/env-flags'
+import { joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
 import { executeShellInSandbox, type SandboxFile } from '@/lib/execution/remote-sandbox'
 
 function sanitizeRelativeFilePath(filePath: string): string | null {
@@ -144,7 +145,7 @@ async function validateAppTypecheckLocally(
   outputDir: string,
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  if (!existsSync(join(outputDir, 'package.json'))) {
+  if (!existsSync(joinGeneratedAppFsPath(outputDir, 'package.json'))) {
     return {
       validated: false,
       output: 'Typecheck validation failed: package.json is missing from the generated app',
@@ -162,7 +163,7 @@ async function validateAppTypecheckLocally(
     logs.push('=== npm install ===')
     logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv))
 
-    if (options.requiresDatabase && existsSync(join(outputDir, 'prisma/schema.prisma'))) {
+    if (options.requiresDatabase && existsSync(joinGeneratedAppFsPath(outputDir, 'prisma/schema.prisma'))) {
       logger.info('Running prisma generate for generated app typecheck', { outputDir })
       logs.push('=== prisma generate ===')
       logs.push(await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv))
@@ -183,7 +184,7 @@ async function validateAppBuildLocally(
   outputDir: string,
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  if (!existsSync(join(outputDir, 'package.json'))) {
+  if (!existsSync(joinGeneratedAppFsPath(outputDir, 'package.json'))) {
     return {
       validated: false,
       output: 'Build validation failed: package.json is missing from the generated app',
@@ -195,7 +196,7 @@ async function validateAppBuildLocally(
   const databaseEnv = options.requiresDatabase
     ? { DATABASE_URL: process.env.DATABASE_URL ?? DUMMY_DATABASE_URL }
     : {}
-  const hasPrisma = existsSync(join(outputDir, 'prisma/schema.prisma'))
+  const hasPrisma = existsSync(joinGeneratedAppFsPath(outputDir, 'prisma/schema.prisma'))
   const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)
 
   try {

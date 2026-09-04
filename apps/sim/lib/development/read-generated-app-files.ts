@@ -1,8 +1,9 @@
 import { existsSync } from 'fs'
 import { readdir, readFile } from 'fs/promises'
-import { join, normalize } from 'path'
+import { normalize } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
 
 const logger = createLogger('ReadGeneratedAppFiles')
 
@@ -54,15 +55,6 @@ const PINNED_SOURCE_PATHS = [
   'app/page.tsx',
   'REPO_SUMMARY.md',
 ] as const
-
-/**
- * Join under a generated-app dir. Ignore both sides so NFT cannot turn pinned
- * names (`next.config.ts`, `package.json`) into this app's files — that emits
- * colliding `[root-of-the-server]` chunks.
- */
-function joinGeneratedPath(rootDir: string, relativePath: string): string {
-  return join(/* turbopackIgnore: true */ rootDir, /* turbopackIgnore: true */ relativePath)
-}
 
 function sanitizeRelativeFilePath(filePath: string): string | null {
   const normalized = normalize(filePath.replace(/\\/g, '/'))
@@ -143,7 +135,7 @@ async function walkDirectory(
       break
     }
 
-    const absolutePath = joinGeneratedPath(currentDir, entry.name)
+    const absolutePath = joinGeneratedAppFsPath(currentDir, entry.name)
     const relativePath = absolutePath.slice(rootDir.length + 1)
 
     if (entry.isDirectory()) {
@@ -183,7 +175,7 @@ export async function readGeneratedAppFiles(outputDir: string): Promise<Generate
   const seenPaths = new Set<string>()
 
   for (const relativePath of PINNED_SOURCE_PATHS) {
-    const absolutePath = joinGeneratedPath(outputDir, relativePath)
+    const absolutePath = joinGeneratedAppFsPath(outputDir, relativePath)
     if (!existsSync(/* turbopackIgnore: true */ absolutePath)) {
       continue
     }

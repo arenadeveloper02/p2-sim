@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'fs'
-import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
 
 const logger = createLogger('PushGeneratedAppToGitHub')
 const execFileAsync = promisify(execFile)
@@ -148,7 +148,7 @@ async function ensureGitRemote(
   remoteUrl: string,
   defaultBranch: string
 ): Promise<void> {
-  const gitDir = join(outputDir, '.git')
+  const gitDir = joinGeneratedAppFsPath(outputDir, '.git')
   if (!existsSync(gitDir)) {
     await runGit(outputDir, ['init'])
     await runGit(outputDir, ['branch', '-M', defaultBranch])
@@ -184,7 +184,7 @@ async function initCommitAndPush(
     throw new Error(`Output directory does not exist: ${outputDir}`)
   }
 
-  const gitDir = join(outputDir, '.git')
+  const gitDir = joinGeneratedAppFsPath(outputDir, '.git')
   if (!existsSync(gitDir)) {
     await runGit(outputDir, ['init'])
   }

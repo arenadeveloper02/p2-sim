@@ -20,7 +20,7 @@ import {
   formatBuildErrorsSummary,
   logGeneratedAppValidationErrors,
 } from '@/lib/development/format-generated-app-build-errors'
-import { findMonorepoRoot, getGeneratedAppDir } from '@/lib/development/generated-apps-paths'
+import { findMonorepoRoot, getGeneratedAppDir, joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
 import {
   buildRepoSummaryContent,
   ensureRepoSummaryFile,
@@ -1408,7 +1408,7 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
       continue
     }
 
-    const fullPath = join(/* turbopackIgnore: true */ outputDir, safePath)
+    const fullPath = joinGeneratedAppFsPath(outputDir, safePath)
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, file.content, 'utf-8')
     written++
@@ -1545,7 +1545,7 @@ async function validateAndRepairUntilBuildPasses(
         originalPrismaSchema: options.originalPrismaSchema,
       })
 
-      const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
+      const nextCacheDir = joinGeneratedAppFsPath(outputDir, '.next')
       if (existsSync(nextCacheDir)) {
         await rm(nextCacheDir, { recursive: true, force: true })
       }
@@ -1589,7 +1589,7 @@ async function validateAndRepairUntilBuildPasses(
       originalPrismaSchema: options.originalPrismaSchema,
     })
 
-    const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
+    const nextCacheDir = joinGeneratedAppFsPath(outputDir, '.next')
     if (existsSync(nextCacheDir)) {
       await rm(nextCacheDir, { recursive: true, force: true })
     }

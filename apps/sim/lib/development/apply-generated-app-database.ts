@@ -2,9 +2,9 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync, readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
-import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
 import {
   buildRepoSummaryContent,
   GENERATED_APP_REPO_SUMMARY_PATH,
@@ -70,7 +70,7 @@ async function runNpmInDir(
 
 function packageJsonHasPrismaSeed(outputDir: string): boolean {
   try {
-    const raw = readFileSync(join(outputDir, 'package.json'), 'utf-8')
+    const raw = readFileSync(joinGeneratedAppFsPath(outputDir, 'package.json'), 'utf-8')
     const pkg = JSON.parse(raw) as { prisma?: { seed?: string } }
     return Boolean(pkg.prisma?.seed?.trim())
   } catch {
@@ -140,9 +140,9 @@ export async function applyGeneratedAppDatabase(
 ): Promise<ApplyGeneratedAppDatabaseResult> {
   const outputDir = input.outputDir
   const databaseUrl = input.databaseUrl.trim()
-  const schemaPath = join(outputDir, 'prisma/schema.prisma')
+  const schemaPath = joinGeneratedAppFsPath(outputDir, 'prisma/schema.prisma')
 
-  if (!existsSync(join(outputDir, 'package.json'))) {
+  if (!existsSync(joinGeneratedAppFsPath(outputDir, 'package.json'))) {
     return { success: false, output: '', error: 'package.json is missing from the generated app' }
   }
 
@@ -160,7 +160,7 @@ export async function applyGeneratedAppDatabase(
   try {
     logger.info('Applying generated app database schema to Neon', { outputDir })
 
-    if (!existsSync(join(outputDir, 'node_modules'))) {
+    if (!existsSync(joinGeneratedAppFsPath(outputDir, 'node_modules'))) {
       logs.push('=== npm install ===')
       logs.push(
         await runNpmInDir(
@@ -180,7 +180,7 @@ export async function applyGeneratedAppDatabase(
     // Vercel when the live Neon still has those columns — or silently destroy data when URLs match.
     logs.push(await runNpmInDir(outputDir, ['exec', 'prisma', 'db', 'push'], databaseEnv))
 
-    const seedSqlPath = join(outputDir, 'db/seed.sql')
+    const seedSqlPath = joinGeneratedAppFsPath(outputDir, 'db/seed.sql')
     if (existsSync(seedSqlPath)) {
       logs.push('=== prisma db execute (db/seed.sql) ===')
       logs.push(
@@ -201,7 +201,7 @@ export async function applyGeneratedAppDatabase(
       )
     }
 
-    const hasSeedTs = existsSync(join(outputDir, 'prisma/seed.ts'))
+    const hasSeedTs = existsSync(joinGeneratedAppFsPath(outputDir, 'prisma/seed.ts'))
     if (hasSeedTs || packageJsonHasPrismaSeed(outputDir)) {
       logs.push('=== prisma db seed ===')
       try {
@@ -280,7 +280,11 @@ export async function prepareGeneratedAppForDatabaseDeploy(input: {
   }
 
   const summaryContent = buildRepoSummaryContent(input.files, summaryOptions)
-  await writeFile(join(input.outputDir, GENERATED_APP_REPO_SUMMARY_PATH), summaryContent, 'utf-8')
+  await writeFile(
+    joinGeneratedAppFsPath(input.outputDir, GENERATED_APP_REPO_SUMMARY_PATH),
+    summaryContent,
+    'utf-8'
+  )
 
   return syncGeneratedAppDatabase({
     outputDir: input.outputDir,
