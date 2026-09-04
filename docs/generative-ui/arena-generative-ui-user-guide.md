@@ -182,6 +182,31 @@ Do not append DataText below an always-visible Repeat.
 
 ---
 
+## Example — Simple todo (collection)
+
+Use this when the job is **one dummy list** (micro collection), not **task then results** and not **keep both visible**. Copy-paste set: [test inputs — collection](./arena-generative-ui-test-inputs.md#simple-todo-collection). No API Bindings — dummy data.
+
+**Mode:** Generate New App
+
+**User Input:**
+
+```
+Simple todo app. Dummy data. One page. List todos, add a todo, mark one complete.
+
+Create and complete stay on this page (dialog or inline) — not a create page
+and not a detail page.
+
+No dashboard, stats, history, filters, or extra routes.
+```
+
+**What to check in Preview**
+
+1. One `home` page. Collection, not Workspace. No create or detail route.
+2. Sample todos on arrival — the list must not start empty.
+3. Add and complete work locally (dialog or inline). Do not invent an API key.
+
+---
+
 ## Example — Projects and tasks (Workspace)
 
 Use this when the job is **keep both visible** (compose), not **replace the current view** (navigate). Copy-paste set: [test inputs — compose](./arena-generative-ui-test-inputs.md#projects-and-tasks-compose). No API Bindings — dummy data.
@@ -209,7 +234,7 @@ the inspector.
 3. Create / complete is local (dialog or inline), not another page.
 4. Planner `content` does not say `Uncoordinated regions`.
 
-“Then go to results” is the other pattern — that is the Article Recommendation Agent above.
+“Then go to results” is Article Recommendation. One dummy list is Simple todo above.
 
 ---
 
@@ -226,6 +251,7 @@ the inspector.
 ## Short checklist
 
 - Same API **key** in User Input and Add an API. Leave Bindings empty for dummy/local apps; do not invent a workflow key.
+- Dummy lists (todos, boards) should show sample rows on arrival. Create / complete stay local.
 - Bound workflows are **deployed** before Preview / Launch.
 - JSON APIs: paste Output format JSON so Results is not a text dump.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.

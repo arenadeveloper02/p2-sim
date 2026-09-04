@@ -653,12 +653,12 @@ dummy data
 +
 create
 +
-edit
-+
-delete
+complete
 ```
 
 should use local/mock mutations.
+
+Dummy collection, workspace, and dashboard pages also include a dummy action the page **onLoads** to seed 4–8 rows (`source` dummy or local, no `apiKey`). Do not omit that seed; the host does not invent collection rows. Mutations stay separate from seed.
 
 ---
 
@@ -683,10 +683,12 @@ data:
   mode: dummy
 
 actions:
+  loadTodos
   createTodo
   completeTodo
-  deleteTodo
 ```
+
+`loadTodos` is the page onLoad seed. `createTodo` / `completeTodo` are mutations.
 
 For AI or long-running operations:
 
@@ -1087,6 +1089,8 @@ The architecture supports the requested user flow.
 
 Every displayed dynamic value has a valid data source.
 
+Dummy collections include a seed action.
+
 ### Actions
 
 Every requested mutation or operation has an action.
@@ -1143,7 +1147,7 @@ errorCopy?
 
 `audience` is a real role — never `"users"`. `purpose` copies analyzed intent.task when present.
 
-When analyzed intent is present, honour its task, entities, requested mutations, and job duration — do not rewrite the job. Pick complexity, sitemap, archetypes, shell, regions, capabilities, data mode, and design that implement that intent.
+When analyzed intent is present, honour its task, entities, requested mutations, and job duration — do not rewrite the job. Dummy collection seed (page onLoad) is still required even if intent omitted it. Pick complexity, sitemap, archetypes, shell, regions, capabilities, data mode, and design that implement that intent.
 
 Do not output component-level JSON.
 

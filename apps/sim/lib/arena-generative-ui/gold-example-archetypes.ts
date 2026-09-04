@@ -538,7 +538,7 @@ export const goldCollectionManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION = goldPrompt(
   'collection',
-  'One collection page. onLoad setState seeds Repeat inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_item, no apiKey) on this page, not an extra page or region. Complete is a row Button (done: true); the host writes onto that row. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
+  'One collection page. onLoad setState seeds Repeat inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_item, no apiKey) on this page, not an extra page or region. Complete is a row Button (done: true); the host writes onto that row. Edit is a row Button setValue editing=true (the host selects that row); save uses editing: false, not creating: false. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
   {
     title: 'Items',
     content: 'Browse a list on one page.',

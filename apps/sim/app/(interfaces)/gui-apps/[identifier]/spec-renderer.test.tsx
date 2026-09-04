@@ -1300,6 +1300,30 @@ describe('SpecRenderer', () => {
       expect(onRunAction).not.toHaveBeenCalled()
     })
 
+    it('selects the Repeat row when setValue opens the editing overlay', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['edit'] },
+          edit: {
+            type: 'Button',
+            props: { label: 'Edit', setValue: 'editing=true' },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem, onRunAction } = render({ spec, state: { articles } })
+      const buttons = Array.from(container.querySelectorAll('button')).filter(
+        (button) => button.textContent === 'Edit'
+      )
+      act(() => {
+        buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalledWith(articles[1], 1)
+      expect(onRunAction).not.toHaveBeenCalled()
+    })
+
     it('hides DataText until showWhen selectedId matches', () => {
       const spec: Spec = {
         root: 'page',

@@ -738,7 +738,12 @@ export function applySelectedRowFields(
   const id = itemIdentityId(patch) || selectedId
   if (!id) return
   if (patchWritesCollection(patch)) return
-  if (Object.prototype.hasOwnProperty.call(patch, 'creating')) return
+  if (
+    Object.prototype.hasOwnProperty.call(patch, 'creating') &&
+    !Object.prototype.hasOwnProperty.call(patch, 'editing')
+  ) {
+    return
+  }
   const fields = selectedRowFieldPatch(patch)
   if (Object.keys(fields).length === 0) return
   const selected = recordFromUnknown(next[ARENA_GENERATIVE_SELECTED_KEY])

@@ -1,9 +1,10 @@
 # Arena Generative UI — test inputs
 
-Two copy-paste sets for the **Arena Generative UI** block. Use **Generate New App**. User Input is prose; only Pages and API Bindings are JSON (leave Pages blank unless you want to pin paths).
+Three copy-paste sets for the **Arena Generative UI** block. Use **Generate New App**. User Input is prose; only Pages and API Bindings are JSON (leave Pages blank unless you want to pin paths).
 
 1. **Navigate** — [Article Recommendation Agent](#article-recommendation-agent-navigate) (task then results). Matches the [user-guide example](./arena-generative-ui-user-guide.md#example--article-recommendation-agent).
-2. **Compose** — [Projects and tasks](#projects-and-tasks-compose) (one Workspace page). Matches [Composition Semantics → WHEN](./arena-generative-ui-composition-semantics.md#6-when--compose-vs-navigate-vs-local).
+2. **Collection** — [Simple todo](#simple-todo-collection) (one dummy list page). Matches the planner’s micro example (`simple todo app`).
+3. **Compose** — [Projects and tasks](#projects-and-tasks-compose) (one Workspace page). Matches [Composition Semantics → WHEN](./arena-generative-ui-composition-semantics.md#6-when--compose-vs-navigate-vs-local).
 
 After each run, open **Deploy → GUI App**, pick the draft, then **Preview**.
 
@@ -142,6 +143,57 @@ Calm Arena-like layout. Generator form left-aligned. History cards are compact: 
 If History dumps every `output` or appends markdown below the list, do not regenerate from this set. **Edit Existing Draft** with a page-scoped delta: History cards bind only keyword/client/date; Open is `selectItem` with no `actionId` and no `navigateTo`; hide Repeat with `!selectedId`; Back is `clearItem`.
 
 Do not use identifier `preview` when you later Launch — that name is reserved.
+
+---
+
+## Simple todo (collection)
+
+Dummy / local data. Leave **API Bindings** empty. The planner should emit one `home` collection page — not a dashboard, not a Workspace, not `/todos/:id`.
+
+### Mode
+
+`Generate New App`
+
+### User Input
+
+```
+Simple todo app. Dummy data. One page. List todos, add a todo, mark one complete.
+
+Create and complete stay on this page (dialog or inline) — not a create page
+and not a detail page.
+
+No dashboard, stats, history, filters, or extra routes.
+```
+
+### Pages
+
+Leave blank.
+
+### Entry Path
+
+```
+home
+```
+
+### API Bindings
+
+Leave blank.
+
+### Design Notes
+
+```
+Comfortable density. Task-oriented. No dashboard, stats, or history.
+```
+
+### What to check in Preview
+
+1. One page. Collection, not Workspace. No separate create or detail routes.
+2. The list shows sample rows on arrival (dummy `onLoad` setState or `Table.rows`). It must not start empty.
+3. Add a todo (dialog or inline). The new row appears locally — no invented API key.
+4. Complete marks that row done. The host writes onto the row (`done: true`).
+5. Bindings stay empty. Create / complete still work (`onSuccess.setState`).
+
+If Preview invented a dashboard, filters, or a detail page, **Edit Existing Draft** with `re-plan` and this User Input again.
 
 ---
 

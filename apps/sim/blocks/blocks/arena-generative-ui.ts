@@ -30,7 +30,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   - User Input describes the app: pages, copy, which API, navigation, empty states. Do not ask for loaders, toasts, or confirm dialogs — the host compiles those.
   - Or upload Screenshots of the UI to match. Arena approximates layout, copy, and regions with catalog components — it will not clone pixels or custom widgets.
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
-  - Set apiBindings when CTAs should call a deployed workflow or HTTP URL. Copilot should write a JSON array of stubs — [{ "key": "qualify_lead", "kind": "workflow", "workflowId": "<id>", "stream": true }] or [{ "key": "search", "kind": "http", "curl": "curl -X POST https://…" }]. The host fills inputSchema from the deployed Start block (and HTTP from the curl). Leave it blank when there is no backend (dummy/local or navigation-only); dummy create/complete stay local. Do not invent keys the user did not name. Name those same keys in User Input (e.g. "Submit calls qualify_lead").
+  - Set apiBindings when CTAs should call a deployed workflow or HTTP URL. Copilot should write a JSON array of stubs — [{ "key": "qualify_lead", "kind": "workflow", "workflowId": "<id>", "stream": true }] or [{ "key": "search", "kind": "http", "curl": "curl -X POST https://…" }]. The host fills inputSchema from the deployed Start block (and HTTP from the curl). Leave it blank when there is no backend (dummy/local or navigation-only); dummy lists seed sample rows on arrival; dummy create/complete stay local. Do not invent keys the user did not name. Name those same keys in User Input (e.g. "Submit calls qualify_lead").
   - Set "stream": true to stream tokens into DataText. Do not add inputMapping { "email": "arenaEmailId" } — that is redundant and must not drop form fields.
   - Visitor email is host-stamped onto Start fields named userEmail / loggedInEmail / visitorEmail. Do not put an email field in the brief unless it is a lead/contact address (a field named email).
   - Humans use Add an API in the editor; Copilot must set apiBindings on the block via edit_workflow (the JSON textarea stays locked in the UI).
@@ -71,14 +71,14 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
         enabled: true,
         prompt: `You are a principal product engineer writing the User Input brief for an Arena Generative UI app. Apps render as a full page (up to 1280px) and also embed in a narrow Arena iframe — Grid and Columns collapse.
 
-The user's note is often a job, not a spec. Infer the product a senior engineer would ship: who it is for, the happy path, pages that path needs (form → results, list → detail, history of past runs), fields the APIs need, CTA labels, and empty-state copy. Write as if you already know the domain.
+The user's note is often a job, not a spec. Infer the product a senior engineer would ship: who it is for, the happy path, pages that path needs (form → results, list → detail when a record page is needed, or one collection page for a simple todo), fields the APIs need, CTA labels, and empty-state copy. Write as if you already know the domain.
 
 Rules:
 - Honour every name, API key, field, and page the user DID write. Do not rename them.
-- Do not invent API keys. If they named a key, keep it. If they did not, describe the CTA in words rather than minting a key.
+- Do not invent API keys. If they named a key, keep it. If they did not, describe the CTA in words rather than minting a key. Dummy/local jobs leave APIs unnamed: lists seed sample rows on arrival; create/complete stay on the page.
 - Do not describe loaders, toasts, confirm dialogs, progress checklists, or login — the host compiles those.
 - Do not add settings, profile, or marketing pages the job does not need.
-- A search or generate job always includes a results destination and Back. A list of records includes a way to open one.
+- A search or generate job always includes a results destination and Back. A list of records includes a way to open one only when the job needs a record page (CRM, orders). A simple todo or checklist is one collection page — create and complete stay on the list.
 - Field names are camelCase; labels may have spaces.
 
 Include:
@@ -182,9 +182,9 @@ Return ONLY the specification text.`,
       placeholder:
         '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify","stream":true}]',
       description:
-        'Named APIs CTAs may call. Leave blank when there is no backend — dummy/local apps still mutate locally. The model cannot invent API keys.',
+        'Named APIs CTAs may call. Leave blank when there is no backend — dummy lists seed sample rows on arrival; dummy create/complete stay local. The model cannot invent API keys.',
       tooltip:
-        'Named CTA backends. Leave blank when there is no workflow or HTTP call (dummy/local or navigation-only). Dummy create/complete stay local. Use Add an API to pick a workflow or paste a curl. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob. Set "forwardEmailId": true on an HTTP binding to send the visitor\'s unverified Arena email.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
+        'Named CTA backends. Leave blank when there is no workflow or HTTP call (dummy/local or navigation-only). Dummy lists seed sample rows on arrival; dummy create/complete stay local. Use Add an API to pick a workflow or paste a curl. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob. Set "forwardEmailId": true on an HTTP binding to send the visitor\'s unverified Arena email.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
     },
     {
       id: 'designNotes',
@@ -246,7 +246,7 @@ Return ONLY the specification text.`,
     apiBindings: {
       type: 'json',
       description:
-        'Named CTA backends. Copilot writes a JSON array of stubs: [{ "key", "kind": "workflow", "workflowId", "stream"? }] or [{ "key", "kind": "http", "curl" }]. The host hydrates inputSchema from the deployed Start block (visitorEmail for userEmail/loggedInEmail; a field named email stays a form lead address) or from the curl. Use the same key in User Input. Leave blank when there is no backend (dummy/local or navigation-only). Do not invent keys. Do not set inputMapping email→arenaEmailId.',
+        'Named CTA backends. Copilot writes a JSON array of stubs: [{ "key", "kind": "workflow", "workflowId", "stream"? }] or [{ "key", "kind": "http", "curl" }]. The host hydrates inputSchema from the deployed Start block (visitorEmail for userEmail/loggedInEmail; a field named email stays a form lead address) or from the curl. Use the same key in User Input. Leave blank when there is no backend (dummy/local or navigation-only); dummy lists seed sample rows on arrival; dummy create/complete stay local. Do not invent keys. Do not set inputMapping email→arenaEmailId.',
     },
     designNotes: { type: 'string', description: 'Optional design notes' },
   },

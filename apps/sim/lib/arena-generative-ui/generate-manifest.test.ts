@@ -414,6 +414,8 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).not.toContain('each binding includes layoutPlan')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Dummy/local actions stay in manifest.actions')
+    expect(userMessage).toContain('page onLoad setState')
+    expect(userMessage).not.toContain('Seed static collection rows')
     expect(userMessage).not.toContain('Navigation and static content only')
   })
 

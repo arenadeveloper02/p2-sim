@@ -21,6 +21,14 @@ describe('suggestionForGenerateFailure', () => {
     ).toContain('Add an API')
   })
 
+  it('maps dummy Repeat boards to seeding rows on arrival', () => {
+    expect(
+      suggestionForGenerateFailure(
+        'Page "home" Repeat/Table statePath "items" has no dummy rows. Seed 4–8 rows with page onLoad setState of that key, or Table.rows plus that Table\'s statePath. The host does not invent Repeat items.'
+      )
+    ).toContain('sample rows on arrival')
+  })
+
   it('maps unreachable pages to naming navigation', () => {
     expect(
       suggestionForGenerateFailure('Unreachable pages from entryPath "home": results')

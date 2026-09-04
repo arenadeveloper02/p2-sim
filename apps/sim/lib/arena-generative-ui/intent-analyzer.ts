@@ -79,7 +79,7 @@ const INTENT_SYSTEM_PROMPT = [
   'Shape: { "task", "audience", "entities": [{ "name", "kind" }], "dataRequirements": [{ "apiKey", "usedFor" }], "actions": [{ "id", "purpose", "apiKey"? }], "workflowComplexity" }',
   'task is the job in one sentence. audience is a real role (sales ops, analysts) — never "users".',
   'entities[].kind is collection | record | metric | prose. Name domain nouns (orders, company, score, analysis), not UI widgets.',
-  'dataRequirements may only use declared binding keys; when none were declared, dataRequirements is []. actions list requested mutations (create, complete, analyze, …). Remote actions use a declared apiKey. Dummy/local actions omit apiKey. When no bindings, omit apiKey — never invent keys, never empty the actions the job needs.',
+  'dataRequirements may only use declared binding keys; when none were declared, dataRequirements is []. actions list requested mutations (create, complete, analyze, …). When no bindings, also list a dummy seed/onLoad action for each collection entity (no apiKey) — that is how the list is filled. Remote actions use a declared apiKey. Dummy/local actions omit apiKey. Never invent keys, never empty the actions the job needs.',
   'workflowComplexity is short | long-running | multi-step | wizard. A typical search/submit is short; a workflow or generate wait is long-running; a named checklist is multi-step; three or more sequential steps with submit at the end is wizard.',
   'Do not pick an archetype. Do not invent pages, routes, or catalog component types (no SearchField, Table, Card, WorkingCard). Do not emit a sitemap or a manifest.',
 ].join('\n')
@@ -142,7 +142,7 @@ function intentUserPayload(params: AnalyzeIntentParams): string {
     'Mode: extract product intent. Do not emit an archetype, pages, catalog types, or a manifest.',
     bindingKeys.length > 0
       ? `Declared API bindings (dataRequirements and actions may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. dataRequirements is []. actions still list requested mutations with no apiKey (dummy/local). Do not invent API keys.',
+      : 'No API bindings. dataRequirements is []. actions still list requested mutations and a dummy collection seed (page onLoad) with no apiKey (dummy/local). Do not invent API keys.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
     `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,

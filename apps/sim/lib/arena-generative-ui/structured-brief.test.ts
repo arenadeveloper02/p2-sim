@@ -341,6 +341,35 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.pages[0]?.regions?.primary?.archetype).toBe('collection')
     expect(parsed?.pages[0]?.regions?.inspector?.archetype).toBe('detail')
     expect(parsed?.pages[0]?.dataMode).toBe('dummy')
+    expect(parsed?.pages[0]?.data).toContain('onLoad seed')
+  })
+
+  it('does not inject onLoad seed onto a dummy task page', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Qualify',
+        purpose: 'Submit a lead.',
+        audience: 'Sales ops',
+        complexity: 'micro',
+        archetype: 'task',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Qualify',
+            purpose: 'Collect the lead',
+            archetype: 'task',
+            data: { mode: 'dummy' },
+            actions: ['submit_lead'],
+          },
+        ],
+        actions: [{ id: 'submit_lead', purpose: 'Submit', source: 'dummy' }],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.dataMode).toBe('dummy')
+    expect(parsed?.pages[0]?.data).toBe('dummy')
+    expect(parsed?.pages[0]?.data).not.toContain('onLoad')
   })
 
   it('lifts a legacy regions array onto the named object and drops relationship', () => {
@@ -772,8 +801,12 @@ describe('structured brief helpers', () => {
     expect(recipes).toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: workspace')
     expect(recipes).not.toContain('SHELL RECIPE')
-    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('home: collection representation=auto')
-    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('detail: detail representation=auto')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
+      'home: collection representation=auto data: onLoad load_orders into orders'
+    )
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
+      'detail: detail representation=auto data: onLoad load_order into the record from ?id'
+    )
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain('Shell: navigation=minimal')
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
       'one primary archetype + capabilities + optional regions'
@@ -828,6 +861,7 @@ describe('structured brief helpers', () => {
     expect(formatted).toContain('Structured brief')
     expect(formatted).toContain('"archetype": "collection"')
     expect(formatted).toContain('emptyCopy as emptyText')
+    expect(formatted).toContain('page onLoad setState')
     expect(formatted).toContain('Do not add pages, history, stats, or modules')
   })
 
@@ -960,6 +994,9 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('/add-customer is not automatically required')
     expect(system).toContain('When Analyzed intent is present')
     expect(system).toContain('requested mutations')
+    expect(system).toContain('even if intent omitted it')
+    expect(system).toContain('onLoads to seed')
+    expect(system).toContain('Dummy collections include a seed action')
     expect(system).not.toContain('workspace is not a page archetype')
     expect(system).not.toContain('actions must be []')
     expect(system).not.toContain('Pick exactly one app-level archetype')
@@ -1190,6 +1227,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(userMessage).toContain('"path": "home"')
     expect(userMessage).toContain('Requested entryPath: home')
     expect(userMessage).toContain('actions are still required for requested mutations')
+    expect(userMessage).toContain('dummy collection seed')
   })
 })
 
@@ -1229,10 +1267,15 @@ describe('target blueprint fixtures', () => {
     expect(parsed?.pages[0]?.archetype).toBe('collection')
     expect(parsed?.pages[0]?.capabilities).toEqual(['create', 'complete'])
     expect(parsed?.pages[0]?.dataMode).toBe('dummy')
+    expect(parsed?.pages[0]?.data).toContain('onLoad seed')
+    expect(formatPageShapesForGenerator(parsed!)).toContain('data.mode: dummy')
+    expect(formatPageShapesForGenerator(parsed!)).toContain('data: onLoad seed 4–8 dummy rows')
     expect(parsed?.actions.map((action) => action.id)).toEqual(['add_todo', 'complete_todo'])
     const recipes = recipesForBlueprint(parsed!)
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('DUMMY / LOCAL DATA')
+    expect(recipes).toContain('does not invent Repeat items')
+    expect(recipes).toContain('editing=true')
     expect(recipes).toContain('foreign key (projectId)')
     expect(recipes).toContain('Id and Project Id columns')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: detail')

@@ -18,6 +18,8 @@ const SUGGEST_STREAM =
   'On that binding, turn Stream off if the API returns JSON, or say in User Input that results use Chat or DataText bound to content.'
 const SUGGEST_FORM_FIELDS =
   'Rename those form fields to match the Start inputs shown in Add an API, or add the missing Start fields on the binding.'
+const SUGGEST_DUMMY_SEED =
+  'Dummy lists need sample rows on arrival: onLoad setState of that collection, or Table.rows plus statePath. Then rerun.'
 const SUGGEST_FALLBACK =
   'Tighten User Input to the job, confirm Add an API shows the fields the UI should bind, pin Pages if the sitemap drifted, then rerun.'
 
@@ -30,6 +32,9 @@ export function suggestionForGenerateFailure(error: string): string {
   }
   if (/unknown API key|references unknown API key|unknown action/i.test(error)) {
     return SUGGEST_API_KEY
+  }
+  if (/has no dummy rows|does not invent Repeat/i.test(error)) {
+    return SUGGEST_DUMMY_SEED
   }
   if (/never binds required host key/i.test(error)) {
     return SUGGEST_HOST_KEY

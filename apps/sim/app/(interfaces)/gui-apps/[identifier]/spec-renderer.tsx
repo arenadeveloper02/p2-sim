@@ -3413,12 +3413,12 @@ export function SpecRenderer({
               if (asBoolean(props.clearItem)) {
                 onClearItem?.()
               }
-              if (asBoolean(props.selectItem) && scope) {
+              const parsedSetValue = setValue ? parseChipSetValue(setValue) : null
+              if ((asBoolean(props.selectItem) || parsedSetValue?.name === 'editing') && scope) {
                 onSelectItem?.(scope.item, scope.index)
               }
-              if (setValue) {
-                const parsed = parseChipSetValue(setValue)
-                if (parsed.name) applyOverlayPatch({ [parsed.name]: parsed.value })
+              if (parsedSetValue?.name) {
+                applyOverlayPatch({ [parsedSetValue.name]: parsedSetValue.value })
               }
               const navPath = navigateTo ? splitNavTarget(navigateTo).path : ''
               const samePageNav = Boolean(navigateTo) && (!navPath || navPath === currentPath)

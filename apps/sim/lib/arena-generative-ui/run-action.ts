@@ -907,7 +907,13 @@ function isClosingCreateOverlay(setState: Record<string, unknown>): boolean {
   return value === false || value === '' || value == null
 }
 
+function looksLikeDummyEdit(actionId: string, setState: Record<string, unknown>): boolean {
+  if (Object.prototype.hasOwnProperty.call(setState, 'editing')) return true
+  return /^(edit|update|rename)(_|$)/i.test(actionId) || /_(edit|update|rename)$/i.test(actionId)
+}
+
 function looksLikeDummyCreate(actionId: string, setState: Record<string, unknown>): boolean {
+  if (looksLikeDummyEdit(actionId, setState)) return false
   if (isClosingCreateOverlay(setState)) return true
   return /^(add|create|new)(_|$)/i.test(actionId) || /_(add|create)$/i.test(actionId)
 }
@@ -949,10 +955,6 @@ const DUMMY_CHILD_CREATE_ACTION = /task|item|row|todo|note|issue|card|entry/i
 
 const DUMMY_CHILD_COLLECTION_KEY = /^(tasks|items|todos|notes|rows|issues|cards|entries)$/i
 
-function isDummyCreateVerbAction(actionId: string): boolean {
-  return /^(add|create|new)(_|$)/i.test(actionId)
-}
-
 function stemCollectionToken(value: string): string {
   return value.toLowerCase().replace(/s$/, '')
 }
@@ -973,7 +975,7 @@ function collectionKeysNamedByAction(actionId: string, keys: readonly string[]):
 
 /**
  * Sole collection, or the collection the action id names (`add_task` → tasks).
- * Unnamed add/create/new lands on the only child-looking key (`tasks`, `rows`).
+ * Unnamed overlay-close (`save_form`) lands on the only child-looking key (`tasks`).
  */
 function dummyCreateTargetCollectionKey(
   actionId: string,
@@ -992,7 +994,6 @@ function dummyCreateTargetCollectionKey(
   ) {
     return implicitKeys[0]
   }
-  if (!isDummyCreateVerbAction(actionId)) return undefined
   const childKeys = keys.filter((key) => DUMMY_CHILD_COLLECTION_KEY.test(key))
   if (childKeys.length === 1) return childKeys[0]
   return undefined

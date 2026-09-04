@@ -126,6 +126,8 @@ describe('analyzeArenaGenerativeIntent', () => {
         system: expect.stringContaining('never empty the actions the job needs'),
       })
     )
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('dummy seed/onLoad')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit an archetype')
     expect(userMessage).toContain('Order inbox.')
@@ -155,6 +157,7 @@ describe('analyzeArenaGenerativeIntent', () => {
     expect(userMessage).toContain('Visual brief from uploaded screenshot')
     expect(userMessage).toContain('Inbox')
     expect(userMessage).toContain('actions still list requested mutations')
+    expect(userMessage).toContain('dummy collection seed')
     expect(userMessage).not.toContain('actions must be empty arrays')
   })
 

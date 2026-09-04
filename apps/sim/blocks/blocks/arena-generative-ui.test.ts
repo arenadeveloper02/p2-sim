@@ -117,6 +117,11 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     expect(userInput?.wandConfig?.prompt).toContain('principal product engineer')
     expect(userInput?.wandConfig?.prompt).toContain('often a job, not a spec')
     expect(userInput?.wandConfig?.prompt).toContain('Do not invent API keys')
+    expect(userInput?.wandConfig?.prompt).toContain('seed sample rows')
+    expect(userInput?.wandConfig?.prompt).toContain('simple todo or checklist')
+    expect(userInput?.wandConfig?.prompt).not.toMatch(
+      /A list of records includes a way to open one\./
+    )
     expect(editInstructions?.rows).toBeUndefined()
     expect(designNotes?.rows).toBeUndefined()
     expect(existingDraftId?.previewHelper).toBe('arena-draft-brief')

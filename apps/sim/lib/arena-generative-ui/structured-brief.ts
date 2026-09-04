@@ -486,7 +486,29 @@ function liftDataMode(value: unknown): ArenaGenerativeDataMode | undefined {
   return asClosedEnum(value, ARENA_GENERATIVE_DATA_MODES)
 }
 
-function liftPageData(page: Record<string, unknown>): {
+const DUMMY_SEED_ARCHETYPES = new Set<string>(['collection', 'workspace', 'dashboard'])
+
+const DUMMY_COLLECTION_SEED_DATA = 'onLoad seed 4–8 dummy rows'
+
+function dummyPageDataDescription(
+  description: string,
+  mode: ArenaGenerativeDataMode | undefined,
+  archetype: string | undefined
+): string {
+  if (mode !== 'dummy' && mode !== 'local') return description
+  if (!archetype || !DUMMY_SEED_ARCHETYPES.has(archetype)) return description
+  if (/\bonload\b/i.test(description)) return description
+  const trimmed = description.trim()
+  if (!trimmed || /^(dummy|local|mock|sample)$/i.test(trimmed)) {
+    return DUMMY_COLLECTION_SEED_DATA
+  }
+  return `${DUMMY_COLLECTION_SEED_DATA}. ${trimmed}`
+}
+
+function liftPageData(
+  page: Record<string, unknown>,
+  archetype?: string
+): {
   data: unknown
   dataMode?: ArenaGenerativeDataMode
 } {
@@ -497,7 +519,8 @@ function liftPageData(page: Record<string, unknown>): {
       typeof page.data.description === 'string' && page.data.description.trim()
         ? page.data.description
         : mode
-    return { data: description ?? 'static', dataMode: mode ?? declaredMode }
+    const data = dummyPageDataDescription(description ?? 'static', mode ?? declaredMode, archetype)
+    return { data, dataMode: mode ?? declaredMode }
   }
   if (typeof page.data === 'string') {
     const lowered = page.data.toLowerCase()
@@ -508,9 +531,19 @@ function liftPageData(page: Record<string, unknown>): {
         : /\bonload\b|\bfetch\b/.test(lowered)
           ? 'remote'
           : undefined)
-    return { data: page.data, dataMode: inferred }
+    return {
+      data: dummyPageDataDescription(page.data, inferred, archetype),
+      dataMode: inferred,
+    }
   }
-  return { data: page.data ?? 'static', dataMode: declaredMode }
+  return {
+    data: dummyPageDataDescription(
+      typeof page.data === 'string' ? page.data : 'static',
+      declaredMode,
+      archetype
+    ),
+    dataMode: declaredMode,
+  }
 }
 
 function liftActionSource(action: Record<string, unknown>): Record<string, unknown> {
@@ -633,7 +666,7 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
         const pageArchetype = appArchetype
           ? inferPageArchetype(page, rawAppArchetype, appArchetype)
           : canonicalizeArchetype(page.archetype)
-        const { data, dataMode } = liftPageData(page)
+        const { data, dataMode } = liftPageData(page, pageArchetype)
         let lifted: Record<string, unknown> = { ...page, data }
         if (pageArchetype) lifted.archetype = pageArchetype
         else lifted = omit(lifted, ['archetype'])
@@ -801,7 +834,7 @@ export function shellRecipe(shell?: ArenaGenerativeShell): string {
 
 export const ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT = [
   'DUMMY / LOCAL DATA',
-    'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows. Prefer Repeat/Table statePath plus onLoad setState so both parent and child arrays land in host state. When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id. If you emit Table.rows, also set that Table\'s statePath — the host lifts those rows into that key so create/complete/delete can update them. Include Id and Project Id columns when Workspace selection filters the table. CTAs the blueprint named (create, complete, analyze, …) stay in manifest.actions with no apiKey (or source dummy/local). Use onSuccess.setState to append, toggle done, set deleted true, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
+    'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows. A Repeat or Table bound to a statePath must page.onLoad an action that onSuccess.setState that array (parent and child arrays together when Workspace filters). Table.rows plus that Table\'s statePath is enough — the host lifts those rows. The host does not invent Repeat items. A form page, and a results page filled only by a CTA, must not onLoad that CTA. When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id. Include Id and Project Id columns when Workspace selection filters the table. CTAs the blueprint named (create, complete, analyze, edit, …) stay in manifest.actions with no apiKey (or source dummy/local). Dummy edit is a row Button setValue editing=true (the host selects that row) and onSuccess.setState editing false with the changed fields — not creating false, or the host appends a new row. Use onSuccess.setState to append, toggle done, set deleted true, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
 ].join('\n')
 
 export interface PlanStructuredBriefParams {
@@ -906,6 +939,7 @@ export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBri
       ? ` capabilities: ${page.capabilities.join(', ')}`
       : ''
     const dataMode = page.dataMode ? ` data.mode: ${page.dataMode}` : ''
+    const data = page.data.trim() ? ` data: ${page.data.trim()}` : ''
     const regions = page.regions
       ? ` regions: ${Object.entries(page.regions)
           .filter(([, region]) => region)
@@ -917,7 +951,7 @@ export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBri
           .map((key) => `${key}=${page.interaction?.[key]}`)
           .join(', ')}`
       : ''
-    return `- ${page.path}: ${shape} representation=${representation}${dataMode}${capabilities}${regions}${modules}${interaction}`
+    return `- ${page.path}: ${shape} representation=${representation}${dataMode}${data}${capabilities}${regions}${modules}${interaction}`
   })
   return [
     'Page shapes (emit each page using that recipe; do not treat every page as the app archetype):',
@@ -939,7 +973,7 @@ export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructur
     'Structured brief (implement this information architecture; emit exactly these page paths as object keys):',
     JSON.stringify(brief, null, 2),
     formatPageShapesForGenerator(brief),
-    "Honour this sitemap and capabilities. Do not add pages, history, stats, or modules the blueprint omitted. Honour onLoad vs CTA as each page's data field describes. Dummy/local data.mode seeds static rows and local actions — do not drop manifest.actions. Use that page's emptyCopy as emptyText on its collection.",
+    "Honour this sitemap and capabilities. Do not add pages, history, stats, or modules the blueprint omitted. Honour onLoad vs CTA as each page's data field describes. Dummy/local collection data.mode seeds via page onLoad setState (or Table.rows) — do not drop that seed action or manifest.actions. Use that page's emptyCopy as emptyText on its collection.",
   ].join('\n')
 }
 
@@ -1290,7 +1324,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
       : 'No explicit page list. Infer the smallest sitemap the request needs — do not add history, stats, detail, or extra pages unless required.',
     bindingKeys.length > 0
       ? `Declared API bindings (remote actions use source "binding:<key>"; inputSchema is the form, outputSchema/layoutPlan is the result):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. Bindings are the remote data contract. When none are declared, data.mode may be dummy or local and actions are still required for requested mutations — use source dummy or local, never invent API keys.',
+      : 'No API bindings. Bindings are the remote data contract. When none are declared, data.mode may be dummy or local and actions are still required for requested mutations and for dummy collection seed (page onLoad) — use source dummy or local, never invent API keys.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
     `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,

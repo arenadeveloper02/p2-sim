@@ -383,6 +383,34 @@ describe('applySelectedRowFields', () => {
     expect(next.projects).toEqual([{ id: 'p1', name: 'Alpha' }])
     expect(next.tasks).toEqual([{ id: 't1', name: 'Ship', projectId: 'p1' }])
   })
+
+  it('writes dummy edit fields onto the selected row', () => {
+    const next: Record<string, unknown> = {
+      todos: [
+        { id: 'a', title: 'Milk' },
+        { id: 'b', title: 'Bread' },
+      ],
+      selectedId: 'a',
+      selected: { id: 'a', title: 'Milk' },
+    }
+    applySelectedRowFields(next, next, { title: 'Reviewed', editing: false })
+    expect(next.selected).toEqual({ id: 'a', title: 'Reviewed' })
+    expect(next.todos).toEqual([
+      { id: 'a', title: 'Reviewed' },
+      { id: 'b', title: 'Bread' },
+    ])
+  })
+
+  it('treats creating+editing overlay-close as edit, not parent rename', () => {
+    const next: Record<string, unknown> = {
+      todos: [{ id: 'a', title: 'Milk' }],
+      selectedId: 'a',
+      selected: { id: 'a', title: 'Milk' },
+    }
+    applySelectedRowFields(next, next, { title: 'Reviewed', creating: false, editing: false })
+    expect(next.selected).toEqual({ id: 'a', title: 'Reviewed' })
+    expect(next.todos).toEqual([{ id: 'a', title: 'Reviewed' }])
+  })
 })
 
 describe('dummyCollectionSeedFromSpec', () => {

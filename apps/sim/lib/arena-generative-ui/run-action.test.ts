@@ -1641,6 +1641,84 @@ describe('runDeployedAppAction', () => {
     expect(result.setState).toEqual({ title: 'Milk', done: true })
   })
 
+  it('does not wrap dummy edit overlay-close as a new collection row', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['list'] },
+                list: { type: 'Repeat', props: { statePath: 'todos' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          save_form: {
+            onSuccess: {
+              setState: { editing: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'save_form',
+      values: { title: 'Reviewed' },
+      requestId: 'req-dummy-edit',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.appendKeys).toBeUndefined()
+    expect(result.setState).toEqual({ title: 'Reviewed', editing: false })
+  })
+
+  it('does not wrap dummy update_item scalars as a new collection row', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['list'] },
+                list: { type: 'Repeat', props: { statePath: 'todos' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          update_item: {
+            onSuccess: {
+              setState: {},
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'update_item',
+      values: { title: 'Reviewed' },
+      requestId: 'req-dummy-update',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.appendKeys).toBeUndefined()
+    expect(result.setState).toEqual({ title: 'Reviewed' })
+  })
+
   it('wraps dummy create onto the collection the action id names', async () => {
     const result = await runGenerativeAppAction({
       manifest: {
@@ -1686,7 +1764,7 @@ describe('runDeployedAppAction', () => {
     })
   })
 
-  it('does not wrap dummy create when two collections exist and the action names neither', async () => {
+  it('wraps unnamed overlay-close create onto the sole child collection', async () => {
     const result = await runGenerativeAppAction({
       manifest: {
         ...twoPageManifest,
@@ -1719,6 +1797,51 @@ describe('runDeployedAppAction', () => {
       actionId: 'save_form',
       values: { name: 'Review' },
       requestId: 'req-dummy-two',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['tasks'])
+    expect(result.setState).toMatchObject({
+      name: 'Review',
+      creating: false,
+      tasks: [{ name: 'Review' }],
+    })
+  })
+
+  it('does not wrap dummy create when two child collections exist and the action names neither', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['tasks', 'items'] },
+                tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: [] },
+                items: { type: 'Repeat', props: { statePath: 'items' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          save_form: {
+            onSuccess: {
+              setState: { creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'save_form',
+      values: { name: 'Review' },
+      requestId: 'req-dummy-ambiguous',
       actorUserId: 'previewer-1',
     })
 

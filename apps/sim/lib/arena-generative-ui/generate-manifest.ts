@@ -611,7 +611,7 @@ export async function generateArenaGenerativeManifest(
   const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed static collection rows and use onSuccess.setState / navigate. Do not invent API keys. Do not drop actions the brief named.',
+      : 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed collection rows with page onLoad setState (or Table.rows plus that Table\'s statePath). Use onSuccess.setState / navigate for mutations. Do not invent API keys. Do not drop actions the brief named.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     visualBrief ? formatVisualBriefForGenerator(visualBrief) : '',
     isPreserveEdit && params.existingBrief?.trim()

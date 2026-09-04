@@ -382,7 +382,7 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.manifest?.pages.results.title).toBe('Results')
   })
 
-  it('accepts a navigation-only app when API bindings are empty', () => {
+  it('strips invented apiKeys and keeps dummy actions when bindings are empty', () => {
     const result = validateArenaGenerativeManifest(
       {
         entryPath: 'home',
@@ -397,12 +397,205 @@ describe('validateArenaGenerativeManifest', () => {
       { apiBindings: [], entryPath: 'home' }
     )
     expect(result.success).toBe(true)
-    expect(result.manifest?.actions).toEqual({})
+    expect(result.manifest?.actions.submit_lead?.apiKey).toBeUndefined()
+    expect(result.manifest?.actions.submit_lead?.onSuccess?.navigate).toBe('results')
     const homeElements = result.manifest?.pages.home.spec.elements as Record<
       string,
       { props?: { actionId?: unknown } }
     >
-    expect(homeElements.form.props?.actionId).toBeUndefined()
+    expect(homeElements.form.props?.actionId).toBe('submit_lead')
+  })
+
+  it('keeps dummy onLoad when invented apiKeys have no bindings', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec({
+              extra: {
+                stack: {
+                  type: 'Stack',
+                  props: { direction: 'vertical', gap: '12px', align: null },
+                  children: ['nav', 'form', 'list'],
+                },
+                list: {
+                  type: 'Repeat',
+                  props: { statePath: 'items' },
+                  children: ['row'],
+                },
+                row: {
+                  type: 'NavLink',
+                  props: { label: '{item.title}', to: 'results?id={item.id}' },
+                  children: [],
+                },
+              },
+            }),
+            onLoad: ['load_items'],
+          },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          load_items: {
+            apiKey: 'list_items',
+            onSuccess: {
+              setState: { items: [{ id: 'i1', title: 'Ship' }] },
+            },
+          },
+          submit_lead: {
+            apiKey: 'create_item',
+            onSuccess: { setState: { creating: true } },
+          },
+        },
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.home.onLoad).toEqual(['load_items'])
+    expect(result.manifest?.actions.load_items?.apiKey).toBeUndefined()
+    expect(result.manifest?.actions.submit_lead?.apiKey).toBeUndefined()
+    expect(result.manifest?.actions.load_items?.onSuccess?.setState).toEqual({
+      items: [{ id: 'i1', title: 'Ship' }],
+    })
+  })
+
+  it('rejects a dummy Repeat that has no onLoad seed and no Table.rows', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec({
+              extra: {
+                stack: {
+                  type: 'Stack',
+                  props: { direction: 'vertical', gap: '12px', align: null },
+                  children: ['nav', 'form', 'list'],
+                },
+                list: {
+                  type: 'Repeat',
+                  props: { statePath: 'items' },
+                  children: ['row'],
+                },
+                row: {
+                  type: 'NavLink',
+                  props: { label: '{item.title}', to: 'results?id={item.id}' },
+                  children: [],
+                },
+              },
+            }),
+          },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { onSuccess: { setState: { creating: true } } },
+        },
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('statePath "items" has no dummy rows')
+    expect(result.error).toContain('does not invent Repeat items')
+  })
+
+  it('accepts dummy Table.rows plus statePath without onLoad', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'Home', backgroundColor: null },
+                  children: ['table'],
+                },
+                table: {
+                  type: 'Table',
+                  props: {
+                    columns: 'Name, Role',
+                    rows: 'Ada | Engineer',
+                    statePath: 'people',
+                    emptyText: null,
+                  },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a dummy Repeat filled only by a CTA setState array', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: {
+            title: 'Results',
+            path: 'results',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'Results', backgroundColor: null },
+                  children: ['back', 'list'],
+                },
+                back: {
+                  type: 'Button',
+                  props: {
+                    label: 'Back',
+                    href: null,
+                    navigateTo: 'home',
+                    actionId: null,
+                    backgroundColor: null,
+                    color: null,
+                  },
+                  children: [],
+                },
+                list: {
+                  type: 'Repeat',
+                  props: { statePath: 'leads' },
+                  children: ['row'],
+                },
+                row: {
+                  type: 'NavLink',
+                  props: { label: '{item.name}', to: 'home' },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {
+          submit_lead: {
+            onSuccess: {
+              navigate: 'results',
+              setState: { leads: [{ id: 'l1', name: 'Acme' }] },
+            },
+          },
+        },
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
   })
 
   it('rejects an unknown apiKey', () => {
@@ -642,9 +835,14 @@ describe('validateArenaGenerativeManifest', () => {
                 },
               },
             },
+            onLoad: ['load_history'],
           },
         },
-        actions: {},
+        actions: {
+          load_history: {
+            onSuccess: { setState: { history: [{ id: 'h1', keyword: 'Dental' }] } },
+          },
+        },
       },
       { apiBindings: [], entryPath: 'home' }
     )

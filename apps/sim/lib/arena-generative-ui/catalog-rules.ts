@@ -18,7 +18,7 @@ export const ARENA_GENERATIVE_UI_ENVELOPE_RULES = [
   'Use NavLink.to or Button.navigateTo for in-app navigation. Never use href for another page in this app.',
   'CTA forms must set Form.actionId or SubmitButton.actionId to a key in manifest.actions.',
   'When an action has apiKey, it MUST be one of the declared API binding keys. Do not invent API keys. Dummy/local actions omit apiKey and use onSuccess.setState / navigate.',
-  'If no API bindings were declared, keep dummy/local actions in manifest.actions with no apiKey. Do not omit create, complete, analyze, or other requested mutations. Navigation-only apps may leave actions empty.',
+  'If no API bindings were declared, keep dummy/local actions in manifest.actions with no apiKey. Do not omit create, complete, analyze, dummy collection seed/onLoad, or other requested mutations. Navigation-only apps may leave actions empty.',
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths, optionally followed by a query string such as "report?range=30d".',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',

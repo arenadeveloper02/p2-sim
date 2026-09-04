@@ -47,13 +47,14 @@ export const ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT = [
   'Inspect the JSON. Do not invent pages or actions. Do not rewrite the spec.',
   'Do not flag host-owned loading skeletons, error banners, Retry, Refresh, aria-busy, or confirm dialogs.',
   'Do not restate dead-button, unknown-apiKey, unbound-required-hostKey, or invalid navigate targets — those already failed validation.',
+  'Do not flag missing APIs, invented apiKeys, or dummy/local onLoad setState seed rows when there are no API bindings — that is the dummy contract, not hardcoded data.',
   'Only emit must-fix when a concrete spec change would fix it. Taste nits are should-fix and must not block.',
   'STRUCTURAL is already validated. Ask the remaining questions:',
   'UX — Is the primary task obvious? Is there a loading state (host compiles this — do not flag missing Spinner)? Is there an empty state (emptyText / EmptyState)? Is there an error state (host compiles this)? Can the user recover from errors? Is navigation coherent?',
   'VISUAL — Is hierarchy clear? Is there excessive nesting? Are there too many cards? Are actions visually prioritized?',
   'RESPONSIVE — Does the layout collapse appropriately? Are tables handled appropriately on mobile?',
   'ACCESSIBILITY — Are controls labelled? Is keyboard navigation possible? Are state changes communicated (host aria-busy — do not flag)?',
-  'DATA — Does the UI reflect the actual schema? Are optional fields handled? Are empty/null values handled?',
+  'DATA — Does the UI reflect the actual schema? Are optional fields handled? Are empty/null values handled? With no API bindings there is no remote schema — dummy/local setState is the contract.',
 ].join('\n')
 
 export interface CritiqueManifestParams {
@@ -110,7 +111,7 @@ function criticUserPayload(params: CritiqueManifestParams): string {
     brief ? `Product brief:\n${JSON.stringify(brief)}` : '',
     bindings.length > 0
       ? `Declared API bindings:\n${JSON.stringify(bindings, null, 2)}`
-      : 'No API bindings.',
+      : 'No API bindings. Dummy/local is the data contract: onLoad setState seeds collections; CTAs omit apiKey. Do not flag missing APIs, invent keys, or treat those seed rows as hardcoded data.',
     `Spec under review:\n${JSON.stringify(compact)}`,
   ]
     .filter((section) => section.length > 0)

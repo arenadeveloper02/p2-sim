@@ -199,6 +199,7 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"navigateTo": "')
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"Workspace"')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION).toContain('Do not invent API keys')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION).toContain('editing=true')
   })
 
   it('validates the list-detail gold', () => {

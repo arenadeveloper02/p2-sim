@@ -100,6 +100,8 @@ describe('ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('ACCESSIBILITY —')
     expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('DATA —')
     expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('already failed validation')
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('dummy contract')
+    expect(ARENA_GENERATIVE_UI_CRITIC_SYSTEM_PROMPT).toContain('dummy/local setState is the contract')
   })
 })
 
@@ -147,6 +149,20 @@ describe('critiqueArenaGenerativeManifest', () => {
     expect(userContent).not.toContain('"path":"results"')
     expect(userContent).toContain('"actionId":"submit_lead"')
     expect(userContent).not.toContain('Qualify a lead')
+  })
+
+  it('tells the critic dummy/local is the contract when bindings are empty', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage(JSON.stringify({ pass: true, issues: [] })))
+
+    await critiqueArenaGenerativeManifest({
+      manifest: twoPageManifest,
+      apiBindings: [],
+    })
+
+    const userContent = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0]?.content as string
+    expect(userContent).toContain('No API bindings.')
+    expect(userContent).toContain('Dummy/local is the data contract')
+    expect(userContent).toContain('Do not flag missing APIs')
   })
 
   it('fails open on empty or invalid JSON', async () => {

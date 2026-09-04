@@ -1,10 +1,18 @@
 import type { Spec } from '@json-render/core'
-import { layoutPlansFromBindings } from '@/lib/arena-generative-ui/binding-layout-plan'
+import { omit } from '@sim/utils/object'
+import {
+  hostStateRoot,
+  layoutPlansFromBindings,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
 import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
+import { dummyCollectionSeedFromSpec } from '@/lib/arena-generative-ui/local-discovery'
 import { normalizeGeneratedSpec } from '@/lib/arena-generative-ui/normalize-spec'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   type ArenaGenerativePageHint,
@@ -134,6 +142,70 @@ function collectActionIdsFromSpec(spec: Spec): string[] {
     }
   }
   return ids
+}
+
+const DUMMY_SKIP_COLLECTION_ROOTS = new Set([
+  ARENA_GENERATIVE_SELECTED_KEY,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+])
+
+function arrayKeysFromSetState(setState: unknown): string[] {
+  if (!setState || typeof setState !== 'object' || Array.isArray(setState)) return []
+  return Object.entries(setState as Record<string, unknown>)
+    .filter(([, value]) => Array.isArray(value) && value.length > 0)
+    .map(([key]) => key)
+}
+
+function dummyCollectionStatePaths(spec: Spec): string[] {
+  const keys: string[] = []
+  const elements = spec.elements as Record<string, FlatElement>
+  for (const element of Object.values(elements ?? {})) {
+    if (element.type !== 'Repeat' && element.type !== 'Table') continue
+    const root = hostStateRoot(asString(element.props?.statePath))
+    if (!root || DUMMY_SKIP_COLLECTION_ROOTS.has(root)) continue
+    if (!keys.includes(root)) keys.push(root)
+  }
+  return keys
+}
+
+/**
+ * Dummy Repeat/Table collections must arrive with rows. The host lifts Table.rows
+ * but never invents Repeat items.
+ */
+function dummyCollectionSeedError(
+  pages: ArenaGenerativeAppManifest['pages'],
+  actions: ArenaGenerativeAppManifest['actions']
+): string | undefined {
+  const onLoadIds = new Set<string>()
+  for (const page of Object.values(pages)) {
+    for (const actionId of page.onLoad ?? []) {
+      onLoadIds.add(actionId)
+    }
+  }
+  const ctaSeeded = new Set<string>()
+  for (const [actionId, action] of Object.entries(actions)) {
+    if (onLoadIds.has(actionId)) continue
+    for (const key of arrayKeysFromSetState(action.onSuccess?.setState)) {
+      ctaSeeded.add(key)
+    }
+  }
+  for (const [path, page] of Object.entries(pages)) {
+    const onLoadSeeded = new Set<string>()
+    for (const actionId of page.onLoad ?? []) {
+      for (const key of arrayKeysFromSetState(actions[actionId]?.onSuccess?.setState)) {
+        onLoadSeeded.add(key)
+      }
+    }
+    const tableSeed = dummyCollectionSeedFromSpec(page.spec)
+    for (const key of dummyCollectionStatePaths(page.spec)) {
+      if (onLoadSeeded.has(key)) continue
+      if (ctaSeeded.has(key)) continue
+      const rows = tableSeed[key]
+      if (Array.isArray(rows) && rows.length > 0) continue
+      return `Page "${path}" Repeat/Table statePath "${key}" has no dummy rows. Seed 4–8 rows with page onLoad setState of that key, or Table.rows plus that Table's statePath. The host does not invent Repeat items.`
+    }
+  }
 }
 
 /**
@@ -296,6 +368,8 @@ function walkReachable(
 
 /**
  * Validates a generated multi-page manifest against the catalog, declared pages, and API bindings.
+ * With no bindings, invented `apiKey`s are stripped and the action is kept as dummy/local.
+ * Dummy Repeat/Table collections must seed rows (onLoad setState or Table.rows).
  */
 export function validateArenaGenerativeManifest(
   raw: unknown,
@@ -482,13 +556,26 @@ export function validateArenaGenerativeManifest(
       continue
     }
     if (!bindingKeys.has(apiKey)) {
-      if (bindingKeys.size === 0) continue
+      if (bindingKeys.size === 0) {
+        const dummyAction = omit(parsedAction, ['apiKey'])
+        actions[actionId] = dummyAction
+        if (navigate && pages[splitNavTarget(navigate).path]) {
+          reachabilityActions[actionId] = dummyAction
+        }
+        continue
+      }
       return {
         success: false,
         error: `Action "${actionId}" references unknown API key "${apiKey}"`,
       }
     }
     actions[actionId] = parsedAction
+  }
+  if (bindingKeys.size === 0) {
+    const seedError = dummyCollectionSeedError(pages, actions)
+    if (seedError) {
+      return { success: false, error: seedError }
+    }
   }
   const navigationOnly = bindingKeys.size === 0 && Object.keys(actions).length === 0
 
