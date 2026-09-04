@@ -1,5 +1,10 @@
 import { chatTurnsFromState, withLastAssistantContent } from '@/lib/arena-generative-ui/chat-turns'
-import { stampSelectionForeignKeys } from '@/lib/arena-generative-ui/local-discovery'
+import {
+  applySelectedRowDelete,
+  applySelectedRowFields,
+  collectionIdentitiesOverlap,
+  stampSelectionForeignKeys,
+} from '@/lib/arena-generative-ui/local-discovery'
 import {
   ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
@@ -39,7 +44,7 @@ export function mergeHostState(
   }
 
   if (!appendKeys || appendKeys.length === 0) {
-    stampPatchedCollections(next, current, patch)
+    finishCollectionPatches(next, current, patch)
     return omitUndefinedPatchKeys(next, patch)
   }
 
@@ -62,6 +67,7 @@ export function mergeHostState(
     const previous = current[key]
     const incoming = patch[key]
     if (!Array.isArray(previous) || !Array.isArray(incoming)) continue
+    if (collectionIdentitiesOverlap(previous, incoming)) continue
     const combined = [...previous, ...incoming]
     if (combined.length > MAX_APPENDED_ITEMS) {
       next[key] = combined.slice(0, MAX_APPENDED_ITEMS)
@@ -73,8 +79,19 @@ export function mergeHostState(
   if (capped) {
     next.hasMore = false
   }
-  stampPatchedCollections(next, current, patch)
+  finishCollectionPatches(next, current, patch)
   return omitUndefinedPatchKeys(next, patch)
+}
+
+function finishCollectionPatches(
+  next: Record<string, unknown>,
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): void {
+  if (!applySelectedRowDelete(next, current, patch)) {
+    applySelectedRowFields(next, current, patch)
+  }
+  stampPatchedCollections(next, current, patch)
 }
 
 function stampPatchedCollections(

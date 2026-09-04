@@ -25,6 +25,64 @@ describe('mergeHostState', () => {
     })
   })
 
+  it('does not concatenate when the incoming list already includes existing ids', () => {
+    expect(
+      mergeHostState(
+        { articles: [{ id: '1' }, { id: '2' }] },
+        { articles: [{ id: '1' }, { id: '2' }, { id: '3' }] },
+        ['articles']
+      )
+    ).toEqual({
+      articles: [{ id: '1' }, { id: '2' }, { id: '3' }],
+    })
+  })
+
+  it('does not rename the selected parent when dummy create setState includes form fields', () => {
+    expect(
+      mergeHostState(
+        {
+          projects: [{ id: 'p1', name: 'Alpha' }],
+          tasks: [{ id: 't1', name: 'Ship', projectId: 'p1' }],
+          selectedId: 'p1',
+          selected: { id: 'p1', name: 'Alpha' },
+        },
+        { tasks: [{ id: 't3', name: 'Review' }], name: 'Review', creating: false },
+        ['tasks']
+      )
+    ).toEqual({
+      projects: [{ id: 'p1', name: 'Alpha' }],
+      tasks: [
+        { id: 't1', name: 'Ship', projectId: 'p1' },
+        { id: 't3', name: 'Review', projectId: 'p1' },
+      ],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+      name: 'Review',
+      creating: false,
+    })
+  })
+
+  it('appends a dummy create row and stamps the selected parent id', () => {
+    expect(
+      mergeHostState(
+        {
+          tasks: [{ id: 't1', name: 'Ship', projectId: 'p1' }],
+          selectedId: 'p1',
+          selected: { id: 'p1', name: 'Alpha' },
+        },
+        { tasks: [{ id: 't3', name: 'Review' }] },
+        ['tasks']
+      )
+    ).toEqual({
+      tasks: [
+        { id: 't1', name: 'Ship', projectId: 'p1' },
+        { id: 't3', name: 'Review', projectId: 'p1' },
+      ],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+    })
+  })
+
   it('replaces when the current value is not yet an array', () => {
     expect(mergeHostState({}, { articles: [{ id: '1' }] }, ['articles'])).toEqual({
       articles: [{ id: '1' }],
@@ -73,6 +131,74 @@ describe('mergeHostState', () => {
     )
     expect(second.chatTurns).toHaveLength(5)
     expect((second.chatTurns as Array<{ content: string }>)[3].content).toBe('Again')
+  })
+
+  it('removes the selected collection item on dummy delete', () => {
+    expect(
+      mergeHostState(
+        {
+          todos: [
+            { id: 'a', title: 'Milk' },
+            { id: 'b', title: 'Bread' },
+          ],
+          selectedId: 'a',
+          selected: { id: 'a', title: 'Milk' },
+          content: 'Milk',
+        },
+        { deleted: true, title: 'Milk' }
+      )
+    ).toEqual({
+      todos: [{ id: 'b', title: 'Bread' }],
+      title: 'Milk',
+    })
+  })
+
+  it('completes a Repeat row from action values while a parent is selected', () => {
+    expect(
+      mergeHostState(
+        {
+          projects: [{ id: 'p1', name: 'Alpha' }],
+          tasks: [{ id: 't1', name: 'Ship', projectId: 'p1', done: false }],
+          selectedId: 'p1',
+          selected: { id: 'p1', name: 'Alpha' },
+        },
+        { id: 't1', name: 'Ship', done: true, index: 0 }
+      )
+    ).toEqual({
+      projects: [{ id: 'p1', name: 'Alpha' }],
+      tasks: [{ id: 't1', name: 'Ship', projectId: 'p1', done: true }],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+      id: 't1',
+      name: 'Ship',
+      done: true,
+      index: 0,
+    })
+  })
+
+  it('writes dummy complete fields onto the selected collection item', () => {
+    expect(
+      mergeHostState(
+        {
+          todos: [
+            { id: 'a', title: 'Milk', done: false },
+            { id: 'b', title: 'Bread', done: false },
+          ],
+          selectedId: 'a',
+          selected: { id: 'a', title: 'Milk', done: false },
+        },
+        { title: 'Milk', done: true }
+      )
+    ).toEqual({
+      todos: [
+        { id: 'a', title: 'Milk', done: true },
+        { id: 'b', title: 'Bread', done: false },
+      ],
+      selectedId: 'a',
+      selected: { id: 'a', title: 'Milk', done: true },
+      title: 'Milk',
+      done: true,
+    })
   })
 
   it('stamps projectId onto a created child row when a parent is selected', () => {

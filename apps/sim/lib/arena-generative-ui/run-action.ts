@@ -38,6 +38,7 @@ import {
 import { unwrapPayloadToSchema } from '@/lib/arena-generative-ui/unwrap-to-schema'
 import {
   ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
   ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
@@ -870,6 +871,26 @@ export interface RunGenerativeAppActionOptions {
   onChunk?: (content: string) => void | Promise<void>
 }
 
+function isOnLoadAction(manifest: ArenaGenerativeAppManifest, actionId: string): boolean {
+  return Object.values(manifest.pages).some((page) => (page.onLoad ?? []).includes(actionId))
+}
+
+/**
+ * Dummy CTAs that setState a collection should append. Page onLoad still replaces.
+ */
+function dummyCollectionAppendKeys(
+  manifest: ArenaGenerativeAppManifest,
+  actionId: string,
+  setState: Record<string, unknown>
+): string[] | undefined {
+  const declared = manifest.actions[actionId]?.append
+  if (isOnLoadAction(manifest, actionId)) return declared
+  const fromState = Object.entries(setState)
+    .filter(([key, value]) => key !== ARENA_GENERATIVE_CHAT_TURNS_KEY && Array.isArray(value))
+    .map(([key]) => key)
+  return [...fromState, ...(declared ?? [])]
+}
+
 /**
  * True when this action id is bound to an API with `stream: true` or
  * `chatProtocol.input`.
@@ -901,11 +922,17 @@ export async function runGenerativeAppAction(
       ...(options.values ?? {}),
       ...(action.onSuccess?.setState ?? {}),
     }
+    const appendKeys = collectAppendKeys(
+      undefined,
+      {},
+      dummyCollectionAppendKeys(options.manifest, options.actionId, setState)
+    )
     return {
       ok: true,
       data: setState,
       navigate: action.onSuccess?.navigate,
       setState,
+      ...(appendKeys.length > 0 ? { appendKeys } : {}),
     }
   }
 

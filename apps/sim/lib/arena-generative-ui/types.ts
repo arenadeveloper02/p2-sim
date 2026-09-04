@@ -245,6 +245,12 @@ export const ARENA_GENERATIVE_SELECTED_KEY = 'selected'
 export const ARENA_GENERATIVE_SELECTED_ID_KEY = 'selectedId'
 
 /**
+ * Dummy/local delete sentinel. `mergeHostState` removes the selected collection
+ * item and drops this key — it is never stored as public host state.
+ */
+export const ARENA_GENERATIVE_DELETED_KEY = 'deleted'
+
+/**
  * Keys that must not be copied from a form submit into `inputs` — they collide
  * with host-owned CTA / pagination state.
  */
@@ -256,6 +262,7 @@ const RESERVED_SUBMITTED_INPUT_KEYS = new Set([
   ARENA_GENERATIVE_INPUTS_KEY,
   ARENA_GENERATIVE_SELECTED_KEY,
   ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_DELETED_KEY,
   'hasMore',
   'nextCursor',
   'offset',
@@ -277,11 +284,20 @@ export function submittedInputsState(values: Record<string, unknown>): Record<st
   return { [ARENA_GENERATIVE_INPUTS_KEY]: inputs }
 }
 
+function identityFieldValue(record: Record<string, unknown>, field: string): unknown {
+  if (field in record) return record[field]
+  const want = field.toLowerCase()
+  for (const [key, value] of Object.entries(record)) {
+    if (key.trim().toLowerCase().replace(/[\s_-]+/g, '') === want) return value
+  }
+  return undefined
+}
+
 function selectedItemId(item: unknown, index: number): string {
   if (item && typeof item === 'object' && !Array.isArray(item)) {
     const record = item as Record<string, unknown>
     for (const field of ['id', 'key', 'slug'] as const) {
-      const value = record[field]
+      const value = identityFieldValue(record, field)
       if (typeof value === 'string' && value) return value
       if (typeof value === 'number' && Number.isFinite(value)) return String(value)
     }

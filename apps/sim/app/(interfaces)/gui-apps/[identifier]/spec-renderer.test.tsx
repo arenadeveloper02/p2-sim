@@ -1399,6 +1399,28 @@ describe('SpecRenderer', () => {
       expect(container.textContent).not.toContain('Plan Beta')
     })
 
+    it('lifts Table.rows into Repeat when both share a statePath', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['tasks', 'table'] },
+          tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.Name}' }, children: [] },
+          table: {
+            type: 'Table',
+            props: {
+              statePath: 'tasks',
+              columns: 'Id, Name',
+              rows: 't1 | Ship Alpha',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, currentPath: 'home', state: {} })
+      expect(container.textContent).toContain('Ship Alpha')
+    })
+
     it('narrows dummy Workspace Table.rows by Project Id', () => {
       const spec: Spec = {
         root: 'page',

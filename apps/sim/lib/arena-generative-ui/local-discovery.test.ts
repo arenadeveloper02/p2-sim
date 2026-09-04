@@ -9,6 +9,11 @@ import {
   filterCollectionItemsBySelection,
   filterStaticTableRows,
   filterStaticTableRowsBySelection,
+  applySelectedRowDelete,
+  applySelectedRowFields,
+  collectionIdentitiesOverlap,
+  dummyCollectionSeedFromSpec,
+  fillMissingHostCollections,
   stampSelectionForeignKeys,
   isLocalDiscoveryPassthrough,
   itemMatchesLocalDiscovery,
@@ -199,6 +204,224 @@ describe('filterCollectionItemsBySelection', () => {
     expect(
       filterCollectionItemsBySelection(notes, 't1', { id: 't1', name: 'Ship', projectId: 'p1' })
     ).toEqual([{ id: 'n1', body: 'Alpha note', projectId: 'p1' }])
+  })
+})
+
+describe('applySelectedRowDelete', () => {
+  it('removes the selected collection item and clears selection', () => {
+    const next: Record<string, unknown> = {
+      todos: [
+        { id: 'a', title: 'Milk' },
+        { id: 'b', title: 'Bread' },
+      ],
+      selectedId: 'a',
+      selected: { id: 'a', title: 'Milk' },
+      content: 'Milk',
+      deleted: true,
+    }
+    expect(applySelectedRowDelete(next, next, { deleted: true })).toBe(true)
+    expect(next).toEqual({
+      todos: [{ id: 'b', title: 'Bread' }],
+    })
+  })
+
+  it('removes a Table.rows item keyed by Id', () => {
+    const next: Record<string, unknown> = {
+      tasks: [
+        { Id: 't1', Name: 'Ship' },
+        { Id: 't2', Name: 'Plan' },
+      ],
+    }
+    expect(applySelectedRowDelete(next, next, { deleted: true, Id: 't1' })).toBe(true)
+    expect(next.tasks).toEqual([{ Id: 't2', Name: 'Plan' }])
+  })
+
+  it('removes a Repeat row by patch id and keeps a selected parent', () => {
+    const next: Record<string, unknown> = {
+      projects: [{ id: 'p1', name: 'Alpha' }],
+      tasks: [
+        { id: 't1', name: 'Ship', projectId: 'p1' },
+        { id: 't2', name: 'Plan', projectId: 'p2' },
+      ],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+    }
+    expect(applySelectedRowDelete(next, next, { deleted: true, id: 't1' })).toBe(true)
+    expect(next.tasks).toEqual([{ id: 't2', name: 'Plan', projectId: 'p2' }])
+    expect(next.selectedId).toBe('p1')
+    expect(next.selected).toEqual({ id: 'p1', name: 'Alpha' })
+  })
+
+  it('is a no-op without the deleted sentinel', () => {
+    const next: Record<string, unknown> = {
+      todos: [{ id: 'a', title: 'Milk' }],
+      selectedId: 'a',
+    }
+    expect(applySelectedRowDelete(next, next, { done: true })).toBe(false)
+    expect(next.todos).toEqual([{ id: 'a', title: 'Milk' }])
+    expect(next.selectedId).toBe('a')
+  })
+})
+
+describe('applySelectedRowFields', () => {
+  it('writes scalar patch fields onto selected and the matching collection item', () => {
+    const next: Record<string, unknown> = {
+      todos: [
+        { id: 'a', title: 'Milk', done: false },
+        { id: 'b', title: 'Bread', done: false },
+      ],
+      selectedId: 'a',
+      selected: { id: 'a', title: 'Milk', done: false },
+    }
+    applySelectedRowFields(next, next, { done: true, title: 'Milk' })
+    expect(next.selected).toEqual({ id: 'a', title: 'Milk', done: true })
+    expect(next.todos).toEqual([
+      { id: 'a', title: 'Milk', done: true },
+      { id: 'b', title: 'Bread', done: false },
+    ])
+  })
+
+  it('does not rewrite a collection the patch already replaced', () => {
+    const current = {
+      tasks: [{ id: 't1', name: 'Ship', done: false }],
+      selectedId: 't1',
+      selected: { id: 't1', name: 'Ship', done: false },
+    }
+    const next: Record<string, unknown> = {
+      ...current,
+      tasks: [{ id: 't1', name: 'Ship', done: false }, { id: 't2', name: 'Review' }],
+    }
+    applySelectedRowFields(next, current, {
+      tasks: next.tasks,
+      done: true,
+    })
+    expect(next.tasks).toEqual([
+      { id: 't1', name: 'Ship', done: false },
+      { id: 't2', name: 'Review' },
+    ])
+    expect(next.selected).toEqual({ id: 't1', name: 'Ship', done: false })
+  })
+
+  it('does not copy create form fields onto the selected parent', () => {
+    const next: Record<string, unknown> = {
+      projects: [{ id: 'p1', name: 'Alpha' }],
+      tasks: [{ id: 't1', name: 'Ship', projectId: 'p1' }],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+    }
+    applySelectedRowFields(next, next, {
+      tasks: [{ id: 't3', name: 'Review' }],
+      name: 'Review',
+      creating: false,
+    })
+    expect(next.selected).toEqual({ id: 'p1', name: 'Alpha' })
+    expect(next.projects).toEqual([{ id: 'p1', name: 'Alpha' }])
+  })
+
+  it('is a no-op without selectedId or a row id in the patch', () => {
+    const next: Record<string, unknown> = {
+      todos: [{ id: 'a', done: false }],
+    }
+    applySelectedRowFields(next, next, { done: true })
+    expect(next.todos).toEqual([{ id: 'a', done: false }])
+  })
+
+  it('uses the Repeat row id from the patch when selectedId is a parent', () => {
+    const next: Record<string, unknown> = {
+      projects: [{ id: 'p1', name: 'Alpha' }],
+      tasks: [
+        { id: 't1', name: 'Ship', projectId: 'p1', done: false },
+        { id: 't2', name: 'Plan', projectId: 'p2', done: false },
+      ],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+    }
+    applySelectedRowFields(next, next, { id: 't1', name: 'Ship', done: true, index: 0 })
+    expect(next.selected).toEqual({ id: 'p1', name: 'Alpha' })
+    expect(next.projects).toEqual([{ id: 'p1', name: 'Alpha' }])
+    expect(next.tasks).toEqual([
+      { id: 't1', name: 'Ship', projectId: 'p1', done: true },
+      { id: 't2', name: 'Plan', projectId: 'p2', done: false },
+    ])
+  })
+
+  it('matches Table.rows identity headers like Id', () => {
+    const next: Record<string, unknown> = {
+      tasks: [
+        { Id: 't1', Name: 'Ship', done: false },
+        { Id: 't2', Name: 'Plan', done: false },
+      ],
+    }
+    applySelectedRowFields(next, next, { Id: 't1', Name: 'Ship', done: true })
+    expect(next.tasks).toEqual([
+      { Id: 't1', Name: 'Ship', done: true },
+      { Id: 't2', Name: 'Plan', done: false },
+    ])
+  })
+
+  it('updates the collection from a row id when nothing is selected', () => {
+    const next: Record<string, unknown> = {
+      todos: [{ id: 'a', title: 'Milk', done: false }],
+    }
+    applySelectedRowFields(next, next, { id: 'a', title: 'Milk', done: true })
+    expect(next.todos).toEqual([{ id: 'a', title: 'Milk', done: true }])
+  })
+})
+
+describe('dummyCollectionSeedFromSpec', () => {
+  it('lifts Table.rows onto a simple statePath', () => {
+    expect(
+      dummyCollectionSeedFromSpec({
+        elements: {
+          table: {
+            type: 'Table',
+            props: {
+              statePath: 'tasks',
+              columns: 'Id, Name, Project Id',
+              rows: 't1 | Ship | p1\nt2 | Plan | p2',
+            },
+          },
+        },
+      })
+    ).toEqual({
+      tasks: [
+        { Id: 't1', Name: 'Ship', 'Project Id': 'p1' },
+        { Id: 't2', Name: 'Plan', 'Project Id': 'p2' },
+      ],
+    })
+  })
+
+  it('skips a Table with no statePath so the host does not invent a key', () => {
+    expect(
+      dummyCollectionSeedFromSpec({
+        elements: {
+          table: {
+            type: 'Table',
+            props: { columns: 'Name', rows: 'Ada' },
+          },
+        },
+      })
+    ).toEqual({})
+  })
+})
+
+describe('collectionIdentitiesOverlap', () => {
+  it('detects when incoming rows already exist', () => {
+    expect(
+      collectionIdentitiesOverlap([{ id: '1' }, { id: '2' }], [{ id: '2' }, { id: '3' }])
+    ).toBe(true)
+    expect(collectionIdentitiesOverlap([{ id: '1' }], [{ id: '3' }])).toBe(false)
+  })
+})
+
+describe('fillMissingHostCollections', () => {
+  it('fills only keys the host has not written', () => {
+    expect(
+      fillMissingHostCollections({ tasks: [{ id: 'kept' }] }, { tasks: [{ id: 'seed' }], notes: [] })
+    ).toBeNull()
+    expect(fillMissingHostCollections({}, { tasks: [{ id: 'seed' }] })).toEqual({
+      tasks: [{ id: 'seed' }],
+    })
   })
 })
 

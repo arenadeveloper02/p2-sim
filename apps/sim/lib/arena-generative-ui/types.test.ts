@@ -327,6 +327,7 @@ describe('Repeat item scope', () => {
         targetKeyword: 'Dental implants',
         content: 'should drop',
         error: 'no',
+        deleted: true,
         hasMore: true,
       })
     ).toEqual({
@@ -360,6 +361,12 @@ describe('Repeat item scope', () => {
       selectedId: 'run_1',
       content: '# Full report\n\nBody.',
     })
+  })
+
+  it('reads Table.rows identity headers like Id for selectedId', () => {
+    expect(selectedItemHostState({ Id: 't1', Name: 'Ship', 'Project Id': 'p1' }, 0).selectedId).toBe(
+      't1'
+    )
   })
 
   it('falls back to the row index when the item has no id', () => {

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { fillMissingHostCollections } from '@/lib/arena-generative-ui/local-discovery'
 import { mergeHostState } from '@/lib/arena-generative-ui/merge-host-state'
 
 interface GenerativeAppPageUi {
@@ -19,6 +20,8 @@ interface GenerativeAppPageUi {
 interface GenerativeAppHostStateValue {
   state: Record<string, unknown>
   mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
+  /** Writes collection keys that are still unset (dummy Table.rows seed). */
+  fillMissingState: (fill: Record<string, unknown>) => void
   pendingActionIds: ReadonlySet<string>
   /** True while any user-initiated CTA is in flight (skip destination onLoad). */
   actionPending: boolean
@@ -59,6 +62,12 @@ function useHostStateValue(): GenerativeAppHostStateValue {
     },
     []
   )
+  const fillMissingState = useCallback((fill: Record<string, unknown>) => {
+    setState((current) => {
+      const patch = fillMissingHostCollections(current, fill)
+      return patch ? mergeHostState(current, patch) : current
+    })
+  }, [])
   const setActionPending = useCallback((actionId: string, pending: boolean) => {
     setCtaPendingIds((current) => togglePendingId(current, actionId, pending))
   }, [])
@@ -100,6 +109,7 @@ function useHostStateValue(): GenerativeAppHostStateValue {
     () => ({
       state,
       mergeState,
+      fillMissingState,
       pendingActionIds,
       actionPending: ctaPendingIds.length > 0,
       setActionPending,
@@ -115,6 +125,7 @@ function useHostStateValue(): GenerativeAppHostStateValue {
     [
       state,
       mergeState,
+      fillMissingState,
       pendingActionIds,
       ctaPendingIds,
       setActionPending,

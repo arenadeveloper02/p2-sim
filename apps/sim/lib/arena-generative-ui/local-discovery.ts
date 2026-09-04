@@ -4,6 +4,18 @@
  * narrow Table and Repeat locally.
  */
 
+import {
+  ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
+  ARENA_GENERATIVE_DELETED_KEY,
+  ARENA_GENERATIVE_ERROR_KEY,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+} from '@/lib/arena-generative-ui/types'
+
 export interface LocalDiscoveryQuery {
   search: string
   filters: Record<string, string | readonly string[]>
@@ -31,6 +43,27 @@ const SEARCH_KEY_ALIASES = new Set(['query', 'q', 'search', 'term'])
 const IGNORED_FILTER_KEYS = new Set(['sort', 'order', 'orderby', 'direction'])
 
 const ITEM_IDENTITY_KEYS = new Set(['id', 'key', 'slug'])
+
+const SELECTED_ROW_PATCH_SKIP = new Set([
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
+  ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  ARENA_GENERATIVE_ERROR_KEY,
+  ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_DELETED_KEY,
+  'creating',
+  'editing',
+  'index',
+  'hasMore',
+  'nextCursor',
+  'offset',
+  'input',
+  'conversationId',
+  'files',
+])
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
@@ -407,6 +440,74 @@ function recordsFromStaticTableRows(
   })
 }
 
+const SIMPLE_HOST_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * Parses dummy `Table.columns` / `Table.rows` (`Name, Role` + `Ada | Engineer`).
+ */
+export function parseStaticTableCollection(
+  columns: unknown,
+  rows: unknown
+): Array<Record<string, unknown>> {
+  const headers = asString(columns)
+    .split(',')
+    .map((header) => header.trim())
+    .filter(Boolean)
+  if (headers.length === 0) return []
+  const lines = asString(rows)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split('|').map((cell) => cell.trim()))
+  if (lines.length === 0) return []
+  return recordsFromStaticTableRows(headers, lines)
+}
+
+/**
+ * Host-state arrays authored as `Table.rows` on a matching `statePath`.
+ * Does not invent rows for a Repeat that has no table seed.
+ */
+export function dummyCollectionSeedFromSpec(spec: {
+  elements?: Record<string, { type?: string; props?: Record<string, unknown> }>
+}): Record<string, unknown[]> {
+  const seed: Record<string, unknown[]> = {}
+  for (const element of Object.values(spec.elements ?? {})) {
+    if (element.type !== 'Table') continue
+    const key = asString(element.props?.statePath).trim()
+    if (!SIMPLE_HOST_STATE_KEY.test(key)) continue
+    const records = parseStaticTableCollection(element.props?.columns, element.props?.rows)
+    if (records.length === 0) continue
+    seed[key] = records
+  }
+  return seed
+}
+
+/**
+ * Patch of seed keys missing from host state. Empty arrays already written by
+ * onLoad stay empty — this does not overwrite.
+ */
+export function fillMissingHostCollections(
+  current: Record<string, unknown>,
+  seed: Record<string, unknown>
+): Record<string, unknown> | null {
+  const patch: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(seed)) {
+    if (!Array.isArray(value) || value.length === 0) continue
+    if (current[key] !== undefined) continue
+    patch[key] = value
+  }
+  return Object.keys(patch).length === 0 ? null : patch
+}
+
+/** Fills missing collection keys from `Table.rows` so Repeat/Table share one array. */
+export function withDummyCollectionSeed(
+  current: Record<string, unknown>,
+  spec: { elements?: Record<string, { type?: string; props?: Record<string, unknown> }> }
+): Record<string, unknown> {
+  const patch = fillMissingHostCollections(current, dummyCollectionSeedFromSpec(spec))
+  return patch ? { ...current, ...patch } : current
+}
+
 export function filterStaticTableRows(
   headers: readonly string[],
   rows: readonly string[][],
@@ -443,6 +544,104 @@ export function filterStaticTableRowsBySelection(
   return filtered.map((record) =>
     headers.map((header) => String((record as Record<string, unknown>)[header] ?? ''))
   )
+}
+
+/**
+ * Dummy delete signals `{ deleted: true }` instead of rewriting the collection.
+ * Remove the selected row, drop selection, and strip the sentinel.
+ */
+export function applySelectedRowDelete(
+  next: Record<string, unknown>,
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): boolean {
+  if (patch[ARENA_GENERATIVE_DELETED_KEY] !== true) return false
+  delete next[ARENA_GENERATIVE_DELETED_KEY]
+  const selectedId =
+    typeof current[ARENA_GENERATIVE_SELECTED_ID_KEY] === 'string'
+      ? (current[ARENA_GENERATIVE_SELECTED_ID_KEY] as string).trim()
+      : ''
+  const id = itemIdentityId(patch) || selectedId
+  if (id) {
+    for (const [key, value] of Object.entries(next)) {
+      if (!Array.isArray(value) || key === ARENA_GENERATIVE_CHAT_TURNS_KEY) continue
+      const filtered = value.filter((item) => itemIdentityId(item) !== id)
+      if (filtered.length !== value.length) next[key] = filtered
+    }
+  }
+  const selected = recordFromUnknown(next[ARENA_GENERATIVE_SELECTED_KEY])
+  if (!selected || itemIdentityId(selected) === id) {
+    delete next[ARENA_GENERATIVE_SELECTED_KEY]
+    delete next[ARENA_GENERATIVE_SELECTED_ID_KEY]
+    delete next[ARENA_GENERATIVE_STREAM_CONTENT_KEY]
+  }
+  return true
+}
+
+function patchWritesCollection(patch: Record<string, unknown>): boolean {
+  return Object.entries(patch).some(
+    ([key, value]) => key !== ARENA_GENERATIVE_CHAT_TURNS_KEY && Array.isArray(value)
+  )
+}
+
+function selectedRowFieldPatch(patch: Record<string, unknown>): Record<string, unknown> {
+  const fields: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (SELECTED_ROW_PATCH_SKIP.has(key)) continue
+    if (value === undefined || Array.isArray(value)) continue
+    fields[key] = value
+  }
+  return fields
+}
+
+/**
+ * Dummy complete/edit often writes scalars (`done: true`) instead of updating
+ * the collection. Copy those fields onto `selected` and the matching row.
+ */
+export function applySelectedRowFields(
+  next: Record<string, unknown>,
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): void {
+  const selectedId =
+    typeof current[ARENA_GENERATIVE_SELECTED_ID_KEY] === 'string'
+      ? (current[ARENA_GENERATIVE_SELECTED_ID_KEY] as string).trim()
+      : ''
+  const id = itemIdentityId(patch) || selectedId
+  if (!id) return
+  if (patchWritesCollection(patch)) return
+  const fields = selectedRowFieldPatch(patch)
+  if (Object.keys(fields).length === 0) return
+  const selected = recordFromUnknown(next[ARENA_GENERATIVE_SELECTED_KEY])
+  if (selected && itemIdentityId(selected) === id) {
+    next[ARENA_GENERATIVE_SELECTED_KEY] = { ...selected, ...fields }
+  }
+  for (const [key, value] of Object.entries(next)) {
+    if (!Array.isArray(value) || key === ARENA_GENERATIVE_CHAT_TURNS_KEY) continue
+    if (Object.prototype.hasOwnProperty.call(patch, key)) continue
+    let changed = false
+    const updated = value.map((item) => {
+      if (itemIdentityId(item) !== id) return item
+      const record = recordFromUnknown(item)
+      if (!record) return item
+      changed = true
+      return { ...record, ...fields }
+    })
+    if (changed) next[key] = updated
+  }
+}
+
+/** True when incoming rows already appear in the collection (a full replace). */
+export function collectionIdentitiesOverlap(
+  existing: readonly unknown[],
+  incoming: readonly unknown[]
+): boolean {
+  const existingIds = new Set(existing.map((item) => itemIdentityId(item)).filter(Boolean))
+  if (existingIds.size === 0) return false
+  return incoming.some((item) => {
+    const id = itemIdentityId(item)
+    return Boolean(id) && existingIds.has(id)
+  })
 }
 
 /** Rows shown per Table/Repeat page when the binding has no pagination API. */

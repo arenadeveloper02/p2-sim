@@ -49,10 +49,30 @@ describe('capabilityRecipePrompt', () => {
     expect(capabilityRecipePrompt(['filter'])).toContain('foreign key (projectId)')
   })
 
+  it('tells delete that the host removes the selected collection item', () => {
+    expect(capabilityRecipePrompt(['delete'])).toContain('onSuccess.setState { deleted: true }')
+    expect(capabilityRecipePrompt(['delete'])).toContain(
+      'The host removes the matching collection item'
+    )
+  })
+
+  it('tells complete and edit that the host writes fields onto the selected row', () => {
+    expect(capabilityRecipePrompt(['complete'])).toContain(
+      'The host writes those fields onto the matching collection item'
+    )
+    expect(capabilityRecipePrompt(['edit'])).toContain(
+      'the host copies them onto the matching collection item'
+    )
+  })
+
   it('tells create to open a Modal with Button setValue', () => {
     expect(capabilityRecipePrompt(['create'])).toContain('setValue "creating=true"')
     expect(capabilityRecipePrompt(['create'])).toContain('Modal showWhen "creating"')
     expect(capabilityRecipePrompt(['create'])).toContain('stamp the selected parent id')
+    expect(capabilityRecipePrompt(['create'])).toContain('the host appends it onto the collection')
+    expect(capabilityRecipePrompt(['create'])).toContain(
+      'does not copy those form fields onto selected'
+    )
   })
 
   it('composes inspect and analyze recipes', () => {

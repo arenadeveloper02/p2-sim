@@ -1528,6 +1528,65 @@ describe('runDeployedAppAction', () => {
     expect(mockExecuteWorkflow).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
+
+  it('marks dummy create collection arrays for append', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        actions: {
+          add_todo: {
+            onSuccess: {
+              setState: { todos: [{ id: 't3', title: 'Review' }] },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'add_todo',
+      values: { title: 'Review' },
+      requestId: 'req-dummy-create',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['todos'])
+    expect(result.setState).toMatchObject({
+      todos: [{ id: 't3', title: 'Review' }],
+    })
+  })
+
+  it('does not append dummy onLoad collection arrays', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: { ...twoPageManifest.pages.home, onLoad: ['seed_todos'] },
+        },
+        actions: {
+          seed_todos: {
+            onSuccess: {
+              setState: { todos: [{ id: 't1', title: 'Milk' }] },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'seed_todos',
+      values: {},
+      requestId: 'req-dummy-load',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toBeUndefined()
+  })
 })
 
 function utf8Stream(parts: string[]): ReadableStream<Uint8Array> {

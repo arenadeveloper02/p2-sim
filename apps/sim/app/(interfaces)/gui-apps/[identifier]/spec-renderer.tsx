@@ -7,6 +7,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -70,6 +72,7 @@ import {
 import {
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
+  dummyCollectionSeedFromSpec,
   filterCollectionItems,
   filterCollectionItemsBySelection,
   filterStaticTableRows,
@@ -77,6 +80,7 @@ import {
   LOCAL_COLLECTION_PAGE_SIZE,
   type PaginatedCollection,
   paginateCollection,
+  withDummyCollectionSeed,
 } from '@/lib/arena-generative-ui/local-discovery'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
@@ -1698,13 +1702,20 @@ export function SpecRenderer({
   onClearSelection,
   onCancelPending,
 }: SpecRendererProps) {
-  const state = withAliasedProseState(rawState, proseAliasKeys ?? [])
+  const dummySeed = useMemo(() => dummyCollectionSeedFromSpec(spec), [spec])
+  const state = withAliasedProseState(
+    withDummyCollectionSeed(rawState, spec),
+    proseAliasKeys ?? []
+  )
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
   const suppressBoundSkeleton = Object.values(elements).some((element) => {
     if (element.type !== 'WorkingCard') return false
     return element.props?.skeleton !== false
   })
   const host = useGenerativeAppHostState()
+  useLayoutEffect(() => {
+    host.fillMissingState(dummySeed)
+  }, [dummySeed, host.fillMissingState])
   const pageKey = currentPath ?? ''
   const [formValues, setFormValuesState] = useState<Record<string, unknown>>(
     () => (pageKey ? host.pageFormValues(pageKey) : {})

@@ -127,19 +127,19 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   create: [
     'CAPABILITY: CREATE',
-    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source appends via onSuccess.setState — do not invent an API key. Workspace child create: stamp the selected parent id onto the new row\'s foreign key (projectId) so the host filter keeps it visible. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
+    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source setState the new row (with an id) — the host appends it onto the collection and does not copy those form fields onto selected. Do not invent an API key. Workspace child create: stamp the selected parent id onto the new row\'s foreign key (projectId) so the host filter keeps it visible. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
   ].join('\n'),
   complete: [
     'CAPABILITY: COMPLETE',
-    'Toggle done on the selected row. Stay on the collection — do not navigate. Dummy/local source flips a completed/done field via onSuccess.setState. Do not invent a second complete page.',
+    'Toggle done on the selected row. Stay on the collection — do not navigate. Dummy/local source flips a completed/done field via onSuccess.setState. The host writes those fields onto the matching collection item (row id from the Repeat action values, or selectedId). Do not invent a second complete page.',
   ].join('\n'),
   edit: [
     'CAPABILITY: EDIT',
-    'Edit lives on the existing record as a Form of the fields the binding inputSchema names. Submit updates that record. Not a second create-flow page and not a Modal for the whole edit.',
+    'Edit lives on the existing record as a Form of the fields the binding inputSchema names. Submit updates that record. Dummy/local source writes those fields via onSuccess.setState; the host copies them onto the matching collection item (row id from the action values, or selectedId). Not a second create-flow page and not a Modal for the whole edit.',
   ].join('\n'),
   delete: [
     'CAPABILITY: DELETE',
-    'A destructive Button (variant destructive) wired to the delete binding. Do not emit a confirm Modal or Alert — the host confirms destructive actions.',
+    'A destructive Button (variant destructive) wired to the delete binding. Do not emit a confirm Modal or Alert — the host confirms destructive actions. Dummy/local source signals delete with onSuccess.setState { deleted: true }. The host removes the matching collection item (row id from the Repeat action values, or selectedId) and clears selection only when that row was selected. Do not rewrite the collection array. Stay on this page.',
   ].join('\n'),
   back: [
     'CAPABILITY: BACK',
