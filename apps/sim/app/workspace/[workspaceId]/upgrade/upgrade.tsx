@@ -131,7 +131,9 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
         : 'pro'
   const checkoutTarget = state.subscription.isOrgScoped || state.isArena ? 'team' : 'pro'
 
-  const isPending = state.isSwitchingInterval || state.isStartingCheckout
+  // After Stripe cancel reloads the page, session can still be settling — keep
+  // checkout CTAs locked until the session query finishes.
+  const isPending = state.isSwitchingInterval || state.isStartingCheckout || state.isSessionPending
 
   /**
    * Resolve a card's CTA from the canonical matrix, then bind it to the matching

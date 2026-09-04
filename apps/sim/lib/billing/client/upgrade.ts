@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { getErrorMessage } from '@sim/utils/errors'
-import { useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import { listCreatorOrganizationsContract } from '@/lib/api/contracts/organizations'
@@ -15,6 +15,7 @@ import {
 import { buildPlanName, getDisplayPlanName, isPaid } from '@/lib/billing/plan-helpers'
 import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { organizationKeys } from '@/hooks/queries/organization'
+import { refreshSessionQuery } from '@/hooks/queries/session'
 
 const logger = createLogger('SubscriptionUpgrade')
 
@@ -47,8 +48,28 @@ function resolveCheckoutRedirectUrl(result: unknown): string | null {
   return null
 }
 
+/**
+ * Resolves the signed-in user for checkout. After Stripe cancel returns to the
+ * app as a full page load, React Query session state can still be empty while
+ * the first getSession is in flight — so a click must not trust a null hook
+ * snapshot. Refresh from the server before failing closed.
+ */
+async function resolveCheckoutUserId(
+  queryClient: QueryClient,
+  sessionUserId: string | undefined
+): Promise<string> {
+  if (sessionUserId) return sessionUserId
+
+  const fresh = await refreshSessionQuery(queryClient)
+  const userId = fresh?.user?.id
+  if (!userId) {
+    throw new Error('User not authenticated')
+  }
+  return userId
+}
+
 export function useSubscriptionUpgrade() {
-  const { data: session } = useSession()
+  const { data: session, isPending: isSessionPending } = useSession()
   const betterAuthSubscription = useSubscription()
   const queryClient = useQueryClient()
 
@@ -57,10 +78,7 @@ export function useSubscriptionUpgrade() {
       const creditTier = options?.creditTier ?? CONSTANTS.DEFAULT_CREDIT_TIER
       const annual = options?.annual ?? false
       const planName = buildPlanName(targetPlan, creditTier)
-      const userId = session?.user?.id
-      if (!userId) {
-        throw new Error('User not authenticated')
-      }
+      const userId = await resolveCheckoutUserId(queryClient, session?.user?.id)
 
       let currentSubscriptionRowId: string | undefined
       let currentStripeSubscriptionId: string | undefined
@@ -283,5 +301,14 @@ export function useSubscriptionUpgrade() {
     [session?.user?.id, betterAuthSubscription, queryClient]
   )
 
-  return { handleUpgrade }
+  return {
+    handleUpgrade,
+    /**
+     * True while the session query has not settled. Upgrade CTAs should stay
+     * disabled so a Stripe cancel reload cannot fire checkout against a null
+     * session snapshot before {@link handleUpgrade}'s refresh runs.
+     */
+    isSessionPending,
+    hasAuthenticatedUser: Boolean(session?.user?.id),
+  }
 }

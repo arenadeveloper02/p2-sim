@@ -27,7 +27,11 @@ vi.mock('@/lib/api/client/request', () => ({
 }))
 
 vi.mock('@/lib/billing/client/upgrade', () => ({
-  useSubscriptionUpgrade: () => ({ handleUpgrade: mockHandleUpgrade }),
+  useSubscriptionUpgrade: () => ({
+    handleUpgrade: mockHandleUpgrade,
+    isSessionPending: false,
+    hasAuthenticatedUser: true,
+  }),
 }))
 
 import type { WorkspaceHostContext } from '@/lib/api/contracts/workspaces'

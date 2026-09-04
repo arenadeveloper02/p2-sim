@@ -58,6 +58,13 @@ export interface UpgradeState {
   isSwitchingInterval: boolean
   /** True while Stripe checkout or in-place plan upgrade is in flight. */
   isStartingCheckout: boolean
+  /**
+   * True while the signed-in session is still loading. Checkout CTAs should
+   * stay disabled until this is false (and ideally until a user id is present).
+   */
+  isSessionPending: boolean
+  /** True when the session query has a signed-in user. */
+  hasAuthenticatedUser: boolean
   doUpgrade: (targetPlan: 'pro' | 'team', creditTier: number) => Promise<void>
   handleSwitchInterval: (interval: 'month' | 'year') => Promise<void>
   upgradeOrSwitchToMax: () => Promise<void>
@@ -76,7 +83,7 @@ export function useUpgradeState({
   hostContext,
   workspaceId,
 }: UseUpgradeStateOptions): UpgradeState {
-  const { handleUpgrade } = useSubscriptionUpgrade()
+  const { handleUpgrade, isSessionPending, hasAuthenticatedUser } = useSubscriptionUpgrade()
   const queryClient = useQueryClient()
   const { ownerBilling } = hostContext
   const arenaBilling = isArenaBilling()
@@ -301,6 +308,8 @@ export function useUpgradeState({
     wantsIntervalSwitch,
     isSwitchingInterval,
     isStartingCheckout,
+    isSessionPending,
+    hasAuthenticatedUser,
     doUpgrade,
     handleSwitchInterval,
     upgradeOrSwitchToMax,
