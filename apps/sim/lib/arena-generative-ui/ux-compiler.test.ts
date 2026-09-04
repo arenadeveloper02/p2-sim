@@ -18,6 +18,7 @@ import {
   compileGenerativeUx,
   inferAsyncKind,
   injectSamePageSelectChrome,
+  specKeepsCollectionVisible,
   stripListHiddenWithoutSamePageSelect,
   specHasLoadingSurface,
   UX_COMPILER_SELECT_BACK_KEY,
@@ -567,6 +568,31 @@ describe('injectSamePageSelectChrome', () => {
     const compiled = injectSamePageSelectChrome(spec, 'home')
     const next = compiled.elements as Record<string, { props?: Record<string, unknown> }>
     expect(next.accounts?.props?.showWhen).toBeUndefined()
+    expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
+  })
+
+  it('does not hide Columns-as-Workspace lists that have two collections', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['columns'] },
+        columns: {
+          type: 'Columns',
+          props: { layout: 'sidebar-left' },
+          children: ['projects', 'tasks'],
+        },
+        projects: { type: 'Repeat', props: { statePath: 'projects' }, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+        tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['card'] },
+        card: { type: 'Card', props: { title: '{item.name}' }, children: [] },
+        body: { type: 'DataText', props: { statePath: 'content' }, children: [] },
+      },
+    }
+    expect(specKeepsCollectionVisible(spec)).toBe(true)
+    const compiled = injectSamePageSelectChrome(spec, 'home')
+    expect(
+      (compiled.elements?.projects as { props?: Record<string, unknown> }).props?.showWhen
+    ).toBeUndefined()
     expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
   })
 

@@ -252,7 +252,7 @@ function itemIdentityId(item: unknown): string {
   const record = recordFromUnknown(item)
   if (!record) return ''
   for (const field of ['id', 'key', 'slug'] as const) {
-    const value = record[field]
+    const value = valueForFilterKey(record, field)
     if (typeof value === 'string' && value) return value
     if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   }
@@ -273,23 +273,52 @@ function collectionHasForeignKeys(items: readonly unknown[]): boolean {
   })
 }
 
-function itemMatchesSelectedId(item: unknown, selectedId: string): boolean {
+function foreignKeyValues(item: unknown): string[] {
   const record = recordFromUnknown(item)
-  if (!record) return false
+  if (!record) return []
+  const values: string[] = []
+  for (const [key, value] of Object.entries(record)) {
+    if (!isForeignKeyName(key)) continue
+    for (const part of primitiveStrings(value)) {
+      const trimmed = part.trim()
+      if (trimmed) values.push(trimmed)
+    }
+  }
+  return values
+}
+
+function itemMatchesSelectionAnchors(item: unknown, anchors: readonly string[]): boolean {
+  const record = recordFromUnknown(item)
+  if (!record || anchors.length === 0) return false
   return Object.entries(record).some(
-    ([key, value]) => isForeignKeyName(key) && valuesMatchFilter(value, selectedId)
+    ([key, value]) =>
+      isForeignKeyName(key) && anchors.some((anchor) => valuesMatchFilter(value, anchor))
   )
 }
 
+function selectionAnchorIds(selectedId: string, selected: unknown): string[] {
+  const anchors: string[] = []
+  if (selectedId) anchors.push(selectedId)
+  const identity = itemIdentityId(selected)
+  if (identity && !anchors.includes(identity)) anchors.push(identity)
+  for (const value of foreignKeyValues(selected)) {
+    if (!anchors.some((anchor) => anchor.toLowerCase() === value.toLowerCase())) {
+      anchors.push(value)
+    }
+  }
+  return anchors
+}
+
 /**
- * Workspace selection: leave the source collection (row id === selectedId)
- * intact; narrow sibling collections that have a foreign key (projectId, …)
- * to rows pointing at that id. No-op when nothing is selected or the
- * collection has no FK-shaped fields.
+ * Workspace selection: the root list (selected row has no foreign key) stays
+ * intact. A child list stays narrowed to the parent after a second click —
+ * siblings share the selected row's projectId, or point at selected / selectedId.
+ * No-op when nothing is selected or the collection has no FK-shaped fields.
  */
 export function filterCollectionItemsBySelection<T>(
   items: readonly T[],
-  selectedId: unknown
+  selectedId: unknown,
+  selected?: unknown
 ): T[] {
   const id =
     typeof selectedId === 'string'
@@ -298,9 +327,84 @@ export function filterCollectionItemsBySelection<T>(
         ? ''
         : String(selectedId).trim()
   if (!id || items.length === 0) return [...items]
-  if (items.some((item) => itemIdentityId(item) === id)) return [...items]
+  const selectedRow = items.find((item) => itemIdentityId(item) === id)
+  if (selectedRow) {
+    const parentIds = foreignKeyValues(selectedRow)
+    if (parentIds.length === 0) return [...items]
+    return items.filter((item) => itemMatchesSelectionAnchors(item, parentIds))
+  }
   if (!collectionHasForeignKeys(items)) return [...items]
-  return items.filter((item) => itemMatchesSelectedId(item, id))
+  return items.filter((item) =>
+    itemMatchesSelectionAnchors(item, selectionAnchorIds(id, selected))
+  )
+}
+
+function inferForeignKeyName(items: readonly unknown[]): string | undefined {
+  for (const item of items) {
+    const record = recordFromUnknown(item)
+    if (!record) continue
+    const key = Object.keys(record).find((name) => isForeignKeyName(name))
+    if (key) return key
+  }
+  return undefined
+}
+
+function isEntityRecord(item: unknown): boolean {
+  const record = recordFromUnknown(item)
+  if (!record) return false
+  return Boolean(itemIdentityId(record) || record.name || record.title)
+}
+
+/**
+ * Dummy/local create onto a filtered child collection. Stamps the selected
+ * parent id onto incoming rows that are missing the foreign key so the new
+ * row stays visible. Leaves the root list and Chat turns alone.
+ */
+export function stampSelectionForeignKeys<T>(
+  incoming: readonly T[],
+  existing: readonly unknown[],
+  selectedId: unknown,
+  selected?: unknown
+): T[] {
+  const id =
+    typeof selectedId === 'string'
+      ? selectedId.trim()
+      : selectedId == null
+        ? ''
+        : String(selectedId).trim()
+  if (!id || incoming.length === 0) return [...incoming]
+  if (!incoming.some((item) => isEntityRecord(item))) return [...incoming]
+  const sourceItem =
+    existing.find((item) => itemIdentityId(item) === id) ??
+    incoming.find((item) => itemIdentityId(item) === id)
+  if (sourceItem && foreignKeyValues(sourceItem).length === 0) return [...incoming]
+  const fkName =
+    inferForeignKeyName(existing) ?? inferForeignKeyName(incoming) ?? 'projectId'
+  const selectedInExisting = existing.some((item) => itemIdentityId(item) === id)
+  const parentId = selectedInExisting
+    ? foreignKeyValues(sourceItem ?? selected)[0]
+    : foreignKeyValues(selected)[0] || id
+  if (!parentId) return [...incoming]
+  return incoming.map((item) => {
+    const record = recordFromUnknown(item)
+    if (!record || !isEntityRecord(record)) return item
+    const current = valueForFilterKey(record, fkName)
+    if (current !== undefined && String(current).trim() !== '') return item
+    return { ...record, [fkName]: parentId }
+  })
+}
+
+function recordsFromStaticTableRows(
+  headers: readonly string[],
+  rows: readonly string[][]
+): Array<Record<string, unknown>> {
+  return rows.map((cells) => {
+    const record: Record<string, unknown> = {}
+    headers.forEach((header, index) => {
+      record[header] = cells[index] ?? ''
+    })
+    return record
+  })
 }
 
 export function filterStaticTableRows(
@@ -310,15 +414,35 @@ export function filterStaticTableRows(
 ): string[][] {
   if (!hasLocalDiscoveryQuery(query)) return rows.map((row) => [...row])
   return rows.filter((cells) => {
+    if (headers.length === 0) {
+      return itemMatchesLocalDiscovery(cells.join(' '), query)
+    }
     const record: Record<string, unknown> = {}
     headers.forEach((header, index) => {
       record[header] = cells[index] ?? ''
     })
-    if (headers.length === 0) {
-      return itemMatchesLocalDiscovery(cells.join(' '), query)
-    }
     return itemMatchesLocalDiscovery(record, query)
   })
+}
+
+/**
+ * Same Workspace selection rule as {@link filterCollectionItemsBySelection},
+ * for dummy Table.rows keyed by header names (Id, Project Id).
+ */
+export function filterStaticTableRowsBySelection(
+  headers: readonly string[],
+  rows: readonly string[][],
+  selectedId: unknown,
+  selected?: unknown
+): string[][] {
+  if (headers.length === 0 || rows.length === 0) {
+    return rows.map((row) => [...row])
+  }
+  const items = recordsFromStaticTableRows(headers, rows)
+  const filtered = filterCollectionItemsBySelection(items, selectedId, selected)
+  return filtered.map((record) =>
+    headers.map((header) => String((record as Record<string, unknown>)[header] ?? ''))
+  )
 }
 
 /** Rows shown per Table/Repeat page when the binding has no pagination API. */

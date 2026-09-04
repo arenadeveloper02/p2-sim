@@ -1233,6 +1233,7 @@ describe('target blueprint fixtures', () => {
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('DUMMY / LOCAL DATA')
     expect(recipes).toContain('foreign key (projectId)')
+    expect(recipes).toContain('Id and Project Id columns')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: dashboard')
     expect(recipes).not.toContain('SHELL RECIPE')

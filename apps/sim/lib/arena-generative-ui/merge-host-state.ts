@@ -1,7 +1,10 @@
 import { chatTurnsFromState, withLastAssistantContent } from '@/lib/arena-generative-ui/chat-turns'
+import { stampSelectionForeignKeys } from '@/lib/arena-generative-ui/local-discovery'
 import {
   ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
 } from '@/lib/arena-generative-ui/types'
 
@@ -36,6 +39,7 @@ export function mergeHostState(
   }
 
   if (!appendKeys || appendKeys.length === 0) {
+    stampPatchedCollections(next, current, patch)
     return omitUndefinedPatchKeys(next, patch)
   }
 
@@ -69,7 +73,27 @@ export function mergeHostState(
   if (capped) {
     next.hasMore = false
   }
+  stampPatchedCollections(next, current, patch)
   return omitUndefinedPatchKeys(next, patch)
+}
+
+function stampPatchedCollections(
+  next: Record<string, unknown>,
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): void {
+  for (const key of Object.keys(patch)) {
+    if (key === ARENA_GENERATIVE_CHAT_TURNS_KEY) continue
+    const incoming = next[key]
+    if (!Array.isArray(incoming)) continue
+    const existing = current[key]
+    next[key] = stampSelectionForeignKeys(
+      incoming,
+      Array.isArray(existing) ? existing : [],
+      current[ARENA_GENERATIVE_SELECTED_ID_KEY],
+      current[ARENA_GENERATIVE_SELECTED_KEY]
+    )
+  }
 }
 
 /**

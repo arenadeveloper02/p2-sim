@@ -8,6 +8,8 @@ import {
   filterCollectionItems,
   filterCollectionItemsBySelection,
   filterStaticTableRows,
+  filterStaticTableRowsBySelection,
+  stampSelectionForeignKeys,
   isLocalDiscoveryPassthrough,
   itemMatchesLocalDiscovery,
   LOCAL_COLLECTION_PAGE_SIZE,
@@ -167,6 +169,71 @@ describe('filterCollectionItemsBySelection', () => {
   it('is a no-op without a selected id', () => {
     expect(filterCollectionItemsBySelection(tasks, '')).toEqual(tasks)
     expect(filterCollectionItemsBySelection(tasks, undefined)).toEqual(tasks)
+  })
+
+  it('keeps the parent filter when the selected row is a child', () => {
+    expect(filterCollectionItemsBySelection(tasks, 't1')).toEqual([
+      { id: 't1', name: 'Ship', projectId: 'p1' },
+      { id: 't3', name: 'Review', projectId: 'p1' },
+    ])
+  })
+
+  it('narrows dummy Table.rows by Project Id', () => {
+    const headers = ['Id', 'Name', 'Project Id']
+    const rows = [
+      ['t1', 'Ship', 'p1'],
+      ['t2', 'Plan', 'p2'],
+      ['t3', 'Review', 'p1'],
+    ]
+    expect(filterStaticTableRowsBySelection(headers, rows, 'p1')).toEqual([
+      ['t1', 'Ship', 'p1'],
+      ['t3', 'Review', 'p1'],
+    ])
+  })
+
+  it('matches a sibling collection to the selected row parent key', () => {
+    const notes = [
+      { id: 'n1', body: 'Alpha note', projectId: 'p1' },
+      { id: 'n2', body: 'Beta note', projectId: 'p2' },
+    ]
+    expect(
+      filterCollectionItemsBySelection(notes, 't1', { id: 't1', name: 'Ship', projectId: 'p1' })
+    ).toEqual([{ id: 'n1', body: 'Alpha note', projectId: 'p1' }])
+  })
+})
+
+describe('stampSelectionForeignKeys', () => {
+  const tasks = [
+    { id: 't1', name: 'Ship', projectId: 'p1' },
+    { id: 't2', name: 'Plan', projectId: 'p2' },
+  ]
+
+  it('stamps projectId onto a new child row', () => {
+    expect(
+      stampSelectionForeignKeys([{ id: 't3', name: 'Review' }], tasks, 'p1', {
+        id: 'p1',
+        name: 'Alpha',
+      })
+    ).toEqual([{ id: 't3', name: 'Review', projectId: 'p1' }])
+  })
+
+  it('leaves an existing foreign key intact', () => {
+    expect(
+      stampSelectionForeignKeys([{ id: 't3', name: 'Review', projectId: 'p2' }], tasks, 'p1')
+    ).toEqual([{ id: 't3', name: 'Review', projectId: 'p2' }])
+  })
+
+  it('does not stamp the root project list', () => {
+    const projects = [
+      { id: 'p1', name: 'Alpha' },
+      { id: 'p2', name: 'Beta' },
+    ]
+    expect(
+      stampSelectionForeignKeys([{ id: 'p3', name: 'Gamma' }], projects, 'p1', {
+        id: 'p1',
+        name: 'Alpha',
+      })
+    ).toEqual([{ id: 'p3', name: 'Gamma' }])
   })
 })
 

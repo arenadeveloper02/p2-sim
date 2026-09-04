@@ -1366,6 +1366,117 @@ describe('SpecRenderer', () => {
       expect(container.textContent).not.toContain('Plan Beta')
     })
 
+    it('keeps Columns-as-Workspace lists visible and filters the sibling collection', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['columns'] },
+          columns: {
+            type: 'Columns',
+            props: { layout: 'sidebar-left' },
+            children: ['projects', 'tasks'],
+          },
+          projects: { type: 'Repeat', props: { statePath: 'projects' }, children: ['open'] },
+          open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+          tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.name}' }, children: [] },
+        },
+      }
+      const { container } = render({
+        spec,
+        currentPath: 'home',
+        state: {
+          projects: [{ id: 'p1', name: 'Alpha' }],
+          tasks: [
+            { id: 't1', name: 'Ship Alpha', projectId: 'p1' },
+            { id: 't2', name: 'Plan Beta', projectId: 'p2' },
+          ],
+          selectedId: 'p1',
+        },
+      })
+      expect(container.textContent).toContain('Open')
+      expect(container.textContent).toContain('Ship Alpha')
+      expect(container.textContent).not.toContain('Plan Beta')
+    })
+
+    it('narrows dummy Workspace Table.rows by Project Id', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['shell'] },
+          shell: {
+            type: 'Workspace',
+            props: { inspectorWhen: 'selectedId' },
+            children: ['navigator', 'primary'],
+          },
+          navigator: { type: 'Stack', props: {}, children: ['projects'] },
+          projects: { type: 'Repeat', props: { statePath: 'projects' }, children: ['open'] },
+          open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+          primary: { type: 'Stack', props: {}, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: {
+              columns: 'Id, Name, Project Id',
+              rows: 't1 | Ship Alpha | p1\nt2 | Plan Beta | p2\nt3 | Review Alpha | p1',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        currentPath: 'home',
+        state: {
+          projects: [{ id: 'p1', name: 'Alpha' }],
+          selectedId: 'p1',
+        },
+      })
+      const names = Array.from(container.querySelectorAll('tbody tr')).map(
+        (row) => row.querySelectorAll('td')[1]?.textContent
+      )
+      expect(names).toEqual(['Ship Alpha', 'Review Alpha'])
+    })
+
+    it('keeps the Workspace parent filter after a child row is selected', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['shell'] },
+          shell: {
+            type: 'Workspace',
+            props: { inspectorWhen: 'selectedId' },
+            children: ['navigator', 'primary'],
+          },
+          navigator: { type: 'Stack', props: {}, children: ['projects'] },
+          projects: { type: 'Repeat', props: { statePath: 'projects' }, children: ['open'] },
+          open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+          primary: { type: 'Stack', props: {}, children: ['tasks'] },
+          tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.name}' }, children: [] },
+        },
+      }
+      const { container } = render({
+        spec,
+        currentPath: 'home',
+        state: {
+          projects: [
+            { id: 'p1', name: 'Alpha' },
+            { id: 'p2', name: 'Beta' },
+          ],
+          tasks: [
+            { id: 't1', name: 'Ship Alpha', projectId: 'p1' },
+            { id: 't2', name: 'Plan Beta', projectId: 'p2' },
+            { id: 't3', name: 'Review Alpha', projectId: 'p1' },
+          ],
+          selectedId: 't1',
+          selected: { id: 't1', name: 'Ship Alpha', projectId: 'p1' },
+        },
+      })
+      expect(container.textContent).toContain('Ship Alpha')
+      expect(container.textContent).toContain('Review Alpha')
+      expect(container.textContent).not.toContain('Plan Beta')
+    })
+
     it('keeps a Drawer inspect collection visible while selectedId is set', () => {
       const spec: Spec = {
         root: 'page',

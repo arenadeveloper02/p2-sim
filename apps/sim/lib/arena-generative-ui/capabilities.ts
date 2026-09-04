@@ -51,7 +51,7 @@ const CAPABILITY_ALIASES: Record<string, ArenaGenerativeCapability> = {
 const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   'long-running': [
     'CAPABILITY: LONG-RUNNING',
-    'The wait is a named job (workflow, generate, analysis). Put WorkingCard on the destination (title interpolating form names, estimate, skeleton true) above the bound result. The host ticks the card. Do not emit ProgressSteps, ProgressBar, or Spinner. Do not leave waiting chrome on the form.',
+    'The wait is a named job (workflow, generate, analysis). Honour pages[].interaction.execution. Put WorkingCard on the destination when the blueprint listed a results page (title interpolating form names, estimate, skeleton true) above the bound result. Workspace / execution that stays in a named region: WorkingCard in that region above the bound result — do not invent a destination page. The host ticks the card. Do not emit ProgressSteps, ProgressBar, or Spinner. Do not leave waiting chrome on a form-only page that navigates away.',
   ].join('\n'),
   streaming: [
     'CAPABILITY: STREAMING',
@@ -67,7 +67,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   progress: [
     'CAPABILITY: PROGRESS',
-    'A named wait with visible progress. Prefer WorkingCard (steps, estimate) on the destination. ProgressBar only when a real percent exists on a bound statePath. Do not emit ProgressSteps.',
+    'A named wait with visible progress. Honour pages[].interaction.execution. Prefer WorkingCard (steps, estimate) on the destination when the blueprint listed a results page; otherwise in the named execution region. ProgressBar only when a real percent exists on a bound statePath. Do not emit ProgressSteps.',
   ].join('\n'),
   search: [
     'CAPABILITY: SEARCH',
@@ -111,11 +111,11 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   analyze: [
     'CAPABILITY: ANALYZE',
-    'The primary CTA produces analysis or generated output. Wire the declared binding when one exists; dummy/local source uses onSuccess.setState to seed the report. Destination is a results page (onSuccess.navigate) when the blueprint has one. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
+    'The primary CTA produces analysis or generated output. Honour pages[].interaction.execution and pages[].regions. Wire the declared binding when one exists; dummy/local source uses onSuccess.setState to seed the report. Workspace / execution that stays in a named region: WorkingCard and the bound result stay in that region — do not invent a Results page and do not set onSuccess.navigate. Destination is a results page (onSuccess.navigate) only when the blueprint already listed one. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
   ].join('\n'),
   generate: [
     'CAPABILITY: GENERATE',
-    'The primary CTA produces generated output. Same wiring as ANALYZE. Seed dummy report prose with onSuccess.setState when there is no binding. Do not invent SWOT, metrics, or extra modules the blueprint omitted.',
+    'The primary CTA produces generated output. Same wiring as ANALYZE — honour pages[].interaction.execution. Seed dummy report prose with onSuccess.setState when there is no binding. Do not invent a Results page, SWOT, metrics, or extra modules the blueprint omitted.',
   ].join('\n'),
   drawer: [
     'CAPABILITY: DRAWER',
@@ -127,7 +127,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   create: [
     'CAPABILITY: CREATE',
-    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source appends via onSuccess.setState — do not invent an API key. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
+    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source appends via onSuccess.setState — do not invent an API key. Workspace child create: stamp the selected parent id onto the new row\'s foreign key (projectId) so the host filter keeps it visible. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
   ].join('\n'),
   complete: [
     'CAPABILITY: COMPLETE',
@@ -151,7 +151,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   chat: [
     'CAPABILITY: CHAT',
-    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation — typically the results page, often the right column. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields other than the input prefix stay on the Form. The first form CTA composes input; Chat follow-ups send the composer text. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Streamed tokens land in host state content; Chat paints that when the page has no DataText statePath "content".',
+    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation. Typically the results page (often the right column) when the blueprint has one. Workspace / execution that stays in a named region: Chat stays in that region — do not invent a Results page. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields other than the input prefix stay on the Form. The first form CTA composes input; Chat follow-ups send the composer text. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Streamed tokens land in host state content; Chat paints that when the page has no DataText statePath "content".',
   ].join('\n'),
   review: [
     'CAPABILITY: REVIEW',

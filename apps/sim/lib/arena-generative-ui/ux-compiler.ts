@@ -558,14 +558,24 @@ function dropSelectedIdListHidden(element: SpecElement): SpecElement {
   return { ...element, props }
 }
 
+function isPageCollection(element: SpecElement): boolean {
+  if (element.type !== 'Repeat' && element.type !== 'Table') return false
+  const statePath = asString(element.props?.statePath)
+  if (statePath && statePath !== 'item' && !statePath.startsWith('item.')) return true
+  return element.type === 'Table' && asString(element.props?.rows).length > 0
+}
+
 /**
  * True when the page already keeps the collection visible — catalog Workspace
- * regions or a Drawer inspector. History hide-list chrome must not run.
+ * or Drawer, or two page-level collections (Columns standing in for Workspace).
+ * History hide-list chrome must not run.
  */
 export function specKeepsCollectionVisible(spec: Spec): boolean {
-  return Object.values(specElements(spec)).some((element) =>
-    COLLECTION_VISIBLE_TYPES.has(element.type ?? '')
-  )
+  const elements = Object.values(specElements(spec))
+  if (elements.some((element) => COLLECTION_VISIBLE_TYPES.has(element.type ?? ''))) {
+    return true
+  }
+  return elements.filter((element) => isPageCollection(element)).length >= 2
 }
 
 function stripSelectedIdListHidden(spec: Spec): Spec {

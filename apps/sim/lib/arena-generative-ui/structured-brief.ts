@@ -801,7 +801,7 @@ export function shellRecipe(shell?: ArenaGenerativeShell): string {
 
 export const ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT = [
   'DUMMY / LOCAL DATA',
-  'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows (Table.rows or Repeat children). When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id; seed both arrays in host state. CTAs the blueprint named (create, complete, analyze, …) stay in manifest.actions with no apiKey (or source dummy/local). Use onSuccess.setState to append, toggle done, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
+  'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows. Prefer Repeat/Table statePath plus onLoad setState so both parent and child arrays land in host state. When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id. If you emit Table.rows instead, include Id and Project Id columns — the host filters those rows the same way. CTAs the blueprint named (create, complete, analyze, …) stay in manifest.actions with no apiKey (or source dummy/local). Use onSuccess.setState to append, toggle done, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
 ].join('\n')
 
 export interface PlanStructuredBriefParams {

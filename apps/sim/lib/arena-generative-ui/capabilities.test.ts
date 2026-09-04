@@ -52,6 +52,7 @@ describe('capabilityRecipePrompt', () => {
   it('tells create to open a Modal with Button setValue', () => {
     expect(capabilityRecipePrompt(['create'])).toContain('setValue "creating=true"')
     expect(capabilityRecipePrompt(['create'])).toContain('Modal showWhen "creating"')
+    expect(capabilityRecipePrompt(['create'])).toContain('stamp the selected parent id')
   })
 
   it('composes inspect and analyze recipes', () => {
@@ -60,7 +61,16 @@ describe('capabilityRecipePrompt', () => {
     expect(prompt).toContain('Honour pages[].interaction.inspect')
     expect(prompt).toContain('Do not navigateTo a Detail page and do not invent one')
     expect(prompt).toContain('CAPABILITY: ANALYZE')
+    expect(prompt).toContain('Honour pages[].interaction.execution')
+    expect(prompt).toContain('do not invent a Results page')
     expect(prompt.indexOf('INSPECT')).toBeLessThan(prompt.indexOf('ANALYZE'))
+  })
+
+  it('keeps generate, chat, and long-running execution in the named region', () => {
+    const prompt = capabilityRecipePrompt(['long-running', 'generate', 'chat'])
+    expect(prompt).toContain('Honour pages[].interaction.execution')
+    expect(prompt).toContain('do not invent a Results page')
+    expect(capabilityRecipePrompt(['chat'])).toContain('Chat stays in that region')
   })
 })
 

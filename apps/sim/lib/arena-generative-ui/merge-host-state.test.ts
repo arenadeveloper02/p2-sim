@@ -75,6 +75,26 @@ describe('mergeHostState', () => {
     expect((second.chatTurns as Array<{ content: string }>)[3].content).toBe('Again')
   })
 
+  it('stamps projectId onto a created child row when a parent is selected', () => {
+    expect(
+      mergeHostState(
+        {
+          tasks: [{ id: 't1', name: 'Ship', projectId: 'p1' }],
+          selectedId: 'p1',
+          selected: { id: 'p1', name: 'Alpha' },
+        },
+        { tasks: [{ id: 't1', name: 'Ship', projectId: 'p1' }, { id: 't3', name: 'Review' }] }
+      )
+    ).toEqual({
+      tasks: [
+        { id: 't1', name: 'Ship', projectId: 'p1' },
+        { id: 't3', name: 'Review', projectId: 'p1' },
+      ],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+    })
+  })
+
   it('drops keys whose patch value is undefined so leftover selection does not linger', () => {
     expect(
       mergeHostState(

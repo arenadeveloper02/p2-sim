@@ -73,6 +73,7 @@ import {
   filterCollectionItems,
   filterCollectionItemsBySelection,
   filterStaticTableRows,
+  filterStaticTableRowsBySelection,
   LOCAL_COLLECTION_PAGE_SIZE,
   type PaginatedCollection,
   paginateCollection,
@@ -81,6 +82,7 @@ import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   collectionFromBoundValue,
   displayTextFromActionData,
@@ -2031,7 +2033,8 @@ export function SpecRenderer({
           specKeepsCollectionVisible(spec) && selectedIdSet
             ? filterCollectionItemsBySelection(
                 discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY]
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
               )
             : discovered
         if (
@@ -2268,7 +2271,8 @@ export function SpecRenderer({
           discoveredCollection && specKeepsCollectionVisible(spec) && selectedIdSet
             ? filterCollectionItemsBySelection(
                 discoveredCollection,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY]
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
               )
             : discoveredCollection
         const boundEmpty = Boolean(
@@ -2306,7 +2310,7 @@ export function SpecRenderer({
             .split(',')
             .map((header) => header.trim())
             .filter(Boolean)
-          const rows = filterStaticTableRows(
+          const discoveredRows = filterStaticTableRows(
             headers,
             asString(props.rows)
               .split('\n')
@@ -2315,6 +2319,15 @@ export function SpecRenderer({
               .map(splitTableRow),
             localDiscovery
           )
+          const rows =
+            specKeepsCollectionVisible(spec) && selectedIdSet
+              ? filterStaticTableRowsBySelection(
+                  headers,
+                  discoveredRows,
+                  state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                  state[ARENA_GENERATIVE_SELECTED_KEY]
+                )
+              : discoveredRows
           if (headers.length === 0 && rows.length === 0) return null
           if (rows.length === 0) {
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
