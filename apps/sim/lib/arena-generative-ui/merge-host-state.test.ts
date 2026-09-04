@@ -62,6 +62,20 @@ describe('mergeHostState', () => {
     })
   })
 
+  it('assigns an id when dummy create omits one', () => {
+    const merged = mergeHostState(
+      { todos: [{ id: 'a', title: 'Milk' }] },
+      { todos: [{ title: 'Bread' }] },
+      ['todos']
+    )
+    const todos = merged.todos as Array<Record<string, unknown>>
+    expect(todos).toHaveLength(2)
+    expect(todos[0]).toEqual({ id: 'a', title: 'Milk' })
+    expect(todos[1]?.title).toBe('Bread')
+    expect(typeof todos[1]?.id).toBe('string')
+    expect(String(todos[1]?.id).length).toBeGreaterThan(8)
+  })
+
   it('appends a dummy create row and stamps the selected parent id', () => {
     expect(
       mergeHostState(

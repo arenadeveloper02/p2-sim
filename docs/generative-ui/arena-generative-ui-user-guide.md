@@ -153,7 +153,7 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 | `Keyword: {Target Keyword}` with only a label, no camelCase name | Often stays literal `{Target Keyword}` after generate. Name the field first. |
 | Stream on + markdown sample | Results fills as tokens arrive. Heading shape follows the sample, not an invented Table. |
 | History cards: keyword, client, date only | Repeat is a stamp. Binding `item.output` would paint the full markdown on **every** card. |
-| Open: `selectItem true`, no `actionId`, no `navigateTo` | Copies that row into `selected` / `selectedId` / `content`. Host hides Repeat while `selectedId` is set. |
+| Open: `selectItem true`, no `actionId`, no `navigateTo` | Copies that row into `selected` / `selectedId` / `content`. On History the host hides Repeat while `selectedId` is set. Workspace/Drawer keep the list visible. |
 | Back: `clearItem true`, `showWhen "selectedId"` | Drops the copied row. The list returns. Do not `navigateTo "history"` — that is a no-op on History. |
 | Generate Results: no `onLoad` | Loading the generate CTA on Results would refetch and replace streamed markdown. History `onLoad` no longer wipes it. History Open does not use this page. |
 
@@ -205,7 +205,7 @@ the inspector.
 **What to check in Preview**
 
 1. One `home` page. No `/projects`, `/tasks`, or task-detail route.
-2. Three regions stay on screen. Project selection filters tasks. Task selection fills the inspector.
+2. Three regions stay on screen. Project selection filters tasks. Task selection fills the inspector. Do not hide navigator or primary with `!selectedId`. Task rows include `projectId` matching the selected project.
 3. Create / complete is local (dialog or inline), not another page.
 4. Planner `content` does not say `Uncoordinated regions`.
 
@@ -231,5 +231,5 @@ the inspector.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
 - User Input names pages, **camelCase field names**, submit label, and “then go to {page}”. To keep two things on screen, say **alongside** / **without leaving** — that is one Workspace page, not extra routes.
 - To show typed values on Results, write `{targetKeyword}` (or the form `name`) there — not History keys like `{keyword}` / `{client}`, and do not wait for the API to echo them.
-- History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`, no `navigateTo`); hide the list with `!selectedId`; Back is `clearItem`. Do not bind `item.output` on the list.
+- History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`, no `navigateTo`); hide the list with `!selectedId`; Back is `clearItem`. Do not bind `item.output` on the list. Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`; child rows use `projectId` so the host can filter.
 - Edits are deltas. Do not paste the original brief again.

@@ -127,7 +127,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   create: [
     'CAPABILITY: CREATE',
-    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source setState the new row (with an id) — the host appends it onto the collection and does not copy those form fields onto selected. Do not invent an API key. Workspace child create: stamp the selected parent id onto the new row\'s foreign key (projectId) so the host filter keeps it visible. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
+    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source setState the new row — the host appends it, assigns an id if missing, and does not copy those form fields onto selected. Do not invent an API key. Workspace child create: stamp the selected parent id onto the new row\'s foreign key (projectId) so the host filter keeps it visible. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
   ].join('\n'),
   complete: [
     'CAPABILITY: COMPLETE',

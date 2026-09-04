@@ -553,21 +553,23 @@ describe('injectSamePageSelectChrome', () => {
     const compiled = injectSamePageSelectChrome(spec, 'home')
     expect(compiled).toEqual(spec)
     const elements = compiled.elements as Record<string, { props?: Record<string, unknown> }>
-    expect(elements.accounts?.props?.showWhen).toBeUndefined()
+    expect(elements.projects?.props?.showWhen).toBeUndefined()
     expect(elements.navigator?.props?.showWhen).toBeUndefined()
+    expect(elements.tasks?.props?.showWhen).toBeUndefined()
+    expect(elements.primary?.props?.showWhen).toBeUndefined()
     expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
   })
 
   it('strips !selectedId from a Workspace list the model hid', () => {
     const spec = structuredClone(goldWorkspaceManifest.pages.home.spec)
     const elements = spec.elements as Record<string, { props?: Record<string, unknown> }>
-    elements.accounts = {
-      ...elements.accounts,
-      props: { ...elements.accounts?.props, showWhen: '!selectedId' },
+    elements.projects = {
+      ...elements.projects,
+      props: { ...elements.projects?.props, showWhen: '!selectedId' },
     }
     const compiled = injectSamePageSelectChrome(spec, 'home')
     const next = compiled.elements as Record<string, { props?: Record<string, unknown> }>
-    expect(next.accounts?.props?.showWhen).toBeUndefined()
+    expect(next.projects?.props?.showWhen).toBeUndefined()
     expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
   })
 

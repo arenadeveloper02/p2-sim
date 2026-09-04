@@ -10,14 +10,12 @@ import {
   goldExamplePromptForArchetype,
 } from '@/lib/arena-generative-ui/gold-example'
 import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
-  GOLD_COLLECTION_LOAD_API_KEY,
   GOLD_CONTENT_LOAD_API_KEY,
   GOLD_DASHBOARD_LOAD_API_KEY,
-  GOLD_LIST_DETAIL_LIST_API_KEY,
-  GOLD_LIST_DETAIL_RECORD_API_KEY,
   GOLD_WIZARD_SUBMIT_API_KEY,
-  GOLD_WORKSPACE_LOAD_API_KEY,
   goldCollectionManifest,
   goldContentManifest,
   goldDashboardManifest,
@@ -200,41 +198,35 @@ describe('per-archetype gold examples', () => {
 
   it('validates the one-page collection gold', () => {
     const result = validateArenaGenerativeManifest(goldCollectionManifest, {
-      apiBindings: [
-        {
-          key: GOLD_COLLECTION_LOAD_API_KEY,
-          label: 'Items',
-          kind: 'workflow',
-          workflowId: 'wf_items',
-        },
-      ],
+      apiBindings: [],
     })
+    expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(Object.keys(goldCollectionManifest.pages)).toEqual(['home'])
     expect(JSON.stringify(goldCollectionManifest)).toContain('"Modal"')
     expect(JSON.stringify(goldCollectionManifest)).toContain('creating=true')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('"create_item"')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('"complete_item"')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('"statePath":"items"')
+    expect(JSON.stringify(goldCollectionManifest.actions.load_items)).not.toContain('apiKey')
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"navigateTo": "')
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"Workspace"')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION).toContain('Do not invent API keys')
   })
 
   it('validates the list-detail gold', () => {
     const result = validateArenaGenerativeManifest(goldListDetailManifest, {
-      apiBindings: [
-        {
-          key: GOLD_LIST_DETAIL_LIST_API_KEY,
-          label: 'List',
-          kind: 'workflow',
-          workflowId: 'wf_list',
-        },
-        {
-          key: GOLD_LIST_DETAIL_RECORD_API_KEY,
-          label: 'Record',
-          kind: 'workflow',
-          workflowId: 'wf_record',
-        },
-      ],
+      apiBindings: [],
     })
+    expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
+    expect(Object.keys(goldListDetailManifest.pages)).toEqual(['home', 'detail'])
+    expect(goldListDetailManifest.pages.detail.onLoad).toBeUndefined()
+    expect(JSON.stringify(goldListDetailManifest)).toContain('"selectItem":true')
+    expect(JSON.stringify(goldListDetailManifest)).toContain('detail?id={item.id}')
+    expect(JSON.stringify(goldListDetailManifest)).toContain('"statePath":"selected"')
+    expect(JSON.stringify(goldListDetailManifest.actions.load_orders)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL).toContain('Do not invent API keys')
   })
 
   it('validates the wizard gold', () => {
@@ -269,24 +261,27 @@ describe('per-archetype gold examples', () => {
 
   it('validates the workspace gold', () => {
     const result = validateArenaGenerativeManifest(goldWorkspaceManifest, {
-      apiBindings: [
-        {
-          key: GOLD_WORKSPACE_LOAD_API_KEY,
-          label: 'Accounts',
-          kind: 'workflow',
-          workflowId: 'wf_accounts',
-        },
-      ],
+      apiBindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldWorkspaceManifest)).toContain('"Workspace"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"statePath":"projects"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"statePath":"tasks"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"projectId"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"open_task"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('creating=true')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"create_task"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"complete_task"')
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"Modal"')
+    expect(JSON.stringify(goldWorkspaceManifest.actions.load_projects)).not.toContain('apiKey')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
       'Honour pages[].regions and pages[].interaction'
     )
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('projectId matching a parent id')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).not.toContain('not a page archetype')
   })
 })

@@ -27,6 +27,10 @@ import {
   constrainBindingInput,
 } from '@/lib/arena-generative-ui/input-schema'
 import {
+  dummyCollectionKeysFromManifest,
+  implicitDummyTableKeysFromManifest,
+} from '@/lib/arena-generative-ui/local-discovery'
+import {
   effectiveOutputSchema,
   outputSchemaWarning,
 } from '@/lib/arena-generative-ui/output-schema'
@@ -891,6 +895,162 @@ function dummyCollectionAppendKeys(
   return [...fromState, ...(declared ?? [])]
 }
 
+function dummySetStateWritesCollection(setState: Record<string, unknown>): boolean {
+  return Object.entries(setState).some(
+    ([key, value]) => key !== ARENA_GENERATIVE_CHAT_TURNS_KEY && Array.isArray(value)
+  )
+}
+
+function isClosingCreateOverlay(setState: Record<string, unknown>): boolean {
+  if (!Object.prototype.hasOwnProperty.call(setState, 'creating')) return false
+  const value = setState.creating
+  return value === false || value === '' || value == null
+}
+
+function looksLikeDummyCreate(actionId: string, setState: Record<string, unknown>): boolean {
+  if (isClosingCreateOverlay(setState)) return true
+  return /^(add|create|new)(_|$)/i.test(actionId) || /_(add|create)$/i.test(actionId)
+}
+
+const DUMMY_CREATE_ROW_SKIP = new Set([
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
+  ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
+  'creating',
+  'editing',
+  'index',
+  'hasMore',
+  'nextCursor',
+  'offset',
+  'input',
+  'conversationId',
+  'files',
+  'deleted',
+  'error',
+  'content',
+  'selected',
+  'selectedId',
+])
+
+function dummyCreateRowFromSetState(
+  setState: Record<string, unknown>
+): Record<string, unknown> | null {
+  const row: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(setState)) {
+    if (DUMMY_CREATE_ROW_SKIP.has(key)) continue
+    if (value === undefined || Array.isArray(value)) continue
+    row[key] = value
+  }
+  return Object.keys(row).length === 0 ? null : row
+}
+
+const DUMMY_CREATE_ACTION_VERBS = new Set(['add', 'create', 'new', 'save', 'submit', 'open', 'load'])
+
+const DUMMY_CHILD_CREATE_ACTION = /task|item|row|todo|note|issue|card|entry/i
+
+const DUMMY_CHILD_COLLECTION_KEY = /^(tasks|items|todos|notes|rows|issues|cards|entries)$/i
+
+function isDummyCreateVerbAction(actionId: string): boolean {
+  return /^(add|create|new)(_|$)/i.test(actionId)
+}
+
+function stemCollectionToken(value: string): string {
+  return value.toLowerCase().replace(/s$/, '')
+}
+
+function collectionKeysNamedByAction(actionId: string, keys: readonly string[]): string[] {
+  const id = actionId.toLowerCase()
+  const tokens = id
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 1 && !DUMMY_CREATE_ACTION_VERBS.has(token))
+  return keys.filter((key) => {
+    const keyNorm = key.toLowerCase()
+    if (keyNorm.length < 2) return false
+    if (id.includes(keyNorm)) return true
+    const keyStem = stemCollectionToken(keyNorm)
+    return tokens.some((token) => stemCollectionToken(token) === keyStem)
+  })
+}
+
+/**
+ * Sole collection, or the collection the action id names (`add_task` → tasks).
+ * Unnamed add/create/new lands on the only child-looking key (`tasks`, `rows`).
+ */
+function dummyCreateTargetCollectionKey(
+  actionId: string,
+  keys: readonly string[],
+  implicitKeys: readonly string[]
+): string | undefined {
+  if (keys.length === 0) return undefined
+  if (keys.length === 1) return keys[0]
+  const named = collectionKeysNamedByAction(actionId, keys)
+  if (named.length === 1) return named[0]
+  if (named.length > 0) return undefined
+  if (
+    implicitKeys.length === 1 &&
+    keys.includes(implicitKeys[0]) &&
+    DUMMY_CHILD_CREATE_ACTION.test(actionId)
+  ) {
+    return implicitKeys[0]
+  }
+  if (!isDummyCreateVerbAction(actionId)) return undefined
+  const childKeys = keys.filter((key) => DUMMY_CHILD_COLLECTION_KEY.test(key))
+  if (childKeys.length === 1) return childKeys[0]
+  return undefined
+}
+
+/**
+ * Dummy CREATE often setStates form scalars (`title`) and never names the
+ * collection. Wrap those fields onto the target collection so append can run.
+ */
+function wrapDummyCreateIntoCollection(
+  manifest: ArenaGenerativeAppManifest,
+  actionId: string,
+  setState: Record<string, unknown>
+): Record<string, unknown> {
+  if (isOnLoadAction(manifest, actionId)) return setState
+  if (dummySetStateWritesCollection(setState)) return setState
+  if (!looksLikeDummyCreate(actionId, setState)) return setState
+  const target = dummyCreateTargetCollectionKey(
+    actionId,
+    dummyCollectionKeysFromManifest(manifest),
+    implicitDummyTableKeysFromManifest(manifest)
+  )
+  if (!target) return setState
+  const row = dummyCreateRowFromSetState(setState)
+  if (!row) return setState
+  return { ...setState, [target]: [row] }
+}
+
+function dummyCreateCollectionArrays(
+  setState: Record<string, unknown>
+): Array<[string, unknown[]]> {
+  return Object.entries(setState).filter(
+    (entry): entry is [string, unknown[]] =>
+      entry[0] !== ARENA_GENERATIVE_CHAT_TURNS_KEY && Array.isArray(entry[1])
+  )
+}
+
+/**
+ * Dummy CREATE often setStates `tasks` while the Table has no statePath and
+ * lives on the implicit `rows` key. Copy that orphan array onto the table.
+ */
+function remapOrphanDummyCreateCollection(
+  manifest: ArenaGenerativeAppManifest,
+  actionId: string,
+  setState: Record<string, unknown>
+): Record<string, unknown> {
+  if (isOnLoadAction(manifest, actionId)) return setState
+  if (!looksLikeDummyCreate(actionId, setState)) return setState
+  const implicitKeys = implicitDummyTableKeysFromManifest(manifest)
+  if (implicitKeys.length !== 1) return setState
+  const implicitKey = implicitKeys[0]
+  if (Object.prototype.hasOwnProperty.call(setState, implicitKey)) return setState
+  const known = new Set(dummyCollectionKeysFromManifest(manifest))
+  const orphans = dummyCreateCollectionArrays(setState).filter(([key]) => !known.has(key))
+  if (orphans.length !== 1) return setState
+  return { ...setState, [implicitKey]: orphans[0][1] }
+}
+
 /**
  * True when this action id is bound to an API with `stream: true` or
  * `chatProtocol.input`.
@@ -918,10 +1078,14 @@ export async function runGenerativeAppAction(
     ? options.apiBindings.find((item) => item.key === action.apiKey)
     : undefined
   if (!action.apiKey || !binding) {
-    const setState = {
-      ...(options.values ?? {}),
-      ...(action.onSuccess?.setState ?? {}),
-    }
+    const setState = remapOrphanDummyCreateCollection(
+      options.manifest,
+      options.actionId,
+      wrapDummyCreateIntoCollection(options.manifest, options.actionId, {
+        ...(options.values ?? {}),
+        ...(action.onSuccess?.setState ?? {}),
+      })
+    )
     const appendKeys = collectAppendKeys(
       undefined,
       {},

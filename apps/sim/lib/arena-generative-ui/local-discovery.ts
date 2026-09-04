@@ -4,6 +4,7 @@
  * narrow Table and Repeat locally.
  */
 
+import { generateId } from '@sim/utils/id'
 import {
   ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
@@ -385,7 +386,40 @@ function inferForeignKeyName(items: readonly unknown[]): string | undefined {
 function isEntityRecord(item: unknown): boolean {
   const record = recordFromUnknown(item)
   if (!record) return false
-  return Boolean(itemIdentityId(record) || record.name || record.title)
+  if (itemIdentityId(record)) return true
+  return (
+    valueForFilterKey(record, 'name') !== undefined ||
+    valueForFilterKey(record, 'title') !== undefined
+  )
+}
+
+function preferredIdentityKey(items: readonly unknown[]): string {
+  for (const field of ['id', 'key', 'slug'] as const) {
+    for (const item of items) {
+      const record = recordFromUnknown(item)
+      if (!record) continue
+      if (field in record) return field
+      for (const key of Object.keys(record)) {
+        if (normalizeDiscoveryKey(key) === field) return key
+      }
+    }
+  }
+  return 'id'
+}
+
+/**
+ * Dummy create often omits `id`. Assign one so complete/delete/select can
+ * target the new row. Reuses an existing `Id` header when the collection
+ * was seeded from Table.rows.
+ */
+export function ensureCollectionItemIds<T>(items: readonly T[]): T[] {
+  const key = preferredIdentityKey(items)
+  return items.map((item) => {
+    if (!isEntityRecord(item) || itemIdentityId(item)) return item
+    const record = recordFromUnknown(item)
+    if (!record) return item
+    return { ...record, [key]: generateId() } as T
+  })
 }
 
 /**
@@ -442,6 +476,32 @@ function recordsFromStaticTableRows(
 
 const SIMPLE_HOST_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
 
+/** Host key for the only Table that has rows and no authored `statePath`. */
+export const IMPLICIT_DUMMY_TABLE_STATE_PATH = 'rows'
+
+function simpleCollectionStatePath(element: SpecElement): string {
+  if (element.type !== 'Repeat' && element.type !== 'Table') return ''
+  const key = asString(element.props?.statePath).trim()
+  return SIMPLE_HOST_STATE_KEY.test(key) ? key : ''
+}
+
+function authoredCollectionStatePaths(spec: {
+  elements?: Record<string, SpecElement>
+}): string[] {
+  const keys: string[] = []
+  for (const element of Object.values(spec.elements ?? {})) {
+    const key = simpleCollectionStatePath(element)
+    if (key) keys.push(key)
+  }
+  return keys
+}
+
+function isUnpathedTableWithRows(element: SpecElement): boolean {
+  if (element.type !== 'Table') return false
+  if (simpleCollectionStatePath(element)) return false
+  return parseStaticTableCollection(element.props?.columns, element.props?.rows).length > 0
+}
+
 /**
  * Parses dummy `Table.columns` / `Table.rows` (`Name, Role` + `Ada | Engineer`).
  */
@@ -465,21 +525,89 @@ export function parseStaticTableCollection(
 
 /**
  * Host-state arrays authored as `Table.rows` on a matching `statePath`.
+ * A sole Table with rows and no path seeds {@link IMPLICIT_DUMMY_TABLE_STATE_PATH}.
  * Does not invent rows for a Repeat that has no table seed.
  */
 export function dummyCollectionSeedFromSpec(spec: {
-  elements?: Record<string, { type?: string; props?: Record<string, unknown> }>
+  elements?: Record<string, SpecElement>
 }): Record<string, unknown[]> {
   const seed: Record<string, unknown[]> = {}
+  const unpathed: SpecElement[] = []
   for (const element of Object.values(spec.elements ?? {})) {
     if (element.type !== 'Table') continue
-    const key = asString(element.props?.statePath).trim()
-    if (!SIMPLE_HOST_STATE_KEY.test(key)) continue
     const records = parseStaticTableCollection(element.props?.columns, element.props?.rows)
     if (records.length === 0) continue
-    seed[key] = records
+    const key = simpleCollectionStatePath(element)
+    if (key) {
+      seed[key] = records
+      continue
+    }
+    unpathed.push(element)
+  }
+  if (unpathed.length === 1) {
+    seed[IMPLICIT_DUMMY_TABLE_STATE_PATH] = parseStaticTableCollection(
+      unpathed[0].props?.columns,
+      unpathed[0].props?.rows
+    )
   }
   return seed
+}
+
+/** Implicit host keys for a sole Table that authored rows but no `statePath`. */
+export function implicitDummyTableKeysFromSpec(spec: {
+  elements?: Record<string, SpecElement>
+}): string[] {
+  const unpathed = Object.values(spec.elements ?? {}).filter((element) =>
+    isUnpathedTableWithRows(element)
+  )
+  return unpathed.length === 1 ? [IMPLICIT_DUMMY_TABLE_STATE_PATH] : []
+}
+
+/** Union of implicit Table keys across every page spec. */
+export function implicitDummyTableKeysFromManifest(manifest: {
+  pages?: Record<string, { spec?: { elements?: Record<string, SpecElement> } }>
+}): string[] {
+  const keys = new Set<string>()
+  for (const page of Object.values(manifest.pages ?? {})) {
+    for (const key of implicitDummyTableKeysFromSpec(page.spec ?? {})) keys.add(key)
+  }
+  return [...keys]
+}
+
+/**
+ * Binds a Table that authored rows but no `statePath` to the implicit host key.
+ * Empty when more than one Table is unpathed.
+ */
+export function implicitDummyTableStatePath(
+  spec: { elements?: Record<string, SpecElement> },
+  elementId: string
+): string {
+  const element = spec.elements?.[elementId]
+  if (!element || !isUnpathedTableWithRows(element)) return ''
+  return implicitDummyTableKeysFromSpec(spec)[0] ?? ''
+}
+
+/** Collection host keys the spec can mutate (authored paths plus Table seeds). */
+export function dummyCollectionKeysFromSpec(spec: {
+  elements?: Record<string, SpecElement>
+}): string[] {
+  return [
+    ...new Set([
+      ...authoredCollectionStatePaths(spec),
+      ...Object.keys(dummyCollectionSeedFromSpec(spec)),
+    ]),
+  ]
+}
+
+/** Union of collection keys across every page spec. */
+export function dummyCollectionKeysFromManifest(manifest: {
+  pages?: Record<string, { spec?: { elements?: Record<string, SpecElement> } }>
+}): string[] {
+  const keys = new Set<string>()
+  for (const page of Object.values(manifest.pages ?? {})) {
+    for (const key of dummyCollectionKeysFromSpec(page.spec ?? {})) keys.add(key)
+  }
+  return [...keys]
 }
 
 /**
@@ -610,6 +738,7 @@ export function applySelectedRowFields(
   const id = itemIdentityId(patch) || selectedId
   if (!id) return
   if (patchWritesCollection(patch)) return
+  if (Object.prototype.hasOwnProperty.call(patch, 'creating')) return
   const fields = selectedRowFieldPatch(patch)
   if (Object.keys(fields).length === 0) return
   const selected = recordFromUnknown(next[ARENA_GENERATIVE_SELECTED_KEY])

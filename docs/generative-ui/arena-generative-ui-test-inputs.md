@@ -190,7 +190,7 @@ Comfortable density. Task-oriented. No dashboard, stats, or history.
 ### What to check in Preview
 
 1. One page. No separate Projects / Tasks / Task detail routes in the sitemap.
-2. Three regions stay visible together. Selecting a project changes the task list. Selecting a task fills the inspector — no navigate to a detail page.
+2. Three regions stay visible together. Selecting a project changes the task list. Selecting a task fills the inspector — no navigate to a detail page. Do not hide navigator or primary with `!selectedId`. Task rows include `projectId` matching the selected project.
 3. Create / complete is a dialog or inline control, not another page.
 4. Collection rows are dummy (4–8). CTAs still work locally (`onSuccess.setState`).
 5. Block `content` should not say `Uncoordinated regions` — `pages[].interaction` named the flows.

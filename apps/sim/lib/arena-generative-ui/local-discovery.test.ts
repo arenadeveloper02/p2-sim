@@ -12,8 +12,12 @@ import {
   applySelectedRowDelete,
   applySelectedRowFields,
   collectionIdentitiesOverlap,
+  dummyCollectionKeysFromManifest,
+  dummyCollectionKeysFromSpec,
   dummyCollectionSeedFromSpec,
+  ensureCollectionItemIds,
   fillMissingHostCollections,
+  implicitDummyTableStatePath,
   stampSelectionForeignKeys,
   isLocalDiscoveryPassthrough,
   itemMatchesLocalDiscovery,
@@ -366,6 +370,19 @@ describe('applySelectedRowFields', () => {
     applySelectedRowFields(next, next, { id: 'a', title: 'Milk', done: true })
     expect(next.todos).toEqual([{ id: 'a', title: 'Milk', done: true }])
   })
+
+  it('does not copy create form fields onto the selected parent when there is no collection array', () => {
+    const next: Record<string, unknown> = {
+      projects: [{ id: 'p1', name: 'Alpha' }],
+      tasks: [{ id: 't1', name: 'Ship', projectId: 'p1' }],
+      selectedId: 'p1',
+      selected: { id: 'p1', name: 'Alpha' },
+    }
+    applySelectedRowFields(next, next, { name: 'Review', creating: false })
+    expect(next.selected).toEqual({ id: 'p1', name: 'Alpha' })
+    expect(next.projects).toEqual([{ id: 'p1', name: 'Alpha' }])
+    expect(next.tasks).toEqual([{ id: 't1', name: 'Ship', projectId: 'p1' }])
+  })
 })
 
 describe('dummyCollectionSeedFromSpec', () => {
@@ -391,7 +408,7 @@ describe('dummyCollectionSeedFromSpec', () => {
     })
   })
 
-  it('skips a Table with no statePath so the host does not invent a key', () => {
+  it('seeds a sole Table with rows and no statePath onto rows', () => {
     expect(
       dummyCollectionSeedFromSpec({
         elements: {
@@ -401,7 +418,72 @@ describe('dummyCollectionSeedFromSpec', () => {
           },
         },
       })
-    ).toEqual({})
+    ).toEqual({ rows: [{ Name: 'Ada' }] })
+  })
+
+  it('seeds the unpathed Table onto rows even when a Repeat already has a path', () => {
+    expect(
+      dummyCollectionSeedFromSpec({
+        elements: {
+          list: { type: 'Repeat', props: { statePath: 'projects' } },
+          table: {
+            type: 'Table',
+            props: { columns: 'Name', rows: 'Ada' },
+          },
+        },
+      })
+    ).toEqual({ rows: [{ Name: 'Ada' }] })
+  })
+})
+
+describe('implicitDummyTableStatePath', () => {
+  it('binds the sole unpathed Table to rows', () => {
+    const spec = {
+      elements: {
+        table: { type: 'Table', props: { columns: 'Name', rows: 'Ada' } },
+      },
+    }
+    expect(implicitDummyTableStatePath(spec, 'table')).toBe('rows')
+    expect(implicitDummyTableStatePath(spec, 'other')).toBe('')
+  })
+
+  it('still binds the unpathed Table when a Repeat already has a path', () => {
+    expect(
+      implicitDummyTableStatePath(
+        {
+          elements: {
+            list: { type: 'Repeat', props: { statePath: 'projects' } },
+            table: { type: 'Table', props: { columns: 'Name', rows: 'Ada' } },
+          },
+        },
+        'table'
+      )
+    ).toBe('rows')
+  })
+})
+
+describe('dummyCollectionKeysFromSpec', () => {
+  it('includes Repeat paths and implicit Table seeds', () => {
+    expect(
+      dummyCollectionKeysFromSpec({
+        elements: {
+          list: { type: 'Repeat', props: { statePath: 'todos' } },
+        },
+      })
+    ).toEqual(['todos'])
+    expect(
+      dummyCollectionKeysFromManifest({
+        pages: {
+          home: {
+            spec: {
+              elements: {
+                table: { type: 'Table', props: { columns: 'Name', rows: 'Ada' } },
+              },
+            },
+          },
+        },
+      })
+    ).toEqual(['rows'])
   })
 })
 
@@ -422,6 +504,30 @@ describe('fillMissingHostCollections', () => {
     expect(fillMissingHostCollections({}, { tasks: [{ id: 'seed' }] })).toEqual({
       tasks: [{ id: 'seed' }],
     })
+  })
+})
+
+describe('ensureCollectionItemIds', () => {
+  it('assigns id when the new row has none', () => {
+    const [row] = ensureCollectionItemIds([{ name: 'Review' }]) as Array<Record<string, unknown>>
+    expect(row.name).toBe('Review')
+    expect(typeof row.id).toBe('string')
+    expect(String(row.id).length).toBeGreaterThan(8)
+  })
+
+  it('reuses an Id header from Table.rows instead of adding id', () => {
+    const [row] = ensureCollectionItemIds([
+      { Id: 't1', Name: 'Ship' },
+      { Name: 'Review' },
+    ]) as Array<Record<string, unknown>>
+    expect(row).toEqual({ Id: 't1', Name: 'Ship' })
+    const created = ensureCollectionItemIds([
+      { Id: 't1', Name: 'Ship' },
+      { Name: 'Review' },
+    ])[1] as Record<string, unknown>
+    expect(created.Name).toBe('Review')
+    expect(created.Id).toEqual(expect.any(String))
+    expect(created.id).toBeUndefined()
   })
 })
 

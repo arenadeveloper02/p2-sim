@@ -174,12 +174,6 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD = goldPrompt(
   }
 )
 
-/** Binding key the list page `onLoad` points at. */
-export const GOLD_LIST_DETAIL_LIST_API_KEY = 'list_orders'
-
-/** Binding key the detail page `onLoad` points at. */
-export const GOLD_LIST_DETAIL_RECORD_API_KEY = 'fetch_order'
-
 const listHomeSpec: Spec = {
   root: 'page',
   elements: {
@@ -236,7 +230,7 @@ const listHomeSpec: Spec = {
       props: {
         label: 'Open',
         actionId: null,
-        selectItem: null,
+        selectItem: true,
         clearItem: null,
         navigateTo: 'detail?id={item.id}',
         href: null,
@@ -271,20 +265,20 @@ const listDetailSpec: Spec = {
     entity: {
       type: 'EntityHeader',
       props: {
-        title: '{record.name}',
-        description: '{record.summary}',
-        badge: '{record.status}',
+        title: '{selected.name}',
+        description: '{selected.summary}',
+        badge: '{selected.status}',
         badgeTone: 'info',
         logoSrc: null,
-        initials: 'OR',
-        statePath: 'record.logo',
-        meta: '{record.meta}',
+        initials: '{selected.initials}',
+        statePath: 'selected.logo',
+        meta: '{selected.meta}',
       },
       children: [],
     },
     details: {
       type: 'KeyValue',
-      props: { items: null, statePath: 'record', emptyText: 'Order not found.' },
+      props: { items: null, statePath: 'selected', emptyText: 'Order not found.' },
       children: [],
     },
   },
@@ -304,30 +298,45 @@ export const goldListDetailManifest: ArenaGenerativeAppManifest = {
       path: 'detail',
       title: 'Order',
       spec: listDetailSpec,
-      onLoad: ['load_order'],
     },
   },
   actions: {
-    load_orders: { apiKey: GOLD_LIST_DETAIL_LIST_API_KEY },
-    load_order: {
-      apiKey: GOLD_LIST_DETAIL_RECORD_API_KEY,
-      inputMapping: { id: 'id' },
+    load_orders: {
+      onSuccess: {
+        setState: {
+          orders: [
+            {
+              id: 'o1',
+              name: 'Acme',
+              status: 'Open',
+              summary: 'Q3 renewal.',
+              meta: 'Due Friday',
+              initials: 'A',
+            },
+            {
+              id: 'o2',
+              name: 'Northwind',
+              status: 'Open',
+              summary: 'New seat expansion.',
+              meta: 'Due next week',
+              initials: 'N',
+            },
+          ],
+        },
+      },
     },
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL = goldPrompt(
   'list-detail',
-  'This sample has a Detail page because the blueprint named one. Collection page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". The sibling Detail page onLoad fetches that record and shows EntityHeader plus KeyValue. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero. Omit the Detail page when pages[] has no detail.',
+  'This sample has a Detail page because the blueprint named one. Collection onLoad setState seeds Repeat inside a 2-column Grid of entity Cards. Open is selectItem plus navigateTo "detail?id={item.id}" so the row is copied; Detail binds selected (EntityHeader + KeyValue) with no onLoad fetch. When list and record bindings were declared, list onLoad uses the list apiKey; Open may omit selectItem; Detail onLoad uses the record apiKey into record. Do not invent API keys. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero. Omit the Detail page when pages[] has no detail.',
   {
     title: 'Orders',
     content: 'Browse orders and open one record.',
     manifest: goldListDetailManifest,
   }
 )
-
-/** Binding key the one-page collection `onLoad` points at. */
-export const GOLD_COLLECTION_LOAD_API_KEY = 'list_items'
 
 const collectionHomeSpec: Spec = {
   root: 'page',
@@ -390,11 +399,27 @@ const collectionHomeSpec: Spec = {
         variant: 'default',
         backgroundColor: null,
       },
-      children: ['item_logo'],
+      children: ['item_logo', 'complete_item'],
     },
     item_logo: {
       type: 'Avatar',
       props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
+      children: [],
+    },
+    complete_item: {
+      type: 'Button',
+      props: {
+        label: 'Complete',
+        actionId: 'complete_item',
+        selectItem: null,
+        clearItem: null,
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
       children: [],
     },
     create_modal: {
@@ -469,14 +494,42 @@ export const goldCollectionManifest: ArenaGenerativeAppManifest = {
     },
   },
   actions: {
-    load_items: { apiKey: GOLD_COLLECTION_LOAD_API_KEY },
+    load_items: {
+      onSuccess: {
+        setState: {
+          items: [
+            {
+              id: 'i1',
+              name: 'Ship',
+              status: 'Open',
+              summary: 'Finish the release.',
+              meta: 'Due today',
+              initials: 'S',
+            },
+            {
+              id: 'i2',
+              name: 'Review',
+              status: 'Open',
+              summary: 'Check the draft.',
+              meta: 'Due Friday',
+              initials: 'R',
+            },
+          ],
+        },
+      },
+    },
     create_item: {},
+    complete_item: {
+      onSuccess: {
+        setState: { done: true },
+      },
+    },
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION = goldPrompt(
   'collection',
-  'One collection page. onLoad fills Repeat inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form on this page, not an extra page or region. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
+  'One collection page. onLoad setState seeds Repeat inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_item, no apiKey) on this page, not an extra page or region. Complete is a row Button (done: true); the host writes onto that row. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
   {
     title: 'Items',
     content: 'Browse a list on one page.',
@@ -829,21 +882,18 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT = goldPrompt(
   }
 )
 
-/** Binding key the workspace navigator `onLoad` points at. */
-export const GOLD_WORKSPACE_LOAD_API_KEY = 'list_accounts'
-
 const workspaceHomeSpec: Spec = {
   root: 'page',
   elements: {
     page: {
       type: 'Page',
-      props: { title: 'Accounts', backgroundColor: null },
+      props: { title: 'Projects', backgroundColor: null },
       children: ['section'],
     },
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['shell'],
+      children: ['shell', 'create_modal'],
     },
     shell: {
       type: 'Workspace',
@@ -859,37 +909,37 @@ const workspaceHomeSpec: Spec = {
         justify: 'start',
         wrap: false,
       },
-      children: ['nav_header', 'accounts'],
+      children: ['nav_header', 'projects'],
     },
     nav_header: {
       type: 'PageHeader',
       props: {
-        title: 'Accounts',
-        subtitle: 'Select a company.',
+        title: 'Projects',
+        subtitle: 'Select a project.',
         kicker: null,
         align: 'start',
       },
       children: [],
     },
-    accounts: {
+    projects: {
       type: 'Repeat',
-      props: { statePath: 'accounts', emptyText: 'No accounts yet.' },
-      children: ['account_card'],
+      props: { statePath: 'projects', emptyText: 'No projects yet.' },
+      children: ['project_card'],
     },
-    account_card: {
+    project_card: {
       type: 'Card',
       props: {
         title: '{item.name}',
-        subtitle: '{item.industry}',
+        subtitle: '{item.status}',
         description: null,
         footerText: null,
         padding: 'md',
         variant: 'default',
         backgroundColor: null,
       },
-      children: ['open_account'],
+      children: ['open_project'],
     },
-    open_account: {
+    open_project: {
       type: 'Button',
       props: {
         label: 'Open',
@@ -914,13 +964,101 @@ const workspaceHomeSpec: Spec = {
         justify: 'start',
         wrap: false,
       },
+      children: ['primary_header', 'tasks'],
+    },
+    primary_header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Tasks',
+        subtitle: 'Rows include projectId matching the selected project.',
+        kicker: null,
+        align: 'start',
+      },
+      children: ['new_task'],
+    },
+    new_task: {
+      type: 'Button',
+      props: {
+        label: 'New task',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'creating=true',
+        navigateTo: null,
+        href: null,
+        variant: 'primary',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    tasks: {
+      type: 'Repeat',
+      props: { statePath: 'tasks', emptyText: 'No tasks for this project.' },
+      children: ['task_card'],
+    },
+    task_card: {
+      type: 'Card',
+      props: {
+        title: '{item.name}',
+        subtitle: '{item.projectId}',
+        description: null,
+        footerText: null,
+        padding: 'md',
+        variant: 'default',
+        backgroundColor: null,
+      },
+      children: ['open_task', 'complete_task'],
+    },
+    open_task: {
+      type: 'Button',
+      props: {
+        label: 'Open',
+        actionId: null,
+        selectItem: true,
+        clearItem: null,
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    complete_task: {
+      type: 'Button',
+      props: {
+        label: 'Complete',
+        actionId: 'complete_task',
+        selectItem: null,
+        clearItem: null,
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    inspector: {
+      type: 'Stack',
+      props: {
+        direction: 'vertical',
+        gap: 'md',
+        align: 'stretch',
+        justify: 'start',
+        wrap: false,
+      },
       children: ['entity', 'details'],
     },
     entity: {
       type: 'EntityHeader',
       props: {
         title: '{selected.name}',
-        description: '{selected.industry}',
+        description: '{selected.status}',
         badge: null,
         badgeTone: null,
         logoSrc: null,
@@ -932,17 +1070,64 @@ const workspaceHomeSpec: Spec = {
     },
     details: {
       type: 'KeyValue',
-      props: { items: null, statePath: 'selected', emptyText: 'Select an account.' },
+      props: { items: null, statePath: 'selected', emptyText: 'Select a project or task.' },
       children: [],
     },
-    inspector: {
-      type: 'DataText',
+    create_modal: {
+      type: 'Modal',
+      props: { title: 'New task', showWhen: 'creating' },
+      children: ['create_form'],
+    },
+    create_form: {
+      type: 'Form',
+      props: { actionId: 'create_task', align: 'start' },
+      children: ['task_name', 'create_actions'],
+    },
+    task_name: {
+      type: 'TextInput',
       props: {
-        statePath: 'content',
-        fallback: 'Notes appear when an account is selected.',
-        color: null,
-        size: null,
+        name: 'name',
+        label: 'Name',
+        required: true,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        placeholder: 'Task name',
       },
+      children: [],
+    },
+    create_actions: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['cancel_create', 'submit_create'],
+    },
+    cancel_create: {
+      type: 'Button',
+      props: {
+        label: 'Cancel',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'creating=',
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    submit_create: {
+      type: 'SubmitButton',
+      props: { label: 'Create', actionId: 'create_task', size: null },
       children: [],
     },
   },
@@ -954,22 +1139,43 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
   pages: {
     home: {
       path: 'home',
-      title: 'Accounts',
+      title: 'Projects',
       spec: workspaceHomeSpec,
-      onLoad: ['load_accounts'],
+      onLoad: ['load_projects'],
     },
   },
   actions: {
-    load_accounts: { apiKey: GOLD_WORKSPACE_LOAD_API_KEY },
+    load_projects: {
+      onSuccess: {
+        setState: {
+          projects: [
+            { id: 'p1', name: 'Alpha', status: 'Active' },
+            { id: 'p2', name: 'Beta', status: 'Paused' },
+          ],
+          tasks: [
+            { id: 't1', name: 'Ship', projectId: 'p1', status: 'Open' },
+            { id: 't2', name: 'Review', projectId: 'p1', status: 'Open' },
+            { id: 't3', name: 'Plan', projectId: 'p2', status: 'Open' },
+            { id: 't4', name: 'Design', projectId: 'p2', status: 'Done' },
+          ],
+        },
+      },
+    },
+    create_task: {},
+    complete_task: {
+      onSuccess: {
+        setState: { done: true },
+      },
+    },
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
   'sidebar-shell',
-  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Honour pages[].regions and pages[].interaction; this sample\'s accounts/notes are subject matter. Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
+  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (parent Repeat), primary (child Repeat), inspector (EntityHeader + KeyValue of selected). Honour pages[].regions and pages[].interaction; this sample\'s projects/tasks are subject matter. Parent and child Open are both selectItem. onLoad setState seeds both arrays — child rows include projectId matching a parent id; the host filters that collection locally. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_task, no apiKey) on this page — the host appends and stamps the selected parent id. Complete is a row Button (done: true); the host writes onto that row. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Do not hide navigator or primary with !selectedId. No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
   {
-    title: 'Accounts',
-    content: 'Keep the list, record, and notes visible together.',
+    title: 'Projects',
+    content: 'Keep the parent list, child list, and selected record visible together.',
     manifest: goldWorkspaceManifest,
   }
 )

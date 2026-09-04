@@ -3,6 +3,7 @@ import {
   applySelectedRowDelete,
   applySelectedRowFields,
   collectionIdentitiesOverlap,
+  ensureCollectionItemIds,
   stampSelectionForeignKeys,
 } from '@/lib/arena-generative-ui/local-discovery'
 import {
@@ -105,7 +106,7 @@ function stampPatchedCollections(
     if (!Array.isArray(incoming)) continue
     const existing = current[key]
     next[key] = stampSelectionForeignKeys(
-      incoming,
+      ensureCollectionItemIds(incoming),
       Array.isArray(existing) ? existing : [],
       current[ARENA_GENERATIVE_SELECTED_ID_KEY],
       current[ARENA_GENERATIVE_SELECTED_KEY]

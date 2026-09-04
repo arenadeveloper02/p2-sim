@@ -127,6 +127,10 @@ describe('bindingsSummaryForPrompt', () => {
     expect(summary[0]?.resultLayout).toContain('selectItem')
     expect(summary[0]?.resultLayout).toContain('clearItem')
     expect(summary[0]?.resultLayout).toContain('!selectedId')
+    expect(summary[0]?.resultLayout).toContain('History-style same-page Open')
+    expect(summary[0]?.resultLayout).toContain(
+      'Workspace and Drawer keep the collection visible'
+    )
     expect(summary[0]?.resultLayout).toContain('do not bind item.output')
     expect(summary[0]?.resultLayout).toContain('{targetKeyword}')
     expect(summary[0]?.resultLayout).not.toContain('restamp inputs')

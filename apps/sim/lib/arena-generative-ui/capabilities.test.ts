@@ -69,7 +69,8 @@ describe('capabilityRecipePrompt', () => {
     expect(capabilityRecipePrompt(['create'])).toContain('setValue "creating=true"')
     expect(capabilityRecipePrompt(['create'])).toContain('Modal showWhen "creating"')
     expect(capabilityRecipePrompt(['create'])).toContain('stamp the selected parent id')
-    expect(capabilityRecipePrompt(['create'])).toContain('the host appends it onto the collection')
+    expect(capabilityRecipePrompt(['create'])).toContain('the host appends it')
+    expect(capabilityRecipePrompt(['create'])).toContain('assigns an id if missing')
     expect(capabilityRecipePrompt(['create'])).toContain(
       'does not copy those form fields onto selected'
     )

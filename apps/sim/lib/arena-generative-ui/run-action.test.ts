@@ -1558,6 +1558,317 @@ describe('runDeployedAppAction', () => {
     })
   })
 
+  it('wraps dummy create form fields onto the sole collection', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['list'] },
+                list: { type: 'Repeat', props: { statePath: 'todos' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          add_todo: {
+            onSuccess: {
+              setState: { creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'add_todo',
+      values: { title: 'Review' },
+      requestId: 'req-dummy-wrap',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['todos'])
+    expect(result.setState).toMatchObject({
+      title: 'Review',
+      creating: false,
+      todos: [{ title: 'Review' }],
+    })
+  })
+
+  it('does not wrap dummy complete scalars as a new collection row', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['list'] },
+                list: { type: 'Repeat', props: { statePath: 'todos' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          complete_todo: {
+            onSuccess: {
+              setState: { done: true },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'complete_todo',
+      values: { title: 'Milk' },
+      requestId: 'req-dummy-complete',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.appendKeys).toBeUndefined()
+    expect(result.setState).toEqual({ title: 'Milk', done: true })
+  })
+
+  it('wraps dummy create onto the collection the action id names', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['projects', 'tasks'] },
+                projects: { type: 'Repeat', props: { statePath: 'projects' }, children: [] },
+                tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          add_task: {
+            onSuccess: {
+              setState: { creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'add_task',
+      values: { name: 'Review' },
+      requestId: 'req-dummy-named',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['tasks'])
+    expect(result.setState).toMatchObject({
+      name: 'Review',
+      creating: false,
+      tasks: [{ name: 'Review' }],
+    })
+  })
+
+  it('does not wrap dummy create when two collections exist and the action names neither', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['projects', 'tasks'] },
+                projects: { type: 'Repeat', props: { statePath: 'projects' }, children: [] },
+                tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          save_form: {
+            onSuccess: {
+              setState: { creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'save_form',
+      values: { name: 'Review' },
+      requestId: 'req-dummy-two',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.appendKeys).toBeUndefined()
+    expect(result.setState).toEqual({ name: 'Review', creating: false })
+  })
+
+  it('wraps a child dummy create onto the implicit Table key', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['projects', 'table'] },
+                projects: { type: 'Repeat', props: { statePath: 'projects' }, children: [] },
+                table: {
+                  type: 'Table',
+                  props: { columns: 'Id, Name, Project Id', rows: 't1 | Ship | p1' },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {
+          add_task: {
+            onSuccess: {
+              setState: { creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'add_task',
+      values: { Name: 'Review' },
+      requestId: 'req-dummy-child-rows',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['rows'])
+    expect(result.setState).toMatchObject({
+      Name: 'Review',
+      creating: false,
+      rows: [{ Name: 'Review' }],
+    })
+  })
+
+  it('wraps unnamed dummy create onto the child collection', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['projects', 'tasks'] },
+                projects: { type: 'Repeat', props: { statePath: 'projects' }, children: [] },
+                tasks: { type: 'Repeat', props: { statePath: 'tasks' }, children: [] },
+              },
+            },
+          },
+        },
+        actions: {
+          create: {
+            onSuccess: {
+              setState: { creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'create',
+      values: { name: 'Review' },
+      requestId: 'req-dummy-child',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['tasks'])
+    expect(result.setState).toMatchObject({
+      name: 'Review',
+      creating: false,
+      tasks: [{ name: 'Review' }],
+    })
+  })
+
+  it('copies an orphan dummy create array onto the implicit Table key', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          home: {
+            ...twoPageManifest.pages.home,
+            spec: {
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['projects', 'table'] },
+                projects: { type: 'Repeat', props: { statePath: 'projects' }, children: [] },
+                table: {
+                  type: 'Table',
+                  props: { columns: 'Id, Name, Project Id', rows: 't1 | Ship | p1' },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {
+          add_task: {
+            onSuccess: {
+              setState: { tasks: [{ Id: 't2', Name: 'Review' }], creating: false },
+            },
+          },
+        },
+      },
+      apiBindings: [],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'add_task',
+      values: { Name: 'Review' },
+      requestId: 'req-dummy-remap',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.appendKeys).toEqual(['tasks', 'rows'])
+    expect(result.setState).toMatchObject({
+      tasks: [{ Id: 't2', Name: 'Review' }],
+      rows: [{ Id: 't2', Name: 'Review' }],
+      creating: false,
+    })
+  })
+
   it('does not append dummy onLoad collection arrays', async () => {
     const result = await runGenerativeAppAction({
       manifest: {

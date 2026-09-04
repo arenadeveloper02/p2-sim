@@ -134,6 +134,10 @@ describe('layoutPlanForBinding', () => {
     ])
     expect(resultLayoutFromPlan(plan)).toContain('selectItem')
     expect(resultLayoutFromPlan(plan)).toContain('do not bind item.output')
+    expect(resultLayoutFromPlan(plan)).toContain('History-style same-page Open')
+    expect(resultLayoutFromPlan(plan)).toContain(
+      'Workspace and Drawer keep the collection visible'
+    )
   })
 
   it('does not require host key data for a Response envelope of markdown', () => {

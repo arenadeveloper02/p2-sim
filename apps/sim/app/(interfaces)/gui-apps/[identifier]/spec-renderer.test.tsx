@@ -875,6 +875,69 @@ describe('SpecRenderer', () => {
     ])
   })
 
+  it('renders host rows on a sole Table that authored rows without statePath', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['table'] },
+        table: {
+          type: 'Table',
+          props: { columns: 'Name, Role', rows: 'Ada | Engineer' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: {
+        rows: [
+          { Name: 'Ada', Role: 'Engineer' },
+          { Name: 'Alan', Role: 'Cryptanalyst' },
+        ],
+      },
+    })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([
+      ['Ada', 'Engineer'],
+      ['Alan', 'Cryptanalyst'],
+    ])
+  })
+
+  it('renders host rows on an unpathed Table beside a Repeat collection', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list', 'table'] },
+        list: { type: 'Repeat', props: { statePath: 'projects' }, children: ['card'] },
+        card: { type: 'Card', props: { title: '{item.name}' }, children: [] },
+        table: {
+          type: 'Table',
+          props: { columns: 'Name, Role', rows: 'Ada | Engineer' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: {
+        projects: [{ id: 'p1', name: 'Alpha' }],
+        rows: [
+          { Name: 'Ada', Role: 'Engineer' },
+          { Name: 'Alan', Role: 'Cryptanalyst' },
+        ],
+      },
+    })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([
+      ['Ada', 'Engineer'],
+      ['Alan', 'Cryptanalyst'],
+    ])
+  })
+
   it('filters static Table rows locally when SearchField has no actionId', () => {
     const spec: Spec = {
       root: 'page',

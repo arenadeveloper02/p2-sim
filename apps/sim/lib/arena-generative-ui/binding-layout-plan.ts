@@ -290,7 +290,7 @@ export function resultLayoutFromPlan(plan: BindingLayoutPlan): string {
       ? `item.${proseCollection.itemFields[0]}`
       : 'item.keyword'
     const prose = proseCollection.proseFields[0] ?? 'output'
-    return `list items include a prose field — Repeat cards bind only short scalars with ${sample}; Open is Button selectItem true (no actionId) and copies prose to content, not inputs; same-page detail uses showWhen "!selectedId" on the list and showWhen "selectedId" plus clearItem Back; do not bind item.${prose} inside Repeat; Results after Generate echo form names ({targetKeyword}), not history keys ({keyword})`
+    return `list items include a prose field — Repeat cards bind only short scalars with ${sample}; Open is Button selectItem true (no actionId) and copies prose to content, not inputs; History-style same-page Open (no Workspace or Drawer inspector) hides the list with showWhen "!selectedId" and shows markdown with showWhen "selectedId" plus clearItem Back; Workspace and Drawer keep the collection visible — do not hide navigator or primary with !selectedId; do not bind item.${prose} inside Repeat; Results after Generate echo form names ({targetKeyword}), not history keys ({keyword})`
   }
   if (plan.kind === 'prose' && plan.stringFieldNames.length === 0 && !plan.stream) {
     return 'no outputSchema — DataText statePath "content"; do not invent Table columns'

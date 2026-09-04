@@ -77,6 +77,7 @@ import {
   filterCollectionItemsBySelection,
   filterStaticTableRows,
   filterStaticTableRowsBySelection,
+  implicitDummyTableStatePath,
   LOCAL_COLLECTION_PAGE_SIZE,
   type PaginatedCollection,
   paginateCollection,
@@ -1758,7 +1759,8 @@ export function SpecRenderer({
   const collectionLengthSignature = Object.entries(elements)
     .filter(([, element]) => element.type === 'Table' || element.type === 'Repeat')
     .map(([id, element]) => {
-      const statePath = asString(element.props?.statePath)
+      const statePath =
+        asString(element.props?.statePath) || implicitDummyTableStatePath(spec, id)
       if (!statePath || statePath === 'item' || statePath.startsWith('item.')) {
         return `${id}:static`
       }
@@ -2272,7 +2274,7 @@ export function SpecRenderer({
         )
       }
       case 'Table': {
-        const statePath = asString(props.statePath)
+        const statePath = asString(props.statePath) || implicitDummyTableStatePath(spec, id)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawCollection = collectionFromBoundValue(stateValue)
         const discoveredCollection = rawCollection
