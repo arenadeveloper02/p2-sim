@@ -114,14 +114,16 @@ async function walkDirectory(
     return
   }
 
-  const entries = await readdir(currentDir, { withFileTypes: true })
+  const entries = await readdir(/* turbopackIgnore: true */ currentDir, {
+    withFileTypes: true,
+  })
 
   for (const entry of entries) {
     if (totalChars.value >= MAX_TOTAL_CHARS) {
       break
     }
 
-    const absolutePath = join(currentDir, entry.name)
+    const absolutePath = join(/* turbopackIgnore: true */ currentDir, entry.name)
     const relativePath = absolutePath.slice(rootDir.length + 1)
 
     if (entry.isDirectory()) {
@@ -137,7 +139,7 @@ async function walkDirectory(
     }
 
     try {
-      const content = await readFile(absolutePath, 'utf-8')
+      const content = await readFile(/* turbopackIgnore: true */ absolutePath, 'utf-8')
       pushFileIfBudgetAllows(files, totalChars, seenPaths, relativePath, content)
     } catch (error) {
       logger.warn('Skipping unreadable generated app file', {
@@ -150,9 +152,11 @@ async function walkDirectory(
 
 /**
  * Reads source files from a generated app directory for LLM edit context.
+ * Path joins and reads use `turbopackIgnore` so NFT does not glob pinned names
+ * like `package.json` across `apps/sim`.
  */
 export async function readGeneratedAppFiles(outputDir: string): Promise<GeneratedAppFile[]> {
-  if (!existsSync(outputDir)) {
+  if (!existsSync(/* turbopackIgnore: true */ outputDir)) {
     throw new Error(`Generated app directory does not exist: ${outputDir}`)
   }
 
@@ -161,12 +165,12 @@ export async function readGeneratedAppFiles(outputDir: string): Promise<Generate
   const seenPaths = new Set<string>()
 
   for (const relativePath of PINNED_SOURCE_PATHS) {
-    const absolutePath = join(outputDir, relativePath)
-    if (!existsSync(absolutePath)) {
+    const absolutePath = join(/* turbopackIgnore: true */ outputDir, relativePath)
+    if (!existsSync(/* turbopackIgnore: true */ absolutePath)) {
       continue
     }
     try {
-      const content = await readFile(absolutePath, 'utf-8')
+      const content = await readFile(/* turbopackIgnore: true */ absolutePath, 'utf-8')
       pushFileIfBudgetAllows(files, totalChars, seenPaths, relativePath, content)
     } catch (error) {
       logger.warn('Skipping unreadable generated app file', {

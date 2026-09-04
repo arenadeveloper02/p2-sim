@@ -17,7 +17,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. A pasted Sample response is kept through generate and edit. |
 | **Design Notes** | Optional. Brand, density, dark mode. Skip unless you care. |
 
-The model **cannot invent API keys**. If User Input names a key (“Submit calls `recommend_articles`”), that key must exist in API Bindings. Leave Bindings empty for dummy/local apps (todos, boards) and for navigation-only apps — create/complete still work locally. Do not add a fake workflow just to have a key.
+The model **cannot invent API keys**. If User Input names a key (“Submit calls `recommend_articles`”), that key must exist in API Bindings. Leave Bindings empty for dummy/local apps (todos, boards) and for navigation-only apps — create, edit, and complete still work locally. Do not add a fake workflow just to have a key.
 
 Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) produce generic shells.
 
@@ -205,6 +205,28 @@ No dashboard, stats, history, filters, or extra routes.
 2. Sample todos on arrival — the list must not start empty.
 3. Add and complete work locally (dialog or inline). Do not invent an API key.
 
+### Editing a row
+
+Edit is **not inferred** — “list todos, add a todo, mark one complete” gets you no Edit button. Ask for it: `Edit a todo on this page (dialog or inline), not an edit page.`
+
+Create and edit are two dialogs on the **same** page, not two routes. The host opens the one you clicked, and Edit copies that row into the form for you — you do not describe the prefill.
+
+| In the brief | What happens |
+|---|---|
+| `Edit a todo on this page` | Each row gets an Edit button that opens a dialog. The host selects that row and prefills the form with its current values. |
+| `not an edit page` | Keeps edit as an overlay. Without it the planner may add a route you did not want. |
+| Nothing about edit | No Edit button. Rows stay read-only apart from complete. |
+
+**Edit saves a duplicate instead of updating the row:** the draft closed the *create* flag when saving the edit, so the host filed the save as a new row. **Edit Existing Draft**, **Copy page edit prompt** from the page, then only this delta:
+
+```
+On the "home" page, the row Edit button opens the edit dialog, not the create dialog.
+Saving the edit must clear the editing flag, not the creating flag, so the host
+updates the selected row instead of appending a new one.
+```
+
+Preview catches the other half of this: if the plan asked for edit but the draft only ever built a create dialog, **Copy as edit instructions** now asks for the missing edit overlay instead of staying silent.
+
 ---
 
 ## Example — Projects and tasks (Workspace)
@@ -251,7 +273,7 @@ the inspector.
 ## Short checklist
 
 - Same API **key** in User Input and Add an API. Leave Bindings empty for dummy/local apps; do not invent a workflow key.
-- Dummy lists (todos, boards) should show sample rows on arrival. Create / complete stay local.
+- Dummy lists (todos, boards) should show sample rows on arrival. Create / edit / complete stay local, as dialogs on the same page. Ask for edit by name — it is not inferred.
 - Bound workflows are **deployed** before Preview / Launch.
 - JSON APIs: paste Output format JSON so Results is not a text dump.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.

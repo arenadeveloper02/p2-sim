@@ -147,7 +147,7 @@ First page after open. Defaults to `home`. Must match a page path.
 
 ### API Bindings (optional JSON)
 
-Named backends that CTAs may call. The model **cannot invent keys**. Leave this empty (or `[]` / `{}`) when there is no workflow or HTTP call — dummy/local apps still create, complete, and navigate. Do not invent a key to fill this field.
+Named backends that CTAs may call. The model **cannot invent keys**. Leave this empty (or `[]` / `{}`) when there is no workflow or HTTP call — dummy/local apps still create, edit, complete, and navigate. Do not invent a key to fill this field.
 
 Two kinds. You rarely need to write either by hand — **Add an API** builds both:
 
@@ -458,7 +458,7 @@ Load more is the **same action**, not a second binding. Put a Button with that `
 
 Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`variant` `default` / `muted`, `padding` token or CSS length, `showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
-Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (create / focused secondary action; `showWhen`; open with `Button.setValue`; not delete confirm)
+Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (create / edit / focused secondary action; `showWhen` names an overlay flag; open with `Button.setValue` `creating=true` / `editing=true`; not delete confirm)
 
 Copy: `Heading`, `Text`, `DataText`, `Alert`, `Toast` (transient in-content feedback the brief asked for; not save success), `List`, `ListItem`, `Divider`, `Image`
 
@@ -492,6 +492,21 @@ Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item templ
 - Never bind a long prose field (`output`, `content`, `body`) inside Repeat — not `item.output`, not `Card.description`, not a Table column. Select the row, then show the markdown once.
 - The host renders at most 48 items.
 - An empty array is not a blank hole: the host shows `emptyText` (default **No results**). Customise it when the brief names the collection.
+
+### Create and edit overlays
+
+`creating` and `editing` are host-owned overlay flags, not fields on your API. A `Button.setValue "creating=true"` (usually the `PageHeader` trailing action) and a row `Button.setValue "editing=true"` inside the Repeat template each open the `Modal` or `Drawer` whose `showWhen` names that flag. A ghost `Button.setValue "creating="` / `"editing="` closes it. Opening one flag clears the other, so create and edit are two overlays on the **same** page rather than two routes.
+
+`editing=true` does more than flip a flag: it also selects that row (as `selectItem` would) and prefills the overlay's form fields from it. The spec still carries `defaultValue: null` on those inputs — the prefill happens at runtime, so an empty `defaultValue` there is not a bug.
+
+Saving is where dummy create and dummy edit diverge:
+
+| `onSuccess.setState` writes | The host does |
+|---|---|
+| `{ creating: false }` | Files it as a **create**: wraps the submitted fields into a new row and appends it to the collection |
+| `{ editing: false }` plus the changed fields | Files it as an **edit**: copies those scalar fields onto the matching row — the `id` in `setState` when there is one, otherwise `selectedId` |
+
+An edit that saves with `creating: false` is therefore filed as a create: it appends a duplicate **and** the selected-row update is skipped outright. Action ids matching `edit` / `update` / `rename` are rescued by name, but do not lean on that — close the flag you opened. With a real binding the action sets `apiKey` as usual; the flags still drive the overlay the same way.
 
 ### Empty collections
 
@@ -641,6 +656,9 @@ The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guid
 | History Open appends markdown below the list | Repeat stayed visible. On **History** (no Workspace/Drawer inspector), hide it while `selectedId` is set (`showWhen "!selectedId"`). Back is `clearItem`, not `navigateTo "history"` on History |
 | Workspace Open hides the project list | Navigator/primary must stay visible. Do not put `!selectedId` on those regions. Child tasks need `projectId` matching the selected project; the host filters locally |
 | History Open calls an API or leaves History | Open must not set `actionId` or `navigateTo` when the brief stays on History |
+| Saving an edit appends a duplicate row | The save closed the wrong flag. Edit saves `setState { editing: false }` plus the changed fields; `{ creating: false }` is filed as a create, which appends and skips the row update |
+| The edit dialog opens blank | The row button set `creating=true`, or it sits outside the Repeat template so no row was selected. Row Edit is `setValue "editing=true"` inside the per-item children — the host prefills from there |
+| Create and edit open the same dialog | Both `Modal`s named the same flag in `showWhen`. Create is `showWhen "creating"`, edit is `showWhen "editing"` |
 | Generation error about selectItem | `selectItem` is Repeat-only and cannot combine with `actionId` or `clearItem`. Put Open inside the Repeat card template |
 | Block error `fetch failed` during generate/edit | Claude can take several minutes. Check **Deploy → GUI App** — a revision may already have been saved even if the block showed an error. Retry the run. |
 
