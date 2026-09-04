@@ -3,7 +3,10 @@ import { readdir, readFile } from 'fs/promises'
 import { normalize } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
+import {
+  generatedAppNextConfigRelPath,
+  joinGeneratedAppFsPath,
+} from '@/lib/development/generated-apps-paths'
 
 const logger = createLogger('ReadGeneratedAppFiles')
 
@@ -45,7 +48,7 @@ interface GeneratedAppFile {
 const PINNED_SOURCE_PATHS = [
   'package.json',
   'tsconfig.json',
-  'next.config.ts',
+  generatedAppNextConfigRelPath(),
   'next-env.d.ts',
   'prisma/schema.prisma',
   'lib/prisma.ts',
@@ -54,7 +57,7 @@ const PINNED_SOURCE_PATHS = [
   'app/layout.tsx',
   'app/page.tsx',
   'REPO_SUMMARY.md',
-] as const
+]
 
 function sanitizeRelativeFilePath(filePath: string): string | null {
   const normalized = normalize(filePath.replace(/\\/g, '/'))

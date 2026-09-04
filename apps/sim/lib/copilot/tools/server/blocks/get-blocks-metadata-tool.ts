@@ -358,11 +358,13 @@ export const getBlocksMetadataServerTool: BaseServerTool<
       }
 
       try {
-        const workingDir = process.cwd()
+        const workingDir = /* turbopackIgnore: true */ process.cwd()
         const isInAppsSim = workingDir.endsWith('/apps/sim') || workingDir.endsWith('\\apps\\sim')
-        const basePath = isInAppsSim ? join(workingDir, '..', '..') : workingDir
+        const basePath = isInAppsSim
+          ? join(/* turbopackIgnore: true */ workingDir, '..', '..')
+          : workingDir
         const docPath = join(
-          basePath,
+          /* turbopackIgnore: true */ basePath,
           'apps',
           'docs',
           'content',
@@ -371,8 +373,8 @@ export const getBlocksMetadataServerTool: BaseServerTool<
           'blocks',
           `${DOCS_FILE_MAPPING[blockId] || blockId}.mdx`
         )
-        if (existsSync(docPath)) {
-          metadata.yamlDocumentation = readFileSync(docPath, 'utf-8')
+        if (existsSync(/* turbopackIgnore: true */ docPath)) {
+          metadata.yamlDocumentation = readFileSync(/* turbopackIgnore: true */ docPath, 'utf-8')
         }
       } catch (error) {
         logger.warn('Failed to read YAML documentation file', {

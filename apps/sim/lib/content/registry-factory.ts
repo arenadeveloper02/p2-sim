@@ -112,7 +112,9 @@ export function createContentRegistry(config: ContentRegistryConfig): ContentReg
   ): Promise<{ width: number; height: number } | null> {
     if (ogImage.startsWith('http')) return null
     try {
-      const buffer = await fs.readFile(path.join(process.cwd(), 'public', ogImage))
+      const buffer = await fs.readFile(
+        path.join(/* turbopackIgnore: true */ process.cwd(), 'public', ogImage)
+      )
       const sharp = (await import('sharp')).default
       const { width, height } = await sharp(buffer).metadata()
       if (!width || !height) {

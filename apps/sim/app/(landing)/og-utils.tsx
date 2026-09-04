@@ -45,7 +45,7 @@ function getTitleFontSize(title: string): number {
  * that file ships beside `public/` — which is also why `content/` is read this
  * way at runtime.
  */
-const FONT_DIR = join(process.cwd(), 'public', 'brand', 'fonts')
+const FONT_DIR = join(/* turbopackIgnore: true */ process.cwd(), 'public', 'brand', 'fonts')
 
 const [geistRegular, geistMedium] = await Promise.all([
   readFile(join(FONT_DIR, 'Geist-Regular.ttf')),

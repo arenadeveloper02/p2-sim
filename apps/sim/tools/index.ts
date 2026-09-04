@@ -322,79 +322,6 @@ async function executeImageGenerationWrapperV2Direct(
   }
 }
 
-async function executeDevelopmentGenerateAppDirect(
-  params: Record<string, any>
-): Promise<ToolResponse> {
-  const [
-    { generateNextjsApp },
-    { mapGenerateAppResultToToolResponse },
-    { resolveDevelopmentToolReferenceImage },
-    { generateRequestId },
-  ] = await Promise.all([
-    import('@/lib/development/nextjs-app-generator'),
-    import('@/tools/development/map-generate-app-response'),
-    import('@/lib/development/resolve-development-tool-reference-image'),
-    import('@/lib/core/utils/request'),
-  ])
-
-  const resolvedReference = await resolveDevelopmentToolReferenceImage({
-    referenceImage: params.referenceImage,
-    userId: params._context?.userId,
-    requestId: generateRequestId(),
-  })
-  if (!resolvedReference.ok) {
-    return mapGenerateAppResultToToolResponse({
-      success: false,
-      error: resolvedReference.error,
-    })
-  }
-
-  return mapGenerateAppResultToToolResponse(
-    await generateNextjsApp({
-      userInput: params.userInput,
-      repoName: params.repoName,
-      privateRepo: params.privateRepo,
-      referenceImage: resolvedReference.referenceImage,
-      arenaMode: params.arenaMode === true,
-    })
-  )
-}
-
-async function executeDevelopmentEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
-  const [
-    { editNextjsApp },
-    { mapGenerateAppResultToToolResponse },
-    { resolveDevelopmentToolReferenceImage },
-    { generateRequestId },
-  ] = await Promise.all([
-    import('@/lib/development/nextjs-app-generator'),
-    import('@/tools/development/map-generate-app-response'),
-    import('@/lib/development/resolve-development-tool-reference-image'),
-    import('@/lib/core/utils/request'),
-  ])
-
-  const resolvedReference = await resolveDevelopmentToolReferenceImage({
-    referenceImage: params.referenceImage,
-    userId: params._context?.userId,
-    requestId: generateRequestId(),
-  })
-  if (!resolvedReference.ok) {
-    return mapGenerateAppResultToToolResponse({
-      success: false,
-      error: resolvedReference.error,
-    })
-  }
-
-  return mapGenerateAppResultToToolResponse(
-    await editNextjsApp({
-      userInput: params.userInput,
-      repoName: params.repoName,
-      referenceImage: resolvedReference.referenceImage,
-      arenaMode: params.arenaMode === true,
-    })
-  )
-}
-
 /**
  * Server-only chart generation. Kept out of the ToolConfig so the client-bundled
  * tools registry never pulls in run-chart-generate.server (and its Node deps).
@@ -2398,27 +2325,7 @@ async function executeToolImplementation(
             : wrapperBaseToolId
               ? (params: Record<string, any>) =>
                   executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-              : normalizedToolId === 'development_generate_app' ||
-                  normalizedToolId === 'arena_development_generate_app'
-                ? (params: Record<string, any>) =>
-                    executeDevelopmentGenerateAppDirect({
-                      ...params,
-                      arenaMode:
-                        normalizedToolId === 'arena_development_generate_app'
-                          ? true
-                          : params.arenaMode,
-                    })
-                : normalizedToolId === 'development_edit_app' ||
-                    normalizedToolId === 'arena_development_edit_app'
-                  ? (params: Record<string, any>) =>
-                      executeDevelopmentEditAppDirect({
-                        ...params,
-                        arenaMode:
-                          normalizedToolId === 'arena_development_edit_app'
-                            ? true
-                            : params.arenaMode,
-                      })
-                  : tool.directExecution
+              : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       if (

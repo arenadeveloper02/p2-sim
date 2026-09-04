@@ -41,3 +41,12 @@ export function getGeneratedAppDir(repoName: string): string {
 export function joinGeneratedAppFsPath(rootDir: string, relativePath: string): string {
   return join(/* turbopackIgnore: true */ rootDir, /* turbopackIgnore: true */ relativePath)
 }
+
+/**
+ * Relative path of a generated app's Next config. Built at runtime so NFT does
+ * not bind the literal `next.config.ts` to this app and emit colliding
+ * `[root-of-the-server]` chunks.
+ */
+export function generatedAppNextConfigRelPath(): string {
+  return Buffer.from('bmV4dC5jb25maWcudHM=', 'base64').toString('utf8')
+}

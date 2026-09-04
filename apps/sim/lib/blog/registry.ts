@@ -1,8 +1,8 @@
 import path from 'path'
 import { createContentRegistry } from '@/lib/content/registry-factory'
 
-const BLOG_DIR = path.join(process.cwd(), 'content', 'blog')
-const AUTHORS_DIR = path.join(process.cwd(), 'content', 'authors')
+const BLOG_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), 'content', 'blog')
+const AUTHORS_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), 'content', 'authors')
 
 /** Posts that ship custom MDX component overrides alongside their content. */
 const BLOG_COMPONENT_LOADERS = {

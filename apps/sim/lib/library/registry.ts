@@ -1,8 +1,8 @@
 import path from 'path'
 import { createContentRegistry } from '@/lib/content/registry-factory'
 
-const LIBRARY_DIR = path.join(process.cwd(), 'content', 'library')
-const AUTHORS_DIR = path.join(process.cwd(), 'content', 'authors')
+const LIBRARY_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), 'content', 'library')
+const AUTHORS_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), 'content', 'authors')
 
 const libraryRegistry = createContentRegistry({
   contentDir: LIBRARY_DIR,

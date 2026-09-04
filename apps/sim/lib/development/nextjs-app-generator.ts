@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
 import { mkdir, rm, writeFile } from 'fs/promises'
-import { dirname, join, normalize, relative } from 'path'
+import { dirname, normalize, relative } from 'path'
 import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
@@ -20,7 +20,12 @@ import {
   formatBuildErrorsSummary,
   logGeneratedAppValidationErrors,
 } from '@/lib/development/format-generated-app-build-errors'
-import { findMonorepoRoot, getGeneratedAppDir, joinGeneratedAppFsPath } from '@/lib/development/generated-apps-paths'
+import {
+  findMonorepoRoot,
+  generatedAppNextConfigRelPath,
+  getGeneratedAppDir,
+  joinGeneratedAppFsPath,
+} from '@/lib/development/generated-apps-paths'
 import {
   buildRepoSummaryContent,
   ensureRepoSummaryFile,
@@ -160,7 +165,7 @@ const MAX_OPTIONAL_PAGE_PATHS = 24
 const REQUIRED_APP_FILE_PATHS = [
   'package.json',
   'tsconfig.json',
-  'next.config.ts',
+  generatedAppNextConfigRelPath(),
   'postcss.config.mjs',
   'tailwind.config.ts',
   'app/layout.tsx',
@@ -551,7 +556,7 @@ function sortManifestFilePaths(paths: string[]): string[] {
     const exact: Record<string, number> = {
       'package.json': 0,
       'tsconfig.json': 1,
-      'next.config.ts': 2,
+      [generatedAppNextConfigRelPath()]: 2,
       'postcss.config.mjs': 3,
       'tailwind.config.ts': 4,
       '.gitignore': 5,
