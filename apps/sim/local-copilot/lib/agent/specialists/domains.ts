@@ -152,6 +152,7 @@ const AGENT_TOOLS = [
   'manage_custom_tool',
   'load_user_skill',
   'function_execute',
+  'manage_sandbox',
   'get_available_integrations',
   'get_platform_actions',
   'list_workspace_mcp_servers',
@@ -167,6 +168,7 @@ const RESEARCH_TOOLS = [
   'search_docs',
   'search_documentation',
   'function_execute',
+  'manage_sandbox',
   'user_memory',
   'read',
   'glob',
@@ -186,6 +188,7 @@ const FILE_TOOLS = [
   'materialize_file',
   'edit_content',
   'function_execute',
+  'manage_sandbox',
   'delete_file',
   'rename_file',
   'move_file',
@@ -332,7 +335,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
-      return 'Focus on integration tools, MCP tools, skills, and function_execute.'
+      return 'Focus on integration tools, MCP tools, skills, function_execute, and manage_sandbox.'
     case 'research':
       return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. When the question is about a workspace file, glob/read/grep that exact VFS path — do not open a similarly named file. Use search_documentation only for Sim product questions.'
     case 'media':

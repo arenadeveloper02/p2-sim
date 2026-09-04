@@ -369,17 +369,11 @@ export async function executeMothershipDelegatedTool(
     workspaceId: ctx.workspaceId,
   })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
-  const result = await executeTool(toolName, enrichedArgs, {
-    userId: ctx.userId,
-    workspaceId: ctx.workspaceId,
-    workflowId: workflowId ?? ctx.workflowId ?? '',
-    chatId: ctx.chatId,
-    abortSignal: ctx.abortSignal,
-    copilotToolExecution: true,
-    userPermission: ctx.userPermission,
-    ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
-    ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
-  })
+  const result = await executeTool(
+    toolName,
+    enrichedArgs,
+    toCopilotServerToolContext(ctx, workflowId)
+  )
 
   if (!result.success) {
     logger.warn('Delegated Mothership tool failed', {

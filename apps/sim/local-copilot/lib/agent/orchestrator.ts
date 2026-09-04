@@ -81,6 +81,10 @@ import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow
 import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
+  loadRelevantSkillGuidance,
+  rewriteSnapshotSkillsForLocalCopilot,
+} from '@/local-copilot/lib/context/relevant-skills'
+import {
   ensureSessionMemory,
   formatRecentToolFailuresSystemMessage,
   formatSessionMemorySystemMessage,
@@ -154,7 +158,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
-  detectMandatoryFollowUp,
+  detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
@@ -360,13 +364,15 @@ Rules:
   - Read or update existing files: \`read\` the exact \`files/.../content\` path first. Targeted edits (title, heading, one string): \`workspace_file\` operation=patch with search_replace, then \`edit_content\` with only the replacement. Full rewrite: \`workspace_file\` update then \`edit_content\` starting from the read result — never parallel with workspace_file.
   - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.
 - Workspace skills and custom tools:
-  - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
-  - When a skill applies, call \`load_user_skill\` with its exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
+  - Ignore any snapshot heading that says skills are "NOT FOR YOU" — that is for Cloud agent blocks. Arena Copilot may use workspace skills.
+  - Context may list workspace skills (name + description, and sometimes a "Relevant workspace skills" block with full instructions). If a listed skill matches the user request, follow it over generic defaults. Do not skip a matching skill.
+  - If a skill's full instructions are already in the prompt, follow them and do not call \`load_user_skill\` again for that name. Otherwise call \`load_user_skill\` with the exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
   - Create/edit/list skills with \`manage_skill\`; custom code tools with \`manage_custom_tool\`; agent MCP server configs with \`manage_mcp_tool\` (distinct from \`*_workspace_mcp_server\` deploy tools).
   - Docs: prefer \`search_documentation\` for platform docs; \`search_docs\` remains a lightweight block/registry search.
 - E2B sandbox and code execution:
-  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
-  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
+  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, \`customSandboxesEnabled\`, and \`supportedCodeLanguages\`.
+  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`. The default Function image is created for that call — do not call \`manage_sandbox\` first.
+  - When \`e2b.customSandboxesEnabled\` is true and a required npm/PyPI/apt package or managed CLI is missing from the default image, call \`manage_sandbox\` operation=add (name + language + dependencies/cliTools/systemPackages), wait for the sandbox, then \`function_execute\` with that \`sandboxId\`. List existing sandboxes with operation=list before creating a duplicate.
   - When E2B is disabled, \`function_execute\` supports JavaScript only (isolated-vm).
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
@@ -636,7 +642,10 @@ export async function* runLocalCopilotAgent(
 
   let snapshotPromptPlan: SnapshotPromptPlan | null = null
   const vfsSnapshot = structuredContext.vfsSnapshot ?? params.workspaceSnapshot
-  const inventoryMarkdown = params.workspaceContext ?? structuredContext.inventoryMarkdown
+  const inventoryMarkdownRaw = params.workspaceContext ?? structuredContext.inventoryMarkdown
+  const inventoryMarkdown = inventoryMarkdownRaw
+    ? rewriteSnapshotSkillsForLocalCopilot(inventoryMarkdownRaw)
+    : inventoryMarkdownRaw
   if (vfsSnapshot && inventoryMarkdown && structuredContext.snapshotFreshness) {
     let priorMeta = null as ReturnType<typeof parseWorkspaceSnapshotMeta>
     let priorFingerprints = null as ReturnType<typeof parseWorkspaceSnapshotFingerprints>
@@ -673,6 +682,16 @@ export async function* runLocalCopilotAgent(
     ...(params.chatId ? { chatId: params.chatId } : {}),
   })
   const userTurnText = getLocalCopilotUserTurnText(userTurn)
+  const relevantSkills = await loadRelevantSkillGuidance({
+    skills: structuredContext.skills,
+    workspaceId: params.workspaceId,
+  })
+  if (relevantSkills.names.length > 0) {
+    logger.info('Arena Copilot loaded relevant workspace skills', {
+      workspaceId: params.workspaceId,
+      skillNames: relevantSkills.names,
+    })
+  }
 
   const pinnedDirective =
     extractedDirectives.activeDirective?.trim() || sessionMemory?.activeDirective?.trim() || ''
@@ -720,6 +739,7 @@ export async function* runLocalCopilotAgent(
   const messages: ChatMessage[] = fitPromptWithSlots(
     [
       { role: 'system', content: SYSTEM_PROMPT },
+      ...(relevantSkills.message ? [relevantSkills.message] : []),
       {
         role: 'system',
         content: `Current context:\n${contextJson}`,
@@ -807,6 +827,9 @@ export async function* runLocalCopilotAgent(
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
     turnMutations: createTurnMutations(),
+    ...(relevantSkills.message
+      ? { relevantSkillGuidance: relevantSkills.message.content }
+      : {}),
   }
 
   if (resolvedWorkflowId) {
@@ -834,13 +857,13 @@ export async function* runLocalCopilotAgent(
     return toolExecutorModule
   }
 
-  let specialistHintInsertAt = 1
+  let specialistHintInsertAt = 1 + (relevantSkills.message ? 1 : 0)
   if (!intent.useFullCatalog && intent.primary !== 'general') {
-    messages.splice(1, 0, {
+    messages.splice(specialistHintInsertAt, 0, {
       role: 'system',
       content: domainSystemHint(intent.primary),
     })
-    specialistHintInsertAt = 2
+    specialistHintInsertAt += 1
   }
 
   const parallelDomains = selectParallelSubagentDomains(intent)
@@ -1331,6 +1354,12 @@ export async function* runLocalCopilotAgent(
         const formattedToolResult = formatToolResultForLlm(call.name, outcome.output, {
           artifactStore: toolCtx.artifactStore,
         })
+        for (const followUp of outcome.result?.pendingFollowUps ?? []) {
+          pendingFollowUps = [
+            ...pendingFollowUps.filter((item) => item.id !== followUp.id),
+            followUp,
+          ]
+        }
         pendingFollowUps = resolveMandatoryFollowUps(
           pendingFollowUps,
           call.name,
@@ -1698,7 +1727,12 @@ export async function* runLocalCopilotAgent(
       const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result, {
         artifactStore: toolCtx.artifactStore,
       })
-      const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
+      const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
+        call.name,
+        toolResult.success,
+        toolResult.result,
+        formattedToolResult
+      )
       if (mandatoryFollowUp) {
         pendingFollowUps = [
           ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),

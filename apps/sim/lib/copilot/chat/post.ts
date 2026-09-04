@@ -5,7 +5,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
@@ -74,13 +74,17 @@ import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import { resolveLocalCopilotRequestCatalogId } from '@/local-copilot/lib/model-catalog'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
+import {
+  remapLegacyLocalCopilotCatalogId,
+  resolveLocalCopilotRequestCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
 
 const logger = createLogger('UnifiedChatAPI')
-const DEFAULT_MODEL = 'claude-opus-4-8'
+const DEFAULT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
 const CHAT_SELECTION_TEXT_MAX_LENGTH = 100_000
 const CHAT_SELECTION_SOURCE_URL_MAX_LENGTH = 8_192
 const CHAT_SELECTION_SOURCE_TITLE_MAX_LENGTH = 512
@@ -559,6 +563,33 @@ async function resolveAgentContexts(params: {
   return agentContexts
 }
 
+/**
+ * Existing Local chats created under the hosted Opus default still store
+ * `claude-opus-4-8`. Rewrite that leftover onto the generic Claude picker id
+ * so follow-up turns and `copilot_messages.model` stop carrying the old id.
+ */
+async function migrateLegacyLocalCopilotChatModel(
+  chatId: string,
+  userId: string
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ model: copilotChats.model })
+    .from(copilotChats)
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+    .limit(1)
+
+  const storedModel = row?.model ?? undefined
+  const remapped = remapLegacyLocalCopilotCatalogId(storedModel)
+  if (!remapped) return storedModel
+
+  await db
+    .update(copilotChats)
+    .set({ model: remapped, updatedAt: new Date() })
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+
+  return storedModel
+}
+
 async function persistUserMessage(params: {
   chatId?: string
   userMessageId: string
@@ -945,7 +976,7 @@ async function resolveBranch(params: {
     workspacePermission,
     effectiveModel: localCatalogId || DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: DEFAULT_MODEL,
+    titleModel: localCatalogId || DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload(
@@ -1093,7 +1124,14 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     let localCatalogId: string | undefined
     if (copilotBackend === 'local') {
-      localCatalogId = resolveLocalCopilotRequestCatalogId(body.model?.trim(), defaultModel)
+      const storedChatModel = body.chatId
+        ? await migrateLegacyLocalCopilotChatModel(body.chatId, authenticatedUserId)
+        : undefined
+      localCatalogId = resolveLocalCopilotRequestCatalogId(
+        body.model?.trim(),
+        defaultModel,
+        storedChatModel
+      )
     }
 
     const userMetadata = {
@@ -1183,7 +1221,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
               userId: authenticatedUserId,
               ...(branch.kind === 'workflow' ? { workflowId: branch.workflowId } : {}),
               workspaceId: branch.workspaceId,
-              model: branch.titleModel,
+              model: branch.effectiveModel,
               type: branch.kind === 'workflow' ? 'copilot' : 'mothership',
             }),
           activeOtelRoot.context

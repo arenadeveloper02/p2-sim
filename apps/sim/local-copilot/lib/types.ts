@@ -140,7 +140,10 @@ export interface LocalCopilotStructuredContext {
   }>
   tables?: Array<{ id: string; name: string; description?: string | null }>
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
-  /** User-created workspace skills (name + description). Load full body via load_user_skill. */
+  /**
+   * User-created workspace skills (name + description). All skill bodies are
+   * inlined for the turn; otherwise load via load_user_skill if a skill applies.
+   */
   skills?: Array<{ id: string; name: string; description: string }>
   /**
    * High-confidence user memories (preferences/entities) for this user + workspace.

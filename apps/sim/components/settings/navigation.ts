@@ -658,18 +658,18 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
   },
   {
-    label: 'Sim API keys',
+    label: 'Arena API keys',
     icon: TerminalWindow,
     unified: {
       id: 'apikeys',
-      description: 'Create and manage API keys for the Sim API.',
+      description: 'Create and manage API keys for the Arena API.',
       group: 'workspace',
       order: 7,
     },
     planes: {
       account: {
         id: 'api-keys',
-        description: 'Create and manage your personal Sim API keys.',
+        description: 'Create and manage your personal Arena API keys.',
         group: 'developer',
         order: 2,
       },
@@ -772,7 +772,7 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     icon: Sprout,
     unified: {
       id: 'self-host',
-      description: 'Manage this deployment from the Sim managed service.',
+      description: 'Manage this deployment from the Arena managed service.',
       group: 'platform',
       order: 2,
       requiresSelfHosted: true,

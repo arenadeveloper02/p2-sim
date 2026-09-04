@@ -147,6 +147,11 @@ export interface ToolExecutionContext {
    * and parallel specialists.
    */
   turnMutations?: LocalCopilotTurnMutations
+  /**
+   * Loaded workspace skill bodies for this turn. Specialists inject this as a
+   * system message so they follow the same playbook as the parent.
+   */
+  relevantSkillGuidance?: string
   /** First successful create_workflow this turn — later creates must reuse it. */
   createdWorkflowThisTurn?: {
     workflowId: string

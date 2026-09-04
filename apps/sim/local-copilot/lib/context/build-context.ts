@@ -18,6 +18,7 @@ import {
   oauthIntegrationsToCredentialMetadata,
 } from '@/local-copilot/lib/context/load-workspace-integrations'
 import { loadWorkspaceResourceSummaries } from '@/local-copilot/lib/context/load-workspace-resources'
+import { rewriteSnapshotSkillsForLocalCopilot } from '@/local-copilot/lib/context/relevant-skills'
 import {
   type StampedWorkspaceSnapshotBundle,
   stampWorkspaceSnapshotBundle,
@@ -134,6 +135,8 @@ export async function buildLocalCopilotContext(
   const snapshotBundle = await resolveWorkspaceSnapshot(params)
   const snapshot = snapshotBundle?.snapshot ?? null
   const inventoryMarkdown = snapshotBundle?.markdown
+    ? rewriteSnapshotSkillsForLocalCopilot(snapshotBundle.markdown)
+    : snapshotBundle?.markdown
 
   const [integrations, currentUserRow] = await Promise.all([
     loadWorkspaceIntegrations(workspaceId, userId),

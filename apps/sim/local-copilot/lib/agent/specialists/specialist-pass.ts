@@ -35,7 +35,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
-  detectMandatoryFollowUp,
+  detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
@@ -107,6 +107,7 @@ export interface SpecialistPassResult {
   structured?: SpecialistStructuredResult
   verifications?: VerificationRecord[]
   mutationOutcomes?: MutationOutcome[]
+  pendingFollowUps?: MandatoryFollowUp[]
 }
 
 function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
@@ -224,6 +225,9 @@ export async function executeSpecialistLoop(
         role: 'system',
         content: `You are a focused Arena Copilot specialist (${params.domain}). ${domainSystemHint(params.domain)} Complete the request using your tools — you may perform domain writes when needed. You may call other specialist tools if another domain is required (nesting is budgeted). Keep the final reply under 8 sentences with actionable facts and outcomes.`,
       },
+      ...(params.toolCtx.relevantSkillGuidance
+        ? [{ role: 'system' as const, content: params.toolCtx.relevantSkillGuidance }]
+        : []),
       { role: 'user', content: params.userMessage },
     ]
 
@@ -508,7 +512,12 @@ export async function executeSpecialistLoop(
             artifactStore: params.toolCtx.artifactStore,
           }
         )
-        const mandatoryFollowUp = detectMandatoryFollowUp(call.name, llmPayload)
+        const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
+          call.name,
+          toolResult.success,
+          toolResult.result,
+          llmPayload
+        )
         if (mandatoryFollowUp) {
           pendingFollowUps = [
             ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
@@ -628,6 +637,7 @@ export async function executeSpecialistLoop(
       structured,
       verifications,
       mutationOutcomes,
+      ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
     }
   } catch (error) {
     const message = getErrorMessage(error, 'specialist failed')

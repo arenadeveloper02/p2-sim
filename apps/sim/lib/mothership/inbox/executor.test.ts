@@ -134,7 +134,7 @@ describe('Inbox raw-secret actor', () => {
     mockSendInboxResponse.mockResolvedValue('response-1')
     dbChainMockFns.returning
       .mockResolvedValueOnce([{ id: 'task-1' }])
-      .mockResolvedValueOnce([{ model: 'claude-opus-4-8' }])
+      .mockResolvedValueOnce([{ model: 'claude-sonnet-4-6' }])
   })
 
   it('gives a workspace member their own raw-secret authority', async () => {
