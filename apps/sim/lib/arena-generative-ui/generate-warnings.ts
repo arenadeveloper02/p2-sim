@@ -17,7 +17,18 @@ export const arenaGenerativeGenerateWarningSchema = z.object({
 
 export type ArenaGenerativeGenerateWarning = z.output<typeof arenaGenerativeGenerateWarningSchema>
 
+export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = ['extra-primary'] as const
+
+export const arenaGenerativeAdoptedChangeSchema = z.object({
+  code: z.enum(ARENA_GENERATIVE_ADOPTED_CHANGE_CODES),
+  asked: z.string().trim().min(1).max(500),
+  adopted: z.string().trim().min(1).max(500),
+})
+
+export type ArenaGenerativeAdoptedChange = z.output<typeof arenaGenerativeAdoptedChangeSchema>
+
 const GENERATE_WARNINGS_KEY = 'generateWarnings'
+const ADOPTED_CHANGES_KEY = 'adoptedChanges'
 
 const PIPELINE_WARNING_CODES = new Set<ArenaGenerativeGenerateWarningCode>([
   'intent-skipped',
@@ -70,6 +81,25 @@ export function collectGenerateWarnings(input: {
   return [...kept, ...current]
 }
 
+function adoptedChangeKey(change: ArenaGenerativeAdoptedChange): string {
+  return `${change.code}:${change.asked}:${change.adopted}`
+}
+
+/**
+ * Host auto-repairs from this run. Preserve edits keep earlier adopted changes.
+ */
+export function collectAdoptedChanges(input: {
+  isPreserveEdit?: boolean
+  existing?: readonly ArenaGenerativeAdoptedChange[]
+  current?: readonly ArenaGenerativeAdoptedChange[]
+}): ArenaGenerativeAdoptedChange[] {
+  const current = input.current ?? []
+  if (!input.isPreserveEdit) return [...current]
+  const seen = new Set(current.map(adoptedChangeKey))
+  const kept = (input.existing ?? []).filter((change) => !seen.has(adoptedChangeKey(change)))
+  return [...kept, ...current]
+}
+
 /**
  * Reads generate warnings nested on a stored structured-brief jsonb row.
  */
@@ -82,6 +112,52 @@ export function parseStoredGenerateWarnings(value: unknown): ArenaGenerativeGene
 }
 
 /**
+ * Reads host auto-repairs nested on a stored structured-brief jsonb row.
+ */
+export function parseStoredAdoptedChanges(value: unknown): ArenaGenerativeAdoptedChange[] {
+  if (!isRecord(value) || !Array.isArray(value[ADOPTED_CHANGES_KEY])) return []
+  const parsed = z
+    .array(arenaGenerativeAdoptedChangeSchema)
+    .safeParse(value[ADOPTED_CHANGES_KEY])
+  return parsed.success ? parsed.data : []
+}
+
+export interface GenerateNotesPatch {
+  generateWarnings?: ArenaGenerativeGenerateWarning[]
+  adoptedChanges?: ArenaGenerativeAdoptedChange[]
+}
+
+function writeNoteArray<T>(
+  next: Record<string, unknown>,
+  key: string,
+  items: T[] | undefined
+): void {
+  if (items === undefined) return
+  if (items.length === 0) {
+    delete next[key]
+    return
+  }
+  next[key] = items
+}
+
+/**
+ * Writes or clears generate notes on a packed structured-brief jsonb value.
+ * Omitted fields leave that key unchanged.
+ */
+export function applyGenerateNotesToStoredBrief(
+  packed: Record<string, unknown> | null,
+  notes: GenerateNotesPatch
+): Record<string, unknown> | null {
+  if (notes.generateWarnings === undefined && notes.adoptedChanges === undefined) {
+    return packed
+  }
+  const next = { ...(packed ?? {}) }
+  writeNoteArray(next, GENERATE_WARNINGS_KEY, notes.generateWarnings)
+  writeNoteArray(next, ADOPTED_CHANGES_KEY, notes.adoptedChanges)
+  return Object.keys(next).length === 0 ? null : next
+}
+
+/**
  * Writes or clears `generateWarnings` on a packed structured-brief jsonb value.
  * `undefined` warnings leave the packed object unchanged.
  */
@@ -89,13 +165,5 @@ export function applyGenerateWarningsToStoredBrief(
   packed: Record<string, unknown> | null,
   warnings: ArenaGenerativeGenerateWarning[] | undefined
 ): Record<string, unknown> | null {
-  if (warnings === undefined) return packed
-  if (!packed && warnings.length === 0) return null
-  const next = { ...(packed ?? {}) }
-  if (warnings.length === 0) {
-    delete next[GENERATE_WARNINGS_KEY]
-    return Object.keys(next).length === 0 ? null : next
-  }
-  next[GENERATE_WARNINGS_KEY] = warnings
-  return next
+  return applyGenerateNotesToStoredBrief(packed, { generateWarnings: warnings })
 }

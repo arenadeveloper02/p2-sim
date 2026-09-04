@@ -3,8 +3,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  applyGenerateNotesToStoredBrief,
   applyGenerateWarningsToStoredBrief,
+  collectAdoptedChanges,
   collectGenerateWarnings,
+  parseStoredAdoptedChanges,
   parseStoredGenerateWarnings,
 } from '@/lib/arena-generative-ui/generate-warnings'
 
@@ -106,6 +109,70 @@ describe('parseStoredGenerateWarnings', () => {
     expect(parseStoredGenerateWarnings({ generateWarnings: [{ code: 'nope', message: 'x' }] })).toEqual(
       []
     )
+  })
+})
+
+describe('collectAdoptedChanges', () => {
+  const extraPrimary = {
+    code: 'extra-primary' as const,
+    asked: 'Section "hero" on page "home" had more than one primary action (a, b).',
+    adopted: 'Kept "a" as primary; changed "b" to a secondary Button.',
+  }
+
+  it('replaces adopted changes on a generate', () => {
+    expect(collectAdoptedChanges({ current: [extraPrimary] })).toEqual([extraPrimary])
+  })
+
+  it('keeps stored adopted changes on a preserve edit', () => {
+    expect(
+      collectAdoptedChanges({
+        isPreserveEdit: true,
+        existing: [extraPrimary],
+        current: [],
+      })
+    ).toEqual([extraPrimary])
+  })
+})
+
+describe('parseStoredAdoptedChanges', () => {
+  it('reads nested adoptedChanges on stored jsonb', () => {
+    expect(
+      parseStoredAdoptedChanges({
+        title: 'Orders',
+        adoptedChanges: [
+          {
+            code: 'extra-primary',
+            asked: 'Section "hero" on page "home" had more than one primary action (a, b).',
+            adopted: 'Kept "a" as primary; changed "b" to a secondary Button.',
+          },
+        ],
+      })
+    ).toHaveLength(1)
+  })
+})
+
+describe('applyGenerateNotesToStoredBrief', () => {
+  it('nests adopted changes beside generate warnings', () => {
+    expect(
+      applyGenerateNotesToStoredBrief({ title: 'Orders' }, {
+        adoptedChanges: [
+          {
+            code: 'extra-primary',
+            asked: 'Section "hero" on page "home" had more than one primary action (a, b).',
+            adopted: 'Kept "a" as primary; changed "b" to a secondary Button.',
+          },
+        ],
+      })
+    ).toEqual({
+      title: 'Orders',
+      adoptedChanges: [
+        {
+          code: 'extra-primary',
+          asked: 'Section "hero" on page "home" had more than one primary action (a, b).',
+          adopted: 'Kept "a" as primary; changed "b" to a secondary Button.',
+        },
+      ],
+    })
   })
 })
 

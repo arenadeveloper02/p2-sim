@@ -7,7 +7,10 @@ import type { NextRequest } from 'next/server'
 import { getGenerativeAppDraftContract } from '@/lib/api/contracts/arena-generative-apps'
 import { parseRequest } from '@/lib/api/server'
 import { pageSummariesFromManifest } from '@/lib/arena-generative-ui/deployment'
-import { parseStoredGenerateWarnings } from '@/lib/arena-generative-ui/generate-warnings'
+import {
+  parseStoredAdoptedChanges,
+  parseStoredGenerateWarnings,
+} from '@/lib/arena-generative-ui/generate-warnings'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
@@ -108,6 +111,7 @@ export const GET = withRouteHandler(
         brief: draft.brief ?? null,
         screenshotMatchNotes: screenshotMatchNotesFromDraft(draft.structuredBrief),
         generateWarnings: parseStoredGenerateWarnings(draft.structuredBrief),
+        adoptedChanges: parseStoredAdoptedChanges(draft.structuredBrief),
       })
     } catch (error) {
       logger.error('Failed to load generative app draft', { error: getErrorMessage(error) })

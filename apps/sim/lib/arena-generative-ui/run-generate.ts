@@ -5,7 +5,10 @@ import type {
   ParsedArenaGenerativeGenerateBody,
 } from '@/lib/api/contracts/arena-generative-apps'
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
-import { parseStoredGenerateWarnings } from '@/lib/arena-generative-ui/generate-warnings'
+import {
+  parseStoredAdoptedChanges,
+  parseStoredGenerateWarnings,
+} from '@/lib/arena-generative-ui/generate-warnings'
 import { interpretArenaGenerativeVisualBrief } from '@/lib/arena-generative-ui/interpret-visual-brief'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
@@ -38,6 +41,7 @@ export interface ArenaGenerativeToolOutput {
   structuredBrief?: ArenaGenerativeGenerateResult['structuredBrief']
   plannerError?: string
   generateWarnings?: ArenaGenerativeGenerateResult['generateWarnings']
+  adoptedChanges?: ArenaGenerativeGenerateResult['adoptedChanges']
   editScope?: ArenaGenerativeGenerateResult['editScope']
 }
 
@@ -74,6 +78,7 @@ export async function runArenaGenerativeUi(options: {
   let existingStructuredBrief: ReturnType<typeof parseStoredStructuredBrief> = null
   let existingVisualBrief: ReturnType<typeof parseStoredVisualBrief> = null
   let existingGenerateWarnings: ReturnType<typeof parseStoredGenerateWarnings> = []
+  let existingAdoptedChanges: ReturnType<typeof parseStoredAdoptedChanges> = []
   let existingRevision = 0
   if (requireExistingDraft || body.existingDraftId) {
     if (!body.existingDraftId) {
@@ -100,6 +105,7 @@ export async function runArenaGenerativeUi(options: {
     existingStructuredBrief = parseStoredStructuredBrief(draft.structuredBrief)
     existingVisualBrief = parseStoredVisualBrief(draft.structuredBrief)
     existingGenerateWarnings = parseStoredGenerateWarnings(draft.structuredBrief)
+    existingAdoptedChanges = parseStoredAdoptedChanges(draft.structuredBrief)
     existingRevision = draft.revision
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
       apiBindings = parseApiBindings(draft.apiBindings)
@@ -168,6 +174,7 @@ export async function runArenaGenerativeUi(options: {
     ...(existingVisualBrief ? { existingVisualBrief } : {}),
     ...(visualBriefError ? { visualBriefError } : {}),
     ...(existingGenerateWarnings.length > 0 ? { existingGenerateWarnings } : {}),
+    ...(existingAdoptedChanges.length > 0 ? { existingAdoptedChanges } : {}),
   })
   logger.info('Generated Arena Generative UI manifest', {
     workspaceId,
@@ -217,6 +224,9 @@ export async function runArenaGenerativeUi(options: {
       ...(generated.generateWarnings !== undefined
         ? { generateWarnings: generated.generateWarnings }
         : {}),
+      ...(generated.adoptedChanges !== undefined
+        ? { adoptedChanges: generated.adoptedChanges }
+        : {}),
     })
     logger.info('Persisted Arena Generative UI draft', {
       workspaceId,
@@ -257,6 +267,9 @@ export async function runArenaGenerativeUi(options: {
         ...(generated.plannerError ? { plannerError: generated.plannerError } : {}),
         ...(generated.generateWarnings && generated.generateWarnings.length > 0
           ? { generateWarnings: generated.generateWarnings }
+          : {}),
+        ...(generated.adoptedChanges && generated.adoptedChanges.length > 0
+          ? { adoptedChanges: generated.adoptedChanges }
           : {}),
         ...(generated.editScope ? { editScope: generated.editScope } : {}),
       },

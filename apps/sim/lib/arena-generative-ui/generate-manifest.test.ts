@@ -1740,6 +1740,71 @@ describe('generateArenaGenerativeManifest', () => {
       expect(result.content).toContain('UI critic: repaired')
     })
 
+    it('host-repairs two primary CTAs and still returns a valid manifest', async () => {
+      const extraPrimaryHome = structuredClone(twoPageManifest.pages.home.spec)
+      const elements = extraPrimaryHome.elements as Record<
+        string,
+        { type?: string; props?: Record<string, unknown>; children?: string[] }
+      >
+      elements.go = {
+        type: 'Button',
+        props: {
+          label: 'Go',
+          href: null,
+          navigateTo: 'results',
+          actionId: null,
+          selectItem: null,
+          clearItem: null,
+          setValue: null,
+          variant: 'primary',
+          size: null,
+          shape: null,
+          showWhen: null,
+        },
+        children: [],
+      }
+      const section = elements.section
+      if (section) {
+        section.children = [...(section.children ?? []), 'go']
+      }
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'ok',
+            manifest: {
+              ...twoPageManifest,
+              pages: {
+                ...twoPageManifest.pages,
+                home: { ...twoPageManifest.pages.home, spec: extraPrimaryHome },
+              },
+            },
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(result.adoptedChanges).toEqual([
+        expect.objectContaining({
+          code: 'extra-primary',
+          asked: expect.stringContaining('more than one primary action'),
+          adopted: expect.stringContaining('secondary Button'),
+        }),
+      ])
+      const go = result.manifest?.pages.home.spec.elements.go as {
+        props?: { variant?: string }
+      }
+      expect(go.props?.variant).toBe('secondary')
+    })
+
     it('still returns a valid manifest when the LLM critic throws', async () => {
       mockCreateAnthropicMessage.mockResolvedValue(textMessage(validReply))
       mockCritique.mockRejectedValue(new Error('haiku down'))

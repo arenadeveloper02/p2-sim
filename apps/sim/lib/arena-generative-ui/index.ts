@@ -33,11 +33,17 @@ export {
   planArenaGenerativeEditScope,
 } from '@/lib/arena-generative-ui/edit-scope'
 export { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
-export type { ArenaGenerativeGenerateWarning } from '@/lib/arena-generative-ui/generate-warnings'
+export type {
+  ArenaGenerativeAdoptedChange,
+  ArenaGenerativeGenerateWarning,
+} from '@/lib/arena-generative-ui/generate-warnings'
 export {
+  collectAdoptedChanges,
   collectGenerateWarnings,
+  parseStoredAdoptedChanges,
   parseStoredGenerateWarnings,
 } from '@/lib/arena-generative-ui/generate-warnings'
+export { repairHostCriticExtras } from '@/lib/arena-generative-ui/host-critic-repair'
 export {
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
@@ -89,7 +95,11 @@ export {
   isJsonRenderSpec,
   isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
-export { hostCriticManifest, hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
+export {
+  extraPrimarySections,
+  hostCriticManifest,
+  hostCriticManifestIssues,
+} from '@/lib/arena-generative-ui/ui-critic'
 export type {
   ArenaGenerativeAsyncKind,
   ArenaGenerativeUxActionPlan,

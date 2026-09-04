@@ -250,6 +250,9 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
       'Copy page edit prompt'
     )
     expect(container.querySelector('[data-testid="preview-theme-picker"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="preview-view-warnings"]')).toBeNull()
+    expect(container.querySelector('[data-testid="preview-view-edit-instructions"]')).toBeNull()
+    expect(container.querySelector('[data-testid="preview-diagnostics-banner"]')).toBeNull()
   })
 
   it('navigates home → results → home without publishing', () => {
@@ -418,7 +421,7 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     ).not.toContain('HTTP 502')
   })
 
-  it('surfaces unresolved statePath as copyable edit instructions', () => {
+  it('surfaces unresolved statePath as copyable edit instructions in a modal', () => {
     mockUseGenerativeAppDraft.mockReturnValue({
       isLoading: false,
       isError: false,
@@ -450,12 +453,19 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     })
     pagePath = 'home'
     renderHost()
-    expect(
-      container.querySelector('[data-testid="preview-diagnostics-banner"]')?.textContent
-    ).toContain('Unresolved statePath "articles"')
+    expect(container.querySelector('[data-testid="preview-diagnostics-banner"]')).toBeNull()
+    expect(container.textContent).not.toContain('Unresolved statePath "articles"')
+    const open = container.querySelector('[data-testid="preview-view-edit-instructions"]')
+    expect(open?.textContent).toContain('View edit instructions')
+    act(() => {
+      open?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'Unresolved statePath "articles"'
+    )
   })
 
-  it('surfaces screenshot catalog gaps in preview', () => {
+  it('surfaces screenshot catalog gaps in the warnings modal', () => {
     mockUseGenerativeAppDraft.mockReturnValue({
       isLoading: false,
       isError: false,
@@ -468,9 +478,80 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     })
     pagePath = 'home'
     renderHost()
-    expect(
-      container.querySelector('[data-testid="preview-diagnostics-banner"]')?.textContent
-    ).toContain('custom kanban board')
+    expect(container.querySelector('[data-testid="preview-diagnostics-banner"]')).toBeNull()
+    expect(container.textContent).not.toContain('custom kanban board')
+    const open = container.querySelector('[data-testid="preview-view-warnings"]')
+    expect(open?.textContent).toContain('View warnings')
+    act(() => {
+      open?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'custom kanban board'
+    )
+  })
+
+  it('surfaces host-adopted changes in the warnings modal', () => {
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...twoPageDraft,
+        adoptedChanges: [
+          {
+            code: 'extra-primary',
+            asked: 'Section "section" on page "home" had more than one primary action (submit, go).',
+            adopted: 'Kept "submit" as primary; changed "go" to a secondary Button.',
+          },
+        ],
+      },
+      error: null,
+    })
+    pagePath = 'home'
+    renderHost()
+    expect(container.textContent).not.toContain('Changes we applied')
+    act(() => {
+      container
+        .querySelector('[data-testid="preview-view-warnings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'Changes we applied'
+    )
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'secondary Button'
+    )
+  })
+
+  it('surfaces persisted generate fallbacks in the warnings modal', () => {
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...twoPageDraft,
+        generateWarnings: [
+          {
+            code: 'planner-failed',
+            message:
+              'Planner failed (Planner reply was not a valid structured brief); generated from the prose brief.',
+          },
+        ],
+      },
+      error: null,
+    })
+    pagePath = 'home'
+    renderHost()
+    expect(container.textContent).not.toContain('Planner failed')
+    act(() => {
+      container
+        .querySelector('[data-testid="preview-view-warnings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'Planner failed'
+    )
+    expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
+      'Generate fallbacks'
+    )
   })
 
   it('streams a chat-protocol CTA without stream:true and appends turns', async () => {

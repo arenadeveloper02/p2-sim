@@ -266,6 +266,10 @@ Return ONLY the specification text.`,
       type: 'json',
       description: 'Fail-open skips (intent, planner, visual, critic) when generate still succeeded',
     },
+    adoptedChanges: {
+      type: 'json',
+      description: 'Host auto-repairs applied so generate could succeed (for example one primary CTA)',
+    },
     editScope: { type: 'json', description: 'Pages rewritten on Edit, theme-only, or replan' },
   },
 }

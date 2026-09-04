@@ -4,7 +4,8 @@ import { generateId } from '@sim/utils/id'
 import { filterUndefined } from '@sim/utils/object'
 import { eq } from 'drizzle-orm'
 import {
-  applyGenerateWarningsToStoredBrief,
+  applyGenerateNotesToStoredBrief,
+  type ArenaGenerativeAdoptedChange,
   type ArenaGenerativeGenerateWarning,
 } from '@/lib/arena-generative-ui/generate-warnings'
 import type { ArenaGenerativeStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
@@ -34,6 +35,8 @@ export interface PersistDraftInput {
   visualBrief?: ArenaGenerativeVisualBrief | null
   /** Fail-open skips from this run. Ordinary edits still write this so preview stays current. */
   generateWarnings?: ArenaGenerativeGenerateWarning[]
+  /** Host auto-repairs from this run. Ordinary edits still write this so preview stays current. */
+  adoptedChanges?: ArenaGenerativeAdoptedChange[]
 }
 
 export interface PersistedDraft {
@@ -68,7 +71,10 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
       entryPath: input.entryPath,
       revision: 1,
       brief: input.brief ?? null,
-      structuredBrief: applyGenerateWarningsToStoredBrief(packedBrief, input.generateWarnings),
+      structuredBrief: applyGenerateNotesToStoredBrief(packedBrief, {
+        generateWarnings: input.generateWarnings,
+        adoptedChanges: input.adoptedChanges,
+      }),
       manifest: input.manifest,
       apiBindings: input.apiBindings,
       createdAt: now,
@@ -109,10 +115,18 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
     !Array.isArray(existing.structuredBrief)
       ? { ...(existing.structuredBrief as Record<string, unknown>) }
       : {}
+  const hasNotes =
+    input.generateWarnings !== undefined || input.adoptedChanges !== undefined
   const nextStoredBrief = rewritingBrief
-    ? applyGenerateWarningsToStoredBrief(packedBrief, input.generateWarnings)
-    : input.generateWarnings !== undefined
-      ? applyGenerateWarningsToStoredBrief(existingPacked, input.generateWarnings)
+    ? applyGenerateNotesToStoredBrief(packedBrief, {
+        generateWarnings: input.generateWarnings,
+        adoptedChanges: input.adoptedChanges,
+      })
+    : hasNotes
+      ? applyGenerateNotesToStoredBrief(existingPacked, {
+          generateWarnings: input.generateWarnings,
+          adoptedChanges: input.adoptedChanges,
+        })
       : undefined
 
   await db

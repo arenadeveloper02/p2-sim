@@ -54,6 +54,7 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(body.brief).toBeNull()
     expect(body.screenshotMatchNotes).toBeNull()
     expect(body.generateWarnings).toEqual([])
+    expect(body.adoptedChanges).toEqual([])
   })
 
   it('returns the original generate brief when the draft stored one', async () => {
@@ -122,6 +123,38 @@ describe('Generative app draft GET (two-page app)', () => {
       {
         code: 'planner-failed',
         message: 'Planner failed (bad json); generated from the prose brief.',
+      },
+    ])
+    expect(body.adoptedChanges).toEqual([])
+  })
+
+  it('returns adopted changes stored on the structured-brief jsonb', async () => {
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          ...draftRow,
+          structuredBrief: {
+            title: 'Lead qualifier',
+            adoptedChanges: [
+              {
+                code: 'extra-primary',
+                asked: 'Section "section" on page "home" had more than one primary action (submit, go).',
+                adopted: 'Kept "submit" as primary; changed "go" to a secondary Button.',
+              },
+            ],
+          },
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'rev-1' }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/drafts/draft-1')
+    const response = await GET(req, { params: Promise.resolve({ id: 'draft-1' }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.adoptedChanges).toEqual([
+      {
+        code: 'extra-primary',
+        asked: 'Section "section" on page "home" had more than one primary action (submit, go).',
+        adopted: 'Kept "submit" as primary; changed "go" to a secondary Button.',
       },
     ])
   })

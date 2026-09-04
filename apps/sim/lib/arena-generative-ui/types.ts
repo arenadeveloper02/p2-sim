@@ -1,5 +1,8 @@
 import type { Spec } from '@json-render/core'
-import type { ArenaGenerativeGenerateWarning } from '@/lib/arena-generative-ui/generate-warnings'
+import type {
+  ArenaGenerativeAdoptedChange,
+  ArenaGenerativeGenerateWarning,
+} from '@/lib/arena-generative-ui/generate-warnings'
 import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 
 export type { ArenaGenerativeTheme }
@@ -207,6 +210,7 @@ export interface ArenaGenerativeGenerateResult {
   plannerError?: string
   /** Fail-open skips from this generate/edit. Empty when every stage ran. */
   generateWarnings?: ArenaGenerativeGenerateWarning[]
+  adoptedChanges?: ArenaGenerativeAdoptedChange[]
   editScope?: {
     mode: 'pages' | 'global' | 'theme' | 'replan'
     pages: string[]

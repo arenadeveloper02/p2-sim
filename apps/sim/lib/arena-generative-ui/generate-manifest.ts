@@ -18,9 +18,12 @@ import {
 } from '@/lib/arena-generative-ui/edit-scope'
 import { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
 import {
+  collectAdoptedChanges,
   collectGenerateWarnings,
+  type ArenaGenerativeAdoptedChange,
   type ArenaGenerativeGenerateWarning,
 } from '@/lib/arena-generative-ui/generate-warnings'
+import { repairHostCriticExtras } from '@/lib/arena-generative-ui/host-critic-repair'
 import {
   type ArenaGenerativeIntent,
   analyzeArenaGenerativeIntent,
@@ -221,6 +224,10 @@ function withStatusPrefix(content: string, ...lines: string[]): string {
   return prefix ? `${prefix}\n\n${content}` : content
 }
 
+type EvaluatedCandidate = ManifestValidationResult & {
+  adoptedChanges?: ArenaGenerativeAdoptedChange[]
+}
+
 interface EvaluateGeneratedCandidateOptions {
   isScopedEdit: boolean
   existingManifest?: ArenaGenerativeAppManifest
@@ -240,7 +247,7 @@ interface EvaluateGeneratedCandidateOptions {
 function evaluateGeneratedCandidate(
   candidate: Record<string, unknown>,
   options: EvaluateGeneratedCandidateOptions
-): ManifestValidationResult {
+): EvaluatedCandidate {
   const merged =
     options.isScopedEdit && options.existingManifest && options.editScope
       ? mergeScopedManifestEdit(options.existingManifest, candidate, {
@@ -259,13 +266,20 @@ function evaluateGeneratedCandidate(
   if (!validation.success || !validation.manifest) {
     return validation
   }
-  const hostIssues = hostCriticManifestIssues(validation.manifest, {
+  const repaired = repairHostCriticExtras(validation.manifest, {
+    authoredPagePaths: options.validationOptions.authoredPagePaths,
+  })
+  const hostIssues = hostCriticManifestIssues(repaired.manifest, {
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
   if (hostIssues.length > 0) {
     return { success: false, error: formatHostCriticRepairError(hostIssues) }
   }
-  return validation
+  return {
+    success: true,
+    manifest: repaired.manifest,
+    adoptedChanges: repaired.adoptedChanges,
+  }
 }
 
 /**
@@ -295,7 +309,10 @@ function remainingIssuesForUser(
   if (!validation.success || !validation.manifest) {
     return [validation.error ?? fallback]
   }
-  const hostIssues = hostCriticManifestIssues(validation.manifest, {
+  const repaired = repairHostCriticExtras(validation.manifest, {
+    authoredPagePaths: options.validationOptions.authoredPagePaths,
+  })
+  const hostIssues = hostCriticManifestIssues(repaired.manifest, {
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
   return hostIssues.length > 0 ? hostIssues : [fallback]
@@ -351,6 +368,8 @@ export interface GenerateArenaGenerativeManifestParams {
   visualBriefError?: string
   /** Stored fail-open warnings. Preserve edits keep intent/planner entries. */
   existingGenerateWarnings?: ArenaGenerativeGenerateWarning[]
+  /** Stored host auto-repairs. Preserve edits keep earlier entries. */
+  existingAdoptedChanges?: ArenaGenerativeAdoptedChange[]
 }
 
 /**
@@ -678,7 +697,7 @@ export async function generateArenaGenerativeManifest(
 
     const messages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: userPayload }]
     let parsed: Record<string, unknown> = {}
-    let validation: ManifestValidationResult = { success: false }
+    let validation: EvaluatedCandidate = { success: false }
     let lastRawText = ''
     let attempt = 0
 
@@ -809,6 +828,11 @@ export async function generateArenaGenerativeManifest(
       isPreserveEdit,
       existing: params.existingGenerateWarnings,
     })
+    const adoptedChanges = collectAdoptedChanges({
+      isPreserveEdit,
+      existing: params.existingAdoptedChanges,
+      current: validation.adoptedChanges,
+    })
     const statusLines = isReplan
       ? [
           formatEditScopeStatus(null, false, true),
@@ -834,6 +858,7 @@ export async function generateArenaGenerativeManifest(
         : {}),
       ...(plannerError ? { plannerError } : {}),
       generateWarnings,
+      adoptedChanges,
       ...(isReplan
         ? { editScope: { mode: 'replan' as const, pages: [] } }
         : isPreserveEdit

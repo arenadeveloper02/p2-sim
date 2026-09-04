@@ -243,19 +243,32 @@ function nestedCardErrors(pagePath: string, spec: Spec): string[] {
   return issues
 }
 
-function extraPrimaryErrors(pagePath: string, spec: Spec): string[] {
-  const issues: string[] = []
+export interface ExtraPrimarySection {
+  sectionId: string
+  primaryIds: string[]
+}
+
+/**
+ * Sections that currently have more than one primary action.
+ */
+export function extraPrimarySections(spec: Spec): ExtraPrimarySection[] {
+  const sections: ExtraPrimarySection[] = []
   const elements = elementsOf(spec)
   for (const [sectionId, element] of Object.entries(elements)) {
     if (element.type !== 'Section') continue
-    const primaries = primaryIdsInSection(sectionId, elements)
-    if (primaries.length > 1) {
-      issues.push(
-        `Page "${pagePath}" Section "${sectionId}" has more than one primary action (${primaries.join(', ')}). Keep one of Button variant "primary", SubmitButton, or SearchField.`
-      )
+    const primaryIds = primaryIdsInSection(sectionId, elements)
+    if (primaryIds.length > 1) {
+      sections.push({ sectionId, primaryIds })
     }
   }
-  return issues
+  return sections
+}
+
+function extraPrimaryErrors(pagePath: string, spec: Spec): string[] {
+  return extraPrimarySections(spec).map(
+    (section) =>
+      `Page "${pagePath}" Section "${section.sectionId}" has more than one primary action (${section.primaryIds.join(', ')}). Keep one of Button variant "primary", SubmitButton, or SearchField.`
+  )
 }
 
 function tooManyCardsErrors(pagePath: string, spec: Spec): string[] {

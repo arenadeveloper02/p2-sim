@@ -43,7 +43,7 @@ import {
   DestructiveConfirmDialog,
 } from '@/app/(interfaces)/gui-apps/generative-app-overlays'
 import { GenerativeAppThemeRoot } from '@/app/(interfaces)/gui-apps/generative-app-theme-root'
-import { PreviewDiagnosticsBanner } from '@/app/(interfaces)/gui-apps/preview-diagnostics-banner'
+import { PreviewAuthorNotes } from '@/app/(interfaces)/gui-apps/preview-author-notes'
 import { PreviewThemePicker } from '@/app/(interfaces)/gui-apps/preview-theme-picker'
 import { SpecRenderErrorBoundary } from '@/app/(interfaces)/gui-apps/spec-render-error-boundary'
 import { useGenerativeAppRuntime } from '@/app/(interfaces)/gui-apps/use-generative-app-runtime'
@@ -194,21 +194,29 @@ export function GenerativeAppPreviewHost({
       <div className='min-h-screen'>
         <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)] px-4 py-2 text-[var(--gui-text-muted,#8a8d99)] text-xs'>
           <span>Preview — not published. CTAs run against this draft.</span>
-          <button
-            type='button'
-            data-testid='copy-page-edit-prompt'
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(pagePrompt)
-                setCopiedPagePrompt(true)
-              } catch {
-                setCopiedPagePrompt(false)
-              }
-            }}
-            className='text-[var(--gui-brand,#1a73e8)] hover:underline'
-          >
-            {copiedPagePrompt ? 'Copied' : 'Copy page edit prompt'}
-          </button>
+          <div className='flex flex-wrap items-center gap-3'>
+            <PreviewAuthorNotes
+              generateWarnings={draftQuery.data.generateWarnings ?? []}
+              adoptedChanges={draftQuery.data.adoptedChanges ?? []}
+              screenshotMatchNotes={draftQuery.data.screenshotMatchNotes}
+              editInstructions={editInstructions}
+            />
+            <button
+              type='button'
+              data-testid='copy-page-edit-prompt'
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(pagePrompt)
+                  setCopiedPagePrompt(true)
+                } catch {
+                  setCopiedPagePrompt(false)
+                }
+              }}
+              className='text-[var(--gui-brand,#1a73e8)] hover:underline'
+            >
+              {copiedPagePrompt ? 'Copied' : 'Copy page edit prompt'}
+            </button>
+          </div>
         </div>
         <PreviewThemePicker theme={liveTheme} onChange={setThemeOverride} />
         {bannerMessage ? (
@@ -220,10 +228,6 @@ export function GenerativeAppPreviewHost({
           />
         ) : null}
         {canRefresh ? <ActionRefreshButton onRefresh={reload} /> : null}
-        {draftQuery.data.screenshotMatchNotes ? (
-          <PreviewDiagnosticsBanner instructions={draftQuery.data.screenshotMatchNotes} />
-        ) : null}
-        <PreviewDiagnosticsBanner instructions={editInstructions} />
         <SpecRenderErrorBoundary
           key={renderKey}
           fallbackTitle='This page failed to render'
