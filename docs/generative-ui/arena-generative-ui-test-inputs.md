@@ -114,6 +114,8 @@ Paste a markdown **Sample response** on `recommend_articles` (same heading shape
 }
 ```
 
+Do not paste `{ "data": "# markdown", "status": 200, "headers": { … } }` on `run_history`. That envelope is one article (use it on generate, or paste the markdown alone with Stream on). History must be a list of runs.
+
 ### Design Notes
 
 ```

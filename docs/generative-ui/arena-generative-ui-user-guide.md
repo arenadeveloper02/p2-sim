@@ -29,6 +29,8 @@ Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) prod
 
 **Sample response** can be the JSON you see in the network tab, including `{ "ok": true, "data": { ... } }`. Wrappers like `ok` and `data` are stripped. As soon as the paste is valid, **Output schema** tags should list the real collection (`run_data.history`, `history[].keyword`, …). If those tags never appear, the paste did not become schema. A pasted schema is kept through generate and edit — it is not replaced by the deployed snapshot. Sim keeps **names and types only** — pasted values never reach the model or the database.
 
+Do **not** paste a Response-block envelope whose `data` is a markdown string (`{ "data": "# …", "status": 200, "headers": { … } }`) as **History**. That is one generated article, not a list of runs. Generate will treat it as prose (`content`). History needs a JSON array of runs (`items` / `history` with keyword, client, date, and optional `output`).
+
 | You paste | The generator can do |
 |---|---|
 | JSON object with fields | `Table`, `Stat`, `KeyValue`, Repeat cards bound to those names |
@@ -128,6 +130,16 @@ A: With care, often a decade or more.
 }
 ```
 
+Wrong (generate Response envelope — do not use this on History):
+
+```json
+{
+  "data": "# Title\n\nMarkdown for one article",
+  "status": 200,
+  "headers": { "Content-Type": "application/json" }
+}
+```
+
 The history sample may include `output` so generate knows the row shape. History cards must still bind only keyword, client, and date. Open uses `selectItem` (no `actionId`, no `navigateTo`); a `clearItem` Back restores the list. Generate still lands on Results.
 
 Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add them later in **Requested Changes** only if you implement them yourself.
@@ -143,7 +155,7 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 | History cards: keyword, client, date only | Repeat is a stamp. Binding `item.output` would paint the full markdown on **every** card. |
 | Open: `selectItem true`, no `actionId`, no `navigateTo` | Copies that row into `selected` / `selectedId` / `content`. Host hides Repeat while `selectedId` is set. |
 | Back: `clearItem true`, `showWhen "selectedId"` | Drops the copied row. The list returns. Do not `navigateTo "history"` — that is a no-op on History. |
-| Generate Results: no `onLoad` | A load run would reset state and drop streamed markdown. History Open does not use this page. |
+| Generate Results: no `onLoad` | Loading the generate CTA on Results would refetch and replace streamed markdown. History `onLoad` no longer wipes it. History Open does not use this page. |
 
 `{item.title}` is only for rows inside a Repeat (a list from the API). Do not use `{item…}` for values the visitor just typed.
 

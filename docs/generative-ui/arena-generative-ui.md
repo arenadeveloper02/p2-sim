@@ -1,6 +1,6 @@
 # Arena Generative UI
 
-How to generate a multi-page Arena app with the **Arena Generative UI** block, then publish it.
+How to generate a multi-page Arena app with the **Arena Generative UI** block, then publish it. Architecture: [arena-generative-ui-architecture.md](./arena-generative-ui-architecture.md). Planner Contract: [arena-generative-ui-planner-contract.md](./arena-generative-ui-planner-contract.md).
 
 This is not the older **Generative UI** block. That block still emits a static HTML/email Spec. Arena Generative UI creates an interactive draft (pages, navigation, forms, CTAs) and only becomes a public URL after you publish it from Deploy.
 
@@ -65,7 +65,7 @@ Describe the app in **plain language**. This field is prose, not JSON. Only **Pa
 
 The model uses this brief to invent pages, copy, forms, and navigation. Do not describe loaders, toasts, or confirm dialogs — the host compiles those. Every generate run also applies the **Universal UI/UX Constitution** (hierarchy, one primary action, density, empty copy, Back) so those quality rules are not left to the archetype recipe.
 
-Generation is Intent → Plan → spec: a cheap analyzer extracts task and entities, a cheap planner picks an archetype and sitemap (dashboard, form→result, list→detail, or wizard) plus capability tags, then the spec call renders the json-render manifest with **only that archetype's gold layout**, so a dashboard is not taught as a search hero. Analyzer and planner both fail open — generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run analyzer and planner again on this draft. The block `content` line starts with `Intent:`, `Planner:`, `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite.
+Generation is Intent → Plan → spec: a cheap analyzer extracts task and entities, a cheap planner emits a flat App Blueprint (complexity, sitemap, page archetypes, compose vs navigate vs local, optional Workspace regions, capabilities, data.mode), then the spec call renders the json-render manifest with **only the recipes that blueprint selected**, so a dashboard is not taught as a search hero. Page jobs are `collection`, `detail`, `task`, `results`, `dashboard`, `workflow`, or `workspace` — not the old form→result / list→detail / wizard labels (those still parse as aliases on stored drafts). Analyzer and planner both fail open — generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run analyzer and planner again on this draft. The block `content` line starts with `Intent:`, `Planner:`, `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite.
 
 Include:
 
@@ -226,7 +226,7 @@ If a binding has neither `outputSchema` nor `outputHint`, results are treated as
 
 Generate and edit **fail** when a used binding's `layoutPlan.hostKeys` never appear as `statePath` (no Table for `articles`, no Stat for `score`). Live `outputSchema` drift stays **warn-only**: if a declared top-level name is missing from the response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
 
-The easiest way to fill it is the **Output format** field in **Add an API**: paste a sample response and Sim derives the field names and types in the browser. **Only names and types are saved** — the pasted values are discarded and never reach the database or the model, so a sample containing real data is safe. A paste also stores `outputSchemaSource: "sample"` so generate and edit keep those fields instead of replacing them with the deployed Response snapshot. Leave Sample empty to keep refreshing from the deploy.
+The easiest way to fill it is the **Output schema** section in **Add an API**. With Sample empty, the last successful run is the default; if there is no run, Sim uses the deployed Response block, then Agent `responseFormat`. Paste a sample to override all of those — Sim derives field names and types in the browser and **keeps the paste on the binding** so Add an API can show it again. Generate and edit still receive names, types, and a synthetic example — not the pasted values. A paste also stores `outputSchemaSource: "sample"` so generate and edit keep those fields instead of replacing them with last-run or the deployed snapshot. Leave Sample empty to keep refreshing from last-run, then the deploy.
 
 Field names are ready-to-use `statePath` values, because of how a successful CTA lands in app state:
 
@@ -422,7 +422,7 @@ Navigation targets carry those params: `NavLink.to`, `Button.navigateTo`, `Tabs.
 Three behaviours worth knowing:
 
 - **`onSuccess.navigate` is ignored for a load run.** Honouring it would bounce the user off the page they just opened. The same action can still navigate when a CTA invokes it.
-- **A plain arrival clears prior state first**, so a detail page never flashes the previous record's data. Arriving mid-CTA — because a CTA navigated here before its request resolved — skips that clear so the in-flight result is not discarded.
+- **A plain arrival drops this page's onLoad keys**, so a detail page never flashes the previous record. Generate `content`, form `inputs`, and other CTA keys stay so History can load without wiping Enhance results. Arriving mid-CTA — because a CTA navigated here before its request resolved — skips that drop so the in-flight result is not discarded.
 - **Load-pending and action-pending are tracked separately**, so a page load finishing cannot clear the placeholders of a CTA that is still running.
 
 Load actions run in parallel, and a failure surfaces in the same error banner as a CTA failure.
@@ -607,7 +607,7 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 
 Use this when Generate streams markdown onto Results, and History `onLoad`s a list whose rows already include that markdown (`output`).
 
-1. Two bindings: the generate workflow (`stream: true` + a markdown Output format sample) and `run_history` (JSON sample with `items[].keyword`, `items[].client`, `items[].date`, and `items[].output`).
+1. Two bindings: the generate workflow (`stream: true` + a markdown Output format sample) and `run_history` (JSON sample with `items[].keyword`, `items[].client`, `items[].date`, and `items[].output`). Do not paste `{ data, status, headers }` with a markdown string as History — that is one article, not a list.
 2. In User Input: History cards bind **only** the short fields. Open is `selectItem true`, **no** `actionId`, **no** `navigateTo`. Hide the list with `showWhen "!selectedId"`. Detail is `showWhen "selectedId"` plus a ghost Back `clearItem true`. Generate still goes to Results (`DataText` on `content`, no `onLoad`).
 3. Do not bind `item.output` on the list — Repeat would render the full markdown on every card.
 4. Generate, Preview History, click Open. The cards hide and that row’s markdown shows on History. Back restores the list — not a second API call and not a trip to Results.
@@ -624,7 +624,7 @@ The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guid
 | Preview CTA fails with “Bound workflow is not deployed” | Deploy the bound workflow first — preview uses the same rule as publish |
 | Identifier “preview” is reserved | That path is the draft preview host. Choose another identifier |
 | Deploy tab says run the block first | Run Arena Generative UI on **this** workflow; drafts are per workflow in Deploy |
-| Generation error about pages / API keys | Pages JSON paths kebab-case; CTA keys ⊆ API Bindings |
+| Generation error about host key `data` | History Sample is a Response envelope, not a list. Paste `{ items: [{ keyword, client, date, output }] }` (or the live history JSON) on `run_history` |
 | CTA fails with “Bound workflow is not deployed” | Deploy the target workflow, then republish the app |
 | CTA fails with host not allowlisted | HTTP URL host is locked at publish. Change the binding, regenerate, Launch again |
 | CTA: Secret `"NAME"` was not found | Name in Secret var must match Settings → Secrets. Accessible names are listed in the error. Try `W_NAME` vs `NAME`. |

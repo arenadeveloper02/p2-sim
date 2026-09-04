@@ -1,6 +1,6 @@
 # Arena Generative UI architecture
 
-How generate, compile, and runtime are split for the **Arena Generative UI** block. Authoring and publish flow: [arena-generative-ui.md](./arena-generative-ui.md). How to fill the block: [arena-generative-ui-user-guide.md](./arena-generative-ui-user-guide.md).
+How generate, compile, and runtime are split for the **Arena Generative UI** block. Authoring and publish flow: [arena-generative-ui.md](./arena-generative-ui.md). How to fill the block: [arena-generative-ui-user-guide.md](./arena-generative-ui-user-guide.md). Planner Contract (human-readable): [arena-generative-ui-planner-contract.md](./arena-generative-ui-planner-contract.md). Composition: [arena-generative-ui-composition-semantics.md](./arena-generative-ui-composition-semantics.md).
 
 Generate-time is Intent → Plan (Planner Contract) → selected recipes/design rules → semantic JSON → validate → critic. That is not one LLM per box. Intent Analyzer is a cheap Haiku call. The UI Planner (Sonnet) is the **only architecture layer** — it sees the Planner Contract and emits an App Blueprint. Recipes and design/UX modules are **prompt fragments selected from that blueprint** for the spec call. The spec LLM (**JSON GENERATOR**) never sees the Planner Contract. It emits semantic catalog JSON only (types, `statePath`, variants, spacing tokens). The host Design System paints `--gui-*` at **JSON RENDER**. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
 
@@ -21,9 +21,9 @@ USER BRIEF
 ┌───────────────────────────────────────┐
 │ UI PLANNER                            │  LLM (cheap, Sonnet)
 │    planner-contract.ts                │  App Blueprint: complexity,
-│    structured-brief.ts                │  sitemap, regions, capabilities,
-│    fail-open → spec still runs        │  data.mode, dummy/local actions,
-│    Planner Contract only ─────────────│  design axes
+│    structured-brief.ts                │  sitemap, regions, interaction,
+│    fail-open → spec still runs        │  capabilities, data.mode,
+│    Planner Contract only ─────────────│  dummy/local actions, design axes
 │    (never sent to the generator)      │
 └──────────────────┬────────────────────┘
           ┌────────┼────────┐
@@ -79,7 +79,7 @@ USER BRIEF
 
 Followed. `analyzeArenaGenerativeIntent` extracts task, audience, entities, data requirements, actions, and workflow complexity (`short` / `long-running` / … — job duration, not planner `complexity`). It does not pick an archetype, pages, or catalog types. Unknown `apiKey`s are dropped against declared bindings. Fail-open: `intent: null` and the planner still runs from prose. Dummy/local actions are the planner’s job, not Haiku’s.
 
-`planArenaGenerativeStructuredBrief` is the architecture layer. Its system prompt is `PLANNER_CONTRACT_PROMPT` (`planner-contract.ts`) — the 30 rules plus the App Blueprint JSON contract. That prompt is **never** passed to `buildGeneratorSystemPrompt`. The planner consumes analyzed intent (when present) and emits a scope-disciplined blueprint: `complexity` (`micro | simple | moderate | complex`), `shell.navigation` (`minimal | sidebar | workspace`), `entities[]`, per-page `archetype` / `capabilities` / `data.mode` / optional `regions`, `actions[]` with `source` `dummy | local | binding:<key>` (apiKey optional when dummy/local), and `design` axes (`density`, `tone`, `visualPriority`, `interactionStyle`). Stored drafts stay jsonb; parse fail-opens and lifts old fields (`visualTone` → `tone`, `emphasis` → `visualPriority`, `none`/`tabs` shells, prose `data`). Intent is nested on the same jsonb (`structured_brief.intent`) — no DB migration.
+`planArenaGenerativeStructuredBrief` is the architecture layer. Its system prompt is `PLANNER_CONTRACT_PROMPT` (`planner-contract.ts`) — the Planner Contract plus a **flat** App Blueprint JSON (not a nested `app` wrapper). Human-readable expansion: [arena-generative-ui-planner-contract.md](./arena-generative-ui-planner-contract.md). That prompt is **never** passed to `buildGeneratorSystemPrompt`. The planner consumes analyzed intent (when present) and emits a scope-disciplined blueprint: `complexity` (`micro | simple | moderate | complex`), `shell.navigation` (`minimal | sidebar | workspace`), `entities[]`, per-page `archetype` / `capabilities` / `data.mode` / optional named `regions` (`navigator` / `primary` / `inspector` / `auxiliary`, not an array) / optional `interaction` (`selection`, `inspect`, `execution`), `actions[]` with `source` `dummy | local | binding:<key>` (apiKey optional when dummy/local), and `design` axes (`density`, `tone`, `visualPriority`, `interactionStyle`). `pages[].path`, `entryPath`, and `actions[].fromPage` are bare kebab-case keys. Composition (compose vs navigate vs local) is decided before the sitemap — [arena-generative-ui-composition-semantics.md](./arena-generative-ui-composition-semantics.md). Stored drafts stay jsonb; parse fail-opens and lifts old fields (`visualTone` → `tone`, `emphasis` → `visualPriority`, `none`/`tabs` shells, prose `data`). Intent is nested on the same jsonb (`structured_brief.intent`) — no DB migration.
 
 **Application architecture is the blueprint. Recipes stay dumb renderers.** `recipesForBlueprint` concatenates only used page/region archetypes, the workspace recipe when a page is `workspace`, the shell recipe when navigation is `sidebar` or `workspace`, the representation fragment when `list` / `table` / `cards` is used, and the dummy-data rule when `data.mode` is dummy/local. `buildGeneratorSystemPrompt` selects design/UX modules from that blueprint (forms, tables, workspace, wait/data-state, dummy-data). A micro collection prompt does not receive dashboard gold, SWOT, or a `productType` / collection→crm table.
 
@@ -103,7 +103,7 @@ APPLICATION
 
 The app has one primary `archetype` (the entry job). **Each sitemap page also declares `pages[].archetype`**. Mixed apps are normal: home = `task` and destination = `results`; home = `collection` and record = `detail`; home = `workspace` with regions. Extra jobs are extra pages. Formula: one primary + short planned capabilities + optional `regions` + `representation` + `BindingLayoutPlan` + design axes.
 
-`pages[].regions` (`navigator` / `primary` / `inspector` / `auxiliary`) stay on workspace pages. Each region independently uses an existing archetype. `pages[].modules` remain domain sections for non-workspace pages — not peer archetypes.
+`pages[].regions` (`navigator` / `primary` / `inspector` / `auxiliary`) stay on workspace pages as a named object, not an array and not a `relationship` object. Each region independently uses an existing archetype. Coordination is named in `pages[].interaction` and region `purpose`. `pages[].modules` remain domain sections for non-workspace pages — not peer archetypes. A multi-archetype page is only a Workspace page; Collection + Detail is either that Workspace page or a navigation boundary.
 
 | Shape | Core question | Slots |
 |---|---|---|
@@ -116,7 +116,7 @@ The app has one primary `archetype` (the entry job). **Each sitemap page also de
 | `content` | How do I read/create/edit substantial content? | Header, metadata, `DataText` body, optional related, actions |
 | `workspace` | How do I keep coordinated regions visible together? | catalog Workspace; each region follows that region’s archetype recipe |
 
-Planner disambiguation: scan modules on arrival → **Dashboard**; find/act on a list → **Collection**; one entity → **Detail**; one-shot form → **Task**; sequential stages → **Workflow**; generate/analyze output → **Results**; document-as-product → **Content**. Persistent navigation / header / breadcrumbs is a **shell** question, not an eighth page job.
+Planner disambiguation: scan modules on arrival → **Dashboard**; find/act on a list → **Collection**; one entity → **Detail**; one-shot form → **Task**; sequential stages → **Workflow**; generate/analyze output → **Results**; simultaneous coordinated regions → **Workspace**. `content` is legacy — do not pick it for a new plan. Persistent navigation / header / breadcrumbs is a **shell** question, not a page job.
 
 Stored jsonb aliases (no DB migration; unknown **archetype** still fails Zod and `parseStoredStructuredBrief` returns `null`): `list-detail` → app `collection` with pages `collection` + `detail`; `form-result` → app `task` (destination path `results` → `results`); `wizard` → `workflow`. `workspace` is a first-class page archetype; old drafts that already folded regions into modules still parse.
 
@@ -157,7 +157,7 @@ Followed. The spec Claude call emits the stored manifest as **semantic catalog J
 
 ### 4. Runtime (JSON RENDER)
 
-Followed. Preview and published both compile in memory, then `SpecRenderer` paints host Design System CSS (`generative-app-theme.css`, `--gui-*`). `run-action` + `actionStateFromPlan` merge payloads onto plan keys; `inputSchema` drops extra fields; live `outputSchema` drift is warn-only. Pending is per `actionId`. Confirm, retry, and control disable consult `uxPlan`. Bound regions stay visible while refetching (`aria-busy`); host **Refresh** re-runs `onLoad` without `resetState`; API errors are sanitized before the banner.
+Followed. Preview and published both compile in memory, then `SpecRenderer` paints host Design System CSS (`generative-app-theme.css`, `--gui-*`). `run-action` + `actionStateFromPlan` merge payloads onto plan keys; `inputSchema` drops extra fields; live `outputSchema` drift is warn-only. Pending is per `actionId`. Confirm, retry, and control disable consult `uxPlan`. Bound regions stay visible while refetching (`aria-busy`); host **Refresh** re-runs `onLoad` without dropping existing keys; first visit drops only that page's load keys (not generate `content` / `inputs`); API errors are sanitized before the banner.
 
 ## Where it is not a clean four-box
 
