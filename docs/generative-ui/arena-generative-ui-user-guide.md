@@ -14,7 +14,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each remote CTA calls (if any). **Not JSON.** |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
 | **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. Leave empty for dummy/local apps — do not add a fake workflow just to have a key. |
-| **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. A pasted Sample response is kept through generate and edit. |
+| **Output schema** (inside Add an API) | Last successful run first; if none, deployed Response, then Agent output. A pasted Sample response is kept through generate and edit. |
 | **Design Notes** | Optional. Brand, density, dark mode. Skip unless you care. |
 
 The model **cannot invent API keys**. If User Input names a key (“Submit calls `recommend_articles`”), that key must exist in API Bindings. Leave Bindings empty for dummy/local apps (todos, boards) and for navigation-only apps — create, edit, and complete still work locally. Do not add a fake workflow just to have a key.
@@ -25,7 +25,7 @@ Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) prod
 
 ## Output format (this is the layout lever)
 
-**Add an API → Output schema** is fetched from the bound workflow’s **deployed** Response block or Agent structured output (field names and types). When Sample is empty, generate and edit re-read that snapshot so a new deploy is picked up without saving the binding again.
+**Add an API → Output schema** prefers the bound workflow’s **last successful run** (field names and types from `finalOutput`). If there is no completed run, Sim uses the **deployed** Response block, then Agent structured output. When Sample is empty, generate and edit re-read that chain so a newer run or deploy is picked up without saving the binding again.
 
 **Sample response** can be the JSON you see in the network tab, including `{ "ok": true, "data": { ... } }`. Wrappers like `ok` and `data` are stripped. As soon as the paste is valid, **Output schema** tags should list the real collection (`run_data.history`, `history[].keyword`, …). If those tags never appear, the paste did not become schema. A pasted schema is kept through generate and edit — it is not replaced by the deployed snapshot. Sim keeps **names and types only** — pasted values never reach the model or the database.
 
@@ -166,7 +166,7 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 3. Open on a row hides the History cards and shows **that** run’s markdown on the same page. Back restores the list. It must not call `run_history` or `recommend_articles`, and it must not leave History.
 4. Back from Results returns to Generator. Opening History again still shows the short list.
 
-**History is empty but the API returned data:** Redeploy `run_history` after changing its Response block, then edit with a page-scoped prompt (`On the "history" page, bind Repeat to items`). Generate/edit re-reads the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
+**History is empty but the API returned data:** Run `run_history` once after changing its Response block (or paste a Sample), then edit with a page-scoped prompt (`On the "history" page, bind Repeat to items`). Generate/edit re-reads last-run, then the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
 
 **History Open appends markdown below the list:** Preview/Launch compile missing `showWhen` and a `clearItem` Back. If markdown still sits under the cards, the draft bound `item.output` on the list or never authored a `DataText` for `content`. **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
 

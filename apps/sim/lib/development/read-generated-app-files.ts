@@ -1,10 +1,8 @@
 import { existsSync } from 'fs'
 import { readdir, readFile } from 'fs/promises'
-import { join } from 'path'
+import { join, normalize } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { GeneratedAppFile } from '@/lib/development/nextjs-app-generator'
-import { sanitizeRelativeFilePath } from '@/lib/development/nextjs-app-generator'
 
 const logger = createLogger('ReadGeneratedAppFiles')
 
@@ -34,6 +32,11 @@ const INCLUDED_EXTENSIONS = new Set([
 const MAX_TOTAL_CHARS = 200_000
 const MAX_FILE_CHARS = 24_000
 
+interface GeneratedAppFile {
+  path: string
+  content: string
+}
+
 /**
  * Always read these first so edit/E2B validation cannot drop tsconfig.json (or
  * other scaffolding) when the 200k char budget is spent on app/components first.
@@ -51,6 +54,23 @@ const PINNED_SOURCE_PATHS = [
   'app/page.tsx',
   'REPO_SUMMARY.md',
 ] as const
+
+/**
+ * Join under a generated-app dir. Ignore both sides so NFT cannot turn pinned
+ * names (`next.config.ts`, `package.json`) into this app's files — that emits
+ * colliding `[root-of-the-server]` chunks.
+ */
+function joinGeneratedPath(rootDir: string, relativePath: string): string {
+  return join(/* turbopackIgnore: true */ rootDir, /* turbopackIgnore: true */ relativePath)
+}
+
+function sanitizeRelativeFilePath(filePath: string): string | null {
+  const normalized = normalize(filePath.replace(/\\/g, '/'))
+  if (normalized.startsWith('..') || normalized.startsWith('/')) {
+    return null
+  }
+  return normalized
+}
 
 function shouldIncludeFile(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, '/')
@@ -123,7 +143,7 @@ async function walkDirectory(
       break
     }
 
-    const absolutePath = join(/* turbopackIgnore: true */ currentDir, entry.name)
+    const absolutePath = joinGeneratedPath(currentDir, entry.name)
     const relativePath = absolutePath.slice(rootDir.length + 1)
 
     if (entry.isDirectory()) {
@@ -152,8 +172,6 @@ async function walkDirectory(
 
 /**
  * Reads source files from a generated app directory for LLM edit context.
- * Path joins and reads use `turbopackIgnore` so NFT does not glob pinned names
- * like `package.json` across `apps/sim`.
  */
 export async function readGeneratedAppFiles(outputDir: string): Promise<GeneratedAppFile[]> {
   if (!existsSync(/* turbopackIgnore: true */ outputDir)) {
@@ -165,7 +183,7 @@ export async function readGeneratedAppFiles(outputDir: string): Promise<Generate
   const seenPaths = new Set<string>()
 
   for (const relativePath of PINNED_SOURCE_PATHS) {
-    const absolutePath = join(/* turbopackIgnore: true */ outputDir, relativePath)
+    const absolutePath = joinGeneratedPath(outputDir, relativePath)
     if (!existsSync(/* turbopackIgnore: true */ absolutePath)) {
       continue
     }
