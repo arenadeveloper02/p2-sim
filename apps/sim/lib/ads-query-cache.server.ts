@@ -5,12 +5,11 @@ import { getRedisClient } from '@/lib/core/config/redis'
 const logger = createLogger('AdsQueryCache')
 
 /**
- * How long a cached ads query response lives. Short on purpose: ad platform
- * data drifts during the day, and the win we are after is follow-up questions
- * in the same conversation ("now chart that", "break it down by device"),
- * which land well inside this window.
+ * How long a cached ads query response lives (30 minutes). Long enough for
+ * a typical analytics chat session; short enough that same-day ads data
+ * does not go stale. Follow-ups like "now chart that" stay inside this window.
  */
-const CACHE_TTL_SECONDS = 600
+const CACHE_TTL_SECONDS = 1800
 
 const KEY_PREFIX = 'ads-query'
 

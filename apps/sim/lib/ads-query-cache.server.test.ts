@@ -95,7 +95,7 @@ describe('setCachedAdsQuery', () => {
       buildAdsQueryCacheKey('facebook', parts),
       JSON.stringify({ success: true }),
       'EX',
-      600
+      1800
     )
   })
 
