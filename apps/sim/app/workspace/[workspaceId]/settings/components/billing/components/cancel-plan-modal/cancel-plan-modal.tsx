@@ -42,7 +42,7 @@ export function CancelPlanModal({
   isConfirming = false,
 }: CancelPlanModalProps) {
   const bodyText = isArena
-    ? "Starter is a one-time trial for new organizations, so it isn't available to switch back to. Canceling ends your org's access at the end of this billing period. You'll lose:"
+    ? "Starter is a one-time trial for new organizations, so you won't be able to switch back to it once you leave. Canceling ends your organization's access at the end of this billing period. You'll lose:"
     : "Canceling ends your access at the end of this billing period. You'll lose:"
 
   return (

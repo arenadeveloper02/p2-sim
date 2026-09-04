@@ -190,13 +190,27 @@ export function useUpgradeState({
         await requestJson(billingSwitchPlanContract, {
           body: { targetPlanName: subscription.plan, interval, workspaceId },
         })
+        // Optimistic: CTA "Current Plan" keys off host-context billingInterval.
+        // Dev refetches can lag (or briefly return a stale column); patch the
+        // cache and toggle immediately so the UI does not stick on "Switching…".
+        setIsAnnual(interval === 'year')
+        queryClient.setQueryData<WorkspaceHostContext>(
+          workspaceHostKeys.detail(workspaceId),
+          (previous) =>
+            previous
+              ? {
+                  ...previous,
+                  ownerBilling: { ...previous.ownerBilling, billingInterval: interval },
+                }
+              : previous
+        )
         await refreshBillingState()
       } finally {
         intervalInFlightRef.current = false
         setIsSwitchingInterval(false)
       }
     },
-    [isLegacyPlan, refreshBillingState, subscription.plan, workspaceId]
+    [isLegacyPlan, queryClient, refreshBillingState, subscription.plan, workspaceId]
   )
 
   const currentCredits = getPlanTierCredits(subscription.plan)

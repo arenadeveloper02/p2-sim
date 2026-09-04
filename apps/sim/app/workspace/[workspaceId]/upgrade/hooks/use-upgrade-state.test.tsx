@@ -5,21 +5,29 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockHandleUpgrade, mockInvalidateQueries, mockRequestJson, mockToastError } = vi.hoisted(
-  () => ({
-    mockHandleUpgrade: vi.fn(),
-    mockInvalidateQueries: vi.fn(),
-    mockRequestJson: vi.fn(),
-    mockToastError: vi.fn(),
-  })
-)
+const {
+  mockHandleUpgrade,
+  mockInvalidateQueries,
+  mockSetQueryData,
+  mockRequestJson,
+  mockToastError,
+} = vi.hoisted(() => ({
+  mockHandleUpgrade: vi.fn(),
+  mockInvalidateQueries: vi.fn(),
+  mockSetQueryData: vi.fn(),
+  mockRequestJson: vi.fn(),
+  mockToastError: vi.fn(),
+}))
 
 vi.mock('@sim/emcn', () => ({
   toast: { error: mockToastError },
 }))
 
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+  useQueryClient: () => ({
+    invalidateQueries: mockInvalidateQueries,
+    setQueryData: mockSetQueryData,
+  }),
 }))
 
 vi.mock('@/lib/api/client/request', () => ({
@@ -159,6 +167,30 @@ describe('useUpgradeState', () => {
         },
       })
     )
+  })
+
+  it('optimistically aligns the toggle and host-context interval after a switch', async () => {
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    expect(currentState?.isAnnual).toBe(false)
+
+    await act(async () => {
+      await currentState?.handleSwitchInterval('year')
+    })
+
+    expect(currentState?.isAnnual).toBe(true)
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['workspace-host', 'detail', 'workspace-b'],
+      expect.any(Function)
+    )
+
+    const updater = mockSetQueryData.mock.calls[0][1] as (
+      previous: WorkspaceHostContext | undefined
+    ) => WorkspaceHostContext | undefined
+    expect(updater(HOST_CONTEXT)?.ownerBilling.billingInterval).toBe('year')
+    expect(updater(undefined)).toBeUndefined()
   })
 
   it('exposes checkout and interval pending flags while requests are in flight', async () => {

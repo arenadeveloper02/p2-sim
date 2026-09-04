@@ -69,7 +69,10 @@ export function getBillingInterval(
  * `billingInterval` column — the only source populated on enterprise/manual
  * subscriptions, which skip the checkout flow that writes the metadata value — and
  * falls back to `metadata.billingInterval` (the column is often null on
- * checkout-created subs), defaulting to monthly. Where both are set they agree.
+ * checkout-created subs), defaulting to monthly.
+ *
+ * {@link writeBillingInterval} keeps both sources in sync for self-serve switches;
+ * prefer that helper over writing only one of them.
  */
 export function resolveBillingInterval(
   sub: { billingInterval?: string | null; metadata?: unknown } | null | undefined
@@ -80,7 +83,12 @@ export function resolveBillingInterval(
 }
 
 /**
- * Merge a `billingInterval` value into a subscription's metadata JSON column.
+ * Persist a billing interval on both the dedicated column and metadata JSON.
+ *
+ * `resolveBillingInterval` prefers the column when set, so metadata-only writes
+ * are ignored for rows that already have `billing_interval` populated (common on
+ * Dev after enterprise/manual syncs). Writing both keeps switch-plan, checkout,
+ * and webhook paths consistent.
  */
 export async function writeBillingInterval(
   subscriptionId: string,
@@ -90,6 +98,7 @@ export async function writeBillingInterval(
   await db
     .update(subscription)
     .set({
+      billingInterval: interval,
       metadata: sql`(COALESCE(metadata::jsonb, '{}'::jsonb) || ${patch}::jsonb)::json`,
     })
     .where(eq(subscription.id, subscriptionId))

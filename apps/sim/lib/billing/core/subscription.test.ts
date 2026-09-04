@@ -73,6 +73,7 @@ import {
   hasWorkspaceLiveSyncAccess,
   hasWorkspaceSandboxAccess,
   isWorkspaceOnEnterprisePlan,
+  resolveBillingInterval,
   syncSubscriptionPlan,
 } from '@/lib/billing/core/subscription'
 
@@ -501,5 +502,29 @@ describe('hasWorkspaceSandboxAccess', () => {
 
     await expect(hasWorkspaceSandboxAccess('workspace-host')).resolves.toBe(true)
     expect(mockGetWorkspaceWithOwner).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveBillingInterval', () => {
+  it('prefers the billing_interval column over metadata', () => {
+    expect(
+      resolveBillingInterval({
+        billingInterval: 'year',
+        metadata: { billingInterval: 'month' },
+      })
+    ).toBe('year')
+  })
+
+  it('falls back to metadata when the column is unset', () => {
+    expect(
+      resolveBillingInterval({
+        billingInterval: null,
+        metadata: { billingInterval: 'year' },
+      })
+    ).toBe('year')
+  })
+
+  it('defaults to month when neither source is set', () => {
+    expect(resolveBillingInterval({ billingInterval: null, metadata: null })).toBe('month')
   })
 })
