@@ -5,7 +5,10 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
-import { listCreatorOrganizationsContract } from '@/lib/api/contracts/organizations'
+import {
+  type CreatorOrganization,
+  listCreatorOrganizationsContract,
+} from '@/lib/api/contracts/organizations'
 import { subscriptionTransferContract } from '@/lib/api/contracts/user'
 import { client, useSession, useSubscription } from '@/lib/auth/auth-client'
 import {
@@ -14,7 +17,7 @@ import {
 } from '@/lib/billing/arena/checkout-policy'
 import { buildPlanName, getDisplayPlanName, isPaid } from '@/lib/billing/plan-helpers'
 import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
-import { organizationKeys } from '@/hooks/queries/organization'
+import { ORGANIZATION_LIST_STALE_TIME, organizationKeys } from '@/hooks/queries/organization'
 import { refreshSessionQuery } from '@/hooks/queries/session'
 
 const logger = createLogger('SubscriptionUpgrade')
@@ -30,6 +33,11 @@ interface UpgradeOptions {
   creditTier?: number
   annual?: boolean
   organizationId?: string
+}
+
+interface CreatorOrganizationsResponse {
+  organizations: CreatorOrganization[]
+  isMemberOfAnyOrg: boolean
 }
 
 /**
@@ -68,6 +76,70 @@ async function resolveCheckoutUserId(
   return userId
 }
 
+/**
+ * Loads creator-org membership via the same React Query key as
+ * {@link useAdminOrganizations} so a warm upgrade page avoids a second GET.
+ */
+function fetchCreatorOrganizations(
+  queryClient: QueryClient
+): Promise<CreatorOrganizationsResponse> {
+  return queryClient.fetchQuery({
+    queryKey: organizationKeys.adminLists(),
+    queryFn: ({ signal }) => requestJson(listCreatorOrganizationsContract, { signal }),
+    staleTime: ORGANIZATION_LIST_STALE_TIME,
+  })
+}
+
+/**
+ * Best-effort post-upgrade bookkeeping. Never awaited on the checkout redirect
+ * path — Stripe navigation must not wait on transfer or cache invalidation.
+ */
+function settleTeamUpgradeSideEffects(params: {
+  queryClient: QueryClient
+  userId: string
+  referenceId: string
+  currentSubscriptionRowId: string | undefined
+}): void {
+  const { queryClient, userId, referenceId, currentSubscriptionRowId } = params
+
+  if (currentSubscriptionRowId && referenceId !== userId) {
+    void (async () => {
+      try {
+        logger.info('Transferring subscription to organization after upgrade', {
+          subscriptionId: currentSubscriptionRowId,
+          organizationId: referenceId,
+        })
+        await requestJson(subscriptionTransferContract, {
+          params: { id: currentSubscriptionRowId },
+          body: { organizationId: referenceId },
+        })
+        logger.info('Successfully transferred subscription to organization', {
+          subscriptionId: currentSubscriptionRowId,
+          organizationId: referenceId,
+        })
+      } catch (transferError) {
+        logger.error('Failed to transfer subscription to organization', {
+          subscriptionId: currentSubscriptionRowId,
+          organizationId: referenceId,
+          error:
+            transferError instanceof ApiClientError
+              ? (transferError.rawBody ?? transferError.message)
+              : getErrorMessage(transferError, 'Unknown error'),
+        })
+      }
+    })()
+  }
+
+  void queryClient.invalidateQueries({ queryKey: organizationKeys.lists() }).then(
+    () => {
+      logger.info('Refreshed organization data after team upgrade')
+    },
+    (error: unknown) => {
+      logger.warn('Failed to refresh organization data after upgrade', error)
+    }
+  )
+}
+
 export function useSubscriptionUpgrade() {
   const { data: session, isPending: isSessionPending } = useSession()
   const betterAuthSubscription = useSubscription()
@@ -80,26 +152,40 @@ export function useSubscriptionUpgrade() {
       const planName = buildPlanName(targetPlan, creditTier)
       const userId = await resolveCheckoutUserId(queryClient, session?.user?.id)
 
-      let currentSubscriptionRowId: string | undefined
-      let currentStripeSubscriptionId: string | undefined
-      let allSubscriptions: any[] = []
-      try {
-        const listResult = await client.subscription.list()
-        allSubscriptions = listResult.data || []
-        const initialReferenceId =
-          targetPlan === 'team' && options?.organizationId ? options.organizationId : userId
-        const activeReferenceSub = allSubscriptions.find(
-          (sub: any) =>
-            hasPaidSubscriptionStatus(sub.status) &&
-            sub.referenceId === initialReferenceId &&
-            isStripeUpgradeableSubscription(sub)
-        )
-        currentSubscriptionRowId = activeReferenceSub?.id
-        currentStripeSubscriptionId = activeReferenceSub?.stripeSubscriptionId
-      } catch (_e) {
-        currentSubscriptionRowId = undefined
-        currentStripeSubscriptionId = undefined
-      }
+      // Subscription list and (for team) org membership are independent — fetch
+      // them together so Get Started does not pay two serial round trips before
+      // Stripe Checkout creation.
+      const subscriptionsPromise = client.subscription.list().then(
+        (listResult) => listResult.data || [],
+        () => [] as any[]
+      )
+      const organizationsPromise =
+        targetPlan === 'team'
+          ? fetchCreatorOrganizations(queryClient).catch((err: unknown) => {
+              if (err instanceof ApiClientError) {
+                throw new Error('Failed to check organization status')
+              }
+              throw err
+            })
+          : Promise.resolve<CreatorOrganizationsResponse | null>(null)
+
+      const [allSubscriptions, orgsData] = await Promise.all([
+        subscriptionsPromise,
+        organizationsPromise,
+      ])
+
+      const initialReferenceId =
+        targetPlan === 'team' && options?.organizationId ? options.organizationId : userId
+      const activeReferenceSub = allSubscriptions.find(
+        (sub: any) =>
+          hasPaidSubscriptionStatus(sub.status) &&
+          sub.referenceId === initialReferenceId &&
+          isStripeUpgradeableSubscription(sub)
+      )
+      const currentSubscriptionRowId = activeReferenceSub?.id as string | undefined
+      const currentStripeSubscriptionId = activeReferenceSub?.stripeSubscriptionId as
+        | string
+        | undefined
 
       if (currentSubscriptionRowId && !currentStripeSubscriptionId) {
         logger.error('Active paid subscription is missing its Stripe subscription ID', {
@@ -116,15 +202,10 @@ export function useSubscriptionUpgrade() {
 
       if (targetPlan === 'team') {
         try {
-          let orgsData
-          try {
-            orgsData = await requestJson(listCreatorOrganizationsContract, {})
-          } catch (err) {
-            if (err instanceof ApiClientError) {
-              throw new Error('Failed to check organization status')
-            }
-            throw err
+          if (!orgsData) {
+            throw new Error('Failed to check organization status')
           }
+
           const existingOrg = options?.organizationId
             ? orgsData.organizations?.find(
                 (org) => org.id === options.organizationId && isOrgAdminRole(org.role)
@@ -233,51 +314,18 @@ export function useSubscriptionUpgrade() {
           )
         }
 
-        if (targetPlan === 'team' && currentSubscriptionRowId && referenceId !== userId) {
-          try {
-            logger.info('Transferring subscription to organization after upgrade', {
-              subscriptionId: currentSubscriptionRowId,
-              organizationId: referenceId,
-            })
-
-            try {
-              await requestJson(subscriptionTransferContract, {
-                params: { id: currentSubscriptionRowId },
-                body: { organizationId: referenceId },
-              })
-              logger.info('Successfully transferred subscription to organization', {
-                subscriptionId: currentSubscriptionRowId,
-                organizationId: referenceId,
-              })
-            } catch (transferError) {
-              logger.error('Failed to transfer subscription to organization', {
-                subscriptionId: currentSubscriptionRowId,
-                organizationId: referenceId,
-                error:
-                  transferError instanceof ApiClientError
-                    ? (transferError.rawBody ?? transferError.message)
-                    : transferError instanceof Error
-                      ? transferError.message
-                      : 'Unknown error',
-              })
-            }
-          } catch (error) {
-            logger.error('Error transferring subscription after upgrade', error)
-          }
-        }
-
-        if (targetPlan === 'team') {
-          try {
-            await queryClient.invalidateQueries({ queryKey: organizationKeys.lists() })
-            logger.info('Refreshed organization data after team upgrade')
-          } catch (error) {
-            logger.warn('Failed to refresh organization data after upgrade', error)
-          }
-        }
-
         const checkoutUrl = resolveCheckoutRedirectUrl(upgradeResult)
         if (!checkoutUrl) {
           throw new Error('Checkout could not be started. Please try again.')
+        }
+
+        if (targetPlan === 'team') {
+          settleTeamUpgradeSideEffects({
+            queryClient,
+            userId,
+            referenceId,
+            currentSubscriptionRowId,
+          })
         }
 
         logger.info('Subscription upgrade completed successfully', { targetPlan, referenceId })
