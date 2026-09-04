@@ -188,14 +188,18 @@ function formatIntentStatus(intent: ArenaGenerativeIntent | null, intentError?: 
 function formatPlannerStatus(
   brief: ArenaGenerativeStructuredBrief | null,
   plannerError?: string,
-  droppedActions?: ReadonlyArray<{ id: string; apiKey?: string }>
+  droppedActions?: ReadonlyArray<{ id: string; apiKey?: string }>,
+  uncoordinatedPages?: readonly string[]
 ): string {
   if (brief) {
     const paths = brief.pages.map((page) => page.path).join(', ')
     const dropped = droppedActions?.length
       ? ` Dropped ${droppedActions.map((action) => action.id).join(', ')} (unknown API key).`
       : ''
-    return `Planner: ${brief.archetype} · ${paths}.${dropped}`
+    const uncoordinated = uncoordinatedPages?.length
+      ? ` Uncoordinated regions on ${uncoordinatedPages.join(', ')}.`
+      : ''
+    return `Planner: ${brief.archetype} · ${paths}.${dropped}${uncoordinated}`
   }
   if (plannerError) {
     return `Planner failed (${plannerError}); generated from the prose brief.`
@@ -527,6 +531,7 @@ export async function generateArenaGenerativeManifest(
   const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
   const plannerError = 'error' in planned ? planned.error : undefined
   const droppedActions = planned.droppedActions ?? []
+  const uncoordinatedPages = planned.uncoordinatedPages ?? []
   if (structuredBrief) {
     logger.info('Planned Arena Generative UI structured brief', {
       archetype: structuredBrief.archetype,
@@ -823,12 +828,18 @@ export async function generateArenaGenerativeManifest(
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
     const criticStatus = formatCriticStatus(critique, criticRepaired)
     const intentStatus = formatIntentStatus(analyzedIntent, intentError)
-    const plannerStatus = formatPlannerStatus(structuredBrief, plannerError, droppedActions)
+    const plannerStatus = formatPlannerStatus(
+      structuredBrief,
+      plannerError,
+      droppedActions,
+      uncoordinatedPages
+    )
     const visualStatus = formatVisualBriefStatus(visualBrief ?? null, params.visualBriefError)
     const generateWarnings = collectGenerateWarnings({
       intentError,
       plannerError,
       droppedActions,
+      uncoordinatedPages,
       visualBriefError: params.visualBriefError,
       criticSkipped: Boolean(critique.skipped),
       isPreserveEdit,

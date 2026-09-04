@@ -5,6 +5,7 @@ export const ARENA_GENERATIVE_GENERATE_WARNING_CODES = [
   'intent-skipped',
   'planner-failed',
   'actions-dropped',
+  'uncoordinated-regions',
   'visual-skipped',
   'critic-skipped',
 ] as const
@@ -36,6 +37,7 @@ const PIPELINE_WARNING_CODES = new Set<ArenaGenerativeGenerateWarningCode>([
   'intent-skipped',
   'planner-failed',
   'actions-dropped',
+  'uncoordinated-regions',
 ])
 
 const DROPPED_ACTION_WARNING_MAX = 500
@@ -58,6 +60,19 @@ export function formatDroppedActionsWarning(
   )
 }
 
+/**
+ * Author-visible note when a Workspace page has regions but no
+ * `pages[].interaction` after the planner repair turn.
+ */
+export function formatUncoordinatedRegionsWarning(pages: readonly string[]): string | undefined {
+  if (pages.length === 0) return undefined
+  return truncate(
+    `Planner left page(s) ${pages.join(', ')} without pages[].interaction — Workspace regions are uncoordinated. Name selection, inspect, or execution.`,
+    DROPPED_ACTION_WARNING_MAX - 3,
+    '...'
+  )
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -70,6 +85,7 @@ export function collectGenerateWarnings(input: {
   intentError?: string
   plannerError?: string
   droppedActions?: ReadonlyArray<{ id: string; apiKey?: string }>
+  uncoordinatedPages?: readonly string[]
   visualBriefError?: string
   criticSkipped?: boolean
   isPreserveEdit?: boolean
@@ -94,6 +110,13 @@ export function collectGenerateWarnings(input: {
       current.push({
         code: 'actions-dropped',
         message: droppedMessage,
+      })
+    }
+    const uncoordinatedMessage = formatUncoordinatedRegionsWarning(input.uncoordinatedPages ?? [])
+    if (uncoordinatedMessage) {
+      current.push({
+        code: 'uncoordinated-regions',
+        message: uncoordinatedMessage,
       })
     }
   }

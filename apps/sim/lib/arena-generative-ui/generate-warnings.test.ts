@@ -95,8 +95,49 @@ describe('collectGenerateWarnings', () => {
         intentError: 'should not appear',
         plannerError: 'should not appear',
         droppedActions: [{ id: 'ghost', apiKey: 'invented' }],
+        uncoordinatedPages: ['home'],
       })
     ).toEqual([])
+  })
+
+  it('records Workspace pages that have regions but no interaction', () => {
+    expect(
+      collectGenerateWarnings({
+        uncoordinatedPages: ['home'],
+      })
+    ).toEqual([
+      {
+        code: 'uncoordinated-regions',
+        message:
+          'Planner left page(s) home without pages[].interaction — Workspace regions are uncoordinated. Name selection, inspect, or execution.',
+      },
+    ])
+  })
+
+  it('keeps a stored uncoordinated-regions note on a preserve edit', () => {
+    expect(
+      collectGenerateWarnings({
+        isPreserveEdit: true,
+        criticSkipped: true,
+        existing: [
+          {
+            code: 'uncoordinated-regions',
+            message:
+              'Planner left page(s) home without pages[].interaction — Workspace regions are uncoordinated. Name selection, inspect, or execution.',
+          },
+        ],
+      })
+    ).toEqual([
+      {
+        code: 'uncoordinated-regions',
+        message:
+          'Planner left page(s) home without pages[].interaction — Workspace regions are uncoordinated. Name selection, inspect, or execution.',
+      },
+      {
+        code: 'critic-skipped',
+        message: 'UI critic: skipped (unavailable)',
+      },
+    ])
   })
 
   it('records invented planner actions that were stripped', () => {

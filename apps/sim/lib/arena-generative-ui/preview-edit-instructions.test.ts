@@ -47,6 +47,21 @@ describe('buildPreviewEditInstructions', () => {
     expect(text).toContain('dropped an action')
   })
 
+  it('asks to name Workspace coordination after an uncoordinated plan', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'home',
+      generateWarnings: [
+        {
+          code: 'uncoordinated-regions',
+          message:
+            'Planner left page(s) home without pages[].interaction — Workspace regions are uncoordinated. Name selection, inspect, or execution.',
+        },
+      ],
+    })
+    expect(text).toContain('On the "home" page, name how regions coordinate as {user_input}')
+    expect(text).toContain('selection, inspect, or execution')
+  })
+
   it('asks to re-plan when the planner fell open', () => {
     const text = buildPreviewEditInstructions({
       pagePath: 'home',

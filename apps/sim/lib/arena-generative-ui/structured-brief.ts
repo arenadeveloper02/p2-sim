@@ -156,6 +156,10 @@ const pageRegionSchema = z.object({
   purpose: briefProse(400).optional(),
 })
 
+const PAGE_REGION_KEYS = ['navigator', 'primary', 'inspector', 'auxiliary'] as const
+
+type PageRegionKey = (typeof PAGE_REGION_KEYS)[number]
+
 const pageRegionsSchema = z.object({
   navigator: pageRegionSchema.optional(),
   primary: pageRegionSchema.optional(),
@@ -522,20 +526,52 @@ function liftActionSource(action: Record<string, unknown>): Record<string, unkno
   return action
 }
 
+function canonicalizeRegionKey(raw: unknown): PageRegionKey | undefined {
+  if (typeof raw !== 'string') return undefined
+  const key = raw.trim().toLowerCase().replace(/_/g, '-')
+  return PAGE_REGION_KEYS.find((item) => item === key)
+}
+
+function regionKeyFromLegacyItem(item: Record<string, unknown>): PageRegionKey | undefined {
+  return (
+    canonicalizeRegionKey(item.role) ??
+    canonicalizeRegionKey(item.region) ??
+    canonicalizeRegionKey(item.id)
+  )
+}
+
+function sanitizeOneRegion(region: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(region)) return undefined
+  const archetype = canonicalizeArchetype(region.archetype)
+  if (!archetype || archetype === 'workspace') return undefined
+  const next: Record<string, unknown> = { archetype }
+  if (typeof region.entity === 'string' && region.entity.trim()) next.entity = region.entity
+  const representation = liftRepresentation(region.representation)
+  if (representation) next.representation = representation
+  if (typeof region.purpose === 'string' && region.purpose.trim()) next.purpose = region.purpose
+  return next
+}
+
+/**
+ * Named object is the contract. An array with role / region / id is the old
+ * Composition Semantics shape — lift it so the workspace is not dropped.
+ */
 function sanitizeRegions(value: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(value)) return undefined
   const regions: Record<string, unknown> = {}
-  for (const key of ['navigator', 'primary', 'inspector', 'auxiliary'] as const) {
-    const region = value[key]
-    if (!isRecord(region)) continue
-    const archetype = canonicalizeArchetype(region.archetype)
-    if (!archetype || archetype === 'workspace') continue
-    const next: Record<string, unknown> = { archetype }
-    if (typeof region.entity === 'string' && region.entity.trim()) next.entity = region.entity
-    const representation = liftRepresentation(region.representation)
-    if (representation) next.representation = representation
-    if (typeof region.purpose === 'string' && region.purpose.trim()) next.purpose = region.purpose
-    regions[key] = next
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (!isRecord(item)) continue
+      const key = regionKeyFromLegacyItem(item)
+      if (!key || regions[key]) continue
+      const next = sanitizeOneRegion(item)
+      if (next) regions[key] = next
+    }
+    return Object.keys(regions).length > 0 ? regions : undefined
+  }
+  if (!isRecord(value)) return undefined
+  for (const key of PAGE_REGION_KEYS) {
+    const next = sanitizeOneRegion(value[key])
+    if (next) regions[key] = next
   }
   return Object.keys(regions).length > 0 ? regions : undefined
 }
@@ -1092,6 +1128,45 @@ function droppedActionsRepairMessage(
   return `That brief invented action(s) ${names}. ${remap} Return one JSON object in the planner blueprint shape.`
 }
 
+function namedRegionCount(page: {
+  regions?: ArenaGenerativeStructuredBrief['pages'][number]['regions']
+}): number {
+  if (!page.regions) return 0
+  return PAGE_REGION_KEYS.filter((key) => page.regions?.[key]).length
+}
+
+/**
+ * Workspace pages that declared regions but no `pages[].interaction`.
+ * Two or more regions, or a workspace archetype with any region, must name
+ * selection / inspect / execution.
+ */
+export function uncoordinatedWorkspacePages(brief: ArenaGenerativeStructuredBrief): string[] {
+  return brief.pages
+    .filter((page) => {
+      const regions = namedRegionCount(page)
+      if (regions === 0) return false
+      if (regions < 2 && page.archetype !== 'workspace') return false
+      return !page.interaction || Object.keys(page.interaction).length === 0
+    })
+    .map((page) => page.path)
+}
+
+function uncoordinatedRegionsRepairMessage(pages: readonly string[]): string {
+  return `That brief composed page(s) ${pages.join(', ')} without pages[].interaction. Name selection, inspect, or execution so the regions coordinate. Return one JSON object in the planner blueprint shape. Do not emit a manifest.`
+}
+
+function plannerIssueRepairMessage(
+  dropped: readonly DroppedBriefAction[],
+  uncoordinatedPages: readonly string[],
+  bindingKeys: readonly string[]
+): string {
+  if (dropped.length > 0 && uncoordinatedPages.length > 0) {
+    return `${droppedActionsRepairMessage(dropped, bindingKeys)} ${uncoordinatedRegionsRepairMessage(uncoordinatedPages)}`
+  }
+  if (dropped.length > 0) return droppedActionsRepairMessage(dropped, bindingKeys)
+  return uncoordinatedRegionsRepairMessage(uncoordinatedPages)
+}
+
 function parseStructuredBriefResult(
   value: unknown,
   options: {
@@ -1230,6 +1305,7 @@ export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null
   error?: string
   droppedActions?: DroppedBriefAction[]
+  uncoordinatedPages?: string[]
 }
 
 /**
@@ -1268,7 +1344,8 @@ export async function planArenaGenerativeStructuredBrief(
       apiBindings: params.apiBindings,
     }
     const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
-    let usableWithDropped: ParsedStructuredBrief | null = null
+    let usableWithIssues: (ParsedStructuredBrief & { uncoordinatedPages: string[] }) | null =
+      null
 
     for (let attempt = 0; attempt < MAX_BRIEF_ATTEMPTS; attempt += 1) {
       const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
@@ -1287,13 +1364,24 @@ export async function planArenaGenerativeStructuredBrief(
         const withIntent = params.intent
           ? { ...parsedBrief.brief, intent: params.intent }
           : parsedBrief.brief
-        if (parsedBrief.droppedActions.length > 0 && attempt + 1 < MAX_BRIEF_ATTEMPTS) {
-          usableWithDropped = { brief: withIntent, droppedActions: parsedBrief.droppedActions }
+        const uncoordinatedPages = uncoordinatedWorkspacePages(withIntent)
+        const hasRepairableIssues =
+          parsedBrief.droppedActions.length > 0 || uncoordinatedPages.length > 0
+        if (hasRepairableIssues && attempt + 1 < MAX_BRIEF_ATTEMPTS) {
+          usableWithIssues = {
+            brief: withIntent,
+            droppedActions: parsedBrief.droppedActions,
+            uncoordinatedPages,
+          }
           messages.push(
             { role: 'assistant', content: rawText },
             {
               role: 'user',
-              content: droppedActionsRepairMessage(parsedBrief.droppedActions, bindingKeys),
+              content: plannerIssueRepairMessage(
+                parsedBrief.droppedActions,
+                uncoordinatedPages,
+                bindingKeys
+              ),
             }
           )
           continue
@@ -1303,6 +1391,7 @@ export async function planArenaGenerativeStructuredBrief(
           ...(parsedBrief.droppedActions.length > 0
             ? { droppedActions: parsedBrief.droppedActions }
             : {}),
+          ...(uncoordinatedPages.length > 0 ? { uncoordinatedPages } : {}),
         }
       }
       if (attempt + 1 < MAX_BRIEF_ATTEMPTS) {
@@ -1312,11 +1401,20 @@ export async function planArenaGenerativeStructuredBrief(
         )
       }
     }
-    if (usableWithDropped) {
-      logger.warn('Arena Generative UI planner kept a brief after dropping invented actions')
+    if (usableWithIssues) {
+      logger.warn(
+        usableWithIssues.droppedActions.length > 0
+          ? 'Arena Generative UI planner kept a brief after dropping invented actions'
+          : 'Arena Generative UI planner kept a brief with uncoordinated Workspace regions'
+      )
       return {
-        brief: usableWithDropped.brief,
-        droppedActions: usableWithDropped.droppedActions,
+        brief: usableWithIssues.brief,
+        ...(usableWithIssues.droppedActions.length > 0
+          ? { droppedActions: usableWithIssues.droppedActions }
+          : {}),
+        ...(usableWithIssues.uncoordinatedPages.length > 0
+          ? { uncoordinatedPages: usableWithIssues.uncoordinatedPages }
+          : {}),
       }
     }
     logger.warn('Arena Generative UI structured brief was unusable; generating from prose')

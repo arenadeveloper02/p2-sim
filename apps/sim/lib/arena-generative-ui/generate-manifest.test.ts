@@ -1120,6 +1120,57 @@ describe('generateArenaGenerativeManifest', () => {
       ])
     })
 
+    it('warns when the planner kept a Workspace page without interaction', async () => {
+      mockPlanBrief.mockResolvedValue({
+        brief: {
+          ...plannedBrief,
+          pages: [
+            {
+              path: 'home',
+              title: 'Home',
+              purpose: 'Form',
+              data: 'CTA then navigate',
+              actions: [],
+            },
+            {
+              path: 'results',
+              title: 'Results',
+              purpose: 'Score',
+              data: 'bind score',
+              actions: [],
+            },
+          ],
+        },
+        uncoordinatedPages: ['home'],
+      })
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Projects',
+            content: 'ok',
+            manifest: { entryPath: 'home' },
+            pages: twoPageManifest.pages,
+            actions: twoPageManifest.actions,
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Projects and tasks side by side.',
+        apiBindings: [],
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.content).toContain('Uncoordinated regions on home')
+      expect(result.generateWarnings).toEqual([
+        {
+          code: 'uncoordinated-regions',
+          message:
+            'Planner left page(s) home without pages[].interaction — Workspace regions are uncoordinated. Name selection, inspect, or execution.',
+        },
+      ])
+    })
+
     it('records intent skip and visual interpret errors as generate warnings', async () => {
       mockAnalyzeIntent.mockResolvedValue({ intent: null, error: 'haiku down' })
       mockCreateAnthropicMessage.mockResolvedValue(

@@ -40,6 +40,7 @@ import {
   parseStoredStructuredBrief,
   planArenaGenerativeStructuredBrief,
   recipesForBlueprint,
+  uncoordinatedWorkspacePages,
 } from '@/lib/arena-generative-ui/structured-brief'
 
 const listDetailBrief: ArenaGenerativeStructuredBrief = {
@@ -88,6 +89,34 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
   capabilities: [],
   processing: [],
   emptyCopy: 'No orders yet.',
+}
+
+const workspaceHomeBrief: ArenaGenerativeStructuredBrief = {
+  title: 'Projects',
+  purpose: 'See tasks alongside the project list.',
+  audience: 'Leads',
+  complexity: 'moderate',
+  archetype: 'workspace',
+  entryPath: 'home',
+  pages: [
+    {
+      path: 'home',
+      title: 'Projects',
+      purpose: 'Navigator and tasks together',
+      data: 'dummy',
+      dataMode: 'dummy',
+      actions: [],
+      capabilities: [],
+      archetype: 'workspace',
+      regions: {
+        navigator: { archetype: 'collection', entity: 'project' },
+        primary: { archetype: 'collection', entity: 'task' },
+      },
+    },
+  ],
+  actions: [],
+  capabilities: [],
+  processing: [],
 }
 
 function textMessage(text: string) {
@@ -312,6 +341,81 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.pages[0]?.regions?.primary?.archetype).toBe('collection')
     expect(parsed?.pages[0]?.regions?.inspector?.archetype).toBe('detail')
     expect(parsed?.pages[0]?.dataMode).toBe('dummy')
+  })
+
+  it('lifts a legacy regions array onto the named object and drops relationship', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Projects',
+        purpose: 'See tasks alongside the project list.',
+        audience: 'Leads',
+        complexity: 'moderate',
+        archetype: 'workspace',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Projects',
+            purpose: 'Navigator, tasks, and inspector together',
+            data: { mode: 'dummy' },
+            actions: [],
+            archetype: 'workspace',
+            regions: [
+              {
+                id: 'projects',
+                role: 'navigator',
+                archetype: 'collection',
+                entity: 'project',
+                representation: 'list',
+              },
+              {
+                id: 'tasks',
+                role: 'primary',
+                archetype: 'collection',
+                entity: 'task',
+                relationship: {
+                  source: 'projects.selection',
+                  target: 'tasks.projectId',
+                },
+              },
+              {
+                region: 'inspector',
+                archetype: 'detail',
+                entity: 'task',
+                purpose: 'Selected task',
+              },
+            ],
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages[0]?.regions).toEqual({
+      navigator: {
+        archetype: 'collection',
+        entity: 'project',
+        representation: 'list',
+      },
+      primary: { archetype: 'collection', entity: 'task' },
+      inspector: { archetype: 'detail', entity: 'task', purpose: 'Selected task' },
+    })
+    expect(parsed?.pages[0]?.regions?.primary).not.toHaveProperty('relationship')
+  })
+
+  it('flags a Workspace page that has regions but no interaction', () => {
+    expect(uncoordinatedWorkspacePages(workspaceHomeBrief)).toEqual(['home'])
+    expect(
+      uncoordinatedWorkspacePages({
+        ...workspaceHomeBrief,
+        pages: [
+          {
+            ...workspaceHomeBrief.pages[0],
+            interaction: { selection: 'project filters tasks' },
+          },
+        ],
+      })
+    ).toEqual([])
   })
 
   it('parses a labeled pages[].interaction string onto the coordination object', () => {
@@ -963,6 +1067,54 @@ describe('planArenaGenerativeStructuredBrief', () => {
     }
     expect(repair.content).toContain('invented action(s) load_order (apiKey "get_order")')
     expect(repair.content).toContain('Declared binding keys: list_orders')
+  })
+
+  it('retries once when a Workspace page has regions but no interaction', async () => {
+    const coordinated = {
+      ...workspaceHomeBrief,
+      pages: [
+        {
+          ...workspaceHomeBrief.pages[0],
+          interaction: { selection: 'project filters tasks', inspect: 'selected task' },
+        },
+      ],
+    }
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(textMessage(JSON.stringify(workspaceHomeBrief)))
+      .mockResolvedValueOnce(textMessage(JSON.stringify(coordinated)))
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Projects and tasks side by side.',
+      apiBindings: [],
+    })
+
+    expect(planned.brief?.pages[0]?.interaction).toEqual({
+      selection: 'project filters tasks',
+      inspect: 'selected task',
+    })
+    expect(planned.uncoordinatedPages).toBeUndefined()
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    const repair = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+      content: string
+    }
+    expect(repair.content).toContain('without pages[].interaction')
+    expect(repair.content).toContain('home')
+  })
+
+  it('keeps the first Workspace brief when the interaction repair is unusable', async () => {
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(textMessage(JSON.stringify(workspaceHomeBrief)))
+      .mockResolvedValueOnce(textMessage('not json'))
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Projects and tasks side by side.',
+      apiBindings: [],
+    })
+
+    expect(planned.brief?.title).toBe('Projects')
+    expect(planned.error).toBeUndefined()
+    expect(planned.uncoordinatedPages).toEqual(['home'])
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the first usable brief when the repair turn is invalid', async () => {
