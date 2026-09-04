@@ -13,6 +13,7 @@ import { decryptSecret } from '@/lib/core/security/encryption'
 import {
   ensureBilledAccountCredentialMembership,
   getCredentialActorContext,
+  requireOrdinaryCredentialType,
 } from '@/lib/credentials/access'
 import { AtlassianValidationError } from '@/lib/credentials/atlassian-service-account'
 import { getCredentialCreationWorkspaceContext } from '@/lib/credentials/environment'
@@ -618,7 +619,7 @@ export async function performCreateCredential(
     params.userId,
     'credential_connected',
     {
-      credential_type: result.credential.type,
+      credential_type: requireOrdinaryCredentialType(result.credential.type),
       provider_id: result.credential.providerId ?? result.credential.type,
       workspace_id: result.credential.workspaceId,
     },

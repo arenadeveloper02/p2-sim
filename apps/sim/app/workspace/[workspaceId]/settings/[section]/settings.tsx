@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { captureEvent } from '@/lib/posthog/client'
 import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -149,6 +150,7 @@ interface SettingsPageProps {
 export function SettingsPage({ section }: SettingsPageProps) {
   const { data: session, isPending: sessionLoading } = useSession()
   const hostContext = useWorkspaceHostContext()
+  const { billingEnabled } = useDeploymentShape()
   const posthog = usePostHog()
 
   const isAdminRole = session?.user?.role === 'admin'
@@ -161,7 +163,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
     isBillingEnabled && isBillingSection && !sessionLoading && !canManageBilling
 
   const effectiveSection =
-    !isBillingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
+    !billingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
       ? 'general'
       : billingRedirectToUsage
         ? 'usage'
@@ -204,7 +206,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
         <AuditLogs organizationId={organizationId} />
       )}
       {effectiveSection === 'apikeys' && <ApiKeys scope='combined' />}
-      {isBillingEnabled && effectiveSection === 'billing' && (
+      {billingEnabled && effectiveSection === 'billing' && (
         <Billing
           scope={organizationId ? 'organization' : 'account'}
           organizationId={organizationId ?? undefined}
@@ -220,7 +222,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
         />
       )}
       {effectiveSection === 'teammates' && <Teammates />}
-      {isBillingEnabled && effectiveSection === 'organization' && organizationId && (
+      {billingEnabled && effectiveSection === 'organization' && organizationId && (
         <TeamManagement
           organizationId={organizationId}
           billingHref={`/workspace/${hostContext.workspace.id}/settings/billing`}

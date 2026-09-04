@@ -52,6 +52,7 @@ interface OutputSelectProps {
   align?: 'start' | 'end' | 'center'
   /** Maximum height of the dropdown content in pixels */
   maxHeight?: number
+  disablePortal?: boolean
   /**
    * Trigger chrome. `'sm'` is the compact pill used in inline toolbars;
    * `'md'` is the 30px chip field, for stacking with `ChipInput` in a form.
@@ -72,6 +73,7 @@ interface OutputSelectMenuProps {
   valueMode: 'id' | 'label' | 'public'
   align: 'start' | 'end' | 'center'
   maxHeight: number
+  disablePortal: boolean
   size: 'sm' | 'md'
   className?: string
 }
@@ -129,6 +131,7 @@ function OutputSelectContent({
   valueMode = 'id',
   align = 'start',
   maxHeight = 200,
+  disablePortal = false,
   size = 'sm',
   className,
 }: OutputSelectProps) {
@@ -232,6 +235,7 @@ function OutputSelectContent({
       valueMode={valueMode}
       align={align}
       maxHeight={maxHeight}
+      disablePortal={disablePortal}
       size={size}
       className={className}
     />
@@ -248,6 +252,7 @@ function OutputSelectMenu({
   valueMode,
   align,
   maxHeight,
+  disablePortal,
   size,
   className,
 }: OutputSelectMenuProps) {
@@ -322,7 +327,7 @@ function OutputSelectMenu({
   return (
     <Trigger
       size={size}
-      className={cn('min-w-[100px]', size === 'sm' && '!py-0.5 w-fit rounded-md px-2.5', className)}
+      className={cn('min-w-[100px]', size === 'sm' && 'w-fit rounded-md px-2.5 py-0.5!', className)}
       groups={comboboxGroups}
       options={[]}
       multiSelect
@@ -341,6 +346,7 @@ function OutputSelectMenu({
       align={align}
       maxHeight={maxHeight}
       dropdownWidth={180}
+      disablePortal={disablePortal}
     />
   )
 }

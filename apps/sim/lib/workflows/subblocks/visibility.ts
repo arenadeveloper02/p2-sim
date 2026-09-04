@@ -1,5 +1,5 @@
+import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/env-flags'
 import { WORKSPACE_ID_CONDITION_KEY } from '@/lib/workspaces/is-admin-workspace'
 import type { SubBlockConfig } from '@/blocks/types'
 
@@ -300,6 +300,29 @@ export function resolveActiveCanonicalValue(
   const mode = resolveCanonicalMode(group, values, overrides)
   const { basicValue, advancedValue } = getCanonicalValues(group, values)
   return mode === 'advanced' ? advancedValue : basicValue
+}
+
+/**
+ * {@link resolveActiveCanonicalValue} addressed by a canonical id or by a member's subblock id,
+ * for a control that reads a SIBLING field without knowing whether that field is half of a pair.
+ *
+ * Strict like its namesake: a pair answers with its active member only, honoring an explicit
+ * toggle, so a dormant half's stale value never scopes a control the run will not scope. A key
+ * outside any group reads its own stored value. Contrast {@link resolveDependencyValue}, whose
+ * cross-mode fallback exists for `dependsOn` gating and is wrong here.
+ */
+export function resolveActiveDependencyValue(
+  dependencyKey: string,
+  values: Record<string, unknown>,
+  canonicalIndex: CanonicalIndex,
+  overrides?: CanonicalModeOverrides
+): unknown {
+  const canonicalId =
+    canonicalIndex.groupsById[dependencyKey]?.canonicalId ||
+    canonicalIndex.canonicalIdBySubBlockId[dependencyKey]
+  const group = canonicalId ? canonicalIndex.groupsById[canonicalId] : undefined
+  if (!group) return values[dependencyKey]
+  return resolveActiveCanonicalValue(group, values, overrides)
 }
 
 /** Extract override entries matching a `${prefix}` key into a bare-`canonicalId`-keyed object. */
@@ -622,7 +645,7 @@ export function isSubBlockHidden(
   subBlock: SubBlockConfig,
   options?: { hosted?: boolean }
 ): boolean {
-  const hosted = options?.hosted ?? isHosted
+  const hosted = options?.hosted ?? getDeploymentShape().hosted
   if (subBlock.hideWhenHosted && hosted) return true
   if (subBlock.hideWhenEnvSet && anyEnvSet(subBlock.hideWhenEnvSet)) return true
   return false

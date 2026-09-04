@@ -2,8 +2,9 @@
  * @vitest-environment jsdom
  */
 import { act } from 'react'
+import { resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const desktopMocks = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -31,7 +32,9 @@ vi.mock('@/lib/auth/auth-client', () => ({
 vi.mock('@/lib/billing/workspace-permissions', () => ({
   canViewWorkspaceBillingSettings: () => true,
 }))
-vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
+/** Billing routes the invitations-disabled row to Subscription; read at render time. */
+beforeAll(() => setEnvFlags({ isBillingEnabled: true }))
+afterAll(resetEnvFlagsMock)
 vi.mock('@/lib/workspaces/colors', () => ({ getUserColor: () => '#000000' }))
 vi.mock('@/hooks/use-workspace-invite-policy', () => ({
   useWorkspaceInvitePolicy: () => ({ isInvitationsDisabled: false }),
@@ -44,6 +47,19 @@ vi.mock('@/app/workspace/[workspaceId]/w/components/sidebar/sidebar', () => ({
 }))
 vi.mock('@/components/icons', () => ({
   SlackIcon: ({ className }: { className?: string }) => <svg className={className} />,
+}))
+vi.mock('posthog-js/react', () => ({
+  usePostHog: () => ({}),
+}))
+vi.mock('@/lib/posthog/client', () => ({
+  captureEvent: vi.fn(),
+}))
+
+const { mockUseOrgBrandConfig } = vi.hoisted(() => ({
+  mockUseOrgBrandConfig: vi.fn(() => ({})),
+}))
+vi.mock('@/ee/whitelabeling/components/branding-provider', () => ({
+  useOrgBrandConfig: mockUseOrgBrandConfig,
 }))
 
 import { SidebarFooter } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-footer/sidebar-footer'
@@ -64,9 +80,7 @@ async function renderFooter(
         showCollapsedTooltips={false}
         getSettingsHref={(section) => `/workspace/workspace-1/settings/${section}`}
         onOpenSettings={() => {}}
-        onOpenDocs={() => {}}
-        onJoinSlack={() => {}}
-        onContactSupport={() => {}}
+        onReportIssue={() => {}}
         {...overrides}
       />
     )
@@ -111,6 +125,7 @@ function menuItem(label: string): HTMLElement {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockUseOrgBrandConfig.mockReturnValue({})
   desktopMocks.listener = null
   desktopMocks.onState.mockImplementation((listener) => {
     desktopMocks.listener = listener
@@ -166,6 +181,26 @@ describe('SidebarFooter', () => {
     openHelpMenu()
     expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Update')
     expect(menuItem('Docs')).toBeVisible()
+    expect(menuItem('Report an issue')).toBeVisible()
+    expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Contact support')
+    expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Join Slack')
+  })
+
+  it('shows brand help destinations when they are configured', async () => {
+    mockUseOrgBrandConfig.mockReturnValue({
+      supportEmail: 'help@example.com',
+      termsUrl: 'https://example.com/terms',
+      privacyUrl: 'https://example.com/privacy',
+      slackCommunityUrl: 'https://example.com/slack',
+    })
+    await renderFooter({ status: 'idle' })
+    openHelpMenu()
+
+    expect(menuItem('Contact support')).toBeVisible()
+    expect(menuItem('Terms of service')).toBeVisible()
+    expect(menuItem('Privacy policy')).toBeVisible()
+    expect(menuItem('Slack Community')).toBeVisible()
+    expect(menuItem('Report an issue')).toBeVisible()
   })
 
   it('replaces Help with a same-size primary update icon and starts it from the same menu', async () => {
@@ -175,7 +210,7 @@ describe('SidebarFooter', () => {
     expect(helpTrigger()).toHaveClass('h-[30px]', 'px-2')
     expect(helpTrigger()).not.toHaveClass('bg-[var(--text-primary)]')
     expect(helpTrigger().querySelector('circle')).not.toBeInTheDocument()
-    expect(helpTrigger().querySelector('span')).toHaveClass(
+    expect(helpTrigger().querySelector('div')).toHaveClass(
       'size-[17px]',
       'rounded-full',
       'bg-[var(--text-primary)]'
@@ -193,15 +228,25 @@ describe('SidebarFooter', () => {
     expect(desktopMocks.install).not.toHaveBeenCalled()
   })
 
+  it('uses a collapsed-sidebar-safe element for the update icon', async () => {
+    await renderFooter(
+      { status: 'available', version: '1.4.0' },
+      { isCollapsed: true, showCollapsedTooltips: true }
+    )
+
+    expect(helpTrigger().querySelector('div')).toHaveClass('size-[17px]')
+    expect(helpTrigger().querySelector('span')).toBeNull()
+  })
+
   it('turns the menu action into restart-and-install when the update is ready', async () => {
     await renderFooter({ status: 'idle' })
 
     act(() => {
       desktopMocks.listener?.({ status: 'ready', version: '1.4.0' })
     })
-    expect(helpTrigger().querySelector('span')).toHaveClass('bg-[var(--text-primary)]')
+    expect(helpTrigger().querySelector('div')).toHaveClass('bg-[var(--text-primary)]')
     openHelpMenu()
-    act(() => menuItem('Update').click())
+    act(() => menuItem('Restart to update').click())
 
     expect(desktopMocks.install).toHaveBeenCalledTimes(1)
     expect(desktopMocks.check).not.toHaveBeenCalled()

@@ -202,10 +202,10 @@ export function GoldenQueriesModal({
                         key={item.id ?? `${item.query}-${index}`}
                         className={`group flex items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-[var(--text-primary)] transition ${
                           isDragging
-                            ? 'bg-[#E6EEF9] opacity-70 shadow-sm ring-1 ring-[var(--border-200)]'
+                            ? 'bg-[var(--surface-5)] opacity-70 shadow-sm ring-1 ring-[var(--border)]'
                             : isDragOver
-                              ? 'bg-[#E6EEF9] ring-2 ring-[var(--brand-primary-hover-hex)]'
-                              : 'bg-[#F3F8FE] hover:bg-[#E6EEF9]'
+                              ? 'bg-[var(--surface-5)] ring-2 ring-[var(--border)]'
+                              : 'bg-[var(--surface-5)] hover:bg-[var(--surface-3)]'
                         }`}
                         draggable={mode === null && !disabled && !isSaving}
                         onDragStart={(event) => {

@@ -21,6 +21,10 @@ import {
   workflowLogContract,
   workflowStateSchema,
 } from '@/lib/api/contracts/workflows'
+import {
+  isRunToolActiveForWorkflow,
+  subscribeToRunToolRelease,
+} from '@/lib/copilot/tools/client/run-tool-execution'
 import type { SecretSafeBlockLog } from '@/lib/logs/execution/display-types'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
@@ -2396,6 +2400,14 @@ export function useWorkflowExecution() {
   )
 
   useEffect(() => {
+    if (!activeWorkflowId) return
+    return subscribeToRunToolRelease((workflowId) => {
+      if (workflowId !== activeWorkflowId) return
+      setReconnectAttemptNonce((nonce) => nonce + 1)
+    })
+  }, [activeWorkflowId])
+
+  useEffect(() => {
     if (!activeWorkflowId || !hasHydrated) return
     if (activeReconnections.has(activeWorkflowId)) return
 
@@ -2413,6 +2425,13 @@ export function useWorkflowExecution() {
     }
 
     const runReconnect = async () => {
+      if (isRunToolActiveForWorkflow(reconnectWorkflowId)) {
+        logger.info('Reconnection skipped; a client run tool owns this workflow run', {
+          workflowId: reconnectWorkflowId,
+        })
+        return
+      }
+
       let executionId: string | undefined
       let fromEventId = 0
 

@@ -1,6 +1,15 @@
 'use client'
 
-import { type ComponentPropsWithoutRef, memo, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ComponentPropsWithoutRef,
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
 // prismjs core must load before its language components — they register on the
@@ -15,9 +24,11 @@ import { Checkbox, CopyCodeButton, cn, languages, highlight as prismHighlight } 
 import { decodeVfsSegmentSafe } from '@/lib/copilot/vfs/path-utils'
 import { extractTextContent } from '@/lib/core/utils/react-node-text'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
+import { SourceChip } from '@/app/workspace/[workspaceId]/home/components/message-content/components/source-chip'
 import {
   type CredentialSubmissionPayload,
   parseSpecialTags,
+  type SourceTagData,
   SpecialTags,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import type {
@@ -25,7 +36,11 @@ import type {
   WorkspaceResourceRef,
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useSmoothText } from '@/hooks/use-smooth-text'
-import { groupChatContentSegments, lastInlineGroupIndex } from './chat-content-groups'
+import {
+  groupChatContentSegments,
+  lastInlineGroupIndex,
+  SOURCE_LINK_PREFIX,
+} from './chat-content-groups'
 import { sanitizeChatDisplayContent } from './chat-sanitize'
 import { ExternalLink, externalLinkHostname } from './external-link'
 
@@ -94,6 +109,27 @@ const ANIMATION_DRAIN_MS = 300
  * into a reply.
  */
 const FADE_MAX_REVEALED_CHARS = 6000
+
+/**
+ * The `<source>` payloads of the segment being rendered, in emission order. An
+ * inline citation is written into the markdown as a link to a sentinel
+ * fragment carrying the payload's index, so it flows with its paragraph, and
+ * the link renderer resolves the index back through this context — the
+ * component map is static, so it is the one channel from segment data into it.
+ */
+const SourceRefsContext = createContext<readonly SourceTagData[]>([])
+
+interface SourceReferenceProps {
+  index: number
+  children?: React.ReactNode
+}
+
+/** The inline citation chip; a dangling index falls back to the link text. */
+function SourceReference({ index, children }: SourceReferenceProps) {
+  const source = useContext(SourceRefsContext)[index]
+  if (!source) return <>{children}</>
+  return <SourceChip source={source} />
+}
 
 type TdProps = ComponentPropsWithoutRef<'td'>
 type ThProps = ComponentPropsWithoutRef<'th'>
@@ -252,6 +288,13 @@ const MARKDOWN_COMPONENTS = {
       )
     }
 
+    if (href?.startsWith(SOURCE_LINK_PREFIX)) {
+      return (
+        <SourceReference index={Number(href.slice(SOURCE_LINK_PREFIX.length))}>
+          {children}
+        </SourceReference>
+      )
+    }
     if (href?.startsWith('#wsres-')) {
       const match = href.match(/^#wsres-(\w+)-(.+)$/)
       const type = match?.[1]
@@ -287,7 +330,7 @@ const MARKDOWN_COMPONENTS = {
           {kind && ref && (
             <ContextMentionIcon
               context={{ kind, label: kind === 'file' ? fileIconLabel(ref, label) : label }}
-              className='relative top-0.5 size-[12px] flex-shrink-0 text-[var(--text-icon)]'
+              className='relative top-0.5 size-[12px] shrink-0 text-[var(--text-icon)]'
             />
           )}
           {children}
@@ -566,6 +609,11 @@ function ChatContentInner({
     return () => onPendingTagChange?.(false)
   }, [hasPendingTag, onPendingTagChange])
 
+  const sourceRefs = useMemo(
+    () => parsed.segments.flatMap((segment) => (segment.type === 'source' ? [segment.data] : [])),
+    [parsed]
+  )
+
   /**
    * Plain text and special-tag content share ONE render structure. A message
    * with no special tags is simply a single inline group — it must NOT get a
@@ -578,40 +626,42 @@ function ChatContentInner({
    * the new special block mounts.
    */
   return (
-    <div className='space-y-3'>
-      {groups.map((group, i) => {
-        if (group.kind === 'inline') {
-          return (
-            <div
-              key={`inline-${i}`}
-              className={cn(PROSE_CLASSES, '[&>:first-child]:mt-0 [&>:last-child]:mb-0')}
-            >
-              <Streamdown
-                key={streamingTree ? 'stream' : 'settled'}
-                mode={parserTree ? undefined : 'static'}
-                animated={fadeActive ? STREAM_ANIMATION : false}
-                isAnimating={streamingTree}
-                components={MARKDOWN_COMPONENTS}
+    <SourceRefsContext.Provider value={sourceRefs}>
+      <div className='space-y-3'>
+        {groups.map((group, i) => {
+          if (group.kind === 'inline') {
+            return (
+              <div
+                key={`inline-${i}`}
+                className={cn(PROSE_CLASSES, '[&>:first-child]:mt-0 [&>:last-child]:mb-0')}
               >
-                {i === lastInlineIndex ? streamedMarkdown : group.markdown}
-              </Streamdown>
-            </div>
+                <Streamdown
+                  key={streamingTree ? 'stream' : 'settled'}
+                  mode={parserTree ? undefined : 'static'}
+                  animated={fadeActive ? STREAM_ANIMATION : false}
+                  isAnimating={streamingTree}
+                  components={MARKDOWN_COMPONENTS}
+                >
+                  {i === lastInlineIndex ? streamedMarkdown : group.markdown}
+                </Streamdown>
+              </div>
+            )
+          }
+          return (
+            <SpecialTags
+              key={`special-${group.index}`}
+              segment={group.segment}
+              interactionId={`${messageId ?? 'message'}:${group.index}`}
+              questionAnswers={questionAnswers}
+              credentialSubmission={credentialSubmission}
+              credentialAbandoned={credentialAbandoned}
+              onOptionSelect={onOptionSelect}
+              onQuestionDismiss={onQuestionDismiss}
+            />
           )
-        }
-        return (
-          <SpecialTags
-            key={`special-${group.index}`}
-            segment={group.segment}
-            interactionId={`${messageId ?? 'message'}:${group.index}`}
-            questionAnswers={questionAnswers}
-            credentialSubmission={credentialSubmission}
-            credentialAbandoned={credentialAbandoned}
-            onOptionSelect={onOptionSelect}
-            onQuestionDismiss={onQuestionDismiss}
-          />
-        )
-      })}
-    </div>
+        })}
+      </div>
+    </SourceRefsContext.Provider>
   )
 }
 

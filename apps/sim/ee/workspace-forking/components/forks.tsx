@@ -9,7 +9,7 @@ import { useQueryState } from 'nuqs'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import type { SettingsAction } from '@/components/settings/settings-header'
 import type { ForkLineageChildApi, ForkLineageNodeApi } from '@/lib/api/contracts/workspace-fork'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { FloatingOverflowText } from '@/app/workspace/[workspaceId]/components'
 import { UnsavedChangesModal } from '@/app/workspace/[workspaceId]/components/credential-detail'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -75,7 +75,7 @@ function ForkListRow({ name, actions }: ForkListRowProps) {
         label={name}
         className='block min-w-0 truncate text-[var(--text-body)] text-sm'
       />
-      <div className='flex flex-shrink-0 items-center gap-1'>
+      <div className='flex shrink-0 items-center gap-1'>
         <RowActionsMenu label='Fork actions' actions={actions} />
       </div>
     </div>
@@ -311,6 +311,7 @@ export function Forks() {
   const workspaceId = params.workspaceId as string
 
   const { canAdmin, isLoading: permissionsLoading } = useUserPermissionsContext()
+  const { billingEnabled } = useDeploymentShape()
   const { available: forkingAvailable, isLoading: availabilityLoading } =
     useForkingAvailability(workspaceId)
   const canUseForking = forkingAvailable && canAdmin
@@ -560,7 +561,7 @@ export function Forks() {
         sourceWorkspaceName={workspaceName || 'Workspace'}
         canFork={canFork}
         onUpgrade={() => {
-          if (isBillingEnabled) navigateToSettings({ section: 'billing' })
+          if (billingEnabled) navigateToSettings({ section: 'billing' })
         }}
       />
 

@@ -8,7 +8,7 @@ import {
   concealCrossTenantResourceError,
   InternalUnauthenticatedError,
 } from '@/lib/api/server/routes'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { resolveServableDocBytes } from '@/lib/copilot/tools/server/files/doc-compile'
 import { DocCompileUserError } from '@/lib/copilot/tools/server/files/doc-compile-error'
 import { asOrchestrationError } from '@/lib/core/orchestration/types'
@@ -28,7 +28,7 @@ import { readWorkspaceFileContentByKey } from '@/lib/workspace-files/application
 import { isSimPageSource, SIM_PAGE_CONTENT_TYPE } from '@/lib/workspace-files/page-compile'
 import { renderSimPageDocumentWithAssets } from '@/lib/workspace-files/page-document.server'
 import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
-import { verifyFileAccess } from '@/app/api/files/authorization'
+import { type KnowledgeFileAccess, verifyFileAccess } from '@/app/api/files/authorization'
 import {
   createErrorResponse,
   createFileResponse,
@@ -410,12 +410,29 @@ export const GET = withRouteHandler(
 
       const userId = legacyAuthResult?.userId
       if (!userId) throw new Error('Authenticated file serve request is missing a user ID')
+      /** Only a session identifies a person; an internal token's user id reads as the workspace. */
+      const knowledgeAccess =
+        legacyAuthResult?.authType === AuthType.SESSION ? ('user' as const) : undefined
 
       if (isUsingCloudStorage()) {
-        return await handleCloudProxy(cloudKey, userId, options, request.signal, storageContext)
+        return await handleCloudProxy(
+          cloudKey,
+          userId,
+          options,
+          request.signal,
+          storageContext,
+          knowledgeAccess
+        )
       }
 
-      return await handleLocalFile(cloudKey, userId, options, request.signal, storageContext)
+      return await handleLocalFile(
+        cloudKey,
+        userId,
+        options,
+        request.signal,
+        storageContext,
+        knowledgeAccess
+      )
     } catch (error) {
       if (error instanceof InternalUnauthenticatedError) {
         logger.warn('Unauthorized file access attempt', { error: error.message })
@@ -498,7 +515,8 @@ async function handleLocalFile(
   userId: string,
   options: ServeOptions,
   signal: AbortSignal | undefined,
-  context: StorageContext
+  context: StorageContext,
+  knowledgeAccess: KnowledgeFileAccess | undefined
 ): Promise<NextResponse> {
   const ownerKey = `user:${userId}`
   try {
@@ -507,7 +525,8 @@ async function handleLocalFile(
       userId,
       undefined, // customConfig
       context,
-      true // isLocal
+      true, // isLocal
+      { knowledgeAccess }
     )
 
     if (!hasAccess) {
@@ -558,7 +577,8 @@ async function handleCloudProxy(
   userId: string,
   options: ServeOptions,
   signal: AbortSignal | undefined,
-  context: StorageContext
+  context: StorageContext,
+  knowledgeAccess: KnowledgeFileAccess | undefined
 ): Promise<NextResponse> {
   const ownerKey = `user:${userId}`
   try {
@@ -569,7 +589,8 @@ async function handleCloudProxy(
       userId,
       undefined, // customConfig
       context, // context
-      false // isLocal
+      false, // isLocal
+      { knowledgeAccess }
     )
 
     if (!hasAccess) {

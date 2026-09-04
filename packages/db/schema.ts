@@ -2092,6 +2092,8 @@ export const workspaceForkResourceTypeEnum = pgEnum('workspace_fork_resource_typ
   'knowledge_base',
   'knowledge_document',
   'file',
+  /** Canonical path identity for a workspace file-folder referenced by a workflow. */
+  'file_folder',
   'mcp_server',
   /** Workflow-publishing MCP server identity (fork shell copy), for attachment sync. */
   'workflow_mcp_server',
@@ -3076,12 +3078,42 @@ export const document = pgTable(
      *  falls back to the workspace billed account. */
     uploadedBy: text('uploaded_by').references(() => user.id, { onDelete: 'set null' }),
 
+    /**
+     * Sorted access-token list applied by every document read; the vocabulary
+     * is owned by `apps/sim/lib/knowledge/access/tokens.ts`. `{ws}` (the
+     * default) is any workspace member and `{}` is nobody. Uploads, API-created
+     * documents, and workspace-mode connectors keep the default; a members-mode
+     * connector materialises it from `knowledge_document_observation`.
+     */
+    acl: text('acl').array().notNull().default(sql`'{ws}'::text[]`),
+    /** Source last-modified time when the connector reports one; NULL for uploads. */
+    sourceModifiedAt: timestamp('source_modified_at'),
+
     // Timestamps
     uploadedAt: timestamp('uploaded_at').notNull().defaultNow(),
   },
   (table) => ({
     // Primary access pattern - filter by knowledge base
     knowledgeBaseIdIdx: index('doc_kb_id_idx').on(table.knowledgeBaseId),
+    /**
+     * Serves the access predicate (`acl && tokens`) when a token set is
+     * selective — one member's subject over a large base — and the
+     * rematerialisation by token (`acl && ARRAY[token]`) a member change
+     * triggers. Partial on live rows: every reader already carries
+     * `deleted_at IS NULL`.
+     */
+    aclGinIdx: index('doc_acl_gin_idx')
+      .using('gin', table.acl.op('array_ops'))
+      .where(sql`${table.deletedAt} IS NULL`),
+    /**
+     * Every element is a well-formed token. A malformed token never matches a
+     * principal, so a write that slipped past the token builder would deny
+     * access silently instead of failing loudly here.
+     */
+    aclTokenShapeCheck: check(
+      'doc_acl_token_shape_check',
+      sql`array_position(${table.acl}, NULL) IS NULL AND (cardinality(${table.acl}) = 0 OR (cardinality(${table.acl}) = array_length(string_to_array(array_to_string(${table.acl}, E'\\n'), E'\\n'), 1) AND array_to_string(${table.acl}, E'\\n') ~ '^((ws|pub|link|u:[^\\nA-Z]+@[^\\nA-Z]+|[gs]:[^\\n:]+:[^\\n:]+:[^\\n]+)(\\n(ws|pub|link|u:[^\\nA-Z]+@[^\\nA-Z]+|[gs]:[^\\n:]+:[^\\n:]+:[^\\n]+))*)$'))`
+    ),
     // Search by filename
     filenameIdx: index('doc_filename_idx').on(table.filename),
     // Processing status filtering
@@ -4115,6 +4147,11 @@ export const mcpServers = pgTable(
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
+    credentialGroupId: text('credential_group_id').references(
+      (): AnyPgColumn => credentialGroup.id,
+      { onDelete: 'set null' }
+    ),
+    managedConnectorId: text('managed_connector_id'),
 
     // Track who created the server, but workspace owns it
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
@@ -4159,6 +4196,22 @@ export const mcpServers = pgTable(
     workspaceEnabledIdx: index('mcp_servers_workspace_enabled_idx').on(
       table.workspaceId,
       table.enabled
+    ),
+    credentialGroupIdx: index('mcp_servers_credential_group_idx').on(table.credentialGroupId),
+    credentialGroupManagedConnectorUnique: uniqueIndex(
+      'mcp_servers_credential_group_managed_connector_unique'
+    )
+      .on(table.credentialGroupId, table.managedConnectorId)
+      .where(
+        sql`${table.credentialGroupId} IS NOT NULL AND ${table.managedConnectorId} IS NOT NULL AND ${table.deletedAt} IS NULL`
+      ),
+    credentialGroupManagedConnectorCheck: check(
+      'mcp_servers_credential_group_managed_connector_check',
+      sql`${table.credentialGroupId} IS NULL OR ${table.managedConnectorId} IS NOT NULL`
+    ),
+    managedConnectorOauthCheck: check(
+      'mcp_servers_managed_connector_oauth_check',
+      sql`${table.managedConnectorId} IS NULL OR ${table.authType} = 'oauth'`
     ),
 
     // Soft delete pattern - workspace + not deleted (partial: only deleted rows)
@@ -4940,6 +4993,7 @@ export const slackSummary = pgTable(
 export const credentialTypeEnum = pgEnum('credential_type', [
   'oauth',
   'managed_oauth',
+  'managed_mcp',
   'env_workspace',
   'env_personal',
   'service_account',
@@ -4957,6 +5011,12 @@ export interface ManagedOAuthProviderMetadata {
   avatarUrl?: string
   username?: string
   tenantDisplayName?: string
+}
+
+export interface ManagedMcpToolSnapshot {
+  name: string
+  description?: string
+  inputSchema: Record<string, unknown>
 }
 
 export const credential = pgTable(
@@ -4987,6 +5047,9 @@ export const credential = pgTable(
       { onDelete: 'cascade' }
     ),
     credentialGroupOptionId: text('credential_group_option_id'),
+    mcpServerId: text('mcp_server_id').references(() => mcpServers.id, {
+      onDelete: 'cascade',
+    }),
     managedOauthScopeVersion: integer('managed_oauth_scope_version'),
     providerSubjectId: text('provider_subject_id'),
     providerTenantId: text('provider_tenant_id'),
@@ -4994,14 +5057,14 @@ export const credential = pgTable(
     grantedScopes: text('granted_scopes').array(),
     providerMetadata: jsonb('provider_metadata').$type<ManagedOAuthProviderMetadata>(),
     encryptedOauthTokenSet: text('encrypted_oauth_token_set'),
+    mcpTools: jsonb('mcp_tools').$type<ManagedMcpToolSnapshot[]>(),
+    mcpToolsRefreshedAt: timestamp('mcp_tools_refreshed_at'),
     grantedAt: timestamp('granted_at'),
     revokedAt: timestamp('revoked_at'),
     accessTokenExpiresAt: timestamp('access_token_expires_at'),
     refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
     lastRefreshedAt: timestamp('last_refreshed_at'),
-    createdBy: text('created_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -5014,9 +5077,13 @@ export const credential = pgTable(
     credentialGroupEnrollmentIdx: index('credential_group_enrollment_idx').on(
       table.credentialGroupEnrollmentId
     ),
+    mcpServerIdx: index('credential_mcp_server_idx').on(table.mcpServerId),
     credentialGroupOptionUnique: uniqueIndex('credential_group_option_unique')
       .on(table.credentialGroupEnrollmentId, table.credentialGroupOptionId)
       .where(sql`${table.type} = 'managed_oauth'`),
+    managedMcpEnrollmentServerUnique: uniqueIndex('credential_managed_mcp_enrollment_server_unique')
+      .on(table.credentialGroupEnrollmentId, table.mcpServerId)
+      .where(sql`${table.type} = 'managed_mcp'`),
     workspaceAccountUnique: uniqueIndex('credential_workspace_account_unique')
       .on(table.workspaceId, table.accountId)
       .where(sql`account_id IS NOT NULL`),
@@ -5052,6 +5119,38 @@ export const credential = pgTable(
         AND managed_oauth_scope_version IS NOT NULL
         AND managed_oauth_scope_version > 0
       )`
+    ),
+    managedMcpSourceConstraint: check(
+      'credential_managed_mcp_source_check',
+      sql`(type::text <> 'managed_mcp') OR (
+        id LIKE 'mcp-cg-%'
+        AND account_id IS NULL
+        AND provider_id IS NULL
+        AND authorization_app_id IS NULL
+        AND credential_group_enrollment_id IS NOT NULL
+        AND credential_group_option_id IS NULL
+        AND mcp_server_id IS NOT NULL
+        AND managed_oauth_status IS NOT NULL
+        AND (managed_oauth_status <> 'active' OR (
+          encrypted_oauth_token_set IS NOT NULL
+          AND mcp_tools IS NOT NULL
+        ))
+        AND granted_at IS NOT NULL
+        AND managed_oauth_scope_version IS NULL
+        AND provider_subject_id IS NULL
+        AND provider_tenant_id IS NULL
+        AND granted_scopes IS NULL
+        AND provider_metadata IS NULL
+        AND created_by IS NULL
+        AND env_key IS NULL
+        AND env_owner_user_id IS NULL
+        AND encrypted_service_account_key IS NULL
+        AND unredacted = false
+      )`
+    ),
+    creatorSourceConstraint: check(
+      'credential_creator_source_check',
+      sql`(type::text = 'managed_mcp') OR created_by IS NOT NULL`
     ),
     workspaceEnvSourceConstraint: check(
       'credential_workspace_env_source_check',
@@ -5559,11 +5658,51 @@ export const knowledgeConnector = pgTable(
       .notNull()
       .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
     connectorType: text('connector_type').notNull(),
+    /**
+     * The credential a workspace-mode connector syncs as. NULL for a
+     * members-mode connector, whose members are the credentials. Not yet a
+     * foreign key: rows written before the `credential` table existed may
+     * still hold a raw `account.id`, which script migration 0011 remaps.
+     * contract-pending(after 0011 has run in production): add the reference to
+     * `credential.id` with ON DELETE SET NULL and remove the raw account-id
+     * fallback in lib/oauth/credential-service.ts.
+     */
     credentialId: text('credential_id'),
     encryptedApiKey: text('encrypted_api_key'),
     sourceConfig: json('source_config').notNull(),
     syncMode: text('sync_mode').notNull().default('full'),
     syncIntervalMinutes: integer('sync_interval_minutes').notNull().default(1440),
+    /**
+     * How document access is derived. `workspace`: every synced document is
+     * `{ws}`. `members`: the source is crawled once per credential-group
+     * member with their own token and a document's ACL is the members whose
+     * crawl returned it. `admin` is reserved for the service-account mirror.
+     */
+    accessMode: text('access_mode').notNull().default('workspace'),
+    /** Members mode: the credential group whose option supplies the member credentials. */
+    credentialGroupId: text('credential_group_id').references(() => credentialGroup.id, {
+      onDelete: 'set null',
+    }),
+    /** Members mode: the option within the group; must map to this connector's provider. */
+    credentialGroupOptionId: text('credential_group_option_id'),
+    /**
+     * Members-mode run state. Mirrors `status` for the content engine but is
+     * independent of it: the two engines never run for the same connector
+     * (`kc_sync_lock_exclusive_check`), yet share no columns so neither can
+     * misread the other's lease.
+     */
+    memberSyncStatus: text('member_sync_status').notNull().default('idle'),
+    memberSyncLockToken: text('member_sync_lock_token'),
+    memberSyncLockLeaseAt: timestamp('member_sync_lock_lease_at'),
+    nextMemberSyncAt: timestamp('next_member_sync_at'),
+    lastMemberSyncAt: timestamp('last_member_sync_at'),
+    lastMemberSyncError: text('last_member_sync_error'),
+    memberSyncConsecutiveFailures: integer('member_sync_consecutive_failures').notNull().default(0),
+    /**
+     * Set by a mode switch whose ACL rewrite exceeded the request budget; the
+     * member-sync job finishes the rewrite before the mode takes effect.
+     */
+    accessRewritePending: boolean('access_rewrite_pending').notNull().default(false),
     /**
      * One of `active`, `pending`, `syncing`, `error`, `paused`, `disabled`.
      *
@@ -5620,6 +5759,179 @@ export const knowledgeConnector = pgTable(
     deletedAtPartialIdx: index('kc_deleted_at_partial_idx')
       .on(table.deletedAt)
       .where(sql`${table.deletedAt} IS NOT NULL`),
+    /** Member-sync scheduler due sweep; partial so workspace-mode rows cost nothing. */
+    memberSyncDueIdx: index('kc_member_sync_due_idx')
+      .on(table.memberSyncStatus, table.nextMemberSyncAt)
+      .where(sql`${table.accessMode} = 'members' AND ${table.deletedAt} IS NULL`),
+    accessModeCheck: check(
+      'kc_access_mode_check',
+      sql`${table.accessMode} IN ('workspace', 'members', 'admin')`
+    ),
+    memberSyncStatusCheck: check(
+      'kc_member_sync_status_check',
+      sql`${table.memberSyncStatus} IN ('idle', 'pending', 'running', 'error', 'disabled')`
+    ),
+    /** The content engine and the member engine are mutually exclusive on a connector. */
+    syncLockExclusiveCheck: check(
+      'kc_sync_lock_exclusive_check',
+      sql`NOT (${table.syncLockToken} IS NOT NULL AND ${table.memberSyncLockToken} IS NOT NULL)`
+    ),
+  })
+)
+
+/**
+ * One row per (members-mode connector, member credential). Membership is
+ * derived from the credential-group option on every run: `active` while the
+ * managed credential is usable and the enrollment live, `suspended` otherwise
+ * (needs re-auth, enrollment revoked, option disabled). Suspension drops the
+ * member's token from every ACL immediately but keeps their observations, so a
+ * routine scope-version bump never wipes the observation graph. A row is
+ * deleted only when the credential row is gone (cascade), the option no longer
+ * references it, or it has stayed suspended past the purge window.
+ */
+export const knowledgeConnectorMember = pgTable(
+  'knowledge_connector_member',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => knowledgeConnector.id, { onDelete: 'cascade' }),
+    credentialId: text('credential_id')
+      .notNull()
+      .references(() => credential.id, { onDelete: 'cascade' }),
+    /**
+     * Snapshot of the member's identity token, derived from the credential
+     * row by `lib/knowledge/access/tokens.ts`. Reconciliation rewrites it and
+     * rematerialises the member's documents if the credential's subject
+     * changes.
+     */
+    subjectToken: text('subject_token').notNull(),
+    /** `active`, `suspended`, or `disabled`. */
+    status: text('status').notNull().default('active'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    /**
+     * When the member is next due. NULL means "with the connector's next run":
+     * a member that completed on a manual-only connector. A new member is due
+     * now. An explicit time that has passed is what keeps a connector
+     * re-dispatching itself.
+     */
+    nextAttemptAt: timestamp('next_attempt_at'),
+    lastStartedAt: timestamp('last_started_at'),
+    /** Last listing that was full, complete, and not suspect — the only kind that may remove observations. */
+    lastCompleteListingAt: timestamp('last_complete_listing_at'),
+    lastListedCount: integer('last_listed_count'),
+    lastError: text('last_error'),
+    /** Incremental watermark; advances only on a complete, non-suspect full listing. */
+    memberSyncedThrough: timestamp('member_synced_through'),
+    /**
+     * Where the member's change feed resumes. Opened just before a full listing
+     * and stored once that listing lands, so every later run reads the feed
+     * instead of relisting; NULL when the connector has no feed or the feed
+     * has to be reopened.
+     */
+    changeCursor: text('change_cursor'),
+    suspendedAt: timestamp('suspended_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    connectorCredentialUnique: uniqueIndex('kcm_connector_credential_unique').on(
+      table.connectorId,
+      table.credentialId
+    ),
+    /** Drain-loop claim order: due first (NULL = never gated), then least recently started. */
+    connectorQueueIdx: index('kcm_connector_queue_idx').on(
+      table.connectorId,
+      table.nextAttemptAt.asc().nullsFirst(),
+      table.lastStartedAt.asc().nullsFirst()
+    ),
+    credentialIdx: index('kcm_credential_idx').on(table.credentialId),
+    statusCheck: check(
+      'kcm_status_check',
+      sql`${table.status} IN ('active', 'suspended', 'disabled')`
+    ),
+    subjectTokenShapeCheck: check(
+      'kcm_subject_token_shape_check',
+      sql`${table.subjectToken} ~ '^s:[^:]+:[^:]+:.+$'`
+    ),
+  })
+)
+
+/**
+ * "Member M's crawl returned document D." A members-mode document's ACL is
+ * exactly the subject tokens of its active observers; a document with no
+ * observation of any status is tombstoned and, after the purge window, hard
+ * deleted.
+ */
+export const knowledgeDocumentObservation = pgTable(
+  'knowledge_document_observation',
+  {
+    documentId: text('document_id')
+      .notNull()
+      .references(() => document.id, { onDelete: 'cascade' }),
+    memberId: text('member_id')
+      .notNull()
+      .references(() => knowledgeConnectorMember.id, { onDelete: 'cascade' }),
+    lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
+    /** Member-sync run (`knowledge_connector_member_sync_log.id`) that last asserted this observation. */
+    runId: text('run_id').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.documentId, table.memberId] }),
+    /** Per-member removal after a complete listing, and the staleness sweep. */
+    memberIdx: index('kdo_member_idx').on(table.memberId),
+  })
+)
+
+/**
+ * Audit trail for members-mode runs; the content sync log is untouched. The
+ * row id doubles as the run's lease token so the scheduler can tell an
+ * orphaned `started` row from one a live run still holds.
+ */
+export const knowledgeConnectorMemberSyncLog = pgTable(
+  'knowledge_connector_member_sync_log',
+  {
+    id: text('id').primaryKey(),
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => knowledgeConnector.id, { onDelete: 'cascade' }),
+    /** `started`, `completed`, or `failed`. */
+    status: text('status').notNull(),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+    membersClaimed: integer('members_claimed').notNull().default(0),
+    membersCompleted: integer('members_completed').notNull().default(0),
+    membersIncomplete: integer('members_incomplete').notNull().default(0),
+    membersFailed: integer('members_failed').notNull().default(0),
+    docsListed: integer('docs_listed').notNull().default(0),
+    docsAdded: integer('docs_added').notNull().default(0),
+    docsUpdated: integer('docs_updated').notNull().default(0),
+    docsUnchanged: integer('docs_unchanged').notNull().default(0),
+    docsHydratedOnce: integer('docs_hydrated_once').notNull().default(0),
+    observationsAdded: integer('observations_added').notNull().default(0),
+    observationsRemoved: integer('observations_removed').notNull().default(0),
+    docsTombstoned: integer('docs_tombstoned').notNull().default(0),
+    docsResurrected: integer('docs_resurrected').notNull().default(0),
+    docsPurged: integer('docs_purged').notNull().default(0),
+    credentialsAudited: integer('credentials_audited').notNull().default(0),
+    errorMessage: text('error_message'),
+  },
+  (table) => ({
+    connectorStartedAtIdx: index('kcmsl_connector_started_at_idx').on(
+      table.connectorId,
+      sql`${table.startedAt} DESC`
+    ),
+    /** Scheduler sweep for orphaned `started` rows; see `kcsl_started_at_partial_idx`. */
+    startedPartialIdx: index('kcmsl_started_at_partial_idx')
+      .on(table.startedAt)
+      .where(sql`${table.status} = 'started'`),
+    statusCheck: check(
+      'kcmsl_status_check',
+      sql`${table.status} IN ('started', 'completed', 'failed')`
+    ),
   })
 )
 

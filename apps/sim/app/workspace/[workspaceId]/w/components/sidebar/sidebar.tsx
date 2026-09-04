@@ -20,10 +20,8 @@ import {
   Upload,
 } from '@sim/emcn'
 import {
-  BookOpen,
   Database,
   Files,
-  HelpCircle,
   Integration,
   MoreHorizontal,
   PanelLeft,
@@ -36,16 +34,14 @@ import {
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
-import { SlackIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { focusVisibleBrowserOmnibox } from '@/lib/browser-agent/renderer-shortcuts'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { isChatEnabled, isHosted, isStatusNoticePreviewEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isStatusNoticePreviewEnabled } from '@/lib/core/config/env-flags'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPathNames } from '@/lib/folders/tree'
-import { captureEvent } from '@/lib/posthog/client'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { CONNECT_MODE } from '@/app/workspace/[workspaceId]/integrations/connect-route'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -110,7 +106,6 @@ import {
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
-import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { type LogFilters, useLogsList } from '@/hooks/queries/logs'
@@ -171,9 +166,6 @@ const SEARCH_MODAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 })
 
-const SLACK_COMMUNITY_URL =
-  'https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA'
-
 export function SidebarTooltip({
   children,
   label,
@@ -202,7 +194,7 @@ export function SidebarTooltip({
 function SidebarItemSkeleton() {
   return (
     <div className='sidebar-collapse-hide flex h-[30px] items-center gap-2 rounded-lg px-2'>
-      <Skeleton className='h-[16px] w-[16px] flex-shrink-0 rounded-sm' />
+      <Skeleton className='h-[16px] w-[16px] shrink-0 rounded-sm' />
     </div>
   )
 }
@@ -288,7 +280,7 @@ const SidebarChatItem = memo(function SidebarChatItem({
       >
         <OverflowText label={chat.name} className='flex-1 text-[var(--text-body)]' />
         {chat.id !== 'new' && (
-          <div className='relative flex size-[18px] flex-shrink-0 items-center justify-center'>
+          <div className='relative flex size-[18px] shrink-0 items-center justify-center'>
             {showStatusDot && (
               <span
                 aria-hidden='true'
@@ -429,9 +421,9 @@ export const Sidebar = memo(function Sidebar({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
 
-  const posthog = usePostHog()
   const { data: sessionData, isPending: sessionLoading } = useSession()
   const { workspace: routeWorkspace } = useWorkspaceHostContext()
+  const { hosted, chatEnabled } = useDeploymentShape()
   const { canAdmin, canEdit, isLoading: permissionsLoading } = useUserPermissionsContext()
   const {
     config: permissionConfig,
@@ -801,26 +793,36 @@ export const Sidebar = memo(function Sidebar({
       [
         {
           id: 'home',
-          label: isChatEnabled ? 'New chat' : 'New workflow',
-          icon: isChatEnabled ? Home : Plus,
-          href: isChatEnabled ? `/workspace/${workspaceId}/home` : undefined,
-          onClick: isChatEnabled ? undefined : createWorkflow,
+          label: chatEnabled ? 'New chat' : 'New workflow',
+          icon: chatEnabled ? Home : Plus,
+          href: chatEnabled ? `/workspace/${workspaceId}/home` : undefined,
+          onClick: chatEnabled ? undefined : createWorkflow,
           // Creation navigates optimistically, so a read-only member would land
           // on a workflow the server declined to create.
-          hidden: !isChatEnabled && !permissionsLoading && !canEdit,
+          hidden: !chatEnabled && !permissionsLoading && !canEdit,
         },
         {
           id: 'integrations',
           label: 'Integrations',
           icon: Integration,
           href: `/workspace/${workspaceId}/integrations`,
-          /* Skills is a tab of this surface, not its own nav item — keep the entry
-             lit while the user is on it. */
-          additionalActivePaths: [`/workspace/${workspaceId}/skills`],
+          /* Skills and Search are tabs of this surface, not their own nav items —
+             keep the entry lit while the user is on either. */
+          additionalActivePaths: [
+            `/workspace/${workspaceId}/skills`,
+            `/workspace/${workspaceId}/search`,
+          ],
           hidden: permissionConfig.hideIntegrationsTab,
         },
       ].filter((item) => !item.hidden),
-    [workspaceId, createWorkflow, canEdit, permissionsLoading, permissionConfig.hideIntegrationsTab]
+    [
+      workspaceId,
+      createWorkflow,
+      canEdit,
+      permissionsLoading,
+      permissionConfig.hideIntegrationsTab,
+      chatEnabled,
+    ]
   )
 
   const workspaceNavItems = useMemo(
@@ -875,19 +877,16 @@ export const Sidebar = memo(function Sidebar({
     files: { hover: filesHover, content: <FilesRailFlyout workspaceId={workspaceId} /> },
   }
 
-  const handleOpenSettings = useCallback(
-    (section: SettingsSection) => {
-      if (!isCollapsedRef.current) {
-        setSidebarWidth(SIDEBAR_WIDTH.MIN)
-      }
-      navigateToSettings({ section })
-    },
-    [navigateToSettings, setSidebarWidth]
-  )
+  const handleOpenSettings = (section: SettingsSection) => {
+    if (!isCollapsedRef.current) {
+      setSidebarWidth(SIDEBAR_WIDTH.MIN)
+    }
+    navigateToSettings({ section })
+  }
 
   const { data: fetchedChats = EMPTY_CHATS, isLoading: chatsLoading } = useMothershipChats(
     workspaceId,
-    { enabled: isChatEnabled }
+    { enabled: chatEnabled }
   )
 
   useMothershipChatEvents(workspaceId)
@@ -1041,7 +1040,6 @@ export const Sidebar = memo(function Sidebar({
   )
 
   const [hasOverflowTop, setHasOverflowTop] = useState(false)
-  const [hasOverflowBottom, setHasOverflowBottom] = useState(false)
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1049,9 +1047,6 @@ export const Sidebar = memo(function Sidebar({
 
     const updateScrollState = () => {
       setHasOverflowTop(container.scrollTop > 1)
-      setHasOverflowBottom(
-        container.scrollHeight - container.scrollTop - container.clientHeight > 1
-      )
     }
 
     updateScrollState()
@@ -1242,10 +1237,10 @@ export const Sidebar = memo(function Sidebar({
     [workspaces, handleLeaveWorkspace]
   )
 
-  const chatsCollapsedIcon = <Task className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+  const chatsCollapsedIcon = <Task className='size-[16px] shrink-0 text-[var(--text-icon)]' />
 
   const workflowsCollapsedIcon = (
-    <Workflow className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+    <Workflow className='size-[16px] shrink-0 text-[var(--text-icon)]' />
   )
 
   const workflowsPrimaryAction = {
@@ -1268,43 +1263,10 @@ export const Sidebar = memo(function Sidebar({
     [isCollapsed, toggleCollapsed]
   )
 
-  const handleOpenHelpFromMenu = useCallback(() => setIsHelpModalOpen(true), [])
-
-  const handleOpenDocs = useCallback(() => {
-    window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
-  }, [posthog])
-
-  const handleOpenSlackCommunity = useCallback(() => {
-    window.open(SLACK_COMMUNITY_URL, '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
-  }, [posthog])
-
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]
   )
-
-  const handleOpenArenaDocs = useCallback(() => {
-    window.open(resolveBrandDocsUrl(brand?.documentationUrl), '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
-  }, [brand?.documentationUrl, posthog])
-
-  const handleContactSupport = useCallback(() => {
-    if (!brand?.supportEmail) return
-    window.location.href = `mailto:${brand.supportEmail}`
-  }, [brand?.supportEmail])
-
-  const handleOpenTerms = useCallback(() => {
-    if (!brand?.termsUrl) return
-    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
-  }, [brand?.termsUrl])
-
-  const handleOpenPrivacy = useCallback(() => {
-    if (!brand?.privacyUrl) return
-    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
-  }, [brand?.privacyUrl])
-
   const handleWorkflowRenameBlur = useCallback(
     () => void workflowFlyoutRename.saveRename(),
     [workflowFlyoutRename.saveRename]
@@ -1423,7 +1385,7 @@ export const Sidebar = memo(function Sidebar({
             )}
             <div
               className={cn(
-                'relative flex flex-shrink-0 items-center px-2 pt-3',
+                'relative flex shrink-0 items-center px-2 pt-3',
                 !isPeeking &&
                   '[[data-sim-desktop-title-bar=inset]_&]:pt-[var(--desktop-title-bar-height)]'
               )}
@@ -1529,7 +1491,7 @@ export const Sidebar = memo(function Sidebar({
                     SIDEBAR_SECTION_GAP_CLASS,
                     SIDEBAR_ITEM_GAP_CLASS,
                     SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
-                    'flex flex-shrink-0 flex-col px-2'
+                    'flex shrink-0 flex-col px-2'
                   )}
                 >
                   {topNavItems.map((item) => (
@@ -1552,11 +1514,11 @@ export const Sidebar = memo(function Sidebar({
                   )}
                 >
                   <div ref={scrollContentRef} className='flex flex-col'>
-                    {isChatEnabled && (
+                    {chatEnabled && (
                       <SidebarSection
                         title='Chats'
                         railCollapsed={isCollapsed}
-                        className='chats-section flex-shrink-0'
+                        className='chats-section shrink-0'
                       >
                         {isCollapsed ? (
                           <div className='px-2'>
@@ -1632,7 +1594,7 @@ export const Sidebar = memo(function Sidebar({
                                           }
                                           onKeyDown={chatFlyoutRename.handleKeyDown}
                                           onBlur={handleChatRenameBlur}
-                                          className='min-w-0 flex-1 border-none bg-transparent text-[14px] text-[var(--text-body)] outline-none'
+                                          className='min-w-0 flex-1 border-none bg-transparent text-[14px] text-[var(--text-body)] outline-hidden'
                                         />
                                       </div>
                                     )
@@ -1682,7 +1644,7 @@ export const Sidebar = memo(function Sidebar({
                     <SidebarSection
                       title='Workspace'
                       railCollapsed={isCollapsed}
-                      className={cn(SIDEBAR_SECTION_GAP_CLASS, 'flex-shrink-0')}
+                      className={cn(SIDEBAR_SECTION_GAP_CLASS, 'shrink-0')}
                     >
                       <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
                         {workspaceNavItems.map((item) => {
@@ -1875,66 +1837,8 @@ export const Sidebar = memo(function Sidebar({
                   </div>
                 </div>
 
-                <div
-                  className={cn(
-                    SIDEBAR_ITEM_GAP_CLASS,
-                    'flex flex-shrink-0 flex-col border-t px-2 pt-[9px] pb-2 transition-colors duration-150',
-                    !hasOverflowBottom && 'border-transparent'
-                  )}
-                >
-                  <DropdownMenu>
-                    <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type='button'
-                          data-item-id='help'
-                          className={chipVariants({ fullWidth: true })}
-                        >
-                          <HelpCircle className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-                          <span className='sidebar-collapse-hide truncate text-[var(--text-body)]'>
-                            Help
-                          </span>
-                        </button>
-                      </DropdownMenuTrigger>
-                    </SidebarTooltip>
-                    <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      <DropdownMenuItem onSelect={handleOpenArenaDocs}>
-                        <BookOpen className='h-[14px] w-[14px]' />
-                        Docs
-                      </DropdownMenuItem>
-                      {brand?.supportEmail ? (
-                        <DropdownMenuItem onSelect={handleContactSupport}>
-                          <HelpCircle className='h-[14px] w-[14px]' />
-                          Contact support
-                        </DropdownMenuItem>
-                      ) : null}
-                      {brand?.termsUrl ? (
-                        <DropdownMenuItem onSelect={handleOpenTerms}>
-                          <BookOpen className='h-[14px] w-[14px]' />
-                          Terms of service
-                        </DropdownMenuItem>
-                      ) : null}
-                      {brand?.privacyUrl ? (
-                        <DropdownMenuItem onSelect={handleOpenPrivacy}>
-                          <BookOpen className='h-[14px] w-[14px]' />
-                          Privacy policy
-                        </DropdownMenuItem>
-                      ) : null}
-                      {brand?.slackCommunityUrl ? (
-                        <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
-                          <SlackIcon className='size-[14px]' />
-                          Slack Community
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
-                        <HelpCircle className='h-[14px] w-[14px]' />
-                        Report an issue
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                {(isHosted || isStatusNoticePreviewEnabled) && !isCollapsed ? (
-                  <div className='flex-shrink-0 px-2 py-2'>
+                {(hosted || isStatusNoticePreviewEnabled) && !isCollapsed ? (
+                  <div className='shrink-0 px-2 py-2'>
                     <StatusNotice preview={isStatusNoticePreviewEnabled} />
                   </div>
                 ) : null}
@@ -1945,9 +1849,7 @@ export const Sidebar = memo(function Sidebar({
                   showCollapsedTooltips={showCollapsedTooltips}
                   getSettingsHref={(section) => getSettingsHref({ section })}
                   onOpenSettings={handleOpenSettings}
-                  onOpenDocs={handleOpenDocs}
-                  onJoinSlack={handleOpenSlackCommunity}
-                  onContactSupport={handleOpenHelpFromMenu}
+                  onReportIssue={() => setIsHelpModalOpen(true)}
                 />
 
                 <NavItemContextMenu

@@ -18,7 +18,7 @@ import { SettingsHeaderProvider, SettingsHeaderShell } from '@/components/settin
 import { SettingsSectionProvider } from '@/components/settings/settings-panel'
 import { SettingsSidebar } from '@/components/settings/settings-sidebar'
 import { useSettingsBeforeUnload } from '@/components/settings/use-settings-before-unload'
-import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { SIDEBAR_WIDTH } from '@/stores/constants'
 
 interface StandaloneSettingsShellBaseProps {
@@ -40,19 +40,21 @@ export function StandaloneSettingsShell(props: StandaloneSettingsShellProps) {
   const { children, plane } = props
   useSettingsBeforeUnload()
   const pathname = usePathname()
+  const { hosted, billingEnabled } = useDeploymentShape()
   const isSuperUser = plane === 'account' ? (props.isSuperUser ?? false) : false
 
   const accountItems = ACCOUNT_SETTINGS_ITEMS.filter((item) => {
-    if (item.id === 'billing' && !isBillingEnabled) return false
     if (isPlatformAdminSettingsSection(item.id) && !isSuperUser) return false
+    if (item.id === 'billing' && !billingEnabled) return false
+    if ((item.id === 'admin' || item.id === 'mothership') && !isSuperUser) return false
     return true
   })
   const selfHostItems = SELFHOST_SETTINGS_ITEMS.filter((item) => {
-    if (item.id === 'billing' && !isBillingEnabled) return false
+    if (item.id === 'billing' && !billingEnabled) return false
     // Chat keys are issued by the managed service, so there are none to list on
-    // a self-hosted deployment — useCopilotKeys is `enabled: isHosted` for the
+    // a self-hosted deployment — useCopilotKeys is `enabled: hosted` for the
     // same reason. Self-hosters manage their keys on sim.ai.
-    if (item.id === 'chat-keys' && !isHosted) return false
+    if (item.id === 'chat-keys' && !hosted) return false
     return true
   })
   const selfHostSection = parseSettingsPathSection({
@@ -96,7 +98,7 @@ export function StandaloneSettingsShell(props: StandaloneSettingsShellProps) {
       */}
       <aside
         style={{ width: SIDEBAR_WIDTH.DEFAULT }}
-        className='flex h-full flex-shrink-0 flex-col overflow-hidden bg-[var(--surface-1)] pt-3'
+        className='flex h-full shrink-0 flex-col overflow-hidden bg-[var(--surface-1)] pt-3'
         aria-label={`${SETTINGS_PLANE_CHROME[plane].label} settings navigation`}
       >
         {sidebar}

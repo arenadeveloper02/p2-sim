@@ -512,7 +512,7 @@ export function Billing({
     <SettingsPanel>
       <div className='flex items-center justify-between gap-3'>
         <div className='flex items-center gap-2.5'>
-          <div className='size-9 flex-shrink-0'>
+          <div className='size-9 shrink-0'>
             <div className='flex size-full items-center justify-center rounded-xl border border-[var(--border-1)] bg-[var(--bg)]'>
               <Credit className='size-5 text-[var(--text-icon)]' />
             </div>
@@ -677,13 +677,11 @@ export function Billing({
                 'flex items-center gap-2.5 rounded-lg p-2 text-left transition-colors'
               const rowContent = (
                 <>
-                  <span className='flex-shrink-0 text-[var(--text-body)] text-sm'>
-                    {invoice.date}
-                  </span>
+                  <span className='shrink-0 text-[var(--text-body)] text-sm'>{invoice.date}</span>
                   <Badge variant={invoice.badge.variant} size='sm'>
                     {invoice.badge.label}
                   </Badge>
-                  <span className='flex-shrink-0 text-[var(--text-muted)] text-caption'>
+                  <span className='shrink-0 text-[var(--text-muted)] text-caption'>
                     {invoice.amount}
                   </span>
                   <span className='min-w-0 flex-1 truncate text-[var(--text-muted)] text-caption'>

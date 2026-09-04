@@ -1,6 +1,6 @@
 'use client'
 
-import { type ComponentType, useEffect, useState } from 'react'
+import type { ComponentType } from 'react'
 import type { DesktopUpdateState } from '@sim/desktop-bridge'
 import {
   Chip,
@@ -18,12 +18,14 @@ import {
   Skeleton,
 } from '@sim/emcn'
 import { BookOpen, Credit, Download, HelpCircle, Settings, Trash, Users } from '@sim/emcn/icons'
+import { usePostHog } from 'posthog-js/react'
 import { SlackIcon } from '@/components/icons'
 import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
 import { useSession } from '@/lib/auth/auth-client'
 import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getDesktopUpdates } from '@/lib/desktop'
+import { captureEvent } from '@/lib/posthog/client'
 import { getUserColor } from '@/lib/workspaces/colors'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -32,7 +34,10 @@ import {
   SIDEBAR_RAIL_CHIP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
+import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useUserProfile } from '@/hooks/queries/user-profile'
+import { useDesktopUpdateState } from '@/hooks/use-desktop-update-state'
 import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
 
 /**
@@ -65,23 +70,23 @@ function desktopUpdateActionLabel(state: DesktopUpdateState): string {
       ? 'Downloading update…'
       : `Downloading update ${state.percent}%`
   }
-  return 'Update'
+  return state.status === 'ready' ? 'Restart to update' : 'Update'
 }
 
 /** Compact primary update circle using the same footprint as the surrounding sidebar icons. */
 function DesktopUpdateIcon({ className }: { className?: string }) {
   return (
-    <span
+    <div
       className={cn(
         className,
-        'flex size-[17px] flex-shrink-0 items-center justify-center rounded-full',
+        'flex size-[17px] shrink-0 items-center justify-center rounded-full',
         chipPrimaryFillTokens
       )}
     >
       {/* Download's default viewBox is asymmetric around its paths. Center the
           artwork itself, not merely its SVG box, inside the avatar-sized circle. */}
       <Download className='size-[11px]' viewBox='-1.75 -1.75 24 24' />
-    </span>
+    </div>
   )
 }
 
@@ -91,14 +96,13 @@ interface SidebarFooterProps {
   showCollapsedTooltips: boolean
   getSettingsHref: (section: SettingsSection) => string
   onOpenSettings: (section: SettingsSection) => void
-  onOpenDocs: () => void
-  onJoinSlack: () => void
-  onContactSupport: () => void
+  onReportIssue: () => void
 }
 
 /**
  * Pinned bottom bar of the workspace sidebar: the viewer's avatar and name, which
- * open a menu of their settings destinations, plus a help menu.
+ * open a menu of their settings destinations, plus a help menu of brand docs,
+ * support, legal links, Slack, and issue reporting.
  *
  * Expanded, the two share one row — the profile claims the free width so the help
  * button lands hard right, mirroring the collapse control in the workspace header.
@@ -125,33 +129,16 @@ export function SidebarFooter({
   showCollapsedTooltips,
   getSettingsHref,
   onOpenSettings,
-  onOpenDocs,
-  onJoinSlack,
-  onContactSupport,
+  onReportIssue,
 }: SidebarFooterProps) {
   const { data: profile } = useUserProfile()
   const { data: session } = useSession()
   const hostContext = useWorkspaceHostContext()
+  const { billingEnabled } = useDeploymentShape()
   const { isInvitationsDisabled } = useWorkspaceInvitePolicy(workspaceId)
-  const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
-
-  useEffect(() => {
-    const updates = getDesktopUpdates()
-    if (!updates) return
-
-    let stateEventReceived = false
-    const unsubscribe = updates.onState((state) => {
-      stateEventReceived = true
-      setUpdateState(state)
-    })
-    void updates
-      .getState()
-      .then((state) => {
-        if (!stateEventReceived) setUpdateState(state)
-      })
-      .catch(() => {})
-    return unsubscribe
-  }, [])
+  const updateState = useDesktopUpdateState()
+  const brand = useOrgBrandConfig()
+  const posthog = usePostHog()
 
   const name = profile ? profile.name?.trim() || profile.email : ''
   const updateAvailable = hasAvailableDesktopUpdate(updateState)
@@ -163,6 +150,32 @@ export function SidebarFooter({
     } else if (updateState.status === 'available') {
       updates?.check()
     }
+  }
+
+  const handleOpenDocs = () => {
+    window.open(resolveBrandDocsUrl(brand.documentationUrl), '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
+  }
+
+  const handleContactSupport = () => {
+    if (!brand.supportEmail) return
+    window.location.href = `mailto:${brand.supportEmail}`
+  }
+
+  const handleOpenTerms = () => {
+    if (!brand.termsUrl) return
+    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleOpenPrivacy = () => {
+    if (!brand.privacyUrl) return
+    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleOpenSlackCommunity = () => {
+    if (!brand.slackCommunityUrl) return
+    window.open(brand.slackCommunityUrl, '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
   }
 
   /**
@@ -186,7 +199,7 @@ export function SidebarFooter({
    */
   const resolveMenuDestination = (section: SettingsSection): SettingsSection | null => {
     if (section === 'teammates' && isInvitationsDisabled) {
-      return isBillingEnabled ? 'billing' : null
+      return billingEnabled ? 'billing' : null
     }
     return section
   }
@@ -198,17 +211,17 @@ export function SidebarFooter({
    * left to see. The workspace header's logo sidesteps the same rule the same way.
    */
   const avatar = !profile ? (
-    <Skeleton className='size-[16px] flex-shrink-0 rounded-full' />
+    <Skeleton className='size-[16px] shrink-0 rounded-full' />
   ) : profile.image ? (
     <img
       src={profile.image}
       alt=''
       referrerPolicy='no-referrer'
-      className='size-[16px] flex-shrink-0 rounded-full object-cover'
+      className='size-[16px] shrink-0 rounded-full object-cover'
     />
   ) : (
     <div
-      className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-full text-[9px] text-white leading-none'
+      className='flex size-[16px] shrink-0 items-center justify-center rounded-full text-[9px] text-white leading-none'
       style={{ backgroundColor: getUserColor(profile.id) }}
     >
       {name.charAt(0).toUpperCase()}
@@ -325,7 +338,7 @@ export function SidebarFooter({
                than the rail, and a shrinking chip would be squeezed onto the avatar.
                Holding its size pushes it past the edge, where the aside's clip hides
                it until there is room. */
-            className={cn('flex-shrink-0', SIDEBAR_RAIL_CHIP_CLASS)}
+            className={cn('shrink-0', SIDEBAR_RAIL_CHIP_CLASS)}
           />
         </DropdownMenuTrigger>
       </SidebarTooltip>
@@ -343,17 +356,37 @@ export function SidebarFooter({
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem onSelect={onOpenDocs}>
+        <DropdownMenuItem onSelect={handleOpenDocs}>
           <BookOpen className='size-[14px]' />
           Docs
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onJoinSlack}>
-          <SlackIcon className='size-[14px]' />
-          Join Slack
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onContactSupport}>
+        {brand.supportEmail ? (
+          <DropdownMenuItem onSelect={handleContactSupport}>
+            <HelpCircle className='size-[14px]' />
+            Contact support
+          </DropdownMenuItem>
+        ) : null}
+        {brand.termsUrl ? (
+          <DropdownMenuItem onSelect={handleOpenTerms}>
+            <BookOpen className='size-[14px]' />
+            Terms of service
+          </DropdownMenuItem>
+        ) : null}
+        {brand.privacyUrl ? (
+          <DropdownMenuItem onSelect={handleOpenPrivacy}>
+            <BookOpen className='size-[14px]' />
+            Privacy policy
+          </DropdownMenuItem>
+        ) : null}
+        {brand.slackCommunityUrl ? (
+          <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
+            <SlackIcon className='size-[14px]' />
+            Slack Community
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onSelect={onReportIssue}>
           <HelpCircle className='size-[14px]' />
-          Contact support
+          Report an issue
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -362,7 +395,7 @@ export function SidebarFooter({
   return (
     <div
       className={cn(
-        'flex flex-shrink-0 border-t px-2 pt-[9px] pb-2',
+        'flex shrink-0 border-t px-2 pt-[9px] pb-2',
         isCollapsed ? cn(SIDEBAR_ITEM_GAP_CLASS, 'flex-col-reverse') : 'items-center'
       )}
     >
@@ -373,7 +406,7 @@ export function SidebarFooter({
           half-leading, which would deepen the bar below the chip. Collapsed, it
           stretches to the rail on its own and the chip fills it. */}
       <div className={cn('flex', !isCollapsed && 'flex-1')}>{profileMenu}</div>
-      {/* {helpMenu} */}
+      {helpMenu}
     </div>
   )
 }

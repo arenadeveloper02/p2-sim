@@ -13,6 +13,7 @@ import { getSession } from '@/lib/auth'
 import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
 import { chatOperations } from '@/lib/copilot/application/operations'
+import { withAskModeContext } from '@/lib/copilot/chat/ask-mode'
 import {
   DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH,
   DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH,
@@ -973,7 +974,7 @@ async function resolveBranch(params: {
           workspaceId: requestedWorkspaceId,
           userId: payloadParams.userId,
           userMessageId: payloadParams.userMessageId,
-          mode: 'agent',
+          mode: mode ?? 'agent',
           model: localCatalogId || '',
           contexts: payloadParams.contexts,
           mcpServerIds: payloadParams.mcpServerIds,
@@ -1000,7 +1001,7 @@ async function resolveBranch(params: {
         chatId,
         messageId,
         userTimezone,
-        requestMode: 'agent',
+        requestMode: mode ?? 'agent',
       }),
   }
 }
@@ -1536,6 +1537,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       // typed snapshot Go diffs into baseline+delta messages.
       const workspaceContext = workspaceSnapshot?.markdown
       const vfs = workspaceSnapshot?.snapshot
+      const turnContexts = withAskModeContext(agentContexts, body.mode)
 
       executionContext.userPermission = userPermission ?? undefined
 
@@ -1559,7 +1561,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userId: authenticatedUserId,
                 userMessageId,
                 chatId: actualChatId,
-                contexts: agentContexts,
+                contexts: turnContexts,
                 mcpServerIds,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,
@@ -1587,7 +1589,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userId: authenticatedUserId,
                 userMessageId,
                 chatId: actualChatId,
-                contexts: agentContexts,
+                contexts: turnContexts,
                 mcpServerIds,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,

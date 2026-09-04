@@ -2,24 +2,29 @@
 
 import { useState } from 'react'
 import { Chip, ChipConfirmModal, ChipModalTabs, toast } from '@sim/emcn'
-import { ArrowLeft, Plus, User } from '@sim/emcn/icons'
+import { ArrowLeft, Plus } from '@sim/emcn/icons'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useQueryState } from 'nuqs'
+import { McpIcon } from '@/components/icons'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import type {
   CredentialGroupEnrollment,
   CredentialGroupEnrollmentConnection,
+  CredentialGroupEnrollmentMcpConnection,
 } from '@/lib/api/contracts/credential-groups'
 import type { CredentialGroupProvider } from '@/lib/credential-groups/providers'
 import { getCredentialGroupProviderService } from '@/lib/credential-groups/providers'
 import { SLACK_CUSTOM_BOT_PROVIDER_ID } from '@/lib/oauth/types'
 import { UnsavedChangesModal } from '@/app/workspace/[workspaceId]/components/credential-detail'
 import {
+  credentialGroupPeopleSearchParam,
+  credentialGroupPeopleSearchUrlKeys,
   credentialGroupProviderSearchParam,
   credentialGroupProviderSearchUrlKeys,
   credentialGroupTabParam,
   credentialGroupTabUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/[section]/search-params'
+import { MemberAvatar } from '@/app/workspace/[workspaceId]/settings/components/member-list'
 import { RowActionsMenu } from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
 import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import type { SettingsAction } from '@/app/workspace/[workspaceId]/settings/components/settings-header/settings-header'
@@ -62,6 +67,7 @@ const CREDENTIAL_GROUP_TABS = [
 
 interface EnrollmentConnectionsProps {
   connections: CredentialGroupEnrollmentConnection[]
+  mcpConnections: CredentialGroupEnrollmentMcpConnection[]
 }
 
 interface CredentialProviderIconProps {
@@ -73,9 +79,11 @@ function CredentialProviderIcon({ provider }: CredentialProviderIconProps) {
   return <ProviderIcon className='size-[14px]' aria-hidden />
 }
 
-function EnrollmentConnections({ connections }: EnrollmentConnectionsProps) {
+function EnrollmentConnections({ connections, mcpConnections }: EnrollmentConnectionsProps) {
   const connected = connections.filter((connection) => connection.status === 'active')
-  const count = connected.reduce((total, connection) => total + connection.count, 0)
+  const connectedMcp = mcpConnections.filter((connection) => connection.status === 'active')
+  const count =
+    connected.reduce((total, connection) => total + connection.count, 0) + connectedMcp.length
   const providers = [...new Set(connected.map((connection) => connection.provider))]
 
   return (
@@ -83,8 +91,9 @@ function EnrollmentConnections({ connections }: EnrollmentConnectionsProps) {
       {providers.map((provider) => {
         return <CredentialProviderIcon key={provider} provider={provider} />
       })}
+      {connectedMcp.length > 0 ? <McpIcon className='size-[14px]' aria-hidden /> : null}
       <span>
-        {count} connected {count === 1 ? 'account' : 'accounts'}
+        {count} connected {count === 1 ? 'connection' : 'connections'}
       </span>
     </span>
   )
@@ -119,6 +128,11 @@ export function CredentialGroupDetail({
     { ...credentialGroupProviderSearchParam.parser, ...credentialGroupProviderSearchUrlKeys }
   )
   const setProviderSearch = useDebouncedSearchSetter(setProviderSearchParam)
+  const [peopleSearch, setPeopleSearchParam] = useQueryState(credentialGroupPeopleSearchParam.key, {
+    ...credentialGroupPeopleSearchParam.parser,
+    ...credentialGroupPeopleSearchUrlKeys,
+  })
+  const setPeopleSearch = useDebouncedSearchSetter(setPeopleSearchParam)
   const [showInvite, setShowInvite] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deletingEnrollmentId, setDeletingEnrollmentId] = useState<string | null>(null)
@@ -126,11 +140,34 @@ export function CredentialGroupDetail({
   const [draftDescription, setDraftDescription] = useState<string | null>(null)
   const credentialGroup = detail.data?.pages[0]?.credentialGroup
   const enrollments = detail.data?.pages.flatMap((page) => page.enrollments) ?? []
+  const peopleFilter = peopleSearch.trim().toLowerCase()
+  /**
+   * Only the pages already loaded: the enrollment list is cursor-paginated with no
+   * server-side term, so a match on a later page appears only once it is fetched.
+   */
+  const visibleEnrollments = peopleFilter
+    ? enrollments.filter((enrollment) => enrollment.email.toLowerCase().includes(peopleFilter))
+    : enrollments
+  /**
+   * `+` means more people exist than are loaded, so it stays on the total. While
+   * filtering, the match count is reported against that total rather than replacing
+   * it — otherwise `People (2+)` reads as a two-person group with more to come.
+   */
+  const loadedTotal = `${enrollments.length}${detail.hasNextPage ? '+' : ''}`
+  const peopleLabel = peopleFilter
+    ? `People (${visibleEnrollments.length} of ${loadedTotal})`
+    : `People (${loadedTotal})`
   const deletingEnrollment = deletingEnrollmentId
     ? (enrollments.find((enrollment) => enrollment.id === deletingEnrollmentId) ?? null)
     : null
   const configurationReady =
-    Boolean(credentialGroup?.options.length) &&
+    Boolean(
+      credentialGroup &&
+        (credentialGroup.options.length ||
+          credentialGroup.mcpServers.some(
+            (server) => server.enabled && server.authType === 'oauth'
+          ))
+    ) &&
     credentialGroup?.options.every(
       (option) =>
         option.provider !== 'slack' ||
@@ -268,17 +305,23 @@ export function CredentialGroupDetail({
           onSelect: () => guard.guardBack(onBack),
         }}
         title={credentialGroup?.name ?? 'Credential group'}
-        description={credentialGroup?.description ?? undefined}
         actions={actions}
         search={
           activeTab === 'details'
             ? {
                 value: providerSearch,
                 onChange: setProviderSearch,
-                placeholder: 'Search account types...',
+                placeholder: 'Search accounts and MCP servers...',
                 disabled: detail.isPending,
               }
-            : undefined
+            : activeTab === 'people'
+              ? {
+                  value: peopleSearch,
+                  onChange: setPeopleSearch,
+                  placeholder: 'Search people...',
+                  disabled: detail.isPending,
+                }
+              : undefined
         }
       >
         {detail.error ? (
@@ -308,7 +351,7 @@ export function CredentialGroupDetail({
 
             {activeTab === 'people' && (
               <SettingsSection
-                label={`People (${enrollments.length}${detail.hasNextPage ? '+' : ''})`}
+                label={peopleLabel}
                 action={
                   detail.hasNextPage ? (
                     <Chip
@@ -320,19 +363,24 @@ export function CredentialGroupDetail({
                   ) : undefined
                 }
               >
-                {enrollments.length === 0 ? (
-                  <SettingsEmptyState variant='inline'>No people invited yet</SettingsEmptyState>
+                {visibleEnrollments.length === 0 ? (
+                  <SettingsEmptyState variant='inline'>
+                    {peopleFilter ? 'No people match your search' : 'No people invited yet'}
+                  </SettingsEmptyState>
                 ) : (
                   <div className={RESOURCE_LIST_STACK}>
-                    {enrollments.map((enrollment) => {
+                    {visibleEnrollments.map((enrollment) => {
                       return (
                         <SettingsResourceRow
                           key={enrollment.id}
-                          icon={<User className='text-[var(--text-icon)]' />}
-                          iconFilled
+                          icon={<MemberAvatar name={enrollment.email} image={null} />}
+                          iconVariant='custom'
                           title={enrollment.email}
                           description={
-                            <EnrollmentConnections connections={enrollment.connections} />
+                            <EnrollmentConnections
+                              connections={enrollment.connections}
+                              mcpConnections={enrollment.mcpConnections}
+                            />
                           }
                           trailing={
                             <RowActionsMenu

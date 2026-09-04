@@ -154,6 +154,11 @@ const nextConfig: NextConfig = {
     '@json-render/core',
     '@json-render/react',
     '@json-render/react-email',
+    /**
+     * PDF.js loads its worker and optional canvas primitives relative to its package at runtime.
+     * Bundling relocates that code and leaves DOMMatrix unavailable in the standalone image.
+     */
+    'pdfjs-dist',
     // The collab-doc seed converter lazily `require`s jsdom for a headless TipTap editor. Keep it
     // external so webpack doesn't try to bundle jsdom's dynamic internal requires.
     'jsdom',

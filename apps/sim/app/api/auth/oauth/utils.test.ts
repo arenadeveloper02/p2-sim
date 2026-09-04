@@ -171,16 +171,18 @@ describe('OAuth Utils', () => {
         refreshToken: 'new-refresh-token',
       })
 
-      mockUpdateChain()
+      const { mockSet } = mockUpdateChain()
 
       const result = await refreshTokenIfNeeded('request-id', mockCredential, 'credential-id')
 
-      expect(mockRefreshOAuthToken).toHaveBeenCalledWith(
-        'google',
-        'refresh-token',
-        ...CUSTOM_APP_REFRESH_ARGS
+      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('google', 'refresh-token')
+      expect(mockSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'new-token',
+          refreshToken: 'new-refresh-token',
+          accessTokenExpiresAt: expect.any(Date),
+        })
       )
-      expect(mockDb.update).toHaveBeenCalled()
       expect(result).toEqual({ accessToken: 'new-token', refreshed: true })
     })
 
@@ -217,6 +219,21 @@ describe('OAuth Utils', () => {
 
       expect(mockRefreshOAuthToken).not.toHaveBeenCalled()
       expect(result).toEqual({ accessToken: 'token', refreshed: false })
+    })
+
+    it('keeps a legacy non-expiring Monday credential usable without refreshing it', async () => {
+      const legacyCredential = {
+        id: 'legacy-monday-credential-id',
+        accessToken: 'legacy-monday-access-token',
+        refreshToken: null,
+        accessTokenExpiresAt: null,
+        providerId: 'monday',
+      }
+
+      const result = await refreshTokenIfNeeded('request-id', legacyCredential, legacyCredential.id)
+
+      expect(mockRefreshOAuthToken).not.toHaveBeenCalled()
+      expect(result).toEqual({ accessToken: 'legacy-monday-access-token', refreshed: false })
     })
   })
 

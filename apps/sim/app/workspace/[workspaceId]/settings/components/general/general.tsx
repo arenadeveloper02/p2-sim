@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezone'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { DeleteAccountModal } from '@/app/workspace/[workspaceId]/settings/components/general/components/delete-account-modal'
@@ -60,7 +60,7 @@ const TIMEZONE_OPTIONS = getTimezoneOptions()
  * to grid) so they line up as one column instead of three differently-sized
  * pills. Wide enough for the longest common timezone label.
  */
-const DROPDOWN_TRIGGER_CLASS = 'w-[240px] flex-shrink-0'
+const DROPDOWN_TRIGGER_CLASS = 'w-[240px] shrink-0'
 
 /**
  * Extracts initials from a user's name.
@@ -80,6 +80,7 @@ export function General() {
   const router = useRouter()
   const brandConfig = useOrgBrandConfig()
   const { data: session } = useSession()
+  const { hosted } = useDeploymentShape()
 
   const { data: profile, isLoading: isProfileLoading } = useUserProfile()
   const updateProfile = useUpdateUserProfile()
@@ -295,7 +296,7 @@ export function General() {
   }
 
   const actions: SettingsAction[] = [
-    ...(isHosted
+    ...(hosted
       ? [
           {
             id: 'home-page',
@@ -342,7 +343,7 @@ export function General() {
                   type='button'
                   aria-label='Change profile picture'
                   className={cn(
-                    'group relative flex size-9 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-colors hover-hover:bg-[var(--bg)]',
+                    'group relative flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-colors hover-hover:bg-[var(--bg)]',
                     !imageUrl && 'border border-[var(--border)]'
                   )}
                   onClick={handleProfilePictureClick}
@@ -406,7 +407,7 @@ export function General() {
                           onChange={(e) => setName(e.target.value)}
                           onKeyDown={handleKeyDown}
                           onBlur={handleInputBlur}
-                          className='absolute top-0 left-0 h-full w-full border-0 bg-transparent p-0 text-base outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                          className='absolute top-0 left-0 h-full w-full border-0 bg-transparent p-0 text-base outline-hidden focus:outline-hidden focus:ring-0 focus-visible:outline-hidden focus-visible:ring-0 focus-visible:ring-offset-0'
                           maxLength={100}
                           disabled={updateProfile.isPending}
                           autoComplete='off'
@@ -417,7 +418,7 @@ export function General() {
                       </div>
                       <Button
                         variant='ghost'
-                        className='size-[12px] flex-shrink-0 p-0'
+                        className='size-[12px] shrink-0 p-0'
                         onClick={handleUpdateName}
                         disabled={updateProfile.isPending}
                         aria-label='Save name'
@@ -430,7 +431,7 @@ export function General() {
                       <h3 className='text-base'>{profile?.name || ''}</h3>
                       <Button
                         variant='ghost'
-                        className='size-[10.5px] flex-shrink-0 p-0'
+                        className='size-[10.5px] shrink-0 p-0'
                         onClick={() => setIsEditingName(true)}
                         aria-label='Edit name'
                       >

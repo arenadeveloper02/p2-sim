@@ -35,6 +35,7 @@ import {
   JiraIcon,
   LinearIcon,
   LinkedInIcon,
+  ManageEngineIcon,
   MetaIcon,
   MicrosoftDataverseIcon,
   MicrosoftExcelIcon,
@@ -82,6 +83,7 @@ import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/cus
 import { getDocusignOAuthUrl } from '@/lib/oauth/docusign'
 import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
+import { MONDAY_OAUTH_TOKEN_URL, resolveMondayAccessTokenExpiresAt } from '@/lib/oauth/monday'
 import {
   SALESFORCE_ADDITIONAL_PROVIDER_IDS,
   SALESFORCE_LOGIN_HOSTS,
@@ -822,6 +824,55 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
     },
     defaultService: 'linear',
+  },
+  'manageengine-sdp': {
+    name: 'ManageEngine ServiceDesk Plus',
+    icon: ManageEngineIcon,
+    services: {
+      'manageengine-sdp': {
+        name: 'ManageEngine ServiceDesk Plus',
+        description:
+          'Manage ServiceDesk Plus Cloud requests, notes, problems, changes, assets, and knowledge base solutions. Connecting requires a Zoho account in the US data center — the authorize and token-exchange legs are pinned to accounts.zoho.com, and a Zoho access token is only valid in the data center that issued it.',
+        providerId: 'manageengine-sdp',
+        icon: ManageEngineIcon,
+        baseProviderIcon: ManageEngineIcon,
+        // ServiceDesk Plus Cloud scopes are `SDPOnDemand.<module>.<operation>`
+        // (getting-started/oauth-2.0.html). Enumerated per operation rather
+        // than requested as the broader `.ALL` group scopes, so the consent
+        // screen names exactly what the block can do.
+        //
+        // The five modules here are the ones the tools cover. Notably absent:
+        // the standalone Tasks module (/api/v3/tasks). Its endpoints are
+        // documented but the scope table publishes no `tasks` entry, and
+        // guessing one would put an unverified scope on every user's consent
+        // screen - so those tools are deliberately not implemented.
+        scopes: [
+          'SDPOnDemand.requests.CREATE',
+          'SDPOnDemand.requests.READ',
+          'SDPOnDemand.requests.UPDATE',
+          'SDPOnDemand.requests.DELETE',
+          'SDPOnDemand.problems.CREATE',
+          'SDPOnDemand.problems.READ',
+          'SDPOnDemand.problems.UPDATE',
+          'SDPOnDemand.problems.DELETE',
+          'SDPOnDemand.changes.CREATE',
+          'SDPOnDemand.changes.READ',
+          'SDPOnDemand.changes.UPDATE',
+          'SDPOnDemand.changes.DELETE',
+          'SDPOnDemand.assets.CREATE',
+          'SDPOnDemand.assets.READ',
+          'SDPOnDemand.assets.UPDATE',
+          'SDPOnDemand.assets.DELETE',
+          'SDPOnDemand.solutions.CREATE',
+          'SDPOnDemand.solutions.READ',
+          'SDPOnDemand.solutions.UPDATE',
+          'SDPOnDemand.solutions.DELETE',
+          // Zoho account profile, used by getUserInfo to label the credential.
+          'aaaserver.profile.READ',
+        ],
+      },
+    },
+    defaultService: 'manageengine-sdp',
   },
   monday: {
     name: 'Monday.com',
@@ -2121,7 +2172,37 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         'MONDAY_CLIENT_SECRET'
       )
       return {
-        tokenEndpoint: 'https://auth.monday.com/oauth2/token',
+        tokenEndpoint: MONDAY_OAUTH_TOKEN_URL,
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        useJsonBody: true,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'manageengine-sdp': {
+      // ServiceDesk Plus Cloud authenticates through Zoho, so the grant is the
+      // same one Zoho Desk uses and shares its client credentials: scopes are
+      // chosen per authorization request, not per API-console client, so one
+      // registered client serves both products.
+      //
+      // Rotation stays off for the same reason as zoho-desk below - Zoho's
+      // refresh_token grant returns a new access token but no new refresh token.
+      // accounts.zoho.com is correct because the authorize and code-exchange
+      // legs in lib/auth/connectors/providers.ts are pinned to the US accounts
+      // server, so every refresh token in the system is US-issued. Data
+      // residency for API calls is honored separately, via the block's data
+      // center selector.
+      // Keyed on the `zoho-desk` capability, which is what
+      // `resolveOAuthClientCapabilityId('manageengine-sdp')` aliases to — the
+      // capability names the env pair, not the product.
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'zoho-desk',
+        'ZOHO_CLIENT_ID',
+        'ZOHO_CLIENT_SECRET'
+      )
+      return {
+        tokenEndpoint: 'https://accounts.zoho.com/oauth/v2/token',
         clientId,
         clientSecret,
         useBasicAuth: false,
@@ -2489,14 +2570,29 @@ export async function refreshOAuthToken(
       newRefreshToken = data.refresh_token
       logger.info(`Received new refresh token from ${provider}`)
     }
+    if (provider === 'monday' && !newRefreshToken) {
+      logger.warn('Monday token refresh response omitted its rotating refresh token')
+      return { ok: false, message: 'Invalid Monday token refresh response' }
+    }
 
     const rawExpiresIn = data.expires_in ?? data.expiresIn
     const parsedExpiresIn =
       typeof rawExpiresIn === 'number' || typeof rawExpiresIn === 'string'
         ? Number(rawExpiresIn)
         : Number.NaN
+    const responseExpiresIn =
+      Number.isFinite(parsedExpiresIn) && parsedExpiresIn > 0 ? parsedExpiresIn : undefined
     const expiresIn =
-      Number.isFinite(parsedExpiresIn) && parsedExpiresIn > 0 ? parsedExpiresIn : 3600
+      provider === 'monday' && accessToken
+        ? Math.max(
+            1,
+            Math.ceil(
+              (resolveMondayAccessTokenExpiresAt(accessToken, responseExpiresIn).getTime() -
+                Date.now()) /
+                1000
+            )
+          )
+        : (responseExpiresIn ?? 3600)
 
     if (!accessToken) {
       // Log only the shape, never `data` itself - on a partial success it can

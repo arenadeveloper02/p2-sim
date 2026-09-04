@@ -1,3 +1,4 @@
+import type { ManagedMcpConnectorId } from '@/lib/credential-groups/managed-mcp-connectors'
 import type { ChatContext } from '@/stores/panel'
 import type { BrowserTextSelection, TerminalTextSelection } from '@/stores/panel/types'
 
@@ -22,11 +23,19 @@ export interface FileAttachmentForApi {
   path?: string
 }
 
+/**
+ * A request mode a send asks the agent for beyond the default. `ask` is an
+ * Assistant turn: an answer drawn from the attached knowledge bases first,
+ * with a connected integration reached only when those cannot answer.
+ */
+export type ChatRequestMode = 'ask'
+
 export interface QueuedMessage {
   id: string
   content: string
   fileAttachments?: FileAttachmentForApi[]
   contexts?: ChatContext[]
+  requestMode?: ChatRequestMode
 }
 
 export const ToolCallStatus = {
@@ -152,6 +161,7 @@ export interface ChatMessageContext {
   blockType?: string
   skillId?: string
   serverId?: string
+  managedConnectorId?: ManagedMcpConnectorId
   /** Selected passage for a `file_selection` context. */
   text?: string
   /** Source file name for a `file_selection` context. */

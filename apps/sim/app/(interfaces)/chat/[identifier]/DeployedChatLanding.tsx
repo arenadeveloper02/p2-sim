@@ -7,15 +7,7 @@ import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selectio
 import { DeployedChatDescriptionModal } from '@/app/(interfaces)/chat/[identifier]/DeployedChatDescriptionModal'
 import { ChatInput } from '@/app/(interfaces)/chat/components'
 import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
-import {
-  DEPLOYED_CHAT_CANVAS_BG,
-  DEPLOYED_CHAT_CANVAS_GRADIENT,
-  DEPLOYED_CHAT_INPUT_PLACEHOLDER,
-  DEPLOYED_CHAT_LANDING_MAX_WIDTH_CLASS,
-  DEPLOYED_CHAT_TEXT_BODY,
-  DEPLOYED_CHAT_TEXT_DISPLAY,
-  DEPLOYED_CHAT_TEXT_MUTED,
-} from '@/app/(interfaces)/chat/constants'
+import { DEPLOYED_CHAT_LANDING_MAX_WIDTH_CLASS } from '@/app/(interfaces)/chat/constants'
 import {
   getDeployedChatFirstName,
   resolveDeployedChatLandingDescription,
@@ -54,8 +46,7 @@ function DeployedChatDescriptionPreview({
     <div className='relative mt-3'>
       <p
         ref={descriptionRef}
-        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[14px] leading-[21px]'
-        style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
+        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center text-[var(--text-muted)] text-sm leading-[21px]'
       >
         <WelcomeMessageWithCtas
           content={text}
@@ -70,11 +61,7 @@ function DeployedChatDescriptionPreview({
               <button
                 type='button'
                 onClick={onExpand}
-                className='absolute right-0 bottom-0 pl-3 font-normal text-[14px] leading-[21px] hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
-                style={{
-                  color: DEPLOYED_CHAT_TEXT_MUTED,
-                  background: `linear-gradient(to right, transparent, ${DEPLOYED_CHAT_CANVAS_BG} 50%)`,
-                }}
+                className='absolute right-0 bottom-0 bg-linear-to-r from-transparent via-[var(--bg)] to-[var(--bg)] pl-3 text-[var(--text-muted)] text-sm leading-[21px] hover:text-[var(--text-primary)]'
                 aria-label='View full description'
               >
                 ...
@@ -158,21 +145,13 @@ export function DeployedChatLanding({
 
   return (
     <>
-      <div
-        className='flex min-h-0 flex-1 flex-col overflow-y-auto'
-        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-      >
+      <div className='flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]'>
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
           <div
             className={`flex w-full flex-col gap-6 ${DEPLOYED_CHAT_LANDING_MAX_WIDTH_CLASS} text-center`}
           >
             <div>
-              <h1
-                className='font-semibold text-[length:var(--text-ds-heading-md,24px)] leading-[var(--leading-ds-heading-md,32px)]'
-                style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
-              >
-                {title}
-              </h1>
+              <h1 className='text-[24px] text-[var(--text-primary)] leading-[32px]'>{title}</h1>
 
               {descriptionSource && (
                 <DeployedChatDescriptionPreview
@@ -183,18 +162,12 @@ export function DeployedChatLanding({
               )}
             </div>
 
-            <p
-              className='font-normal text-[length:var(--text-ds-heading-sm,20px)] leading-[var(--leading-ds-heading-sm,28px)]'
-              style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
-            >
-              {promptLine}
-            </p>
+            <p className='text-[20px] text-[var(--text-primary)] leading-[28px]'>{promptLine}</p>
 
             <div ref={inputWrapperRef} className='w-full'>
               <ChatInput
                 embedded
                 landing
-                placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}
                 insertText={insertText}
                 onInsertConsumed={onInsertConsumed}
                 onSubmit={onSubmit}

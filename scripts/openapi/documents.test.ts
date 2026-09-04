@@ -36,11 +36,11 @@ const DOCUMENTS = [
 const EXPECTED_OPERATION_COUNTS = new Map<string, number>([
   ['apps/docs/openapi-v2-workflows.json', 38],
   ['apps/docs/openapi-v2-logs.json', 3],
-  ['apps/docs/openapi-v2-files-audit.json', 27],
+  ['apps/docs/openapi-v2-files-audit.json', 29],
   ['apps/docs/openapi-v2-tables.json', 53],
   ['apps/docs/openapi-v2-knowledge.json', 44],
   ['apps/docs/openapi-v2-billing.json', 2],
-  ['apps/docs/openapi-v2-resources.json', 46],
+  ['apps/docs/openapi-v2-resources.json', 51],
 ])
 
 const generatedDocuments = new Map<(typeof DOCUMENTS)[number], JsonObject>()
@@ -183,7 +183,7 @@ describe('generated OpenAPI documents', () => {
         })
       }
     }
-    expect(totalOperations).toBe(213)
+    expect(totalOperations).toBe(220)
   })
 
   it('documents mixed workflow execution and resume responses', () => {
@@ -279,6 +279,10 @@ describe('generated OpenAPI documents', () => {
     expect(tableProperties.ownerEmail).toMatchObject({ type: 'string', format: 'email' })
   })
 
+  it('omits feature-flagged table column types', () => {
+    expect(JSON.stringify(generatedDocument(tablesOpenApiDocument))).not.toContain('"ttl"')
+  })
+
   it('keeps billing as its own API reference group', () => {
     const spec = generatedDocument(billingOpenApiDocument)
     expect((spec.tags as JsonObject[]).map((tag) => tag.name)).toEqual(['Billing'])
@@ -307,7 +311,7 @@ describe('generated OpenAPI documents', () => {
     )
   })
 
-  it('publishes Agent tools as named integration, custom, and MCP schemas', () => {
+  it('publishes Agent tools as integration, custom, MCP tool, and advanced MCP schemas', () => {
     const workflowsSpec = generatedDocument(workflowsOpenApiDocument)
     const schemas = (workflowsSpec.components as JsonObject).schemas as JsonObject
     const agentToolInput = schemas.AgentToolInput as JsonObject
@@ -332,6 +336,7 @@ describe('generated OpenAPI documents', () => {
       { $ref: '#/components/schemas/AgentIntegrationTool' },
       { $ref: '#/components/schemas/AgentCustomTool' },
       { $ref: '#/components/schemas/AgentMcpTool' },
+      { $ref: '#/components/schemas/AgentMcpServerAdvanced' },
     ])
     expect(agentToolInput).toEqual(
       expect.objectContaining({ type: 'array', maxItems: MAX_AGENT_TOOLS_PER_BLOCK })
