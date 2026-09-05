@@ -7,7 +7,8 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import Image from 'next/image'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
+import { STARTER_PLAN } from '@/lib/billing/arena/constants'
+import { isEnterprise, isMaxTier } from '@/lib/billing/plan-helpers'
 import { HEX_COLOR_REGEX } from '@/lib/branding'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import {
@@ -121,7 +122,13 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
   const { data: savedSettings, isLoading } = useWhitelabelSettings(orgId)
   const updateSettings = useUpdateWhitelabelSettings()
 
-  const hasEnterprisePlan = isEnterprise(organizationBillingData?.data?.subscriptionPlan)
+  const organizationBilling = organizationBillingData?.data
+  const hasEnterprisePlan =
+    organizationBilling?.subscriptionState === 'active' &&
+    !organizationBilling.billingBlocked &&
+    (isEnterprise(organizationBilling.subscriptionPlan) ||
+      organizationBilling.subscriptionPlan === STARTER_PLAN ||
+      isMaxTier(organizationBilling.subscriptionPlan))
 
   const [brandName, setBrandName] = useState('')
   const [primaryColor, setPrimaryColor] = useState('')

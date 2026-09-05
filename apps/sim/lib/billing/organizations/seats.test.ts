@@ -101,6 +101,21 @@ describe('reconcileOrganizationSeats', () => {
     expect(enqueueMock).toHaveBeenCalledOnce()
   })
 
+  it('skips reconcile for Arena flat org plans so Stripe quantity stays at 1', async () => {
+    queueReconcileReads([{ ...teamSub, plan: 'team_1950', seats: 1 }], [{ value: 4 }])
+
+    const result = await reconcileOrganizationSeats({
+      organizationId: 'org-1',
+      reason: 'member-accepted-invite',
+    })
+
+    expect(result).toEqual({
+      changed: false,
+      reason: 'Arena flat org pricing keeps Stripe quantity at 1',
+    })
+    expect(enqueueMock).not.toHaveBeenCalled()
+  })
+
   it('still records the seat audit when the post-commit usage-limit sync fails', async () => {
     queueReconcileReads([teamSub], [{ value: 2 }])
     mockSyncSubscriptionUsageLimits.mockRejectedValueOnce(new Error('sync unavailable'))

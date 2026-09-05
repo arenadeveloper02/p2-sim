@@ -387,7 +387,8 @@ export const WORKSPACE_SETTINGS_GROUPS = [
 ] as const
 
 /**
- * Arena Agents billing — Subscription sidebar entry that opens billing-usage.
+ * Arena Agents billing — Subscription sidebar entry that opens the standard
+ * Billing settings panel (plan, limits, invoices).
  * Sidebar visibility is gated to org admins / owners (and personal payers) via
  * `canManageWorkspaceBilling`; org members get remaining-credits stats on Usage.
  */

@@ -74,9 +74,7 @@ const Billing = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/billing/billing').then((m) => m.Billing)
 )
 const ArenaBilling = dynamic(() =>
-  import('@/app/workspace/[workspaceId]/settings/components/billing-usage').then(
-    (m) => m.BillingPageShell
-  )
+  import('@/app/workspace/[workspaceId]/settings/components/billing/billing').then((m) => m.Billing)
 )
 const Teammates = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/teammates/teammates').then(
@@ -216,7 +214,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
           scope={organizationId ? 'organization' : 'account'}
           organizationId={organizationId ?? undefined}
           governingWorkspaceName={hostContext.workspace.name}
-          creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/billing/credit-usage`}
+          creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/usage`}
         />
       )}
       {effectiveSection === 'teammates' && <Teammates />}

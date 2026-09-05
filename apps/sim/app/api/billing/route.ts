@@ -13,11 +13,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getBillingContract } from '@/lib/api/contracts/subscription'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { presentOrganizationSubscription } from '@/lib/billing/arena/billing-presenter'
 import { getOrganizationSubscription, getPersonalBillingSummary } from '@/lib/billing/core/billing'
 import { getOrganizationBillingData } from '@/lib/billing/core/organization'
 import { resolveBillingInterval } from '@/lib/billing/core/subscription'
 import { getCreditBalanceForEntity } from '@/lib/billing/credits/balance'
-import { isPaid } from '@/lib/billing/plan-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('UnifiedBillingAPI')
@@ -214,31 +214,32 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     const latestSubscription = latestSubscriptionRows[0] ?? null
-    const activeSubscription =
-      entitledSubscription && isPaid(entitledSubscription.plan) ? entitledSubscription : null
-    const freeSubscription =
-      entitledSubscription && !isPaid(entitledSubscription.plan) ? entitledSubscription : null
-    const lapsedSubscription =
-      !entitledSubscription && latestSubscription && isPaid(latestSubscription.plan)
-        ? latestSubscription
-        : null
-    const displayedSubscription = activeSubscription ?? freeSubscription ?? lapsedSubscription
-    const subscriptionState = activeSubscription
-      ? ('active' as const)
-      : lapsedSubscription
-        ? ('lapsed' as const)
-        : ('free' as const)
+    const { subscriptionState, displayedSubscription: displayedSummary } =
+      presentOrganizationSubscription({
+        entitledSubscription: entitledSubscription
+          ? { plan: entitledSubscription.plan, status: entitledSubscription.status }
+          : null,
+        latestSubscription: latestSubscription
+          ? { plan: latestSubscription.plan, status: latestSubscription.status }
+          : null,
+      })
+    const displayedSubscriptionRow =
+      entitledSubscription?.plan === displayedSummary?.plan
+        ? entitledSubscription
+        : latestSubscription?.plan === displayedSummary?.plan
+          ? latestSubscription
+          : (entitledSubscription ?? latestSubscription)
 
     const billingData = {
       organizationId,
       organizationName: rawBillingData?.organizationName ?? organizationRecord.name ?? '',
       subscriptionState,
-      hasSubscription: displayedSubscription !== null,
-      subscriptionPlan: displayedSubscription?.plan ?? 'free',
-      subscriptionStatus: displayedSubscription?.status ?? null,
+      hasSubscription: displayedSummary !== null,
+      subscriptionPlan: displayedSummary?.plan ?? 'free',
+      subscriptionStatus: displayedSummary?.status ?? null,
       creditBalance,
-      billingInterval: resolveBillingInterval(displayedSubscription),
-      cancelAtPeriodEnd: displayedSubscription?.cancelAtPeriodEnd ?? false,
+      billingInterval: resolveBillingInterval(displayedSubscriptionRow),
+      cancelAtPeriodEnd: displayedSubscriptionRow?.cancelAtPeriodEnd ?? false,
       totalSeats: rawBillingData?.totalSeats ?? 0,
       usedSeats: rawBillingData?.usedSeats ?? 0,
       seatsCount: rawBillingData?.seatsCount ?? 0,
@@ -248,11 +249,11 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       averageUsagePerMember: rawBillingData?.averageUsagePerMember ?? 0,
       billingPeriodStart:
         rawBillingData?.billingPeriodStart?.toISOString() ??
-        displayedSubscription?.periodStart?.toISOString() ??
+        displayedSubscriptionRow?.periodStart?.toISOString() ??
         null,
       billingPeriodEnd:
         rawBillingData?.billingPeriodEnd?.toISOString() ??
-        displayedSubscription?.periodEnd?.toISOString() ??
+        displayedSubscriptionRow?.periodEnd?.toISOString() ??
         null,
       members:
         rawBillingData?.members.map((organizationMember) => ({

@@ -54,50 +54,50 @@ export interface IntentAnalyzerParams {
 }
 
 /**
- * Fetches the intent analyzer system prompt from the prompt_config table.
+ * Fetches the intent analyzer system prompt from the master_config table.
  * Returns null if unavailable (caller should use a fallback).
  */
 async function fetchIntentAnalyzerPrompt(): Promise<string | null> {
   try {
-    const { promptConfig } = await import('@sim/db/schema')
+    const { masterConfig } = await import('@sim/db/schema')
     const { PROMPT_CONFIG_KEYS } = await import('@sim/db/constants')
 
     const rows = await db
-      .select({ prompt: promptConfig.prompt })
-      .from(promptConfig)
-      .where(eq(promptConfig.key, PROMPT_CONFIG_KEYS.INTENT_ANALYZER_SYSTEM_PROMPT))
+      .select({ value: masterConfig.value })
+      .from(masterConfig)
+      .where(eq(masterConfig.key, PROMPT_CONFIG_KEYS.INTENT_ANALYZER_SYSTEM_PROMPT))
       .limit(1)
 
-    if (rows.length > 0 && rows[0].prompt) {
-      return rows[0].prompt
+    if (rows.length > 0 && rows[0].value) {
+      return rows[0].value
     }
   } catch (error) {
-    logger.warn('Failed to fetch intent analyzer prompt from prompt_config table', { error })
+    logger.warn('Failed to fetch intent analyzer prompt from master_config table', { error })
   }
 
   return null
 }
 
 /**
- * Fetches the skip response generation system prompt from the prompt_config table.
+ * Fetches the skip response generation system prompt from the master_config table.
  * Returns null if unavailable (caller should use a fallback).
  */
 async function fetchSkipResponseSystemPrompt(): Promise<string | null> {
   try {
-    const { promptConfig } = await import('@sim/db/schema')
+    const { masterConfig } = await import('@sim/db/schema')
     const { PROMPT_CONFIG_KEYS } = await import('@sim/db/constants')
 
     const rows = await db
-      .select({ prompt: promptConfig.prompt })
-      .from(promptConfig)
-      .where(eq(promptConfig.key, PROMPT_CONFIG_KEYS.GENERATE_SKIP_RESPONSE_SYSTEM_PROMPT))
+      .select({ value: masterConfig.value })
+      .from(masterConfig)
+      .where(eq(masterConfig.key, PROMPT_CONFIG_KEYS.GENERATE_SKIP_RESPONSE_SYSTEM_PROMPT))
       .limit(1)
 
-    if (rows.length > 0 && rows[0].prompt) {
-      return rows[0].prompt
+    if (rows.length > 0 && rows[0].value) {
+      return rows[0].value
     }
   } catch (error) {
-    logger.warn('Failed to fetch skip response system prompt from prompt_config table', { error })
+    logger.warn('Failed to fetch skip response system prompt from master_config table', { error })
   }
 
   return null
@@ -533,7 +533,7 @@ async function generateSkipResponse(
     const { OpenAI } = await import('openai')
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    // Fetch system prompt from prompt_config table, fallback to default if not found
+    // Fetch system prompt from master_config table, fallback to default if not found
     const dbSystemPrompt = await fetchSkipResponseSystemPrompt()
     const systemPrompt = dbSystemPrompt || ''
 
@@ -659,7 +659,7 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
   logger.info('Intent analyzer: step 2 done', { hasDbPrompt: !!dbPrompt })
 
   if (!dbPrompt) {
-    logger.warn('No intent analyzer prompt configured in prompt_config table, defaulting to RUN')
+    logger.warn('No intent analyzer prompt configured in master_config table, defaulting to RUN')
     // Fetch the latest conversation even if we're defaulting to RUN
     const conversationId = params.inputs.conversationId
     const lastConversation = conversationId ? await fetchLatestConversation(conversationId) : null

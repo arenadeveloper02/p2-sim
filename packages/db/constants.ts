@@ -73,8 +73,8 @@ export type DateTagSlot = (typeof DATE_TAG_SLOTS)[number]
 export type BooleanTagSlot = (typeof BOOLEAN_TAG_SLOTS)[number]
 
 /**
- * Prompt config keys used to fetch prompt templates from the prompt_config table.
- * Each key maps to a row in the `prompt_config` table's `key` column.
+ * Prompt config keys used to fetch prompt templates from the master_config table.
+ * Each key maps to a row in the `master_config` table's `key` column.
  */
 export const PROMPT_CONFIG_KEYS = {
   INTENT_ANALYZER_SYSTEM_PROMPT: 'INTENT_ANALYZER_SYSTEM_PROMPT',

@@ -1,6 +1,8 @@
 import type Stripe from 'stripe'
+import { isArenaBilling } from '@/lib/billing/arena/env'
+import { getArenaPlans } from '@/lib/billing/arena/plans'
 import { CREDIT_TIERS } from '@/lib/billing/constants'
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import { isTeam } from '@/lib/billing/plan-helpers'
 import { getFreeTierLimit } from '@/lib/billing/subscriptions/utils'
 import { env } from '@/lib/core/config/env'
@@ -25,8 +27,15 @@ export interface BillingPlan {
  *
  * Legacy subscriptions with plan='pro' or plan='team' are handled by
  * plan-helpers.ts which maps them to their original dollar amounts.
+ *
+ * When Arena billing is enabled, returns {@link getArenaPlans} instead
+ * (team_1950 / team_6500 flat org pricing).
  */
 export function getPlans(): BillingPlan[] {
+  if (isArenaBilling()) {
+    return getArenaPlans()
+  }
+
   const plans: BillingPlan[] = [
     {
       name: 'free',
@@ -61,7 +70,7 @@ export function getPlans(): BillingPlan[] {
     const proPrices = proPriceMap[tier.dollars]
     const teamPrices = teamPriceMap[tier.dollars]
 
-    const creditValueDollars = tier.credits / CREDIT_MULTIPLIER
+    const creditValueDollars = tier.credits / getCreditsPerDollar()
 
     if (proPrices?.monthly) {
       plans.push({

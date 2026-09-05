@@ -7,8 +7,8 @@ import type { PlanCategory } from '@/lib/billing/plan-helpers'
  */
 export const DEFAULT_BILLING_CONCURRENCY_LIMITS = {
   free: 10,
-  pro: 50,
-  team: 200,
+  pro: 20,
+  team: 100,
   enterprise: 1000,
 } as const satisfies Record<PlanCategory, number>
 

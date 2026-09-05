@@ -42,6 +42,10 @@ vi.mock('@sim/emcn', () => ({
   ChipLink: ({ children, href }: { children: ReactNode; href: string }) => (
     <a href={href}>{children}</a>
   ),
+  ChipModal: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ChipModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ChipModalFooter: () => null,
+  ChipModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Credit: () => <span />,
   Label: ({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
@@ -71,6 +75,14 @@ vi.mock('@sim/emcn', () => ({
   chipVariants: () => '',
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' '),
   toast: { error: vi.fn() },
+}))
+
+vi.mock('@sim/emcn/icons', () => ({
+  CircleX: () => <span />,
+}))
+
+vi.mock('@/lib/billing/arena/env', () => ({
+  isArenaBilling: () => true,
 }))
 
 vi.mock('@tanstack/react-query', () => ({
@@ -108,6 +120,7 @@ vi.mock('@/hooks/queries/organization', () => ({
 vi.mock('@/hooks/queries/subscription', () => ({
   useInvoices: () => ({ data: { invoices: [], hasMore: false } }),
   useOpenBillingPortal: () => ({ isPending: false, mutate: vi.fn() }),
+  usePurchaseCredits: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useSubscriptionData: (...args: unknown[]) => {
     mockUseSubscriptionData(...args)
     return mockPersonalQuery.current
@@ -135,6 +148,15 @@ vi.mock(
   '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section',
   () => ({
     CreditUsageSection: () => <div>Personal credit usage</div>,
+  })
+)
+
+vi.mock(
+  '@/app/workspace/[workspaceId]/settings/components/billing/components/prepaid-top-up-section/prepaid-top-up-section',
+  () => ({
+    PrepaidTopUpSection: ({ canPurchase }: { canPurchase: boolean }) => (
+      <div data-testid='prepaid-top-up' data-can-purchase={canPurchase} />
+    ),
   })
 )
 
@@ -288,21 +310,38 @@ describe('Billing payer scope', () => {
     expect(container.textContent).toContain('Access until')
     expect(container.textContent).toContain('Subscription canceled')
     expect(container.textContent).toContain('Restore')
-    expect(container.querySelector('[data-testid="usage-limit"]')).toHaveAttribute(
-      'data-organization-id',
-      'org-target'
+    expect(container.querySelector('[data-testid="prepaid-top-up"]')).toHaveAttribute(
+      'data-can-purchase',
+      'true'
     )
+    expect(container.querySelector('[data-testid="usage-limit"]')).toBeNull()
+    expect(container.querySelector('[role="switch"]')).toBeNull()
+    expect(container.textContent).toContain('Personal credit usage')
+  })
 
-    const onDemandSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]')
-    expect(onDemandSwitch).toHaveAttribute('aria-checked', 'true')
+  it('hides credit usage for starter organization plans', async () => {
+    mockOrganizationQuery.current = {
+      data: organizationResponse({
+        subscriptionPlan: 'starter',
+        subscriptionState: 'active',
+        hasSubscription: true,
+        subscriptionStatus: 'active',
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
+    }
+
     await act(async () => {
-      onDemandSwitch?.click()
+      root.render(
+        <Billing
+          scope='organization'
+          organizationId='org-target'
+          governingWorkspaceName='Starter org'
+        />
+      )
     })
-    expect(mockUpdateOrganizationLimit).toHaveBeenCalledWith({
-      organizationId: 'org-target',
-      limit: 130,
-    })
-    expect(mockUpdateUserLimit).not.toHaveBeenCalled()
+
+    expect(container.textContent).not.toContain('Personal credit usage')
   })
 
   it('uses a guaranteed personal payer workspace for account upgrades', async () => {
