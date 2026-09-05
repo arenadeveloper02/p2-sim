@@ -550,14 +550,40 @@ const WIDE_SECTION_TYPES = new Set([
   'Chart',
   'Sparkline',
   'Workspace',
-  'Grid',
-  'Columns',
 ])
+
+function visibleLayoutChildIds(
+  elements: Record<string, SpecElement>,
+  childIds: string[]
+): string[] {
+  return childIds.filter((id) => {
+    const child = elements[id]
+    return Boolean(child) && child.type !== 'Modal' && child.type !== 'Drawer'
+  })
+}
+
+function hasSingleVisibleLayoutChild(
+  elements: Record<string, SpecElement>,
+  childIds: string[],
+  visibilityValues: Record<string, unknown>
+): boolean {
+  let count = 0
+  for (const id of childIds) {
+    const child = elements[id]
+    if (!child) continue
+    if (child.type === 'Modal' || child.type === 'Drawer') continue
+    if (!fieldIsVisible(child.props ?? {}, visibilityValues)) continue
+    count += 1
+    if (count > 1) return false
+  }
+  return true
+}
 
 /**
  * True when this Section's visible job is a stacked Form (no Grid/Columns
- * inside it, no collection sibling). Generated specs often omit width or set
- * wide, which stretched the Card to 1280px while Form sat at the 40rem measure.
+ * inside the Form, no collection sibling). A Columns/Grid that only wraps that
+ * Form is still form-only — generated specs often emit a two-column shell with
+ * one child, which left the fields in half the Card.
  */
 function sectionIsFormOnly(
   elements: Record<string, SpecElement>,
@@ -580,6 +606,11 @@ function sectionIsFormOnly(
         continue
       }
       if (WIDE_SECTION_TYPES.has(child.type)) hasWideContent = true
+      if (child.type === 'Grid' || child.type === 'Columns') {
+        if (visibleLayoutChildIds(elements, child.children ?? []).length >= 2) {
+          hasWideContent = true
+        }
+      }
       visit(child.children ?? [])
     }
   }
@@ -1169,7 +1200,7 @@ function FieldShell({
     </>
   ) : null
   return (
-    <div className='flex flex-col gap-1.5'>
+    <div className='flex w-full min-w-0 flex-col gap-1.5'>
       {title ? (
         htmlFor ? (
           <label
@@ -2068,8 +2099,22 @@ export function SpecRenderer({
           </div>
         )
       }
-      case 'Grid':
+      case 'Grid': {
         if (!fieldIsVisible(props, visibilityValues)) return null
+        const singleChild = hasSingleVisibleLayoutChild(elements, childIds, visibilityValues)
+        if (singleChild && gridColumnCount(props) === '2') {
+          return (
+            <div
+              className='grid w-full grid-cols-1'
+              style={{
+                gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+                ...styleFromProps(props),
+              }}
+            >
+              {children}
+            </div>
+          )
+        }
         if (isEqualTwoColFormGrid(withinForm, props)) {
           return (
             <div
@@ -2095,6 +2140,7 @@ export function SpecRenderer({
             {children}
           </div>
         )
+      }
       case 'Repeat': {
         if (!fieldIsVisible(props, visibilityValues)) return null
         if (hideListForSelection) return null
@@ -2154,13 +2200,14 @@ export function SpecRenderer({
       }
       case 'Columns': {
         const layout = asString(props.layout, 'equal')
+        const singleChild = hasSingleVisibleLayoutChild(elements, childIds, visibilityValues)
         return (
           <div
             className={cn(
               'grid w-full grid-cols-1',
-              layout === 'sidebar-left' && 'md:grid-cols-[280px_1fr]',
-              layout === 'sidebar-right' && 'md:grid-cols-[1fr_280px]',
-              layout === 'equal' && 'md:grid-cols-2'
+              !singleChild && layout === 'sidebar-left' && 'md:grid-cols-[280px_1fr]',
+              !singleChild && layout === 'sidebar-right' && 'md:grid-cols-[1fr_280px]',
+              !singleChild && layout === 'equal' && 'md:grid-cols-2'
             )}
             style={{
               gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
@@ -2766,7 +2813,7 @@ export function SpecRenderer({
           <div
             data-testid='card'
             data-variant={asString(props.variant, 'default')}
-            className={cn('flex flex-col gap-4', cardSurfaceClass(props.variant))}
+            className={cn('flex w-full min-w-0 flex-col gap-4', cardSurfaceClass(props.variant))}
             style={styleFromProps(props)}
           >
             {mediaBesideTitle ? (
@@ -3070,7 +3117,7 @@ export function SpecRenderer({
         return (
           <form
             className={cn(
-              'flex w-full flex-col gap-[var(--gui-gap,16px)]',
+              'flex w-full min-w-0 flex-col gap-[var(--gui-gap,16px)]',
               alignItemsClass(props.align, 'stretch')
             )}
             onSubmit={handleSubmit}

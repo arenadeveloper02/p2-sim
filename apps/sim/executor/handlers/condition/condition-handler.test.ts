@@ -176,7 +176,7 @@ describe('ConditionBlockHandler', () => {
       'function_execute',
       expect.objectContaining({
         code: expect.stringContaining('context.value > 5'),
-        timeout: 5000,
+        timeout: 10 * 60 * 1000,
         envVars: mockContext.environmentVariables,
         workflowVariables: mockContext.workflowVariables,
         blockData: {},

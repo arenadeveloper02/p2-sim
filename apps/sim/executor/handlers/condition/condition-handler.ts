@@ -16,7 +16,7 @@ import { executeTool } from '@/tools'
 
 const logger = createLogger('ConditionBlockHandler')
 
-const CONDITION_TIMEOUT_MS = 5000
+const CONDITION_TIMEOUT_MS = 10 * 60 * 1000
 
 /**
  * Evaluates a single condition expression.

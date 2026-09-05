@@ -777,6 +777,9 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
     expect(container.querySelector('form')?.className).not.toContain('max-w-[var(--gui-measure')
     expect(container.querySelector('form')?.className).toContain('w-full')
+    expect(container.querySelector('input[name="url"]')?.parentElement?.className).toContain(
+      'w-full'
+    )
   })
 
   it('keeps a form-only Section full when width is explicitly full', () => {
@@ -834,6 +837,28 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec, state: { creating: true } })
     expect(container.querySelector('section')?.className).toContain('max-w-[1280px]')
+  })
+
+  it('collapses a one-child Columns shell so the Form fills the Card', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: { width: 'wide' }, children: ['card'] },
+        card: { type: 'Card', props: {}, children: ['columns'] },
+        columns: { type: 'Columns', props: { layout: 'equal' }, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'enhance' }, children: ['url'] },
+        url: {
+          type: 'TextInput',
+          props: { name: 'url', label: 'Article URL' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('section')?.className).toContain('max-w-2xl')
+    expect(container.querySelector('.md\\:grid-cols-2')).toBeNull()
+    expect(container.querySelector('form')?.className).toContain('w-full')
   })
 
   it('renders Grid with auto-fit template columns sized from columns', () => {
