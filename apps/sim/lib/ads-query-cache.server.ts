@@ -32,6 +32,43 @@ function normalize(value: string): string {
   return value.toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
+/** Stable JSON so field/column order does not change the parsed cache key. */
+export function stableFingerprint(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value !== 'object') return String(value)
+  if (Array.isArray(value)) {
+    const mapped = value.map((entry) => stableFingerprint(entry))
+    const allScalar = value.every((entry) => entry === null || typeof entry !== 'object')
+    return `[${(allScalar ? mapped.slice().sort() : mapped).join(',')}]`
+  }
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${key}:${stableFingerprint(record[key])}`)
+    .join(',')}}`
+}
+
+/**
+ * Cache identity for the parsed ads request (GAQL / report spec / Facebook
+ * endpoint), not the agent's wording. Two tool questions that resolve to the
+ * same account + dates + metrics share this key.
+ */
+export function parsedAdsQueryCacheParts(
+  workspaceId: string | undefined,
+  accountKey: string,
+  fingerprint: Record<string, unknown>
+): AdsQueryCacheParts {
+  return {
+    workspaceId,
+    accountKey,
+    question: '',
+    extra: {
+      cacheKind: 'parsed',
+      fingerprint: stableFingerprint(fingerprint),
+    },
+  }
+}
+
 /**
  * Deterministic key for one (channel, workspace, account, question) on one
  * calendar day. The current date is part of the key so relative ranges like
@@ -70,8 +107,13 @@ export async function getCachedAdsQuery<T = Record<string, unknown>>(
     if (!redis) return null
 
     const raw = await redis.get(buildAdsQueryCacheKey(channel, parts))
-    if (!raw) return null
+    const kind = parts.extra?.cacheKind === 'parsed' ? 'parsed' : 'question'
+    if (!raw) {
+      logger.info('Ads query cache miss', { channel, kind })
+      return null
+    }
 
+    logger.info('Ads query cache hit', { channel, kind })
     return JSON.parse(raw) as T
   } catch (error) {
     logger.warn('Ads query cache read failed; continuing without cache', {

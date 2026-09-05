@@ -1,6 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getCachedAdsQuery, setCachedAdsQuery } from '@/lib/ads-query-cache.server'
+import {
+  getCachedAdsQuery,
+  parsedAdsQueryCacheParts,
+  setCachedAdsQuery,
+} from '@/lib/ads-query-cache.server'
 import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
@@ -144,29 +148,24 @@ export async function POST(request: NextRequest) {
       useAdminCredentials,
     })
 
-    // Serve a repeat of the same question on the same account/day from Redis,
-    // skipping both the query-parsing LLM call and the Facebook API call.
-    // Only the admin-credentials path is cached — OAuth requests depend on the
-    // caller's own access token and are never shared.
-    const cacheParts = useAdminCredentials
-      ? {
-          workspaceId,
-          accountKey: accountId,
-          question: query,
-          extra: {
-            date_preset,
-            level,
-            time_range: time_range ? JSON.stringify(time_range) : undefined,
-            fields: fields ? JSON.stringify(fields) : undefined,
-          },
-        }
-      : null
-    if (cacheParts) {
-      const cachedResponse = await getCachedAdsQuery<FacebookAdsResponse>('facebook', cacheParts)
-      if (cachedResponse) {
-        logger.info('Serving Facebook Ads response from cache', { requestId })
-        return NextResponse.json({ ...cachedResponse, requestId, timestamp })
-      }
+    // Question key: exact (normalized) tool wording. Parsed key: same Meta
+    // request after the LLM rewrite — that is what makes "ROAS per campaign"
+    // and "purchase value for all campaigns" share a cache entry.
+    const cacheParts = {
+      workspaceId,
+      accountKey: accountId,
+      question: query,
+      extra: {
+        date_preset,
+        level,
+        time_range: time_range ? JSON.stringify(time_range) : undefined,
+        fields: fields ? JSON.stringify(fields) : undefined,
+      },
+    }
+    const cachedResponse = await getCachedAdsQuery<FacebookAdsResponse>('facebook', cacheParts)
+    if (cachedResponse) {
+      logger.info('Serving Facebook Ads response from cache', { requestId, via: 'question' })
+      return NextResponse.json({ ...cachedResponse, requestId, timestamp })
     }
 
     const parsedQuery = await parseQueryWithAI(query, accountName)
@@ -182,6 +181,25 @@ export async function POST(request: NextRequest) {
       level: parsedQuery.level || level,
       filters: parsedQuery.filters,
       breakdowns: parsedQuery.breakdowns,
+    }
+
+    const parsedCacheParts = parsedAdsQueryCacheParts(workspaceId, accountId, {
+      endpoint: requestOptions.endpoint,
+      fields: requestOptions.fields,
+      date_preset: requestOptions.date_preset,
+      time_range: requestOptions.time_range,
+      level: requestOptions.level,
+      filters: requestOptions.filters,
+      breakdowns: requestOptions.breakdowns,
+    })
+    const parsedCachedResponse = await getCachedAdsQuery<FacebookAdsResponse>(
+      'facebook',
+      parsedCacheParts
+    )
+    if (parsedCachedResponse) {
+      logger.info('Serving Facebook Ads response from cache', { requestId, via: 'parsed' })
+      await setCachedAdsQuery('facebook', cacheParts, parsedCachedResponse)
+      return NextResponse.json({ ...parsedCachedResponse, requestId, timestamp })
     }
 
     const result = useAdminCredentials
@@ -215,10 +233,9 @@ export async function POST(request: NextRequest) {
       resultsCount: (result as { data?: unknown[] })?.data?.length || 0,
     })
 
-    // Cache only successful admin-path responses; errors never enter the cache.
-    if (cacheParts) {
-      await setCachedAdsQuery('facebook', cacheParts, response)
-    }
+    // Cache only successful responses (admin and OAuth). Never store the token.
+    await setCachedAdsQuery('facebook', cacheParts, response)
+    await setCachedAdsQuery('facebook', parsedCacheParts, response)
 
     return NextResponse.json(response)
   } catch (error) {
