@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getBaseModelProviders,
   getHostedModels,
+  getModelCapabilities,
   getModelPricing,
   getModelsWithPromptCaching,
   getPromptCachingMinimumTokens,
@@ -13,9 +14,79 @@ import {
   isModelDeprecated,
   orderModelIdsByReleaseDate,
   PROVIDER_DEFINITIONS,
+  supportsForcedToolUse,
   updateFireworksModels,
 } from '@/providers/models'
 import { supportsPromptCaching } from '@/providers/utils'
+
+describe('OpenAI provider definition', () => {
+  const openai = PROVIDER_DEFINITIONS.openai
+
+  it('registers GPT-6 Astra as the sole recommended model with verified pricing tiers', () => {
+    const astra = openai.models.find((model) => model.id === 'gpt-6-astra')
+
+    expect(astra).toMatchObject({
+      pricing: {
+        input: 10,
+        cachedInput: 1,
+        output: 50,
+        tiers: [
+          {
+            aboveInputTokens: 272000,
+            input: 20,
+            cachedInput: 2,
+            output: 75,
+          },
+        ],
+      },
+      contextWindow: 1050000,
+      recommended: true,
+    })
+    expect(openai.models.filter((model) => model.recommended).map((model) => model.id)).toEqual([
+      'gpt-6-astra',
+    ])
+  })
+
+  it('is included in getHostedModels since Sim provides the OpenAI key server-side', () => {
+    expect(getHostedModels()).toContain('gpt-6-astra')
+  })
+})
+
+describe('catalog featured model metadata', () => {
+  it('defines at most one active featured model per provider', () => {
+    for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
+      const featuredModels = provider.models.filter((model) => model.featured)
+
+      expect(featuredModels.length).toBeLessThanOrEqual(1)
+      expect(featuredModels.every((model) => model.sunset === undefined)).toBe(true)
+    }
+  })
+})
+
+describe('forced tool use capability', () => {
+  it.each(['claude-fable-5-1', 'CLAUDE-FABLE-5-1'])(
+    'disables Force while keeping Auto and None support for %s',
+    (model) => {
+      expect(getModelCapabilities(model)).toMatchObject({
+        toolUsageControl: true,
+        forcedToolUse: false,
+      })
+      expect(supportsForcedToolUse(model)).toBe(false)
+    }
+  )
+
+  it.each(['claude-sonnet-5', 'claude-fable-5', 'claude-opus-5', 'gpt-5.5'])(
+    'inherits provider tool-control support for %s',
+    (model) => {
+      expect(supportsForcedToolUse(model)).toBe(true)
+    }
+  )
+
+  it('does not enable Force for an unknown model without tool-control capabilities', () => {
+    expect(getModelCapabilities('unknown-model')).toBeNull()
+    expect(supportsForcedToolUse('unknown-model')).toBe(false)
+  })
+})
 
 describe('Anthropic thinking stream visibility', () => {
   it('classifies visible Claude thinking as summarized rather than raw', () => {
@@ -26,6 +97,34 @@ describe('Anthropic thinking stream visibility', () => {
         }
       }
     }
+  })
+})
+
+describe('Anthropic provider definition', () => {
+  const anthropic = PROVIDER_DEFINITIONS.anthropic
+
+  it('matches Anthropic lifecycle classifications', () => {
+    expect(
+      anthropic.models.filter((model) => model.sunset?.status === 'legacy').map((model) => model.id)
+    ).toEqual([
+      'claude-fable-5',
+      'claude-opus-4-8',
+      'claude-opus-4-7',
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-opus-4-5',
+      'claude-sonnet-4-5',
+    ])
+    expect(
+      anthropic.models
+        .filter((model) => model.sunset?.status === 'deprecated')
+        .map((model) => model.id)
+    ).toEqual([
+      'claude-opus-4-1',
+      'claude-opus-4-0',
+      'claude-sonnet-4-0',
+      'claude-3-haiku-20240307',
+    ])
   })
 })
 
@@ -59,9 +158,10 @@ describe('prompt caching capability', () => {
     expect(supportsPromptCaching('gpt-5.5')).toBe(false)
   })
 
-  it('reports the vendor minimum prefix, raised for Haiku', () => {
+  it('reports each vendor minimum prefix, including retired Haiku 3', () => {
     expect(getPromptCachingMinimumTokens('claude-sonnet-5')).toBe(1024)
     expect(getPromptCachingMinimumTokens('claude-haiku-4-5')).toBe(4096)
+    expect(getPromptCachingMinimumTokens('claude-3-haiku-20240307')).toBe(2048)
     expect(getPromptCachingMinimumTokens('azure-anthropic/claude-haiku-4-5')).toBe(4096)
     expect(getPromptCachingMinimumTokens('gpt-5.5')).toBeNull()
   })

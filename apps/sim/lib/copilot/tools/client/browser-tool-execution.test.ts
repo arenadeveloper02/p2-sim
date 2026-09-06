@@ -85,6 +85,31 @@ describe('executeBrowserToolOnClient', () => {
     vi.unstubAllGlobals()
   })
 
+  it('reports stopped form outcomes with partial readbacks and does not replay their writes', async () => {
+    const toolCallId = nextToolCallId()
+    const result = {
+      completed: false,
+      completedCount: 1,
+      stoppedIndex: 1,
+      results: [{ index: 0, elementId: 1, kind: 'text', verified: true, valuePreview: 'filled' }],
+      doNotRetry: true,
+      error: 'The next field disappeared',
+    }
+    mockExecuteBrowserTool.mockResolvedValue(result)
+    const params = { fields: [{ elementId: 1, kind: 'text', text: 'filled' }] }
+    executeBrowserToolOnClient(toolCallId, 'browser_fill_form', params, CHAT_SCOPE)
+    await flush()
+    expect(mockReportCompletion).toHaveBeenCalledWith(
+      toolCallId,
+      'error',
+      'Form filling stopped; inspect the partial result',
+      result
+    )
+    executeBrowserToolOnClient(toolCallId, 'browser_fill_form', params, CHAT_SCOPE)
+    await flush()
+    expect(mockExecuteBrowserTool).toHaveBeenCalledTimes(1)
+  })
+
   it('preserves every executed completion when a guard result arrives at retention capacity', async () => {
     const replayClaim = vi
       .spyOn(BrowserToolReplayLedger.prototype, 'claim')
@@ -1203,6 +1228,22 @@ describe('executeBrowserToolOnClient', () => {
     const [, , , reported] = mockReportCompletion.mock.calls[0]
     expect(reported.attachment).toBeUndefined()
     expect(reported.note).toContain('could not be encoded')
+  })
+
+  it('preserves cropped screenshot offsets and explains coordinate conversion', async () => {
+    mockExecuteBrowserTool.mockResolvedValue({
+      dataUrl: 'data:image/jpeg;base64,/9j/4AAQ',
+      clip: { x: 20, y: 30, width: 200, height: 100 },
+      scale: 2,
+    })
+    executeBrowserToolOnClient(nextToolCallId(), 'browser_screenshot', { elementId: 0 })
+    await flush()
+
+    const reported = mockReportCompletion.mock.calls[0][3]
+    expect(reported.clip).toEqual({ x: 20, y: 30, width: 200, height: 100 })
+    expect(reported.scale).toBe(2)
+    expect(reported.content).toContain('cssX = clip.x + imageX / scale')
+    expect(reported.content).toContain('cssY = clip.y + imageY / scale')
   })
 
   it('gives restored-tab switching the renderer navigation budget', async () => {
