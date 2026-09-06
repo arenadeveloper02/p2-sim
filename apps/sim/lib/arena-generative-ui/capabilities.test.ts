@@ -24,6 +24,11 @@ describe('capabilityRecipePrompt', () => {
     expect(prompt).not.toContain('FILTER')
   })
 
+  it('tells multi-step wait chrome not to become a workflow page', () => {
+    expect(capabilityRecipePrompt(['multi-step'])).toContain('WorkingCard.steps')
+    expect(capabilityRecipePrompt(['multi-step'])).toContain('Not the workflow archetype')
+  })
+
   it('tells streaming recipes that Chat can paint content', () => {
     expect(capabilityRecipePrompt(['streaming'])).toContain(
       'Chat on the same page also paints content'

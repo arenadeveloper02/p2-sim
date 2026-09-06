@@ -51,7 +51,7 @@ const CAPABILITY_ALIASES: Record<string, ArenaGenerativeCapability> = {
 const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   'long-running': [
     'CAPABILITY: LONG-RUNNING',
-    'The wait is a named job (workflow, generate, analysis). Honour pages[].interaction.execution. Put WorkingCard on the destination when the blueprint listed a results page (title interpolating form names, estimate, skeleton true) above the bound result. Workspace / execution that stays in a named region: WorkingCard in that region above the bound result — do not invent a destination page. The host ticks the card. Do not emit ProgressSteps, ProgressBar, or Spinner. Do not leave waiting chrome on a form-only page that navigates away.',
+    'The wait is a named job (generate, analysis). Honour pages[].interaction.execution. Put WorkingCard on the destination when the blueprint listed a results page (title interpolating form names, estimate, skeleton true) above the bound result. Same-page generate (no results page): WorkingCard below the form, then the bound result — do not invent a workflow page or a two-column empty results pane. Workspace / execution that stays in a named region: WorkingCard in that region above the bound result — do not invent a destination page. The host ticks the card. Do not emit ProgressSteps, ProgressBar, or Spinner. Do not leave waiting chrome on a form-only page that navigates away.',
   ].join('\n'),
   streaming: [
     'CAPABILITY: STREAMING',
@@ -59,7 +59,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   'multi-step': [
     'CAPABILITY: MULTI-STEP',
-    'WorkingCard.steps are the brief’s checklist (one line per step). The host ticks steps and the bar together. Do not emit ProgressSteps as a sibling.',
+    'WorkingCard.steps are the brief’s checklist (one line per step). The host ticks steps and the bar together. Do not emit ProgressSteps as a sibling. Not the workflow archetype and not Stepper — those are visitor-walked input stages.',
   ].join('\n'),
   cancellable: [
     'CAPABILITY: CANCELLABLE',
@@ -67,7 +67,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   progress: [
     'CAPABILITY: PROGRESS',
-    'A named wait with visible progress. Honour pages[].interaction.execution. Prefer WorkingCard (steps, estimate) on the destination when the blueprint listed a results page; otherwise in the named execution region. ProgressBar only when a real percent exists on a bound statePath. Do not emit ProgressSteps.',
+    'A named wait with visible progress. Honour pages[].interaction.execution. Prefer WorkingCard (steps, estimate) on the destination when the blueprint listed a results page; otherwise below the form on the task page or in the named execution region. ProgressBar only when a real percent exists on a bound statePath. Do not emit ProgressSteps. Not a workflow page.',
   ].join('\n'),
   search: [
     'CAPABILITY: SEARCH',

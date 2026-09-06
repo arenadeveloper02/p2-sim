@@ -80,7 +80,7 @@ const INTENT_SYSTEM_PROMPT = [
   'task is the job in one sentence. audience is a real role (sales ops, analysts) — never "users".',
   'entities[].kind is collection | record | metric | prose. Name domain nouns (orders, company, score, analysis), not UI widgets.',
   'dataRequirements may only use declared binding keys; when none were declared, dataRequirements is []. actions list requested mutations (create, complete, analyze, …). When no bindings, also list a dummy seed/onLoad action for each collection entity (no apiKey) — that is how the list is filled. Remote actions use a declared apiKey. Dummy/local actions omit apiKey. Never invent keys, never empty the actions the job needs.',
-  'workflowComplexity is short | long-running | multi-step | wizard. A typical search/submit is short; a workflow or generate wait is long-running; a named checklist is multi-step; three or more sequential steps with submit at the end is wizard.',
+  'workflowComplexity is short | long-running | multi-step | wizard. A typical search/submit is short. A generate/analyze/research wait is long-running. A named wait checklist while that request runs (Analyzing gaps, Writing draft) is multi-step — still a generate job, not a wizard. wizard is only when the visitor walks sequential input stages and submits at the end (onboarding, KYC). Do not mark wizard because an API call has progress steps.',
   'Do not pick an archetype. Do not invent pages, routes, or catalog component types (no SearchField, Table, Card, WorkingCard). Do not emit a sitemap or a manifest.',
 ].join('\n')
 

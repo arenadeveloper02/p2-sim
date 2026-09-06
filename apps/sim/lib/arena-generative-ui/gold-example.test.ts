@@ -165,6 +165,9 @@ describe('per-archetype gold examples', () => {
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(
+      goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'collection'] })
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
 

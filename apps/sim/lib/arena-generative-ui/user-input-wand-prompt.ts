@@ -66,17 +66,17 @@ MODE
 - "start over" / "rebuild" / "re-plan" in the Generate note means expand from that note and ignore the current brief as product scope.
 
 RULES
-- Honour every name, API key, field, and page the user DID write. Do not rename them.
+- Honour every name, API key, field, and page the user DID write. Do not rename them. A History tab or history API the user wrote is a page even if Generator is one view.
 - Do not invent API keys. Use only Declared API Bindings. If bindings are none, describe CTAs in words. Dummy/local lists seed sample rows on arrival; create/complete/edit stay on the page (dialog or inline), not extra routes.
 - Edit a row only if the job asked for edit by name — it is not inferred.
-- Do not describe loaders, toasts, confirm dialogs, progress checklists, elapsed timers, Cancel on a form, or login — the host compiles those.
-- Minimum architecture: one page > many pages. Create a route only for a navigation boundary (submit then replace the view, or inspect that leaves the list).
-- Search or generate that replaces the form: results page + Back. Do not put waiting chrome on the form; Results has no onLoad of that generate CTA.
+- Do not describe loaders, toasts, confirm dialogs, progress checklists, elapsed timers, Cancel on a form, or login — the host compiles those. Named wait steps while a request runs belong on Results (or stacked below the form); they are not wizard pages.
+- Minimum architecture: one page > many pages. Create a route only for a navigation boundary (submit then replace the view, inspect that leaves the list, or History / previous runs).
+- Search or generate that replaces the form: results page + Back. Do not put waiting chrome on the form; Results has no onLoad of that generate CTA. If the brief keeps results on the Generator (below the form), do not invent a results page and do not put form and empty results in two columns.
 - Simple todo or checklist: one collection page. Create and complete stay on the list.
 - Keep two things visible (alongside / without leaving / inspect without leaving): one Workspace page with named regions, not extra routes. Do not hide navigator or primary when a row is selected.
 - A list of records includes a way to open one only when the job needs a record page (CRM, orders). Same-page History Open: cards show short fields only (no item.output / content / body on the card); Open is selectItem true, no actionId, no navigateTo; hide the list with showWhen "!selectedId"; markdown in DataText statePath "content" with showWhen "selectedId"; Back is clearItem true, no navigateTo.
 - Field names are camelCase; labels may have spaces. Show typed values on a later page as {fieldName} using the form name, not a different JSON key.
-- In-content navigation only (Back, submit-then-navigate, tabs if three or more top-level destinations). No left nav, no logo, no app chrome.
+- In-content navigation only (Back, submit-then-navigate, tabs if two or more peer top-level destinations such as Generator | History). No left nav, no logo, no app chrome.
 - Bind results to output field names from Declared API Bindings. Do not invent table columns the schema does not have. Streaming + markdown sample → DataText on content, not an invented Table.
 - Do not paste JSON for Pages or API Bindings. This field is the prose brief only.
 

@@ -295,6 +295,80 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.pages[0]?.archetype).toBe('workflow')
   })
 
+  it('demotes a one-page generate wait mislabeled as workflow onto task', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Article Enhancer Agent',
+        purpose: 'Enhance an article from a URL.',
+        audience: 'Editors',
+        archetype: 'workflow',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Article Enhancer Agent',
+            purpose: 'Submit a URL and wait for the enhanced draft',
+            data: 'CTA then result',
+            actions: ['enhance_article'],
+            capabilities: ['generate', 'long-running', 'multi-step'],
+          },
+        ],
+        actions: [
+          {
+            id: 'enhance_article',
+            purpose: 'Enhance the article',
+            source: 'binding:enhance-article',
+            apiKey: 'enhance-article',
+          },
+        ],
+      },
+      {
+        apiBindings: [
+          { key: 'enhance-article', label: 'Enhance', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      }
+    )
+    expect(parsed?.archetype).toBe('task')
+    expect(parsed?.pages[0]?.archetype).toBe('task')
+    expect(parsed?.capabilities).toEqual(
+      expect.arrayContaining(['generate', 'long-running', 'multi-step'])
+    )
+  })
+
+  it('keeps a multi-page visitor-walked wizard as workflow', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Vendor onboarding',
+        purpose: 'Walk through setup.',
+        audience: 'Admins',
+        archetype: 'workflow',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Company',
+            purpose: 'Step 1',
+            data: 'static',
+            actions: ['next'],
+            archetype: 'workflow',
+          },
+          {
+            path: 'review',
+            title: 'Review',
+            purpose: 'Step 2',
+            data: 'static',
+            actions: ['submit'],
+            archetype: 'workflow',
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.archetype).toBe('workflow')
+    expect(parsed?.pages.map((page) => page.archetype)).toEqual(['workflow', 'workflow'])
+  })
+
   it('keeps workspace pages and regions instead of folding them away', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
@@ -776,6 +850,8 @@ describe('structured brief helpers', () => {
     }
     expect(archetypeRecipe('task')).toContain('SearchField')
     expect(archetypeRecipe('task')).toContain('Do not add a results or history page unless')
+    expect(archetypeRecipe('task')).toContain('WorkingCard.steps')
+    expect(archetypeRecipe('task')).toContain('stack WorkingCard then bound results')
     expect(archetypeRecipe('results')).toContain('DataText "content"')
     expect(archetypeRecipe('results')).toContain('No onLoad of the CTA')
     expect(archetypeRecipe('results')).toContain('Do not invent SWOT')
@@ -787,6 +863,7 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('dashboard')).toContain('Module count')
     expect(archetypeRecipe('dashboard')).not.toContain('Grid of four Stat size display')
     expect(archetypeRecipe('workflow')).toContain('Stepper')
+    expect(archetypeRecipe('workflow')).toContain('Not a generate/analyze wait')
     expect(archetypeRecipe('workflow')).not.toContain('One page per step')
     expect(archetypeRecipe('content')).toContain('DataText markdown')
     expect(archetypeRecipe('workspace')).toContain('Honour pages[].regions and pages[].interaction')
@@ -983,6 +1060,11 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('HOW regions coordinate')
     expect(system).toContain('WHEN — compose vs navigate vs local')
     expect(system).toContain('must they remain visible together')
+    expect(system).toContain('named progress checklist is task + wait capabilities')
+    expect(system).toContain('Result stacks below the form')
+    expect(system).toContain('second collection page, shell tabs')
+    expect(system).toContain('"navigation": "minimal"|"tabs"|"sidebar"|"workspace"')
+    expect(system).toContain('wizard is the only intent value that suggests workflow pages')
     expect(system).toContain('Emit pages[].regions as a named object')
     expect(system).toContain('not a relationship object')
     expect(system).toContain('Never Collection+Detail as two peer page archetypes')
@@ -1009,6 +1091,9 @@ describe('planArenaGenerativeStructuredBrief', () => {
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')
     expect(userMessage).toContain('No analyzed intent')
+    expect(userMessage).toContain(
+      'Create a history, results, or detail page when the request named that destination'
+    )
     expect(userMessage).toContain('Order inbox with a detail page.')
   })
 

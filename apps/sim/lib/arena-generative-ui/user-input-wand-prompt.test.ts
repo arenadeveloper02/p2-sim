@@ -18,6 +18,10 @@ describe('ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('Workspace page')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('selectItem true')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('no onLoad of that generate CTA')
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('tabs if two or more peer top-level destinations')
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain(
+      'A History tab or history API the user wrote is a page'
+    )
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).not.toContain('AVAILABLE COMPONENTS')
   })
 })

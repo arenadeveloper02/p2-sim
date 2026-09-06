@@ -774,7 +774,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: task',
     'Purpose: Collect input to accomplish something.',
     'Structure: Header → optional context → Form or SearchField → one primary action.',
-    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Do not add a results or history page unless the blueprint listed it. Same-page saves stay here; the host toasts.',
+    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Do not add a results or history page unless the blueprint listed it. Same-page saves stay here; the host toasts. Named wait steps (Analyzing gaps, Writing draft) are WorkingCard.steps via CAPABILITY multi-step / long-running — not a workflow page, not Stepper, and not Columns with an empty results pane beside the form. When the blueprint has no results page, stack WorkingCard then bound results below the form (Chip setValue for same-page result views). Do not emit catalog Workspace to keep an empty results region visible.',
   ].join('\n'),
   results: [
     'ARCHETYPE RECIPE: results',
@@ -790,9 +790,9 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   ].join('\n'),
   workflow: [
     'ARCHETYPE RECIPE: workflow',
-    'Purpose: Complete a multi-stage task.',
+    'Purpose: The visitor walks sequential input stages (Next, submit on the last step) — onboarding, KYC, multi-form setup. Not a generate/analyze wait with a named progress checklist; that is task + CAPABILITY long-running / multi-step.',
     'Structure: Progress → current step (inputs + actions) → navigation.',
-    'Rules: Not automatically one page per step. Two or three short stages can be one page of Sections. Progress is a Stepper, not Tabs. Early stages use Next; the last is the only SubmitButton.',
+    'Rules: Not automatically one page per step. Two or three short stages can be one page of Sections. Progress is a Stepper, not Tabs. Early stages use Next; the last is the only SubmitButton. Do not pick this recipe because an API call lists wait steps.',
   ].join('\n'),
   content: [
     'ARCHETYPE RECIPE: content',
@@ -819,7 +819,7 @@ export const SHELL_RECIPE = [
   'App chrome is not a page job. Honour brief.shell.',
   'sidebar: emit catalog Workspace or a persistent nav column for top-level destinations. Sync via selectedId when regions exist. No Tabs for workspace regions. Host collapses inspector, then navigator.',
   'workspace: persistent multi-region chrome. Honour pages[].regions and pages[].interaction. Same catalog Workspace as the workspace page recipe.',
-  'tabs: emit Tabs as Label|path. Not sequential steps (those are Stepper).',
+  'tabs: emit Tabs as Label|path for two or more peer top-level destinations (Generator|home and History|history). Not sequential steps (those are Stepper). Not task→results (that is navigate). Not same-page result panels (Chip setValue).',
   'minimal / none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
   'header: emit AppHeader (icon + product name) as a direct child of Page. breadcrumbs: NavLinks only when that flag is true. PageHeader remains the in-page title inside Section.',
 ].join('\n')
@@ -1202,6 +1202,59 @@ function plannerIssueRepairMessage(
   return uncoordinatedRegionsRepairMessage(uncoordinatedPages)
 }
 
+const GENERATE_WAIT_CAPABILITIES = new Set<ArenaGenerativeCapability>([
+  'generate',
+  'analyze',
+  'long-running',
+  'multi-step',
+  'progress',
+])
+
+const GENERATE_WAIT_NAME =
+  /\b(enhance|enhancer|generat|analy|research|recommend)\b/i
+
+function briefLooksLikeGenerateWait(brief: ArenaGenerativeStructuredBrief): boolean {
+  if (brief.capabilities.some((capability) => GENERATE_WAIT_CAPABILITIES.has(capability))) {
+    return true
+  }
+  if (
+    brief.actions.some((action) =>
+      GENERATE_WAIT_NAME.test(`${action.id} ${action.purpose} ${action.apiKey ?? ''} ${action.source ?? ''}`)
+    )
+  ) {
+    return true
+  }
+  if (GENERATE_WAIT_NAME.test(`${brief.title} ${brief.purpose}`)) return true
+  return brief.pages.some((page) => GENERATE_WAIT_NAME.test(`${page.title} ${page.purpose}`))
+}
+
+function demoteWorkflowPageArchetype(
+  page: ArenaGenerativeStructuredBrief['pages'][number]
+): ArenaGenerativeStructuredBrief['pages'][number] {
+  if (page.archetype !== 'workflow') return page
+  if (page.path === 'results' || page.path === 'result') return { ...page, archetype: 'results' }
+  if (page.path === 'history') return { ...page, archetype: 'collection' }
+  return { ...page, archetype: 'task' }
+}
+
+/**
+ * Named wait steps on a generate/analyze job are capabilities, not the workflow
+ * (wizard) archetype. A visitor-walked multi-page wizard is left alone.
+ */
+export function demoteWaitWorkflowToTask(
+  brief: ArenaGenerativeStructuredBrief
+): ArenaGenerativeStructuredBrief {
+  if (brief.archetype !== 'workflow') return brief
+  const workflowPages = brief.pages.filter((page) => page.archetype === 'workflow')
+  if (workflowPages.length >= 2) return brief
+  if (!briefLooksLikeGenerateWait(brief)) return brief
+  return {
+    ...brief,
+    archetype: 'task',
+    pages: brief.pages.map(demoteWorkflowPageArchetype),
+  }
+}
+
 function parseStructuredBriefResult(
   value: unknown,
   options: {
@@ -1237,7 +1290,9 @@ function parseStructuredBriefResult(
     brief = { ...brief, entryPath: first.path }
   }
   return {
-    brief: foldProcessingIntoCapabilities(omit(withParsedPlanClassifiers(brief), ['intent'])),
+    brief: demoteWaitWorkflowToTask(
+      foldProcessingIntoCapabilities(omit(withParsedPlanClassifiers(brief), ['intent']))
+    ),
     droppedActions: dropped,
   }
 }
@@ -1321,7 +1376,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
     pageHints.length > 0
       ? `Requested pages (use exactly these paths):\n${JSON.stringify(pageHints, null, 2)}`
-      : 'No explicit page list. Infer the smallest sitemap the request needs — do not add history, stats, detail, or extra pages unless required.',
+      : 'No explicit page list. Infer the smallest sitemap the request needs. Create a history, results, or detail page when the request named that destination or a declared binding is for that job. Do not add stats or extra pages the request did not name.',
     bindingKeys.length > 0
       ? `Declared API bindings (remote actions use source "binding:<key>"; inputSchema is the form, outputSchema/layoutPlan is the result):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Bindings are the remote data contract. When none are declared, data.mode may be dummy or local and actions are still required for requested mutations and for dummy collection seed (page onLoad) — use source dummy or local, never invent API keys.',

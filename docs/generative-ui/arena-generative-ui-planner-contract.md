@@ -207,6 +207,8 @@ See **Composition Semantics → WHEN** for compose vs navigate vs local interact
 
 Do not create separate pages merely because a capability exists.
 
+A named History tab, history API, or previous-runs list **is** a navigation boundary. Same-page result views are not a page. Named wait steps while one request runs are not pages.
+
 ---
 
 ## 7. Archetype Selection
@@ -235,7 +237,7 @@ Use:
 Task
 ```
 
-when the primary job is submitting input or initiating an operation.
+when the primary job is submitting input or initiating an operation (including generate / analyze).
 
 Use:
 
@@ -259,7 +261,9 @@ Use:
 Workflow
 ```
 
-when the user must complete a sequence of dependent steps.
+when the **visitor** walks sequential input stages (Next, then submit) — onboarding, KYC, multi-form setup.
+
+A generate / analyze wait with a named progress checklist is **task + wait capabilities**, not Workflow.
 
 Use:
 
@@ -734,7 +738,9 @@ Input
 
 Add progress details only when useful or requested.
 
-Do not invent elaborate progress steps.
+Named wait steps the user listed (Analyzing gaps, Writing draft, …) are capability `multi-step` / `progress` on that generate action. They are **not** workflow pages, **not** visitor-walked stages, and **not** a reason to pick archetype workflow.
+
+Do not invent elaborate progress steps the request did not name.
 
 ---
 
@@ -807,7 +813,7 @@ But:
 
 is not automatically required.
 
-Prefer a local interaction for simple creation/editing. History, settings, and help only if asked.
+Prefer a local interaction for simple creation/editing. History, settings, and help only if asked. When asked (a History tab, a history / `run_history` API key, previous runs), add a collection page with that onLoad. Do not collapse History into the Generator because the brief also said single view.
 
 ---
 
@@ -821,7 +827,15 @@ Use:
 minimal shell
 ```
 
-for small focused applications.
+for a **single destination**.
+
+Use:
+
+```text
+tabs
+```
+
+when there are **two or more peer top-level destinations** (Generator and History). Task→results is navigate, not a Results tab.
 
 Use:
 
@@ -829,7 +843,7 @@ Use:
 sidebar + header
 ```
 
-when there are multiple meaningful top-level destinations.
+when users move between major entities in a multi-area app.
 
 Do not add navigation chrome simply because the application is professional.
 
@@ -841,11 +855,16 @@ Do not add navigation chrome simply because the application is professional.
 
 Use for:
 
+- one destination
 - focused tools
-- generators
+- a generator with no History
 - search tools
 - simple CRUD apps
 - single-purpose applications
+
+### Tabs
+
+Use when there are two or more peer destinations (Generator | History).
 
 ### Sidebar
 
@@ -1034,6 +1053,8 @@ Ask:
 7. Could an inferred feature be represented as a local interaction instead?
 
 If yes, simplify unless the feature is necessary.
+
+Do not drop an explicit History page, history API, or named wait capability to satisfy smallest-sitemap.
 
 ---
 

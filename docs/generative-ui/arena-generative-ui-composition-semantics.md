@@ -172,13 +172,15 @@ Ask: must the user see both at once?
 | --- | --- |
 | alongside, while keeping X visible, inspect without leaving, simultaneously, split view | Compose on one Workspace page |
 | result replaces the current view (task submit then report) | Navigate to another page |
+| result stacks below the form on the same Generator (below, not beside) | One task page — wait then results. Not Workspace, not a two-column empty results pane |
+| named History tab or history API | Separate collection page even when Generator is one view |
 | create / edit / confirm is temporary | Local interaction (dialog, drawer, inline) — not a page, not a region |
 | parent / child entities | Do not auto-create extra routes. Default: one Workspace page unless the user asked to leave the current view |
 | separate section, dedicated page, open, navigate, manage independently | Navigation |
 
 Inspect navigates to a Detail page unless the user asked to keep the collection visible.
 
-Do not create a Results page merely because an operation returns data if the result must stay beside the task. If the result **replaces** the task, two pages are correct.
+Do not create a Results page merely because an operation returns data if the result must stay on the task page. If the result **replaces** the task, two pages are correct. If the result **stacks below** the form, one task page is correct — do not keep an empty results pane beside the form.
 
 Parent / child does not automatically produce `/projects`, `/tasks`, `/tasks/:id`.
 
@@ -205,11 +207,22 @@ If the result replaces the task view:
 Task → Results          (two pages)
 ```
 
-If both must remain visible:
+If the result stacks below the form on the same Generator:
+
+```text
+Task
+  form
+  wait
+  results               (one task page)
+```
+
+If both must remain visible as a split (user asked to keep the form **alongside** results):
 
 ```text
 Task | Results          (one Workspace page)
 ```
+
+Named wait steps on a generate/analyze request are wait capabilities, not a workflow (wizard) page.
 
 ### Dashboard + Collection
 
@@ -270,6 +283,8 @@ Always prefer the smallest valid composition.
 **CRM** — collection pages plus a Detail page (inspect navigates), unless the prompt asked for a persistent inspector.
 
 **Competitor analysis** — task page then results page (replace, not compose).
+
+**Article enhance / generate agent** — task page (form), wait capabilities for named progress steps, results stacked below or a results page if the form is replaced. History tab / history API → second collection page, shell tabs (Generator | History). Not a one-page workflow and not form beside empty results.
 
 **Project management** — one `home` Workspace page:
 

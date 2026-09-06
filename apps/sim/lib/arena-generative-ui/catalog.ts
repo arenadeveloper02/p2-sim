@@ -162,7 +162,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         activePath: z.string().nullable(),
       }),
       description:
-        'Top-level navigation across pages. items is newline-separated "Label|path" where each path is a distinct manifest page path — never two tabs with the same path. activePath marks the current page. Do not fake tabs with Chip setValue on one page when the destinations are separate pages.',
+        'Top-level navigation across two or more peer destinations. items is newline-separated "Label|path" where each path is a distinct manifest page path — never two tabs with the same path. activePath marks the current page. Use for Generator|home and History|history. Do not fake tabs with Chip setValue on one page when the destinations are separate pages. Task→results is navigate, not a Results tab.',
     },
     Card: {
       props: z.object({

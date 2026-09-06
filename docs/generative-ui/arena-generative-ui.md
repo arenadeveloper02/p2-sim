@@ -83,7 +83,13 @@ Submit calls qualify_lead, then go to Results.
 Results shows score and a Back link.
 ```
 
-Use the wand on this field if you want the brief expanded before you run.
+Use **Generate** on this field before you run the block. The wand writes the **brief**, not the app.
+
+- Empty User Input plus a job note **expands** a planner-ready spec (audience, pages, camelCase fields, CTA keys, empty copy).
+- A long existing brief plus `fix this brief` / `align with Arena guidelines` **repairs** it in place: names, pages, and keys stay; host chrome (loaders, toasts, login) and unrequested dashboards / history / extra routes are stripped.
+- `start over` / `rebuild` in the Generate box expands from that note and ignores the current brief as product scope.
+- The wand sees **API Bindings** keys (and form / output field names, not URLs or secrets) and must not invent keys. Leave Bindings empty for dummy/local apps.
+- The Generate box cannot be empty. The wand does not receive the catalog or archetype recipes — those apply on the spec call when you run the block.
 
 The brief is stored on the draft, so Edit can send it as background context without you retyping it. The planner's structured brief (archetype and sitemap) is stored with it, so Edit keeps the same layout recipe without re-planning.
 

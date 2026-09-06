@@ -14,7 +14,7 @@ export const ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT = [
   'Table — comparable rows of the same scalar fields, no per-row visual identity.',
   'Repeat — each item has its own visual representation (Card, avatar, action, or Disclosure). Put Repeat inside Grid; never wrap Grid in Repeat.',
   'Grid — two or more peer cells. Do not use Grid merely to place one component.',
-  'Tabs — three or more peer top-level pages. items is Label|path with distinct page paths. Not sequential workflow steps (those are Stepper). Not same-page result panels (those are Chip setValue; the host paints selected). Not Workspace regions.',
+  'Tabs — two or more peer top-level destinations (Generator|home and History|history). items is Label|path with distinct page paths. Not sequential workflow steps (those are Stepper). Not task→results (navigate). Not same-page result panels (those are Chip setValue; the host paints selected). Not Workspace regions.',
   'Chip — same-page view switch (result panels on one Generator page): one Chip per view, shared setValue field, distinct values, no actionId. Do not duplicate brand/muted chips for selected state. Suggestion chips stay a single authored-tone Chip.',
   'Stepper — sequential workflow progress. Not Tabs and not ProgressSteps.',
   'Workspace — simultaneous navigator + primary + optional inspector. Children in that order. Not Columns twice and not Tabs.',
@@ -32,6 +32,6 @@ export const ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT = [
   'WorkingCard — a long-run wait the brief named (steps, estimate, or Cancel). Not ProgressSteps, ProgressBar, or Spinner.',
   'DataText — a markdown or prose body. Do not invent Table columns from unstructured output.',
   'EmptyState — the page has no collection yet and Repeat/Table emptyText is not enough. The child is the next useful action (SearchField, Button, or NavLink). Not a loading state.',
-  'Columns — main area plus a supporting sidebar. Not a 2-column form (that is Grid).',
+  'Columns — main area plus a supporting sidebar. Not a 2-column form (that is Grid). Not a generate form beside an empty results pane — stack WorkingCard then results below the form, or navigate to a results page.',
   'Toolbar — a row of filters or secondary actions. Filters belong here, not scattered through content.',
 ].join('\n')

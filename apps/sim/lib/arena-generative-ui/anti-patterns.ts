@@ -11,7 +11,7 @@ export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'charts — Never create a decorative Sparkline or Chart. Sparkline needs values or statePath. Chart needs statePath (or dummy categories + values when data.mode is dummy/local). Do not emit either as chrome.',
   'table — Never use Table for narrative entities. That is Repeat of Cards. Table is comparable scalars with no per-row identity.',
   'form — Never create a Form or SearchField when no user input is required (onLoad-only dashboard). Do not add a parameters form the brief did not ask for.',
-  'tabs — Never use Tabs for unrelated actions. Tabs are three or more peer pages (Label|path). Same-page result panels are Chip setValue — one Chip per view. Never duplicate brand and muted Chips for selected state; the host paints the active Chip.',
+  'tabs — Never use Tabs for unrelated actions. Tabs are two or more peer destinations (Label|path). Same-page result panels are Chip setValue — one Chip per view. Never duplicate brand and muted Chips for selected state; the host paints the active Chip.',
   'disclose — Never expand a Repeat row with selectItem. FAQ, criteria, and justification lists are Disclosure inside Repeat. Never emit two copies (open and closed) or Icon chevrons; the host paints expand chrome. Not Drawer and not History Open.',
   'cards — Never nest Cards unnecessarily. Card is one conceptual group or a Repeat item. Do not wrap every Section in a Card.',
   'calls — Never duplicate API calls. One actionId per job. A results page must not onLoad the same CTA that already navigated there.',

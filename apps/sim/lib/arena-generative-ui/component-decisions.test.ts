@@ -47,6 +47,9 @@ describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT).toMatch(
       /Tabs[^\n]*[Nn]ot sequential workflow steps/
     )
+    expect(ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT).toContain(
+      'two or more peer top-level destinations'
+    )
   })
 
   it('tells Disclosure not to use selectItem or duplicate chevrons', () => {

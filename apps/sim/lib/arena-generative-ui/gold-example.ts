@@ -229,6 +229,9 @@ export function goldExamplePromptForArchetype(
   if (shapes.has('collection') && shapes.has('detail')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
   }
+  if (shapes.has('task')) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+  }
   if (shapes.has('collection')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION
   }

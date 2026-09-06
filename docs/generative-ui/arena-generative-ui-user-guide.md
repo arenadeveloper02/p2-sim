@@ -11,7 +11,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | Field | What goes here |
 |---|---|
 | **Mode** | **Generate New App** for a first draft. **Edit Existing Draft** later — type only the delta in **Requested Changes**, or say `re-plan` / `rebuild the app` to regenerate the sitemap. |
-| **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each remote CTA calls (if any). **Not JSON.** |
+| **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each remote CTA calls (if any). **Not JSON.** Use **Generate** on this field to expand a job note or repair a long brief before you run. |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
 | **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. Leave empty for dummy/local apps — do not add a fake workflow just to have a key. |
 | **Output schema** (inside Add an API) | Last successful run first; if none, deployed Response, then Agent output. A pasted Sample response is kept through generate and edit. |
@@ -20,6 +20,26 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 The model **cannot invent API keys**. If User Input names a key (“Submit calls `recommend_articles`”), that key must exist in API Bindings. Leave Bindings empty for dummy/local apps (todos, boards) and for navigation-only apps — create, edit, and complete still work locally. Do not add a fake workflow just to have a key.
 
 Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) produce generic shells.
+
+---
+
+## Generate wand (User Input)
+
+**Generate** on User Input writes the **brief**. It does not generate the app — run the block after the field looks right.
+
+Add APIs first when you have them. The wand sees those keys (and their form / output field names) and will not invent new ones. Leave Bindings empty for dummy/local apps so it describes CTAs in words.
+
+The Generate box cannot be empty. Type a job note, or an instruction such as `fix this brief`.
+
+| What’s in User Input | What to type in Generate | What happens |
+|---|---|---|
+| Empty or a short job | The job (`article recommender`, `simple todo`) | Expands a planner-ready brief: audience, pages, camelCase fields, CTA keys, empty copy. |
+| A long pasted spec | `align with Arena guidelines` or `fix this brief` | Repairs in place. Keeps pages, names, copy, and keys. Strips loaders / toasts / login (host-owned). Drops dashboards, stats, history, and extra routes the job did not ask for. |
+| Anything | `start over` / `rebuild` plus the new job | Expands from that note and ignores the current brief as product scope. |
+
+The wand writes **prose**, not json-render JSON. Recipes and the catalog apply when you run the block.
+
+A repaired brief still needs the usual checks: same API key as **Add an API**, Results has no `onLoad` of the generate CTA, History Open is `selectItem` with no `actionId` / `navigateTo`, dummy lists seed sample rows.
 
 ---
 
@@ -50,7 +70,7 @@ Turn **Response → Stream** on when the workflow or HTTP call streams tokens. S
 
 One brief covers the host features you actually use: camelCase field names echoed on Results, streaming markdown, waiting chrome on Results (not the form), History `onLoad`, and Open that swaps the History list for that row’s markdown on the same page — without dumping every `output` onto the cards.
 
-Do **not** ask for a progress panel, elapsed timer, or Cancel **on the form**. Waiting lives on Results. The host disables submit and shows error + Retry. Tabs only navigate — History must `onLoad` its API.
+Do **not** ask for a progress panel, elapsed timer, or Cancel **on the form**. Waiting lives on Results (or stacked below the form). Named wait steps while a request runs are wait chrome, not wizard pages. The host disables submit and shows error + Retry. Tabs only navigate — History must `onLoad` its API. Generator + History is two peer destinations (tabs); do not drop History because Generator is one view.
 
 **Mode:** Generate New App
 
@@ -272,6 +292,7 @@ the inspector.
 
 ## Short checklist
 
+- **Generate** on User Input expands a job or repairs a long brief (`fix this brief`). Add APIs first so it uses those keys. Then run the block.
 - Same API **key** in User Input and Add an API. Leave Bindings empty for dummy/local apps; do not invent a workflow key.
 - Dummy lists (todos, boards) should show sample rows on arrival. Create / edit / complete stay local, as dialogs on the same page. Ask for edit by name — it is not inferred.
 - Bound workflows are **deployed** before Preview / Launch.
