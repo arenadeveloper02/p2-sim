@@ -31,6 +31,7 @@ const CATALOG_TYPES = [
   'Workspace',
   'Chart',
   'Sparkline',
+  'Chip',
 ] as const
 
 describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {
@@ -44,6 +45,12 @@ describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {
   it('tells Tabs not to be sequential steps', () => {
     expect(ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT).toMatch(
       /Tabs[^\n]*[Nn]ot sequential workflow steps/
+    )
+  })
+
+  it('tells Chip not to duplicate selected state', () => {
+    expect(ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT).toMatch(
+      /Chip[^\n]*[Dd]o not duplicate brand\/muted chips/
     )
   })
 

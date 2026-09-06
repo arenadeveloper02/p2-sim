@@ -3254,6 +3254,70 @@ describe('SpecRenderer', () => {
     expect(input.value).toBe('Stripe')
   })
 
+  it('paints the selected Chip in a same-page view-switch group', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['pills'] },
+        pills: {
+          type: 'Stack',
+          props: { direction: 'horizontal' },
+          children: ['article', 'gaps'],
+        },
+        article: {
+          type: 'Chip',
+          props: { text: 'Enhanced Article', tone: 'muted', setValue: 'resultTab=article' },
+          children: [],
+        },
+        gaps: {
+          type: 'Chip',
+          props: { text: 'Gap Analysis', tone: 'brand', setValue: 'resultTab=gaps' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const article = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Enhanced Article'
+    )
+    const gaps = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Gap Analysis'
+    )
+    expect(article?.getAttribute('aria-pressed')).toBe('true')
+    expect(gaps?.getAttribute('aria-pressed')).toBe('false')
+    expect(article?.className).toContain('gui-brand')
+    expect(gaps?.className).toContain('gui-canvas')
+
+    act(() => {
+      gaps?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(article?.getAttribute('aria-pressed')).toBe('false')
+    expect(gaps?.getAttribute('aria-pressed')).toBe('true')
+    expect(gaps?.className).toContain('gui-brand')
+    expect(article?.className).toContain('gui-canvas')
+  })
+
+  it('keeps authored tone on a lone suggestion Chip', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chip'] },
+        chip: {
+          type: 'Chip',
+          props: { text: 'Try Stripe', tone: 'muted', setValue: 'query=Stripe' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Try Stripe'
+    )
+    expect(chip?.getAttribute('aria-pressed')).toBeNull()
+    expect(chip?.className).toContain('gui-canvas')
+    expect(chip?.className).not.toContain('gui-brand-surface')
+  })
+
   it('renders Card subtitle, media, and footer', () => {
     const spec: Spec = {
       root: 'page',

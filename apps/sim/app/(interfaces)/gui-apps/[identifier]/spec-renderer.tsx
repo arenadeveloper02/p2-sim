@@ -276,6 +276,56 @@ function parseChipSetValue(raw: string): { name: string | null; value: string } 
   return { name: null, value: raw }
 }
 
+/**
+ * Document-order Chip ids that share a `setValue` field. Two or more means a
+ * same-page view switch — the host paints selected, not duplicate brand/muted chips.
+ */
+function chipIdsForSetValueField(
+  elements: Record<string, SpecElement>,
+  rootId: string,
+  field: string
+): string[] {
+  const ids: string[] = []
+  const walk = (id: string) => {
+    const element = elements[id]
+    if (!element) return
+    if (element.type === 'Chip') {
+      const parsed = parseChipSetValue(asString(element.props?.setValue))
+      if (parsed.name === field) ids.push(id)
+    }
+    for (const childId of element.children ?? []) walk(childId)
+  }
+  walk(rootId)
+  return ids
+}
+
+/**
+ * Brand when this Chip is the active view; muted otherwise. `null` keeps the
+ * authored tone (suggestion chips, a lone setValue Chip).
+ */
+function viewSwitchChipTone(
+  elementId: string,
+  setValue: string,
+  values: Record<string, unknown>,
+  spec: Spec
+): 'brand' | 'muted' | null {
+  const parsed = parseChipSetValue(setValue)
+  if (!parsed.name) return null
+  const group = chipIdsForSetValueField(spec.elements, spec.root, parsed.name)
+  if (group.length < 2) return null
+  const current = values[parsed.name]
+  const currentText =
+    current === undefined || current === null ? '' : String(current).trim()
+  const selectedId =
+    currentText.length === 0
+      ? group[0]
+      : (group.find((id) => {
+          const chipValue = parseChipSetValue(asString(spec.elements[id]?.props?.setValue)).value
+          return chipValue === currentText
+        }) ?? group[0])
+  return elementId === selectedId ? 'brand' : 'muted'
+}
+
 function subtreeHasActionId(
   elements: Record<string, SpecElement>,
   id: string,
@@ -2650,11 +2700,14 @@ export function SpecRenderer({
           </span>
         )
       case 'Chip': {
-        const tone = asString(props.tone, 'muted')
         const text = asString(props.text)
         const actionId = asString(props.actionId)
         const navigateTo = asString(props.navigateTo)
         const setValue = asString(props.setValue)
+        const viewTone = setValue
+          ? viewSwitchChipTone(id, setValue, visibilityValues, spec)
+          : null
+        const tone = viewTone ?? asString(props.tone, 'muted')
         const interactive = Boolean(actionId || navigateTo || setValue)
         const className = cn(
           'inline-flex items-center rounded-full px-3 py-1.5 font-medium text-sm',
@@ -2686,6 +2739,7 @@ export function SpecRenderer({
             type='button'
             disabled={chipBusy}
             aria-busy={chipBusy || undefined}
+            aria-pressed={viewTone ? viewTone === 'brand' : undefined}
             className={cn(className, chipBusy && 'gap-2')}
             style={styleFromProps(props)}
             onClick={runChip}

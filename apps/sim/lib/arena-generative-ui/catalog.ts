@@ -403,7 +403,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         setValue: z.string().nullable(),
       }),
       description:
-        'Compact pill. tone is muted, brand, or info. Optional actionId, navigateTo, or setValue (the string to put in a named field, as "query=Stripe" or a bare value that fills the page SearchField). Use for suggestion chips and entity meta.',
+        'Compact pill. tone is muted, brand, or info. Optional actionId, navigateTo, or setValue (the string to put in a named field, as "query=Stripe" or "resultTab=article"). Same-page result views: one Chip per view with the same setValue field and distinct values — the host paints the selected Chip brand. Do not emit a brand Chip and a muted Chip for the same label. Suggestion chips and entity meta keep authored tone.',
     },
     Icon: {
       props: z.object({
