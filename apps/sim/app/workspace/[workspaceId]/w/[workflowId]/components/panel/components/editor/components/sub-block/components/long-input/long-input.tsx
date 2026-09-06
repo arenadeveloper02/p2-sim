@@ -4,6 +4,7 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -11,6 +12,7 @@ import { cn, Textarea } from '@sim/emcn'
 import { ChevronsUpDown, Wand } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { Button } from '@/components/ui/button'
+import { formatBindingsForUserInputWand } from '@/lib/arena-generative-ui/user-input-wand-prompt'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import {
   maskSecretText,
@@ -109,10 +111,23 @@ export function LongInput({
   const [localContent, setLocalContent] = useState<string>('')
   const [isFocused, setIsFocused] = useState(false)
   const persistSubBlockValueRef = useRef<(value: string) => void>(() => {})
+  const [apiBindingsRaw] = useSubBlockValue(blockId, 'apiBindings', false)
+  const wandConfig = useMemo(() => {
+    const configWand = config.wandConfig
+    if (!configWand?.prompt.includes('{bindings}')) {
+      return configWand
+    }
+    return {
+      ...configWand,
+      prompt: configWand.prompt.replaceAll(
+        '{bindings}',
+        formatBindingsForUserInputWand(apiBindingsRaw)
+      ),
+    }
+  }, [apiBindingsRaw, config.wandConfig])
 
-  // Wand functionality - always call the hook unconditionally
   const wandHook = useWand({
-    wandConfig: config.wandConfig,
+    wandConfig,
     currentValue: localContent,
     onStreamStart: () => {
       // Clear the content when streaming starts

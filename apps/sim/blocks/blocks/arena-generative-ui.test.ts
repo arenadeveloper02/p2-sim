@@ -115,10 +115,13 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     )
     expect(userInput?.rows).toBe(10)
     expect(userInput?.wandConfig?.prompt).toContain('principal product engineer')
-    expect(userInput?.wandConfig?.prompt).toContain('often a job, not a spec')
+    expect(userInput?.wandConfig?.prompt).toContain('{context}')
+    expect(userInput?.wandConfig?.prompt).toContain('{bindings}')
+    expect(userInput?.wandConfig?.prompt).toContain('REPAIR')
     expect(userInput?.wandConfig?.prompt).toContain('Do not invent API keys')
     expect(userInput?.wandConfig?.prompt).toContain('seed sample rows')
-    expect(userInput?.wandConfig?.prompt).toContain('simple todo or checklist')
+    expect(userInput?.wandConfig?.prompt).toContain('Simple todo or checklist')
+    expect(userInput?.wandConfig?.placeholder).toContain('fix the current brief')
     expect(userInput?.wandConfig?.prompt).not.toMatch(
       /A list of records includes a way to open one\./
     )

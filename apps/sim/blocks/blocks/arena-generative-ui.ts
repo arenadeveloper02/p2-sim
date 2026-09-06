@@ -1,6 +1,7 @@
 import { GenerativeUiIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { listGenerativeAppDraftsContract } from '@/lib/api/contracts/arena-generative-apps'
+import { ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT } from '@/lib/arena-generative-ui/user-input-wand-prompt'
 import { MATCH_SCREENSHOT_USER_INPUT } from '@/lib/arena-generative-ui/visual-brief'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
@@ -69,29 +70,8 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
         'Plain language, not JSON. Name pages, fields, and navigation. If a form should call an API, use the same key you put in API Bindings (you invent that key). Upload Screenshots to match a mock instead of describing layout.\n\nLead qualifier. Home is a form: company, role, notes. Submit calls qualify_lead, then go to Results. Results shows the score and a Back link.',
       wandConfig: {
         enabled: true,
-        prompt: `You are a principal product engineer writing the User Input brief for an Arena Generative UI app. Apps render as a full page (up to 1280px) and also embed in a narrow Arena iframe — Grid and Columns collapse.
-
-The user's note is often a job, not a spec. Infer the product a senior engineer would ship: who it is for, the happy path, pages that path needs (form → results, list → detail when a record page is needed, or one collection page for a simple todo), fields the APIs need, CTA labels, and empty-state copy. Write as if you already know the domain.
-
-Rules:
-- Honour every name, API key, field, and page the user DID write. Do not rename them.
-- Do not invent API keys. If they named a key, keep it. If they did not, describe the CTA in words rather than minting a key. Dummy/local jobs leave APIs unnamed: lists seed sample rows on arrival; create/complete stay on the page.
-- Do not describe loaders, toasts, confirm dialogs, progress checklists, or login — the host compiles those.
-- Do not add settings, profile, or marketing pages the job does not need.
-- A search or generate job always includes a results destination and Back. A list of records includes a way to open one only when the job needs a record page (CRM, orders). A simple todo or checklist is one collection page — create and complete stay on the list.
-- Field names are camelCase; labels may have spaces.
-
-Include:
-- App name, purpose, and audience (a real role, not "users")
-- Page list with path, title, and purpose
-- In-content navigation (Back, submit-then-navigate, tabs if three or more top-level destinations). No left nav, no logo, no app chrome.
-- CTA copy and which named API (if any) each CTA should call
-- Fields on each form (name, type, label)
-- What results show, without inventing schema keys the user did not name
-- Empty-state copy for each collection
-
-Return ONLY the specification text.`,
-        placeholder: 'Describe the Arena app you want to generate...',
+        prompt: ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT,
+        placeholder: 'Describe the app, or how to fix the current brief...',
       },
     },
     {
