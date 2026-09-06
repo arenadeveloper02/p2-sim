@@ -122,7 +122,7 @@ type ImageGenerationToolConfig = InternalToolConfig<ImageGenerationParams, Image
 export const imageGenerateTool: ImageGenerationToolConfig = {
   id: 'image_generate',
   name: 'Image Generator',
-  description: 'Generate images with OpenAI GPT Image, Google Nano Banana, or Fal.ai image models',
+  description: 'Generate images with OpenAI GPT Image or Google Nano Banana models',
   version: '1.0.0',
 
   params: {
@@ -131,14 +131,14 @@ export const imageGenerateTool: ImageGenerationToolConfig = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Image generation provider. Use openai for gpt-image-* and chatgpt-image-latest; gemini for gemini-*-image* models; falai for nano-banana-*, flux-2-pro, seedream-v4.5, and grok-imagine-image. When omitted, provider is inferred from model.',
+        'Image generation provider. Use openai for gpt-image-* models; gemini for gemini-*-image* models. When omitted, provider is inferred from model.',
     },
     apiKey: {
       type: 'string',
       required: false,
       visibility: 'user-only',
       description:
-        'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
+        'Provider API key. OpenAI and Gemini use hosted keys; only required when using a BYOK provider.',
     },
     model: {
       type: 'string',
@@ -197,32 +197,32 @@ export const imageGenerateTool: ImageGenerationToolConfig = {
     safetyTolerance: {
       type: 'string',
       required: false,
-      visibility: 'user-or-llm',
-      description: 'Fal.ai safety tolerance when supported',
+      visibility: 'hidden',
+      description: 'Legacy safety tolerance when supported',
     },
     seed: {
       type: 'number',
       required: false,
-      visibility: 'user-or-llm',
+      visibility: 'hidden',
       description: 'Random seed when supported',
     },
     enableSafetyChecker: {
       type: 'boolean',
       required: false,
-      visibility: 'user-or-llm',
-      description: 'Enable the Fal.ai safety checker when supported',
+      visibility: 'hidden',
+      description: 'Enable the safety checker when supported',
     },
     enableWebSearch: {
       type: 'boolean',
       required: false,
-      visibility: 'user-or-llm',
-      description: 'Enable web search grounding when supported by the selected Fal.ai model',
+      visibility: 'hidden',
+      description: 'Enable web search grounding when supported',
     },
     thinkingLevel: {
       type: 'string',
       required: false,
-      visibility: 'user-or-llm',
-      description: 'Fal.ai thinking level when supported: minimal or high',
+      visibility: 'hidden',
+      description: 'Thinking level when supported: minimal or high',
     },
     inputImage: {
       type: 'json',
