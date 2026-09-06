@@ -2285,6 +2285,46 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('dd')?.textContent).toBe('arena')
   })
 
+  it('formats nested KeyValue arrays as a list and object rows as a table', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['details'] },
+        details: {
+          type: 'KeyValue',
+          props: { statePath: 'coverage_report' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: {
+        coverage_report: {
+          faq_added: true,
+          faq_questions_added: ['How much did Nvidia invest directly in OpenAI?'],
+          citations_count: 10,
+          citations_found: [
+            {
+              claim: 'Nvidia mobilised capital.',
+              source_name: 'NVIDIA',
+              source_url: 'https://investor.nvidia.com/example',
+            },
+          ],
+        },
+      },
+    })
+    expect(container.textContent).toContain('Yes')
+    expect(container.textContent).not.toContain('["How much')
+    expect(container.querySelector('ul')?.textContent).toContain(
+      'How much did Nvidia invest directly in OpenAI?'
+    )
+    expect(container.querySelector('table')?.textContent).toContain('Nvidia mobilised capital.')
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(
+      'https://investor.nvidia.com/example'
+    )
+  })
+
   it('renders Card description under the title', () => {
     const spec: Spec = {
       root: 'page',
@@ -3295,6 +3335,117 @@ describe('SpecRenderer', () => {
     expect(gaps?.getAttribute('aria-pressed')).toBe('true')
     expect(gaps?.className).toContain('gui-brand')
     expect(article?.className).toContain('gui-canvas')
+  })
+
+  it('keeps History selected detail when a result-view Chip is clicked', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list', 'detail'] },
+        list: {
+          type: 'Section',
+          props: { showWhen: '!selectedId' },
+          children: ['runs'],
+        },
+        runs: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: {
+          type: 'Button',
+          props: { label: 'View', selectItem: true },
+          children: [],
+        },
+        detail: {
+          type: 'Section',
+          props: { showWhen: 'selectedId' },
+          children: ['article', 'gaps', 'articleBody', 'gapsBody'],
+        },
+        article: {
+          type: 'Chip',
+          props: { text: 'Enhanced Article', tone: 'muted', setValue: 'resultTab=article' },
+          children: [],
+        },
+        gaps: {
+          type: 'Chip',
+          props: { text: 'Gap Analysis', tone: 'muted', setValue: 'resultTab=gaps' },
+          children: [],
+        },
+        articleBody: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: '', showWhen: 'resultTab=article' },
+          children: [],
+        },
+        gapsBody: {
+          type: 'DataText',
+          props: { statePath: 'gaps', fallback: '', showWhen: 'resultTab=gaps' },
+          children: [],
+        },
+      },
+    }
+    const { container, onClearSelection } = render({
+      spec,
+      state: {
+        selectedId: 'run_1',
+        content: '# Enhanced article',
+        gaps: '# Coverage gaps',
+        history: [{ id: 'run_1', keyword: 'SEO' }],
+      },
+    })
+    expect(container.textContent).toContain('Enhanced article')
+    expect(container.textContent).not.toContain('Coverage gaps')
+    const gapsChip = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Gap Analysis'
+    )
+    act(() => {
+      gapsChip?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onClearSelection).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Coverage gaps')
+    expect(container.textContent).not.toContain('Enhanced article')
+    expect(gapsChip?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('places result-view Chips above Card body instead of the footer', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: 'Enhanced results' },
+          children: ['body', 'article', 'gaps', 'analyze'],
+        },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: '' },
+          children: [],
+        },
+        article: {
+          type: 'Chip',
+          props: { text: 'Enhanced Article', setValue: 'resultTab=article' },
+          children: [],
+        },
+        gaps: {
+          type: 'Chip',
+          props: { text: 'Gap Analysis', setValue: 'resultTab=gaps' },
+          children: [],
+        },
+        analyze: {
+          type: 'Button',
+          props: { label: 'Export', variant: 'secondary' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { content: '# Report body' } })
+    const card = container.querySelector('[data-testid="card"]') as HTMLElement
+    const switchRow = card.querySelector('[data-testid="view-switch-chips"]') as HTMLElement
+    const footer = card.querySelector('[data-testid="card-footer"]') as HTMLElement
+    expect(switchRow?.textContent).toContain('Enhanced Article')
+    expect(switchRow?.textContent).toContain('Gap Analysis')
+    expect(footer?.textContent).toContain('Export')
+    expect(footer?.textContent).not.toContain('Enhanced Article')
+    expect(card.textContent?.indexOf('Enhanced Article') ?? -1).toBeLessThan(
+      card.textContent?.indexOf('Report body') ?? 0
+    )
   })
 
   it('keeps authored tone on a lone suggestion Chip', () => {

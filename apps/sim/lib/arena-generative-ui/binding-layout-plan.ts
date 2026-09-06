@@ -3,7 +3,6 @@ import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-s
 import {
   layoutOutputSchemaFromBinding,
   namedSchemaFields,
-  outputSchemaRootName,
 } from '@/lib/arena-generative-ui/output-schema'
 import {
   type ArenaGenerativeApiBinding,
@@ -68,6 +67,8 @@ export interface BindingLayoutPlan {
   collections: BindingLayoutCollection[]
   metricPaths: string[]
   recordKeys: string[]
+  /** Nested scalar fields (`coverage_report.summary`) — not collection wrappers. */
+  scalarPaths: string[]
   /** DataText paths: `content` and/or a top-level markdown string field. */
   prosePaths: string[]
   /** String field names that must not be bound as `field.content`. */
@@ -84,9 +85,11 @@ export interface BindingLayoutPlan {
 export function layoutPlanForBinding(binding: ArenaGenerativeApiBinding): BindingLayoutPlan {
   const schema = layoutOutputSchemaFromBinding(binding)
   const collections = collectionsFromSchema(schema)
+  const wrapperKeys = new Set(collections.flatMap((collection) => collection.wrapperKeys))
   const stringFieldNames = topLevelStringFieldNames(schema)
   const metricPaths = metricPathsFromSchema(schema)
   const recordKeys = recordKeysFromSchema(schema, collections)
+  const scalarPaths = scalarFieldPathsFromSchema(schema, collections)
   const stream = binding.stream === true
   const kind = kindFrom({
     stream,
@@ -98,8 +101,9 @@ export function layoutPlanForBinding(binding: ArenaGenerativeApiBinding): Bindin
 
   const hostKeys = uniqueStrings([
     ...collections.map((collection) => collection.hostKey),
-    ...metricPaths.map((path) => outputSchemaRootName(path)).filter(Boolean),
-    ...recordKeys,
+    ...metricPaths,
+    ...scalarPaths,
+    ...recordKeys.filter((key) => !wrapperKeys.has(key)),
     ...stringFieldNames,
     ...(stream || kind === 'prose' || collections.some((collection) => collection.samePageSelect)
       ? ['content']
@@ -135,6 +139,7 @@ export function layoutPlanForBinding(binding: ArenaGenerativeApiBinding): Bindin
     collections,
     metricPaths,
     recordKeys,
+    scalarPaths,
     prosePaths,
     stringFieldNames,
     stream,
@@ -158,6 +163,7 @@ export function planHasStructuredSchema(plan: BindingLayoutPlan): boolean {
     plan.collections.length > 0 ||
     plan.metricPaths.length > 0 ||
     plan.recordKeys.length > 0 ||
+    plan.scalarPaths.length > 0 ||
     plan.stringFieldNames.length > 0
   )
 }
@@ -270,13 +276,32 @@ function proseString(value: unknown): string | undefined {
 
 function omitFromPlanState(plan: BindingLayoutPlan, key: string, value: unknown): boolean {
   if (plan.collections.some((collection) => collection.wrapperKeys.includes(key))) {
-    return true
+    return isPureCollectionWrapper(value, plan)
   }
   if (plan.recordKeys.includes(key) || plan.stringFieldNames.includes(key)) {
     return false
   }
   if (key === 'content') return proseString(value) === undefined
   return DISPLAY_ENVELOPE_KEYS.has(key) && plan.collections.length > 0
+}
+
+function isPureCollectionWrapper(value: unknown, plan: BindingLayoutPlan): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record)
+  if (keys.length === 0) return false
+  const collectionKeys = new Set(plan.collections.map((collection) => collection.hostKey))
+  const nestedWrappers = new Set(
+    plan.collections.flatMap((collection) => collection.wrapperKeys.filter((key) => key.includes('.')))
+  )
+  return keys.every((key) => {
+    if (collectionKeys.has(key) && Array.isArray(record[key])) return true
+    const nested = record[key]
+    if (nestedWrappers.has(key) || (nested && typeof nested === 'object' && !Array.isArray(nested))) {
+      return isPureCollectionWrapper(nested, plan)
+    }
+    return false
+  })
 }
 
 /**
@@ -304,9 +329,14 @@ export function resultLayoutFromPlan(plan: BindingLayoutPlan): string {
   }
   const hostKeys = plan.hostKeys.filter((key) => key !== 'content').join(', ')
   const layout = `bind layoutPlan.hostKeys as statePath (${hostKeys || 'content'}); nested arrays (run_data.history) also land as "${plan.collections[0]?.hostKey ?? 'history'}"; a string markdown field binds as that name or "content", never "field.content"`
+  const wrappers = uniqueStrings(plan.collections.flatMap((collection) => collection.wrapperKeys))
+  const nested =
+    wrappers.length > 0
+      ? `; do not KeyValue wrapper objects (${wrappers.join(', ')}) — bind each collection hostKey as Table (object rows with the same scalar fields) or Repeat (string[] as Text rows; long item fields as Disclosure); bind wrapper scalars with dotted hostKeys (${plan.scalarPaths.slice(0, 4).join(', ') || 'wrapper.field'})`
+      : ''
   const chartable = plan.collections.map((collection) => chartableHint(collection)).filter(Boolean)
-  if (chartable.length === 0) return layout
-  return `${layout}; chartable collections: ${chartable.join('; ')} — use Chart with those keys, or Table if the job is compare-rows`
+  if (chartable.length === 0) return `${layout}${nested}`
+  return `${layout}${nested}; chartable collections: ${chartable.join('; ')} — use Chart with those keys, or Table if the job is compare-rows`
 }
 
 function chartableHint(collection: BindingLayoutCollection): string | undefined {
@@ -447,6 +477,25 @@ function metricPathsFromSchema(schema: Array<{ name: string; type: string }>): s
   return schema
     .filter((field) => field.type === 'number' && !field.name.includes('[]'))
     .map((field) => field.name)
+}
+
+function scalarFieldPathsFromSchema(
+  schema: Array<{ name: string; type: string }>,
+  collections: BindingLayoutCollection[]
+): string[] {
+  const collectionPaths = new Set(
+    collections.flatMap((collection) => [collection.hostKey, ...collection.schemaPaths])
+  )
+  return uniqueStrings(
+    schema
+      .filter((field) => {
+        if (field.name.includes('[]') || !field.name.includes('.')) return false
+        if (field.type === 'array' || field.type === 'object') return false
+        if (collectionPaths.has(field.name)) return false
+        return true
+      })
+      .map((field) => field.name)
+  )
 }
 
 function recordKeysFromSchema(

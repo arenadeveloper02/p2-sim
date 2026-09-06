@@ -774,13 +774,13 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: task',
     'Purpose: Collect input to accomplish something.',
     'Structure: Header → optional context → Form or SearchField → one primary action.',
-    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Do not add a results or history page unless the blueprint listed it. Same-page saves stay here; the host toasts. Named wait steps (Analyzing gaps, Writing draft) are WorkingCard.steps via CAPABILITY multi-step / long-running — not a workflow page, not Stepper, and not Columns with an empty results pane beside the form. When the blueprint has no results page, stack WorkingCard then bound results below the form (Chip setValue for same-page result views). Do not emit catalog Workspace to keep an empty results region visible.',
+    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Do not add a results or history page unless the blueprint listed it. Same-page saves stay here; the host toasts. Named wait steps (Analyzing gaps, Writing draft) are WorkingCard.steps via CAPABILITY multi-step / long-running — not a workflow page, not Stepper, and not Columns with an empty results pane beside the form. When the blueprint has no results page, stack WorkingCard then bound results below the form (Chip setValue row above those panels for same-page result views — never after DataText, never Card footer). Do not emit catalog Workspace to keep an empty results region visible.',
   ].join('\n'),
   results: [
     'ARCHETYPE RECIPE: results',
     'Purpose: Consume or analyze generated output.',
-    'Structure: Context → primary result → actions.',
-    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name). Structured hostKeys use Repeat, Stat, or KeyValue only when the blueprint or layoutPlan named them. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
+    'Structure: Context → Chip setValue row when same-page result views exist (top or left) → primary result → actions.',
+    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name). Same-page result views are Chip setValue above those panels (or left of a horizontal split) — not after DataText and not Card footer. Structured hostKeys use Repeat, Table, Stat, or KeyValue only when the blueprint or layoutPlan named them. A layoutPlan collection is Repeat or Table, never KeyValue JSON. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
   ].join('\n'),
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',

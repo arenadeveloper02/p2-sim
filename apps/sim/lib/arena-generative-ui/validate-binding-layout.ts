@@ -440,12 +440,15 @@ function boundPathError(
           }
           return undefined
         }
-        if (type === 'DataText') {
-          return `Page "${pagePath}" DataText "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat or Table.`
+        if (type === 'DataText' || type === 'KeyValue') {
+          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat or Table.`
         }
       }
       if (collection.wrapperKeys.includes(statePath) && COLLECTION_TYPES.has(type)) {
         return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; the host lifts that collection to "${collection.hostKey}". Bind statePath "${collection.hostKey}".`
+      }
+      if (collection.wrapperKeys.includes(statePath) && type === 'KeyValue') {
+        return `Page "${pagePath}" KeyValue "${elementId}" binds statePath "${statePath}"; that wrapper holds collections. Bind "${collection.hostKey}" as Repeat or Table, and scalars with dotted hostKeys.`
       }
     }
     if (plan.stringFieldNames.includes(root) && statePath === `${root}.content`) {

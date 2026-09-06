@@ -334,7 +334,8 @@ export function clearedSelectedItemHostState(): Record<string, unknown> {
 
 /**
  * Drops `selected` / `selectedId` without wiping generate `content`, so a
- * History tab or Chip view-switch can show the list while the article remains.
+ * History tab can show the list while the article remains. Chip result-view
+ * switches keep `selectedId`.
  */
 export function clearedSelectedIdHostState(): Record<string, unknown> {
   return {

@@ -197,6 +197,41 @@ describe('layoutPlanForBinding', () => {
     expect(plan.collections[0]?.samePageSelect).toBe(false)
   })
 
+  it('splits a nested coverage_report object into lifted collections and dotted scalars', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        key: 'enhance_article',
+        outputSchema: [
+          { name: 'coverage_report', type: 'object' },
+          { name: 'coverage_report.faq_added', type: 'boolean' },
+          { name: 'coverage_report.faq_questions_added', type: 'array' },
+          { name: 'coverage_report.faq_questions_added[]', type: 'string' },
+          { name: 'coverage_report.citations_count', type: 'number' },
+          { name: 'coverage_report.citations_found', type: 'array' },
+          { name: 'coverage_report.citations_found[].claim', type: 'string' },
+          { name: 'coverage_report.citations_found[].source_name', type: 'string' },
+          { name: 'coverage_report.citations_found[].source_url', type: 'string' },
+          { name: 'coverage_report.summary', type: 'string' },
+        ],
+      })
+    )
+
+    expect(plan.kind).toBe('collection')
+    expect(plan.recordKeys).not.toContain('coverage_report')
+    expect(plan.hostKeys).toEqual(
+      expect.arrayContaining([
+        'faq_questions_added',
+        'citations_found',
+        'coverage_report.faq_added',
+        'coverage_report.citations_count',
+        'coverage_report.summary',
+      ])
+    )
+    expect(plan.hostKeys).not.toContain('coverage_report')
+    expect(resultLayoutFromPlan(plan)).toContain('do not KeyValue wrapper objects')
+    expect(resultLayoutFromPlan(plan)).toContain('citations_found')
+  })
+
   it('describes a numeric collection as chartable in resultLayout', () => {
     const plan = layoutPlanForBinding(
       workflowBinding({
@@ -316,6 +351,37 @@ describe('actionStateFromPlan', () => {
     expect(state.items).toBe(state.history)
     expect(state).not.toHaveProperty('run_data')
     expect(state).not.toHaveProperty('content')
+  })
+
+  it('keeps a mixed coverage_report wrapper and lifts nested arrays', () => {
+    const coverage_report = {
+      faq_added: true,
+      faq_questions_added: ['How much did Nvidia invest?'],
+      citations_count: 10,
+      citations_found: [
+        {
+          claim: 'Nvidia mobilised capital.',
+          source_name: 'NVIDIA',
+          source_url: 'https://investor.nvidia.com/example',
+        },
+      ],
+      summary: 'Coverage looks strong.',
+    }
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [
+          { name: 'coverage_report', type: 'object' },
+          { name: 'coverage_report.faq_added', type: 'boolean' },
+          { name: 'coverage_report.faq_questions_added', type: 'array' },
+          { name: 'coverage_report.citations_found', type: 'array' },
+          { name: 'coverage_report.citations_found[].claim', type: 'string' },
+        ],
+      })
+    )
+    const state = actionStateFromPlan({ coverage_report }, plan)
+    expect(state.coverage_report).toEqual(coverage_report)
+    expect(state.faq_questions_added).toEqual(['How much did Nvidia invest?'])
+    expect(state.citations_found).toEqual(coverage_report.citations_found)
   })
 
   it('keeps extra business keys that the schema did not list', () => {

@@ -153,7 +153,7 @@ interface SpecRendererProps {
   onSelectItem?: (item: unknown, index: number) => void
   /** Drops the copied Repeat row so an in-page detail can return to the list. */
   onClearItem?: () => void
-  /** Drops selectedId without wiping generate content (tab / Chip view switch). */
+  /** Drops selectedId without wiping generate content (top-level Tabs / page navigation). */
   onClearSelection?: () => void
 }
 
@@ -215,6 +215,17 @@ const CHIP_TONE_CLASSES = {
 
 const CARD_MEDIA_TYPES = new Set(['Icon', 'Avatar'])
 const CARD_FOOTER_TYPES = new Set(['Button', 'Chip', 'NavLink', 'Link', 'Toolbar'])
+/** Keep Back / form / wait chrome ahead of a hoisted result-view Chip row. */
+const VIEW_SWITCH_LEAD_TYPES = new Set([
+  'PageHeader',
+  'Form',
+  'SearchField',
+  'WorkingCard',
+  'Stepper',
+  'Tabs',
+  'Button',
+  'NavLink',
+])
 
 function looksLikeImageSrc(value: string): boolean {
   return /^(https?:|data:|\/)/i.test(value) || /\.(png|jpe?g|gif|svg|webp)(\?|$)/i.test(value)
@@ -299,6 +310,93 @@ function chipIdsForSetValueField(
   }
   walk(rootId)
   return ids
+}
+
+function chipSetValueField(element: SpecElement | undefined): string | null {
+  if (element?.type !== 'Chip') return null
+  return parseChipSetValue(asString(element.props?.setValue)).name
+}
+
+function isViewSwitchChip(
+  elements: Record<string, SpecElement>,
+  rootId: string,
+  id: string
+): boolean {
+  const field = chipSetValueField(elements[id])
+  if (!field) return false
+  return chipIdsForSetValueField(elements, rootId, field).length >= 2
+}
+
+function isViewSwitchChrome(
+  elements: Record<string, SpecElement>,
+  rootId: string,
+  id: string
+): boolean {
+  const element = elements[id]
+  if (!element) return false
+  if (element.type === 'Chip') return isViewSwitchChip(elements, rootId, id)
+  if (element.type !== 'Stack' && element.type !== 'Toolbar') return false
+  const kids = element.children ?? []
+  if (kids.length === 0) return false
+  return kids.every((childId) => isViewSwitchChrome(elements, rootId, childId))
+}
+
+function partitionViewSwitchChrome(
+  childIds: string[],
+  elements: Record<string, SpecElement>,
+  rootId: string
+): { leadIds: string[]; chromeIds: string[]; bodyIds: string[] } {
+  const chromeIds: string[] = []
+  const restIds: string[] = []
+  for (const id of childIds) {
+    if (isViewSwitchChrome(elements, rootId, id)) chromeIds.push(id)
+    else restIds.push(id)
+  }
+  let insertAt = 0
+  while (
+    insertAt < restIds.length &&
+    VIEW_SWITCH_LEAD_TYPES.has(elements[restIds[insertAt]]?.type ?? '')
+  ) {
+    insertAt += 1
+  }
+  return {
+    leadIds: restIds.slice(0, insertAt),
+    chromeIds,
+    bodyIds: restIds.slice(insertAt),
+  }
+}
+
+/**
+ * First Chip value for each same-page view-switch field that is still empty,
+ * so showWhen matches the host-painted selected Chip before the first click.
+ */
+function viewSwitchDefaultValues(
+  elements: Record<string, SpecElement>,
+  rootId: string,
+  values: Record<string, unknown>
+): Record<string, string> {
+  const defaults: Record<string, string> = {}
+  const seen = new Set<string>()
+  const walk = (id: string) => {
+    const element = elements[id]
+    if (!element) return
+    if (element.type === 'Chip') {
+      const parsed = parseChipSetValue(asString(element.props?.setValue))
+      if (parsed.name && !seen.has(parsed.name)) {
+        seen.add(parsed.name)
+        const group = chipIdsForSetValueField(elements, rootId, parsed.name)
+        if (group.length >= 2) {
+          const current = values[parsed.name]
+          const currentText =
+            current === undefined || current === null ? '' : String(current).trim()
+          if (currentText.length === 0) defaults[parsed.name] = parsed.value
+        }
+      }
+    }
+    for (const childId of element.children ?? []) walk(childId)
+  }
+  walk(rootId)
+  return defaults
 }
 
 /**
@@ -688,14 +786,14 @@ function splitTableRow(row: string): string[] {
   return row.split('|').map((cell) => cell.trim())
 }
 
-function tableRowsFromState(value: unknown, headers: string[]): string[][] {
+function tableRowsFromState(value: unknown, headers: string[]): unknown[][] {
   if (!Array.isArray(value)) return []
   return value.map((entry) => {
     if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
       const record = entry as Record<string, unknown>
-      return headers.map((header) => displayFromStateValue(record[header], ''))
+      return headers.map((header) => record[header])
     }
-    return [displayFromStateValue(entry, '')]
+    return [entry]
   })
 }
 
@@ -712,15 +810,12 @@ function tableHeadersFromState(value: unknown): string[] {
 }
 
 /** Parses `key: value` rows, or an object from host state, into pairs. */
-function keyValuePairs(items: unknown, stateValue: unknown): Array<[string, string]> {
+function keyValueEntries(items: unknown, stateValue: unknown): Array<[string, unknown]> {
   if (stateValue && typeof stateValue === 'object' && !Array.isArray(stateValue)) {
-    return Object.entries(stateValue as Record<string, unknown>).map(([key, value]) => [
-      key,
-      displayFromStateValue(value, ''),
-    ])
+    return Object.entries(stateValue as Record<string, unknown>)
   }
   if (typeof items !== 'string') return []
-  const pairs: Array<[string, string]> = []
+  const pairs: Array<[string, unknown]> = []
   for (const line of items.split('\n')) {
     const row = line.trim()
     if (!row) continue
@@ -732,6 +827,33 @@ function keyValuePairs(items: unknown, stateValue: unknown): Array<[string, stri
     pairs.push([row.slice(0, separator).trim(), row.slice(separator + 1).trim()])
   }
   return pairs
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function looksLikeHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value.trim())
+}
+
+function ScalarValue({ value }: { value: unknown }) {
+  if (typeof value === 'boolean') return <>{value ? 'Yes' : 'No'}</>
+  if (typeof value === 'number' && Number.isFinite(value)) return <>{String(value)}</>
+  if (typeof value === 'string' && looksLikeHttpUrl(value)) {
+    const href = value.trim()
+    return (
+      <a
+        href={href}
+        className='font-medium text-[var(--gui-brand,#1a73e8)] underline-offset-2 hover:underline'
+        rel='noreferrer'
+      >
+        {href}
+      </a>
+    )
+  }
+  const text = displayFromStateValue(value, '')
+  return <>{text}</>
 }
 
 interface ProgressStepsViewProps {
@@ -1118,7 +1240,7 @@ function StateTable({
                   key={`cell-${cellIndex}`}
                   className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
                 >
-                  {cell}
+                  <ScalarValue value={cell} />
                 </td>
               ))}
             </tr>
@@ -1129,7 +1251,15 @@ function StateTable({
   )
 }
 
-function StateKeyValue({ pairs, busy }: { pairs: Array<[string, string]>; busy?: boolean }) {
+function StateKeyValue({
+  pairs,
+  busy,
+  depth = 0,
+}: {
+  pairs: Array<[string, unknown]>
+  busy?: boolean
+  depth?: number
+}) {
   if (pairs.length === 0) return null
   return (
     <dl
@@ -1141,11 +1271,41 @@ function StateKeyValue({ pairs, busy }: { pairs: Array<[string, string]>; busy?:
           <dt className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
             {key}
           </dt>
-          <dd className='text-[var(--gui-text,#2c2d33)]'>{value}</dd>
+          <dd className='min-w-0 text-[var(--gui-text,#2c2d33)]'>
+            <KeyValueCell value={value} depth={depth} />
+          </dd>
         </Fragment>
       ))}
     </dl>
   )
+}
+
+function KeyValueCell({ value, depth }: { value: unknown; depth: number }) {
+  if (depth > 4) return <ScalarValue value={value} />
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className='text-[var(--gui-text-muted,#575a66)]'>—</span>
+    const objectRows = value.every((item) => isPlainRecord(item))
+    if (objectRows) {
+      return <StateTable value={value} />
+    }
+    return (
+      <ul className='flex list-disc flex-col gap-2 pl-5'>
+        {value.map((item, index) => (
+          <li key={index}>
+            {isPlainRecord(item) || Array.isArray(item) ? (
+              <KeyValueCell value={item} depth={depth + 1} />
+            ) : (
+              <ScalarValue value={item} />
+            )}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  if (isPlainRecord(value)) {
+    return <StateKeyValue pairs={Object.entries(value)} depth={depth + 1} />
+  }
+  return <ScalarValue value={value} />
 }
 
 const DEFAULT_EMPTY_TEXT = {
@@ -2092,6 +2252,12 @@ export function SpecRenderer({
       ...formValues,
       ...(scope ? repeatItemActionValues(scope.item, scope.index) : {}),
       ...overlayFlags,
+      ...viewSwitchDefaultValues(elements, spec.root, {
+        ...state,
+        ...formValues,
+        ...(scope ? repeatItemActionValues(scope.item, scope.index) : {}),
+        ...overlayFlags,
+      }),
     }
 
     const applyOverlayPatch = (patch: Record<string, unknown>) => {
@@ -2106,6 +2272,32 @@ export function SpecRenderer({
         delete next[name]
         return next
       })
+    }
+
+    const renderChildNodes = (ids: string[]) =>
+      ids.map((childId) => (
+        <Fragment key={childId}>
+          {renderNode(childId, scope, childWithinForm, nextFormActionId)}
+        </Fragment>
+      ))
+
+    const renderViewSwitchRow = (chromeIds: string[], placement: 'top' | 'left') => {
+      if (chromeIds.length === 0) return null
+      const only = chromeIds.length === 1 ? elements[chromeIds[0]] : undefined
+      if (only && (only.type === 'Stack' || only.type === 'Toolbar')) {
+        return renderChildNodes(chromeIds)
+      }
+      return (
+        <div
+          data-testid='view-switch-chips'
+          className={cn(
+            'flex flex-wrap gap-2',
+            placement === 'left' ? 'flex-col items-stretch' : 'flex-row items-center'
+          )}
+        >
+          {renderChildNodes(chromeIds)}
+        </div>
+      )
     }
 
     switch (element.type) {
@@ -2135,8 +2327,9 @@ export function SpecRenderer({
           </div>
         )
       }
-      case 'Section':
+      case 'Section': {
         if (!fieldIsVisible(props, visibilityValues)) return null
+        const partitioned = partitionViewSwitchChrome(childIds, elements, spec.root)
         return (
           <section
             className={cn(
@@ -2145,17 +2338,22 @@ export function SpecRenderer({
             )}
             style={styleFromProps(props)}
           >
-            {children}
+            {renderChildNodes(partitioned.leadIds)}
+            {renderViewSwitchRow(partitioned.chromeIds, 'top')}
+            {renderChildNodes(partitioned.bodyIds)}
           </section>
         )
+      }
       case 'Stack': {
         if (!fieldIsVisible(props, visibilityValues)) return null
         const justify = asString(props.justify, 'start')
+        const horizontal = asString(props.direction, 'vertical') === 'horizontal'
+        const partitioned = partitionViewSwitchChrome(childIds, elements, spec.root)
         return (
           <div
             className={cn(
               'flex',
-              asString(props.direction, 'vertical') === 'horizontal' ? 'flex-row' : 'flex-col',
+              horizontal ? 'flex-row' : 'flex-col',
               alignItemsClass(props.align, 'stretch'),
               justify === 'center' && 'justify-center',
               justify === 'between' && 'justify-between',
@@ -2167,7 +2365,9 @@ export function SpecRenderer({
               ...styleFromProps(props),
             }}
           >
-            {children}
+            {renderChildNodes(partitioned.leadIds)}
+            {renderViewSwitchRow(partitioned.chromeIds, horizontal ? 'left' : 'top')}
+            {renderChildNodes(partitioned.bodyIds)}
           </div>
         )
       }
@@ -2743,7 +2943,6 @@ export function SpecRenderer({
           if (setValue) {
             const parsed = parseChipSetValue(setValue)
             setNamedValue(parsed.name || firstSearchFieldName(elements), parsed.value)
-            onClearSelection?.()
           }
           if (navigateTo) requestNavigate(navigateTo)
           if (actionId) void dispatchAction(actionId, actionValues)
@@ -2835,7 +3034,7 @@ export function SpecRenderer({
       case 'KeyValue': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
-        const pairs = keyValuePairs(props.items, stateValue)
+        const pairs = keyValueEntries(props.items, stateValue)
         if (pairs.length === 0 && statePath && boundPending(statePath)) {
           return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
         }
@@ -2897,11 +3096,14 @@ export function SpecRenderer({
         if (!fieldIsVisible(props, visibilityValues)) return null
         const mediaIds: string[] = []
         const footerIds: string[] = []
+        const chromeIds: string[] = []
         const bodyIds: string[] = []
         for (const childId of childIds) {
           const childType = elements[childId]?.type ?? ''
           if (CARD_MEDIA_TYPES.has(childType) && mediaIds.length === 0) {
             mediaIds.push(childId)
+          } else if (isViewSwitchChrome(elements, spec.root, childId)) {
+            chromeIds.push(childId)
           } else if (CARD_FOOTER_TYPES.has(childType)) {
             footerIds.push(childId)
           } else {
@@ -2956,6 +3158,7 @@ export function SpecRenderer({
                 {heading}
               </>
             )}
+            {renderViewSwitchRow(chromeIds, 'top')}
             {bodyIds.map((childId) => (
               <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
             ))}

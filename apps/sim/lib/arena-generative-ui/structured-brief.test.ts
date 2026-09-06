@@ -853,6 +853,7 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('task')).toContain('WorkingCard.steps')
     expect(archetypeRecipe('task')).toContain('stack WorkingCard then bound results')
     expect(archetypeRecipe('results')).toContain('DataText "content"')
+    expect(archetypeRecipe('results')).toContain('Chip setValue above those panels')
     expect(archetypeRecipe('results')).toContain('No onLoad of the CTA')
     expect(archetypeRecipe('results')).toContain('Do not invent SWOT')
     expect(archetypeRecipe('collection')).toContain('pages[].representation')
