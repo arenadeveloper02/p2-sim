@@ -122,7 +122,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       {
         ownership: 'generator',
         text: 'Prefer progressive disclosure over showing everything simultaneously.',
-        prompt: 'Prefer progressive disclosure over showing everything simultaneously.',
+        prompt:
+          'Prefer progressive disclosure over showing everything simultaneously. FAQ, criteria, and justification lists are Repeat of Disclosure — title visible, body expands on click. Do not dump every item body at once, and do not use selectItem to expand a row.',
       },
       {
         ownership: 'generator',

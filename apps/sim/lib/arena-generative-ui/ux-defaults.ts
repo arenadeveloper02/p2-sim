@@ -40,4 +40,5 @@ export const UX_DEFAULTS = {
   },
   Image: { fallback: true, lazyLoad: true },
   Tabs: { activeFromRoute: true },
+  Disclosure: { collapsedByDefault: true, multipleOpen: true },
 } as const

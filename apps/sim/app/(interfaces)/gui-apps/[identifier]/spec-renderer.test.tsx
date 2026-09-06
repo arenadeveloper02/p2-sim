@@ -3318,6 +3318,93 @@ describe('SpecRenderer', () => {
     expect(chip?.className).not.toContain('gui-brand-surface')
   })
 
+  it('expands Disclosure rows independently without selectItem', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list'] },
+        list: { type: 'Repeat', props: { statePath: 'faq_suggestions' }, children: ['row'] },
+        row: {
+          type: 'Disclosure',
+          props: { title: '{item.question}' },
+          children: ['answer'],
+        },
+        answer: { type: 'Text', props: { text: '{item.suggested_answer}' }, children: [] },
+      },
+    }
+    const onSelectItem = vi.fn()
+    const { container } = render({
+      spec,
+      onSelectItem,
+      state: {
+        faq_suggestions: [
+          { question: 'What is SEO?', suggested_answer: 'Search engine optimization.' },
+          { question: 'Why citations?', suggested_answer: 'They build trust.' },
+        ],
+      },
+    })
+    const rows = Array.from(container.querySelectorAll('[data-testid="disclosure"]'))
+    expect(rows).toHaveLength(2)
+    const first = rows[0]?.querySelector('button')
+    const second = rows[1]?.querySelector('button')
+    expect(first?.getAttribute('aria-expanded')).toBe('false')
+    expect(second?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).toContain('What is SEO?')
+    expect(container.textContent).toContain('Why citations?')
+    expect(container.textContent).not.toContain('Search engine optimization.')
+    expect(container.textContent).not.toContain('They build trust.')
+
+    act(() => {
+      first?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(first?.getAttribute('aria-expanded')).toBe('true')
+    expect(second?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).toContain('Search engine optimization.')
+    expect(container.textContent).not.toContain('They build trust.')
+
+    act(() => {
+      second?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(first?.getAttribute('aria-expanded')).toBe('true')
+    expect(second?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('They build trust.')
+
+    act(() => {
+      first?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(first?.getAttribute('aria-expanded')).toBe('false')
+    expect(second?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).not.toContain('Search engine optimization.')
+    expect(container.textContent).toContain('They build trust.')
+    expect(onSelectItem).not.toHaveBeenCalled()
+  })
+
+  it('honours Disclosure defaultOpen without emitting a second copy', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['row'] },
+        row: {
+          type: 'Disclosure',
+          props: { title: 'Justification', defaultOpen: true },
+          children: ['body'],
+        },
+        body: { type: 'Text', props: { text: 'Coverage is thin on pricing.' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const trigger = container.querySelector('[data-testid="disclosure"] button')
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('Coverage is thin on pricing.')
+    expect(container.querySelectorAll('[data-testid="disclosure"]')).toHaveLength(1)
+
+    act(() => {
+      trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(trigger?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('Coverage is thin on pricing.')
+  })
+
   it('renders Card subtitle, media, and footer', () => {
     const spec: Spec = {
       root: 'page',

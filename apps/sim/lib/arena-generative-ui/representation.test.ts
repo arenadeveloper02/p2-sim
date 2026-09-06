@@ -25,6 +25,7 @@ describe('ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('Archetype is the job')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('No Kanban type')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('No Timeline type')
+    expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('Repeat of Disclosure')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).not.toContain('collection = Table')
   })
 })

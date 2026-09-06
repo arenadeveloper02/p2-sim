@@ -23,6 +23,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'AppHeader',
       'SearchField',
       'Chip',
+      'Disclosure',
       'Icon',
       'Avatar',
       'EntityHeader',
@@ -107,6 +108,11 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).toContain('the host pages long lists locally')
     expect(prompt).toContain('do not emit a Load more Button')
   })
+
+  it('teaches host-owned Disclosure expand chrome', () => {
+    expect(prompt).toContain('The host paints the chevron')
+    expect(prompt).toContain('do not use Button.selectItem to expand')
+  })
 })
 
 describe('isArenaGenerativeCatalogType', () => {
@@ -114,6 +120,7 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Chat')).toBe(true)
     expect(isArenaGenerativeCatalogType('Workspace')).toBe(true)
     expect(isArenaGenerativeCatalogType('Stepper')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Disclosure')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
   })
 })

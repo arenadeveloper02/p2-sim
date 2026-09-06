@@ -19,6 +19,8 @@ import {
   Building2,
   Calendar,
   Check,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Globe,
   Inbox,
@@ -324,6 +326,19 @@ function viewSwitchChipTone(
           return chipValue === currentText
         }) ?? group[0])
   return elementId === selectedId ? 'brand' : 'muted'
+}
+
+function disclosureInstanceKey(elementId: string, scope?: RepeatItemScope): string {
+  if (!scope) return elementId
+  return `${elementId}:${repeatItemKey(scope.item, scope.index)}`
+}
+
+function disclosureIsOpen(
+  key: string,
+  defaultOpen: boolean,
+  toggled: Record<string, boolean>
+): boolean {
+  return key in toggled ? toggled[key] : defaultOpen
 }
 
 function subtreeHasActionId(
@@ -1867,6 +1882,7 @@ export function SpecRenderer({
   const [localPages, setLocalPagesState] = useState<Record<string, number>>(
     () => (pageKey ? host.pageLocalPages(pageKey) : {})
   )
+  const [disclosureOpen, setDisclosureOpen] = useState<Record<string, boolean>>({})
   const setFormValues = (
     update: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)
   ) => {
@@ -1884,6 +1900,12 @@ export function SpecRenderer({
       if (pageKey) host.setPageLocalPages(pageKey, next)
       return next
     })
+  }
+  const toggleDisclosure = (key: string, defaultOpen: boolean) => {
+    setDisclosureOpen((current) => ({
+      ...current,
+      [key]: !(key in current ? current[key] : defaultOpen),
+    }))
   }
   const knownActionIds = collectKnownActionIds(
     actionHostKeys,
@@ -2821,6 +2843,55 @@ export function SpecRenderer({
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.details)} />
         }
         return <StateKeyValue pairs={pairs} busy={Boolean(statePath && boundPending(statePath))} />
+      }
+      case 'Disclosure': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const title = asString(props.title)
+        const subtitle = asString(props.subtitle)
+        const defaultOpen =
+          asBoolean(props.defaultOpen) || !UX_DEFAULTS.Disclosure.collapsedByDefault
+        const rowKey = disclosureInstanceKey(id, scope)
+        const open = disclosureIsOpen(rowKey, defaultOpen, disclosureOpen)
+        const bodyIds = childIds.filter((childId) => elements[childId]?.type !== 'Icon')
+        const Chevron = open ? ChevronDown : ChevronRight
+        return (
+          <div
+            data-testid='disclosure'
+            className='w-full border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
+            style={styleFromProps(props)}
+          >
+            <button
+              type='button'
+              aria-expanded={open}
+              className='flex w-full items-center justify-between gap-3 py-3 text-left'
+              onClick={() => toggleDisclosure(rowKey, defaultOpen)}
+            >
+              <span className='min-w-0 flex-1'>
+                <span className='block font-medium text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'>
+                  {title}
+                </span>
+                {subtitle ? (
+                  <span className='mt-0.5 block text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+                    {subtitle}
+                  </span>
+                ) : null}
+              </span>
+              <Chevron
+                aria-hidden
+                className='size-[14px] shrink-0 text-[var(--gui-text-muted,#575a66)]'
+              />
+            </button>
+            {open ? (
+              <div className='pb-3 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[1.5]'>
+                {bodyIds.map((childId) => (
+                  <Fragment key={childId}>
+                    {renderNode(childId, scope, childWithinForm, nextFormActionId)}
+                  </Fragment>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )
       }
       case 'Card': {
         if (!fieldIsVisible(props, visibilityValues)) return null

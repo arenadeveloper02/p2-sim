@@ -35,6 +35,9 @@ describe('ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT', () => {
       /tabs[^\n]*Never use Tabs for unrelated actions/
     )
     expect(ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT).toMatch(
+      /disclose[^\n]*Never expand a Repeat row with selectItem/
+    )
+    expect(ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT).toMatch(
       /cards[^\n]*Never nest Cards unnecessarily/
     )
   })

@@ -73,7 +73,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) inside Repeat. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button.',
     },
     Columns: {
       props: z.object({
@@ -177,7 +177,18 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
+        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. Not a FAQ/criteria row — that is Disclosure. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
+    },
+    Disclosure: {
+      props: z.object({
+        title: z.string(),
+        subtitle: z.string().nullable(),
+        defaultOpen: z.boolean().nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Collapsible row: the title stays visible; children show when expanded. Use inside Repeat for FAQ, criteria, or justification lists. Title is "{item.question}" (or a static label such as "Justification"); body is DataText or KeyValue on item.* long fields. The host paints the chevron and keeps expand state per row — multiple rows may be open. Default is collapsed. Do not emit Icon chevrons, do not duplicate open and closed copies, and do not use Button.selectItem to expand. Not Drawer, not History Open, and not a Card with the full body always visible.',
     },
     Heading: {
       props: z.object({

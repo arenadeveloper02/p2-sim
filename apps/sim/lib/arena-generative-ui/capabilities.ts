@@ -107,7 +107,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   inspect: [
     'CAPABILITY: INSPECT',
-    'Open one entity. Honour pages[].interaction.inspect and pages[].regions.inspector. Same-page inspect (inspector region, or inspect that is not navigate) uses Workspace inspector or Drawer — Button selectItem true, showWhen selectedId, ghost clearItem. Do not navigateTo a Detail page and do not invent one. Inspect that replaces the collection is a Detail page the blueprint already listed (navigateTo with ?id=). A small focused view may use Modal; a row that already has prose may stay inline. Do not encode drawer vs page as a second capability. Do not fetch the same record twice.',
+    'Open one entity. Honour pages[].interaction.inspect and pages[].regions.inspector. Same-page inspect (inspector region, or inspect that is not navigate) uses Workspace inspector or Drawer — Button selectItem true, showWhen selectedId, ghost clearItem. Do not navigateTo a Detail page and do not invent one. Inspect that replaces the collection is a Detail page the blueprint already listed (navigateTo with ?id=). A small focused view may use Modal. Expanding FAQ / criteria / justification rows in a list is Disclosure inside Repeat, not selectItem. Do not encode drawer vs page as a second capability. Do not fetch the same record twice.',
   ].join('\n'),
   analyze: [
     'CAPABILITY: ANALYZE',

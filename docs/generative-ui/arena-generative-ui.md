@@ -456,13 +456,13 @@ Load more is the **same action**, not a second binding. Put a Button with that `
 
 ## UI catalog (what the model may emit)
 
-Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`variant` `default` / `muted`, `padding` token or CSS length, `showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
+Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`variant` `default` / `muted`, `padding` token or CSS length, `showWhen`), `Disclosure` (collapsible Repeat row: `title` always visible, children expand on click; host paints the chevron), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
 Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (create / edit / focused secondary action; `showWhen` names an overlay flag; open with `Button.setValue` `creating=true` / `editing=true`; not delete confirm)
 
 Copy: `Heading`, `Text`, `DataText`, `Alert`, `Toast` (transient in-content feedback the brief asked for; not save success), `List`, `ListItem`, `Divider`, `Image`
 
-Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an array of objects), `Repeat` (per-item Card / action / link; bind fields with `statePath` `item.field` and put values into labels and hrefs with `{item.field}`), `Stat` (`label` + `value` or `statePath`, plus an optional `delta` / `deltaTone` change indicator), `KeyValue` (`key: value` rows or a `statePath` object), `Badge`, `EmptyState` (title, optional body/icon; child is the next useful action)
+Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an array of objects), `Repeat` (per-item Card, Disclosure, action, or link; bind fields with `statePath` `item.field` and put values into labels and hrefs with `{item.field}`), `Stat` (`label` + `value` or `statePath`, plus an optional `delta` / `deltaTone` change indicator), `KeyValue` (`key: value` rows or a `statePath` object), `Badge`, `EmptyState` (title, optional body/icon; child is the next useful action)
 
 Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `RadioGroup`, `MultiSelect`, `Checkbox`, `Switch`, `SubmitButton`
 
@@ -480,7 +480,7 @@ Paths listed in `Tabs.items` count as navigation, so a page reachable only throu
 
 ### Repeat (collections)
 
-`Table` is still the right component when every item is the same scalar fields. Use `Repeat` when each item needs its own Card, Badge, button, or link.
+`Table` is still the right component when every item is the same scalar fields. Use `Repeat` when each item needs its own Card, Disclosure, Badge, button, or link.
 
 Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item template and render once per element of the `statePath` array. Wrapping a Grid in Repeat produces N grids.
 
@@ -489,7 +489,8 @@ Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item templ
 - A `Button.selectItem` inside Repeat copies the row into host state (`selected`, `selectedId`, `content` from `output` / `content`) without calling an API. It does **not** restamp `inputs`. **History-style** same-page Open (prose already on the row, no Workspace or Drawer inspector): omit `navigateTo`, hide Repeat with `showWhen: "!selectedId"`, show markdown with `showWhen: "selectedId"`, Back is `clearItem` (no `actionId`). **Workspace and Drawer** keep navigator and primary visible — do not hide them with `!selectedId`; `inspectorWhen` / Drawer `showWhen "selectedId"` reveals inspect. Child lists filter locally when rows include a foreign key (`projectId`) matching the selected parent id. Or `navigateTo` a results page that has **no** `onLoad`. Results after Generate still echo the **form `name`s** (`{targetKeyword}`), not History JSON keys (`{keyword}`). Do not append `DataText` below an always-visible Repeat. Do not set `actionId` on the Open button.
 - A `Button.clearItem` drops `selected`, `selectedId`, and copied `content` so the list returns. It must not set `selectItem` or `actionId`. A `navigateTo` / `NavLink.to` equal to the current path also clears while a row is selected.
 - A `Button.actionId` inside Repeat sends the item's fields as the action input, so `inputMapping` can pass `id` the same way page query params do.
-- Never bind a long prose field (`output`, `content`, `body`) inside Repeat — not `item.output`, not `Card.description`, not a Table column. Select the row, then show the markdown once.
+- FAQ, criteria, and justification lists are `Disclosure` inside Repeat: `title` `"{item.question}"` (or a static label such as `"Justification"`), body `DataText` / `KeyValue` on `item.*`. Clicking the title expands that row; click again to collapse. Several rows may be open. The host paints the chevron — do not emit `Icon` chevrons or a second open/closed copy, and do not use `selectItem` to expand.
+- Never bind a long prose field (`output`, `content`, `body`) as always-visible Repeat copy — not `item.output`, not `Card.description`, not a Table column. History Open still selects the row and shows markdown once. Per-row FAQ bodies belong in `Disclosure` children.
 - The host renders at most 48 items.
 - An empty array is not a blank hole: the host shows `emptyText` (default **No results**). Customise it when the brief names the collection.
 
@@ -573,6 +574,7 @@ Models often reach for names from other design systems. Those are rewritten to t
 | `FilterBar` | `Filter` |
 | `Notification` | `Toast` |
 | `Sheet` | `Drawer` |
+| `Accordion`, `Collapse`, `Collapsible`, `Details`, `Expander`, `ExpansionPanel` | `Disclosure` |
 
 The same pass repairs shape as well as names: a nested `children` tree of objects is flattened into the `{ root, elements }` map, a non-`Page` root is wrapped in `Page` (and `Section`), `Form.submitLabel` becomes a `SubmitButton` child, `Grid.cols: { default: 1, md: 3 }` becomes `columns: "3"`, spacing words such as `md` and `lg` become real lengths, and list props supplied as arrays (`Select.options`, `Table.rows`, `Tabs.items`) are joined into the string encodings the catalog expects. An unknown component type is left alone so validation still reports it instead of silently dropping content.
 
@@ -653,6 +655,7 @@ The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guid
 | Generation error about a SubmitButton doing nothing | A `SubmitButton` ended up outside its `Form` with no `actionId`. Rerun; if it repeats, say in the brief which form the button submits |
 | Preview shows unresolved statePath / unknown type | Copy **Copy as edit instructions** into the block's **Requested Changes** and rerun Edit. Bind a real top-level response field or add `onLoad`. |
 | History list shows every row’s full markdown | The draft bound `item.output` (or dumped `content`). Edit History only: cards bind keyword/client/date; Open is `selectItem` with no `actionId` |
+| FAQ / criteria rows are all expanded, or Open copies a row into `content` | Expanding a list row is `Disclosure`, not `selectItem`. One `Disclosure` per item; the host paints the chevron |
 | History Open appends markdown below the list | Repeat stayed visible. On **History** (no Workspace/Drawer inspector), hide it while `selectedId` is set (`showWhen "!selectedId"`). Back is `clearItem`, not `navigateTo "history"` on History |
 | Workspace Open hides the project list | Navigator/primary must stay visible. Do not put `!selectedId` on those regions. Child tasks need `projectId` matching the selected project; the host filters locally |
 | History Open calls an API or leaves History | Open must not set `actionId` or `navigateTo` when the brief stays on History |

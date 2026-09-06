@@ -32,6 +32,7 @@ const CATALOG_TYPES = [
   'Chart',
   'Sparkline',
   'Chip',
+  'Disclosure',
 ] as const
 
 describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {
@@ -48,9 +49,12 @@ describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {
     )
   })
 
-  it('tells Chip not to duplicate selected state', () => {
+  it('tells Disclosure not to use selectItem or duplicate chevrons', () => {
     expect(ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT).toMatch(
-      /Chip[^\n]*[Dd]o not duplicate brand\/muted chips/
+      /Disclosure[^\n]*[Dd]o not use selectItem/
+    )
+    expect(ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT).toMatch(
+      /Disclosure[^\n]*[Dd]o not emit Icon chevrons/
     )
   })
 
