@@ -1,5 +1,6 @@
 export * from '@/lib/api/contracts/v1/admin/access-control'
 export * from '@/lib/api/contracts/v1/admin/billing'
+export * from '@/lib/api/contracts/v1/admin/client-organizations'
 export * from '@/lib/api/contracts/v1/admin/dashboard'
 export * from '@/lib/api/contracts/v1/admin/dashboard-workspaces'
 export * from '@/lib/api/contracts/v1/admin/global-work'

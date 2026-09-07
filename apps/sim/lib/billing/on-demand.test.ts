@@ -20,11 +20,11 @@ describe('getPooledCreditsRemaining', () => {
 
   it('does not add the credit balance back (the double-count regression)', () => {
     // team_6000, 2 seats: planBase $60 + credits $60 → limit $120, usage ~$62.
-    // Remaining is $58 ≈ 11,600 credits — NOT $118 ≈ 23,600 (limit + credits - usage).
+    // Remaining is $58 ≈ 3,770 credits — NOT $118 ≈ 7,670 (limit + credits - usage).
     const remaining = getPooledCreditsRemaining(120, 62)
     expect(remaining).toBe(58)
-    expect(dollarsToCredits(remaining)).toBe(11_600)
-    expect(dollarsToCredits(remaining)).not.toBe(23_600)
+    expect(dollarsToCredits(remaining)).toBe(3_770)
+    expect(dollarsToCredits(remaining)).not.toBe(7_670)
   })
 
   it('clamps at zero when usage meets or exceeds the limit', () => {

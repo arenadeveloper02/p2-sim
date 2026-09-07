@@ -12,6 +12,7 @@ const {
   mockGetPlanTierCredits,
   mockHasUsableSubscriptionAccess,
   mockGetEffectiveBillingStatus,
+  mockIsBlockingOrgSubscription,
 } = vi.hoisted(() => ({
   mockGetHighestPrioritySubscription: vi.fn(),
   mockGetHighestPriorityPersonalSubscription: vi.fn(),
@@ -20,6 +21,7 @@ const {
   mockGetPlanTierCredits: vi.fn(),
   mockHasUsableSubscriptionAccess: vi.fn(),
   mockGetEffectiveBillingStatus: vi.fn(),
+  mockIsBlockingOrgSubscription: vi.fn(),
 }))
 
 vi.mock('@/lib/billing/core/access', () => ({
@@ -44,6 +46,10 @@ vi.mock('@/lib/billing/plan-helpers', () => ({
   sqlIsPaid: vi.fn(() => ({ type: 'sqlIsPaid' })),
 }))
 
+vi.mock('@/lib/billing/arena/checkout-policy', () => ({
+  isBlockingOrgSubscription: mockIsBlockingOrgSubscription,
+}))
+
 /** Mirrors the production sets exactly — a mock that widens them would let a gate regress unnoticed. */
 vi.mock('@/lib/billing/subscriptions/utils', () => ({
   checkEnterprisePlan: mockCheckEnterprisePlan,
@@ -59,12 +65,15 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
 }))
 
 import {
+  ensureSubscriptionStripeCustomerId,
   getOrganizationCoverageForMember,
   getOrganizationIdForSubscriptionReference,
+  hasBlockingOrgCheckoutSubscription,
   hasPaidSubscription,
   hasWorkspaceLiveSyncAccess,
   hasWorkspaceSandboxAccess,
   isWorkspaceOnEnterprisePlan,
+  resolveBillingInterval,
   syncSubscriptionPlan,
 } from '@/lib/billing/core/subscription'
 
@@ -106,6 +115,33 @@ describe('hasPaidSubscription', () => {
   })
 })
 
+describe('hasBlockingOrgCheckoutSubscription', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns false when no entitled subscription exists', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+
+    await expect(hasBlockingOrgCheckoutSubscription('org-1')).resolves.toBe(false)
+    expect(mockIsBlockingOrgSubscription).not.toHaveBeenCalled()
+  })
+
+  it('delegates to isBlockingOrgSubscription when an entitled row exists', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([{ id: 'sub-1', plan: 'starter' }])
+    mockIsBlockingOrgSubscription.mockReturnValueOnce(false)
+
+    await expect(hasBlockingOrgCheckoutSubscription('org-1')).resolves.toBe(false)
+    expect(mockIsBlockingOrgSubscription).toHaveBeenCalledWith({ id: 'sub-1', plan: 'starter' })
+  })
+
+  it('fails closed by default when the lookup errors', async () => {
+    dbChainMockFns.limit.mockRejectedValueOnce(new Error('db unavailable'))
+
+    await expect(hasBlockingOrgCheckoutSubscription('org-1')).resolves.toBe(true)
+  })
+})
+
 describe('syncSubscriptionPlan', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -144,6 +180,57 @@ describe('syncSubscriptionPlan', () => {
     await expect(syncSubscriptionPlan('sub-1', 'team_6000', null, 'org-1')).resolves.toBe(
       'team_6000'
     )
+    expect(dbChainMockFns.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('ensureSubscriptionStripeCustomerId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns the existing customer id without writing', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: 'cus_existing',
+        stripeSubscription: { customer: 'cus_from_stripe' },
+      })
+    ).resolves.toBe('cus_existing')
+    expect(dbChainMockFns.update).not.toHaveBeenCalled()
+  })
+
+  it('backfills from a string Stripe customer id when the row is missing one', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: null,
+        stripeSubscription: { customer: 'cus_new' },
+      })
+    ).resolves.toBe('cus_new')
+    expect(dbChainMockFns.update).toHaveBeenCalled()
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ stripeCustomerId: 'cus_new' })
+  })
+
+  it('backfills from an expanded Stripe customer object', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: undefined,
+        stripeSubscription: { customer: { id: 'cus_obj' } as never },
+      })
+    ).resolves.toBe('cus_obj')
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ stripeCustomerId: 'cus_obj' })
+  })
+
+  it('returns null without writing when Stripe has no customer', async () => {
+    await expect(
+      ensureSubscriptionStripeCustomerId({
+        subscriptionId: 'sub-1',
+        currentStripeCustomerId: null,
+        stripeSubscription: { customer: null },
+      })
+    ).resolves.toBeNull()
     expect(dbChainMockFns.update).not.toHaveBeenCalled()
   })
 })
@@ -415,5 +502,29 @@ describe('hasWorkspaceSandboxAccess', () => {
 
     await expect(hasWorkspaceSandboxAccess('workspace-host')).resolves.toBe(true)
     expect(mockGetWorkspaceWithOwner).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveBillingInterval', () => {
+  it('prefers the billing_interval column over metadata', () => {
+    expect(
+      resolveBillingInterval({
+        billingInterval: 'year',
+        metadata: { billingInterval: 'month' },
+      })
+    ).toBe('year')
+  })
+
+  it('falls back to metadata when the column is unset', () => {
+    expect(
+      resolveBillingInterval({
+        billingInterval: null,
+        metadata: { billingInterval: 'year' },
+      })
+    ).toBe('year')
+  })
+
+  it('defaults to month when neither source is set', () => {
+    expect(resolveBillingInterval({ billingInterval: null, metadata: null })).toBe('month')
   })
 })

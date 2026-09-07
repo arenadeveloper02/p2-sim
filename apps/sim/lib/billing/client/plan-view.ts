@@ -1,3 +1,5 @@
+import { isStarterPlan } from '@/lib/billing/arena/starter-plan'
+import { getArenaPlanTierDollars, isArenaMaxPlan } from '@/lib/billing/arena/tier-config'
 import { MAX_TIER_CREDITS } from '@/lib/billing/constants'
 import { getPlanTierCredits, isEnterprise, isFree, isPaid } from '@/lib/billing/plan-helpers'
 
@@ -55,7 +57,9 @@ const PLAN_RANK: Record<PlanTier, number> = { free: 0, pro: 1, max: 2, enterpris
  */
 export function resolvePlanTier(plan: string | null | undefined): PlanTier {
   if (isEnterprise(plan)) return 'enterprise'
-  if (isFree(plan)) return 'free'
+  if (isFree(plan) || isStarterPlan(plan)) return 'free'
+  if (isArenaMaxPlan(plan)) return 'max'
+  if (getArenaPlanTierDollars(plan) != null) return 'pro'
   return getPlanTierCredits(plan) >= MAX_TIER_CREDITS ? 'max' : 'pro'
 }
 

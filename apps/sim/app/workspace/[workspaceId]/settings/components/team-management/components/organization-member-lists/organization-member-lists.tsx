@@ -192,10 +192,9 @@ export function OrganizationMemberLists({
                 },
               ]
             : []),
-          // Temporarily hidden: transfer ownership is disabled for owners until the flow is re-enabled.
-          // ...(isSelf && isOwner && onTransferOwnership
-          //   ? [{ label: 'Transfer ownership', onSelect: () => onTransferOwnership() }]
-          //   : []),
+          ...(isSelf && isOwner && onTransferOwnership
+            ? [{ label: 'Transfer ownership', onSelect: () => onTransferOwnership() }]
+            : []),
           ...(canManage && isSelf && !isOwner
             ? [
                 {

@@ -4,6 +4,9 @@ import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, ne, sql } from 'drizzle-orm'
+import { isBlockingOrgSubscription } from '@/lib/billing/arena/checkout-policy'
+import { getFlatOrgPriceDollars } from '@/lib/billing/arena/org-pricing'
+import { supersedeStarterSubscriptions } from '@/lib/billing/arena/supersede-starter'
 import { getPlanPricing, isSubscriptionOrgScoped } from '@/lib/billing/core/billing'
 import { getOrganizationIdForSubscriptionReference } from '@/lib/billing/core/subscription'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
@@ -219,7 +222,7 @@ export async function ensureOrganizationForTeamSubscription(
         }
 
         const [existingOrgSub] = await tx
-          .select({ id: subscriptionTable.id })
+          .select({ id: subscriptionTable.id, plan: subscriptionTable.plan })
           .from(subscriptionTable)
           .where(
             and(
@@ -230,12 +233,15 @@ export async function ensureOrganizationForTeamSubscription(
           .limit(1)
 
         if (existingOrgSub) {
-          logger.error('Organization already has an active subscription', {
-            userId,
-            organizationId: membership.organizationId,
-            newSubscriptionId: subscription.id,
-          })
-          throw new Error('Organization already has an active subscription')
+          if (isBlockingOrgSubscription(existingOrgSub)) {
+            logger.error('Organization already has an active subscription', {
+              userId,
+              organizationId: membership.organizationId,
+              newSubscriptionId: subscription.id,
+            })
+            throw new Error('Organization already has an active subscription')
+          }
+          await supersedeStarterSubscriptions(membership.organizationId, subscription.id, tx)
         }
 
         await tx
@@ -303,7 +309,7 @@ export async function ensureOrganizationForTeamSubscription(
     }
 
     const [existingOrgSub] = await tx
-      .select({ id: subscriptionTable.id })
+      .select({ id: subscriptionTable.id, plan: subscriptionTable.plan })
       .from(subscriptionTable)
       .where(
         and(
@@ -314,7 +320,10 @@ export async function ensureOrganizationForTeamSubscription(
       )
       .limit(1)
     if (existingOrgSub) {
-      throw new Error('Organization already has an active subscription')
+      if (isBlockingOrgSubscription(existingOrgSub)) {
+        throw new Error('Organization already has an active subscription')
+      }
+      await supersedeStarterSubscriptions(orgId, subscription.id, tx)
     }
 
     await tx
@@ -416,7 +425,7 @@ export async function ensureOrganizationForTeamSubscriptionTx(
     }
 
     const [existingOrganizationSubscription] = await tx
-      .select({ id: subscriptionTable.id })
+      .select({ id: subscriptionTable.id, plan: subscriptionTable.plan })
       .from(subscriptionTable)
       .where(
         and(
@@ -427,7 +436,10 @@ export async function ensureOrganizationForTeamSubscriptionTx(
       )
       .limit(1)
     if (existingOrganizationSubscription) {
-      throw new Error('Organization already has an active subscription')
+      if (isBlockingOrgSubscription(existingOrganizationSubscription)) {
+        throw new Error('Organization already has an active subscription')
+      }
+      await supersedeStarterSubscriptions(organizationId, subscription.id, tx)
     }
   } else {
     await acquireUserBillingIdentityLock(tx, userId)
@@ -529,9 +541,13 @@ export async function syncSubscriptionUsageLimits(subscription: SubscriptionData
       // Min = (basePrice × seats) + prepaid balance. Prepaid credits are
       // additive headroom and must not be absorbed by a later seat increase.
       if (isPaid(subscription.plan) && !isEnterprise(subscription.plan)) {
+        const flatPrice = getFlatOrgPriceDollars(subscription.plan)
         const { basePrice } = getPlanPricing(subscription.plan)
         const seats = subscription.seats || 1
-        const planBase = toDecimal(basePrice).times(seats).toString()
+        const planBase =
+          flatPrice != null
+            ? toDecimal(flatPrice).toString()
+            : toDecimal(basePrice).times(seats).toString()
         const liveMinimum = sql`${planBase}::numeric + ${organization.creditBalance}`
 
         await db
@@ -550,8 +566,8 @@ export async function syncSubscriptionUsageLimits(subscription: SubscriptionData
         logger.info('Synchronized organization plan-plus-prepaid minimum', {
           organizationId,
           plan: subscription.plan,
-          seats,
-          basePrice,
+          seats: flatPrice != null ? 1 : seats,
+          basePrice: flatPrice ?? basePrice,
         })
       }
 
