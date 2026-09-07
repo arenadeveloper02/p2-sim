@@ -278,7 +278,7 @@ describe('executeSsmTool', () => {
     })
 
     it('keeps the written value out of the put_parameter failure envelope', async () => {
-      const secret = 'postgres://user:hunter2@db.example.com/app'
+      const secret = 'postgres://user:hunter2@localhost/app'
       mockOperations.executeSsmPutParameter.mockRejectedValue(
         new Error('ParameterAlreadyExists: the parameter already exists')
       )
