@@ -105,7 +105,7 @@ describe('editInstructionsFromDiagnostics', () => {
   it('formats a paste-ready Requested Changes prompt', () => {
     const text = editInstructionsFromDiagnostics(collectRenderDiagnostics(spec, {}, false), 'home')
     expect(text).toContain('Paste into Requested Changes')
-    expect(text).toContain('On the "home" page, bind "table" to {user_input}')
+    expect(text).toContain('On the "home" page, "table" is bound to "articles"')
     expect(text).toContain('replace "widget" with a catalog type')
     expect(text).toContain('Do not invent UnknownWidget')
   })

@@ -25,6 +25,8 @@ export interface PreviewEditInstructionInput {
   /** Overlay flags (`creating` / `editing`) found on Button setValue or Modal showWhen. */
   overlayFlags?: readonly string[]
   apiBindingKeys?: readonly string[]
+  /** layoutPlan.hostKeys from Add an API, used when unresolved statePaths need a rebind target. */
+  outputHostKeys?: readonly string[]
 }
 
 const HEADER =
@@ -43,7 +45,7 @@ function hasType(types: readonly string[] | undefined, type: string): boolean {
   return Boolean(types?.includes(type))
 }
 
-function diagnosticLine(item: RenderDiagnostic, pagePath: string): string {
+function diagnosticLine(item: RenderDiagnostic, pagePath: string): string | undefined {
   const prefix = pagePrefix(pagePath)
   if (item.kind === 'throw') {
     return `${prefix} ${USER_INPUT_PLACEHOLDER} (describe the broken region). The renderer threw: ${item.message}`
@@ -53,12 +55,67 @@ function diagnosticLine(item: RenderDiagnostic, pagePath: string): string {
     const id = item.elementId ?? 'that element'
     return `${prefix} replace "${id}" with a catalog type (Table, Repeat, Card, or DataText). Do not invent ${type}.`
   }
+  if (item.kind !== 'unresolved-state-path') {
+    return undefined
+  }
   const id = item.elementId ?? 'that element'
   const path = item.statePath ?? 'that field'
   if (item.statePath && isActionTelemetryRoot(item.statePath)) {
     return `${prefix} remove "${id}" bound to "${path}"; the host strips execution telemetry.`
   }
-  return `${prefix} bind "${id}" to ${USER_INPUT_PLACEHOLDER} (a top-level field from the Sample response in Add an API), or add that field to onLoad.`
+  return undefined
+}
+
+function uniqueHostKeys(keys: readonly string[] | undefined): string[] {
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const key of keys ?? []) {
+    const trimmed = key.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    unique.push(trimmed)
+  }
+  return unique
+}
+
+function unresolvedStatePathLines(
+  diagnostics: readonly RenderDiagnostic[],
+  pagePath: string,
+  outputHostKeys: readonly string[] | undefined
+): string[] {
+  const items = (diagnostics ?? []).filter(
+    (item) =>
+      item.kind === 'unresolved-state-path' &&
+      !(item.statePath && isActionTelemetryRoot(item.statePath))
+  )
+  if (items.length === 0) {
+    return []
+  }
+
+  const prefix = pagePrefix(pagePath)
+  const available = uniqueHostKeys(outputHostKeys)
+  const hostHint =
+    available.length > 0
+      ? ` Available host keys: ${available.slice(0, 16).join(', ')}.`
+      : ' Use a top-level field from Add an API Output schema.'
+  const rows = items.map((item) => {
+    const id = item.elementId ?? 'that element'
+    const path = item.statePath ?? 'that field'
+    return `"${id}" → "${path}"`
+  })
+
+  if (rows.length === 1) {
+    const item = items[0]
+    const id = item.elementId ?? 'that element'
+    const path = item.statePath ?? 'that field'
+    return [
+      `${prefix} "${id}" is bound to "${path}", which is not in host state. Load it with onLoad, or rebind.${hostHint}`,
+    ]
+  }
+
+  return [
+    `${prefix} these widgets are bound to fields that are not in host state. Load them with onLoad, or rebind each to a top-level Output schema field.${hostHint}\n  - ${rows.join('\n  - ')}`,
+  ]
 }
 
 function warningLine(
@@ -197,7 +254,8 @@ export function overlayFlagsFromManifest(manifest: ArenaGenerativeAppManifest): 
 
 /**
  * Pasteable Requested Changes from generate notes, catalog limits, and
- * live render problems. Placeholders mark copy the author must fill in.
+ * live render problems. `{user_input}` is only used when Preview cannot
+ * name the copy or field; unresolved statePaths include the bound path.
  */
 export function buildPreviewEditInstructions(input: PreviewEditInstructionInput): string {
   const lines: string[] = []
@@ -209,6 +267,13 @@ export function buildPreviewEditInstructions(input: PreviewEditInstructionInput)
     lines.push(trimmed)
   }
 
+  for (const line of unresolvedStatePathLines(
+    input.diagnostics ?? [],
+    input.pagePath,
+    input.outputHostKeys
+  )) {
+    push(line)
+  }
   for (const item of input.diagnostics ?? []) {
     push(diagnosticLine(item, input.pagePath))
   }
@@ -232,5 +297,9 @@ export function buildPreviewEditInstructions(input: PreviewEditInstructionInput)
   }
 
   if (lines.length === 0) return ''
-  return [HEADER, ...lines.map((line) => `- ${line}`)].join('\n')
+  const needsPlaceholder = lines.some((line) => line.includes(USER_INPUT_PLACEHOLDER))
+  const header = needsPlaceholder
+    ? HEADER
+    : 'Paste into Requested Changes.'
+  return [header, ...lines.map((line) => `- ${line}`)].join('\n')
 }

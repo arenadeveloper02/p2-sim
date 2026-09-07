@@ -454,14 +454,14 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     pagePath = 'home'
     renderHost()
     expect(container.querySelector('[data-testid="preview-diagnostics-banner"]')).toBeNull()
-    expect(container.textContent).not.toContain('bind "table" to {user_input}')
+    expect(container.textContent).not.toContain('"table" is bound to "articles"')
     const open = container.querySelector('[data-testid="preview-view-edit-instructions"]')
     expect(open?.textContent).toContain('View edit instructions')
     act(() => {
       open?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('[data-testid="preview-author-notes"]')?.textContent).toContain(
-      'bind "table" to {user_input}'
+      '"table" is bound to "articles"'
     )
   })
 

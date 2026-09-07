@@ -16,7 +16,7 @@ describe('buildPreviewEditInstructions', () => {
     expect(buildPreviewEditInstructions({ pagePath: 'home' })).toBe('')
   })
 
-  it('turns unresolved statePath into a bind instruction with a placeholder', () => {
+  it('turns unresolved statePath into a bind instruction that names the missing field', () => {
     const text = buildPreviewEditInstructions({
       pagePath: 'home',
       diagnostics: [
@@ -29,9 +29,36 @@ describe('buildPreviewEditInstructions', () => {
       ],
     })
     expect(text).toContain('Paste into Requested Changes')
-    expect(text).toContain('{user_input}')
-    expect(text).toContain('On the "home" page, bind "table" to {user_input}')
-    expect(text).toContain('Add an API')
+    expect(text).not.toContain('{user_input}')
+    expect(text).not.toContain('Replace {user_input}')
+    expect(text).toContain('"table" is bound to "articles"')
+    expect(text).toContain('Add an API Output schema')
+  })
+
+  it('groups several unresolved widgets and lists available host keys', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'home',
+      outputHostKeys: ['citations', 'score', 'citations'],
+      diagnostics: [
+        {
+          kind: 'unresolved-state-path',
+          elementId: 'citations_table',
+          statePath: 'citations',
+          message: 'Unresolved statePath "citations" on Table "citations_table".',
+        },
+        {
+          kind: 'unresolved-state-path',
+          elementId: 'stat_overall_score',
+          statePath: 'overall_score',
+          message: 'Unresolved statePath "overall_score" on Stat "stat_overall_score".',
+        },
+      ],
+    })
+    expect(text).toContain('these widgets are bound to fields that are not in host state')
+    expect(text).toContain('"citations_table" → "citations"')
+    expect(text).toContain('"stat_overall_score" → "overall_score"')
+    expect(text).toContain('Available host keys: citations, score')
+    expect(text).not.toContain('{user_input}')
   })
 
   it('asks to bind a dropped planner action to Add an API', () => {

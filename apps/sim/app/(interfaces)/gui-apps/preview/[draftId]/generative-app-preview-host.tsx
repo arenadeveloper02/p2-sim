@@ -196,6 +196,7 @@ export function GenerativeAppPreviewHost({
     appCatalogTypes: catalogTypesFromManifest(manifest),
     overlayFlags: overlayFlagsFromManifest(manifest),
     apiBindingKeys: (apiBindings ?? []).map((binding) => binding.key),
+    outputHostKeys: layoutPlansFromBindings(apiBindings ?? []).flatMap((plan) => plan.hostKeys),
   })
   const liveTheme = themeOverride ?? manifest.theme
   const pagePrompt = pageEditPrompt(pagePath)
