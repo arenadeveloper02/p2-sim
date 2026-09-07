@@ -125,11 +125,11 @@ export async function parseQueryWithAI(
 Always return valid JSON. Never refuse to generate a response.`
 
   try {
-    const apiKey = getApiKey('openai', 'gpt-4o')
+    const apiKey = getApiKey('anthropic', 'claude-sonnet-4-6')
 
     logger.info('Making AI request for Facebook Ads query parsing', {
       hasApiKey: !!apiKey,
-      model: 'gpt-4o',
+      model: 'claude-sonnet-4-6',
       intents,
     })
 
@@ -142,8 +142,8 @@ Always return valid JSON. Never refuse to generate a response.`
 
     const fullSystemPrompt = `${systemPrompt}\n\n${responseInstructions}`
 
-    const aiResponse = await executeProviderRequest('openai', {
-      model: 'gpt-4o',
+    const aiResponse = await executeProviderRequest('anthropic', {
+      model: 'claude-sonnet-4-6',
       systemPrompt: fullSystemPrompt,
       context: `Parse this Facebook Ads question for account "${accountName}": "${userQuery}"`,
       messages: [

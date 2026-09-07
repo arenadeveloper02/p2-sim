@@ -4,11 +4,6 @@
  */
 
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  getCachedAdsQuery,
-  parsedAdsQueryCacheParts,
-  setCachedAdsQuery,
-} from '@/lib/ads-query-cache.server'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getBingAdsAccounts } from '@/lib/channel-accounts'
 import { makeBingAdsRequest } from './bing-ads-api'
@@ -67,40 +62,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       )
     }
 
-    // Serve a repeat of the same question on the same account/day from Redis,
-    // skipping both the query-generation LLM call and the Bing Ads API call.
-    const cacheParts = { workspaceId, accountKey: resolvedAccountKey, question: query }
-    const cachedResponse = await getCachedAdsQuery<Record<string, unknown>>('bing', cacheParts)
-    if (cachedResponse) {
-      return NextResponse.json({
-        ...cachedResponse,
-        execution_time_ms: Date.now() - startTime,
-      })
-    }
-
     // Generate Bing Ads query using AI
     const queryResult = await generateBingAdsQuery(query)
-
-    const parsedCacheParts = parsedAdsQueryCacheParts(workspaceId, resolvedAccountKey, {
-      reportType: queryResult.reportType,
-      columns: queryResult.columns,
-      timeRange: queryResult.timeRange,
-      aggregation: queryResult.aggregation,
-      campaignFilter: queryResult.campaignFilter ?? '',
-      adGroupFilter: queryResult.adGroupFilter ?? '',
-      keywordFilter: queryResult.keywordFilter ?? '',
-    })
-    const parsedCachedResponse = await getCachedAdsQuery<Record<string, unknown>>(
-      'bing',
-      parsedCacheParts
-    )
-    if (parsedCachedResponse) {
-      await setCachedAdsQuery('bing', cacheParts, parsedCachedResponse)
-      return NextResponse.json({
-        ...parsedCachedResponse,
-        execution_time_ms: Date.now() - startTime,
-      })
-    }
 
     // Execute the Bing Ads query against Bing Ads API using the exact dates
     // the model calculated. Do not snap to Last7/14/30 presets — that made
@@ -150,10 +113,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       totals: processedResults.totals,
       execution_time_ms: executionTime,
     }
-
-    // Cache only successful responses; errors never enter the cache.
-    await setCachedAdsQuery('bing', cacheParts, response)
-    await setCachedAdsQuery('bing', parsedCacheParts, response)
 
     return NextResponse.json(response)
   } catch (error) {

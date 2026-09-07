@@ -1,10 +1,5 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  getCachedAdsQuery,
-  parsedAdsQueryCacheParts,
-  setCachedAdsQuery,
-} from '@/lib/ads-query-cache.server'
 import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
@@ -93,7 +88,7 @@ export async function POST(request: NextRequest) {
     const body: FacebookAdsRequest = await request.json()
     const workspaceId =
       body.workspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
-    const { query, date_preset = 'last_30d', time_range, fields, level = 'account' } = body
+    const { query, date_preset = 'last_30d', time_range, level = 'account' } = body
 
     if (!query) {
       return NextResponse.json(
@@ -148,26 +143,6 @@ export async function POST(request: NextRequest) {
       useAdminCredentials,
     })
 
-    // Question key: exact (normalized) tool wording. Parsed key: same Meta
-    // request after the LLM rewrite — that is what makes "ROAS per campaign"
-    // and "purchase value for all campaigns" share a cache entry.
-    const cacheParts = {
-      workspaceId,
-      accountKey: accountId,
-      question: query,
-      extra: {
-        date_preset,
-        level,
-        time_range: time_range ? JSON.stringify(time_range) : undefined,
-        fields: fields ? JSON.stringify(fields) : undefined,
-      },
-    }
-    const cachedResponse = await getCachedAdsQuery<FacebookAdsResponse>('facebook', cacheParts)
-    if (cachedResponse) {
-      logger.info('Serving Facebook Ads response from cache', { requestId, via: 'question' })
-      return NextResponse.json({ ...cachedResponse, requestId, timestamp })
-    }
-
     const parsedQuery = await parseQueryWithAI(query, accountName)
 
     logger.info('AI parsed query', { parsedQuery })
@@ -181,25 +156,6 @@ export async function POST(request: NextRequest) {
       level: parsedQuery.level || level,
       filters: parsedQuery.filters,
       breakdowns: parsedQuery.breakdowns,
-    }
-
-    const parsedCacheParts = parsedAdsQueryCacheParts(workspaceId, accountId, {
-      endpoint: requestOptions.endpoint,
-      fields: requestOptions.fields,
-      date_preset: requestOptions.date_preset,
-      time_range: requestOptions.time_range,
-      level: requestOptions.level,
-      filters: requestOptions.filters,
-      breakdowns: requestOptions.breakdowns,
-    })
-    const parsedCachedResponse = await getCachedAdsQuery<FacebookAdsResponse>(
-      'facebook',
-      parsedCacheParts
-    )
-    if (parsedCachedResponse) {
-      logger.info('Serving Facebook Ads response from cache', { requestId, via: 'parsed' })
-      await setCachedAdsQuery('facebook', cacheParts, parsedCachedResponse)
-      return NextResponse.json({ ...parsedCachedResponse, requestId, timestamp })
     }
 
     const result = useAdminCredentials
@@ -232,10 +188,6 @@ export async function POST(request: NextRequest) {
       requestId,
       resultsCount: (result as { data?: unknown[] })?.data?.length || 0,
     })
-
-    // Cache only successful responses (admin and OAuth). Never store the token.
-    await setCachedAdsQuery('facebook', cacheParts, response)
-    await setCachedAdsQuery('facebook', parsedCacheParts, response)
 
     return NextResponse.json(response)
   } catch (error) {

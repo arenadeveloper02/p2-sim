@@ -1,10 +1,5 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  getCachedAdsQuery,
-  parsedAdsQueryCacheParts,
-  setCachedAdsQuery,
-} from '@/lib/ads-query-cache.server'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -102,39 +97,8 @@ export async function POST(request: NextRequest) {
       accountName: accountInfo.name,
     })
 
-    // Serve a repeat of the same question on the same account/day from Redis,
-    // skipping both the GAQL-generation LLM call and the Google Ads API call.
-    const cacheParts = { workspaceId, accountKey: resolvedAccountKey, question: query }
-    const cachedResponse = await getCachedAdsQuery('google', cacheParts)
-    if (cachedResponse) {
-      logger.info(`[${requestId}] Serving Google Ads response from cache`, {
-        executionTime: Date.now() - startTime,
-      })
-      return NextResponse.json(cachedResponse)
-    }
-
     // Use smart parsing to generate GAQL query based on the user's question
     const queryResult = await generateSmartGAQL(query, accountInfo.name)
-
-    // Same GAQL + dates + account = same data, even if the agent reworded the tool query.
-    const parsedCacheParts = parsedAdsQueryCacheParts(workspaceId, resolvedAccountKey, {
-      gaqlQuery: queryResult.gaqlQuery,
-      startDate: queryResult.startDate,
-      endDate: queryResult.endDate,
-      queryType: queryResult.queryType,
-      comparisonQuery: queryResult.comparisonQuery ?? '',
-      comparisonStartDate: queryResult.comparisonStartDate ?? '',
-      comparisonEndDate: queryResult.comparisonEndDate ?? '',
-    })
-    const parsedCachedResponse = await getCachedAdsQuery('google', parsedCacheParts)
-    if (parsedCachedResponse) {
-      logger.info(`[${requestId}] Serving Google Ads response from cache`, {
-        via: 'parsed',
-        executionTime: Date.now() - startTime,
-      })
-      await setCachedAdsQuery('google', cacheParts, parsedCachedResponse)
-      return NextResponse.json(parsedCachedResponse)
-    }
 
     logger.info(`[${requestId}] Smart-generated query details`, {
       queryType: queryResult.queryType,
@@ -243,11 +207,6 @@ export async function POST(request: NextRequest) {
           }
         : null,
     })
-
-    // Cache only successful responses; errors never enter the cache.
-    // Write both the raw question key and the parsed GAQL key.
-    await setCachedAdsQuery('google', cacheParts, response)
-    await setCachedAdsQuery('google', parsedCacheParts, response)
 
     return NextResponse.json(response)
   } catch (error) {

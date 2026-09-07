@@ -5,11 +5,6 @@
 
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  getCachedAdsQuery,
-  parsedAdsQueryCacheParts,
-  setCachedAdsQuery,
-} from '@/lib/ads-query-cache.server'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -113,17 +108,6 @@ export async function POST(request: NextRequest) {
       accountName: accountInfo.name,
     })
 
-    // Serve a repeat of the same question on the same account from Redis,
-    // skipping both the GAQL-generation LLM call and the Google Ads API call.
-    const cacheParts = { workspaceId, accountKey: resolvedAccountKey, question: query }
-    const cachedResponse = await getCachedAdsQuery<Record<string, unknown>>('google', cacheParts)
-    if (cachedResponse) {
-      logger.info(`[${requestId}] Serving Google Ads V1 response from cache`, {
-        executionTime: Date.now() - startTime,
-      })
-      return NextResponse.json(cachedResponse)
-    }
-
     // Generate GAQL query using AI
     const queryResult = await generateGAQLQuery(query)
 
@@ -133,23 +117,6 @@ export async function POST(request: NextRequest) {
       tables: queryResult.tables_used,
       metrics: queryResult.metrics_used,
     })
-
-    // Same GAQL + account = same data, even if the agent reworded the tool query.
-    const parsedCacheParts = parsedAdsQueryCacheParts(workspaceId, resolvedAccountKey, {
-      gaqlQuery: queryResult.gaql_query,
-    })
-    const parsedCachedResponse = await getCachedAdsQuery<Record<string, unknown>>(
-      'google',
-      parsedCacheParts
-    )
-    if (parsedCachedResponse) {
-      logger.info(`[${requestId}] Serving Google Ads V1 response from cache`, {
-        via: 'parsed',
-        executionTime: Date.now() - startTime,
-      })
-      await setCachedAdsQuery('google', cacheParts, parsedCachedResponse)
-      return NextResponse.json(parsedCachedResponse)
-    }
 
     // Execute the GAQL query against Google Ads API
     logger.info(`[${requestId}] Executing GAQL query against account ${accountInfo.id}`)
@@ -196,9 +163,6 @@ export async function POST(request: NextRequest) {
       ...(queryResult.model ? { model: queryResult.model } : {}),
       ...(queryResult.tokens ? { tokens: queryResult.tokens } : {}),
     }
-
-    await setCachedAdsQuery('google', cacheParts, response)
-    await setCachedAdsQuery('google', parsedCacheParts, response)
 
     return NextResponse.json(response)
   } catch (error) {
