@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { db } from '@sim/db'
 import { arenaSsoTicket, session as sessionTable, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { setSessionCookie } from 'better-auth/cookies'
+import { type CookieOptions, serializeCookie, serializeSignedCookie } from 'better-call'
 import { and, eq, gt, isNull } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
@@ -140,9 +142,10 @@ export async function validateArenaJwtViaAccountService(
 
   const status = payload.statusCode ?? response.status
   if (status !== 200 || !payload.response?.email) {
+    const mappedStatus = status === 429 ? 429 : status >= 500 ? status : 401
     return {
       ok: false,
-      status: status === 429 ? 429 : 401,
+      status: mappedStatus,
       error: payload.errorResponse || 'Invalid or expired Arena token',
     }
   }
@@ -178,11 +181,98 @@ export function buildArenaSsoClearCookie(): string {
   return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None`
 }
 
-function buildSessionSetCookie(sessionToken: string): string {
-  const secure = true
-  const name = secure ? '__Secure-better-auth.session_token' : 'better-auth.session_token'
-  const maxAge = 30 * 24 * 60 * 60
-  return `${name}=${sessionToken}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=None`
+/** Arena → Sim is cross-site fetch; Lax cookies from that response are dropped. */
+const CROSS_SITE_COOKIE: CookieOptions = {
+  sameSite: 'none',
+  secure: true,
+  httpOnly: true,
+  path: '/',
+}
+
+function withCrossSiteCookie(options?: CookieOptions): CookieOptions {
+  return {
+    ...options,
+    ...CROSS_SITE_COOKIE,
+    domain: undefined,
+  }
+}
+
+function collectSetCookieHeaders(headers: Headers): string[] {
+  if (typeof headers.getSetCookie === 'function') {
+    return headers.getSetCookie()
+  }
+  const raw = headers.get('set-cookie')
+  return raw ? [raw] : []
+}
+
+/**
+ * Same writer email sign-in uses (`setSessionCookie`): signed session_token +
+ * session_data. Attributes forced to SameSite=None so Arena can store them.
+ */
+export async function buildBetterAuthSessionSetCookies(params: {
+  session: {
+    id: string
+    token: string
+    userId: string
+    expiresAt: Date
+    createdAt: Date
+    updatedAt: Date
+    ipAddress?: string | null
+    userAgent?: string | null
+    activeOrganizationId?: string | null
+    impersonatedBy?: string | null
+  }
+  user: {
+    id: string
+    name: string
+    email: string
+    emailVerified: boolean
+    image?: string | null
+    createdAt: Date
+    updatedAt: Date
+  }
+}): Promise<string[]> {
+  const authCtx = await auth.$context
+  const responseHeaders = new Headers()
+
+  const endpointCtx = {
+    context: {
+      ...authCtx,
+      responseHeaders,
+      setNewSession: authCtx.setNewSession?.bind(authCtx) ?? (() => undefined),
+    },
+    responseHeaders,
+    headers: new Headers(),
+    getCookie: () => null,
+    getSignedCookie: async () => null,
+    setCookie: (key: string, value: string, options?: CookieOptions) => {
+      const cookie = serializeCookie(key, value, withCrossSiteCookie(options))
+      responseHeaders.append('set-cookie', cookie)
+      return cookie
+    },
+    setSignedCookie: async (
+      key: string,
+      value: string,
+      secret: string,
+      options?: CookieOptions
+    ) => {
+      const cookie = await serializeSignedCookie(key, value, secret, withCrossSiteCookie(options))
+      responseHeaders.append('set-cookie', cookie)
+      return cookie
+    },
+  }
+
+  await setSessionCookie(
+    endpointCtx as unknown as Parameters<typeof setSessionCookie>[0],
+    {
+      session: params.session,
+      user: params.user,
+    },
+    false,
+    CROSS_SITE_COOKIE
+  )
+
+  return collectSetCookieHeaders(responseHeaders)
 }
 
 export async function upsertTicketAndSession(params: {
@@ -248,9 +338,27 @@ export async function upsertTicketAndSession(params: {
     throw new Error('Failed to create Better Auth session')
   }
 
+  const [simUser] = await db.select().from(user).where(eq(user.id, params.userId)).limit(1)
+  if (!simUser) {
+    throw new Error('Failed to load Sim user for session cookies')
+  }
+
+  const sessionCookies = await buildBetterAuthSessionSetCookies({
+    session,
+    user: {
+      id: simUser.id,
+      name: simUser.name,
+      email: simUser.email,
+      emailVerified: simUser.emailVerified,
+      image: simUser.image,
+      createdAt: simUser.createdAt,
+      updatedAt: simUser.updatedAt,
+    },
+  })
+
   return {
     userId: params.userId,
-    setCookies: [buildSessionSetCookie(session.token), buildArenaSsoSetCookie(rawTicket)],
+    setCookies: [...sessionCookies, buildArenaSsoSetCookie(rawTicket)],
   }
 }
 

@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   assertArenaSsoCsrf,
@@ -55,7 +56,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
       return response
     } catch (error) {
-      logger.error('Arena SSO session mint failed', { error })
+      logger.error('Arena SSO session mint failed', {
+        error,
+        message: getErrorMessage(error),
+        userId: simUser.id,
+        email: validation.email,
+      })
       return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
     }
   }
