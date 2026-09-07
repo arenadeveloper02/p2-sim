@@ -10,6 +10,7 @@ import {
   arenaGenerativeAdoptedChangeSchema,
   arenaGenerativeGenerateWarningSchema,
 } from '@/lib/arena-generative-ui/generate-warnings'
+import { MAX_OUTPUT_SCHEMA_FIELDS } from '@/lib/arena-generative-ui/output-schema'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
 import { RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
@@ -95,7 +96,10 @@ export const arenaGenerativeApiBindingSchema = z
             type: z.string().min(1).optional(),
           })
         )
-        .max(40, 'outputSchema is limited to 40 fields')
+        .max(
+          MAX_OUTPUT_SCHEMA_FIELDS,
+          `outputSchema is limited to ${MAX_OUTPUT_SCHEMA_FIELDS} fields`
+        )
         .optional()
     ),
     outputHint: z.string().min(1).max(2048).optional(),

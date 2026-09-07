@@ -247,7 +247,7 @@ So `statePath` is the host key itself — `articles` or lifted `history`, never 
 
 When a binding has `stream: true`, prose still binds to `DataText statePath="content"`. If **Output format** also describes structured fields (for example `companies`), new drafts bind those as `Table` / `Stat` / `KeyValue` instead of dumping the whole body. Existing drafts keep their current layout until you **Edit Existing Draft** or generate again. Host state strips execution telemetry (`tokens`, `finishReason`, `model`) so it never appears as the report. `DataText` always renders markdown/prose — it does not turn a JSON blob into a Table. JSON-mode workflow answers that land in `content` show as formatted text; bind `Table` when the layout plan chose a collection.
 
-Derivation walks 3 object levels, describes arrays from their first element, and caps at 40 fields.
+Derivation walks 3 object levels, unions object keys across sampled array items (not only the first element), and caps at 80 fields. Sibling keys are listed before nested array columns so a field cap cannot hide later fields such as `coverage_report.summary`.
 
 ### Design Notes (optional)
 

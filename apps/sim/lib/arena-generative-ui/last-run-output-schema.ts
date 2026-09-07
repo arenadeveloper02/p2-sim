@@ -5,8 +5,8 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { and, desc, eq } from 'drizzle-orm'
 import {
   type ArenaGenerativeSchemaField,
+  deriveOutputSchema,
   namedSchemaFields,
-  outputSchemaFromSample,
 } from '@/lib/arena-generative-ui/output-schema'
 import { omitTelemetrySchemaFields } from '@/lib/arena-generative-ui/types'
 import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
@@ -15,6 +15,9 @@ const logger = createLogger('ArenaLastRunOutputSchema')
 
 export const LAST_RUN_TRUNCATED_WARNING =
   "The last successful run's output was truncated, so nested fields may be missing. Paste a Sample or add a nested Response body, then redeploy."
+
+export const LAST_RUN_FIELD_CAP_WARNING =
+  'The last successful run has more nested fields than the schema can list, so some keys may be missing. Paste a Sample if you need the full shape.'
 
 export const LAST_RUN_STALE_WARNING =
   'Schema is from a run of an older deployment. Run the current deploy once, or paste a Sample, if the output shape changed.'
@@ -66,14 +69,15 @@ export async function loadLastSuccessfulRunOutputSchema(
       executionId: row.executionId,
     })
     const truncated = materialized.executionDataTruncated === true
-    const fields = fieldsFromFinalOutput(materialized.finalOutput)
+    const derived = fieldsFromFinalOutput(materialized.finalOutput)
     const warnings = lastRunSchemaWarnings({
       truncated,
+      fieldCap: derived.truncated,
       stale: isStaleLastRun(row.deploymentVersionId, options?.activeDeploymentVersionId),
-      emptyList: lastRunHasEmptyArrayWithoutItems(fields),
+      emptyList: lastRunHasEmptyArrayWithoutItems(derived.fields),
     })
 
-    return { fields, warnings, found: true }
+    return { fields: derived.fields, warnings, found: true }
   } catch (error) {
     logger.warn('Could not derive outputSchema from last successful run', {
       workflowId,
@@ -90,14 +94,21 @@ function asExecutionDataRecord(value: unknown): Record<string, unknown> | undefi
   return value as Record<string, unknown>
 }
 
-function fieldsFromFinalOutput(finalOutput: unknown): ArenaGenerativeSchemaField[] {
+function fieldsFromFinalOutput(finalOutput: unknown): {
+  fields: ArenaGenerativeSchemaField[]
+  truncated: boolean
+} {
   if (finalOutput === undefined || finalOutput === null) {
-    return []
+    return { fields: [], truncated: false }
   }
   try {
-    return omitTelemetrySchemaFields(outputSchemaFromSample(JSON.stringify(finalOutput)))
+    const derived = deriveOutputSchema(finalOutput)
+    return {
+      fields: omitTelemetrySchemaFields(derived.fields),
+      truncated: derived.truncated,
+    }
   } catch {
-    return []
+    return { fields: [], truncated: false }
   }
 }
 
@@ -122,11 +133,13 @@ function lastRunHasEmptyArrayWithoutItems(fields: ArenaGenerativeSchemaField[]):
 
 function lastRunSchemaWarnings(flags: {
   truncated: boolean
+  fieldCap: boolean
   stale: boolean
   emptyList: boolean
 }): string[] {
   const warnings: string[] = []
   if (flags.truncated) warnings.push(LAST_RUN_TRUNCATED_WARNING)
+  if (flags.fieldCap) warnings.push(LAST_RUN_FIELD_CAP_WARNING)
   if (flags.stale) warnings.push(LAST_RUN_STALE_WARNING)
   if (flags.emptyList) warnings.push(LAST_RUN_EMPTY_LIST_WARNING)
   return warnings

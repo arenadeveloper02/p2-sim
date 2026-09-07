@@ -2,6 +2,7 @@ import { normalizeWorkflowBlockName } from '@sim/workflow-types/workflow'
 import {
   type ArenaGenerativeSchemaField,
   hasSchemaFieldName,
+  MAX_OUTPUT_SCHEMA_FIELDS,
   namedSchemaFields,
   outputSchemaFromSample,
   prefixOutputSchemaFields,
@@ -12,7 +13,6 @@ import {
 } from '@/lib/core/utils/response-format'
 
 const MAX_DEPTH = 3
-const MAX_FIELDS = 40
 
 const BUILDER_ITEM_TYPES = new Set(['string', 'number', 'boolean', 'object', 'array'])
 
@@ -141,7 +141,7 @@ function collectJsonSchemaFields(
   depth: number,
   fields: ArenaGenerativeSchemaField[]
 ): void {
-  if (fields.length >= MAX_FIELDS || depth > MAX_DEPTH) return
+  if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS || depth > MAX_DEPTH) return
   if (!node || typeof node !== 'object' || Array.isArray(node)) {
     if (path) fields.push({ name: path, type: 'string' })
     return
@@ -170,7 +170,7 @@ function collectJsonSchemaFields(
     }
     if (hasProperties) {
       for (const [key, nested] of Object.entries(properties as Record<string, unknown>)) {
-        if (fields.length >= MAX_FIELDS) return
+        if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) return
         collectJsonSchemaFields(
           nested,
           path ? `${path}.${key}` : key,
@@ -213,10 +213,10 @@ function collectBuilderFields(
   fields: ArenaGenerativeSchemaField[],
   blocks: Record<string, WorkflowBlockRecord>
 ): void {
-  if (depth > MAX_DEPTH || fields.length >= MAX_FIELDS) return
+  if (depth > MAX_DEPTH || fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) return
 
   for (const property of properties) {
-    if (fields.length >= MAX_FIELDS) return
+    if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) return
     if (!property || typeof property !== 'object') continue
     const record = property as { name?: unknown; type?: unknown; value?: unknown }
     const name = typeof record.name === 'string' ? record.name.trim() : ''
@@ -263,7 +263,7 @@ function collectBuilderArrayItems(
   fields: ArenaGenerativeSchemaField[],
   blocks: Record<string, WorkflowBlockRecord>
 ): void {
-  if (value.length === 0 || fields.length >= MAX_FIELDS) return
+  if (value.length === 0 || fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) return
   const first = value[0]
   if (!first || typeof first !== 'object') return
   const item = first as { type?: unknown; value?: unknown }
@@ -443,14 +443,14 @@ function mergeStubResponseWithAgent(
   for (const field of toMerge) {
     pushUniqueField(merged, field)
   }
-  return merged.slice(0, MAX_FIELDS)
+  return merged.slice(0, MAX_OUTPUT_SCHEMA_FIELDS)
 }
 
 function pushUniqueField(
   fields: ArenaGenerativeSchemaField[],
   field: ArenaGenerativeSchemaField
 ): void {
-  if (fields.length >= MAX_FIELDS) return
+  if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) return
   if (fields.some((existing) => existing.name === field.name)) return
   fields.push(field)
 }
