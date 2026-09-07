@@ -57,13 +57,13 @@ describe('GET /api/users/me/usage-logs', () => {
         source: 'workflow',
         sourceLabel: 'Workflow',
         workflowName: null,
-        creditCost: 100,
+        creditCost: 33,
         hasCost: true,
       },
     ])
     expect(body.summary).toEqual({
-      totalCredits: 100,
-      bySourceCredits: { workflow: 100 },
+      totalCredits: 33,
+      bySourceCredits: { workflow: 33 },
     })
   })
 
@@ -125,7 +125,7 @@ describe('GET /api/users/me/usage-logs', () => {
     const body = await (await GET(createMockRequest('GET'))).json()
 
     expect(body.logs.map((log: { source: string }) => log.source)).toEqual(['sim-chat', 'sim-chat'])
-    expect(body.summary.bySourceCredits).toEqual({ 'sim-chat': 120 })
+    expect(body.summary.bySourceCredits).toEqual({ 'sim-chat': 39 })
   })
 
   it('filters sim-chat across both internal ledgers', async () => {

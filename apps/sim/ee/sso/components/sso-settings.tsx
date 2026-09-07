@@ -22,7 +22,8 @@ import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import type { SettingsAction } from '@/components/settings/settings-header'
 import type { SsoRegistrationBody } from '@/lib/api/contracts/auth'
 import { useSession } from '@/lib/auth/auth-client'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
+import { STARTER_PLAN } from '@/lib/billing/arena/constants'
+import { isEnterprise, isMaxTier } from '@/lib/billing/plan-helpers'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -238,7 +239,13 @@ function OrganizationSsoSettings({ organizationId }: SSOProps) {
   const existingProvider = providers[0] as SSOProvider | undefined
 
   const userId = session?.user?.id
-  const hasEnterprisePlan = isEnterprise(organizationBillingData?.data?.subscriptionPlan)
+  const organizationBilling = organizationBillingData?.data
+  const hasEnterprisePlan =
+    organizationBilling?.subscriptionState === 'active' &&
+    !organizationBilling.billingBlocked &&
+    (isEnterprise(organizationBilling.subscriptionPlan) ||
+      organizationBilling.subscriptionPlan === STARTER_PLAN ||
+      isMaxTier(organizationBilling.subscriptionPlan))
 
   const isSSOProviderOwner =
     !isBillingEnabled && userId ? providers.some((p) => p.userId === userId) : null

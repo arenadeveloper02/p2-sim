@@ -34,7 +34,7 @@ describe('unified settings navigation', () => {
       { id: 'credential-groups', label: 'Credential groups', section: 'workspace' },
       { id: 'custom-tools', label: 'Custom tools', section: 'workspace' },
       { id: 'mcp', label: 'MCP tools', section: 'workspace' },
-      { id: 'apikeys', label: 'Sim API keys', section: 'workspace' },
+      { id: 'apikeys', label: 'Arena API keys', section: 'workspace' },
       { id: 'workflow-mcp-servers', label: 'MCP servers', section: 'workspace' },
       { id: 'byok', label: 'BYOK', section: 'workspace' },
       { id: 'sandboxes', label: 'Sandboxes', section: 'workspace' },
@@ -48,7 +48,7 @@ describe('unified settings navigation', () => {
       { id: 'whitelabeling', label: 'White-labeling', section: 'organization' },
       { id: 'custom-blocks', label: 'Custom blocks', section: 'organization' },
       { id: 'admin', label: 'Admin', section: 'platform' },
-      { id: 'mothership', label: 'Mothership', section: 'platform' },
+      { id: 'skill-share', label: 'Skill share', section: 'platform' },
     ])
   })
 
@@ -91,7 +91,7 @@ describe('unified settings navigation', () => {
       'data-retention',
       'data-drains',
     ])
-    expect(idsForSection('platform')).toEqual(['admin', 'mothership', 'self-host'])
+    expect(idsForSection('platform')).toEqual(['admin', 'skill-share', 'self-host'])
   })
 
   it('derives every unified item from exactly one registry entry', () => {

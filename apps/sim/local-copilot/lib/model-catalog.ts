@@ -75,6 +75,13 @@ export const LOCAL_COPILOT_CATALOG = [
     model: 'zai.glm-5',
   },
   {
+    id: 'bedrock-deepseek-v3.2',
+    providerGroup: 'bedrock',
+    label: 'DeepSeek V3.2',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'deepseek.v3.2',
+  },
+  {
     id: 'bedrock-nemotron-super-3-120b',
     providerGroup: 'bedrock',
     label: 'Nemotron Super 3',
@@ -115,9 +122,29 @@ const CATALOG_BY_ID = new Map<string, (typeof LOCAL_COPILOT_CATALOG)[number]>(
   LOCAL_COPILOT_CATALOG.map((entry) => [entry.id, entry])
 )
 
+/**
+ * Leftover Cloud / Anthropic ids stored on chats created before the Local
+ * picker. `claude-opus-4-8` was the previous hosted default; map it onto the
+ * generic Claude leaf rather than falling through to Gemini.
+ */
+const LEGACY_LOCAL_COPILOT_CATALOG_IDS: Record<string, LocalCopilotCatalogId> = {
+  'claude-opus-4-8': 'claude',
+}
+
 /** Type guard for allowlisted catalog ids. */
 export function isLocalCopilotCatalogId(value: string): value is LocalCopilotCatalogId {
   return CATALOG_BY_ID.has(value)
+}
+
+/**
+ * Maps a leftover stored/request model onto a Local picker id, or `undefined`
+ * when the value is not a known legacy alias.
+ */
+export function remapLegacyLocalCopilotCatalogId(
+  value: string | undefined | null
+): LocalCopilotCatalogId | undefined {
+  if (!value) return undefined
+  return LEGACY_LOCAL_COPILOT_CATALOG_IDS[value]
 }
 
 /**
@@ -127,18 +154,27 @@ export function resolveLocalCopilotCatalogId(
   value: string | undefined | null
 ): LocalCopilotCatalogId {
   if (value && isLocalCopilotCatalogId(value)) return value
+  const remapped = remapLegacyLocalCopilotCatalogId(value)
+  if (remapped) return remapped
   return DEFAULT_LOCAL_COPILOT_CATALOG_ID
 }
 
 /**
- * Local request model: honor a valid picker id, otherwise the per-user
- * `default_model` enum (Gemini when that is missing or a Cloud model string).
+ * Local request model: leftover stored `claude-opus-4-8` switches onto
+ * `claude`; otherwise honor a valid picker id, otherwise a leftover request
+ * id, otherwise the per-user `default_model` enum (Gemini when that is
+ * missing or a Cloud model string).
  */
 export function resolveLocalCopilotRequestCatalogId(
   requested: string | undefined | null,
-  defaultFromAccess: string | undefined | null
+  defaultFromAccess: string | undefined | null,
+  storedChatModel?: string | null
 ): LocalCopilotCatalogId {
+  const remappedStored = remapLegacyLocalCopilotCatalogId(storedChatModel)
+  if (remappedStored) return remappedStored
   if (requested && isLocalCopilotCatalogId(requested)) return requested
+  const remappedRequested = remapLegacyLocalCopilotCatalogId(requested)
+  if (remappedRequested) return remappedRequested
   return resolveLocalCopilotCatalogId(defaultFromAccess)
 }
 

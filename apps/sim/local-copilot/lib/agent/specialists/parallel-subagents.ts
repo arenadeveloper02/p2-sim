@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { truncate } from '@sim/utils/string'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
+import { buildAutoFanoutSpecialistUserMessage } from '@/local-copilot/lib/agent/specialists/classify'
 import {
   type LocalCopilotCloudSpecialistDomain,
   MAX_PARALLEL_SUBAGENTS,
@@ -53,7 +54,12 @@ export async function* runParallelSubagents(
   const settled = await Promise.all(
     domains.map(async (domain) => {
       try {
-        return await executeSpecialistLoop({ ...params, domain, parentDepth })
+        return await executeSpecialistLoop({
+          ...params,
+          domain,
+          userMessage: buildAutoFanoutSpecialistUserMessage(domain, params.userMessage),
+          parentDepth,
+        })
       } catch (error) {
         logger.warn('Parallel subagent failed', {
           domain,

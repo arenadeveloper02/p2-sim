@@ -12,8 +12,10 @@ import {
 } from '@aws-sdk/client-bedrock-runtime'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
+import { recoverDeepSeekDsmlToolCallsIfNeeded } from '@/local-copilot/lib/providers/deepseek-dsml'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type {
+  ChatCompletionChunk,
   ChatCompletionRequest,
   ChatMessage,
   LocalCopilotProvider,
@@ -424,191 +426,101 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
   const region = config.region || process.env.AWS_REGION || 'us-east-1'
   const client = createBedrockClient(config)
 
-  return {
-    id: 'bedrock',
-    async *chatCompletionStream(request: ChatCompletionRequest) {
-      const model = request.model || config.model
-      const bedrockModelId = getBedrockInferenceProfileId(model, region)
-      const converted = convertMessagesToBedrock(request.messages)
-      const mappedTools = toBedrockTools(request.tools)
-      const { system, messages, tools } = withBedrockPromptCachePoints({
-        model,
-        system: converted.system,
-        messages: converted.messages,
-        tools: mappedTools,
-      })
+  async function* emitBedrockChunks(
+    model: string,
+    request: ChatCompletionRequest
+  ): AsyncGenerator<ChatCompletionChunk, void, undefined> {
+    const bedrockModelId = getBedrockInferenceProfileId(model, region)
+    const converted = convertMessagesToBedrock(request.messages)
+    const mappedTools = toBedrockTools(request.tools)
+    const { system, messages, tools } = withBedrockPromptCachePoints({
+      model,
+      system: converted.system,
+      messages: converted.messages,
+      tools: mappedTools,
+    })
 
-      const hasToolContent = messages.some((msg) =>
-        msg.content?.some(
-          (block) =>
-            ('toolUse' in block && block.toolUse) || ('toolResult' in block && block.toolResult)
-        )
+    const hasToolContent = messages.some((msg) =>
+      msg.content?.some(
+        (block) =>
+          ('toolUse' in block && block.toolUse) || ('toolResult' in block && block.toolResult)
       )
+    )
 
-      if (hasToolContent && !tools?.length) {
-        throw new Error(
-          'Messages contain tool use/result blocks but no tools were provided. Bedrock requires toolConfig when processing messages with tool content.'
-        )
+    if (hasToolContent && !tools?.length) {
+      throw new Error(
+        'Messages contain tool use/result blocks but no tools were provided. Bedrock requires toolConfig when processing messages with tool content.'
+      )
+    }
+
+    const toolConfig: ToolConfiguration | undefined = tools?.length
+      ? { tools, toolChoice: { auto: {} } }
+      : undefined
+
+    // Nova tool-calling is unreliable above temperature 0; Claude 5 rejects temperature.
+    const inferenceConfig = buildBedrockInferenceConfig({
+      model,
+      temperature: request.temperature,
+      maxTokens: request.maxTokens ?? 8192,
+    })
+
+    const baseInput = {
+      modelId: bedrockModelId,
+      messages,
+      system: system.length > 0 ? system : undefined,
+      inferenceConfig,
+      toolConfig,
+    }
+
+    const useStream = !(toolConfig && !bedrockSupportsStreamingWithTools(model))
+    const promptCaching = bedrockModelSupportsPromptCaching(model)
+
+    try {
+      if (toolConfig || promptCaching) {
+        logger.info('Bedrock request', {
+          model: bedrockModelId,
+          toolCount: mappedTools?.length ?? 0,
+          streaming: useStream,
+          promptCaching,
+        })
       }
 
-      const toolConfig: ToolConfiguration | undefined = tools?.length
-        ? { tools, toolChoice: { auto: {} } }
-        : undefined
-
-      // Nova tool-calling is unreliable above temperature 0; Claude 5 rejects temperature.
-      const inferenceConfig = buildBedrockInferenceConfig({
-        model,
-        temperature: request.temperature,
-        maxTokens: request.maxTokens ?? 8192,
-      })
-
-      const baseInput = {
-        modelId: bedrockModelId,
-        messages,
-        system: system.length > 0 ? system : undefined,
-        inferenceConfig,
-        toolConfig,
-      }
-
-      const useStream = !(toolConfig && !bedrockSupportsStreamingWithTools(model))
-      const promptCaching = bedrockModelSupportsPromptCaching(model)
-
-      try {
-        if (toolConfig || promptCaching) {
-          logger.info('Bedrock request', {
-            model: bedrockModelId,
-            toolCount: mappedTools?.length ?? 0,
-            streaming: useStream,
-            promptCaching,
-          })
-        }
-
-        if (!useStream) {
-          const response = await client.send(
-            new ConverseCommand(baseInput),
-            request.signal ? { abortSignal: request.signal } : undefined
-          )
-
-          let finishReason = mapBedrockStopReason(response.stopReason)
-          let yieldedToolCall = false
-          for (const block of response.output?.message?.content ?? []) {
-            if ('text' in block && typeof block.text === 'string' && block.text) {
-              yield { type: 'text', content: block.text }
-            }
-            if ('toolUse' in block && block.toolUse) {
-              yieldedToolCall = true
-              const name = block.toolUse.name ?? ''
-              yield {
-                type: 'tool_call',
-                toolCall: {
-                  id: block.toolUse.toolUseId || generateToolUseId(name || 'tool'),
-                  name,
-                  arguments: JSON.stringify(block.toolUse.input ?? {}),
-                },
-              }
-              finishReason = 'tool_calls'
-            }
-          }
-
-          if (toolConfig && !yieldedToolCall) {
-            logger.warn('Bedrock returned no toolUse on a tool-enabled turn', {
-              model: bedrockModelId,
-              stopReason: response.stopReason,
-              toolCount: mappedTools?.length ?? 0,
-            })
-          }
-
-          const usage = parseBedrockUsage(response.usage)
-          if (usage.cacheReadTokens || usage.cacheCreationTokens) {
-            logger.info('Bedrock prompt cache usage', {
-              model: bedrockModelId,
-              cacheReadTokens: usage.cacheReadTokens ?? 0,
-              cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-              inputTokens: usage.inputTokens,
-            })
-          }
-
-          yield {
-            type: 'done',
-            finishReason,
-            usage,
-          }
-          return
-        }
-
+      if (!useStream) {
         const response = await client.send(
-          new ConverseStreamCommand(baseInput),
+          new ConverseCommand(baseInput),
           request.signal ? { abortSignal: request.signal } : undefined
         )
 
-        if (!response.stream) {
-          throw new Error('No stream returned from Bedrock')
-        }
-
-        const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>()
-        let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
-        let finishReason = 'stop'
-
-        for await (const event of response.stream) {
-          if (request.signal?.aborted) {
-            throw new Error('Request aborted')
+        let finishReason = mapBedrockStopReason(response.stopReason)
+        let yieldedToolCall = false
+        for (const block of response.output?.message?.content ?? []) {
+          if ('text' in block && typeof block.text === 'string' && block.text) {
+            yield { type: 'text', content: block.text }
           }
-
-          if (event.contentBlockStart) {
-            const index = event.contentBlockStart.contentBlockIndex ?? 0
-            const start = event.contentBlockStart.start
-            if (start && 'toolUse' in start && start.toolUse) {
-              const toolUse = start.toolUse
-              const name = toolUse.name ?? ''
-              pendingToolCalls.set(index, {
-                id: toolUse.toolUseId || generateToolUseId(name || 'tool'),
+          if ('toolUse' in block && block.toolUse) {
+            yieldedToolCall = true
+            const name = block.toolUse.name ?? ''
+            yield {
+              type: 'tool_call',
+              toolCall: {
+                id: block.toolUse.toolUseId || generateToolUseId(name || 'tool'),
                 name,
-                arguments: '',
-              })
+                arguments: JSON.stringify(block.toolUse.input ?? {}),
+              },
             }
-          }
-
-          if (event.contentBlockDelta) {
-            const index = event.contentBlockDelta.contentBlockIndex ?? 0
-            const delta = event.contentBlockDelta.delta
-            if (delta && 'text' in delta && typeof delta.text === 'string') {
-              yield { type: 'text', content: delta.text }
-            }
-            if (delta && 'toolUse' in delta && delta.toolUse?.input) {
-              const existing = pendingToolCalls.get(index)
-              if (existing) {
-                existing.arguments += delta.toolUse.input
-                pendingToolCalls.set(index, existing)
-              }
-            }
-          }
-
-          if (event.contentBlockStop) {
-            const index = event.contentBlockStop.contentBlockIndex ?? 0
-            const call = pendingToolCalls.get(index)
-            if (call) {
-              yield {
-                type: 'tool_call',
-                toolCall: {
-                  id: call.id,
-                  name: call.name,
-                  arguments: call.arguments || '{}',
-                },
-              }
-              pendingToolCalls.delete(index)
-              finishReason = 'tool_calls'
-            }
-          }
-
-          if (event.metadata?.usage) {
-            usage = parseBedrockUsage(event.metadata.usage)
-          }
-
-          if (event.messageStop?.stopReason) {
-            finishReason = mapBedrockStopReason(event.messageStop.stopReason)
+            finishReason = 'tool_calls'
           }
         }
 
+        if (toolConfig && !yieldedToolCall) {
+          logger.warn('Bedrock returned no toolUse on a tool-enabled turn', {
+            model: bedrockModelId,
+            stopReason: response.stopReason,
+            toolCount: mappedTools?.length ?? 0,
+          })
+        }
+
+        const usage = parseBedrockUsage(response.usage)
         if (usage.cacheReadTokens || usage.cacheCreationTokens) {
           logger.info('Bedrock prompt cache usage', {
             model: bedrockModelId,
@@ -623,13 +535,115 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
           finishReason,
           usage,
         }
-      } catch (error) {
-        logger.error('Bedrock request failed', { error: toError(error).message })
-        if (isCredentialError(error)) {
-          throw new Error(BEDROCK_NOT_CONFIGURED)
-        }
-        throw toError(error)
+        return
       }
+
+      const response = await client.send(
+        new ConverseStreamCommand(baseInput),
+        request.signal ? { abortSignal: request.signal } : undefined
+      )
+
+      if (!response.stream) {
+        throw new Error('No stream returned from Bedrock')
+      }
+
+      const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>()
+      let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
+      let finishReason = 'stop'
+
+      for await (const event of response.stream) {
+        if (request.signal?.aborted) {
+          throw new Error('Request aborted')
+        }
+
+        if (event.contentBlockStart) {
+          const index = event.contentBlockStart.contentBlockIndex ?? 0
+          const start = event.contentBlockStart.start
+          if (start && 'toolUse' in start && start.toolUse) {
+            const toolUse = start.toolUse
+            const name = toolUse.name ?? ''
+            pendingToolCalls.set(index, {
+              id: toolUse.toolUseId || generateToolUseId(name || 'tool'),
+              name,
+              arguments: '',
+            })
+          }
+        }
+
+        if (event.contentBlockDelta) {
+          const index = event.contentBlockDelta.contentBlockIndex ?? 0
+          const delta = event.contentBlockDelta.delta
+          if (delta && 'text' in delta && typeof delta.text === 'string') {
+            yield { type: 'text', content: delta.text }
+          }
+          if (delta && 'toolUse' in delta && delta.toolUse?.input) {
+            const existing = pendingToolCalls.get(index)
+            if (existing) {
+              existing.arguments += delta.toolUse.input
+              pendingToolCalls.set(index, existing)
+            }
+          }
+        }
+
+        if (event.contentBlockStop) {
+          const index = event.contentBlockStop.contentBlockIndex ?? 0
+          const call = pendingToolCalls.get(index)
+          if (call) {
+            yield {
+              type: 'tool_call',
+              toolCall: {
+                id: call.id,
+                name: call.name,
+                arguments: call.arguments || '{}',
+              },
+            }
+            pendingToolCalls.delete(index)
+            finishReason = 'tool_calls'
+          }
+        }
+
+        if (event.metadata?.usage) {
+          usage = parseBedrockUsage(event.metadata.usage)
+        }
+
+        if (event.messageStop?.stopReason) {
+          finishReason = mapBedrockStopReason(event.messageStop.stopReason)
+        }
+      }
+
+      if (usage.cacheReadTokens || usage.cacheCreationTokens) {
+        logger.info('Bedrock prompt cache usage', {
+          model: bedrockModelId,
+          cacheReadTokens: usage.cacheReadTokens ?? 0,
+          cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+          inputTokens: usage.inputTokens,
+        })
+      }
+
+      yield {
+        type: 'done',
+        finishReason,
+        usage,
+      }
+    } catch (error) {
+      logger.error('Bedrock request failed', { error: toError(error).message })
+      if (isCredentialError(error)) {
+        throw new Error(BEDROCK_NOT_CONFIGURED)
+      }
+      throw toError(error)
+    }
+  }
+
+  return {
+    id: 'bedrock',
+    async *chatCompletionStream(request: ChatCompletionRequest) {
+      const model = request.model || config.model
+      yield* recoverDeepSeekDsmlToolCallsIfNeeded(
+        model,
+        request.tools,
+        emitBedrockChunks(model, request),
+        generateToolUseId
+      )
     },
   }
 }

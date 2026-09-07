@@ -3,9 +3,11 @@ import { subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { APIError } from 'better-auth/api'
 import { and, eq, isNotNull } from 'drizzle-orm'
-import { hasPaidSubscription } from '@/lib/billing'
 import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
-import { getOrganizationCoverageForMember } from '@/lib/billing/core/subscription'
+import {
+  getOrganizationCoverageForMember,
+  hasBlockingOrgCheckoutSubscription,
+} from '@/lib/billing/core/subscription'
 import {
   assertNoUnresolvedEnterpriseIssuance,
   EnterpriseIssuanceInProgressError,
@@ -161,7 +163,10 @@ export async function authorizeSubscriptionReference(
     await assertNoBoundIncompleteSubscription(referenceId)
   }
 
-  if (action === 'upgrade-subscription' && (await hasPaidSubscription(referenceId))) {
+  if (
+    action === 'upgrade-subscription' &&
+    (await hasBlockingOrgCheckoutSubscription(referenceId))
+  ) {
     logger.warn('Blocking checkout - active subscription already exists for organization', {
       userId,
       referenceId,

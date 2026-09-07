@@ -58,6 +58,8 @@ export interface LocalCopilotConnectedIntegration {
   providerId: string
   displayName?: string | null
   role?: string | null
+  /** True when this OAuth connection belongs to the signed-in user. */
+  isOwn?: boolean
 }
 
 export interface LocalCopilotExecutionContext {
@@ -78,6 +80,11 @@ export interface LocalCopilotLogEntry {
 
 export interface LocalCopilotStructuredContext {
   workspace: LocalCopilotWorkspaceContext
+  /** Signed-in user talking to Copilot — use for "my email" / "my account". */
+  currentUser?: {
+    email: string
+    name?: string
+  }
   connectedIntegrations: LocalCopilotConnectedIntegration[]
   /** Configured workspace/personal env key names (values never included). */
   envVariables: string[]
@@ -133,7 +140,10 @@ export interface LocalCopilotStructuredContext {
   }>
   tables?: Array<{ id: string; name: string; description?: string | null }>
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
-  /** User-created workspace skills (name + description). Load full body via load_user_skill. */
+  /**
+   * User-created workspace skills (name + description). All skill bodies are
+   * inlined for the turn; otherwise load via load_user_skill if a skill applies.
+   */
   skills?: Array<{ id: string; name: string; description: string }>
   /**
    * High-confidence user memories (preferences/entities) for this user + workspace.

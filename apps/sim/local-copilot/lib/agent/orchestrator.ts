@@ -81,6 +81,10 @@ import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow
 import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
+  loadRelevantSkillGuidance,
+  rewriteSnapshotSkillsForLocalCopilot,
+} from '@/local-copilot/lib/context/relevant-skills'
+import {
   ensureSessionMemory,
   formatRecentToolFailuresSystemMessage,
   formatSessionMemorySystemMessage,
@@ -154,7 +158,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
-  detectMandatoryFollowUp,
+  detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
@@ -168,11 +172,13 @@ import {
   buildWorkflowBuildCompleteSystemMessage,
   createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
+  emptyAssistantTurnFallback,
   isBridgingAssistantNarration,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
+  shouldEmitEmptyAssistantFallback,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
 } from '@/local-copilot/lib/user-facing-text'
@@ -186,6 +192,7 @@ import { resolveTurnCompletion } from '@/local-copilot/lib/verification/completi
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
 import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
 import type { MutationOutcome, VerificationRecord } from '@/local-copilot/lib/verification/types'
+import { createTurnMutations } from '@/local-copilot/lib/writes/turn-mutations'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -294,9 +301,12 @@ Rules:
   - Never burn tool rounds re-doing work that constraints already forbade. If stuck after a failed retry, stop and ask — do not loop the same tool with the same args.
   - When a tool result includes \`artifactId\` + \`truncated: true\`, call \`load_copilot_artifact\` only if you need the full body.
 - Credentials and API keys:
-  - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
+  - Context includes \`currentUser\` (the signed-in person's email), \`connectedIntegrations\` (OAuth), and \`envVariables\` (configured env key names only).
+  - For "my email", "my account", "my inbox", "my Gmail", and other first-person account questions, use \`currentUser.email\` and OAuth credentials with \`isOwn: true\`. Workspace Members are teammates — never treat a teammate as the user unless they named that person.
+  - \`connectedIntegrations\` may include teammates' accounts (workspace admins see all). Prefer \`isOwn: true\`. If the user names a different account (email or displayName), use that credentialId instead.
+  - If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
-  - For OAuth blocks, pass the \`credentialId\` from \`connectedIntegrations\`. For api_key blocks backed by env vars, omit api-key subblock values — execution reads workspace env automatically.
+  - For OAuth blocks, pass the \`credentialId\` from \`connectedIntegrations\`. Prefer the row with \`isOwn: true\` for that provider. For api_key blocks backed by env vars, omit api-key subblock values — execution reads workspace env automatically.
   - Only ask the user to configure a key when it is missing from both \`connectedIntegrations\` and \`envVariables\` and hosted keys do not apply.
 - Direct one-off actions (no workflow required):
   - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
@@ -308,7 +318,7 @@ Rules:
     - Broader web result lists: \`invoke_integration_tool({ toolId: "exa_search", params: { query: "<search>" } })\`.
     - Do NOT invent live facts from memory. Do NOT skip search because you "already know" the answer. Do NOT claim "no search API key" until an Exa/search tool actually returns a missing-credential error — workspace \`EXA_API_KEY\`, BYOK, and hosted keys are applied automatically when available.
   - Other integrations: \`list_integration_tools({ integration: "gmail" })\` (underscores, not hyphens) then \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { ... } })\`. Never call \`load_integration_tool\` — that is Cloud-only; Arena Copilot uses \`invoke_integration_tool\`.
-  - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). If only one connected credential matches, Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
+  - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). Prefer \`isOwn: true\`. If the signed-in user has exactly one matching own credential — or only one connected credential exists — Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
   - Google Docs by name (not ID): first \`google_drive_list\` with \`query\` set to the document title (or \`google_drive_search\` with \`prompt\` describing the doc), pick the matching file id (\`mimeType\` \`application/vnd.google-apps.document\`), then \`google_docs_read\` / \`google_docs_write\` with that \`documentId\`. Never pass the title as \`documentId\`.
   - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
@@ -356,16 +366,18 @@ Rules:
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
   - Create files: \`create_file_folder\` when needed, then \`create_file\` once with \`content\` for markdown/text/json/csv/html. Never call \`create_file\` twice for the same path, and never follow it with \`workspace_file\` kind=new_file or operation=create. Never echo that body in chat.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
-  - Read or update existing files: \`workspace_file\` (update/append/patch) then \`edit_content\` in the **next** step with the body — never parallel.
+  - Read or update existing files: \`read\` the exact \`files/.../content\` path first. Targeted edits (title, heading, one string): \`workspace_file\` operation=patch with search_replace, then \`edit_content\` with only the replacement. Full rewrite: \`workspace_file\` update then \`edit_content\` starting from the read result — never parallel with workspace_file.
   - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.
 - Workspace skills and custom tools:
-  - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
-  - When a skill applies, call \`load_user_skill\` with its exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
+  - Ignore any snapshot heading that says skills are "NOT FOR YOU" — that is for Cloud agent blocks. Arena Copilot may use workspace skills.
+  - Context may list workspace skills (name + description, and sometimes a "Relevant workspace skills" block with full instructions). If a listed skill matches the user request, follow it over generic defaults. Do not skip a matching skill.
+  - If a skill's full instructions are already in the prompt, follow them and do not call \`load_user_skill\` again for that name. Otherwise call \`load_user_skill\` with the exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
   - Create/edit/list skills with \`manage_skill\`; custom code tools with \`manage_custom_tool\`; agent MCP server configs with \`manage_mcp_tool\` (distinct from \`*_workspace_mcp_server\` deploy tools).
   - Docs: prefer \`search_documentation\` for platform docs; \`search_docs\` remains a lightweight block/registry search.
 - E2B sandbox and code execution:
-  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
-  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
+  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, \`customSandboxesEnabled\`, and \`supportedCodeLanguages\`.
+  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`. The default Function image is created for that call — do not call \`manage_sandbox\` first.
+  - When \`e2b.customSandboxesEnabled\` is true and a required npm/PyPI/apt package or managed CLI is missing from the default image, call \`manage_sandbox\` operation=add (name + language + dependencies/cliTools/systemPackages), wait for the sandbox, then \`function_execute\` with that \`sandboxId\`. List existing sandboxes with operation=list before creating a duplicate.
   - When E2B is disabled, \`function_execute\` supports JavaScript only (isolated-vm).
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
@@ -635,7 +647,10 @@ export async function* runLocalCopilotAgent(
 
   let snapshotPromptPlan: SnapshotPromptPlan | null = null
   const vfsSnapshot = structuredContext.vfsSnapshot ?? params.workspaceSnapshot
-  const inventoryMarkdown = params.workspaceContext ?? structuredContext.inventoryMarkdown
+  const inventoryMarkdownRaw = params.workspaceContext ?? structuredContext.inventoryMarkdown
+  const inventoryMarkdown = inventoryMarkdownRaw
+    ? rewriteSnapshotSkillsForLocalCopilot(inventoryMarkdownRaw)
+    : inventoryMarkdownRaw
   if (vfsSnapshot && inventoryMarkdown && structuredContext.snapshotFreshness) {
     let priorMeta = null as ReturnType<typeof parseWorkspaceSnapshotMeta>
     let priorFingerprints = null as ReturnType<typeof parseWorkspaceSnapshotFingerprints>
@@ -672,6 +687,16 @@ export async function* runLocalCopilotAgent(
     ...(params.chatId ? { chatId: params.chatId } : {}),
   })
   const userTurnText = getLocalCopilotUserTurnText(userTurn)
+  const relevantSkills = await loadRelevantSkillGuidance({
+    skills: structuredContext.skills,
+    workspaceId: params.workspaceId,
+  })
+  if (relevantSkills.names.length > 0) {
+    logger.info('Arena Copilot loaded relevant workspace skills', {
+      workspaceId: params.workspaceId,
+      skillNames: relevantSkills.names,
+    })
+  }
 
   const pinnedDirective =
     extractedDirectives.activeDirective?.trim() || sessionMemory?.activeDirective?.trim() || ''
@@ -719,6 +744,7 @@ export async function* runLocalCopilotAgent(
   const messages: ChatMessage[] = fitPromptWithSlots(
     [
       { role: 'system', content: SYSTEM_PROMPT },
+      ...(relevantSkills.message ? [relevantSkills.message] : []),
       {
         role: 'system',
         content: `Current context:\n${contextJson}`,
@@ -801,9 +827,14 @@ export async function* runLocalCopilotAgent(
     lastUserMessage: userTurnText,
     mutationIdempotency: new Map(),
     listedIntegrationToolIds: new Set(),
+    readVfsPaths: new Set(),
     allowedWorkflowIds: new Set(),
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
+    turnMutations: createTurnMutations(),
+    ...(relevantSkills.message
+      ? { relevantSkillGuidance: relevantSkills.message.content }
+      : {}),
   }
 
   if (resolvedWorkflowId) {
@@ -831,13 +862,13 @@ export async function* runLocalCopilotAgent(
     return toolExecutorModule
   }
 
-  let specialistHintInsertAt = 1
+  let specialistHintInsertAt = 1 + (relevantSkills.message ? 1 : 0)
   if (!intent.useFullCatalog && intent.primary !== 'general') {
-    messages.splice(1, 0, {
+    messages.splice(specialistHintInsertAt, 0, {
       role: 'system',
       content: domainSystemHint(intent.primary),
     })
-    specialistHintInsertAt = 2
+    specialistHintInsertAt += 1
   }
 
   const parallelDomains = selectParallelSubagentDomains(intent)
@@ -869,7 +900,7 @@ export async function* runLocalCopilotAgent(
     if (findings.trim()) {
       messages.splice(specialistHintInsertAt, 0, {
         role: 'system',
-        content: `Parallel specialist findings — synthesize these; avoid re-running the same research unless needed:\n${findings}`,
+        content: `Parallel specialist findings — these writes already happened. Do NOT call create_workflow or create_file again unless a specialist failed. Synthesize the outcome for the user using the ids below:\n${findings}`,
       })
     }
     logger.info('Arena Copilot parallel subagents injected', {
@@ -945,6 +976,7 @@ export async function* runLocalCopilotAgent(
    * Used to detect the stuck "Let me run it." → Running workflow → no result case.
    */
   let streamedCharsAtLastRunTool: number | null = null
+  let lastFinishReason: string | undefined
   const turnToolRecords: ToolTurnRecord[] = []
   const turnMutationOutcomes: MutationOutcome[] = []
   const turnVerifications: VerificationRecord[] = []
@@ -1059,11 +1091,14 @@ export async function* runLocalCopilotAgent(
         textStreamer.markToolCall()
         pendingToolCalls.push(chunk.toolCall)
       }
-      if (chunk.type === 'done' && chunk.usage) {
-        roundInputTokens = chunk.usage.inputTokens
-        roundOutputTokens = chunk.usage.outputTokens
-        roundCacheReadTokens = chunk.usage.cacheReadTokens
-        roundCacheCreationTokens = chunk.usage.cacheCreationTokens
+      if (chunk.type === 'done') {
+        if (chunk.finishReason) lastFinishReason = chunk.finishReason
+        if (chunk.usage) {
+          roundInputTokens = chunk.usage.inputTokens
+          roundOutputTokens = chunk.usage.outputTokens
+          roundCacheReadTokens = chunk.usage.cacheReadTokens
+          roundCacheCreationTokens = chunk.usage.cacheCreationTokens
+        }
       }
     }
 
@@ -1324,6 +1359,12 @@ export async function* runLocalCopilotAgent(
         const formattedToolResult = formatToolResultForLlm(call.name, outcome.output, {
           artifactStore: toolCtx.artifactStore,
         })
+        for (const followUp of outcome.result?.pendingFollowUps ?? []) {
+          pendingFollowUps = [
+            ...pendingFollowUps.filter((item) => item.id !== followUp.id),
+            followUp,
+          ]
+        }
         pendingFollowUps = resolveMandatoryFollowUps(
           pendingFollowUps,
           call.name,
@@ -1691,7 +1732,12 @@ export async function* runLocalCopilotAgent(
       const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result, {
         artifactStore: toolCtx.artifactStore,
       })
-      const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
+      const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
+        call.name,
+        toolResult.success,
+        toolResult.result,
+        formattedToolResult
+      )
       if (mandatoryFollowUp) {
         pendingFollowUps = [
           ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
@@ -1928,16 +1974,19 @@ export async function* runLocalCopilotAgent(
         streamedUserFacingText += cleaned
         yield { type: 'text_delta', content: cleaned }
       }
-      if (chunk.type === 'done' && chunk.usage) {
-        turnCost.addModelUsage({
-          model: config.model,
-          inputTokens: chunk.usage.inputTokens,
-          outputTokens: chunk.usage.outputTokens,
-          cacheReadTokens: chunk.usage.cacheReadTokens,
-          provider: config.provider,
-        })
-        turnInputTokens += chunk.usage.inputTokens
-        turnOutputTokens += chunk.usage.outputTokens
+      if (chunk.type === 'done') {
+        if (chunk.finishReason) lastFinishReason = chunk.finishReason
+        if (chunk.usage) {
+          turnCost.addModelUsage({
+            model: config.model,
+            inputTokens: chunk.usage.inputTokens,
+            outputTokens: chunk.usage.outputTokens,
+            cacheReadTokens: chunk.usage.cacheReadTokens,
+            provider: config.provider,
+          })
+          turnInputTokens += chunk.usage.inputTokens
+          turnOutputTokens += chunk.usage.outputTokens
+        }
       }
     }
     if (assistantText.length === priorAssistantChars) {
@@ -2000,6 +2049,21 @@ export async function* runLocalCopilotAgent(
       streamedUserFacingText += chunk
       yield { type: 'text_delta', content: chunk }
     }
+  }
+
+  if (
+    !params.signal?.aborted &&
+    shouldEmitEmptyAssistantFallback({
+      streamedUserFacingText,
+      toolRecordCount: turnToolRecords.length,
+    })
+  ) {
+    const safe = stripIdsFromUserFacingText(
+      emptyAssistantTurnFallback({ finishReason: lastFinishReason })
+    )
+    assistantText = safe
+    streamedUserFacingText = safe
+    yield { type: 'text_delta', content: safe }
   }
 
   // Emit at most one follow-up block for the whole turn (never after each tool round).

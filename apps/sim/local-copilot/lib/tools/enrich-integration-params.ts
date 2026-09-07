@@ -1,22 +1,10 @@
 import { createLogger } from '@sim/logger'
+import { pickPreferredOAuthCredential } from '@/lib/credentials/pick-oauth-credential'
 import type { LocalCopilotConnectedIntegration } from '@/local-copilot/lib/types'
 import { resolveGoogleSheetsV2RangeParams } from '@/tools/google_sheets/range'
 import { getTool, resolveToolId, stripVersionSuffix } from '@/tools/utils'
 
 const logger = createLogger('LocalCopilotIntegrationParams')
-
-/**
- * Google Workspace OAuth providers that share Drive scopes. A connected Docs
- * account can authorize Drive list/search (and vice versa), which local copilot
- * needs when resolving a document by name before google_docs_read/write.
- */
-const GOOGLE_DRIVE_SCOPE_PROVIDERS = new Set([
-  'google-drive',
-  'google-docs',
-  'google-sheets',
-  'google-slides',
-  'google-forms',
-])
 
 function hasExplicitCredentialSelector(params: Record<string, unknown>): boolean {
   for (const key of ['credentialId', 'oauthCredential', 'credential'] as const) {
@@ -39,12 +27,10 @@ function findMatchingCredential(
   connectedIntegrations: LocalCopilotConnectedIntegration[],
   provider: string
 ): LocalCopilotConnectedIntegration | undefined {
-  const usable = connectedIntegrations.filter(isUsableOAuthCredential)
-  const exact = usable.find((integration) => integration.providerId === provider)
-  if (exact) return exact
-
-  if (!GOOGLE_DRIVE_SCOPE_PROVIDERS.has(provider)) return undefined
-  return usable.find((integration) => GOOGLE_DRIVE_SCOPE_PROVIDERS.has(integration.providerId))
+  return pickPreferredOAuthCredential(
+    connectedIntegrations.filter(isUsableOAuthCredential),
+    provider
+  )
 }
 
 /** Internal marker: fan out one Gmail/Outlook draft per recipient. */

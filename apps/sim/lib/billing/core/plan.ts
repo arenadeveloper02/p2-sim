@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { member, organization, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
+import { checkArenaStarterPlan } from '@/lib/billing/arena/subscription-resolution'
 import {
   checkEnterprisePlan,
   checkProPlan,
@@ -52,6 +53,7 @@ export async function getHighestPriorityPersonalSubscription(
       checkEnterprisePlan,
       checkTeamPlan,
       checkProPlan,
+      checkArenaStarterPlan,
     ])
   } catch (error) {
     logger.error('Error getting highest priority personal subscription', { error, userId })
@@ -127,7 +129,7 @@ export async function getHighestPrioritySubscription(
 
     return pickHighestPrioritySubscription(
       [...orgSubs, ...personalSubs],
-      [checkEnterprisePlan, checkTeamPlan, checkProPlan]
+      [checkEnterprisePlan, checkTeamPlan, checkProPlan, checkArenaStarterPlan]
     )
   } catch (error) {
     logger.error('Error getting highest priority subscription', { error, userId })

@@ -11,6 +11,37 @@ import type { FacebookAdsQueryResponse } from '@/tools/facebook_ads/index'
 
 const FACEBOOK_ADS_COND_NEVER = '__facebook_ads_cond_never__'
 
+/** In-flight promise cache keyed by workspaceId — deduplicates concurrent fetchOptions + fetchOptionById calls */
+let _inflightFetch: {
+  workspaceId: string
+  promise: Promise<Record<string, { id: string; name: string }>>
+} | null = null
+
+async function fetchFacebookAdsAccounts(
+  workspaceId: string
+): Promise<Record<string, { id: string; name: string }>> {
+  if (_inflightFetch?.workspaceId === workspaceId) {
+    return _inflightFetch.promise
+  }
+
+  const promise = fetch(`/api/facebook-ads/accounts?workspaceId=${encodeURIComponent(workspaceId)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      _inflightFetch = null
+      if (data?.success && data.accounts && typeof data.accounts === 'object') {
+        return data.accounts as Record<string, { id: string; name: string }>
+      }
+      return {}
+    })
+    .catch(() => {
+      _inflightFetch = null
+      return {}
+    })
+
+  _inflightFetch = { workspaceId, promise }
+  return promise
+}
+
 /** Show admin account dropdown fields (admin workspaces only). */
 function facebookAdsAdminOnlyCondition(values?: Record<string, unknown>) {
   const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
@@ -80,21 +111,35 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       options: [],
       fetchOptions: async () => {
         try {
-          const response = await fetch('/api/facebook-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return []
 
-          if (data?.success && data.accounts && typeof data.accounts === 'object') {
-            const accounts = data.accounts as Record<string, { id: string; name: string }>
-            return Object.entries(accounts)
-              .map(([key, account]) => ({
-                id: key,
-                label: account.name,
-              }))
-              .sort((a, b) => a.label.localeCompare(b.label))
-          }
-          return []
+          const accounts = await fetchFacebookAdsAccounts(workspaceId)
+          return Object.entries(accounts)
+            .map(([key, account]) => ({
+              id: key,
+              label: account.name,
+              value: key,
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label))
         } catch {
           return []
+        }
+      },
+      fetchOptionById: async (_blockId: string, optionId: string) => {
+        try {
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return null
+
+          const accounts = await fetchFacebookAdsAccounts(workspaceId)
+          const account = accounts[optionId]
+          if (!account) return null
+
+          return { id: optionId, label: account.name }
+        } catch {
+          return null
         }
       },
       placeholder: 'Select Facebook ad account',
@@ -133,10 +178,15 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
         const oauthCredential = (params.oauthCredential ??
           params.credential ??
           params.manualCredential) as string | undefined
+        // Model- or dropdown-filled catalog key. Carried on BOTH paths (like
+        // bing_ads) so an agent-filled account is never dropped: the query
+        // route routes to the workspace catalog whenever `account` is set and
+        // no user OAuth credentials are provided.
+        const account = params.accountAdvanced ?? params.accountSelector ?? params.account
 
         if (isAdminWorkspace(workspaceId)) {
           return {
-            account: params.accountAdvanced ?? params.accountSelector ?? params.account,
+            account,
             query: params.query,
             workspaceId,
             _context: params._context,
@@ -144,10 +194,11 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
         }
 
         return {
+          account,
           query: params.query,
           workspaceId,
           oauthCredential,
-          adAccountId: params.accountId ?? params.adAccountId ?? params.account,
+          adAccountId: params.accountId ?? params.adAccountId,
           _context: params._context,
         }
       },

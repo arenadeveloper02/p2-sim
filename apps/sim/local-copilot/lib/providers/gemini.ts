@@ -10,6 +10,7 @@ import { toError } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type {
+  ChatCompletionChunk,
   ChatCompletionRequest,
   ChatMessage,
   ChatMessageContentPart,
@@ -64,6 +65,54 @@ function toGeminiUserParts(content: string | ChatMessageContentPart[]): Part[] {
     })
   }
   return parts
+}
+
+export interface GeminiCandidatePart {
+  thought?: boolean
+  text?: string
+  thoughtSignature?: string
+  functionCall?: {
+    id?: string
+    name?: string
+    args?: Record<string, unknown>
+  }
+}
+
+/**
+ * Maps Gemini candidate parts onto Local Copilot stream chunks.
+ * Function calls are kept even when the API flags the part as thought — Gemini 3.x
+ * often attaches `thought: true` (and a thought signature) to tool-call parts.
+ * Thought text is not user-facing.
+ */
+export function chunksFromGeminiParts(
+  parts: GeminiCandidatePart[],
+  generateCallId: () => string
+): ChatCompletionChunk[] {
+  const chunks: ChatCompletionChunk[] = []
+
+  for (const part of parts) {
+    if (part.functionCall?.name) {
+      const thoughtSignature =
+        typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0
+          ? part.thoughtSignature
+          : undefined
+      chunks.push({
+        type: 'tool_call',
+        toolCall: {
+          id: part.functionCall.id || generateCallId(),
+          name: part.functionCall.name,
+          arguments: JSON.stringify(part.functionCall.args ?? {}),
+          ...(thoughtSignature ? { thoughtSignature } : {}),
+        },
+      })
+    }
+
+    if (part.text && part.thought !== true) {
+      chunks.push({ type: 'text', content: part.text })
+    }
+  }
+
+  return chunks
 }
 
 function parseToolArguments(raw: string): Record<string, unknown> {
@@ -243,30 +292,9 @@ export function createGeminiProvider(config: LocalCopilotConfig): LocalCopilotPr
           const parts = candidate?.content?.parts ?? []
           partCount += parts.length
 
-          for (const part of parts) {
-            // Thought / reasoning parts must not be treated as user-facing text.
-            if (part.thought === true) continue
-
-            if (part.text) {
-              yield { type: 'text', content: part.text }
-            }
-
-            if (part.functionCall?.name) {
-              yieldedToolCall = true
-              const thoughtSignature =
-                typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0
-                  ? part.thoughtSignature
-                  : undefined
-              yield {
-                type: 'tool_call',
-                toolCall: {
-                  id: part.functionCall.id || generateShortId(),
-                  name: part.functionCall.name,
-                  arguments: JSON.stringify(part.functionCall.args ?? {}),
-                  ...(thoughtSignature ? { thoughtSignature } : {}),
-                },
-              }
-            }
+          for (const emitted of chunksFromGeminiParts(parts, generateShortId)) {
+            if (emitted.type === 'tool_call') yieldedToolCall = true
+            yield emitted
           }
         }
 
@@ -288,7 +316,7 @@ export function createGeminiProvider(config: LocalCopilotConfig): LocalCopilotPr
 
         yield {
           type: 'done',
-          finishReason: yieldedToolCall ? 'tool_calls' : 'stop',
+          finishReason: yieldedToolCall ? 'tool_calls' : (apiFinishReason ?? 'stop'),
           usage: { inputTokens, outputTokens },
         }
       } catch (error) {

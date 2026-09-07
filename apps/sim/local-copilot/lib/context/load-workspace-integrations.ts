@@ -46,6 +46,7 @@ export async function loadWorkspaceIntegrations(
       providerId: credential.providerId,
       displayName: credential.displayName,
       role: credential.role,
+      isOwn: credential.ownerUserId === userId,
     })),
     envKeysFromCredentials,
     getHubSpotSharedAccountOptionIds()
@@ -54,6 +55,7 @@ export async function loadWorkspaceIntegrations(
     providerId: integration.providerId,
     displayName: integration.displayName,
     role: integration.role ?? null,
+    ...(integration.isOwn ? { isOwn: true } : {}),
   }))
 
   return {

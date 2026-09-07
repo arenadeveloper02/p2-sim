@@ -32,8 +32,8 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
   params: {
     account: {
       type: 'string',
-      description: 'Facebook ad account key (admin workspaces only)',
-      required: false,
+      description: 'Facebook ad account key from the workspace account catalog',
+      required: true,
       visibility: 'user-or-llm',
     },
     query: {

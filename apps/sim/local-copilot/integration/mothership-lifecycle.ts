@@ -59,9 +59,8 @@ import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
   type LocalCopilotCatalogId,
+  resolveLocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
@@ -96,11 +95,7 @@ function extractWorkspaceSnapshot(value: unknown): VfsSnapshotV1 | undefined {
 function resolveCatalogIdFromPayload(
   requestPayload: Record<string, unknown>
 ): LocalCopilotCatalogId {
-  const model = extractString(requestPayload.model)
-  if (!model || !isLocalCopilotCatalogId(model)) {
-    return DEFAULT_LOCAL_COPILOT_CATALOG_ID
-  }
-  return model
+  return resolveLocalCopilotCatalogId(extractString(requestPayload.model))
 }
 
 function extractContexts(value: unknown): CopilotContextEntry[] | undefined {

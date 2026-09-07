@@ -32,7 +32,7 @@ function basenameWithoutExtension(path: string): string {
   return withoutExt || base
 }
 
-function resolveCreateFilePath(args: Record<string, unknown>): string {
+export function resolveCreateFilePath(args: Record<string, unknown>): string {
   if (typeof args.fileName === 'string' && args.fileName.trim()) {
     return args.fileName.trim()
   }
@@ -44,6 +44,16 @@ function resolveCreateFilePath(args: Record<string, unknown>): string {
     }
   }
   return ''
+}
+
+/**
+ * Stable `files/...` key for turn-scoped create_file reuse.
+ */
+export function canonicalCreateFilePath(args: Record<string, unknown>): string {
+  const raw = resolveCreateFilePath(args)
+  if (!raw) return ''
+  const withPrefix = raw.startsWith('files/') ? raw : `files/${raw}`
+  return withPrefix.toLowerCase()
 }
 
 /**

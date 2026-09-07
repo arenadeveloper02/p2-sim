@@ -320,6 +320,7 @@ export function buildContextPromptPayload(
   return JSON.stringify(
     sanitizeForLlm({
       workspace: context.workspace,
+      currentUser: context.currentUser,
       connectedIntegrations: context.connectedIntegrations,
       envVariables: slimInventory ? undefined : context.envVariables,
       hostedKeysAvailable: context.hostedKeysAvailable,
@@ -332,7 +333,7 @@ export function buildContextPromptPayload(
       knowledgeBases: slimInventory ? undefined : context.knowledgeBases,
       tables: slimInventory ? undefined : context.tables,
       workspaceFiles: slimInventory ? undefined : context.workspaceFiles,
-      skills: slimInventory ? undefined : context.skills,
+      skills: context.skills,
       userMemories: context.userMemories,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,

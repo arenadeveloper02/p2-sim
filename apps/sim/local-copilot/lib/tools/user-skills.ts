@@ -11,9 +11,6 @@ const logger = createLogger('LocalCopilotUserSkills')
 /** Tool name for Arena's local load_user_skill (cloud mothership dropped this path). */
 export const LOAD_USER_SKILL_TOOL_NAME = 'load_user_skill'
 
-/** Max skill summaries injected into Arena Copilot context. */
-const MAX_CONTEXT_SKILLS = 100
-
 export interface LocalCopilotSkillSummary {
   id: string
   name: string
@@ -50,7 +47,7 @@ export async function buildLocalCopilotUserSkillTool(
 
   return {
     name: LOAD_USER_SKILL_TOOL_NAME,
-    description: `Load a user-created skill's full instructions. You MUST call this before following a skill: the list below only tells you which skills exist and when each applies — it is NOT the instructions. To use a skill, call load_user_skill with its exact name and follow the content it returns; never act on a skill's name or description alone. Available skills:\n${catalog}`,
+    description: `Load a user-created skill's full instructions only when that skill is listed below and its body is not already in the Relevant workspace skills prompt. Do not call this for names that are already inlined. Never act on a skill's name or description alone. Available skills:\n${catalog}`,
     parameters: {
       type: 'object',
       properties: {
@@ -84,7 +81,6 @@ export async function loadWorkspaceSkillSummaries(
       })
       .from(skill)
       .where(eq(skill.workspaceId, workspaceId))
-      .limit(MAX_CONTEXT_SKILLS)
 
     return rows.map((row) => ({
       id: row.id,

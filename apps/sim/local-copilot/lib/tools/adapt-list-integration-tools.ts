@@ -2,7 +2,7 @@ import { createUserToolSchema } from '@/tools/params'
 import { getTool, resolveToolId } from '@/tools/utils'
 
 const LOCAL_INVOKE_NOTE =
-  'Arena Copilot: call invoke_integration_tool({ toolId: "<id>", params: { ... } }) with the exact id. Do NOT call load_integration_tool (Cloud-only). Pass credentialId from connectedIntegrations for OAuth tools. When only one matching credential exists, Arena injects credentialId automatically. For Gmail separate drafts, call once per recipient with a single email in params.to — never put multiple recipients in one draft when the user asked for separate drafts.'
+  'Arena Copilot: call invoke_integration_tool({ toolId: "<id>", params: { ... } }) with the exact id. Do NOT call load_integration_tool (Cloud-only). Pass credentialId from connectedIntegrations for OAuth tools — prefer isOwn: true (the signed-in user\'s account). When the user has one matching own credential, or only one matching credential exists, Arena injects credentialId automatically. For Gmail separate drafts, call once per recipient with a single email in params.to — never put multiple recipients in one draft when the user asked for separate drafts.'
 
 interface ListedIntegrationTool {
   id: string

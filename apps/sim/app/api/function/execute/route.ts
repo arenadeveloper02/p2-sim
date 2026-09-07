@@ -18,7 +18,11 @@ import {
   validateWorkspaceFileWriteTarget,
   writeWorkspaceFileByPath,
 } from '@/lib/copilot/vfs/resource-writer'
-import { isMothershipSandboxEnabled, isRemoteSandboxEnabled } from '@/lib/core/config/env-flags'
+import {
+  isHosted,
+  isMothershipSandboxEnabled,
+  isRemoteSandboxEnabled,
+} from '@/lib/core/config/env-flags'
 import {
   createTimeoutAbortController,
   isTimeoutAbortReason,
@@ -1994,7 +1998,18 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         { status: 503 }
       )
     }
-    if (usesMothershipSandbox && !selectedSandboxId && !isMothershipSandboxEnabled) {
+    const mothershipUsesFunctionFallback =
+      usesMothershipSandbox &&
+      !selectedSandboxId &&
+      !isMothershipSandboxEnabled &&
+      isRemoteSandboxEnabled &&
+      !isHosted
+    if (
+      usesMothershipSandbox &&
+      !selectedSandboxId &&
+      !isMothershipSandboxEnabled &&
+      !mothershipUsesFunctionFallback
+    ) {
       return NextResponse.json(
         { success: false, error: 'Mothership code sandbox is not configured' },
         { status: 503 }
@@ -2002,11 +2017,14 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
     // A selected Sim sandbox is layered on the Function base, even for a
     // trusted Mothership call. Only an unselected Mothership call uses the
-    // separately built Mothership image.
+    // separately built Mothership image. Self-hosted Copilot may reuse the
+    // Function image when the dedicated Mothership template is unset.
+    const useMothershipImage =
+      usesMothershipSandbox && isMothershipSandboxEnabled && !selectedSandboxId
     const remoteSandboxEnabled = selectedSandboxId
       ? isRemoteSandboxEnabled
       : usesMothershipSandbox
-        ? isMothershipSandboxEnabled
+        ? isMothershipSandboxEnabled || mothershipUsesFunctionFallback
         : isRemoteSandboxEnabled
     const remainingExecutionMs =
       executionDeadlineAt === undefined ? undefined : Math.max(1, executionDeadlineAt - Date.now())
@@ -2193,9 +2211,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         outputSandboxPaths,
         workspaceId,
         sandboxId: selectedSandboxId,
-        ...(usesMothershipSandbox && !selectedSandboxId
-          ? { sandboxKind: 'mothership' as const }
-          : {}),
+        ...(useMothershipImage ? { sandboxKind: 'mothership' as const } : {}),
         signal: executionSignal,
       })
       const executionTime = Date.now() - execStart
@@ -2366,9 +2382,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           outputSandboxPaths,
           workspaceId,
           sandboxId: selectedSandboxId,
-          ...(usesMothershipSandbox && !selectedSandboxId
-            ? { sandboxKind: 'mothership' as const }
-            : {}),
+          ...(useMothershipImage ? { sandboxKind: 'mothership' as const } : {}),
           signal: executionSignal,
         })
         const executionTime = Date.now() - execStart
@@ -2457,9 +2471,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         outputSandboxPaths,
         workspaceId,
         sandboxId: selectedSandboxId,
-        ...(usesMothershipSandbox && !selectedSandboxId
-          ? { sandboxKind: 'mothership' as const }
-          : {}),
+        ...(useMothershipImage ? { sandboxKind: 'mothership' as const } : {}),
         signal: executionSignal,
       })
       const executionTime = Date.now() - execStart

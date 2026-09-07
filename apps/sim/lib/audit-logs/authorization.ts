@@ -1,9 +1,9 @@
 import { db } from '@sim/db'
-import { member, subscription } from '@sim/db/schema'
+import { member } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
 import { isOrganizationBillingBlocked } from '@/lib/billing/core/access'
-import { USABLE_SUBSCRIPTION_STATUSES } from '@/lib/billing/subscriptions/utils'
 import type { ForbiddenDetailCode } from '@/lib/core/application'
 import { isAuditLogsEnabled, isBillingEnabled } from '@/lib/core/config/env-flags'
 
@@ -79,34 +79,22 @@ export async function resolveEnterpriseAuditAccess(
     }
   }
 
-  const [orgSub, orgMembers] = await Promise.all([
-    isBillingEnabled
-      ? db
-          .select({ id: subscription.id })
-          .from(subscription)
-          .where(
-            and(
-              eq(subscription.referenceId, membership.organizationId),
-              eq(subscription.plan, 'enterprise'),
-              inArray(subscription.status, USABLE_SUBSCRIPTION_STATUSES)
-            )
-          )
-          .limit(1)
-      : Promise.resolve([]),
-    db
-      .select({ userId: member.userId })
-      .from(member)
-      .where(eq(member.organizationId, membership.organizationId)),
-  ])
-
-  if (isBillingEnabled && orgSub.length === 0) {
-    return {
-      success: false,
-      status: 403,
-      code: 'ENTERPRISE_PLAN_REQUIRED',
-      message: 'Active enterprise subscription required',
+  if (isBillingEnabled) {
+    const entitled = await isOrganizationOnEnterprisePlan(membership.organizationId)
+    if (!entitled) {
+      return {
+        success: false,
+        status: 403,
+        code: 'ENTERPRISE_PLAN_REQUIRED',
+        message: 'Active enterprise subscription required',
+      }
     }
   }
+
+  const orgMembers = await db
+    .select({ userId: member.userId })
+    .from(member)
+    .where(eq(member.organizationId, membership.organizationId))
 
   const orgMemberIds = orgMembers.map((organizationMember) => organizationMember.userId)
   logger.info('Enterprise audit access validated', {

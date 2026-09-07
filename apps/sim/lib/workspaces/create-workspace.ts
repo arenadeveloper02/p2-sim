@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { ensureUserInOrganization } from '@/lib/billing/organizations/membership'
 import { PlatformEvents } from '@/lib/core/telemetry'
+import { seedGeneralSkillsIntoWorkspace } from '@/lib/skill-share/repository'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
@@ -120,6 +121,18 @@ export async function createWorkspace({
   } catch (error) {
     logger.error(`Failed to create workspace ${workspaceId}:`, error)
     throw error
+  }
+
+  try {
+    await seedGeneralSkillsIntoWorkspace({
+      workspaceId,
+      ownerUserId: userId,
+    })
+  } catch (error) {
+    logger.error('Failed to seed general catalog skills into new workspace', {
+      workspaceId,
+      error,
+    })
   }
 
   try {

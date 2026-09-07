@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { credential, credentialMember, permissions, workspace } from '@sim/db/schema'
+import { account, credential, credentialMember, permissions, workspace } from '@sim/db/schema'
 import { permissionSatisfies } from '@sim/platform-authz/workspace'
 import { chunkArray } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
@@ -784,6 +784,8 @@ export interface AccessibleOAuthCredential {
   /** Distinguishes a personal OAuth connection from a shared service account. */
   type: 'oauth' | 'service_account'
   updatedAt: Date
+  /** Sim user who owns the linked OAuth account; null for service accounts. */
+  ownerUserId: string | null
 }
 
 export async function getAccessibleOAuthCredentials(
@@ -802,8 +804,10 @@ export async function getAccessibleOAuthCredentials(
         displayName: credential.displayName,
         type: credential.type,
         updatedAt: credential.updatedAt,
+        ownerUserId: account.userId,
       })
       .from(credential)
+      .leftJoin(account, eq(credential.accountId, account.id))
       .where(
         and(
           eq(credential.workspaceId, workspaceId),
@@ -820,6 +824,7 @@ export async function getAccessibleOAuthCredentials(
         role: 'admin' as const,
         type: row.type as AccessibleOAuthCredential['type'],
         updatedAt: row.updatedAt,
+        ownerUserId: row.ownerUserId ?? null,
       }))
   }
 
@@ -831,6 +836,7 @@ export async function getAccessibleOAuthCredentials(
       role: credentialMember.role,
       type: credential.type,
       updatedAt: credential.updatedAt,
+      ownerUserId: account.userId,
     })
     .from(credential)
     .innerJoin(
@@ -841,6 +847,7 @@ export async function getAccessibleOAuthCredentials(
         eq(credentialMember.status, 'active')
       )
     )
+    .leftJoin(account, eq(credential.accountId, account.id))
     .where(
       and(
         eq(credential.workspaceId, workspaceId),
@@ -849,13 +856,14 @@ export async function getAccessibleOAuthCredentials(
     )
 
   return rows
-    .filter((row): row is AccessibleOAuthCredential => Boolean(row.providerId))
+    .filter((row): row is typeof row & { providerId: string } => Boolean(row.providerId))
     .map((row) => ({
       id: row.id,
-      providerId: row.providerId!,
+      providerId: row.providerId,
       displayName: row.displayName,
       role: row.role,
       type: row.type as AccessibleOAuthCredential['type'],
       updatedAt: row.updatedAt,
+      ownerUserId: row.ownerUserId ?? null,
     }))
 }

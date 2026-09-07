@@ -8,7 +8,8 @@ import {
 import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
 /** Default Local Copilot main agent model (override with `COPILOT_MODEL`). */
-const DEFAULT_MODEL = 'claude-sonnet-4-6'
+export const DEFAULT_LOCAL_COPILOT_MODEL = 'claude-sonnet-4-6'
+const DEFAULT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
 /**
  * Default specialist / parallel-subagent model when `COPILOT_PROVIDER=anthropic`
  * and `COPILOT_SPECIALIST_MODEL` is unset. Cheaper than Sonnet for leaf tool work.
@@ -49,7 +50,7 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
 }
 
 function isBedrockModelId(modelId: string): boolean {
-  return /^(?:(?:us|eu|apac|global|us-gov)\.)?(anthropic|amazon|meta|mistral|nvidia|zai|cohere)\./.test(
+  return /^(?:(?:us|eu|apac|global|us-gov)\.)?(anthropic|amazon|meta|mistral|nvidia|zai|cohere|deepseek)\./.test(
     modelId
   )
 }

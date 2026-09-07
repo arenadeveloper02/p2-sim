@@ -5,7 +5,9 @@ import { BillingPeriodToggle } from '@/app/workspace/[workspaceId]/upgrade/compo
 import {
   type CellValue,
   COMPARISON_SECTIONS,
+  type ComparisonSection,
   PLAN_COLUMNS,
+  type PlanColumn,
   type PlanName,
 } from '@/app/workspace/[workspaceId]/upgrade/components/comparison-table/comparison-data'
 
@@ -47,11 +49,17 @@ export interface ComparisonTableProps {
    * Should point to the same setter as the page-level toggle.
    */
   onIsAnnualChange: (isAnnual: boolean) => void
+  /** Disables the in-table billing-period toggle while a plan action is pending. */
+  billingPeriodDisabled?: boolean
   /**
    * Resolved CTA per plan column, mirroring the upgrade-page plan cards. Plans
-   * without an entry (e.g. Free) render no button.
+   * without an entry (e.g. Free / Starter) render no button.
    */
   ctas: Partial<Record<PlanName, ComparisonPlanCta>>
+  /** Optional comparison dataset override (Arena swaps Free→Starter, drops daily refresh). */
+  sections?: ComparisonSection[]
+  /** Optional column metadata override. */
+  columns?: PlanColumn[]
 }
 
 /**
@@ -135,17 +143,24 @@ export function ComparisonTable({
   maxPrice,
   isAnnual,
   onIsAnnualChange,
+  billingPeriodDisabled = false,
   ctas,
+  sections = COMPARISON_SECTIONS,
+  columns = PLAN_COLUMNS,
 }: ComparisonTableProps) {
   const runtimePrices: Partial<Record<PlanName, string>> = {
     Pro: proPrice,
     Max: maxPrice,
   }
+  const planColCount = columns.length
 
   return (
     <div className='w-full overflow-x-auto rounded-xl border border-[var(--border-1)]'>
-      {/* CSS grid: 1 label col + 4 equal plan cols */}
-      <div className='grid min-w-[640px] grid-cols-[1fr_repeat(4,minmax(0,1fr))]'>
+      {/* CSS grid: 1 label col + N equal plan cols */}
+      <div
+        className='grid min-w-[640px]'
+        style={{ gridTemplateColumns: `1fr repeat(${planColCount}, minmax(0, 1fr))` }}
+      >
         {/* ── Column headers ── */}
         {/* Top-left cell: title, subtitle, and billing toggle */}
         <div className='flex h-full flex-col justify-between gap-3 border-[var(--border)] border-r bg-[var(--surface-1)] px-4 py-4'>
@@ -153,10 +168,14 @@ export function ComparisonTable({
             <span className='text-[var(--text-primary)] text-base'>Compare plans</span>
             <span className='text-[var(--text-muted)] text-small'>Find the right plan for you</span>
           </div>
-          <BillingPeriodToggle isAnnual={isAnnual} onChange={onIsAnnualChange} />
+          <BillingPeriodToggle
+            isAnnual={isAnnual}
+            onChange={onIsAnnualChange}
+            disabled={billingPeriodDisabled}
+          />
         </div>
 
-        {PLAN_COLUMNS.map((col) => {
+        {columns.map((col) => {
           const price = runtimePrices[col.name] ?? col.staticPrice ?? ''
           const cta = ctas[col.name]
 
@@ -186,7 +205,7 @@ export function ComparisonTable({
         })}
 
         {/* ── Sections ── */}
-        {COMPARISON_SECTIONS.map((section, sectionIdx) => (
+        {sections.map((section, sectionIdx) => (
           <div key={section.title} className='contents'>
             {/* Section header row — split so the left-column separator stays continuous */}
             <div
@@ -199,9 +218,10 @@ export function ComparisonTable({
             </div>
             <div
               className={cn(
-                'col-span-4 bg-[var(--surface-2)]',
+                'bg-[var(--surface-2)]',
                 sectionIdx > 0 && 'border-[var(--border-1)] border-t'
               )}
+              style={{ gridColumn: `span ${planColCount} / span ${planColCount}` }}
             />
 
             {/* Feature rows */}
@@ -220,7 +240,7 @@ export function ComparisonTable({
                 {/* Plan cells */}
                 {row.values.map((value, colIdx) => (
                   <div
-                    key={PLAN_COLUMNS[colIdx].name}
+                    key={columns[colIdx]?.name ?? colIdx}
                     className={cn(
                       'flex items-center justify-center bg-[var(--surface-2)] px-3 py-2.5',
                       rowIdx < section.rows.length - 1 && 'border-[var(--border-1)] border-b'
