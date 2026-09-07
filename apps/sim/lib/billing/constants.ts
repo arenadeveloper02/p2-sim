@@ -48,7 +48,7 @@ export const BILLING_LOCK_TIMEOUT_MS = 5_000
 /**
  * Available credit tiers. Each tier maps a credit amount to the underlying dollar
  * cost and carries that tier's fixed weekly refresh allowance.
- * 1 credit = $0.005, so credits = dollars * 200.
+ * Display conversion is `getCreditsPerDollar()` (fallback `CREDITS_PER_DOLLAR`, 65).
  *
  * `weeklyRefreshCredits` is a fixed per-tier amount, NOT a rate. Which plans map
  * to which allowance (legacy plans, seat scaling, free/enterprise exclusion) is
@@ -83,8 +83,9 @@ export type CreditTier = (typeof CREDIT_TIERS)[number]
 export const MAX_TIER_CREDITS = MAX_CREDIT_TIER.credits
 
 /**
- * Credits granted per dollar of plan spend. A credit is $0.005, so a dollar
- * buys 200 — the conversion behind both free-tier and weekly-refresh credits.
+ * Credits granted per dollar of plan spend. Fallback when `master_config`
+ * `CREDITS_PER_DOLLOR` is unset. Prefer `getCreditsPerDollar()` at UI/API
+ * boundaries — do not hardcode 200 (upstream Sim Cloud).
  */
 export const CREDITS_PER_DOLLAR = 65
 
