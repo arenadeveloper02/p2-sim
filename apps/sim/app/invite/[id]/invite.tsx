@@ -314,14 +314,11 @@ export default function Invite({ registrationDisabled }: InviteProps) {
 
   const handleAutoLogin = useCallback(async () => {
     try {
-      await client.signIn.email(
-        {
-          email: userEmail || '',
-          password: 'Position2!',
-          callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-        },
-        {}
-      )
+      const { attemptArenaSso } = await import('@/lib/auth/attempt-arena-sso')
+      const { ok } = await attemptArenaSso()
+      if (!ok) {
+        logger.error('Arena SSO failed for invite flow')
+      }
     } catch (error) {
       logger.error('Error auto-logging in for invite flow', { error })
     }

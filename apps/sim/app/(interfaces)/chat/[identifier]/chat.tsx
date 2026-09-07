@@ -337,14 +337,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 if (!hasSession) {
                   setIsAutoLoginInProgress(true)
                   localStorage.setItem(autoLoginKey, '1')
-                  await client.signIn.email(
-                    {
-                      email: cookieEmail,
-                      password: 'Position2!',
-                      callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-                    },
-                    {}
-                  )
+                  const { attemptArenaSso } = await import('@/lib/auth/attempt-arena-sso')
+                  await attemptArenaSso()
                   return
                 }
               }

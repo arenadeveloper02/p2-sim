@@ -5922,3 +5922,26 @@ export const clientOrganization = pgTable(
     ),
   })
 )
+
+/** Arena V3 ↔ Sim SSO ticket (CASA: opaque cookie hashed at rest; never store Arena JWT) */
+export const arenaSsoTicket = pgTable(
+  'arena_sso_ticket',
+  {
+    id: text('id').primaryKey(),
+    ticketHash: text('ticket_hash').notNull(),
+    aud: text('aud').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    arenaEmail: text('arena_email').notNull(),
+    arenaSysId: text('arena_sys_id'),
+    expiresAt: timestamp('expires_at').notNull(),
+    revokedAt: timestamp('revoked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    ticketHashUnique: uniqueIndex('arena_sso_ticket_ticket_hash_uidx').on(table.ticketHash),
+    userIdIdx: index('arena_sso_ticket_user_id_idx').on(table.userId),
+  })
+)

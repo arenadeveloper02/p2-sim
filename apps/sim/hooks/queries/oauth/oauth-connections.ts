@@ -120,15 +120,9 @@ export function useArenaV3IntegrationsAutoLogin(workspaceId: string): void {
         }
 
         localStorage.setItem(autoLoginKey, '1')
-        await client.signIn.email(
-          {
-            email: cookieEmail,
-            password: 'Position2!',
-            callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-          },
-          {}
-        )
-        if (!cancelled) {
+        const { attemptArenaSso } = await import('@/lib/auth/attempt-arena-sso')
+        const { ok } = await attemptArenaSso()
+        if (ok && !cancelled) {
           router.refresh()
         }
       } catch (error) {
