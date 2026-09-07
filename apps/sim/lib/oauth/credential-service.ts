@@ -30,6 +30,7 @@ import {
   PROACTIVE_REFRESH_THRESHOLD_DAYS,
 } from '@/lib/oauth/microsoft'
 import { refreshOAuthToken } from '@/lib/oauth/oauth'
+import { decryptQuickBooksOAuthClientConfig } from '@/lib/oauth/quickbooks-client-config'
 import { getOAuthRefreshCoordinationIdentity } from '@/lib/oauth/refresh-coordination'
 import {
   extractSlackTeamId,
@@ -799,6 +800,7 @@ interface CoalescedRefreshOptions {
   refreshToken: string
   /** External provider account id (`account.accountId`), used to scope Slack refreshes per installation. */
   providerAccountId?: string | null
+  oauthConfig?: string | null
   requestId?: string
   userId?: string
   targetTable?: 'account' | 'account_tokens'
@@ -837,6 +839,7 @@ async function performCoalescedRefresh({
   providerId,
   refreshToken,
   providerAccountId,
+  oauthConfig,
   requestId,
   userId,
   targetTable = 'account',
@@ -913,10 +916,17 @@ async function performCoalescedRefresh({
             refreshTokenToUse = freshest.refreshToken
           }
 
+          let quickBooksClientConfig
+          if (providerId === 'quickbooks') {
+            if (!oauthConfig) {
+              throw new Error('QuickBooks OAuth client configuration is missing')
+            }
+            quickBooksClientConfig = await decryptQuickBooksOAuthClientConfig(oauthConfig)
+          }
           const result = await refreshOAuthToken(
             providerId,
             refreshTokenToUse,
-            alias,
+            quickBooksClientConfig ?? alias,
             organizationId,
             getOrganizationOAuthApp
           )
@@ -967,6 +977,11 @@ async function performCoalescedRefresh({
             }
             if (isMicrosoftProvider(providerId)) {
               updateData.refreshTokenExpiresAt = getMicrosoftRefreshTokenExpiry()
+            }
+            if (result.refreshTokenExpiresIn) {
+              updateData.refreshTokenExpiresAt = new Date(
+                Date.now() + result.refreshTokenExpiresIn * 1000
+              )
             }
 
             if (targetTable === 'account_tokens') {
@@ -1048,6 +1063,7 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
       idToken: account.idToken,
       scope: account.scope,
       updatedAt: account.updatedAt,
+      oauthConfig: account.oauthConfig,
     })
     .from(account)
     .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
@@ -1110,6 +1126,7 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
       providerId,
       refreshToken: credential.refreshToken!,
       providerAccountId: credential.providerAccountId,
+      oauthConfig: credential.oauthConfig,
       userId,
       targetTable: sourceTable,
       alias: resolveHubSpotRefreshAlias({
@@ -1220,6 +1237,7 @@ export async function resolveCredentialTokenBundle(
       providerId: credential.providerId,
       refreshToken: credential.refreshToken!,
       providerAccountId: credential.accountId,
+      oauthConfig: credential.oauthConfig,
       requestId,
       userId: credential.userId,
       alias: resolveHubSpotRefreshAlias(credential),
@@ -1415,6 +1433,7 @@ export async function refreshTokenIfNeeded(
     providerId: credential.providerId,
     refreshToken: credential.refreshToken!,
     providerAccountId: credential.accountId,
+    oauthConfig: credential.oauthConfig,
     requestId,
     userId: credential.userId,
     targetTable,

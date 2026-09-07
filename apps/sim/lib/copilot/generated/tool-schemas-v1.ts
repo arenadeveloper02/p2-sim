@@ -225,7 +225,7 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         x: {
           type: 'number',
           description:
-            "X in CSS pixels within the current viewport. When read off a browser_screenshot, divide the image pixel value by the screenshot's scale.",
+            'X in CSS pixels within the current viewport. When read off a browser_screenshot, divide the image pixel value by scale and add clip.x when present.',
         },
         y: {
           type: 'number',
@@ -612,6 +612,248 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
       },
     },
   },
+  browser_fill_form: {
+    parameters: {
+      additionalProperties: false,
+      properties: {
+        fields: {
+          description:
+            "Ordered list of 1–8 fields with unique elementId refs from the current top page's latest snapshot. Supply exactly one matching value parameter per kind.",
+          items: {
+            oneOf: [
+              {
+                additionalProperties: false,
+                properties: {
+                  elementId: {},
+                  kind: {
+                    enum: ['text'],
+                  },
+                  text: {},
+                },
+                required: ['text'],
+              },
+              {
+                additionalProperties: false,
+                properties: {
+                  elementId: {},
+                  kind: {
+                    enum: ['select'],
+                  },
+                  value: {},
+                },
+                required: ['value'],
+              },
+              {
+                additionalProperties: false,
+                properties: {
+                  checked: {},
+                  elementId: {},
+                  kind: {
+                    enum: ['checked'],
+                  },
+                },
+                required: ['checked'],
+              },
+            ],
+            properties: {
+              checked: {
+                description:
+                  'Desired state for kind=checked. A radio can only be set true; native checkboxes may be true or false.',
+                type: 'boolean',
+              },
+              elementId: {
+                description:
+                  "Nonnegative integer element ref from the current page's latest snapshot.",
+                maximum: 9007199254740991,
+                minimum: 0,
+                type: 'integer',
+              },
+              kind: {
+                description:
+                  'text requires text; select requires value; checked requires checked. Do not supply parameters for another kind.',
+                enum: ['text', 'select', 'checked'],
+                type: 'string',
+              },
+              text: {
+                description:
+                  'Replacement content for kind=text, including empty to clear. At most 4096 characters. Ordinary input or textarea only.',
+                maxLength: 4096,
+                type: 'string',
+              },
+              value: {
+                description:
+                  'Option value or visible label for kind=select. At most 4096 characters. Native single-selection dropdown only.',
+                maxLength: 4096,
+                type: 'string',
+              },
+            },
+            required: ['elementId', 'kind'],
+            type: 'object',
+          },
+          maxItems: 8,
+          minItems: 1,
+          type: 'array',
+        },
+      },
+      required: ['fields'],
+      type: 'object',
+    },
+    resultSchema: {
+      type: 'object',
+      properties: {
+        completed: {
+          type: 'boolean',
+          description:
+            'True only when every requested field passed exact verification and the page boundary stayed unchanged.',
+        },
+        completedCount: {
+          type: 'number',
+          description:
+            'Number of field results whose latest readback matched the requested state. Inspect results for the individual indices.',
+        },
+        doNotRetry: {
+          type: 'boolean',
+          description:
+            'True when input dispatch began: inspect partial results and a fresh snapshot before deciding on remaining work; never blindly repeat the batch.',
+        },
+        error: {
+          type: 'string',
+          description: 'Reason filling stopped; preceding fields may already have taken effect.',
+        },
+        note: {
+          type: 'string',
+          description: 'Partial-outcome recovery guidance. Form filling is not atomic.',
+        },
+        notices: {
+          type: 'array',
+          items: {
+            type: 'string',
+          },
+        },
+        results: {
+          type: 'array',
+          description:
+            'Ordered field readbacks. An interrupted write may have no result; absence is not proof that input had no effect.',
+          items: {
+            type: 'object',
+            properties: {
+              checked: {
+                type: 'boolean',
+              },
+              elementId: {
+                type: 'number',
+              },
+              index: {
+                type: 'number',
+              },
+              kind: {
+                type: 'string',
+                enum: ['text', 'select', 'checked'],
+              },
+              redacted: {
+                type: 'boolean',
+              },
+              valueLength: {
+                type: 'number',
+              },
+              valuePreview: {
+                type: 'string',
+                description:
+                  'Bounded normalized actual field preview, withheld for sensitive autocomplete fields; full-value equality is checked inside the page.',
+              },
+              verified: {
+                type: 'boolean',
+                description:
+                  'Whether the full requested value or checked state matched at the latest successful probe, not merely whether input was dispatched.',
+              },
+            },
+            required: ['index', 'elementId', 'kind', 'verified'],
+          },
+        },
+        stoppedIndex: {
+          type: 'number',
+          description: 'Zero-based field index being processed or verified when filling stopped.',
+        },
+      },
+      required: ['completed', 'completedCount', 'results'],
+    },
+  },
+  browser_find: {
+    parameters: {
+      type: 'object',
+      properties: {
+        elementId: {
+          type: 'number',
+          description:
+            'Optional current top-page element id to observe only that element and its subtree, such as a known form, row, or card. Returns scoped: true and fresh refs; all previous snapshot refs are invalidated. Cross-origin frame contents are omitted and mark the result truncated. Framed roots are rejected. Omit for a full-page snapshot or when the previous scope has disappeared.',
+        },
+        maxResults: {
+          type: 'number',
+          description: 'Maximum matches to return (default 20, capped at 50).',
+        },
+        query: {
+          type: 'string',
+          description: 'Literal case-insensitive text to find in ref-bearing snapshot lines.',
+        },
+      },
+      required: ['query'],
+    },
+    resultSchema: {
+      type: 'object',
+      properties: {
+        matches: {
+          type: 'array',
+          description: 'Bounded matching snapshot lines with valid element ids.',
+          items: {
+            type: 'object',
+            properties: {
+              elementId: {
+                type: 'number',
+                description: 'Fresh element id from the captured snapshot.',
+              },
+              line: {
+                type: 'string',
+                description: 'Matching ref-bearing snapshot line.',
+              },
+            },
+          },
+        },
+        notices: {
+          type: 'array',
+          description:
+            'Pending auto-handled JavaScript alert/confirm/prompt notices since the previous successful browser result.',
+          items: {
+            type: 'string',
+          },
+        },
+        query: {
+          type: 'string',
+          description: 'Literal query that was searched.',
+        },
+        scoped: {
+          type: 'boolean',
+          description: 'Whether observation was limited to the requested element subtree.',
+        },
+        title: {
+          type: 'string',
+          description: 'Top-page title when available.',
+        },
+        totalMatches: {
+          type: 'number',
+          description: 'Total matches before applying maxResults.',
+        },
+        truncated: {
+          type: 'boolean',
+          description: 'Whether snapshot coverage or matching results were truncated.',
+        },
+        url: {
+          type: 'string',
+          description: 'Top-page URL.',
+        },
+      },
+      required: ['query', 'matches', 'totalMatches', 'truncated'],
+    },
+  },
   browser_go_back: {
     parameters: {
       type: 'object',
@@ -865,6 +1107,56 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
       required: ['dispatched'],
     },
   },
+  browser_list_downloads: {
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    resultSchema: {
+      type: 'object',
+      properties: {
+        downloads: {
+          type: 'array',
+          description: 'Recent downloads for this browser session, newest first.',
+          items: {
+            type: 'object',
+            properties: {
+              filename: {
+                type: 'string',
+                description: 'Sanitized filename; no local filesystem path is exposed.',
+              },
+              id: {
+                type: 'string',
+                description: 'Session-local download id.',
+              },
+              receivedBytes: {
+                type: 'number',
+                description: 'Bytes received so far.',
+              },
+              startedAt: {
+                type: 'string',
+                description: 'ISO timestamp when the download started.',
+              },
+              state: {
+                type: 'string',
+                description: 'Current download lifecycle state.',
+                enum: ['progressing', 'completed', 'interrupted', 'cancelled'],
+              },
+              totalBytes: {
+                type: 'number',
+                description: 'Expected total bytes when known, otherwise zero.',
+              },
+            },
+          },
+        },
+        scopeId: {
+          type: 'string',
+          description: 'Browser session scope that owns these downloads.',
+        },
+      },
+      required: ['downloads', 'scopeId'],
+    },
+  },
   browser_list_sessions: {
     parameters: {
       type: 'object',
@@ -886,7 +1178,7 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         url: {
           type: 'string',
           description:
-            'The absolute URL to navigate to, including scheme (https:// or http://). Must resolve to a public address — localhost and private/internal hosts are rejected.',
+            'The absolute URL to navigate to, including scheme (https:// or http://). Public websites and localhost/loopback are supported; other private/internal hosts are rejected.',
         },
       },
       required: ['url'],
@@ -1103,10 +1395,44 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
       },
     },
   },
-  browser_screenshot: {
+  browser_reload: {
     parameters: {
       type: 'object',
       properties: {},
+    },
+    resultSchema: {
+      type: 'object',
+      properties: {
+        notices: {
+          type: 'array',
+          description:
+            'Pending auto-handled JavaScript alert/confirm/prompt notices since the previous successful browser result.',
+          items: {
+            type: 'string',
+          },
+        },
+        title: {
+          type: 'string',
+          description: 'Top-page title when available.',
+        },
+        url: {
+          type: 'string',
+          description: 'Top-page URL.',
+        },
+      },
+      required: ['url', 'title'],
+    },
+  },
+  browser_screenshot: {
+    parameters: {
+      type: 'object',
+      properties: {
+        elementId: {
+          type: 'number',
+          description:
+            "Optional element id from the current tab's latest browser_snapshot. When present, capture only the visible portion of that top-page element without scrolling or changing layout. Scroll explicitly first if needed. Framed elements are rejected; use a viewport screenshot for them. Use the returned clip offset when converting image coordinates.",
+        },
+      },
     },
     resultSchema: undefined,
   },
@@ -1117,12 +1443,12 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         amount: {
           type: 'number',
           description:
-            'Optional distance to scroll in pixels (default: 85% of the viewport height, so a little context carries over).',
+            'Optional distance to scroll in pixels (default: 85% of the viewport height for up/down or width for left/right, so a little context carries over).',
         },
         direction: {
           type: 'string',
           description: 'Scroll direction.',
-          enum: ['up', 'down'],
+          enum: ['up', 'down', 'left', 'right'],
         },
         elementId: {
           type: 'number',
@@ -1139,6 +1465,16 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
           type: 'boolean',
           description: 'Whether the selected region is at its bottom boundary.',
         },
+        atLeft: {
+          type: 'boolean',
+          description:
+            'Whether the selected region is at its physical left boundary, included for left/right.',
+        },
+        atRight: {
+          type: 'boolean',
+          description:
+            'Whether the selected region is at its physical right boundary, included for left/right.',
+        },
         atTop: {
           type: 'boolean',
           description: 'Whether the selected region is at its top boundary.',
@@ -1147,9 +1483,14 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
           type: 'number',
           description: 'Region viewport height.',
         },
+        clientWidth: {
+          type: 'number',
+          description: 'Region viewport width, included for left/right.',
+        },
         movedBy: {
           type: 'number',
-          description: 'Actual signed movement; zero means the target did not move.',
+          description:
+            'Actual signed movement on the requested axis: negative for up/left, positive for down/right; zero means the target did not move.',
         },
         notices: {
           type: 'array',
@@ -1163,9 +1504,18 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
           type: 'number',
           description: 'Region content height.',
         },
+        scrollLeft: {
+          type: 'number',
+          description:
+            'Resulting horizontal region scroll offset, included for left/right; may be negative in right-to-left regions.',
+        },
         scrollTop: {
           type: 'number',
-          description: 'Resulting region scroll offset.',
+          description: 'Resulting vertical region scroll offset.',
+        },
+        scrollWidth: {
+          type: 'number',
+          description: 'Region content width, included for left/right.',
         },
         target: {
           type: 'string',
@@ -1176,9 +1526,13 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
           description:
             'element, element-boundary, focus, focus-boundary, viewport-center, viewport-center-boundary, largest-visible, or page.',
         },
+        windowScrollX: {
+          type: 'number',
+          description: 'Top-page horizontal window scroll offset after a left/right region scroll.',
+        },
         windowScrollY: {
           type: 'number',
-          description: 'Top-page window scroll offset after the region scroll.',
+          description: 'Top-page vertical window scroll offset after the region scroll.',
         },
       },
       required: ['atTop', 'atBottom'],
@@ -1250,10 +1604,77 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
       required: ['selected'],
     },
   },
+  browser_set_checked: {
+    parameters: {
+      type: 'object',
+      properties: {
+        checked: {
+          type: 'boolean',
+          description:
+            'Desired checked state. Radio buttons cannot be unchecked directly; select another radio in the group instead.',
+        },
+        elementId: {
+          type: 'number',
+          description:
+            "The element id to act on (from the current tab's most recent browser_snapshot). Treat refs as invalid across tab switches or later snapshots.",
+        },
+      },
+      required: ['elementId', 'checked'],
+    },
+    resultSchema: {
+      type: 'object',
+      properties: {
+        changed: {
+          type: 'boolean',
+          description: 'Whether the control needed to change.',
+        },
+        checked: {
+          type: 'boolean',
+          description: 'Settled checked state after the operation.',
+        },
+        dispatched: {
+          type: 'boolean',
+          description: 'Whether input was dispatched.',
+        },
+        element: {
+          type: 'string',
+          description: 'Resolved checkable control kind.',
+        },
+        note: {
+          type: 'string',
+          description: 'Readback or follow-up guidance.',
+        },
+        notices: {
+          type: 'array',
+          description:
+            'Pending auto-handled JavaScript alert/confirm/prompt notices since the previous successful browser result.',
+          items: {
+            type: 'string',
+          },
+        },
+        refRecovered: {
+          type: 'boolean',
+          description:
+            'Whether a stale detached ref was safely rebound to one unique semantic match.',
+        },
+        trusted: {
+          type: 'boolean',
+          description: "Whether Chromium's trusted pointer pipeline dispatched the change.",
+        },
+      },
+      required: ['checked', 'changed', 'dispatched'],
+    },
+  },
   browser_snapshot: {
     parameters: {
       type: 'object',
-      properties: {},
+      properties: {
+        elementId: {
+          type: 'number',
+          description:
+            'Optional current top-page element id to observe only that element and its subtree, such as a known form, row, or card. Returns scoped: true and fresh refs; all previous snapshot refs are invalidated. Cross-origin frame contents are omitted and mark the result truncated. Framed roots are rejected. Omit for a full-page snapshot or when the previous scope has disappeared.',
+        },
+      },
     },
     resultSchema: {
       type: 'object',
@@ -1282,6 +1703,10 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         pageHeight: {
           type: 'number',
           description: 'Top-page document height.',
+        },
+        scoped: {
+          type: 'boolean',
+          description: 'Whether observation was limited to the requested element subtree.',
         },
         scrollY: {
           type: 'number',
@@ -1488,6 +1913,30 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
     parameters: {
       type: 'object',
       properties: {
+        elementId: {
+          type: 'number',
+          description:
+            "Optional top-page element id from the current tab's latest browser_snapshot. Supply with state to inspect that exact registered DOM node; waits do not recover replacement nodes. Framed refs and navigation during an element wait are rejected; use text/URL conditions for those flows.",
+        },
+        state: {
+          type: 'string',
+          description:
+            'Optional semantic condition for elementId. attached/detached inspect DOM presence; visible/hidden inspect rendering; enabled/disabled include native and ARIA state; checked, expanded, and selected conditions inspect native or ARIA state. All supplied text, URL, and element conditions must pass.',
+          enum: [
+            'attached',
+            'detached',
+            'visible',
+            'hidden',
+            'enabled',
+            'disabled',
+            'checked',
+            'unchecked',
+            'expanded',
+            'collapsed',
+            'selected',
+            'unselected',
+          ],
+        },
         text: {
           type: 'string',
           description: 'Optional visible text to wait for.',
@@ -1495,6 +1944,10 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         timeoutMs: {
           type: 'number',
           description: 'Maximum time to wait, in milliseconds (default 10000, capped at 120000).',
+        },
+        urlContains: {
+          type: 'string',
+          description: "Optional substring that the active tab's URL must contain.",
         },
       },
     },
@@ -1507,15 +1960,22 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         },
         found: {
           type: 'boolean',
-          description: 'Whether the requested text appeared before timeout.',
+          description: 'Whether every supplied wait condition passed before timeout.',
         },
         foundInFrame: {
           type: 'boolean',
           description: 'Whether the match was found in an eligible visible child frame.',
         },
+        matched: {
+          type: 'array',
+          description: 'Condition categories that passed: text, url, and/or element.',
+          items: {
+            type: 'string',
+          },
+        },
         note: {
           type: 'string',
-          description: 'Timeout/recovery guidance.',
+          description: 'Timeout or recovery guidance.',
         },
         notices: {
           type: 'array',
@@ -1530,6 +1990,41 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
           description: 'Completed sleep duration when no text was requested.',
         },
       },
+    },
+  },
+  browser_zoom: {
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Zoom action: in, out, or reset.',
+          enum: ['in', 'out', 'reset'],
+        },
+      },
+      required: ['action'],
+    },
+    resultSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Applied zoom action.',
+        },
+        notices: {
+          type: 'array',
+          description:
+            'Pending auto-handled JavaScript alert/confirm/prompt notices since the previous successful browser result.',
+          items: {
+            type: 'string',
+          },
+        },
+        zoomPercent: {
+          type: 'number',
+          description: 'Settled tab zoom as a percentage.',
+        },
+      },
+      required: ['action', 'zoomPercent'],
     },
   },
   call_integration_tool: {

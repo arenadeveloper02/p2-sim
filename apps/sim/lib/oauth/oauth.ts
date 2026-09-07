@@ -50,6 +50,7 @@ import {
   NotionIcon,
   OutlookIcon,
   PipedriveIcon,
+  QuickBooksIcon,
   RedditIcon,
   SalesforceIcon,
   ShopifyIcon,
@@ -84,6 +85,8 @@ import { getDocusignOAuthUrl } from '@/lib/oauth/docusign'
 import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import { MONDAY_OAUTH_TOKEN_URL, resolveMondayAccessTokenExpiresAt } from '@/lib/oauth/monday'
+import type { QuickBooksOAuthClientConfig } from '@/lib/oauth/quickbooks-client-config'
+import { QUICKBOOKS_TOKEN_URL } from '@/lib/oauth/quickbooks-constants'
 import {
   SALESFORCE_ADDITIONAL_PROVIDER_IDS,
   SALESFORCE_LOGIN_HOSTS,
@@ -1212,6 +1215,57 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'pipedrive',
   },
+  quickbooks: {
+    name: 'QuickBooks',
+    icon: QuickBooksIcon,
+    services: {
+      quickbooks: {
+        name: 'QuickBooks',
+        description:
+          'Access company data and manage customers, vendors, and items in QuickBooks Online.',
+        providerId: 'quickbooks',
+        icon: QuickBooksIcon,
+        baseProviderIcon: QuickBooksIcon,
+        scopes: ['openid', 'profile', 'email', 'com.intuit.quickbooks.accounting'],
+        clientConfiguration: {
+          redirectPath: '/api/auth/oauth2/callback/quickbooks',
+          fields: [
+            {
+              id: 'clientId',
+              label: 'Client ID',
+              placeholder: 'Enter your Intuit app client ID',
+              secret: false,
+            },
+            {
+              id: 'clientSecret',
+              label: 'Client secret',
+              placeholder: 'Enter your Intuit app client secret',
+              secret: true,
+            },
+            {
+              id: 'environment',
+              label: 'Environment',
+              placeholder: 'Select an Intuit environment',
+              secret: false,
+              options: [
+                { value: 'sandbox', label: 'Sandbox' },
+                { value: 'production', label: 'Production' },
+              ],
+              hint: 'Use the environment that matches the credentials in your Intuit app.',
+            },
+            {
+              id: 'webhookVerifierToken',
+              label: 'Webhook verifier token',
+              placeholder: 'Enter your Intuit app webhook verifier token',
+              secret: true,
+              hint: 'Used only to authenticate QuickBooks webhook triggers for this Intuit app.',
+            },
+          ],
+        },
+      },
+    },
+    defaultService: 'quickbooks',
+  },
   hubspot: {
     name: 'HubSpot',
     icon: HubspotIcon,
@@ -1698,7 +1752,14 @@ class MissingCustomAppError extends Error {}
  * `fetch` around this call, and any added microtask here would let a
  * concurrently-running test swap `fetch` out from under this one.
  */
-function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthConfig {
+function getProviderAuthConfig(
+  provider: string,
+  alias?: string,
+  clientOverride?: Pick<QuickBooksOAuthClientConfig, 'clientId' | 'clientSecret'>
+): ProviderAuthConfig {
+  if (clientOverride && provider !== 'quickbooks') {
+    throw new Error(`OAuth client override is not supported for provider ${provider}`)
+  }
   const getCredentials = (clientId: string | undefined, clientSecret: string | undefined) => {
     if (!clientId || !clientSecret) {
       throw new Error(`Missing client credentials for provider: ${provider}`)
@@ -2039,6 +2100,18 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: true,
       }
     }
+    case 'quickbooks': {
+      if (!clientOverride) {
+        throw new Error('QuickBooks OAuth client configuration is missing')
+      }
+      return {
+        tokenEndpoint: QUICKBOOKS_TOKEN_URL,
+        clientId: clientOverride.clientId,
+        clientSecret: clientOverride.clientSecret,
+        useBasicAuth: true,
+        supportsRefreshTokenRotation: true,
+      }
+    }
     case 'hubspot': {
       // If an alias is provided, try to find specific credentials for that alias
       // Expected env pattern: HUBSPOT_NORTHSTAR_ANESTHESIA_CLIENT_ID
@@ -2356,6 +2429,7 @@ export interface RefreshTokenSuccess {
   accessToken: string
   expiresIn: number
   refreshToken: string
+  refreshTokenExpiresIn?: number
 }
 
 export interface RefreshTokenFailure {
@@ -2468,10 +2542,15 @@ async function refreshInstagramLongLivedToken(
   }
 }
 
+/**
+ * Refresh an OAuth access token. The third argument is either a HubSpot portal
+ * alias or a per-credential QuickBooks client override; Zoom custom-app
+ * credentials are resolved from `organizationId` + `resolveCustomAppCredentials`.
+ */
 export async function refreshOAuthToken(
   providerId: string,
   refreshToken: string,
-  alias?: string,
+  aliasOrClientOverride?: string | Pick<QuickBooksOAuthClientConfig, 'clientId' | 'clientSecret'>,
   organizationId?: string,
   resolveCustomAppCredentials?: CustomOAuthAppCredentialsResolver
 ): Promise<RefreshTokenResult> {
@@ -2486,9 +2565,12 @@ export async function refreshOAuthToken(
             ? 'facebook-ads'
             : getBaseProviderForService(providerId)
 
+    const clientOverride =
+      typeof aliasOrClientOverride === 'object' ? aliasOrClientOverride : undefined
+    const alias = typeof aliasOrClientOverride === 'string' ? aliasOrClientOverride : undefined
     const config = requiresCustomOAuthApp(provider)
       ? await resolveCustomOAuthAppConfig(provider, organizationId, resolveCustomAppCredentials)
-      : getProviderAuthConfig(provider, alias)
+      : getProviderAuthConfig(provider, alias, clientOverride)
     if (config.clientSecret) exactSecrets.push(config.clientSecret)
 
     if (config.refreshStrategy === 'instagram_long_lived') {
@@ -2574,6 +2656,10 @@ export async function refreshOAuthToken(
       logger.warn('Monday token refresh response omitted its rotating refresh token')
       return { ok: false, message: 'Invalid Monday token refresh response' }
     }
+    if (provider === 'quickbooks' && !newRefreshToken) {
+      logger.warn('QuickBooks token refresh response omitted its rotating refresh token')
+      return { ok: false, message: 'Invalid QuickBooks token refresh response' }
+    }
 
     const rawExpiresIn = data.expires_in ?? data.expiresIn
     const parsedExpiresIn =
@@ -2593,6 +2679,18 @@ export async function refreshOAuthToken(
             )
           )
         : (responseExpiresIn ?? 3600)
+
+    const rawRefreshTokenExpiresIn = data.x_refresh_token_expires_in
+    const parsedRefreshTokenExpiresIn =
+      typeof rawRefreshTokenExpiresIn === 'number' || typeof rawRefreshTokenExpiresIn === 'string'
+        ? Number(rawRefreshTokenExpiresIn)
+        : Number.NaN
+    const refreshTokenExpiresIn =
+      provider === 'quickbooks' &&
+      Number.isSafeInteger(parsedRefreshTokenExpiresIn) &&
+      parsedRefreshTokenExpiresIn > 0
+        ? parsedRefreshTokenExpiresIn
+        : undefined
 
     if (!accessToken) {
       // Log only the shape, never `data` itself - on a partial success it can
@@ -2615,6 +2713,7 @@ export async function refreshOAuthToken(
       accessToken,
       expiresIn,
       refreshToken: newRefreshToken ?? refreshToken,
+      ...(refreshTokenExpiresIn ? { refreshTokenExpiresIn } : {}),
     }
   } catch (error) {
     const normalized = toError(error)

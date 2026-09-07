@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activeElementSecrecy,
   clickElement,
@@ -8,11 +8,13 @@ import {
   describeFocusedEditable,
   describePointTarget,
   focusElementForTyping,
+  getElementScreenshotRect,
   getViewportInfo,
   hoverElement,
   pageContainsText,
   pressKeyOnPage,
   readActiveElementState,
+  readCheckableElementState,
   readChildFrameElementState,
   readPageActionState,
   readPageText,
@@ -150,6 +152,7 @@ describe('serialization contract', () => {
     ],
     ['pressKeyOnPage', pressKeyOnPage, ['a', 'KeyA', 65, false, false, false, false]],
     ['readPageActionState', readPageActionState, []],
+    ['readCheckableElementState', readCheckableElementState, [0]],
     ['scrollPage', scrollPage, ['down', 100]],
     ['selectOptionInElement', selectOptionInElement, [0, 'value']],
     ['readSelectElementState', readSelectElementState, [0]],
@@ -157,6 +160,7 @@ describe('serialization contract', () => {
     ['readPageText', readPageText, []],
     ['pageContainsText', pageContainsText, ['needle']],
     ['getViewportInfo', getViewportInfo, []],
+    ['getElementScreenshotRect', getElementScreenshotRect, [0]],
     ['describePointTarget', describePointTarget, [10, 10]],
     ['describeFocusedEditable', describeFocusedEditable, []],
   ]
@@ -625,6 +629,32 @@ describe('collectSnapshot', () => {
     expect(outlineOf(collectSnapshot())).toContain('gridcell "party-parrot"')
   })
 
+  it('reports native and ARIA control state in the snapshot', () => {
+    document.body.innerHTML = `
+      <input type="checkbox" aria-label="Email alerts" />
+      <input type="radio" aria-label="Weekly" checked />
+      <input type="checkbox" aria-label="Partial selection" />
+      <button aria-expanded="false" aria-pressed="true">Filters</button>
+      <div role="switch" aria-label="Dark mode" aria-checked="mixed"></div>
+      <div role="tab" aria-selected="true">Activity</div>
+      <textarea aria-label="Notes" readonly required></textarea>
+      <div role="textbox" aria-label="Summary" aria-readonly="true" aria-required="true"></div>
+    `
+    for (const element of document.body.children) visible(element as HTMLElement)
+    document.querySelector<HTMLInputElement>('[aria-label="Partial selection"]')!.indeterminate =
+      true
+    const outline = outlineOf(collectSnapshot())
+
+    expect(outline).toMatch(/checkbox "Email alerts" \[ref=\d+\] unchecked/)
+    expect(outline).toMatch(/radio "Weekly" \[ref=\d+\] checked/)
+    expect(outline).toMatch(/checkbox "Partial selection" \[ref=\d+\] mixed/)
+    expect(outline).toMatch(/button "Filters" \[ref=\d+\] aria-expanded=false aria-pressed=true/)
+    expect(outline).toMatch(/switch "Dark mode" \[ref=\d+\] aria-checked=mixed/)
+    expect(outline).toMatch(/tab "Activity" \[ref=\d+\] aria-selected=true/)
+    expect(outline).toMatch(/textbox "Notes" \[ref=\d+\] readonly required/)
+    expect(outline).toMatch(/textbox "Summary" \[ref=\d+\] aria-readonly aria-required/)
+  })
+
   it('does not duplicate every descendant of an inherited pointer target', () => {
     document.body.innerHTML = `
       <div style="cursor: pointer">
@@ -885,6 +915,43 @@ describe('collectSnapshot', () => {
     expect(after.popups).not.toEqual(before.popups)
   })
 
+  it.each([
+    { role: 'dialog', field: 'dialogs' },
+    { role: 'toolbar', field: 'popups' },
+  ] as const)(
+    'reports truncation when visible $field exceed the summary limit',
+    ({ role, field }) => {
+      for (let index = 0; index < 10; index++) {
+        const element = visible(document.createElement('div'))
+        element.setAttribute('role', role)
+        element.setAttribute('aria-label', `Existing ${index}`)
+        document.body.append(element)
+      }
+      const before = readPageActionState() as {
+        dialogs: string[]
+        popups: string[]
+        observationTruncated: boolean
+      }
+      expect(before[field]).toHaveLength(10)
+      expect(before.observationTruncated).toBe(false)
+
+      const additional = visible(document.createElement('div'))
+      additional.setAttribute('role', role === 'toolbar' ? 'listbox' : role)
+      additional.setAttribute('aria-label', 'New overlay')
+      document.body.append(additional)
+      expect(readPageActionState()).toMatchObject({
+        [field]: before[field],
+        observationTruncated: true,
+      })
+
+      additional.setAttribute('aria-hidden', 'true')
+      expect(readPageActionState()).toMatchObject({
+        [field]: before[field],
+        observationTruncated: false,
+      })
+    }
+  )
+
   it('reports a targeted control semantic disappearance after its panel closes', () => {
     document.body.innerHTML = `
       <aside aria-label="Thread panel"><button data-testid="close-thread">Close thread</button></aside>
@@ -923,6 +990,305 @@ describe('collectSnapshot', () => {
   })
 })
 
+describe('semantic control state', () => {
+  it('scopes a fresh snapshot to one card without reading sibling geometry', () => {
+    document.body.innerHTML =
+      '<div role="group" tabindex="0" aria-label="Selected card"><button>Save card</button><input type="password" value="private" /></div><button>Outside card</button>'
+    for (const element of document.querySelectorAll('*')) visible(element)
+    const full = outlineOf(collectSnapshot())
+    const oldRootRef = refFor(full, 'Selected card')
+    const outside = document.querySelector('body > button')!
+    const outsideGeometry = vi.spyOn(outside, 'getBoundingClientRect')
+
+    const scoped = runSerialized(collectSnapshot, [100, oldRootRef]) as {
+      scoped: boolean
+      outline: string
+      refIds: number[]
+    }
+    expect(scoped.scoped).toBe(true)
+    expect(scoped.outline).toContain('Selected card')
+    expect(scoped.outline).toContain('Save card')
+    expect(scoped.outline).not.toContain('Outside card')
+    expect(scoped.outline).not.toContain('private')
+    expect(scoped.refIds.every((id) => id >= 100)).toBe(true)
+    expect(window.__simAgentResolveElement?.(oldRootRef)).toBeNull()
+    expect(outsideGeometry).not.toHaveBeenCalled()
+  })
+
+  it('rejects stale or framed snapshot roots without replacing the page registry', () => {
+    const button = document.createElement('button')
+    document.body.append(visible(button))
+    register(button)
+    button.remove()
+    expect(collectSnapshot(10, 0)).toMatchObject({ error: 'stale' })
+    expect(window.__simAgentElements?.[0]).toBe(button)
+
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const child = frame.contentDocument!.createElement('button')
+    frame.contentDocument!.body.append(visible(child))
+    register(child)
+    expect(collectSnapshot(10, 0)).toEqual({ error: 'framed-snapshot' })
+  })
+
+  it.each(['detached', 'hidden', 'renamed'])(
+    'rejects a %s root before scoped capture without adopting a lookalike',
+    (change) => {
+      document.body.innerHTML =
+        '<div id="card" tabindex="0" aria-label="Selected card"><button>Save card</button></div>'
+      for (const element of document.querySelectorAll('*')) visible(element)
+      const root = document.querySelector('#card')!
+      const rootRef = refFor(outlineOf(collectSnapshot()), 'Selected card')
+      const replacement = root.cloneNode(true) as HTMLElement
+      for (const element of [replacement, ...replacement.querySelectorAll('*')]) visible(element)
+      if (change === 'detached') root.replaceWith(replacement)
+      else {
+        root.after(replacement)
+        if (change === 'hidden') root.setAttribute('hidden', '')
+        else root.setAttribute('aria-label', 'Different card')
+      }
+
+      expect(runSerialized(collectSnapshot, [100, rootRef])).toMatchObject({ error: 'stale' })
+      expect(window.__simAgentElements?.[rootRef]).toBe(root)
+      expect(runSerialized(collectSnapshot, [100, rootRef])).toMatchObject({ error: 'stale' })
+    }
+  )
+
+  it('marks unreadable scoped frame content truncated', () => {
+    const root = visible(document.createElement('div'))
+    const frame = visible(document.createElement('iframe'))
+    root.append(frame)
+    document.body.append(root)
+    register(root)
+    Object.defineProperty(frame, 'contentDocument', { value: null })
+    expect(collectSnapshot(10, 0)).toMatchObject({ scoped: true, truncated: true })
+  })
+
+  it('does not recover scoped refs into a different card after the original closes', () => {
+    document.body.innerHTML =
+      '<div tabindex="0" aria-label="Selected card"><button id="save">Save card</button></div>'
+    for (const element of document.querySelectorAll('*')) visible(element)
+    const root = document.querySelector('body > div')!
+    const rootRef = refFor(outlineOf(collectSnapshot()), 'Selected card')
+    const saveRef = refFor(outlineOf(collectSnapshot(10, rootRef)), 'Save card')
+    const replacement = root.cloneNode(true) as HTMLElement
+    for (const element of [replacement, ...replacement.querySelectorAll('*')]) visible(element)
+    root.replaceWith(replacement)
+
+    expect(window.__simAgentResolveElement?.(saveRef)).toBeNull()
+    expect(window.__simAgentStaleReason).toContain('scoped snapshot root')
+  })
+
+  it('keeps scoped snapshots bounded when a selected container is very large', () => {
+    const root = document.createElement('div')
+    root.tabIndex = 0
+    root.setAttribute('aria-label', 'Large card')
+    document.body.append(visible(root))
+    register(root)
+    for (let index = 0; index < 400; index++) {
+      const button = visible(document.createElement('button'))
+      button.textContent = `Action ${index}`
+      root.append(button)
+    }
+    const scoped = collectSnapshot(10, 0) as { refIds: number[]; truncated: boolean }
+    expect(scoped.refIds).toHaveLength(300)
+    expect(scoped.truncated).toBe(true)
+  })
+
+  it('distinguishes hidden registered nodes from detached nodes without action recovery', () => {
+    const button = visible(document.createElement('button'))
+    document.body.append(button)
+    register(button)
+    window.__simAgentResolveElement = vi.fn(() => null)
+    button.style.display = 'none'
+
+    expect(readPageActionState(false, 0, 'registered')).toMatchObject({
+      targetState: { present: true, rendered: false },
+    })
+    button.remove()
+    expect(readPageActionState(false, 0, 'registered')).toMatchObject({
+      targetState: { present: false, rendered: false },
+    })
+    expect(window.__simAgentResolveElement).not.toHaveBeenCalled()
+  })
+
+  it('does not report a text input as an unchecked control', () => {
+    const input = visible(document.createElement('input'))
+    document.body.append(input)
+    register(input)
+
+    expect(readPageActionState(false, 0, 'registered')).toMatchObject({
+      targetState: { present: true, checked: undefined },
+    })
+    expect(readPageActionState(false, 1, 'registered')).toEqual({ error: 'stale' })
+  })
+
+  it.each([true, false])(
+    'reports native disclosure state as %s without inventing it on other elements',
+    (open) => {
+      document.body.innerHTML =
+        '<details><summary>Details</summary></details><dialog></dialog><button>Other</button>'
+      const details = document.querySelector('details')!
+      const dialog = document.querySelector('dialog')!
+      details.open = open
+      dialog.open = open
+      const elements = [
+        details,
+        document.querySelector('summary')!,
+        dialog,
+        document.querySelector('button')!,
+      ]
+      register(...elements.map(visible))
+      for (let id = 0; id < elements.length; id++) {
+        expect(runSerialized(readPageActionState, [false, id, 'registered'])).toMatchObject({
+          targetState: { open: id === 3 ? undefined : open },
+        })
+      }
+    }
+  )
+
+  it.each(['checkbox', 'radio'])('reads native %s state with XHTML tag casing', (type) => {
+    const input = visible(document.createElement('input'))
+    input.type = type
+    input.checked = true
+    Object.defineProperty(input, 'tagName', { value: 'input' })
+    document.body.append(input)
+    register(input)
+
+    expect(runSerialized(readPageActionState, [false, 0, 'registered'])).toMatchObject({
+      targetState: { checked: true },
+    })
+  })
+
+  it('preserves native and ARIA mixed states instead of reporting unchecked', () => {
+    document.body.innerHTML =
+      '<input type="checkbox" /><div role="checkbox" aria-checked="mixed"></div>'
+    const checkbox = visible(document.querySelector('input') as HTMLInputElement)
+    checkbox.indeterminate = true
+    register(checkbox, visible(document.querySelector('div') as HTMLDivElement))
+
+    expect(readCheckableElementState(0)).toMatchObject({ checked: 'mixed' })
+    expect(readCheckableElementState(1)).toMatchObject({ checked: 'mixed' })
+  })
+
+  it('honors disabled fieldsets and ARIA-disabled ancestors', () => {
+    document.body.innerHTML =
+      '<fieldset disabled><input type="checkbox" /></fieldset><div aria-disabled="true"><button role="switch" aria-checked="false"></button></div>'
+    register(
+      visible(document.querySelector('input') as HTMLInputElement),
+      visible(document.querySelector('button') as HTMLButtonElement)
+    )
+
+    expect(readCheckableElementState(0)).toMatchObject({ disabled: true })
+    expect(readCheckableElementState(1)).toMatchObject({ disabled: true })
+  })
+
+  it.each([true, false])(
+    'reads ARIA-disabled=%s across shadow boundaries for waits and checked state',
+    (disabled) => {
+      const host = visible(document.createElement('div'))
+      host.setAttribute('aria-disabled', String(disabled))
+      const nestedHost = visible(document.createElement('div'))
+      host.attachShadow({ mode: 'open' }).append(nestedHost)
+      const checkbox = visible(document.createElement('input'))
+      checkbox.type = 'checkbox'
+      nestedHost.attachShadow({ mode: 'open' }).append(checkbox)
+      document.body.append(host)
+      register(checkbox)
+
+      expect(runSerialized(readCheckableElementState, [0])).toMatchObject({ disabled })
+      expect(runSerialized(readPageActionState, [false, 0, 'registered'])).toMatchObject({
+        targetState: { disabled },
+      })
+    }
+  )
+
+  it('reads native and ARIA checkable controls without mutating them', () => {
+    document.body.innerHTML = `
+      <input type="checkbox" checked />
+      <button role="switch" aria-checked="false" aria-disabled="true">Alerts</button>
+    `
+    const checkbox = visible(document.querySelector('input') as HTMLInputElement)
+    const toggle = visible(document.querySelector('button') as HTMLButtonElement)
+    register(checkbox, toggle)
+
+    expect(readCheckableElementState(0)).toMatchObject({
+      checked: true,
+      disabled: false,
+      kind: 'input:checkbox',
+    })
+    expect(readCheckableElementState(1)).toMatchObject({
+      checked: false,
+      disabled: true,
+      kind: 'role:switch',
+    })
+    expect(checkbox.checked).toBe(true)
+  })
+
+  it('returns a viewport-clamped element screenshot rectangle', () => {
+    const button = visible(document.createElement('button'))
+    button.scrollIntoView = vi.fn()
+    button.getBoundingClientRect = () =>
+      ({
+        x: -10,
+        y: 5,
+        width: 120,
+        height: 20,
+        top: 5,
+        left: -10,
+        right: 110,
+        bottom: 25,
+      }) as DOMRect
+    document.body.append(button)
+    register(button)
+
+    expect(getElementScreenshotRect(0)).toMatchObject({
+      x: 0,
+      y: 5,
+      width: 110,
+      height: 20,
+      element: 'button',
+    })
+    expect(button.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('rejects a replacement screenshot target even when its geometry matches', () => {
+    const button = visible(document.createElement('button'))
+    button.id = 'save'
+    button.textContent = 'Save'
+    document.body.append(button)
+    const ref = refFor(outlineOf(collectSnapshot()), 'Save')
+    expect(getElementScreenshotRect(ref)).toMatchObject({ width: 100, height: 20 })
+    button.replaceWith(visible(button.cloneNode(true) as HTMLElement))
+
+    expect(runSerialized(getElementScreenshotRect, [ref])).toMatchObject({ error: 'stale' })
+    expect(window.__simAgentElements?.[ref]).toBe(button)
+  })
+
+  it('rejects same-origin frame crops rather than using frame-local coordinates', () => {
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const button = frame.contentDocument!.createElement('button')
+    frame.contentDocument!.body.append(button)
+    register(visible(button))
+
+    expect(getElementScreenshotRect(0)).toEqual({ error: 'framed-screenshot' })
+    expect(readPageActionState(false, 0, 'registered')).toEqual({ error: 'framed-wait' })
+  })
+
+  it('does not scroll an offscreen element into view for a screenshot', () => {
+    const button = visible(document.createElement('button'))
+    button.scrollIntoView = vi.fn()
+    document.body.append(button)
+    button.getBoundingClientRect = () =>
+      ({ left: 0, right: 20, top: 5000, bottom: 5020, width: 20, height: 20 }) as DOMRect
+    register(button)
+
+    expect(getElementScreenshotRect(0)).toEqual({ error: 'not-visible' })
+    expect(button.scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
 describe('scrollPage', () => {
   function makeScroller(scrollTop: number): {
     scroller: HTMLDivElement
@@ -946,6 +1312,163 @@ describe('scrollPage', () => {
     })
     return { scroller, child }
   }
+
+  function makeHorizontalScroller(
+    scrollLeft = 0,
+    rtl = false
+  ): {
+    scroller: HTMLDivElement
+    child: HTMLDivElement
+  } {
+    const { scroller, child } = makeScroller(300)
+    scroller.style.overflowX = 'auto'
+    scroller.style.direction = rtl ? 'rtl' : 'ltr'
+    Object.defineProperties(scroller, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 1_000 },
+      scrollLeft: { configurable: true, writable: true, value: scrollLeft },
+    })
+    Object.defineProperty(scroller, 'scrollBy', {
+      configurable: true,
+      value: ({ left, top }: ScrollToOptions) => {
+        const extent = scroller.scrollWidth - scroller.clientWidth
+        const min = rtl ? -extent : 0
+        const max = rtl ? 0 : extent
+        scroller.scrollLeft = Math.max(min, Math.min(max, scroller.scrollLeft + (left || 0)))
+        scroller.scrollTop += top || 0
+      },
+    })
+    return { scroller, child }
+  }
+
+  it('scrolls a referenced horizontal region without changing its vertical position', () => {
+    const { scroller, child } = makeHorizontalScroller(100)
+    register(child)
+
+    expect(runSerialized(scrollPage, ['right', 125, 0])).toMatchObject({
+      target: 'Message history',
+      targetSource: 'element',
+      scrollLeft: 225,
+      scrollWidth: 1_000,
+      clientWidth: 200,
+      movedBy: 125,
+      atLeft: false,
+      atRight: false,
+      scrollTop: 300,
+      atTop: false,
+      atBottom: false,
+    })
+    expect(scroller.scrollTop).toBe(300)
+  })
+
+  it('uses viewport width for the default horizontal distance', () => {
+    const { scroller, child } = makeHorizontalScroller()
+    Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 10_000 })
+    register(child)
+
+    expect(scrollPage('right', undefined, 0)).toMatchObject({
+      movedBy: Math.round(window.innerWidth * 0.85),
+    })
+  })
+
+  it('skips a vertical-only descendant when targeting a horizontal ancestor', () => {
+    const { scroller, child } = makeHorizontalScroller(200)
+    child.style.overflowY = 'auto'
+    Object.defineProperties(child, {
+      clientHeight: { configurable: true, value: 50 },
+      scrollHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, writable: true, value: 100 },
+    })
+    register(child)
+
+    expect(scrollPage('left', 75, 0)).toMatchObject({
+      target: 'Message history',
+      targetSource: 'element',
+      movedBy: -75,
+      scrollLeft: 125,
+    })
+    expect(scroller.scrollTop).toBe(300)
+    expect(child.scrollTop).toBe(100)
+  })
+
+  it('keeps a centered horizontal pane at its boundary instead of scrolling another pane', () => {
+    const { scroller, child } = makeHorizontalScroller(800)
+    const other = visible(document.createElement('div'))
+    other.style.overflowX = 'auto'
+    other.setAttribute('aria-label', 'Unrelated pane')
+    Object.defineProperties(other, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 1_000 },
+    })
+    document.body.prepend(other)
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [child, scroller],
+    })
+
+    expect(scrollPage('right', 100)).toMatchObject({
+      target: 'Message history',
+      targetSource: 'viewport-center-boundary',
+      movedBy: 0,
+      atRight: true,
+    })
+    expect(other.scrollLeft).toBe(0)
+  })
+
+  it.each([
+    { direction: 'left', before: 0, after: -100, movedBy: -100, atLeft: false, atRight: false },
+    { direction: 'left', before: -750, after: -800, movedBy: -50, atLeft: true, atRight: false },
+    { direction: 'left', before: -800, after: -800, movedBy: 0, atLeft: true, atRight: false },
+    { direction: 'right', before: -50, after: 0, movedBy: 50, atLeft: false, atRight: true },
+    { direction: 'right', before: 0, after: 0, movedBy: 0, atLeft: false, atRight: true },
+  ])('scrolls RTL $direction from $before with physical boundaries', (test) => {
+    const { child } = makeHorizontalScroller(test.before, true)
+    register(child)
+
+    expect(scrollPage(test.direction, 100, 0)).toMatchObject({
+      scrollLeft: test.after,
+      movedBy: test.movedBy,
+      atLeft: test.atLeft,
+      atRight: test.atRight,
+    })
+  })
+
+  it('scrolls the document root containing an explicit same-origin iframe ref', () => {
+    document.body.innerHTML = '<iframe></iframe>'
+    const frame = visible(document.querySelector('iframe') as HTMLIFrameElement)
+    const frameDocument = frame.contentDocument as Document
+    const frameWindow = frame.contentWindow as Window
+    frameDocument.body.innerHTML = '<div>wide table</div>'
+    const child = visible(frameDocument.body.firstElementChild as HTMLDivElement)
+    const root = visible(frameDocument.documentElement)
+    Object.defineProperties(root, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 1_000 },
+      scrollLeft: { configurable: true, writable: true, value: 0 },
+    })
+    Object.defineProperty(frameWindow, 'scrollX', { configurable: true, writable: true, value: 0 })
+    Object.defineProperty(frameWindow, 'scrollBy', {
+      configurable: true,
+      value: ({ left }: ScrollToOptions) => {
+        root.scrollLeft = Math.max(0, Math.min(800, root.scrollLeft + (left || 0)))
+        Object.defineProperty(frameWindow, 'scrollX', {
+          configurable: true,
+          value: root.scrollLeft,
+        })
+      },
+    })
+    register(child)
+
+    expect(scrollPage('right', 100, 0)).toMatchObject({
+      target: 'html',
+      targetSource: 'element',
+      scrollLeft: 100,
+      movedBy: 100,
+      atLeft: false,
+      atRight: false,
+      windowScrollX: 0,
+    })
+  })
 
   it('scrolls the movable internal container under the viewport center', () => {
     const { scroller, child } = makeScroller(600)

@@ -822,6 +822,14 @@ describe('Cost Calculation', () => {
       expect(cachedCost.output).toBe(regularCost.output)
     })
 
+    it('should select pricing tiers from the full request input size', () => {
+      const shortContext = calculateCost('gpt-5.6-terra', 272_000, 100_000)
+      const longContext = calculateCost('gpt-5.6-terra', 272_001, 100_000)
+
+      expect(shortContext).toMatchObject({ input: 0.544, output: 1.2, total: 1.744 })
+      expect(longContext).toMatchObject({ input: 1.088004, output: 1.8, total: 2.888004 })
+    })
+
     it('should return default pricing for unknown models', () => {
       const result = calculateCost('unknown-model', 1000, 500, false)
 
@@ -871,6 +879,7 @@ describe('getHostedModels', () => {
   it('should return OpenAI, Anthropic, Google, and xAI models as hosted', () => {
     const hostedModels = getHostedModels()
 
+    expect(hostedModels).toContain('gpt-6-astra')
     expect(hostedModels).toContain('gpt-4o')
     expect(hostedModels).toContain('o1')
 
@@ -898,6 +907,7 @@ describe('getHostedModels', () => {
 
 describe('shouldBillModelUsage', () => {
   it('should return true for exact matches of hosted models', () => {
+    expect(shouldBillModelUsage('gpt-6-astra')).toBe(true)
     expect(shouldBillModelUsage('gpt-4o')).toBe(true)
     expect(shouldBillModelUsage('gpt-4o-mini')).toBe(true)
     expect(shouldBillModelUsage('o1')).toBe(true)

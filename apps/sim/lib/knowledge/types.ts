@@ -1,4 +1,5 @@
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
+import type { KbEmbeddingDimensions } from '@/lib/knowledge/embedding-models'
 
 /**
  * Units:
@@ -46,7 +47,7 @@ export interface CreateKnowledgeBaseData {
   workspaceId: string
   folderId?: string | null
   embeddingModel: string
-  embeddingDimension: 1536
+  embeddingDimension: KbEmbeddingDimensions
   chunkingConfig: ChunkingConfig
   userId: string
 }

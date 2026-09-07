@@ -112,6 +112,7 @@ import {
   OAUTH_PROVIDERS,
   refreshOAuthToken,
 } from '@/lib/oauth'
+import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import { REDDIT_USER_AGENT } from '@/tools/reddit/constants'
 
 /** Compares real icon components by identity; the global `@/components/icons` stub in vitest.setup.ts would make that vacuous. */
@@ -451,6 +452,7 @@ describe('OAuth Token Refresh', () => {
       providerId: string
       endpoint: string
       expectedBasicAuthPair?: `${string}:${string}`
+      clientOverride?: { clientId: string; clientSecret: string }
     }> = [
       {
         name: 'Airtable',
@@ -461,6 +463,15 @@ describe('OAuth Token Refresh', () => {
         name: 'Bitbucket',
         providerId: 'bitbucket',
         endpoint: 'https://bitbucket.org/site/oauth2/access_token',
+      },
+      {
+        name: 'QuickBooks',
+        providerId: 'quickbooks',
+        endpoint: 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
+        clientOverride: {
+          clientId: 'quickbooks_client_id',
+          clientSecret: 'quickbooks_client_secret',
+        },
       },
       { name: 'X (Twitter)', providerId: 'x', endpoint: 'https://api.x.com/2/oauth2/token' },
       {
@@ -487,56 +498,112 @@ describe('OAuth Token Refresh', () => {
       },
     ]
 
-    basicAuthProviders.forEach(({ name, providerId, endpoint, expectedBasicAuthPair }) => {
-      it.concurrent(
-        `should send ${name} request with Basic Auth header and no credentials in body`,
-        async () => {
-          const mockFetch = createMockFetch(defaultOAuthResponse)
-          const refreshToken = 'test_refresh_token'
+    basicAuthProviders.forEach(
+      ({ name, providerId, endpoint, expectedBasicAuthPair, clientOverride }) => {
+        it.concurrent(
+          `should send ${name} request with Basic Auth header and no credentials in body`,
+          async () => {
+            const mockFetch = createMockFetch(defaultOAuthResponse)
+            const refreshToken = 'test_refresh_token'
 
-          await withMockFetch(mockFetch, () => refreshOAuthToken(providerId, refreshToken))
+            await withMockFetch(mockFetch, () =>
+              refreshOAuthToken(providerId, refreshToken, clientOverride)
+            )
 
-          expect(mockFetch).toHaveBeenCalledWith(
-            endpoint,
-            expect.objectContaining({
-              method: 'POST',
-              headers: expect.objectContaining({
-                'Content-Type': 'application/x-www-form-urlencoded',
-                Authorization: expect.stringMatching(/^Basic /),
-              }),
-              body: expect.any(String),
-            })
-          )
+            expect(mockFetch).toHaveBeenCalledWith(
+              endpoint,
+              expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  Authorization: expect.stringMatching(/^Basic /),
+                }),
+                body: expect.any(String),
+              })
+            )
 
-          const [, requestOptions] = mockFetch.mock.calls[0] as [
-            string,
-            { headers: Record<string, string>; body: string },
-          ]
+            const [, requestOptions] = mockFetch.mock.calls[0] as [
+              string,
+              { headers: Record<string, string>; body: string },
+            ]
 
-          const authHeader = requestOptions.headers.Authorization
-          expect(authHeader).toMatch(/^Basic /)
+            const authHeader = requestOptions.headers.Authorization
+            expect(authHeader).toMatch(/^Basic /)
 
-          const base64Credentials = authHeader.replace('Basic ', '')
-          const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8')
-          const [clientId, clientSecret] = credentials.split(':')
+            const base64Credentials = authHeader.replace('Basic ', '')
+            const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8')
+            const [clientId, clientSecret] = credentials.split(':')
 
-          const expectedPair =
-            expectedBasicAuthPair ?? `${providerId}_client_id:${providerId}_client_secret`
-          const [expectedClientId, expectedSecret] = expectedPair.split(':')
-          expect(clientId).toBe(expectedClientId)
-          expect(clientSecret).toBe(expectedSecret)
+            const expectedPair =
+              expectedBasicAuthPair ?? `${providerId}_client_id:${providerId}_client_secret`
+            const [expectedClientId, expectedSecret] = expectedPair.split(':')
+            expect(clientId).toBe(expectedClientId)
+            expect(clientSecret).toBe(expectedSecret)
 
-          const bodyParams = new URLSearchParams(requestOptions.body)
-          const bodyKeys = Array.from(bodyParams.keys())
+            const bodyParams = new URLSearchParams(requestOptions.body)
+            const bodyKeys = Array.from(bodyParams.keys())
 
-          expect(bodyKeys).toEqual(['grant_type', 'refresh_token'])
-          expect(bodyParams.get('grant_type')).toBe('refresh_token')
-          expect(bodyParams.get('refresh_token')).toBe(refreshToken)
+            expect(bodyKeys).toEqual(['grant_type', 'refresh_token'])
+            expect(bodyParams.get('grant_type')).toBe('refresh_token')
+            expect(bodyParams.get('refresh_token')).toBe(refreshToken)
 
-          expect(bodyParams.get('client_id')).toBeNull()
-          expect(bodyParams.get('client_secret')).toBeNull()
-        }
+            expect(bodyParams.get('client_id')).toBeNull()
+            expect(bodyParams.get('client_secret')).toBeNull()
+          }
+        )
+      }
+    )
+
+    it('preserves Intuit refresh-token lifetime metadata', async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: {
+          access_token: 'new-access-token',
+          expires_in: 3600,
+          refresh_token: 'new-refresh-token',
+          x_refresh_token_expires_in: 8_726_400,
+        },
+      })
+
+      const result = await withMockFetch(mockFetch, () =>
+        refreshOAuthToken('quickbooks', 'old-refresh-token', {
+          clientId: 'quickbooks-client-id',
+          clientSecret: 'quickbooks-client-secret',
+          environment: 'sandbox',
+        })
       )
+
+      expect(result).toEqual({
+        ok: true,
+        accessToken: 'new-access-token',
+        expiresIn: 3600,
+        refreshToken: 'new-refresh-token',
+        refreshTokenExpiresIn: 8_726_400,
+      })
+    })
+
+    it('rejects a QuickBooks refresh response that omits its rotated refresh token', async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: {
+          access_token: 'new-access-token',
+          expires_in: 3600,
+          x_refresh_token_expires_in: 8_726_400,
+        },
+      })
+
+      await expect(
+        withMockFetch(mockFetch, () =>
+          refreshOAuthToken('quickbooks', 'old-refresh-token', {
+            clientId: 'quickbooks-client-id',
+            clientSecret: 'quickbooks-client-secret',
+            environment: 'sandbox',
+          })
+        )
+      ).resolves.toEqual({
+        ok: false,
+        message: 'Invalid QuickBooks token refresh response',
+      })
     })
   })
 
@@ -643,12 +710,12 @@ describe('OAuth Token Refresh', () => {
       {
         name: 'Microsoft',
         providerId: 'microsoft',
-        endpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        endpoint: getMicrosoftOAuthEndpoints().tokenUrl,
       },
       {
         name: 'Outlook',
         providerId: 'outlook',
-        endpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        endpoint: getMicrosoftOAuthEndpoints().tokenUrl,
       },
       { name: 'Slack', providerId: 'slack', endpoint: 'https://slack.com/api/oauth.v2.access' },
       {
@@ -744,13 +811,17 @@ describe('OAuth Token Refresh', () => {
               ? 'microsoft_client_id'
               : providerId === 'google-ads'
                 ? 'google_ads_client_id'
-                : `${providerId}_client_id`
+                : providerId === 'salesforce-sandbox'
+                  ? 'salesforce_client_id'
+                  : `${providerId}_client_id`
           const expectedClientSecret =
             providerId === 'outlook'
               ? 'microsoft_client_secret'
               : providerId === 'google-ads'
                 ? 'google_ads_client_secret'
-                : `${providerId}_client_secret`
+                : providerId === 'salesforce-sandbox'
+                  ? 'salesforce_client_secret'
+                  : `${providerId}_client_secret`
 
           expect(bodyParams.get('client_id')).toBe(expectedClientId)
           expect(bodyParams.get('client_secret')).toBe(expectedClientSecret)

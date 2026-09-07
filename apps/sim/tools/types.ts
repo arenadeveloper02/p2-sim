@@ -135,6 +135,8 @@ export interface OAuthConfig {
     | 'credentialType'
     | 'domain'
     | 'instanceUrl'
+    | 'realmId'
+    | 'quickBooksEnvironment'
   )[]
 }
 

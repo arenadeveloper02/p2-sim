@@ -16,6 +16,7 @@ import {
   getServiceConfigByServiceId,
   parseProvider,
   providerIdsForService,
+  usesCredentialConfiguredOAuthClient,
 } from './utils'
 
 describe('getAllOAuthServices', () => {
@@ -81,6 +82,11 @@ describe('getAllOAuthServices', () => {
     expect(slackService).toBeDefined()
     expect(slackService?.name).toBe('Slack')
     expect(slackService?.baseProvider).toBe('slack')
+
+    const quickbooksService = services.find((s) => s.providerId === 'quickbooks')
+    expect(quickbooksService).toBeDefined()
+    expect(quickbooksService?.name).toBe('QuickBooks')
+    expect(quickbooksService?.baseProvider).toBe('quickbooks')
   })
 
   it.concurrent('should not include duplicate services', () => {
@@ -173,6 +179,14 @@ describe('getServiceByProviderAndId', () => {
     expect(Array.isArray(service.scopes)).toBe(true)
     expect(service.scopes.length).toBeGreaterThan(0)
     expect(service.scopes).toContain('https://www.googleapis.com/auth/gmail.send')
+  })
+})
+
+describe('usesCredentialConfiguredOAuthClient', () => {
+  it.concurrent('distinguishes user-supplied OAuth apps from deployment OAuth clients', () => {
+    expect(usesCredentialConfiguredOAuthClient('quickbooks')).toBe(true)
+    expect(usesCredentialConfiguredOAuthClient('slack')).toBe(false)
+    expect(usesCredentialConfiguredOAuthClient('unknown-provider')).toBe(false)
   })
 })
 
@@ -275,6 +289,14 @@ describe('getServiceConfigByProviderId', () => {
     expect(service).toBeDefined()
     expect(service?.providerId).toBe('slack')
     expect(service?.name).toBe('Slack')
+  })
+
+  it.concurrent('should work for QuickBooks', () => {
+    const service = getServiceConfigByProviderId('quickbooks')
+
+    expect(service).toBeDefined()
+    expect(service?.providerId).toBe('quickbooks')
+    expect(service?.name).toBe('QuickBooks')
   })
 
   it.concurrent('should return service with scopes', () => {
@@ -384,6 +406,13 @@ describe('getCanonicalScopesForProvider', () => {
 
     expect(excelScopes.length).toBeGreaterThan(0)
     expect(excelScopes).toContain('Files.Read')
+  })
+
+  it.concurrent('should return the exact canonical QuickBooks scopes', () => {
+    const expected = ['openid', 'profile', 'email', 'com.intuit.quickbooks.accounting']
+
+    expect(getCanonicalScopesForProvider('quickbooks')).toEqual(expected)
+    expect(getScopesForService('quickbooks')).toEqual(expected)
   })
 
   it.concurrent('should handle providers with empty scopes array', () => {

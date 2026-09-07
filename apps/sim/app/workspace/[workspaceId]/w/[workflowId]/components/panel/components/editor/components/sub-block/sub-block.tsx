@@ -544,6 +544,7 @@ function SubBlockComponent({
     triggerId: undefined,
     isPreview,
     useWebhookUrl: config.useWebhookUrl,
+    providerWebhookUrl: config.providerWebhookUrl,
   })
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
@@ -1503,7 +1504,9 @@ function SubBlockComponent({
         canonicalToggle,
         Boolean(canonicalToggle?.disabled || disabled || isPreview),
         {
-          showCopyButton: Boolean(config.showCopyButton && config.useWebhookUrl),
+          showCopyButton: Boolean(
+            config.showCopyButton && (config.useWebhookUrl || config.providerWebhookUrl)
+          ),
           copied,
           onCopy: handleCopy,
         },

@@ -1113,10 +1113,10 @@ export function useWorkflowExecution() {
     const workflowEdges = (executionWorkflowState?.edges ??
       latestWorkflowState.edges) as typeof currentWorkflow.edges
 
-    // Filter out blocks without type (these are layout-only blocks) and disabled blocks
+    /** Keep disabled targets available for routing; the DAG excludes them from execution. */
     const validBlocks = Object.entries(workflowBlocks).reduce(
       (acc, [blockId, block]) => {
-        if (block?.type && block.enabled !== false) {
+        if (block?.type) {
           acc[blockId] = block
         }
         return acc
@@ -1154,22 +1154,27 @@ export function useWorkflowExecution() {
       }
     })
 
-    // Filter out blocks without type and disabled blocks
     const filteredStates = Object.entries(mergedStates).reduce(
       (acc, [id, block]) => {
         if (!block || !block.type) {
           logger.warn(`Skipping block with undefined type: ${id}`, block)
           return acc
         }
-        // Skip disabled blocks to prevent them from being passed to executor
-        if (block.enabled === false) {
-          logger.warn(`Skipping disabled block: ${id}`)
-          return acc
-        }
         acc[id] = block
         return acc
       },
       {} as typeof mergedStates
+    )
+
+    /** Trigger resolution must never select a disabled trigger. */
+    const enabledStates = Object.entries(filteredStates).reduce(
+      (acc, [id, block]) => {
+        if (block.enabled !== false) {
+          acc[id] = block
+        }
+        return acc
+      },
+      {} as typeof filteredStates
     )
 
     // If this is a chat execution, get the selected outputs
@@ -1186,7 +1191,7 @@ export function useWorkflowExecution() {
 
     if (isExecutingFromChat) {
       // For chat execution, find the appropriate chat trigger
-      const startBlock = TriggerUtils.findStartBlock(filteredStates, 'chat')
+      const startBlock = TriggerUtils.findStartBlock(enabledStates, 'chat')
 
       if (!startBlock) {
         throw new WorkflowValidationError(
@@ -1200,7 +1205,7 @@ export function useWorkflowExecution() {
       startBlockId = startBlock.blockId
     } else {
       // Manual execution: detect and group triggers by paths
-      const candidates = resolveStartCandidates(filteredStates, {
+      const candidates = resolveStartCandidates(enabledStates, {
         execution: 'manual',
       })
 
@@ -1212,7 +1217,7 @@ export function useWorkflowExecution() {
           'Workflow Validation'
         )
         logger.error('No trigger blocks found for manual run', {
-          allBlockTypes: Object.values(filteredStates).map((b) => b.type),
+          allBlockTypes: Object.values(enabledStates).map((b) => b.type),
         })
         if (activeWorkflowId) finishOwnedExecution(activeWorkflowId, persistenceExecution)
         throw error
@@ -2043,15 +2048,15 @@ export function useWorkflowExecution() {
       const sourceExecutionId = isTriggerBlock ? undefined : effectiveSnapshot.sourceExecutionId
 
       const mergedStates = mergeSubblockState(latestWorkflowState.blocks, workflowId)
-      const executableStates = Object.entries(mergedStates).reduce(
+      const filteredStates = Object.entries(mergedStates).reduce(
         (states, [id, block]) => {
-          if (block?.type && block.enabled !== false) states[id] = block
+          if (block?.type) states[id] = block
           return states
         },
         {} as typeof mergedStates
       )
       const workflowStateOverride = workflowStateSchema.parse({
-        blocks: executableStates,
+        blocks: filteredStates,
         edges: workflowEdges,
         loops: latestWorkflowState.loops,
         parallels: latestWorkflowState.parallels,
@@ -2060,7 +2065,14 @@ export function useWorkflowExecution() {
       // Extract mock payload for trigger blocks
       let workflowInput: any
       if (isTriggerBlock) {
-        const candidates = resolveStartCandidates(executableStates, { execution: 'manual' })
+        const enabledStates = Object.entries(filteredStates).reduce(
+          (states, [id, block]) => {
+            if (block.enabled !== false) states[id] = block
+            return states
+          },
+          {} as typeof filteredStates
+        )
+        const candidates = resolveStartCandidates(enabledStates, { execution: 'manual' })
         const candidate = candidates.find((c) => c.blockId === blockId)
 
         if (candidate) {
@@ -2078,7 +2090,7 @@ export function useWorkflowExecution() {
           }
         } else {
           // Fallback: block is trigger by position but not classified as start candidate
-          const block = executableStates[blockId]
+          const block = enabledStates[blockId]
           if (block) {
             const blockConfig = getBlock(block.type)
             const hasTriggers = blockConfig?.triggers?.available?.length

@@ -105,6 +105,7 @@ Add rows here as more custom work lands.
 | Arena upgrade page overlay | `arena/upgrade-presenter.ts`, `arena/upgrade-comparison.ts` → `upgrade.tsx` / `use-upgrade-state.ts` |
 | Checkout ignores Starter Stripe ID | `arena/checkout-policy.ts` → `lib/billing/client/upgrade.ts` |
 | Supersede Starter on paid checkout | `arena/supersede-starter.ts` → `onSubscriptionComplete` + org ensure |
+| Personal / signup workspace creation | `apps/sim/lib/workspaces/README.md` |
 
 ---
 
@@ -118,7 +119,8 @@ When pulling upstream Sim into an Arena branch:
 4. **Image variations** — `resolve-image-count.server.ts` and related image-generation paths are not overwritten by upstream single-image defaults.
 5. **Settings Enterprise nav** — Keep `forks` and `custom-blocks` commented out in `settings/navigation.ts`.
 6. **Stripe / plans** — Follow `apps/sim/lib/billing/README.md` (runtime `getCreditsPerDollar()`, Checkout URL + non-blocking transfer, Starter has no Stripe ID, EE entitlement includes Starter/Max).
-7. **This file** — Update the tables above if anything was added, removed, or renamed during the merge.
+7. **Workspaces** — Follow `apps/sim/lib/workspaces/README.md` (signup `ensurePersonalWorkspaceOnEmailSignup`, keep `/workspace` fallbacks, keep `isPersonal` + first-personal on free/lapsed orgs).
+8. **This file** — Update the tables above if anything was added, removed, or renamed during the merge.
 
 ---
 
@@ -126,6 +128,7 @@ When pulling upstream Sim into an Arena branch:
 
 | Date | Change |
 |------|--------|
+| 2026-09-07 | Workspace creation and personal-workspace README at `apps/sim/lib/workspaces/README.md` |
 | 2026-09-07 | Stripe payments and plans README at `apps/sim/lib/billing/README.md` |
 | 2026-09-01 | Arena upgrade overlay (Starter/Pro/Max) + checkout ignores Starter Stripe ID and supersedes Starter on payment |
 | 2026-09-01 | Arena flat org pricing ($30 Pro / $100 Max) + Stripe plan catalog (`team_1950` / `team_6500`, `STRIPE_PRICE_TEAM_30_*`) |

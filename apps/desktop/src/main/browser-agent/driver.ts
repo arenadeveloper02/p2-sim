@@ -52,12 +52,15 @@ import {
   describeFocusedEditable,
   describePointTarget,
   focusElementForTyping,
+  getElementScreenshotRect,
   getViewportInfo,
   hoverElement,
   pageContainsText,
   pressKeyOnPage,
   readActiveElementState,
+  readCheckableElementState,
   readChildFrameElementState,
+  readFormFieldState,
   readPageActionState,
   readPageText,
   readSelectElementState,
@@ -81,6 +84,9 @@ const TAKEOVER_POLL_MS = 1_500
  * legitimate tool (browser_wait_for caps at 120s).
  */
 const DEFAULT_TOOL_WATCHDOG_MS = 20_000
+const MAX_FORM_FIELDS = 8
+const MAX_FORM_FIELD_TEXT = 4_096
+const MAX_FORM_TEXT = 16_384
 const WAIT_FOR_TOOL_WATCHDOG_GRACE_MS = 5_000
 /** Retained native tool calls: generous for normal serial use, finite under a wedged caller. */
 export const BROWSER_TOOL_ADMISSION_LIMITS = Object.freeze({
@@ -91,8 +97,96 @@ const MAX_CROSS_ORIGIN_SNAPSHOT_FRAMES = 8
 const MAX_CROSS_ORIGIN_SCAN_FRAMES = 32
 const COMBINED_SNAPSHOT_LINE_CAP = 900
 const BROWSER_AGENT_ISOLATED_WORLD_ID = 1001
+const BROWSER_WAIT_ELEMENT_STATES = [
+  'attached',
+  'detached',
+  'visible',
+  'hidden',
+  'enabled',
+  'disabled',
+  'checked',
+  'unchecked',
+  'expanded',
+  'collapsed',
+  'selected',
+  'unselected',
+] as const
+const BROWSER_WAIT_ELEMENT_STATE_SET: ReadonlySet<string> = new Set(BROWSER_WAIT_ELEMENT_STATES)
+
+type BrowserWaitElementState = (typeof BROWSER_WAIT_ELEMENT_STATES)[number]
+
+function isBrowserWaitElementState(value: string): value is BrowserWaitElementState {
+  return BROWSER_WAIT_ELEMENT_STATE_SET.has(value)
+}
 
 type PageExecutionTarget = WebContents | WebFrameMain
+
+type FormField =
+  | { elementId: number; kind: 'text'; text: string }
+  | { elementId: number; kind: 'select'; value: string }
+  | { elementId: number; kind: 'checked'; checked: boolean }
+
+function parseFormFields(params: Record<string, unknown>): FormField[] {
+  if (Object.keys(params).some((key) => key !== 'fields')) {
+    throw new ToolError('Form filling accepts only fields; submitting is not supported.')
+  }
+  if (
+    !Array.isArray(params.fields) ||
+    params.fields.length === 0 ||
+    params.fields.length > MAX_FORM_FIELDS
+  ) {
+    throw new ToolError(`Form filling requires between 1 and ${MAX_FORM_FIELDS} fields.`)
+  }
+  const ids = new Set<number>()
+  let totalText = 0
+  return params.fields.map((field): FormField => {
+    if (
+      !isRecordLike(field) ||
+      typeof field.elementId !== 'number' ||
+      !Number.isSafeInteger(field.elementId) ||
+      field.elementId < 0 ||
+      ids.has(field.elementId)
+    ) {
+      throw new ToolError('Every form field requires a unique nonnegative integer elementId.')
+    }
+    ids.add(field.elementId)
+    const valueKey =
+      field.kind === 'text'
+        ? 'text'
+        : field.kind === 'select'
+          ? 'value'
+          : field.kind === 'checked'
+            ? 'checked'
+            : null
+    if (
+      !valueKey ||
+      Object.keys(field).some((key) => !['elementId', 'kind', valueKey].includes(key))
+    ) {
+      throw new ToolError(
+        'Each form field must specify text, select, or checked and only its matching value parameter.'
+      )
+    }
+    if (field.kind === 'checked' && typeof field.checked === 'boolean') {
+      return { elementId: field.elementId, kind: 'checked', checked: field.checked }
+    }
+    const value = field[valueKey]
+    if (
+      typeof value !== 'string' ||
+      value.length > MAX_FORM_FIELD_TEXT ||
+      field.kind === 'checked'
+    ) {
+      throw new ToolError(
+        `Text and selection values must be strings of at most ${MAX_FORM_FIELD_TEXT} characters; checked must be boolean.`
+      )
+    }
+    totalText += value.length
+    if (totalText > MAX_FORM_TEXT)
+      throw new ToolError(`Form field text cannot exceed ${MAX_FORM_TEXT} characters in total.`)
+    return field.kind === 'text'
+      ? { elementId: field.elementId, kind: 'text', text: value }
+      : { elementId: field.elementId, kind: 'select', value }
+  })
+}
 
 export type BrowserSessionPersistence = session.BrowserSessionPersistence
 
@@ -865,6 +959,7 @@ export function browserToolWatchdogMs(
     tool === 'browser_open_url' ||
     tool === 'browser_go_back' ||
     tool === 'browser_go_forward' ||
+    tool === 'browser_reload' ||
     tool === 'browser_open_tab' ||
     tool === 'browser_switch_tab'
   ) {
@@ -887,6 +982,67 @@ function requireNum(params: Record<string, unknown>, key: string): number {
   const value = num(params, key)
   if (value === undefined) throw new ToolError(`Missing required numeric parameter "${key}"`)
   return value
+}
+
+function browserElementStateMatches(
+  targetState: Record<string, unknown>,
+  requestedState: BrowserWaitElementState
+): boolean {
+  const present = targetState.present === true
+  const rendered = targetState.rendered === true
+  const checked =
+    targetState.checked === 'mixed' || targetState.ariaChecked === 'mixed'
+      ? undefined
+      : typeof targetState.checked === 'boolean'
+        ? targetState.checked
+        : targetState.ariaChecked === 'true' || targetState.ariaPressed === 'true'
+          ? true
+          : targetState.ariaChecked === 'false' || targetState.ariaPressed === 'false'
+            ? false
+            : undefined
+  const expanded =
+    typeof targetState.open === 'boolean'
+      ? targetState.open
+      : targetState.ariaExpanded === 'true'
+        ? true
+        : targetState.ariaExpanded === 'false'
+          ? false
+          : undefined
+  const selected =
+    typeof targetState.selected === 'boolean'
+      ? targetState.selected
+      : targetState.ariaSelected === 'true'
+        ? true
+        : targetState.ariaSelected === 'false'
+          ? false
+          : undefined
+
+  switch (requestedState) {
+    case 'attached':
+      return present
+    case 'detached':
+      return !present
+    case 'visible':
+      return present && rendered
+    case 'hidden':
+      return !present || !rendered || targetState.hidden === true
+    case 'enabled':
+      return present && targetState.disabled !== true
+    case 'disabled':
+      return present && targetState.disabled === true
+    case 'checked':
+      return present && checked === true
+    case 'unchecked':
+      return present && checked === false
+    case 'expanded':
+      return present && expanded === true
+    case 'collapsed':
+      return present && expanded === false
+    case 'selected':
+      return present && selected === true
+    case 'unselected':
+      return present && selected === false
+  }
 }
 
 /**
@@ -1111,6 +1267,26 @@ function unwrapPageResult(result: unknown): unknown {
     if (code === 'not-select') {
       throw new ToolError('That element is not a <select> dropdown.')
     }
+    if (code === 'not-checkable') {
+      throw new ToolError(
+        'That element is not a checkbox, radio button, switch, or checkable menu item.'
+      )
+    }
+    if (code === 'framed-screenshot') {
+      throw new ToolError(
+        'Element screenshots are limited to the top page. Use browser_screenshot without elementId for framed content.'
+      )
+    }
+    if (code === 'framed-wait') {
+      throw new ToolError(
+        'Element-state waits are limited to the top page. Use a text or URL condition for framed content.'
+      )
+    }
+    if (code === 'framed-snapshot') {
+      throw new ToolError(
+        'Scoped snapshots require a top-page element. Omit elementId to capture framed content.'
+      )
+    }
     if (code === 'no-option') {
       const options = (result as { options?: string[] }).options ?? []
       throw new ToolError(
@@ -1198,8 +1374,10 @@ async function loadAgentCheckedUrlAndGetResult(
     throw new ToolError('The tab was closed before navigation could start.')
   }
   const beforeUrl = contents.getURL()
+  let loadCompleted = false
   try {
     await contents.loadURL(url)
+    loadCompleted = true
   } catch (error) {
     const candidate = error as { code?: unknown; errno?: unknown }
     const routineAbort =
@@ -1217,7 +1395,10 @@ async function loadAgentCheckedUrlAndGetResult(
       throw new ToolError(`The navigation was aborted (${getErrorMessage(error)}).`)
     }
   }
-  return await navigationResult(contents)
+  return await navigationResult(
+    contents,
+    loadCompleted && !contents.isLoading() ? Promise.resolve() : undefined
+  )
 }
 
 /**
@@ -1859,11 +2040,20 @@ function validateSnapshotRefs(
  * policy intentionally lacks; password redaction still runs inside every frame
  * before any result crosses back to the driver.
  */
-async function captureSnapshot(contents: WebContents, notAfter?: number): Promise<unknown> {
+async function captureSnapshot(
+  contents: WebContents,
+  notAfter?: number,
+  elementId?: number
+): Promise<unknown> {
   const state = driverScopeState()
   const tab = session.requireAutomationTab()
   if (tab.view.webContents !== contents) {
     throw new ToolError('The active tab changed before the snapshot started. Try again.')
+  }
+  if (elementId !== undefined && pageTargetForElement(contents, elementId) !== contents) {
+    throw new ToolError(
+      'Scoped snapshots require a top-page element. Omit elementId to capture framed content.'
+    )
   }
   invalidateSnapshot(state)
   const captureEpoch = state.snapshotCaptureEpoch
@@ -1885,12 +2075,14 @@ async function captureSnapshot(contents: WebContents, notAfter?: number): Promis
   }
 
   const mainStartingElementId = state.nextElementRefId
-  const mainSnapshot = await execInPage(
-    contents,
-    collectSnapshot,
-    [mainStartingElementId],
-    false,
-    notAfter
+  const mainSnapshot = unwrapPageResult(
+    await execInPage(
+      contents,
+      collectSnapshot,
+      elementId === undefined ? [mainStartingElementId] : [mainStartingElementId, elementId],
+      false,
+      notAfter
+    )
   )
   if (!stillCurrent()) {
     throw new ToolError('The tab changed while its snapshot was being captured. Try again.')
@@ -1920,7 +2112,7 @@ async function captureSnapshot(contents: WebContents, notAfter?: number): Promis
   let capturedCrossOriginFrames = 0
   let unreadableCrossOriginFrames = 0
   let hiddenCrossOriginFrames = 0
-  const boundaryFrames = crossOriginBoundaryFrames(contents)
+  const boundaryFrames = elementId === undefined ? crossOriginBoundaryFrames(contents) : []
   const frames = boundaryFrames.slice(0, MAX_CROSS_ORIGIN_SCAN_FRAMES)
   if (boundaryFrames.length > frames.length) truncated = true
 
@@ -1977,6 +2169,7 @@ async function captureSnapshot(contents: WebContents, notAfter?: number): Promis
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 120)
+        .replace(/\[ref=/g, '[ref\u200b=')
       const frameLines = outline.split('\n')
       const sectionStartLine = combinedLineCount
       sections.push(
@@ -2156,6 +2349,15 @@ async function executeToolInner(
       return await navigationResult(contents, completion)
     }
 
+    case 'browser_reload': {
+      invalidateSnapshot()
+      const contents = session.requireAutomationTab().view.webContents
+      const completion = waitForLoadComplete(contents, NAVIGATION_TIMEOUT_MS)
+      assertCurrentExecution()
+      session.reloadPage(contents)
+      return await navigationResult(contents, completion)
+    }
+
     case 'browser_open_tab': {
       invalidateSnapshot()
       const url = str(params, 'url')
@@ -2210,16 +2412,51 @@ async function executeToolInner(
       return await getKnownSessions()
     }
 
+    case 'browser_list_downloads': {
+      return session.getBrowserDownloadsState(session.getBrowserScopeId())
+    }
+
     case 'browser_wait_for': {
       const text = str(params, 'text')
+      const urlContains = str(params, 'urlContains')
+      const elementId = num(params, 'elementId')
+      const requestedState = str(params, 'state')
+      if ((elementId === undefined) !== (requestedState === undefined)) {
+        throw new ToolError('browser_wait_for requires elementId and state together.')
+      }
+      const elementState =
+        requestedState && isBrowserWaitElementState(requestedState) ? requestedState : undefined
+      if (requestedState && !elementState) {
+        throw new ToolError(`Unsupported element state "${requestedState}".`)
+      }
       const timeoutMs = normalizeBrowserWaitForTimeoutMs(params.timeoutMs)
       const startedAt = Date.now()
-      if (!text) {
+      if (!text && !urlContains && elementId === undefined) {
         await sleep(timeoutMs)
         return { waitedMs: timeoutMs }
       }
       const waitedTab = session.requireAutomationTab()
       const contents = waitedTab.view.webContents
+      const elementTarget =
+        elementId === undefined ? undefined : pageTargetForElement(contents, elementId)
+      if (elementTarget && elementTarget !== contents) {
+        throw new ToolError(
+          'Element-state waits are limited to the top page. Use a text or URL condition for framed content.'
+        )
+      }
+      const waitedNavigationEpoch = navigationEpoch(contents)
+      const waitedUrl = contents.getURL()
+      const assertWaitTargetIsCurrent = (): void => {
+        assertCurrentExecution()
+        if (
+          elementTarget &&
+          (navigationEpoch(contents) !== waitedNavigationEpoch || contents.getURL() !== waitedUrl)
+        ) {
+          throw new ToolError(
+            'The page changed while waiting for an element. Take a fresh browser_snapshot.'
+          )
+        }
+      }
       while (Date.now() - startedAt < timeoutMs) {
         assertCurrentExecution()
         const active = session.automationTab()
@@ -2228,42 +2465,102 @@ async function executeToolInner(
             'The active tab changed while waiting. Start browser_wait_for again on the tab you want to inspect.'
           )
         }
-        const foundTop = await execInPage(
-          contents,
-          pageContainsText,
-          [text],
-          false,
-          executionDeadline
-        ).catch(() => false)
-        if (foundTop) return { found: true, elapsedMs: Date.now() - startedAt }
-        const frames = await visibleFrameTargets(contents, executionDeadline)
+        let textFound = !text
         let foundInFrame = false
-        for (const frame of frames.targets) {
-          foundInFrame = await execInPage(
-            frame,
+        if (text) {
+          textFound = await execInPage(
+            contents,
             pageContainsText,
             [text],
             false,
             executionDeadline
           ).catch(() => false)
-          if (foundInFrame) break
+          if (!textFound) {
+            const frames = await visibleFrameTargets(contents, executionDeadline)
+            for (const frame of frames.targets) {
+              foundInFrame = await execInPage(
+                frame,
+                pageContainsText,
+                [text],
+                false,
+                executionDeadline
+              ).catch(() => false)
+              if (foundInFrame) break
+            }
+            textFound = foundInFrame
+          }
         }
-        if (foundInFrame) {
-          return { found: true, elapsedMs: Date.now() - startedAt, foundInFrame: true }
+        const urlMatched = !urlContains || contents.getURL().includes(urlContains)
+        let elementMatched = elementId === undefined
+        if (elementId !== undefined && elementState && elementTarget) {
+          assertWaitTargetIsCurrent()
+          const state = toRecord(
+            unwrapPageResult(
+              await execInPage(
+                elementTarget,
+                readPageActionState,
+                [false, elementId, 'registered'],
+                false,
+                executionDeadline
+              )
+            )
+          )
+          assertWaitTargetIsCurrent()
+          elementMatched = browserElementStateMatches(toRecord(state.targetState), elementState)
+        }
+        if (textFound && urlMatched && elementMatched) {
+          return {
+            found: true,
+            elapsedMs: Date.now() - startedAt,
+            matched: [
+              ...(text ? ['text'] : []),
+              ...(urlContains ? ['url'] : []),
+              ...(elementId !== undefined ? ['element'] : []),
+            ],
+            ...(foundInFrame ? { foundInFrame: true } : {}),
+          }
         }
         await sleep(300)
       }
       return {
         found: false,
         elapsedMs: Date.now() - startedAt,
-        note: 'Text did not appear before the timeout. Take a browser_snapshot to see the current page state.',
+        note: 'The requested conditions were not all met before the timeout. Take a browser_snapshot to inspect the current page state.',
       }
     }
 
     case 'browser_snapshot': {
       const contents = session.requireAutomationTab().view.webContents
       assertCurrentExecution()
-      return await captureSnapshot(contents, executionDeadline)
+      return await captureSnapshot(contents, executionDeadline, num(params, 'elementId'))
+    }
+
+    case 'browser_find': {
+      const query = requireStr(params, 'query')
+      if (query.length > 4096) throw new ToolError('Search text must not exceed 4096 characters.')
+      const requestedMax = num(params, 'maxResults')
+      const maxResults = Math.min(50, Math.max(1, Math.floor(requestedMax ?? 20)))
+      const contents = session.requireAutomationTab().view.webContents
+      const snapshot = toRecord(
+        await captureSnapshot(contents, executionDeadline, num(params, 'elementId'))
+      )
+      const outline = typeof snapshot.outline === 'string' ? snapshot.outline : ''
+      const needle = query.toLowerCase()
+      const matches = outline.split('\n').flatMap((line) => {
+        const ref = line.match(/\[ref=(\d+)\]/)
+        return ref && line.toLowerCase().includes(needle)
+          ? [{ elementId: Number(ref[1]), line }]
+          : []
+      })
+      return {
+        query,
+        matches: matches.slice(0, maxResults),
+        totalMatches: matches.length,
+        truncated: snapshot.truncated === true || matches.length > maxResults,
+        url: snapshot.url,
+        title: snapshot.title,
+        ...(snapshot.scoped === true ? { scoped: true } : {}),
+      }
     }
 
     case 'browser_read_text': {
@@ -2282,6 +2579,27 @@ async function executeToolInner(
       const capturedNavigationEpoch = navigationEpoch(contents)
       const capturedUrl = contents.getURL()
       const capturedTitle = contents.getTitle()
+      const elementId = num(params, 'elementId')
+      let elementClip: Record<string, unknown> | undefined
+      if (elementId !== undefined) {
+        const target = pageTargetForElement(contents, elementId)
+        if (target !== contents) {
+          throw new ToolError(
+            'Element screenshots are limited to the top page. Use browser_screenshot without elementId for framed content.'
+          )
+        }
+        elementClip = toRecord(
+          unwrapPageResult(
+            await execInPage(
+              contents,
+              getElementScreenshotRect,
+              [elementId],
+              false,
+              executionDeadline
+            )
+          )
+        )
+      }
       const capturedViewportUrl = capturedUrl.slice(0, 4096)
       const capturedViewportTitle = capturedTitle.slice(0, 500)
       const captureIsCurrent = (): boolean => {
@@ -2302,7 +2620,21 @@ async function executeToolInner(
           'The page changed while its screenshot was being captured. Retry browser_screenshot before using image coordinates.'
         )
       }
-      const shot = await cdp.captureScreenshot(contents).catch((error) => {
+      const clip =
+        elementClip &&
+        typeof elementClip.x === 'number' &&
+        typeof elementClip.y === 'number' &&
+        typeof elementClip.width === 'number' &&
+        typeof elementClip.height === 'number'
+          ? {
+              x: elementClip.x,
+              y: elementClip.y,
+              width: elementClip.width,
+              height: elementClip.height,
+            }
+          : undefined
+      assertCaptureIsCurrent()
+      const shot = await cdp.captureScreenshot(contents, clip).catch((error) => {
         logger.warn('Browser screenshot capture failed', { error: getErrorMessage(error) })
         return null
       })
@@ -2312,6 +2644,25 @@ async function executeToolInner(
         )
       }
       assertCaptureIsCurrent()
+      if (elementId !== undefined && elementClip) {
+        const currentClip = toRecord(
+          unwrapPageResult(
+            await execInPage(
+              contents,
+              getElementScreenshotRect,
+              [elementId],
+              false,
+              executionDeadline
+            )
+          )
+        )
+        assertCaptureIsCurrent()
+        if (['x', 'y', 'width', 'height'].some((key) => currentClip[key] !== elementClip[key])) {
+          throw new ToolError(
+            'The element moved while its screenshot was being captured. Retry browser_screenshot before using image coordinates.'
+          )
+        }
+      }
       if (shot.dataUrl.length > 8_000_000) {
         throw new ToolError(
           'The screenshot result was too large to return safely. Use browser_snapshot or browser_read_text instead.'
@@ -2371,9 +2722,18 @@ async function executeToolInner(
         }
         scale = widthScale
       }
-      // scale maps image pixels back to CSS viewport pixels for the
-      // coordinate tools: cssX = imageX / scale.
-      return { dataUrl: shot.dataUrl, viewport, scale }
+      return {
+        dataUrl: shot.dataUrl,
+        viewport,
+        scale,
+        ...(clip
+          ? {
+              element: elementClip?.element,
+              refRecovered: elementClip?.refRecovered === true,
+              clip,
+            }
+          : {}),
+      }
     }
 
     case 'browser_extract': {
@@ -2773,9 +3133,185 @@ async function executeToolInner(
       }
     }
 
+    case 'browser_fill_form': {
+      const fields = parseFormFields(params)
+      const contents = session.requireAutomationTab().view.webContents
+      const epoch = navigationEpoch(contents)
+      const url = contents.getURL()
+      const state = driverScopeState()
+      const tabIds = session
+        .getTabsState()
+        .tabs.map((tab) => tab.tabId)
+        .join(',')
+      const downloadIds = session
+        .getBrowserDownloadsState(session.getBrowserScopeId())
+        .downloads.map((download) => download.id)
+        .join(',')
+      const noticeCount = state.pendingNotices.length
+      const deadline = Math.min(executionDeadline ?? Number.POSITIVE_INFINITY, Date.now() + 18_000)
+      const results: Record<string, unknown>[] = []
+      let stoppedIndex = 0
+      let dispatchStarted = false
+      const readField = async (field: FormField) => {
+        const target = pageTargetForElement(contents, field.elementId)
+        if (target !== contents)
+          throw new ToolError(
+            'Form batches require top-page fields; use individual tools for framed fields.'
+          )
+        const readback = toRecord(
+          unwrapPageResult(
+            await execInPage(
+              contents,
+              readFormFieldState,
+              [
+                field.elementId,
+                field.kind,
+                field.kind === 'text'
+                  ? field.text
+                  : field.kind === 'select'
+                    ? field.value
+                    : field.checked,
+              ],
+              false,
+              deadline
+            )
+          )
+        )
+        if (typeof readback.error === 'string') throw new ToolError(readback.error)
+        if (typeof readback.matchesRequested !== 'boolean')
+          throw new ToolError('The form field could not be verified.')
+        return readback
+      }
+      const readBoundary = async () => {
+        const boundary = toRecord(
+          await execInPage(contents, readPageActionState, [], false, deadline)
+        )
+        if (
+          !Array.isArray(boundary.dialogs) ||
+          !Array.isArray(boundary.popups) ||
+          boundary.observationTruncated === true
+        ) {
+          throw new ToolError(
+            'The page state could not be fully verified for form filling. Use individual field tools.'
+          )
+        }
+        return JSON.stringify([boundary.url, boundary.dialogs, boundary.popups])
+      }
+      const assertBoundary = () => {
+        assertCurrentExecution()
+        if (Date.now() >= deadline) throw new ToolError('Form filling reached its time limit.')
+        assertActiveContents(contents, epoch)
+        if (
+          contents.getURL() !== url ||
+          session
+            .getTabsState()
+            .tabs.map((tab) => tab.tabId)
+            .join(',') !== tabIds ||
+          state.pendingNotices.length !== noticeCount ||
+          session
+            .getBrowserDownloadsState(session.getBrowserScopeId())
+            .downloads.map((download) => download.id)
+            .join(',') !== downloadIds
+        ) {
+          throw new ToolError(
+            'The page, tabs, dialogs, or downloads changed during form filling. Inspect the page before continuing.'
+          )
+        }
+      }
+      try {
+        assertBoundary()
+        const initialBoundary = await readBoundary()
+        for (const [index, field] of fields.entries()) {
+          stoppedIndex = index
+          await readField(field)
+          assertBoundary()
+        }
+        for (const [index, field] of fields.entries()) {
+          stoppedIndex = index
+          assertBoundary()
+          if ((await readBoundary()) !== initialBoundary)
+            throw new ToolError('A dialog, popup, or page transition interrupted form filling.')
+          const before = await readField(field)
+          assertBoundary()
+          if (before.matchesRequested !== true) {
+            dispatchStarted = true
+            await executeToolInner(
+              field.kind === 'text'
+                ? 'browser_type'
+                : field.kind === 'select'
+                  ? 'browser_select_option'
+                  : 'browser_set_checked',
+              field.kind === 'text'
+                ? { elementId: field.elementId, text: field.text }
+                : field.kind === 'select'
+                  ? { elementId: field.elementId, value: field.value }
+                  : { elementId: field.elementId, checked: field.checked },
+              assertBoundary,
+              deadline,
+              invocationEpoch
+            )
+          }
+          assertBoundary()
+          const readback = await readField(field)
+          results.push({
+            index,
+            elementId: field.elementId,
+            kind: field.kind,
+            verified: readback.matchesRequested === true,
+            ...omit(readback, ['matchesRequested', 'focused']),
+          })
+          if (readback.matchesRequested !== true)
+            throw new ToolError(
+              'The field did not retain the requested value. Inspect its readback before continuing.'
+            )
+          if (
+            field.kind === 'text' &&
+            before.matchesRequested !== true &&
+            readback.focused !== true
+          )
+            throw new ToolError(
+              'Focus moved away from the typed field. Inspect the page before continuing.'
+            )
+          if ((await readBoundary()) !== initialBoundary)
+            throw new ToolError('A dialog, popup, or page transition interrupted form filling.')
+          assertBoundary()
+        }
+        for (const [index, field] of fields.entries()) {
+          stoppedIndex = index
+          const readback = await readField(field)
+          results[index] = {
+            ...results[index],
+            verified: readback.matchesRequested === true,
+            ...omit(readback, ['matchesRequested', 'focused']),
+          }
+          assertBoundary()
+          if (readback.matchesRequested !== true)
+            throw new ToolError(
+              'A previously filled field changed. Inspect the partial result before continuing.'
+            )
+        }
+        if ((await readBoundary()) !== initialBoundary)
+          throw new ToolError('A dialog, popup, or page transition interrupted form filling.')
+        assertBoundary()
+        return { completed: true, completedCount: fields.length, results }
+      } catch (error) {
+        assertCurrentExecution()
+        return {
+          completed: false,
+          completedCount: results.filter((result) => result.verified === true).length,
+          stoppedIndex,
+          results,
+          error: getErrorMessage(error),
+          doNotRetry: dispatchStarted,
+          note: 'Earlier fields may already have taken effect. Inspect the readbacks and take a fresh snapshot before deciding which remaining fields to fill. Form filling is not atomic.',
+        }
+      }
+    }
+
     case 'browser_type': {
       const elementId = requireNum(params, 'elementId')
-      const text = requireStr(params, 'text')
+      const text = params.text
+      if (typeof text !== 'string') throw new ToolError('Missing required parameter "text"')
       const submit = params.submit === true
       const contents = session.requireAutomationTab().view.webContents
       const target = pageTargetForElement(contents, elementId)
@@ -3274,8 +3810,8 @@ async function executeToolInner(
 
     case 'browser_scroll': {
       const direction = requireStr(params, 'direction')
-      if (direction !== 'up' && direction !== 'down') {
-        throw new ToolError('Scroll direction must be "up" or "down".')
+      if (!['up', 'down', 'left', 'right'].includes(direction)) {
+        throw new ToolError('Scroll direction must be "up", "down", "left", or "right".')
       }
       const contents = session.requireAutomationTab().view.webContents
       const elementId = num(params, 'elementId')
@@ -3373,6 +3909,84 @@ async function executeToolInner(
         ...(!effectObserved
           ? { note: 'The dropdown did not retain the requested option; inspect before continuing.' }
           : {}),
+      }
+    }
+
+    case 'browser_set_checked': {
+      const elementId = requireNum(params, 'elementId')
+      if (typeof params.checked !== 'boolean') {
+        throw new ToolError('Missing required boolean parameter "checked"')
+      }
+      const checked = params.checked
+      const contents = session.requireAutomationTab().view.webContents
+      const target = pageTargetForElement(contents, elementId)
+      const before = toRecord(
+        unwrapPageResult(
+          await execInPage(target, readCheckableElementState, [elementId], false, executionDeadline)
+        )
+      )
+      if (before.checked === checked) {
+        return {
+          checked,
+          changed: false,
+          dispatched: false,
+          element: before.kind,
+          refRecovered: before.refRecovered === true,
+        }
+      }
+      if (before.disabled === true) throw new ToolError('That control is disabled.')
+      if (before.readOnly === true) throw new ToolError('That control is read-only.')
+      if (
+        !checked &&
+        (before.kind === 'input:radio' ||
+          before.kind === 'role:radio' ||
+          before.kind === 'role:menuitemradio')
+      ) {
+        throw new ToolError('Radio buttons cannot be unchecked directly. Select another option.')
+      }
+
+      const clickResult = toRecord(
+        await executeToolInner(
+          'browser_click',
+          { elementId },
+          assertCurrentExecution,
+          executionDeadline,
+          invocationEpoch
+        )
+      )
+      const readbackDeadline = Math.min(
+        Date.now() + SETTLE_GRACE_MS,
+        executionDeadline ?? Number.POSITIVE_INFINITY
+      )
+      let after: Record<string, unknown>
+      for (;;) {
+        assertCurrentExecution()
+        after = toRecord(
+          unwrapPageResult(
+            await execInPage(
+              target,
+              readCheckableElementState,
+              [elementId],
+              false,
+              executionDeadline
+            )
+          )
+        )
+        if (after.checked === checked) break
+        if (Date.now() + SETTLE_PROBE_INTERVAL_MS > readbackDeadline) {
+          throw new ToolError(
+            'The control did not reach the requested checked state. Take a fresh browser_snapshot and inspect the page.'
+          )
+        }
+        await sleep(SETTLE_PROBE_INTERVAL_MS)
+      }
+      return {
+        checked,
+        changed: true,
+        dispatched: clickResult.dispatched === true,
+        trusted: clickResult.trusted === true,
+        element: after.kind,
+        refRecovered: before.refRecovered === true || after.refRecovered === true,
       }
     }
 
@@ -3867,6 +4481,23 @@ async function executeToolInner(
       }
     }
 
+    case 'browser_zoom': {
+      const action = requireStr(params, 'action')
+      if (action !== 'in' && action !== 'out' && action !== 'reset') {
+        throw new ToolError('Zoom action must be "in", "out", or "reset".')
+      }
+      const contents = session.requireAutomationTab().view.webContents
+      const current = contents.getZoomFactor()
+      const next =
+        action === 'reset'
+          ? session.getBrowserDefaultZoomFactor()
+          : steppedZoomFactor(current, action === 'in' ? 1 : -1)
+      invalidateSnapshot()
+      contents.setZoomFactor(next)
+      await sleep(100)
+      return { action, zoomPercent: zoomPercentOf(contents.getZoomFactor()) }
+    }
+
     case 'browser_request_takeover': {
       // The reason renders in the chat's tool row, not here — but require it
       // so the model always tells the user why control was handed over.
@@ -4009,7 +4640,11 @@ export async function executeTool(
               ? execution
               : raceAgainstWatchdog(execution, watchdogMs, () => {
                   if (state.toolExecutionEpoch === executionEpoch) state.toolExecutionEpoch++
-                  if (tool === 'browser_snapshot' || tool === 'browser_open_url') {
+                  if (
+                    tool === 'browser_snapshot' ||
+                    tool === 'browser_open_url' ||
+                    tool === 'browser_find'
+                  ) {
                     invalidateSnapshot(state)
                   }
                 })
@@ -4046,7 +4681,7 @@ export async function executeTool(
       // The watchdog cannot cancel an in-flight renderer promise. Invalidate its
       // capture token before releasing the queue so a late snapshot cannot
       // overwrite refs belonging to a newer tab or snapshot.
-      if (tool === 'browser_snapshot' || tool === 'browser_open_url') {
+      if (tool === 'browser_snapshot' || tool === 'browser_open_url' || tool === 'browser_find') {
         invalidateSnapshot(state)
       }
       const message = String(sanitizeBrowserResult(getErrorMessage(error), undefined, 0, 'error'))
