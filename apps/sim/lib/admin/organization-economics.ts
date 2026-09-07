@@ -1,4 +1,5 @@
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { getFlatOrgPriceDollars } from '@/lib/billing/arena/org-pricing'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import { getPlanTierCredits, getPlanTierDollars, isTeam } from '@/lib/billing/plan-helpers'
 import { Decimal, toDecimal } from '@/lib/billing/utils/decimal'
 
@@ -8,16 +9,24 @@ export interface TeamOrganizationEconomics {
   monthlyInvoiceAmountUsd: number
 }
 
-/** Canonical pooled Team allowance and invoice amount (`per-seat × members`). */
+/** Canonical pooled Team allowance and invoice amount. Arena flat orgs use price × 1. */
 export function getTeamOrganizationEconomics(
   plan: string | null | undefined,
   internalMemberCount: number
 ): TeamOrganizationEconomics | null {
   if (!plan || !isTeam(plan)) return null
   const seats = Math.max(0, Math.trunc(internalMemberCount))
+  const flatPrice = getFlatOrgPriceDollars(plan)
+  if (flatPrice != null) {
+    return {
+      seats: 1,
+      planAllowanceDollars: flatPrice,
+      monthlyInvoiceAmountUsd: flatPrice,
+    }
+  }
   return {
     seats,
-    planAllowanceDollars: (getPlanTierCredits(plan) * seats) / CREDIT_MULTIPLIER,
+    planAllowanceDollars: (getPlanTierCredits(plan) * seats) / getCreditsPerDollar(),
     monthlyInvoiceAmountUsd: getPlanTierDollars(plan) * seats,
   }
 }

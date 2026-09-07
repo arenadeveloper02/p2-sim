@@ -98,6 +98,13 @@ Add rows here as more custom work lands.
 | Org whitelabeling / branding | `apps/sim/ee/whitelabeling/` |
 | Sidebar brand header | `apps/sim/app/workspace/.../sidebar/components/sidebar-brand-header/` |
 | Settings Enterprise nav (forks + custom-blocks off) | `apps/sim/app/workspace/.../settings/navigation.ts` |
+| Arena billing (Starter plan, flat org pricing, daily refresh policy) | `apps/sim/lib/billing/arena/` |
+| Client org Starter provisioning | `apps/sim/lib/billing/arena/client-org-billing.ts` (called from `lib/organizations/client-organization.ts`) |
+| Arena Stripe plans (`team_1950` / `team_6500`) | `apps/sim/lib/billing/arena/plans.ts` via `getPlans()` when Arena billing is on |
+| Flat org seat reconcile skip | `apps/sim/lib/billing/arena/org-pricing.ts` → early return in `reconcileOrganizationSeats` |
+| Arena upgrade page overlay | `arena/upgrade-presenter.ts`, `arena/upgrade-comparison.ts` → `upgrade.tsx` / `use-upgrade-state.ts` |
+| Checkout ignores Starter Stripe ID | `arena/checkout-policy.ts` → `lib/billing/client/upgrade.ts` |
+| Supersede Starter on paid checkout | `arena/supersede-starter.ts` → `onSubscriptionComplete` + org ensure |
 
 ---
 
@@ -118,5 +125,8 @@ When pulling upstream Sim into an Arena branch:
 
 | Date | Change |
 |------|--------|
+| 2026-09-01 | Arena upgrade overlay (Starter/Pro/Max) + checkout ignores Starter Stripe ID and supersedes Starter on payment |
+| 2026-09-01 | Arena flat org pricing ($30 Pro / $100 Max) + Stripe plan catalog (`team_1950` / `team_6500`, `STRIPE_PRICE_TEAM_30_*`) |
+| 2026-09-01 | Arena billing module: Starter plan provisioning for client organizations, daily refresh disabled by default |
 | 2026-07-17 | Document Enterprise settings: `forks` and `custom-blocks` nav items disabled |
 | 2026-07-02 | Initial notes: custom blocks registry, image variations, deployed chat refactor |

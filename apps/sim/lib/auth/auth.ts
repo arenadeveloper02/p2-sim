@@ -41,18 +41,20 @@ import { clampExpiryForSession } from '@/lib/auth/session-policy'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
 import { guardSubscriptionPlanWrites } from '@/lib/auth/stripe-adapter-guard'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
+import { supersedeStarterSubscriptions } from '@/lib/billing/arena/supersede-starter'
 import {
   assertPersonalCheckoutAllowed,
   authorizeSubscriptionReference,
   isPersonalCheckoutRequest,
 } from '@/lib/billing/authorization'
 import {
-  type CheckoutAdmissionClaim,
   claimCheckoutAdmission,
+  getCheckoutAdmissionClaimFromHookContext,
   releaseCheckoutAdmission,
   resolveCheckoutReferenceId,
 } from '@/lib/billing/checkout-admission'
 import {
+  ensureSubscriptionStripeCustomerId,
   getOrganizationIdForSubscriptionReference,
   syncSubscriptionPlan,
   writeBillingInterval,
@@ -1156,9 +1158,9 @@ export const auth = betterAuth({
       }
 
       if (isBillingEnabled && ctx.path === '/subscription/upgrade') {
-        const checkoutAdmissionClaim = ctx.context.billingCheckoutAdmissionClaim as
-          | CheckoutAdmissionClaim
-          | undefined
+        // Better Auth merges before-hook `context` onto the endpoint ctx root,
+        // not AuthContext — see getCheckoutAdmissionClaimFromHookContext.
+        const checkoutAdmissionClaim = getCheckoutAdmissionClaimFromHookContext(ctx)
         if (checkoutAdmissionClaim) {
           await releaseCheckoutAdmission(checkoutAdmissionClaim)
         }
@@ -1372,6 +1374,15 @@ export const auth = betterAuth({
                   )
                 }
 
+                const stripeCustomerId = await ensureSubscriptionStripeCustomerId({
+                  subscriptionId: subscription.id,
+                  currentStripeCustomerId: subscription.stripeCustomerId,
+                  stripeSubscription,
+                })
+                if (stripeCustomerId) {
+                  subscription.stripeCustomerId = stripeCustomerId
+                }
+
                 const syncedPlan = await syncSubscriptionPlan(
                   subscription.id,
                   subscription.plan,
@@ -1425,6 +1436,11 @@ export const auth = betterAuth({
                   : false
 
                 if (!coveredByOrganization) {
+                  await supersedeStarterSubscriptions(
+                    resolvedSubscription.referenceId,
+                    resolvedSubscription.id,
+                    db
+                  )
                   await handleSubscriptionCreated(resolvedSubscription, event.id)
                 }
 
@@ -1478,6 +1494,15 @@ export const auth = betterAuth({
                     '[onSubscriptionUpdate] Could not resolve plan from Stripe price — org creation may be skipped for team upgrades',
                     { subscriptionId: subscription.id, dbPlan: subscription.plan }
                   )
+                }
+
+                const stripeCustomerId = await ensureSubscriptionStripeCustomerId({
+                  subscriptionId: subscription.id,
+                  currentStripeCustomerId: subscription.stripeCustomerId,
+                  stripeSubscription,
+                })
+                if (stripeCustomerId) {
+                  subscription.stripeCustomerId = stripeCustomerId
                 }
 
                 const syncedPlan = await syncSubscriptionPlan(

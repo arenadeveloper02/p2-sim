@@ -1,4 +1,4 @@
-import { CREDIT_MULTIPLIER, dollarsToCredits } from '@/lib/billing/credits/conversion'
+import { dollarsToCredits, getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import { toDecimal } from '@/lib/billing/utils/decimal'
 
 interface DeriveEnterpriseCreditLimitsInput {
@@ -19,7 +19,7 @@ export function deriveEnterpriseCreditLimits({
   const prepaidBalance = toDecimal(prepaidBalanceDollars)
   const prepaidCredits = dollarsToCredits(prepaidBalance.toNumber())
   const effectiveUsageLimitDollars = toDecimal(configuredUsageLimitCredits)
-    .div(CREDIT_MULTIPLIER)
+    .div(getCreditsPerDollar())
     .plus(prepaidBalance)
     .toString()
   const effectiveUsageLimitCredits = dollarsToCredits(Number(effectiveUsageLimitDollars))

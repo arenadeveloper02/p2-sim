@@ -1,10 +1,6 @@
 import { DEFAULT_BILLING_CONCURRENCY_LIMITS } from '@/lib/billing/concurrency-defaults'
-import {
-  CREDIT_TIERS,
-  CREDITS_PER_DOLLAR,
-  DAILY_REFRESH_RATE,
-  DEFAULT_FREE_CREDITS,
-} from '@/lib/billing/constants'
+import { CREDIT_TIERS, DAILY_REFRESH_RATE, DEFAULT_FREE_CREDITS } from '@/lib/billing/constants'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 
 /**
  * Looks up a credit tier by name, so a column binds to the right tier even if
@@ -24,7 +20,7 @@ const formatCredits = (credits: number): string => credits.toLocaleString('en-US
 
 /** Daily refresh credits for a plan: 1% of plan dollars/day, in credits. */
 const dailyRefreshCredits = (dollars: number): number =>
-  Math.round(dollars * DAILY_REFRESH_RATE * CREDITS_PER_DOLLAR)
+  Math.round(dollars * DAILY_REFRESH_RATE * getCreditsPerDollar())
 
 /** A brand icon rendered in a cell instead of a check/em-dash/text. */
 export interface CellIcon {
@@ -38,19 +34,19 @@ export type CellValue = string | boolean | CellIcon
 /** Shared Slack-availability cell. */
 const SLACK: CellIcon = { icon: 'slack' }
 
-/** Names of the four plan columns — used as a discriminated union for type-safe plan selection. */
-export type PlanName = 'Free' | 'Pro' | 'Max' | 'Enterprise'
+/** Names of the plan columns — used as a discriminated union for type-safe plan selection. */
+export type PlanName = 'Free' | 'Starter' | 'Pro' | 'Max' | 'Enterprise'
 
 /** A single feature row inside a section. */
 export interface ComparisonRow {
   /** Row label displayed in the left column. */
   label: string
   /**
-   * Values for [Free, Pro, Max, Enterprise].
-   * `true` renders a check icon; `false` renders a muted em-dash.
-   * Strings render as-is with tabular-nums styling.
+   * Values aligned with {@link PlanColumn} order (e.g. Free/Pro/Max/Enterprise
+   * or Arena Starter/Max/Enterprise). `true` renders a check icon; `false`
+   * renders a muted em-dash. Strings render as-is with tabular-nums styling.
    */
-  values: [CellValue, CellValue, CellValue, CellValue]
+  values: readonly CellValue[]
 }
 
 /** A labelled group of comparison rows. */
@@ -87,7 +83,7 @@ export const COMPARISON_SECTIONS: ComparisonSection[] = [
       {
         label: 'Monthly credits',
         values: [
-          formatCredits(DEFAULT_FREE_CREDITS * CREDITS_PER_DOLLAR),
+          formatCredits(DEFAULT_FREE_CREDITS * getCreditsPerDollar()),
           formatCredits(PRO_TIER.credits),
           formatCredits(MAX_TIER.credits),
           'Custom',
