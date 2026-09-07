@@ -157,4 +157,34 @@ describe('bindingsSummaryForPrompt', () => {
     expect(summary[0]?.layoutPlan?.hostKeys).toEqual(['content'])
     expect(JSON.stringify(summary)).not.toContain('# Digital Camera Guide')
   })
+
+  it('strips result[].output from the prompt schema so generate binds coverage_report.summary', () => {
+    const summary = bindingsSummaryForPrompt([
+      {
+        key: 'enhancer_run_history',
+        label: 'Enhance',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [
+          { name: 'result', type: 'array' },
+          { name: 'result[].output', type: 'object' },
+          { name: 'result[].output.coverage_report', type: 'object' },
+          { name: 'result[].output.coverage_report.summary', type: 'string' },
+          { name: 'result[].output.enhanced_article', type: 'string' },
+        ],
+      },
+    ])
+    expect(summary[0]?.outputSchema?.map((field) => field.name)).toEqual([
+      'result',
+      'result[].coverage_report',
+      'result[].coverage_report.summary',
+      'result[].enhanced_article',
+    ])
+    expect(JSON.stringify(summary[0]?.outputExample)).not.toContain('"output"')
+    expect(summary[0]?.layoutPlan?.hostKeys).toEqual(
+      expect.arrayContaining(['coverage_report.summary', 'enhanced_article'])
+    )
+    expect(summary[0]?.layoutPlan?.hostKeys.join(' ')).not.toContain('output.')
+    expect(summary[0]?.resultLayout).toContain('coverage_report.summary')
+  })
 })

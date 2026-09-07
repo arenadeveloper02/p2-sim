@@ -288,7 +288,13 @@ function identityFieldValue(record: Record<string, unknown>, field: string): unk
   if (field in record) return record[field]
   const want = field.toLowerCase()
   for (const [key, value] of Object.entries(record)) {
-    if (key.trim().toLowerCase().replace(/[\s_-]+/g, '') === want) return value
+    if (
+      key
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '') === want
+    )
+      return value
   }
   return undefined
 }
@@ -616,6 +622,12 @@ function flattenCollectionItems(items: unknown[]): unknown[] {
     if (!isPlainRecord(item)) return item
     const input = item.input
     const next = isPlainRecord(input) ? { ...input, ...item } : { ...item }
+    const output = next.output
+    if (isPlainRecord(output)) {
+      for (const [key, value] of Object.entries(output)) {
+        if (next[key] === undefined) next[key] = value
+      }
+    }
     if (next.date === undefined && next.createdAt !== undefined) {
       next.date = next.createdAt
     }

@@ -8,10 +8,13 @@ import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   actionStateFromData,
+  liftNestedCollections,
   parseJsonLiteral,
 } from '@/lib/arena-generative-ui/types'
 
 const DISPLAY_ENVELOPE_KEYS = new Set(['assistantContent', 'output', 'text', 'message', 'body'])
+
+const SCHEMA_ENVELOPE_SEGMENTS = new Set(['data', 'output', 'result', 'response', 'body'])
 
 const PROSE_ITEM_FIELDS = new Set([
   'output',
@@ -177,7 +180,7 @@ export function actionStateFromPlan(
   data: unknown,
   plan?: BindingLayoutPlan
 ): Record<string, unknown> {
-  const heuristic = actionStateFromData(data)
+  const heuristic = withLiftedResultItem(actionStateFromData(data))
   if (!plan || !planHasStructuredSchema(plan)) {
     return heuristic
   }
@@ -236,6 +239,37 @@ export function withAliasedProseState(
   return changed ? next : state
 }
 
+function withLiftedResultItem(heuristic: Record<string, unknown>): Record<string, unknown> {
+  const items = heuristic.result
+  if (!Array.isArray(items) || items.length === 0) return heuristic
+  const flattened = items.map((item) => spreadObjectOutput(item))
+  const first = flattened[0]
+  if (!first || typeof first !== 'object' || Array.isArray(first)) {
+    return { ...heuristic, result: flattened }
+  }
+  const record = first as Record<string, unknown>
+  return {
+    ...liftNestedCollections(record),
+    ...record,
+    ...heuristic,
+    result: flattened,
+  }
+}
+
+function spreadObjectOutput(item: unknown): unknown {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+  const record = item as Record<string, unknown>
+  const output = record.output
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return record
+  }
+  const next: Record<string, unknown> = { ...record }
+  for (const [key, value] of Object.entries(output as Record<string, unknown>)) {
+    if (next[key] === undefined) next[key] = value
+  }
+  return next
+}
+
 /**
  * Overlay `content` for DataText only when the display string is real prose
  * (or a stream). Structured JSON dumps stay off `content` so Repeat/Table
@@ -292,12 +326,17 @@ function isPureCollectionWrapper(value: unknown, plan: BindingLayoutPlan): boole
   if (keys.length === 0) return false
   const collectionKeys = new Set(plan.collections.map((collection) => collection.hostKey))
   const nestedWrappers = new Set(
-    plan.collections.flatMap((collection) => collection.wrapperKeys.filter((key) => key.includes('.')))
+    plan.collections.flatMap((collection) =>
+      collection.wrapperKeys.filter((key) => key.includes('.'))
+    )
   )
   return keys.every((key) => {
     if (collectionKeys.has(key) && Array.isArray(record[key])) return true
     const nested = record[key]
-    if (nestedWrappers.has(key) || (nested && typeof nested === 'object' && !Array.isArray(nested))) {
+    if (
+      nestedWrappers.has(key) ||
+      (nested && typeof nested === 'object' && !Array.isArray(nested))
+    ) {
       return isPureCollectionWrapper(nested, plan)
     }
     return false
@@ -370,7 +409,7 @@ function kindFrom(params: {
 function collectionsFromSchema(
   schema: Array<{ name: string; type: string }>
 ): BindingLayoutCollection[] {
-  const arrayFields = schema.filter((field) => field.type === 'array' && !field.name.includes('[]'))
+  const arrayFields = schema.filter((field) => field.type === 'array' && !field.name.endsWith('[]'))
   const collections: BindingLayoutCollection[] = []
   const seen = new Set<string>()
 
@@ -383,23 +422,24 @@ function collectionsFromSchema(
         .filter(
           (field) =>
             field.type === 'array' &&
-            !field.name.includes('[]') &&
+            !field.name.endsWith('[]') &&
             lastPathSegment(field.name) === hostKey
         )
         .map((field) => field.name)
     )
     const wrapperKeys = uniqueStrings(
-      schemaPaths.map((path) => wrapperPrefix(path, hostKey)).filter(Boolean)
+      schemaPaths.map((path) => hostBindPath(wrapperPrefix(path, hostKey))).filter(Boolean)
     )
     const itemEntries = schema.filter((field) => isItemFieldOf(field.name, schemaPaths, hostKey))
     const itemFields: string[] = []
     const numericItemFields: string[] = []
     const proseFields: string[] = []
     for (const entry of itemEntries) {
-      const itemPath = itemPathFrom(entry.name, schemaPaths, hostKey)
+      const rawItemPath = itemPathFrom(entry.name, schemaPaths, hostKey)
+      const itemPath = hostBindPath(rawItemPath) || rawItemPath
       if (!itemPath) continue
       const leaf = lastPathSegment(itemPath)
-      if (PROSE_ITEM_FIELDS.has(leaf)) {
+      if (PROSE_ITEM_FIELDS.has(leaf) && entry.type === 'string') {
         proseFields.push(leaf)
         continue
       }
@@ -463,20 +503,42 @@ function lastPathSegment(path: string): string {
   return parts[parts.length - 1] ?? ''
 }
 
+/**
+ * Schema names the generator may copy (`result[].output.coverage_report.summary`)
+ * into bindable host keys (`coverage_report.summary`).
+ */
+function hostBindPath(schemaName: string): string {
+  let name = schemaName.trim()
+  if (!name) return ''
+  if (name === 'result[]') return ''
+  if (name.startsWith('result[].')) {
+    name = name.slice('result[].'.length)
+  }
+  while (name.includes('.')) {
+    const dot = name.indexOf('.')
+    const head = name.slice(0, dot)
+    if (!SCHEMA_ENVELOPE_SEGMENTS.has(head)) break
+    name = name.slice(dot + 1)
+  }
+  return name
+}
+
 function topLevelStringFieldNames(schema: Array<{ name: string; type: string }>): string[] {
   return uniqueStrings(
     schema
-      .filter(
-        (field) => field.type === 'string' && !field.name.includes('.') && !field.name.includes('[')
-      )
-      .map((field) => field.name)
+      .filter((field) => field.type === 'string')
+      .map((field) => hostBindPath(field.name))
+      .filter((name) => name.length > 0 && !name.includes('.') && !name.includes('['))
   )
 }
 
 function metricPathsFromSchema(schema: Array<{ name: string; type: string }>): string[] {
-  return schema
-    .filter((field) => field.type === 'number' && !field.name.includes('[]'))
-    .map((field) => field.name)
+  return uniqueStrings(
+    schema
+      .filter((field) => field.type === 'number')
+      .map((field) => hostBindPath(field.name))
+      .filter((name) => name.length > 0 && !name.includes('[]'))
+  )
 }
 
 function scalarFieldPathsFromSchema(
@@ -484,17 +546,21 @@ function scalarFieldPathsFromSchema(
   collections: BindingLayoutCollection[]
 ): string[] {
   const collectionPaths = new Set(
-    collections.flatMap((collection) => [collection.hostKey, ...collection.schemaPaths])
+    collections.flatMap((collection) => [
+      collection.hostKey,
+      ...collection.schemaPaths,
+      ...collection.schemaPaths.map((path) => hostBindPath(path)),
+    ])
   )
   return uniqueStrings(
     schema
-      .filter((field) => {
-        if (field.name.includes('[]') || !field.name.includes('.')) return false
-        if (field.type === 'array' || field.type === 'object') return false
-        if (collectionPaths.has(field.name)) return false
+      .filter((field) => field.type !== 'array' && field.type !== 'object')
+      .map((field) => hostBindPath(field.name))
+      .filter((name) => {
+        if (!name.includes('.') || name.includes('[]')) return false
+        if (collectionPaths.has(name)) return false
         return true
       })
-      .map((field) => field.name)
   )
 }
 

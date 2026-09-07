@@ -158,7 +158,7 @@ export function deriveOutputSchema(data: unknown): {
   const isPlainObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
   const fields: ArenaGenerativeSchemaField[] = []
   const truncated = collectFields(parsed, isPlainObject ? '' : NON_OBJECT_ROOT_PATH, 0, fields)
-  return { fields, truncated }
+  return { fields: rewriteArrayItemSingletonEnvelope(fields), truncated }
 }
 
 /**
@@ -231,7 +231,10 @@ function schemaFromStoredSample(
 
 /**
  * Drops Response-block envelope rows so layout plans bind the body. A string
- * `data` (or unwrapped `result`) is omitted — host prose uses `content`.
+ * `data` (or unwrapped `result`) is omitted — host prose uses `content`. An
+ * object `output` on array items is rewritten the same way last-run derivation
+ * does, so a stored `result[].output.coverage_report.summary` becomes
+ * `result[].coverage_report.summary` before generate copies host keys.
  */
 export function unwrapHttpEnvelopeSchemaFields(
   schema: ArenaGenerativeSchemaField[]
@@ -245,18 +248,20 @@ export function unwrapHttpEnvelopeSchemaFields(
     if (!dataType || dataType === 'string') {
       return []
     }
-    return named
-      .filter(
-        (field) =>
-          field.name === 'data' || field.name.startsWith('data.') || field.name.startsWith('data[')
-      )
-      .map((field) => ({ ...field, name: renameDataEnvelopeRoot(field.name, dataType) }))
-      .filter((field) => field.name.length > 0)
+    return rewriteArrayItemSingletonEnvelope(
+      named
+        .filter(
+          (field) =>
+            field.name === 'data' || field.name.startsWith('data.') || field.name.startsWith('data[')
+        )
+        .map((field) => ({ ...field, name: renameDataEnvelopeRoot(field.name, dataType) }))
+        .filter((field) => field.name.length > 0)
+    )
   }
   if (named.length === 1 && named[0].name === 'result' && named[0].type === 'string') {
     return []
   }
-  return named
+  return rewriteArrayItemSingletonEnvelope(named)
 }
 
 function isHttpEnvelopeOnlySchema(fields: Array<{ name: string }>): boolean {
@@ -328,7 +333,11 @@ function enqueueSchemaNode(
       fields.push({ name: path, type: 'array' })
     }
     if (value.length > 0) {
-      queue.push({ value: representativeArrayItem(value), path: `${path}[]`, depth })
+      queue.push({
+        value: unwrapPastedSample(representativeArrayItem(value)),
+        path: `${path}[]`,
+        depth,
+      })
     }
     return
   }
@@ -439,6 +448,53 @@ function isEmptySchemaValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+/**
+ * `{output: {coverage_report}}` on every array item is an envelope, not a
+ * business key. Rewrite `result[].output.summary` to `result[].summary` so
+ * generate binds `coverage_report.summary` instead of `output.coverage_report.summary`.
+ */
+function rewriteArrayItemSingletonEnvelope(
+  fields: ArenaGenerativeSchemaField[]
+): ArenaGenerativeSchemaField[] {
+  const arrayPaths = fields
+    .filter((field) => field.type === 'array' && !field.name.includes('[]'))
+    .map((field) => field.name)
+  let next = fields
+  for (const arrayPath of arrayPaths) {
+    const itemPrefix = `${arrayPath}[]`
+    const outputObject = `${itemPrefix}.output`
+    const itemFields = next.filter(
+      (field) =>
+        field.name === itemPrefix ||
+        field.name.startsWith(`${itemPrefix}.`) ||
+        field.name.startsWith(`${itemPrefix}[`)
+    )
+    if (itemFields.length === 0) continue
+    const hasOutputChildren = itemFields.some(
+      (field) =>
+        field.name.startsWith(`${outputObject}.`) || field.name.startsWith(`${outputObject}[`)
+    )
+    const outputRow = itemFields.find((field) => field.name === outputObject)
+    if (!hasOutputChildren || outputRow?.type === 'string') continue
+    const kept: ArenaGenerativeSchemaField[] = []
+    const seen = new Set<string>()
+    for (const field of next) {
+      let name = field.name
+      if (name === outputObject) continue
+      if (name.startsWith(`${outputObject}.`)) {
+        name = `${itemPrefix}.${name.slice(outputObject.length + 1)}`
+      } else if (name.startsWith(`${outputObject}[`)) {
+        name = `${itemPrefix}${name.slice(outputObject.length)}`
+      }
+      if (seen.has(name)) continue
+      seen.add(name)
+      kept.push(name === field.name ? field : { ...field, name })
+    }
+    next = kept
+  }
+  return next
 }
 
 function schemaTypeFromValue(value: unknown): string {

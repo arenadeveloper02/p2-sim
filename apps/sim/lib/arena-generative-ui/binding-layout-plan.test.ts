@@ -135,9 +135,7 @@ describe('layoutPlanForBinding', () => {
     expect(resultLayoutFromPlan(plan)).toContain('selectItem')
     expect(resultLayoutFromPlan(plan)).toContain('do not bind item.output')
     expect(resultLayoutFromPlan(plan)).toContain('History-style same-page Open')
-    expect(resultLayoutFromPlan(plan)).toContain(
-      'Workspace and Drawer keep the collection visible'
-    )
+    expect(resultLayoutFromPlan(plan)).toContain('Workspace and Drawer keep the collection visible')
   })
 
   it('does not require host key data for a Response envelope of markdown', () => {
@@ -230,6 +228,38 @@ describe('layoutPlanForBinding', () => {
     expect(plan.hostKeys).not.toContain('coverage_report')
     expect(resultLayoutFromPlan(plan)).toContain('do not KeyValue wrapper objects')
     expect(resultLayoutFromPlan(plan)).toContain('citations_found')
+  })
+
+  it('strips result[].output envelopes so generate binds coverage_report.summary', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        key: 'enhancer_run_history',
+        outputSchema: [
+          { name: 'result', type: 'array' },
+          { name: 'result[].output', type: 'object' },
+          { name: 'result[].output.coverage_report', type: 'object' },
+          { name: 'result[].output.coverage_report.summary', type: 'string' },
+          { name: 'result[].output.coverage_report.overall_score', type: 'number' },
+          { name: 'result[].output.coverage_report.citations_found', type: 'array' },
+          { name: 'result[].output.coverage_report.citations_found[].claim', type: 'string' },
+          { name: 'result[].output.enhanced_article', type: 'string' },
+        ],
+      })
+    )
+
+    expect(plan.hostKeys).toEqual(
+      expect.arrayContaining([
+        'result',
+        'citations_found',
+        'coverage_report.summary',
+        'coverage_report.overall_score',
+        'enhanced_article',
+      ])
+    )
+    expect(plan.hostKeys.join(' ')).not.toContain('output.')
+    expect(plan.collections.flatMap((collection) => collection.wrapperKeys)).toEqual(
+      expect.arrayContaining(['coverage_report'])
+    )
   })
 
   it('describes a numeric collection as chartable in resultLayout', () => {
@@ -382,6 +412,28 @@ describe('actionStateFromPlan', () => {
     expect(state.coverage_report).toEqual(coverage_report)
     expect(state.faq_questions_added).toEqual(['How much did Nvidia invest?'])
     expect(state.citations_found).toEqual(coverage_report.citations_found)
+  })
+
+  it('lifts coverage_report out of result[].output so DataText can bind summary', () => {
+    const coverage_report = { summary: 'Coverage looks strong.', overall_score: 82 }
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [
+          { name: 'result', type: 'array' },
+          { name: 'result[].output.coverage_report', type: 'object' },
+          { name: 'result[].output.coverage_report.summary', type: 'string' },
+        ],
+      })
+    )
+    const state = actionStateFromPlan(
+      [{ output: { coverage_report, enhanced_article: '# Hi' } }],
+      plan
+    )
+    expect(state.coverage_report).toEqual(coverage_report)
+    expect(state.enhanced_article).toBe('# Hi')
+    expect(state.result).toEqual([
+      expect.objectContaining({ coverage_report, enhanced_article: '# Hi' }),
+    ])
   })
 
   it('keeps extra business keys that the schema did not list', () => {

@@ -378,6 +378,8 @@ describe('generateArenaGenerativeManifest', () => {
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('each binding includes layoutPlan')
+    expect(system).toContain('never an output.')
+    expect(system).toContain('coverage_report.summary, not output.coverage_report.summary')
     expect(system).toContain('never "data.articles"')
     expect(system).toContain('never "field.content"')
     expect(system).toContain('must not onLoad that same action')

@@ -202,6 +202,40 @@ describe('outputSchemaFromSample', () => {
     expect(names).toEqual(expect.arrayContaining(['keyword', 'output']))
   })
 
+  it('keeps a string output field on history rows', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify([{ keyword: 'Dental', output: 'saved markdown' }])
+    ).map((field) => field.name)
+    expect(names).toEqual(expect.arrayContaining(['result[].keyword', 'result[].output']))
+  })
+
+  it('lifts an object output envelope on array rows even when siblings exist', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify([
+        {
+          id: 'run-1',
+          createdAt: '2026-09-07T00:00:00.000Z',
+          output: {
+            coverage_report: { summary: 'ok', overall_score: 82 },
+            enhanced_article: 'article',
+          },
+        },
+      ])
+    ).map((field) => field.name)
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'result[].id',
+        'result[].createdAt',
+        'result[].coverage_report.summary',
+        'result[].coverage_report.overall_score',
+        'result[].enhanced_article',
+      ])
+    )
+    expect(names).not.toContain('result[].output')
+    expect(names.some((name) => name.includes('.output.'))).toBe(false)
+  })
+
   it('roots an array response under result, matching host state', () => {
     expect(outputSchemaFromSample('[{"title":"First"}]')).toEqual([
       { name: 'result', type: 'array' },
@@ -283,13 +317,16 @@ describe('outputSchemaFromSample', () => {
 
     expect(names).toEqual(
       expect.arrayContaining([
-        'result[].output.coverage_report.overall_score',
-        'result[].output.coverage_report.passed',
-        'result[].output.coverage_report.summary',
-        'result[].output.coverage_report.criteria',
-        'result[].output.coverage_report.citations_found[].claim',
+        'result[].coverage_report.overall_score',
+        'result[].coverage_report.passed',
+        'result[].coverage_report.summary',
+        'result[].coverage_report.criteria',
+        'result[].coverage_report.criteria[].name',
+        'result[].coverage_report.citations_found[].claim',
+        'result[].enhanced_article',
       ])
     )
+    expect(names.some((name) => name.includes('.output.') || name.endsWith('.output'))).toBe(false)
   })
 
   it('unions object keys from later array items, not only the first', () => {
@@ -312,14 +349,15 @@ describe('outputSchemaFromSample', () => {
 
     expect(names).toEqual(
       expect.arrayContaining([
-        'result[].output.coverage_report.faq_added',
-        'result[].output.coverage_report.overall_score',
-        'result[].output.coverage_report.passed',
-        'result[].output.coverage_report.summary',
-        'result[].output.coverage_report.criteria',
-        'result[].output.coverage_report.criteria[].name',
+        'result[].coverage_report.faq_added',
+        'result[].coverage_report.overall_score',
+        'result[].coverage_report.passed',
+        'result[].coverage_report.summary',
+        'result[].coverage_report.criteria',
+        'result[].coverage_report.criteria[].name',
       ])
     )
+    expect(names.some((name) => name.includes('.output.'))).toBe(false)
   })
 
   it('keeps only names and types, never sample values', () => {
@@ -458,6 +496,19 @@ describe('effectiveOutputSchema', () => {
       { name: 'history', type: 'array' },
       { name: 'history[].id', type: 'string' },
     ])
+  })
+
+  it('strips a stored result[].output envelope so generate binds coverage_report.summary', () => {
+    expect(
+      effectiveOutputSchema({
+        outputSchema: [
+          { name: 'result', type: 'array' },
+          { name: 'result[].output', type: 'object' },
+          { name: 'result[].output.coverage_report', type: 'object' },
+          { name: 'result[].output.coverage_report.summary', type: 'string' },
+        ],
+      }).map((field) => field.name)
+    ).toEqual(['result', 'result[].coverage_report', 'result[].coverage_report.summary'])
   })
 })
 
