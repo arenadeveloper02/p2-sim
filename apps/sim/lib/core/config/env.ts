@@ -652,7 +652,7 @@ export const env = createEnv({
     // Arena
     ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
-    ACCOUNT_SERVICE_BASE_URL:             z.string().url().optional(),            // Account-service base for /loginservice/sso/validate
+    ACCOUNT_SERVICE_BASE_URL:             z.string().url().optional(),            // Account-service base for /account/loginservice/sso/validate
     ARENA_SSO_COOKIE_NAME:                z.string().optional(),                  // Host-only SSO cookie e.g. arena_sso_dev
     ARENA_SSO_REVOKE_SECRET:              z.string().optional(),                  // Shared secret for internal revoke-user (CASA 2.2.2)
 

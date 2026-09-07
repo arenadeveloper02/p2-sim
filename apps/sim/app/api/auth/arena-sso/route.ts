@@ -18,7 +18,7 @@ const logger = createLogger('ArenaSsoAPI')
 /**
  * POST /api/auth/arena-sso
  * Arena → Sim SSO handshake (CASA: no shared password; CSRF on cookie path).
- * - Authorisation JWT → account-service /sso/validate → createSession + ticket
+ * - Authorisation JWT → account-service /account/loginservice/sso/validate → createSession + ticket
  * - Else arena_sso_* cookie → ticket exchange (CSRF checked)
  */
 export const POST = withRouteHandler(async (request: NextRequest) => {

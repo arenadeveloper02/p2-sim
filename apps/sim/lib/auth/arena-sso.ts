@@ -114,7 +114,7 @@ export async function validateArenaJwtViaAccountService(
 
   let response: Response
   try {
-    response = await fetch(`${base}/loginservice/sso/validate`, {
+    response = await fetch(`${base}/account/loginservice/sso/validate`, {
       method: 'POST',
       headers: {
         authorisation: jwt,
