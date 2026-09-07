@@ -30,9 +30,11 @@ export {
   chipFilledFillTokens,
   chipFilledSurfaceTokens,
   chipGeometryClass,
+  chipGeometryUnroundedClass,
   chipHoverSurfaceClass,
   chipIconSlotClass,
   chipPrimaryFillTokens,
+  chipRadiusClass,
   disclosureChevronClass,
 } from './chip/chip-chrome'
 export { ChipCombobox } from './chip-combobox/chip-combobox'
@@ -53,12 +55,14 @@ export {
 export { ChipInput, type ChipInputProps } from './chip-input/chip-input'
 export {
   type ChipConfirmAction,
+  type ChipConfirmDefaultAction,
   ChipConfirmModal,
   type ChipConfirmModalProps,
   type ChipConfirmText,
   type ChipConfirmTextSegment,
   ChipModal,
   ChipModalBody,
+  type ChipModalBodyProps,
   type ChipModalDropdownOption,
   type ChipModalEmailsFieldProps,
   ChipModalError,
@@ -68,6 +72,7 @@ export {
   ChipModalFooter,
   type ChipModalFooterAction,
   type ChipModalFooterCustomAction,
+  type ChipModalFooterDefaultAction,
   type ChipModalFooterProps,
   type ChipModalFooterSlotAction,
   ChipModalHeader,
@@ -110,6 +115,8 @@ export {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuItemAction,
+  DropdownMenuItemLabel,
+  type DropdownMenuItemLabelProps,
   DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuRadioGroup,
@@ -121,6 +128,7 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  dropdownMenuRowClass,
 } from './dropdown-menu/dropdown-menu'
 export { Expandable, ExpandableContent } from './expandable/expandable'
 export { DashedDividerLine, FieldDivider } from './field-divider/field-divider'
@@ -160,6 +168,12 @@ export {
   useNativeSurfaceOcclusionReady,
 } from './modal/modal'
 export {
+  OverflowText,
+  type OverflowTextProps,
+  overflowTextClipClass,
+  overflowTextFadeClass,
+} from './overflow-text/overflow-text'
+export {
   Popover,
   PopoverAnchor,
   PopoverBackButton,
@@ -183,10 +197,13 @@ export { Switch } from './switch/switch'
 export {
   isTabTitleTruncated,
   TabStrip,
+  type TabStripDragContext,
   type TabStripItem,
   type TabStripProps,
   type TabStripSelectionSource,
+  type TabStripVariant,
   tabDropIndex,
+  tabStripItemSelector,
   tabStripWheelPosition,
 } from './tab-strip/tab-strip'
 export {

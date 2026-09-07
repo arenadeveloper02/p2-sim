@@ -108,12 +108,18 @@ vi.mock('@/lib/copilot/vfs/path-utils', () => ({
 }))
 
 vi.mock('@/lib/workflows/operations/import-export', () => ({ parseWorkflowJson: vi.fn() }))
+/** Only the import size cap is read from `import-workflow`; its orchestration dependency is the whole deploy graph. */
+vi.mock('@/lib/workflows/orchestration', () => ({
+  performCreateWorkflow: vi.fn(),
+  performCreateWorkflowTransition: vi.fn(),
+}))
 vi.mock('@/lib/workflows/persistence/utils', () => ({ saveWorkflowToNormalizedTables: vi.fn() }))
 vi.mock('@/lib/workflows/utils', () => ({ deduplicateWorkflowName: vi.fn() }))
 vi.mock('@/app/api/v1/admin/types', () => ({ extractWorkflowMetadata: vi.fn() }))
 
 import type { ExecutionContext } from '@/lib/copilot/request/types'
 import { executeMaterializeFile } from '@/lib/copilot/tools/handlers/materialize-file'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { fetchWorkspaceFileBuffer } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
@@ -169,7 +175,7 @@ const mothershipRow = {
   originalName: 'upload.txt',
   displayName: 'report.txt',
   contentType: 'text/plain',
-  size: 100,
+  sizeBytes: 100,
   deletedAt: null,
   uploadedAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -223,19 +229,19 @@ describe('executeMaterializeFile - unsupported operation', () => {
     )
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Unsupported materialize_file operation "table"')
+    expect(result.error).toContain('Unsupported save_upload operation "table"')
     expect(result.error).toContain('table subagent')
     expect(mockFindUpload).not.toHaveBeenCalled()
   })
 
-  it('rejects the knowledge_base operation and points to the knowledge subagent', async () => {
+  it('rejects the manage_knowledge_base operation and points to the knowledge subagent', async () => {
     const result = await executeMaterializeFile(
-      { fileNames: ['data.csv'], operation: 'knowledge_base' },
+      { fileNames: ['data.csv'], operation: 'manage_knowledge_base' },
       context
     )
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Unsupported materialize_file operation "knowledge_base"')
+    expect(result.error).toContain('Unsupported save_upload operation "manage_knowledge_base"')
     expect(result.error).toContain('knowledge subagent')
     expect(mockFindUpload).not.toHaveBeenCalled()
   })
@@ -277,6 +283,42 @@ describe('executeMaterializeFile - workflow import', () => {
     expect(JSON.stringify(dbChainMockFns.values.mock.calls)).not.toContain(
       'PRIVATE WORKFLOW DESCRIPTION'
     )
+  })
+
+  /**
+   * Copilot is a surface adapter, not an exemption. The imported graph comes
+   * from a file the user uploaded, so it is exactly the caller-supplied
+   * whole-graph write the integration allowlist judges — and the subject is the
+   * person chatting.
+   */
+  it('names the chatting user as the subject the permission group governs', async () => {
+    await executeMaterializeFile({ fileNames: ['workflow.json'], operation: 'import' }, context)
+
+    expect(saveWorkflowToNormalizedTablesMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      { workspaceId: 'ws-1', subjectUserId: 'user-1' }
+    )
+  })
+
+  it('surfaces the shared write refusal and rolls the shell workflow row back', async () => {
+    saveWorkflowToNormalizedTablesMock.mockRejectedValue(
+      new OrchestrationError(
+        'forbidden',
+        'Block type "gmail" is not allowed by your organization\'s permission group'
+      )
+    )
+
+    const result = await executeMaterializeFile(
+      { fileNames: ['workflow.json'], operation: 'import' },
+      context
+    )
+
+    expect(result.success).toBe(false)
+    expect(
+      (result.output as { failed: { fileName: string; error: string }[] }).failed[0].error
+    ).toContain('gmail')
+    expect(dbChainMockFns.delete).toHaveBeenCalled()
   })
 })
 
@@ -334,7 +376,7 @@ describe('executeMaterializeFile - save storage transition', () => {
       null
     )
     expect(dbChainMockFns.set).toHaveBeenCalledWith(
-      expect.objectContaining({ context: 'workspace', chatId: null, size: 250 })
+      expect.objectContaining({ context: 'workspace', chatId: null, sizeBytes: 250 })
     )
     expect(mockMaybeNotifyStorageLimitForBillingContext).toHaveBeenCalledWith(
       STORAGE_CONTEXT,
@@ -342,9 +384,7 @@ describe('executeMaterializeFile - save storage transition', () => {
     )
   })
 
-  it('writes an int4-representable legacy size and the exact byte count above the int4 ceiling', async () => {
-    // A row above the int4 ceiling must not be written raw to `size`: Postgres
-    // raises 22003 and the save becomes unrecoverable.
+  it('writes the exact byte count above the int4 ceiling without the legacy projection', async () => {
     mockHeadObject.mockResolvedValue({ size: OVERSIZED_BYTES, contentType: 'text/plain' })
 
     const result = await executeMaterializeFile(
@@ -354,7 +394,7 @@ describe('executeMaterializeFile - save storage transition', () => {
 
     expect(result.success).toBe(true)
     const [updateSet] = dbChainMockFns.set.mock.calls.at(-1) as [Record<string, unknown>]
-    expect(updateSet.size).toBe(POSTGRES_INT4_MAX)
+    expect(updateSet).not.toHaveProperty('size')
     expect(updateSet.sizeBytes).toBe(OVERSIZED_BYTES)
     expect(mockCheckStorageQuotaForBillingContext).toHaveBeenCalledWith(
       STORAGE_CONTEXT,
@@ -367,9 +407,7 @@ describe('executeMaterializeFile - save storage transition', () => {
     )
   })
 
-  it('falls back to the exact stored byte count, not the clamped legacy size', async () => {
-    // Without cloud storage a missing object does not short-circuit, so the row is
-    // the only size source — and its `size` is already clamped.
+  it('uses the exact stored byte count when object metadata is unavailable', async () => {
     mockHeadObject.mockResolvedValue(null)
     mockHasCloudStorage.mockReturnValue(false)
     mockFindUpload.mockResolvedValue({
@@ -386,7 +424,7 @@ describe('executeMaterializeFile - save storage transition', () => {
     expect(result.success).toBe(true)
     const [updateSet] = dbChainMockFns.set.mock.calls.at(-1) as [Record<string, unknown>]
     expect(updateSet.sizeBytes).toBe(OVERSIZED_BYTES)
-    expect(updateSet.size).toBe(POSTGRES_INT4_MAX)
+    expect(updateSet).not.toHaveProperty('size')
     expect(mockIncrementStorageUsageForBillingContextInTx).toHaveBeenCalledWith(
       expect.anything(),
       STORAGE_CONTEXT,
@@ -633,7 +671,7 @@ describe('executeMaterializeFile - extract operation', () => {
       originalName: 'bundle.zip',
       displayName: 'bundle.zip',
       contentType: 'application/zip',
-      size: 2048,
+      sizeBytes: 2048,
       deletedAt: null,
       uploadedAt: new Date(),
       updatedAt: new Date(),
@@ -787,7 +825,7 @@ describe('executeMaterializeFile - save operation on archives', () => {
       originalName: 'bundle.zip',
       displayName: 'bundle.zip',
       contentType: 'application/zip',
-      size: 2048,
+      sizeBytes: 2048,
       deletedAt: null,
       uploadedAt: new Date(),
       updatedAt: new Date(),

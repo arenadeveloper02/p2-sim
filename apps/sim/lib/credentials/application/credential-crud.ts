@@ -1,11 +1,17 @@
 import { AuditAction, AuditResourceType } from '@sim/audit'
 import { requirePrincipalSubjectUserId } from '@sim/auth/principal'
 import { defineAuthorizedWorkspaceUseCase } from '@/lib/core/application'
+import { getBlockVisibility } from '@/lib/core/config/block-visibility'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
-import { canUseCredential, getCredentialActorContext } from '@/lib/credentials/access'
+import {
+  canUseCredential,
+  getCredentialActorContext,
+  requireOrdinaryCredentialType,
+} from '@/lib/credentials/access'
 import {
   defineAuthorizedCredentialUseCase,
   requireCredentialAccess,
+  requireManageableCredentialType,
 } from '@/lib/credentials/application/authorized-credential-use-case'
 import { resolveCredentialApplicationContext } from '@/lib/credentials/application/credential-context'
 import { credentialOperations } from '@/lib/credentials/application/operations'
@@ -25,6 +31,9 @@ import {
   type VisibleWorkspaceCredential,
   type WorkspaceCredentialLookup,
 } from '@/lib/credentials/queries'
+import { getServiceAccountGatingBlockType } from '@/lib/credentials/service-account-provider-ids'
+import { createIntegrationCredentialVisibility } from '@/lib/integrations/credential-visibility.server'
+import { assertWorkspaceCapability } from '@/lib/permission-groups/capability-assertions'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { loadActiveWorkspaceApplicationContext } from '@/lib/workspaces/application/workspace-context'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
@@ -77,6 +86,39 @@ export type ListInternalCredentialsResult =
   | { mode: 'list'; credentials: VisibleWorkspaceCredential[] }
   | { mode: 'lookup'; credential: WorkspaceCredentialLookup | null }
 
+async function filterGatedServiceAccountCredentials(
+  credentials: VisibleWorkspaceCredential[],
+  viewer: { userId: string; organizationId: string | null }
+): Promise<VisibleWorkspaceCredential[]> {
+  const gatedProviderIds = new Set(
+    credentials.flatMap(({ providerId }) => {
+      if (!providerId || !getServiceAccountGatingBlockType(providerId)) return []
+      return [providerId]
+    })
+  )
+  if (gatedProviderIds.size === 0) return credentials
+
+  const blockVisibility = await getBlockVisibility({
+    userId: viewer.userId,
+    ...(viewer.organizationId ? { orgId: viewer.organizationId } : {}),
+  })
+  const visibility = createIntegrationCredentialVisibility({
+    allowedIntegrationTypes: null,
+    blockVisibility,
+  })
+
+  return credentials.filter((credential) => {
+    const { providerId } = credential
+    if (!providerId || !gatedProviderIds.has(providerId)) return true
+    if (credential.type !== 'service_account') {
+      throw new Error(
+        `Gated service-account provider ${providerId} has credential type ${credential.type}`
+      )
+    }
+    return visibility.isCredentialVisible({ providerId, type: credential.type })
+  })
+}
+
 export const listInternalCredentials = defineAuthorizedWorkspaceUseCase({
   operation: credentialOperations.listInternal,
   resolveContext: async ({ input }: { input: ListInternalCredentialsInput }) => {
@@ -108,7 +150,11 @@ export const listInternalCredentials = defineAuthorizedWorkspaceUseCase({
       types: input.type ? [input.type] : undefined,
       providerId: input.providerId,
     })
-    return { mode: 'list', credentials: page.data }
+    const credentials = await filterGatedServiceAccountCredentials(page.data, {
+      userId,
+      organizationId: context.workspaceOrganizationId,
+    })
+    return { mode: 'list', credentials }
   },
 })
 
@@ -125,6 +171,16 @@ export interface CreateWorkspaceCredentialResult {
   auditMetadata: Record<string, unknown>
 }
 
+/**
+ * The credential types that belong to one person rather than to the workspace:
+ * a personal environment secret, and an OAuth grant bound to the connecting
+ * user's own linked account. `env_workspace`, `service_account` and
+ * `managed_oauth` are workspace-shared and stay available.
+ */
+const PERSONAL_SCOPE_CREDENTIAL_TYPES: ReadonlySet<PerformCreateCredentialParams['type']> = new Set(
+  ['env_personal', 'oauth']
+)
+
 export const createWorkspaceCredential = defineAuthorizedWorkspaceUseCase({
   operation: credentialOperations.create,
   resolveContext: async ({ input }: { input: CreateWorkspaceCredentialInput }) => {
@@ -133,8 +189,23 @@ export const createWorkspaceCredential = defineAuthorizedWorkspaceUseCase({
     return context
   },
   authorizationOptions: {},
-  async execute({ principal, input }): Promise<CreateWorkspaceCredentialResult> {
+  async execute({ principal, input, context }): Promise<CreateWorkspaceCredentialResult> {
     const userId = requirePrincipalSubjectUserId(principal)
+    /**
+     * permission-group-enforced: credentials.personal — scope is the request's
+     * `type`, not a property of the operation: the same `credentials.create`
+     * makes a personal secret and a workspace-shared one. Declaring the
+     * capability on the operation would refuse both, so it is asserted here
+     * against the type actually being created.
+     */
+    if (PERSONAL_SCOPE_CREDENTIAL_TYPES.has(input.type)) {
+      await assertWorkspaceCapability(
+        userId,
+        context.workspaceId,
+        'credentials.personal',
+        context.workspaceOrganizationId
+      )
+    }
     const result = await createCredentialRecord({ ...input, userId }, { authorizeWorkspace: false })
     if (!result.success) throwCredentialMutationFailure(result)
     if (!result.credential) throw new Error('Credential creation succeeded without a credential')
@@ -174,7 +245,7 @@ export const createWorkspaceCredential = defineAuthorizedWorkspaceUseCase({
       requirePrincipalSubjectUserId(principal),
       'credential_connected',
       {
-        credential_type: result.credential.type,
+        credential_type: requireOrdinaryCredentialType(result.credential.type),
         provider_id: result.credential.providerId ?? result.credential.type,
         workspace_id: context.workspaceId,
       },
@@ -202,17 +273,23 @@ export const getWorkspaceCredentialUseCase = defineAuthorizedCredentialUseCase({
 export type UpdateWorkspaceCredentialInput = Omit<
   PerformUpdateCredentialParams,
   'userId' | 'actorName' | 'actorEmail' | 'allowedTypes' | 'reason' | 'request'
->
+> & {
+  /**
+   * Workspace the caller asserts owns the credential; a mismatch is concealed as
+   * a not-found. The internal surface omits it and resolves the credential's own
+   * workspace instead, which is what it did before this field existed.
+   */
+  assertedWorkspaceId?: string
+}
 
 export const updateWorkspaceCredentialUseCase = defineAuthorizedCredentialUseCase({
   operation: credentialOperations.update,
   resolveContext: ({ input }: { input: UpdateWorkspaceCredentialInput }) =>
     resolveCredentialApplicationContext(input),
   async execute({ principal, input, context }) {
-    if (principal.kind === 'delegated' && context.credential.type !== 'oauth') {
-      throw new OrchestrationError('validation', 'Copilot can update only oauth credentials')
-    }
-    const result = await updateCredentialRecord({ ...input, credential: context.credential })
+    requireManageableCredentialType(principal, context.credential)
+    const { assertedWorkspaceId, ...fields } = input
+    const result = await updateCredentialRecord({ ...fields, credential: context.credential })
     if (!result.success) throwCredentialMutationFailure(result)
     const access = await getCredentialActorContext(
       context.credential.id,

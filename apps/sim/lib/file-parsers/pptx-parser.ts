@@ -1,77 +1,79 @@
 import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { createLogger } from '@sim/logger'
-import type { FileParseResult, FileParser } from '@/lib/file-parsers/types'
+import { FileParserError, isEncryptedOfficeParserError } from '@/lib/file-parsers/errors'
+import { parseOfficeText } from '@/lib/file-parsers/officeparser-module'
+import type { FileParseOptions, FileParseResult, FileParser } from '@/lib/file-parsers/types'
 import { sanitizeTextForUTF8 } from '@/lib/file-parsers/utils'
 import { assertOoxmlArchiveWithinLimits } from '@/lib/file-parsers/zip-guard'
 
 const logger = createLogger('PptxParser')
 
 export class PptxParser implements FileParser {
-  async parseFile(filePath: string): Promise<FileParseResult> {
-    try {
-      if (!filePath) {
-        throw new Error('No file path provided')
-      }
-
-      if (!existsSync(filePath)) {
-        throw new Error(`File not found: ${filePath}`)
-      }
-
-      logger.info(`Parsing PowerPoint file: ${filePath}`)
-
-      const buffer = await readFile(filePath)
-      return this.parseBuffer(buffer)
-    } catch (error) {
-      logger.error('PowerPoint file parsing error:', error)
-      throw new Error(`Failed to parse PowerPoint file: ${(error as Error).message}`)
+  async parseFile(filePath: string, options: FileParseOptions = {}): Promise<FileParseResult> {
+    if (!filePath) {
+      throw new Error('No file path provided')
     }
+
+    if (!existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`)
+    }
+
+    logger.info(`Parsing PowerPoint file: ${filePath}`)
+
+    const buffer = await readFile(filePath, { signal: options.signal })
+    return this.parseBuffer(buffer, options)
   }
 
-  async parseBuffer(buffer: Buffer): Promise<FileParseResult> {
+  async parseBuffer(buffer: Buffer, options: FileParseOptions = {}): Promise<FileParseResult> {
+    logger.info('Parsing PowerPoint buffer, size:', buffer.length)
+
+    options.signal?.throwIfAborted()
+    if (!buffer || buffer.length === 0) {
+      throw new FileParserError('empty_input', 'Empty buffer provided')
+    }
+
+    assertOoxmlArchiveWithinLimits(buffer)
+
     try {
-      logger.info('Parsing PowerPoint buffer, size:', buffer.length)
+      const result = await parseOfficeText(buffer, options)
 
-      if (!buffer || buffer.length === 0) {
-        throw new Error('Empty buffer provided')
-      }
-
-      assertOoxmlArchiveWithinLimits(buffer)
-
-      let parseOfficeAsync
-      try {
-        const officeParser = await import('officeparser')
-        parseOfficeAsync = officeParser.parseOfficeAsync
-      } catch (importError) {
-        logger.warn('officeparser not available, using fallback extraction')
+      if (!result || typeof result !== 'string') {
         return this.fallbackExtraction(buffer)
       }
 
-      try {
-        const result = await parseOfficeAsync(buffer)
+      const content = sanitizeTextForUTF8(result.trim())
 
-        if (!result || typeof result !== 'string') {
-          throw new Error('officeparser returned invalid result')
-        }
+      logger.info('PowerPoint parsing completed successfully with officeparser')
 
-        const content = sanitizeTextForUTF8(result.trim())
+      return {
+        content: content,
+        metadata: {
+          characterCount: content.length,
+          extractionMethod: 'officeparser',
+        },
+      }
+    } catch (extractError) {
+      options.signal?.throwIfAborted()
+      if (isEncryptedOfficeParserError(extractError)) {
+        throw new FileParserError(
+          'encrypted_file',
+          'This presentation is encrypted or password-protected',
+          extractError
+        )
+      }
 
-        logger.info('PowerPoint parsing completed successfully with officeparser')
-
-        return {
-          content: content,
-          metadata: {
-            characterCount: content.length,
-            extractionMethod: 'officeparser',
-          },
-        }
-      } catch (extractError) {
-        logger.warn('officeparser failed, using fallback:', extractError)
+      const isZipFile = buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b
+      if (!isZipFile) {
+        logger.warn('officeparser failed for legacy PowerPoint, using fallback:', extractError)
         return this.fallbackExtraction(buffer)
       }
-    } catch (error) {
-      logger.error('PowerPoint buffer parsing error:', error)
-      throw new Error(`Failed to parse PowerPoint buffer: ${(error as Error).message}`)
+
+      throw new FileParserError(
+        'invalid_format',
+        'The PowerPoint container could not be read',
+        extractError
+      )
     }
   }
 
@@ -101,6 +103,7 @@ export class PptxParser implements FileParser {
       content,
       metadata: {
         extractionMethod: 'fallback',
+        degraded: true,
         characterCount: content.length,
         warning: 'Basic text extraction used',
       },

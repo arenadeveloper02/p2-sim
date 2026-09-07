@@ -4,11 +4,17 @@ import { normalizeLinkHref } from '../markdown-fidelity'
 
 /**
  * Applies a link to the chain's current selection: normalizes `rawHref`, expands to the full link
- * mark, and sets it — or removes the link when the href is empty/unsafe. The caller supplies a chain
- * already focused with the target selection (the captured bubble-menu range / the hovered link range).
+ * mark, and sets it. Clearing the field removes the link; a target that survives normalization
+ * replaces it. A target that normalizes away is neither set nor removed — the editor seeds this field
+ * with the raw href, so committing an untouched one would otherwise delete a link the user only
+ * opened, and dropping an unsafe target is not the same instruction as "remove this link". The
+ * caller supplies a chain already focused with the target selection (the captured bubble-menu range /
+ * the hovered link range).
  */
 export function applyLink(chain: ChainedCommands, rawHref: string): void {
-  const href = normalizeLinkHref(rawHref.trim())
+  const trimmed = rawHref.trim()
+  const href = normalizeLinkHref(trimmed)
+  if (!href && trimmed) return
   chain.extendMarkRange('link')
   if (href) chain.setLink({ href })
   else chain.unsetLink()
@@ -47,7 +53,7 @@ export function LinkUrlInput({ value, onChange, onCommit, onCancel, inputRef }: 
         }
       }}
       placeholder='Paste or type a link…'
-      className='h-[28px] w-[220px] bg-transparent px-2 text-[var(--text-body)] text-small outline-none placeholder:text-[var(--text-subtle)]'
+      className='h-[28px] w-[220px] bg-transparent px-2 text-[var(--text-body)] text-small outline-hidden placeholder:text-[var(--text-subtle)]'
     />
   )
 }

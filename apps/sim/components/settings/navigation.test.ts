@@ -2,43 +2,98 @@
  * @vitest-environment node
  */
 import { createElement } from 'react'
-import { resetEnvFlagsMock, resetEnvMock, setEnv, setEnvFlags } from '@sim/testing'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   ACCOUNT_SETTINGS_ITEMS,
   ACCOUNT_SETTINGS_PATH_ALIASES,
-  buildUnifiedSettingsNavigation,
+  buildUnifiedSettingsCatalog,
   canMutateWorkspaceSettingsSection,
   getAccountSettingsHref,
-  getOrganizationSettingsHref,
+  getOrganizationSettingsFeatures,
   getWorkspaceSettingsHref,
   isOrganizationSettingsSectionAvailable,
+  isSelfHostedOverrideEnabled,
   ORGANIZATION_PLANE_UNIFIED_SECTIONS,
-  ORGANIZATION_SETTINGS_ITEMS,
-  ORGANIZATION_SETTINGS_PATH_ALIASES,
   parseSettingsPathSection,
   resolveOrganizationSectionAccess,
   resolveWorkspaceNavigation,
   SELFHOST_SETTINGS_ITEMS,
   SETTINGS_SECTION_REGISTRY,
+  UNIFIED_TO_ORGANIZATION_SECTION,
+  UNIFIED_TO_WORKSPACE_SECTION,
   WORKSPACE_SETTINGS_ITEMS,
   WORKSPACE_SETTINGS_PATH_ALIASES,
 } from '@/components/settings/navigation'
+import type { DeploymentShape } from '@/lib/api/contracts/workspaces'
 
-beforeEach(() => {
-  setEnv({})
-  resetEnvFlagsMock()
-})
+const SELF_HOSTED: DeploymentShape = {
+  hosted: false,
+  billingEnabled: false,
+  chatEnabled: true,
+  azureConfigured: false,
+  cohereConfigured: false,
+  features: {
+    accessControl: false,
+    auditLogs: false,
+    customBlocks: false,
+    dataDrains: false,
+    dataRetention: false,
+    inbox: true,
+    sandboxes: false,
+    sessionPolicies: true,
+    sso: false,
+    usageMonitoring: false,
+    whitelabeling: true,
+  },
+}
 
-afterAll(() => {
-  resetEnvMock()
-  resetEnvFlagsMock()
-})
+const HOSTED: DeploymentShape = { ...SELF_HOSTED, hosted: true, billingEnabled: true }
+
+/** A self-hosted deployment with every feature override on. */
+const SELF_HOSTED_ALL_FEATURES: DeploymentShape = {
+  ...SELF_HOSTED,
+  features: { ...SELF_HOSTED.features, customBlocks: true },
+}
+
+/** Every workspace-plane section a self-hosted deployment offers; BYOK is Sim Cloud only. */
+const SELF_HOSTED_WORKSPACE_SECTIONS = WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id).filter(
+  (id) => id !== 'byok'
+)
+
+const ALL_ENTITLEMENTS = {
+  credentialGroups: true,
+  customBlocks: true,
+  forks: true,
+  inbox: true,
+  sandboxes: true,
+}
 
 describe('settings navigation boundaries', () => {
+  it('keeps Custom Blocks opt-in on self-hosted deployments', () => {
+    const customBlocks = buildUnifiedSettingsCatalog().find(({ id }) => id === 'custom-blocks')
+
+    expect(customBlocks?.selfHostedOverride).toBe('customBlocks')
+    expect(isSelfHostedOverrideEnabled(customBlocks?.selfHostedOverride, SELF_HOSTED)).toBe(false)
+    expect(
+      isSelfHostedOverrideEnabled(customBlocks?.selfHostedOverride, {
+        ...SELF_HOSTED,
+        features: { ...SELF_HOSTED.features, customBlocks: true },
+      })
+    ).toBe(true)
+  })
+
+  it('resolves self-hosted overrides against the deployment shape, never on Sim Cloud', () => {
+    expect(isSelfHostedOverrideEnabled(undefined, SELF_HOSTED)).toBe(false)
+    expect(isSelfHostedOverrideEnabled('always', SELF_HOSTED)).toBe(true)
+    expect(isSelfHostedOverrideEnabled('always', HOSTED)).toBe(false)
+    expect(isSelfHostedOverrideEnabled('sessionPolicies', SELF_HOSTED)).toBe(true)
+    expect(isSelfHostedOverrideEnabled('sessionPolicies', HOSTED)).toBe(false)
+    expect(isSelfHostedOverrideEnabled('sso', SELF_HOSTED)).toBe(false)
+  })
+
   it('preserves the order of all four settings catalogs', () => {
-    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).toEqual([
+    expect(buildUnifiedSettingsCatalog().map(({ id }) => id)).toEqual([
       'general',
       'desktop',
       'browser',
@@ -51,6 +106,7 @@ describe('settings navigation boundaries', () => {
       'teammates',
       'organization',
       'oauth-apps',
+      'usage',
       'secrets',
       'credential-groups',
       'custom-tools',
@@ -74,16 +130,7 @@ describe('settings navigation boundaries', () => {
       'api-keys',
       'admin',
     ])
-    expect(SELFHOST_SETTINGS_ITEMS.map(({ id }) => id)).toEqual(['general', 'billing'])
-    expect(ORGANIZATION_SETTINGS_ITEMS.map(({ id }) => id)).toEqual([
-      'members',
-      'billing',
-      'access-control',
-      'audit-logs',
-      'sessions',
-      'data-retention',
-      'whitelabeling',
-    ])
+    expect(SELFHOST_SETTINGS_ITEMS.map(({ id }) => id)).toEqual(['general', 'billing', 'chat-keys'])
     expect(WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id)).toEqual([
       'teammates',
       'secrets',
@@ -101,22 +148,14 @@ describe('settings navigation boundaries', () => {
     ])
   })
 
-  it('keeps the Sandboxes section in the legacy self-hosted defaults', () => {
-    setEnv({ NEXT_PUBLIC_SANDBOXES_ENABLED: undefined, NEXT_PUBLIC_E2B_ENABLED: undefined })
-
-    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).toContain('sandboxes')
+  it('keeps the Sandboxes section in the catalog and the workspace navigation', () => {
+    expect(buildUnifiedSettingsCatalog().map(({ id }) => id)).toContain('sandboxes')
     expect(
       resolveWorkspaceNavigation({
         permission: 'admin',
         permissionConfig: {},
-        entitlements: {
-          byok: true,
-          credentialGroups: true,
-          inbox: true,
-          customBlocks: true,
-          forks: true,
-          sandboxes: true,
-        },
+        entitlements: ALL_ENTITLEMENTS,
+        deployment: SELF_HOSTED,
       }).map(({ id }) => id)
     ).toContain('sandboxes')
   })
@@ -124,47 +163,89 @@ describe('settings navigation boundaries', () => {
   /**
    * The Self-host section links out to the managed service that issues this
    * deployment's Chat keys. On Sim Cloud that surface is reached from the
-   * account plane instead, so the section must not exist there at all — in the
-   * sidebar catalog or in the workspace-plane gate the route consults.
+   * account plane instead, so the workspace-plane gate the route consults must
+   * drop it there.
    */
   it('shows the Self-host section only on a self-hosted deployment', () => {
-    setEnvFlags({ isHosted: false })
-
-    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).toContain('self-host')
-    expect(
+    const navigate = (deployment: DeploymentShape) =>
       resolveWorkspaceNavigation({
         permission: 'admin',
         permissionConfig: {},
-        entitlements: {
-          byok: true,
-          credentialGroups: true,
-          inbox: true,
-          customBlocks: true,
-          forks: true,
-          sandboxes: true,
-        },
+        entitlements: ALL_ENTITLEMENTS,
+        deployment,
       }).map(({ id }) => id)
-    ).toContain('self-host')
+
+    expect(navigate(SELF_HOSTED)).toContain('self-host')
+    expect(navigate(HOSTED)).not.toContain('self-host')
   })
 
-  it('drops the Self-host section on hosted Sim', () => {
-    setEnvFlags({ isHosted: true })
-
-    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).not.toContain('self-host')
-    expect(
+  /**
+   * The route gate and the sidebar must agree on deployment-gated sections: a
+   * hosted-only section is offered on a self-hosted deployment only when its
+   * feature override resolves on, so a direct link cannot open what the sidebar
+   * hides. BYOK has no override and stays Sim Cloud only.
+   */
+  it('offers hosted-only workspace sections on self-hosted only through their override', () => {
+    const navigate = (deployment: DeploymentShape) =>
       resolveWorkspaceNavigation({
         permission: 'admin',
         permissionConfig: {},
-        entitlements: {
-          byok: true,
-          credentialGroups: true,
-          inbox: true,
-          customBlocks: true,
-          forks: true,
-          sandboxes: true,
-        },
+        entitlements: ALL_ENTITLEMENTS,
+        deployment,
       }).map(({ id }) => id)
-    ).not.toContain('self-host')
+
+    const inboxDisabled: DeploymentShape = {
+      ...SELF_HOSTED,
+      features: { ...SELF_HOSTED.features, inbox: false },
+    }
+    expect(navigate(inboxDisabled)).not.toContain('inbox')
+    expect(navigate(SELF_HOSTED)).toContain('inbox')
+    expect(navigate({ ...HOSTED, features: inboxDisabled.features })).toContain('inbox')
+
+    expect(navigate(SELF_HOSTED)).not.toContain('byok')
+    expect(navigate(HOSTED)).toContain('byok')
+  })
+
+  /**
+   * The catalog keeps every section regardless of deployment so the route can
+   * tell an unavailable section from an unknown one and redirect to General
+   * instead of answering 404 — the sidebar applies deployment visibility itself.
+   */
+  it('keeps deployment-gated sections in the catalog', () => {
+    const ids = buildUnifiedSettingsCatalog().map(({ id }) => id)
+
+    expect(ids).toContain('self-host')
+    expect(ids).toContain('byok')
+    expect(
+      buildUnifiedSettingsCatalog().find(({ id }) => id === 'self-host')?.requiresSelfHosted
+    ).toBe(true)
+  })
+
+  it('derives organization settings features from the deployment shape', () => {
+    expect(
+      getOrganizationSettingsFeatures(true, {
+        ...SELF_HOSTED,
+        features: { ...SELF_HOSTED.features, sso: true, usageMonitoring: true },
+      })
+    ).toEqual({
+      billingEnabled: false,
+      hasEnterprisePlan: true,
+      hosted: false,
+      selfHosted: {
+        'access-control': false,
+        'audit-logs': false,
+        sso: true,
+        sessions: true,
+        'data-retention': false,
+        'data-drains': false,
+        usage: true,
+        whitelabeling: true,
+      },
+    })
+    expect(getOrganizationSettingsFeatures(false, HOSTED)).toMatchObject({
+      billingEnabled: true,
+      hosted: true,
+    })
   })
 
   /**
@@ -173,7 +254,7 @@ describe('settings navigation boundaries', () => {
    * one colored item in a monochrome icon column.
    */
   it('marks the Self hosting section with a currentColor line icon', () => {
-    const selfHost = buildUnifiedSettingsNavigation().find(({ id }) => id === 'self-host')
+    const selfHost = buildUnifiedSettingsCatalog().find(({ id }) => id === 'self-host')
     const markup = renderToStaticMarkup(createElement(selfHost!.icon, {}))
 
     expect(selfHost?.label).toBe('Self hosting')
@@ -188,9 +269,6 @@ describe('settings navigation boundaries', () => {
     const accountIds = SETTINGS_SECTION_REGISTRY.flatMap(({ planes }) =>
       planes?.account ? [planes.account.id] : []
     )
-    const organizationIds = SETTINGS_SECTION_REGISTRY.flatMap(({ planes }) =>
-      planes?.organization ? [planes.organization.id] : []
-    )
     const selfHostIds = SETTINGS_SECTION_REGISTRY.flatMap(({ planes }) =>
       planes?.selfhost ? [planes.selfhost.id] : []
     )
@@ -200,18 +278,14 @@ describe('settings navigation boundaries', () => {
 
     expect(new Set(unifiedIds).size).toBe(unifiedIds.length)
     expect(new Set(accountIds).size).toBe(accountIds.length)
-    expect(new Set(organizationIds).size).toBe(organizationIds.length)
     expect(new Set(selfHostIds).size).toBe(selfHostIds.length)
     expect(new Set(workspaceIds).size).toBe(workspaceIds.length)
     expect([...unifiedIds].sort()).toEqual(
-      buildUnifiedSettingsNavigation()
+      buildUnifiedSettingsCatalog()
         .map(({ id }) => id)
         .sort()
     )
     expect([...accountIds].sort()).toEqual(ACCOUNT_SETTINGS_ITEMS.map(({ id }) => id).sort())
-    expect([...organizationIds].sort()).toEqual(
-      ORGANIZATION_SETTINGS_ITEMS.map(({ id }) => id).sort()
-    )
     expect([...selfHostIds].sort()).toEqual(SELFHOST_SETTINGS_ITEMS.map(({ id }) => id).sort())
     expect([...workspaceIds].sort()).toEqual(WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id).sort())
   })
@@ -224,32 +298,57 @@ describe('settings navigation boundaries', () => {
       'data-retention',
       'organization',
       'sessions',
+      'sso',
+      'usage',
       'whitelabeling',
     ])
   })
 
-  it('shares labels, icons, and docs links across projections', () => {
-    const unifiedAccessControl = buildUnifiedSettingsNavigation().find(
-      ({ id }) => id === 'access-control'
+  it('maps every organization-scoped unified section to its organization counterpart', () => {
+    // The section page reads this map to decide whether to apply the organization
+    // gate at all, so a section missing from it is not "ungated by omission" — it
+    // is a section any workspace member could open.
+    expect(UNIFIED_TO_ORGANIZATION_SECTION).toEqual({
+      organization: 'members',
+      billing: 'billing',
+      'access-control': 'access-control',
+      'audit-logs': 'audit-logs',
+      sso: 'sso',
+      sessions: 'sessions',
+      'data-retention': 'data-retention',
+      'data-drains': 'data-drains',
+      whitelabeling: 'whitelabeling',
+      usage: 'usage',
+    })
+    expect(Object.keys(UNIFIED_TO_ORGANIZATION_SECTION).sort()).toEqual(
+      [...ORGANIZATION_PLANE_UNIFIED_SECTIONS].sort()
     )
-    const organizationAccessControl = ORGANIZATION_SETTINGS_ITEMS.find(
-      ({ id }) => id === 'access-control'
-    )
-
-    expect(unifiedAccessControl?.docsLink).toBeDefined()
-    expect(organizationAccessControl?.label).toBe(unifiedAccessControl?.label)
-    expect(organizationAccessControl?.icon).toBe(unifiedAccessControl?.icon)
-    expect(organizationAccessControl?.docsLink).toBe(unifiedAccessControl?.docsLink)
   })
 
-  it('uses scope-specific labels consistently across settings surfaces', () => {
-    const organizationMembers = ORGANIZATION_SETTINGS_ITEMS.find(({ id }) => id === 'members')
-    const unifiedOrganization = buildUnifiedSettingsNavigation().find(
+  it('maps every workspace projection from its unified section', () => {
+    expect(UNIFIED_TO_WORKSPACE_SECTION).toEqual({
+      teammates: 'teammates',
+      secrets: 'secrets',
+      byok: 'byok',
+      sandboxes: 'sandboxes',
+      'credential-groups': 'credential-groups',
+      'custom-tools': 'custom-tools',
+      mcp: 'mcp',
+      'workflow-mcp-servers': 'workflow-mcp-servers',
+      apikeys: 'api-keys',
+      inbox: 'inbox',
+      'recently-deleted': 'recently-deleted',
+      forks: 'forks',
+      'custom-blocks': 'custom-blocks',
+      'self-host': 'self-host',
+    })
+  })
+
+  it('labels the members section consistently', () => {
+    const unifiedOrganization = buildUnifiedSettingsCatalog().find(
       ({ id }) => id === 'organization'
     )
 
-    expect(organizationMembers?.label).toBe('Members')
-    expect(organizationMembers?.description).toBe('Manage organization members, roles, and seats.')
     expect(unifiedOrganization?.label).toBe('Members')
   })
 
@@ -285,9 +384,6 @@ describe('settings navigation boundaries', () => {
 
   it('builds canonical settings hrefs across all three planes', () => {
     expect(getAccountSettingsHref('general')).toBe('/account/settings/general')
-    expect(getOrganizationSettingsHref('organization-a', 'members')).toBe(
-      '/organization/organization-a/settings/members'
-    )
     expect(getWorkspaceSettingsHref('workspace-a', 'teammates')).toBe(
       '/workspace/workspace-a/settings/teammates'
     )
@@ -320,20 +416,6 @@ describe('settings navigation boundaries', () => {
     expect(parseAccountPath('/account/settings', 'general')).toBe('general')
   })
 
-  it('parses canonical, aliased, and invalid organization settings paths', () => {
-    const parseOrganizationPath = (path: string) =>
-      parseSettingsPathSection({
-        path,
-        items: ORGANIZATION_SETTINGS_ITEMS,
-        defaultSection: null,
-        aliases: ORGANIZATION_SETTINGS_PATH_ALIASES,
-      })
-
-    expect(parseOrganizationPath('audit-logs')).toBe('audit-logs')
-    expect(parseOrganizationPath('/organization/org-a/settings/organization')).toBe('members')
-    expect(parseOrganizationPath('/organization/org-a/settings/not-a-section')).toBeNull()
-  })
-
   it('parses canonical, aliased, and invalid workspace settings paths', () => {
     const parseWorkspacePath = (path: string) =>
       parseSettingsPathSection({
@@ -351,7 +433,6 @@ describe('settings navigation boundaries', () => {
   it('keeps API keys split between account and workspace settings', () => {
     expect(ACCOUNT_SETTINGS_ITEMS.some(({ id }) => id === 'api-keys')).toBe(true)
     expect(WORKSPACE_SETTINGS_ITEMS.some(({ id }) => id === 'api-keys')).toBe(true)
-    expect(ORGANIZATION_SETTINGS_ITEMS.some(({ id }) => String(id) === 'api-keys')).toBe(false)
   })
 
   it('requires target-organization membership and admin authority', () => {
@@ -409,7 +490,6 @@ describe('settings navigation boundaries', () => {
       visible: [
         'teammates',
         'secrets',
-        'byok',
         'sandboxes',
         'custom-tools',
         'mcp',
@@ -426,7 +506,6 @@ describe('settings navigation boundaries', () => {
       visible: [
         'teammates',
         'secrets',
-        'byok',
         'sandboxes',
         'custom-tools',
         'mcp',
@@ -440,8 +519,8 @@ describe('settings navigation boundaries', () => {
     },
     {
       permission: 'admin' as const,
-      visible: WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id),
-      mutable: WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id),
+      visible: SELF_HOSTED_WORKSPACE_SECTIONS,
+      mutable: SELF_HOSTED_WORKSPACE_SECTIONS,
     },
   ])(
     'makes workspace $permission navigation and mutation chrome explicit',
@@ -449,14 +528,8 @@ describe('settings navigation boundaries', () => {
       const items = resolveWorkspaceNavigation({
         permission,
         permissionConfig: {},
-        entitlements: {
-          byok: true,
-          credentialGroups: true,
-          customBlocks: true,
-          forks: true,
-          inbox: true,
-          sandboxes: true,
-        },
+        entitlements: ALL_ENTITLEMENTS,
+        deployment: SELF_HOSTED_ALL_FEATURES,
       })
 
       expect(items.map(({ id }) => id)).toEqual(visible)
@@ -473,21 +546,14 @@ describe('settings navigation boundaries', () => {
         hideInboxTab: true,
         disableMcpTools: true,
         disableCustomTools: true,
+        hideSandboxesTab: true,
       },
-      entitlements: {
-        byok: true,
-        credentialGroups: true,
-        customBlocks: true,
-        forks: true,
-        inbox: true,
-        sandboxes: true,
-      },
+      entitlements: ALL_ENTITLEMENTS,
+      deployment: SELF_HOSTED_ALL_FEATURES,
     })
 
     expect(items.map(({ id }) => id)).toEqual([
       'teammates',
-      'byok',
-      'sandboxes',
       'credential-groups',
       'workflow-mcp-servers',
       'recently-deleted',

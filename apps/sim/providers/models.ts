@@ -855,6 +855,27 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'claude-fable-5-1',
+        pricing: {
+          input: 10.0,
+          cachedInput: 0.25,
+          output: 50.0,
+          updatedAt: '2026-09-01',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-09-01',
+      },
+      {
         id: 'claude-fable-5',
         pricing: {
           input: 10.0,
@@ -865,6 +886,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
           thinking: {
             levels: ['low', 'medium', 'high', 'xhigh', 'max'],
             default: 'high',
@@ -906,6 +928,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
           thinking: {
             levels: ['low', 'medium', 'high', 'xhigh', 'max'],
             default: 'high',
@@ -947,6 +970,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 2048 },
           thinking: {
             levels: ['low', 'medium', 'high', 'xhigh', 'max'],
             default: 'high',
@@ -968,6 +992,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 4096 },
           thinking: {
             levels: ['low', 'medium', 'high', 'max'],
             default: 'high',
@@ -1010,6 +1035,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 64000,
+          promptCaching: { minimumCacheableTokens: 4096 },
           thinking: {
             levels: ['low', 'medium', 'high'],
             default: 'high',
@@ -1136,7 +1162,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 64000,
-          promptCaching: { minimumCacheableTokens: 2048 },
+          promptCaching: { minimumCacheableTokens: 4096 },
           thinking: {
             levels: ['low', 'medium', 'high'],
             default: 'high',
@@ -1507,6 +1533,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 4096 },
           thinking: {
             levels: ['low', 'medium', 'high', 'max'],
             default: 'high',
@@ -1528,6 +1555,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 64000,
+          promptCaching: { minimumCacheableTokens: 4096 },
           thinking: {
             levels: ['low', 'medium', 'high'],
             default: 'high',
@@ -1591,7 +1619,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 64000,
-          promptCaching: { minimumCacheableTokens: 2048 },
+          promptCaching: { minimumCacheableTokens: 4096 },
           thinking: {
             levels: ['low', 'medium', 'high'],
             default: 'high',
@@ -1617,6 +1645,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     color: '#4285F4',
     models: [
       {
+        id: 'gemini-3.8-flash',
+        pricing: {
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-02',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-09-02',
+        recommended: true,
+      },
+      {
         id: 'gemini-3.6-flash',
         pricing: {
           input: 1.5,
@@ -1634,7 +1682,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2026-07-21',
-        recommended: true,
       },
       {
         id: 'gemini-3.5-flash-lite',
@@ -2817,7 +2864,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     id: 'meta',
     name: 'Meta',
     description: "Meta's Muse Spark models via the Meta Model API (OpenAI-compatible)",
-    defaultModel: 'muse-spark-1.1',
+    defaultModel: 'muse-spark-1.3',
     modelPatterns: [/^muse-spark/],
     icon: MetaIcon,
     color: '#0082FB',
@@ -2826,6 +2873,23 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
+      {
+        id: 'muse-spark-1.3',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.15,
+          output: 4.25,
+          updatedAt: '2026-09-02',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+          },
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-09-02',
+        recommended: true,
+      },
       {
         id: 'muse-spark-1.1',
         pricing: {
@@ -2841,7 +2905,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2026-07-09',
-        recommended: true,
       },
     ],
   },
@@ -2939,6 +3002,41 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'glm-5.3',
+        pricing: {
+          input: 1.4,
+          output: 4.4,
+          updatedAt: '2026-08-26',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          toolUsageControl: true,
+          maxOutputTokens: 131072,
+          reasoningEffort: {
+            values: ['low', 'high', 'max'],
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-08-14',
+        recommended: true,
+      },
+      {
+        id: 'glm-5.3-flash',
+        pricing: {
+          input: 0.15,
+          output: 0.5,
+          updatedAt: '2026-08-26',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          toolUsageControl: true,
+          maxOutputTokens: 131072,
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-08-26',
+        speedOptimized: true,
+      },
+      {
         id: 'glm-5.2',
         pricing: {
           input: 1.4,
@@ -2955,7 +3053,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-06-13',
-        recommended: true,
       },
       {
         id: 'glm-5.1',

@@ -1,8 +1,8 @@
 import type { Context } from '@opentelemetry/api'
 import { createLogger } from '@sim/logger'
 import type { PermissionType } from '@sim/platform-authz/workspace'
-import { toError } from '@sim/utils/errors'
-import { sleep } from '@sim/utils/helpers'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import { interruptibleSleep, sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
 import { omit } from '@sim/utils/object'
 import {
@@ -16,6 +16,7 @@ import {
   createAttributedBillingRequestEnvelope,
 } from '@/lib/billing/core/billing-attribution'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
+import type { AsyncCompletionSignal } from '@/lib/copilot/async-runs/lifecycle'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_VERSION, TOOL_WATCHDOG_RESUME_GRACE_MS } from '@/lib/copilot/constants'
 import {
@@ -23,15 +24,12 @@ import {
   prepareCopilotEnvironmentContext,
 } from '@/lib/copilot/environment-context'
 import {
-  COPILOT_BILLING_PROTOCOL,
-  COPILOT_BILLING_PROTOCOL_HEADER,
-} from '@/lib/copilot/generated/billing-protocol-v1'
-import {
   MothershipStreamV1CompletionStatus,
   MothershipStreamV1EventType,
   MothershipStreamV1RunKind,
   MothershipStreamV1ToolOutcome,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import { CopilotDegradedReason } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { getAutoAllowedTools } from '@/lib/copilot/persistence/tool-permission/auto-allow'
 import { createStreamingContext } from '@/lib/copilot/request/context/request-context'
 import { buildToolCallSummaries } from '@/lib/copilot/request/context/result'
@@ -41,6 +39,8 @@ import {
   runStreamLoop,
   StreamEndedWithoutTerminalError,
 } from '@/lib/copilot/request/go/stream'
+import { recordDegraded } from '@/lib/copilot/request/metrics'
+import { AbortReason } from '@/lib/copilot/request/session/abort-reason'
 import {
   getToolCallTerminalData,
   requireToolCallStateResult,
@@ -68,12 +68,8 @@ import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copil
 import { hasCopilotApiKey } from '@/lib/copilot/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
-import {
-  isBillingEnabled,
-  isCopilotBillingAttributionV1Enabled,
-  isCopilotToolPermissionsEnabled,
-  isHosted,
-} from '@/lib/core/config/env-flags'
+import { isCopilotToolPermissionsEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { isWorkspaceCapabilityWithheld } from '@/lib/permission-groups/capability-assertions'
 import { filterModelSafeWorkspaceFileAttachments } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { refuseResolvedSecretProjection } from '@/executor/utils/resolved-secret-projection-refusal'
 import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
@@ -219,8 +215,45 @@ async function resolveToolPermissions(
     isCopilotToolPermissionsEnabled &&
     options.interactive !== false &&
     (options.goRoute ?? '').startsWith('/api/mothership')
-  if (!enabled) return { enabled: false, autoAllowed: new Set() }
-  return { enabled: true, autoAllowed: await getAutoAllowedTools(options.userId, options.chatId) }
+  if (!enabled) return { enabled: false, autoAllowed: new Set(), autoAllowPermitted: true }
+
+  /**
+   * permission-group-enforced: copilot.tool_auto_approval — read at the point
+   * the decision is made, not only where one is saved. A member who clicked
+   * "always allow" before the key was set would otherwise keep the prompt
+   * silenced forever, so the stored list is not even loaded once the group
+   * withholds the capability.
+   *
+   * A failed lookup reads as withheld, matching the decision endpoint: letting
+   * it reject would abort the whole turn here, before any card is drawn, over a
+   * database hiccup — the turn is interactive by construction at this point, so
+   * there is a human to ask. Withholding keeps the capability fail-closed
+   * without wedging the turn: no stored always-allow is loaded, nothing durable
+   * is remembered, and every gated call still asks its one-time question.
+   */
+  const withheld =
+    options.userId && options.workspaceId
+      ? await isWorkspaceCapabilityWithheld(
+          options.userId,
+          options.workspaceId,
+          'copilot.tool_auto_approval'
+        ).catch((error) => {
+          logger.warn('Could not resolve the tool auto-approval capability; prompting every time', {
+            workspaceId: options.workspaceId,
+            error: getErrorMessage(error),
+          })
+          return true
+        })
+      : false
+  if (withheld) {
+    return { enabled: true, autoAllowed: new Set(), autoAllowPermitted: false }
+  }
+
+  return {
+    enabled: true,
+    autoAllowed: await getAutoAllowedTools(options.userId, options.chatId),
+    autoAllowPermitted: true,
+  }
 }
 
 export async function runCopilotLifecycle(
@@ -294,17 +327,14 @@ export async function runCopilotLifecycle(
       secretMountPolicy: lifecycleOptions.secretMountPolicy,
       secretActorUserId: lifecycleOptions.secretActorUserId,
     }))
+  execContext.copilotInteractionMode =
+    lifecycleOptions.interactive === true ? 'interactive' : 'headless'
   if (goRoute && MOTHERSHIP_CODE_TOOL_ROUTES.has(goRoute)) {
     execContext.sandboxProfile = 'mothership'
   } else {
     execContext.sandboxProfile = undefined
   }
-  const shouldUseHostedBillingProtocol = isHosted && isCopilotBillingAttributionV1Enabled
-  if (
-    shouldUseHostedBillingProtocol &&
-    execContext.workspaceId &&
-    !execContext.billingAttribution
-  ) {
+  if (isHosted && (!execContext.workspaceId || !execContext.billingAttribution)) {
     throw new Error('Billing attribution is required for hosted Copilot execution')
   }
   let hostedBillingRequest: AttributedBillingRequestEnvelope | undefined
@@ -317,7 +347,7 @@ export async function runCopilotLifecycle(
       throw new Error('Copilot billing attribution does not match its actor and workspace')
     }
     execContext.billingAttribution = billingAttribution
-    if (shouldUseHostedBillingProtocol) {
+    if (isHosted) {
       hostedBillingRequest = createAttributedBillingRequestEnvelope(billingAttribution)
     }
   }
@@ -421,7 +451,13 @@ export async function runCopilotLifecycle(
     // the work the user watched succeed.
     const backendFinishedTurn =
       context.completionStatus === MothershipStreamV1CompletionStatus.complete
-    const succeeded = !context.wasAborted && (backendFinishedTurn || context.errors.length === 0)
+    // Consult the lifecycle signal as well as the flag. `context.wasAborted` is
+    // only reached from a fanout leg through the (deliberately asymmetric) merge
+    // in `mergeResumeLegOutputs`, so a Stop landing mid-fanout could otherwise
+    // classify the turn as a success. Mirrors the check already used below on
+    // the throw path.
+    const turnWasAborted = context.wasAborted || (lifecycleOptions.abortSignal?.aborted ?? false)
+    const succeeded = !turnWasAborted && (backendFinishedTurn || context.errors.length === 0)
 
     const result: OrchestratorResult = {
       success: succeeded,
@@ -434,7 +470,7 @@ export async function runCopilotLifecycle(
       // path, but practically that doesn't happen in the success
       // branch here — if there are errors we never reach a
       // wasAborted-without-errors state.
-      cancelled: context.wasAborted && context.errors.length === 0,
+      cancelled: turnWasAborted && context.errors.length === 0,
       content: resultContent(context, lifecycleOptions),
       contentBlocks: context.contentBlocks,
       toolCalls: buildToolCallSummaries(context),
@@ -560,20 +596,16 @@ function isPerSubagentContinuation(c: AsyncContinuation): boolean {
 // every resume leg), so the auth/source/version headers can't drift between the
 // sequential path and the concurrent per-subagent resume legs.
 function mothershipRequestHeaders(
-  hostedBillingRequest?: AttributedBillingRequestEnvelope
+  hostedBillingRequest?: AttributedBillingRequestEnvelope,
+  simRequestId?: string
 ): Record<string, string> {
   return {
     'Content-Type': 'application/json',
+    ...(simRequestId ? { 'X-Sim-Request-ID': simRequestId } : {}),
     ...(env.COPILOT_API_KEY ? { 'x-api-key': env.COPILOT_API_KEY } : {}),
     ...getMothershipSourceEnvHeaders(),
     'X-Client-Version': SIM_AGENT_VERSION,
-    ...(hostedBillingRequest
-      ? hostedBillingRequest.headers
-      : isHosted && !isCopilotBillingAttributionV1Enabled
-        ? {
-            [COPILOT_BILLING_PROTOCOL_HEADER]: COPILOT_BILLING_PROTOCOL.legacy,
-          }
-        : {}),
+    ...(hostedBillingRequest ? hostedBillingRequest.headers : {}),
   }
 }
 
@@ -595,6 +627,12 @@ function mothershipRequestHeaders(
 //   - completionStatus: the backend's terminal verdict, set only on the leg that
 //     carries the turn to its end; a stale one from a sibling would speak for a
 //     turn that leg never finished.
+//   - wasAborted: the ONE field with an asymmetric fold. Cancelling a fanout
+//     cancels its siblings by design, and each cancelled sibling returns
+//     normally with wasAborted set — folding that unconditionally marked the
+//     SHARED context aborted, so every later leg was born aborted and every tool
+//     it dispatched was cancelled before dispatch. Reset per leg, and fold back
+//     only for a turn-level abort (see mergeResumeLegOutputs).
 // When adding a per-leg field, update BOTH functions (and the contract test in
 // resume-leg-context.test.ts). Exported only for that test.
 export function makeResumeLegContext(base: StreamingContext): StreamingContext {
@@ -608,52 +646,119 @@ export function makeResumeLegContext(base: StreamingContext): StreamingContext {
     cost: undefined,
     errors: [],
     completionStatus: undefined,
+    wasAborted: false,
   }
 }
 
 // mergeResumeLegOutputs folds a finished leg's isolated scalars back into the
 // shared context. Child (subagent-lane) legs leave the join scalars empty; only
 // the join-carrying leg (which streams the orchestrator continuation) sets them.
-export function mergeResumeLegOutputs(context: StreamingContext, leg: StreamingContext): void {
+//
+// `turnWasAborted` is the caller's answer to "was this abort the turn's, or just
+// this fanout cancelling its own lanes?". Only a turn-level abort belongs on the
+// shared context: it is what `runCopilotLifecycle` reads to classify the request
+// as cancelled, and on the headless path (which never wires `onAbortObserved`)
+// it is the only record that the abort marker was ever observed.
+export function mergeResumeLegOutputs(
+  context: StreamingContext,
+  leg: StreamingContext,
+  turnWasAborted = true
+): void {
   if (leg.accumulatedContent) context.accumulatedContent += leg.accumulatedContent
   if (leg.finalAssistantContent) context.finalAssistantContent += leg.finalAssistantContent
   if (leg.usage) context.usage = leg.usage
   if (leg.cost) context.cost = leg.cost
   if (leg.sawMainToolCall) context.sawMainToolCall = true
-  if (leg.wasAborted) context.wasAborted = true
+  if (leg.wasAborted && turnWasAborted) context.wasAborted = true
   if (leg.errors.length > 0) context.errors.push(...leg.errors)
   if (leg.completionStatus) context.completionStatus = leg.completionStatus
 }
 
-async function waitForToolIds(context: StreamingContext, toolIds: string[]): Promise<void> {
+async function waitForToolIds(
+  context: StreamingContext,
+  toolIds: string[],
+  abortSignal?: AbortSignal
+): Promise<boolean> {
   const promises: Promise<unknown>[] = []
   for (const id of toolIds) {
     const p = context.pendingToolPromises.get(id)
     if (p) promises.push(p)
   }
-  if (promises.length > 0) await Promise.allSettled(promises)
+  if (promises.length === 0) return true
+  if (!abortSignal) {
+    await Promise.allSettled(promises)
+    return true
+  }
+  if (abortSignal.aborted) return false
+
+  let onAbort = () => {}
+  const aborted = new Promise<false>((resolve) => {
+    onAbort = () => resolve(false)
+    abortSignal.addEventListener('abort', onAbort, { once: true })
+    if (abortSignal.aborted) onAbort()
+  })
+  try {
+    return await Promise.race([Promise.allSettled(promises).then(() => true as const), aborted])
+  } finally {
+    abortSignal.removeEventListener('abort', onAbort)
+  }
+}
+
+interface ResumeToolResult {
+  callId: string
+  name: string
+  data: unknown
+  success: boolean
+}
+
+/**
+ * Build the resume payload entry for one pending tool call.
+ *
+ * A tool that never reached a terminal state has no result to send. That used to
+ * throw — which turned one incomplete tool into a dead turn, and inside a
+ * subagent fanout cancelled every sibling lane and reported the whole request as
+ * an error blaming an unrelated tool. Synthesize the same failure Go already
+ * writes for itself when Sim posts nothing for a pending call, so the model sees
+ * one failed tool and the turn carries on. Still logged at error level: getting
+ * here is a bug, it just must not be fatal.
+ */
+function buildResumeToolResult(
+  context: StreamingContext,
+  toolCallId: string,
+  checkpointId: string | undefined
+): ResumeToolResult {
+  const tool = context.toolCalls.get(toolCallId)
+  if (!tool || !tool.result) {
+    recordDegraded(CopilotDegradedReason.MissingToolResult)
+    logger.error('Missing tool result for pending tool call; synthesizing a failure', {
+      toolCallId,
+      checkpointId,
+      hasToolEntry: !!tool,
+      toolName: tool?.name,
+      toolStatus: tool?.status,
+      hasPendingPromise: context.pendingToolPromises.has(toolCallId),
+    })
+    return {
+      callId: toolCallId,
+      name: tool?.name || '',
+      data: { error: `no result was returned for tool call ${toolCallId}` },
+      success: false,
+    }
+  }
+  return {
+    callId: toolCallId,
+    name: tool.name || '',
+    data: getToolCallTerminalData(tool),
+    success: requireToolCallStateResult(tool).success,
+  }
 }
 
 function collectResultsForToolIds(
   context: StreamingContext,
   toolIds: string[],
   checkpointId: string
-): Array<{ callId: string; name: string; data: unknown; success: boolean }> {
-  return toolIds.map((toolCallId) => {
-    const tool = context.toolCalls.get(toolCallId)
-    if (!tool || !tool.result) {
-      throw new Error(
-        `Cannot resume subagent chain ${checkpointId}: missing result for tool call ${toolCallId}`
-      )
-    }
-    const name = tool.name || ''
-    return {
-      callId: toolCallId,
-      name,
-      data: getToolCallTerminalData(tool),
-      success: requireToolCallStateResult(tool).success,
-    }
-  })
+): ResumeToolResult[] {
+  return toolIds.map((toolCallId) => buildResumeToolResult(context, toolCallId, checkpointId))
 }
 
 // runResumeLegWithRetry runs ONE resume POST with the same retryable-error +
@@ -680,7 +785,7 @@ async function runResumeLegWithRetry(
         url,
         {
           method: 'POST',
-          headers: mothershipRequestHeaders(hostedBillingRequest),
+          headers: mothershipRequestHeaders(hostedBillingRequest, options.simRequestId),
           body: JSON.stringify(body),
         },
         leg,
@@ -719,6 +824,12 @@ async function driveOneChildChain(
   execContext: ExecutionContext,
   options: CopilotLifecycleOptions,
   baseURL: string,
+  /**
+   * The turn's own abort signal, NOT the fanout controller in `options`. Used to
+   * tell "the user stopped the turn" from "a lane failed and cancelled its
+   * siblings" when deciding whether a leg's abort belongs on the shared context.
+   */
+  turnAbortSignal: AbortSignal | undefined,
   workspaceId?: string,
   hostedBillingRequest?: AttributedBillingRequestEnvelope
 ): Promise<AsyncContinuation | null> {
@@ -735,10 +846,23 @@ async function driveOneChildChain(
   for (;;) {
     if (isAborted(options, context)) return null
 
-    await waitForToolIds(context, toolIds)
+    const toolsSettled = await waitForToolIds(context, toolIds, options.abortSignal)
+    if (!toolsSettled || isAborted(options, context)) return null
     const results = collectResultsForToolIds(context, toolIds, checkpointId)
 
     const leg = makeResumeLegContext(context)
+    // The abort marker is turn-scoped (keyed on the shared messageId), so a leg
+    // that observes it at body close IS a turn-level abort — and on the headless
+    // path, where `onAbortObserved` is never wired to the turn controller, this
+    // is the only record of it.
+    let markerObserved = false
+    const legOptions: CopilotLifecycleOptions = {
+      ...options,
+      onAbortObserved: (reason) => {
+        if (reason === AbortReason.MarkerObservedAtBodyClose) markerObserved = true
+        options.onAbortObserved?.(reason)
+      },
+    }
     await runResumeLegWithRetry(
       `${baseURL}/api/tools/resume`,
       {
@@ -750,10 +874,10 @@ async function driveOneChildChain(
       },
       leg,
       execContext,
-      options,
+      legOptions,
       hostedBillingRequest
     )
-    mergeResumeLegOutputs(context, leg)
+    mergeResumeLegOutputs(context, leg, markerObserved || (turnAbortSignal?.aborted ?? false))
 
     const cont = leg.awaitingAsyncContinuation
     if (!cont) {
@@ -832,6 +956,7 @@ async function driveSubagentChains(
           execContext,
           legOptions,
           baseURL,
+          parentSignal,
           workspaceId,
           hostedBillingRequest
         ).catch((error) => {
@@ -864,9 +989,14 @@ async function runCheckpointLoop(
   let route = initialRoute
   let payload: Record<string, unknown> = initialPayload
   let resumeAttempt = 0
+  let initialAttempt = 0
   const callerOnEvent = options.onEvent
   const mothershipBaseURL = await getMothershipBaseURL({ userId: options.userId })
   const lifecycleWorkspaceId = nonBlankString(options.workspaceId)
+  const mothershipRequestId = nonBlankString(options.simRequestId) ?? generateId()
+  if (!options.simRequestId) {
+    options = { ...options, simRequestId: mothershipRequestId }
+  }
   const systemPromptOverride = env.MSHIP_SYSPROMPT_OVERRIDE
 
   if (typeof systemPromptOverride === 'string' && systemPromptOverride.trim() !== '') {
@@ -950,7 +1080,7 @@ async function runCheckpointLoop(
         `${mothershipBaseURL}${route}`,
         {
           method: 'POST',
-          headers: mothershipRequestHeaders(hostedBillingRequest),
+          headers: mothershipRequestHeaders(hostedBillingRequest, mothershipRequestId),
           body: JSON.stringify(payload),
         },
         context,
@@ -965,6 +1095,7 @@ async function runCheckpointLoop(
       context.trace.endSpan(streamSpan, streamStatus)
       context.trace.setActiveSpan(undefined)
       resumeAttempt = 0
+      initialAttempt = 0
     } catch (streamError) {
       context.trace.endSpan(streamSpan, RequestTraceV1SpanStatus.error)
       context.trace.setActiveSpan(undefined)
@@ -975,22 +1106,27 @@ async function runCheckpointLoop(
         })
         break
       }
-      if (
-        isResume &&
-        isRetryableStreamError(streamError) &&
-        resumeAttempt < MAX_RESUME_ATTEMPTS - 1
-      ) {
+      const attempt = isResume ? resumeAttempt : initialAttempt
+      const retryable = isResume
+        ? isRetryableStreamError(streamError)
+        : isRetryableInitialStreamError(streamError)
+      if (retryable && attempt < MAX_RESUME_ATTEMPTS - 1) {
         // Discard errors recorded during this failed attempt; we're about to
         // redo this leg and a clean retry must not finalize as `error`.
         context.errors.length = errorsBeforeAttempt
-        resumeAttempt++
-        const backoff = RESUME_BACKOFF_MS[resumeAttempt - 1] ?? 1000
-        logger.warn('Resume stream failed, retrying', {
-          attempt: resumeAttempt + 1,
-          maxAttempts: MAX_RESUME_ATTEMPTS,
-          backoffMs: backoff,
-          error: toError(streamError).message,
-        })
+        if (isResume) resumeAttempt++
+        else initialAttempt++
+        const nextAttempt = isResume ? resumeAttempt : initialAttempt
+        const backoff = RESUME_BACKOFF_MS[nextAttempt - 1] ?? 1000
+        logger.warn(
+          isResume ? 'Resume stream failed, retrying' : 'Initial stream failed, retrying',
+          {
+            attempt: nextAttempt + 1,
+            maxAttempts: MAX_RESUME_ATTEMPTS,
+            backoffMs: backoff,
+            error: toError(streamError).message,
+          }
+        )
         await sleepWithAbort(backoff, options.abortSignal)
         continue
       }
@@ -1032,7 +1168,15 @@ async function runCheckpointLoop(
           next = null
           break
         }
-        await waitForToolIds(context, next.pendingToolCallIds)
+        const toolsSettled = await waitForToolIds(
+          context,
+          next.pendingToolCallIds,
+          options.abortSignal
+        )
+        if (!toolsSettled || isAborted(options, context)) {
+          next = null
+          break
+        }
         next = await driveSubagentChains(
           next,
           context,
@@ -1043,71 +1187,138 @@ async function runCheckpointLoop(
           hostedBillingRequest
         )
       }
-      if (!next) break
+      if (!next) {
+        if (isAborted(options, context)) cancelPendingTools(context)
+        break
+      }
       continuation = next
     }
 
     if (context.pendingToolPromises.size > 0) {
-      // Snapshot the gate by tool. Human waits remain durable, but they must
-      // not disable the structural watchdog for an unrelated parallel tool.
-      const pendingTools = Array.from(context.pendingToolPromises.entries()).map(
-        ([toolCallId, promise]) => ({
-          toolCallId,
-          promise,
-          waitBudgetMs: pendingToolWaitBudgetMs(context.toolCalls.get(toolCallId)),
-        })
-      )
-      const durableTools = pendingTools.filter((tool) => tool.waitBudgetMs === null)
-      const boundedTools = pendingTools.flatMap((tool) =>
-        tool.waitBudgetMs === null ? [] : [{ ...tool, waitBudgetMs: tool.waitBudgetMs }]
-      )
-      const boundedWaitBudgetMs =
-        boundedTools.length > 0
-          ? Math.max(...boundedTools.map((tool) => tool.waitBudgetMs)) +
-            TOOL_WATCHDOG_RESUME_GRACE_MS
-          : null
       const waitSpan = context.trace.startSpan('Wait for Tools', 'lifecycle.wait_tools', {
         checkpointId: continuation.checkpointId,
         pendingCount: context.pendingToolPromises.size,
-        durableCount: durableTools.length,
-        ...(boundedWaitBudgetMs !== null ? { waitBudgetMs: boundedWaitBudgetMs } : {}),
       })
-      logger.info('Waiting for in-flight tool executions before resume', {
-        checkpointId: continuation.checkpointId,
-        pendingCount: context.pendingToolPromises.size,
-        durableCount: durableTools.length,
-        waitBudgetMs: boundedWaitBudgetMs,
-      })
-      const boundedSettledInTime =
-        boundedWaitBudgetMs === null
-          ? true
-          : await Promise.race([
-              Promise.allSettled(boundedTools.map((tool) => tool.promise)).then(() => true),
-              sleep(boundedWaitBudgetMs).then(() => false),
-            ])
-      if (!boundedSettledInTime) {
-        const hungToolCallIds = boundedTools
-          .filter(
-            ({ toolCallId, promise }) => context.pendingToolPromises.get(toolCallId) === promise
+      let maximumWaitBudgetMs = 0
+      let timedOutCount = 0
+      const pendingWatchdogs = new Map<
+        string,
+        {
+          promise: Promise<AsyncCompletionSignal>
+          settlement: Promise<{
+            toolCallId: string
+            promise: Promise<AsyncCompletionSignal>
+          }>
+          deadlineAt: number
+          waitBudgetMs: number
+        }
+      >()
+
+      /**
+       * A long-running approval must not lend its deadline to an unrelated
+       * short tool. Wake for the earliest promise settlement or deadline so a
+       * replaced call can receive its own watchdog without waiting for a long
+       * sibling. Unchanged promises retain their absolute deadlines.
+       */
+      while (context.pendingToolPromises.size > 0) {
+        if (isAborted(options, context)) break
+        const now = Date.now()
+        for (const [toolCallId, watchdog] of pendingWatchdogs) {
+          if (context.pendingToolPromises.get(toolCallId) !== watchdog.promise) {
+            pendingWatchdogs.delete(toolCallId)
+          }
+        }
+        for (const [toolCallId, promise] of context.pendingToolPromises) {
+          if (pendingWatchdogs.get(toolCallId)?.promise === promise) continue
+          const waitBudgetMs =
+            pendingToolWaitBudgetMs(context.toolCalls.get(toolCallId)) +
+            TOOL_WATCHDOG_RESUME_GRACE_MS
+          pendingWatchdogs.set(toolCallId, {
+            promise,
+            settlement: promise.then(
+              () => ({ toolCallId, promise }),
+              () => ({ toolCallId, promise })
+            ),
+            deadlineAt: now + waitBudgetMs,
+            waitBudgetMs,
+          })
+          maximumWaitBudgetMs = Math.max(maximumWaitBudgetMs, waitBudgetMs)
+        }
+
+        const expiredTools = Array.from(pendingWatchdogs.entries()).filter(
+          ([toolCallId, watchdog]) =>
+            watchdog.deadlineAt <= now &&
+            context.pendingToolPromises.get(toolCallId) === watchdog.promise
+        )
+        if (expiredTools.length > 0) {
+          await Promise.all(
+            expiredTools.map(async ([toolCallId, watchdog]) => {
+              logger.error(
+                'Pending tool execution exceeded its resume wait budget; force-failing',
+                {
+                  checkpointId: continuation.checkpointId,
+                  toolCallId,
+                  waitBudgetMs: watchdog.waitBudgetMs,
+                }
+              )
+              await forceFailHungToolCall(
+                toolCallId,
+                context,
+                'Tool execution hung on the Sim executor and was abandoned so the conversation could continue.'
+              )
+              if (context.pendingToolPromises.get(toolCallId) === watchdog.promise) {
+                context.pendingToolPromises.delete(toolCallId)
+              }
+              pendingWatchdogs.delete(toolCallId)
+            })
           )
-          .map(({ toolCallId }) => toolCallId)
-        logger.error('Pending tool executions exceeded the resume wait budget; force-failing', {
+          timedOutCount += expiredTools.length
+          continue
+        }
+
+        const activeWatchdogs = Array.from(pendingWatchdogs.entries())
+        if (activeWatchdogs.length === 0) continue
+        const nextDeadlineAt = Math.min(
+          ...activeWatchdogs.map(([, watchdog]) => watchdog.deadlineAt)
+        )
+        logger.info('Waiting for in-flight tool executions before resume', {
           checkpointId: continuation.checkpointId,
-          waitBudgetMs: boundedWaitBudgetMs,
-          hungToolCallIds,
+          pendingCount: activeWatchdogs.length,
+          maximumWaitBudgetMs,
+          nextDeadlineAt,
         })
-        for (const toolCallId of hungToolCallIds) {
-          await forceFailHungToolCall(
-            toolCallId,
-            context,
-            'Tool execution hung on the Sim executor and was abandoned so the conversation could continue.'
-          )
-          context.pendingToolPromises.delete(toolCallId)
+
+        const watchdogController = new AbortController()
+        const waitSignal = options.abortSignal
+          ? AbortSignal.any([watchdogController.signal, options.abortSignal])
+          : watchdogController.signal
+        try {
+          const wake = await Promise.race([
+            ...activeWatchdogs.map(([, watchdog]) => watchdog.settlement),
+            interruptibleSleep(Math.max(0, nextDeadlineAt - Date.now()), waitSignal).then(
+              () => null
+            ),
+          ])
+          if (isAborted(options, context)) break
+          if (wake && context.pendingToolPromises.get(wake.toolCallId) === wake.promise) {
+            context.pendingToolPromises.delete(wake.toolCallId)
+          }
+        } finally {
+          watchdogController.abort()
         }
       }
-      await Promise.allSettled(durableTools.map((tool) => tool.promise))
-      waitSpan.attributes = { ...waitSpan.attributes, settledInTime: boundedSettledInTime }
-      context.trace.endSpan(waitSpan)
+      const waitWasAborted = isAborted(options, context)
+      waitSpan.attributes = {
+        ...waitSpan.attributes,
+        waitBudgetMs: maximumWaitBudgetMs,
+        timedOutCount,
+        aborted: waitWasAborted,
+        settledInTime: timedOutCount === 0 && !waitWasAborted,
+      }
+      context.trace.endSpan(
+        waitSpan,
+        waitWasAborted ? RequestTraceV1SpanStatus.cancelled : RequestTraceV1SpanStatus.ok
+      )
     }
 
     if (isAborted(options, context)) {
@@ -1145,37 +1356,14 @@ async function runCheckpointLoop(
       break
     }
 
-    const results: Array<{
-      callId: string
-      name: string
-      data: unknown
-      success: boolean
-    }> = []
+    const results: ResumeToolResult[] = []
     for (const toolCallId of continuation.pendingToolCallIds) {
       if (isAborted(options, context)) {
         cancelPendingTools(context)
         context.awaitingAsyncContinuation = undefined
         break
       }
-      const tool = context.toolCalls.get(toolCallId)
-      if (!tool || !tool.result) {
-        logger.error('Missing tool result for pending tool call', {
-          toolCallId,
-          checkpointId: continuation.checkpointId,
-          hasToolEntry: !!tool,
-          toolName: tool?.name,
-          toolStatus: tool?.status,
-          hasPendingPromise: context.pendingToolPromises.has(toolCallId),
-        })
-        throw new Error(`Cannot resume: missing result for pending tool call ${toolCallId}`)
-      }
-      const name = tool.name || ''
-      results.push({
-        callId: toolCallId,
-        name,
-        data: getToolCallTerminalData(tool),
-        success: requireToolCallStateResult(tool).success,
-      })
+      results.push(buildResumeToolResult(context, toolCallId, continuation.checkpointId))
     }
 
     if (isAborted(options, context)) {
@@ -1417,6 +1605,25 @@ function isRetryableStreamError(error: unknown): boolean {
     return true
   }
   return false
+}
+
+/**
+ * Initial requests use a durable request identity and the backend's checkpoint
+ * delivery reservation. Reposting a transport-ambiguous initial leg is safe:
+ * Go redelivers an untouched committed pause, starts a request that never
+ * anchored, or fails closed when the accepted leg has no recoverable pause.
+ */
+function isRetryableInitialStreamError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return false
+  }
+  if (error instanceof StreamEndedWithoutTerminalError) {
+    return true
+  }
+  if (error instanceof CopilotBackendError) {
+    return error.status !== undefined && error.status >= 500
+  }
+  return error instanceof TypeError
 }
 
 function sleepWithAbort(ms: number, abortSignal?: AbortSignal): Promise<void> {

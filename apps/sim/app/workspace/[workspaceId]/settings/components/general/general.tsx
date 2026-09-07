@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
+  Chip,
   ChipCombobox,
   ChipModal,
   ChipModalBody,
@@ -10,6 +11,7 @@ import {
   ChipModalFooter,
   ChipModalHeader,
   ChipSelect,
+  cn,
   Input,
   Label,
   Switch,
@@ -19,13 +21,22 @@ import { Camera, Check, CircleInfo, Pencil } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { requestJson } from '@/lib/api/client/request'
-import { telemetryContract } from '@/lib/api/contracts/telemetry'
+import { useQueryState } from 'nuqs'
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezone'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { DeleteAccountModal } from '@/app/workspace/[workspaceId]/settings/components/general/components/delete-account-modal'
+import { PrivacyView } from '@/app/workspace/[workspaceId]/settings/components/general/components/privacy-view'
+import {
+  generalViewParam,
+  generalViewUrlKeys,
+} from '@/app/workspace/[workspaceId]/settings/components/general/search-params'
+import {
+  getTimezonePickerPresentation,
+  timezonePreferenceFromPickerValue,
+} from '@/app/workspace/[workspaceId]/settings/components/general/timezone-picker'
 import type { SettingsAction } from '@/app/workspace/[workspaceId]/settings/components/settings-header/settings-header'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
@@ -49,7 +60,7 @@ const TIMEZONE_OPTIONS = getTimezoneOptions()
  * to grid) so they line up as one column instead of three differently-sized
  * pills. Wide enough for the longest common timezone label.
  */
-const DROPDOWN_TRIGGER_CLASS = 'w-[240px] flex-shrink-0'
+const DROPDOWN_TRIGGER_CLASS = 'w-[240px] shrink-0'
 
 /**
  * Extracts initials from a user's name.
@@ -69,6 +80,7 @@ export function General() {
   const router = useRouter()
   const brandConfig = useOrgBrandConfig()
   const { data: session } = useSession()
+  const { hosted } = useDeploymentShape()
 
   const { data: profile, isLoading: isProfileLoading } = useUserProfile()
   const updateProfile = useUpdateUserProfile()
@@ -90,8 +102,14 @@ export function General() {
     setName(profile.name)
   }
 
+  const [view, setView] = useQueryState(generalViewParam.key, {
+    ...generalViewParam.parser,
+    ...generalViewUrlKeys,
+  })
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false)
   const resetPassword = useResetPassword()
+
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false)
 
   const [uploadError, setUploadError] = useState<string | null>(null)
 
@@ -171,13 +189,18 @@ export function General() {
   }
 
   const handleSignOut = async () => {
+    const logoutUrl = '/login?fromLogout=true'
+    let canNavigateInApp = false
+
     try {
-      await Promise.all([signOut(), clearUserData()])
-      router.push('/login?fromLogout=true')
+      const [, inMemoryResetSucceeded] = await Promise.all([signOut(), clearUserData()])
+      canNavigateInApp = inMemoryResetSucceeded
     } catch (error) {
       logger.error('Error signing out:', { error })
-      router.push('/login?fromLogout=true')
     }
+
+    if (canNavigateInApp) router.push(logoutUrl)
+    else window.location.assign(logoutUrl)
   }
 
   const handleResetPasswordConfirm = async () => {
@@ -208,7 +231,12 @@ export function General() {
   }
 
   const handleTimezoneChange = async (value: string) => {
-    await updateSetting.mutateAsync({ key: 'timezone', value })
+    const timezone = timezonePreferenceFromPickerValue(value)
+    if (timezone === undefined) return
+    await updateSetting.mutateAsync({
+      key: 'timezone',
+      value: timezone,
+    })
   }
 
   const handleAutoConnectChange = async (checked: boolean) => {
@@ -263,26 +291,44 @@ export function General() {
   const imageUrl =
     profilePictureUrl || profile?.image || brandConfig.logoUrl || brandConfig.logoUrlBlacktext
 
-  if (isLoading) {
-    return null
+  if (view === 'privacy') {
+    return <PrivacyView onBack={() => setView(null)} />
   }
 
   const actions: SettingsAction[] = [
-    ...(isHosted
+    ...(hosted
       ? [
           {
+            id: 'home-page',
             text: 'Home page',
             onSelect: () => window.open('/?home', '_blank', 'noopener,noreferrer'),
           },
         ]
       : []),
-    ...(!isAuthDisabled
+    ...(session?.user?.id && !isAuthDisabled
       ? [
-          { text: 'Sign out', onSelect: handleSignOut },
-          { text: 'Reset password', onSelect: () => setShowResetPasswordModal(true) },
+          { id: 'sign-out', text: 'Sign out', onSelect: handleSignOut },
+          {
+            id: 'reset-password',
+            text: 'Reset password',
+            onSelect: () => setShowResetPasswordModal(true),
+            disabled: !profile?.email,
+          },
         ]
       : []),
   ]
+
+  if (isLoading) {
+    return <SettingsPanel actions={actions} />
+  }
+
+  const browserTimezone = getBrowserTimezone()
+  const savedTimezone = settings?.timezone ?? null
+  const timezonePicker = getTimezonePickerPresentation(
+    savedTimezone,
+    browserTimezone,
+    TIMEZONE_OPTIONS
+  )
 
   return (
     <>
@@ -296,7 +342,10 @@ export function General() {
                 <button
                   type='button'
                   aria-label='Change profile picture'
-                  className={`group relative flex size-9 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover-hover:bg-[var(--bg)] ${!imageUrl ? 'border border-[var(--border)]' : ''}`}
+                  className={cn(
+                    'group relative flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-colors hover-hover:bg-[var(--bg)]',
+                    !imageUrl && 'border border-[var(--border)]'
+                  )}
                   onClick={handleProfilePictureClick}
                 >
                   {(() => {
@@ -358,7 +407,7 @@ export function General() {
                           onChange={(e) => setName(e.target.value)}
                           onKeyDown={handleKeyDown}
                           onBlur={handleInputBlur}
-                          className='absolute top-0 left-0 h-full w-full border-0 bg-transparent p-0 text-base outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                          className='absolute top-0 left-0 h-full w-full border-0 bg-transparent p-0 text-base outline-hidden focus:outline-hidden focus:ring-0 focus-visible:outline-hidden focus-visible:ring-0 focus-visible:ring-offset-0'
                           maxLength={100}
                           disabled={updateProfile.isPending}
                           autoComplete='off'
@@ -369,7 +418,7 @@ export function General() {
                       </div>
                       <Button
                         variant='ghost'
-                        className='size-[12px] flex-shrink-0 p-0'
+                        className='size-[12px] shrink-0 p-0'
                         onClick={handleUpdateName}
                         disabled={updateProfile.isPending}
                         aria-label='Save name'
@@ -382,7 +431,7 @@ export function General() {
                       <h3 className='text-base'>{profile?.name || ''}</h3>
                       <Button
                         variant='ghost'
-                        className='size-[10.5px] flex-shrink-0 p-0'
+                        className='size-[10.5px] shrink-0 p-0'
                         onClick={() => setIsEditingName(true)}
                         aria-label='Edit name'
                       >
@@ -428,10 +477,10 @@ export function General() {
                   dropdownWidth={240}
                   searchable
                   searchPlaceholder='Search timezones'
-                  value={settings?.timezone ?? getBrowserTimezone()}
+                  value={timezonePicker.value}
                   onChange={handleTimezoneChange}
                   placeholder='Select timezone'
-                  options={TIMEZONE_OPTIONS}
+                  options={timezonePicker.options}
                 />
               </div>
             </div>
@@ -560,21 +609,20 @@ export function General() {
         </SettingsSection>
 
         <SettingsSection label='Privacy'>
-          <div className='flex flex-col gap-3'>
-            <div className='flex items-center justify-between'>
-              <Label htmlFor='telemetry'>Allow anonymous telemetry</Label>
-              <Switch
-                id='telemetry'
-                checked={settings?.telemetryEnabled ?? true}
-                onCheckedChange={handleTelemetryToggle}
-              />
-            </div>
-            <p className='text-[var(--text-muted)] text-small'>
-              We use OpenTelemetry to collect anonymous usage data to improve Sim. You can opt-out
-              at any time.
-            </p>
+          <div className='flex items-center justify-between'>
+            <Label>Privacy settings</Label>
+            <Chip onClick={() => setView('privacy')}>Manage</Chip>
           </div>
         </SettingsSection>
+
+        {!isAuthDisabled && (
+          <SettingsSection label='Account'>
+            <div className='flex items-center justify-between'>
+              <Label>Delete account</Label>
+              <Chip onClick={() => setShowDeleteAccountModal(true)}>Delete</Chip>
+            </div>
+          </SettingsSection>
+        )}
       </SettingsPanel>
 
       <ChipModal
@@ -607,6 +655,12 @@ export function General() {
           }}
         />
       </ChipModal>
+
+      <DeleteAccountModal
+        open={showDeleteAccountModal}
+        onOpenChange={setShowDeleteAccountModal}
+        email={profile?.email || ''}
+      />
     </>
   )
 }

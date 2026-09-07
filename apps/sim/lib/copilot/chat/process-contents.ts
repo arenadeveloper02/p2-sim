@@ -32,12 +32,21 @@ import { EnvCapabilityConfigurationError } from '@/lib/core/config/env-capabilit
 import { getAllowedIntegrationsFromEnv } from '@/lib/core/config/env-flags'
 import { isIntegrationDeploymentAvailableForVisibility } from '@/lib/integrations/availability.server'
 import { readKnowledgeBase } from '@/lib/knowledge/application/knowledge-bases'
+import {
+  projectCostTotal,
+  projectExecutionData,
+  resolveLogFieldProjection,
+} from '@/lib/logs/log-projection'
 import { toOverview } from '@/lib/logs/log-views'
 import type { TraceSpan } from '@/lib/logs/types'
 import { mcpService } from '@/lib/mcp/service'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
-import { intersectIntegrationAllowlists } from '@/lib/permission-groups/integration-allowlist'
+import { resolvePermissionGroupConfig } from '@/lib/permission-groups/config-scope.server'
+import {
+  intersectIntegrationAllowlists,
+  resolveAccessControlBlockType,
+} from '@/lib/permission-groups/integration-allowlist'
 import { getColumnId } from '@/lib/table/column-keys'
 import { getRowsByIds } from '@/lib/table/rows/service'
 import { getTableById } from '@/lib/table/service'
@@ -47,8 +56,8 @@ import { getSkillById } from '@/lib/workflows/skills/operations'
 import { listFolders } from '@/lib/workflows/utils'
 import { readWorkspaceFileMetadata } from '@/lib/workspace-files/application/read-workspace-file-metadata'
 import { parseWorkspaceFileFolderDisplayPath } from '@/lib/workspace-files/folder-display-path'
-import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { escapeRegExp } from '@/executor/constants'
+import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import type { BrowserTextSelection, ChatContext, TerminalTextSelection } from '@/stores/panel'
 
 type AgentContextType =
@@ -124,7 +133,8 @@ export async function processContextsServer(
   userId: string,
   userMessage?: string,
   currentWorkspaceId?: string,
-  chatId?: string
+  chatId?: string,
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
 ): Promise<AgentContext[]> {
   if (!Array.isArray(contexts) || contexts.length === 0) return []
   const tasks = contexts.map(async (ctx) => {
@@ -314,17 +324,36 @@ export async function processContextsServer(
       }
       if (ctx.kind === 'docs') {
         try {
-          const { searchDocumentationServerTool } = await import(
-            '@/lib/copilot/tools/server/docs/search-documentation'
+          const { searchDocsServerTool } = await import(
+            '@/lib/copilot/tools/server/docs/search-docs'
           )
           const rawQuery = (userMessage || '').trim() || ctx.label || 'Sim documentation'
-          const query = sanitizeMessageForDocs(rawQuery, contexts)
-          const res = await searchDocumentationServerTool.execute({ query, topK: 10 })
-          const content = JSON.stringify(res?.results || [])
+          const query =
+            sanitizeMessageForDocs(rawQuery, contexts) || ctx.label || 'Sim documentation'
+          const res = await searchDocsServerTool.execute(
+            { query },
+            {
+              userId,
+              workspaceId: currentWorkspaceId,
+              chatId,
+              resolvedSecretTraceRegistry,
+            }
+          )
+          const content = JSON.stringify({
+            results: res?.results || [],
+            ...(res?.note ? { note: res.note } : {}),
+          })
           return { type: 'docs', tag: ctx.label ? `@${ctx.label}` : '@', content }
         } catch (e) {
           logger.error('Failed to process docs context', e)
-          return null
+          return {
+            type: 'docs',
+            tag: ctx.label ? `@${ctx.label}` : '@',
+            content: JSON.stringify({
+              results: [],
+              note: 'Documentation search is temporarily unavailable. Do not infer that the docs lack this topic; retry search_docs or browse docs/** later.',
+            }),
+          }
         }
       }
       return null
@@ -537,46 +566,6 @@ async function processWorkflowFromDb(
   }
 }
 
-async function processPastChat(chatId: string, tagOverride?: string): Promise<AgentContext | null> {
-  try {
-    // boundary-raw-fetch: GET /api/mothership/chat?chatId=... has no defineRouteContract;
-    // the route forwards to the copilot chat handler and emits a free-form chat envelope
-    // that isn't covered by mothershipChatGetQuerySchema or copilotChatGetContract.
-    const resp = await fetch(`/api/mothership/chat?chatId=${encodeURIComponent(chatId)}`)
-    if (!resp.ok) {
-      logger.error('Failed to fetch past chat', { chatId, status: resp.status })
-      return null
-    }
-    const data = await resp.json()
-    const messages = Array.isArray(data?.chat?.messages) ? data.chat.messages : []
-    const content = messages
-      .map((m: any) => {
-        const role = m.role || 'user'
-        // Prefer contentBlocks text if present (joins text blocks), else use content
-        let text = ''
-        if (Array.isArray(m.contentBlocks) && m.contentBlocks.length > 0) {
-          text = m.contentBlocks
-            .filter((b: any) => b?.type === 'text')
-            .map((b: any) => String(b.content || ''))
-            .join('')
-            .trim()
-        }
-        if (!text && typeof m.content === 'string') text = m.content
-        return `${role}: ${text}`.trim()
-      })
-      .filter((s: string) => s.length > 0)
-      .join('\n')
-    logger.info('Processed past_chat context via API', { chatId, length: content.length })
-
-    return { type: 'past_chat', tag: tagOverride || '@', content }
-  } catch (error) {
-    logger.error('Error processing past chat', { chatId, error })
-    return null
-  }
-}
-
-// Back-compat alias; used by processContexts above
-
 async function processKnowledgeFromDb(
   knowledgeBaseId: string,
   userId: string | undefined,
@@ -619,7 +608,7 @@ async function processBlockMetadata(
 ): Promise<AgentContext | null> {
   try {
     const [permissionConfig, visibility] = await Promise.all([
-      userId && workspaceId ? getUserPermissionConfig(userId, workspaceId) : null,
+      userId && workspaceId ? resolvePermissionGroupConfig(userId, workspaceId, undefined) : null,
       userId ? getBlockVisibilityForCopilot(userId, workspaceId) : null,
     ])
     const allowedIntegrations = intersectIntegrationAllowlists(
@@ -633,7 +622,7 @@ async function processBlockMetadata(
     if (
       allowedIntegrations != null &&
       !isBlockTypeAccessControlExempt(blockId) &&
-      !allowedIntegrations.includes(blockId.toLowerCase())
+      !allowedIntegrations.includes(resolveAccessControlBlockType(blockId.toLowerCase()))
     ) {
       logger.debug('Block not allowed by integration allowlist', { blockId, userId })
       return null
@@ -773,11 +762,35 @@ async function processExecutionLogFromDb(
       }
     }
 
+    /**
+     * Copilot is deliberately not exempt: it acts as the person, so the run it
+     * inlines is withheld exactly as the person's own log surfaces withhold it.
+     * `userId` here is the chatting user — both callers of
+     * `processContextsServer` pass the request's authenticated subject, and this
+     * is session context rather than an executor delegation — so it is the right
+     * subject for the projection, and an absent one reads whole.
+     *
+     * `logs.trace_spans` withholds the overview entirely rather than merely
+     * thinning it: the tree is derived from `traceSpans`, which is on the
+     * withheld list that the log-detail route strips outright.
+     * `logs.cost` blanks the run total AND every span's own `cost`, through the
+     * shared projector — a viewer who can sum the spans has been withheld
+     * nothing.
+     *
+     * permission-group-enforced: logs.trace_spans
+     * permission-group-enforced: logs.cost
+     */
+    const projection = await resolveLogFieldProjection(userId, log.workspaceId)
+
     const { materializeExecutionData } = await import('@/lib/logs/execution/trace-store')
-    const executionData = (await materializeExecutionData(
+    const materialized = (await materializeExecutionData(
       log.executionData as Record<string, unknown> | null,
       { workspaceId: log.workspaceId, workflowId: log.workflowId, executionId: log.executionId }
-    )) as { traceSpans?: TraceSpan[] } | undefined
+    )) as Record<string, unknown> | null | undefined
+    const executionData = projectExecutionData(materialized ?? null, projection) as
+      | { traceSpans?: TraceSpan[] }
+      | null
+      | undefined
     const overview = executionData?.traceSpans?.length
       ? toOverview(executionData.traceSpans)
       : undefined
@@ -792,7 +805,7 @@ async function processExecutionLogFromDb(
       endedAt: log.endedAt?.toISOString?.() || (log.endedAt ? String(log.endedAt) : null),
       totalDurationMs: log.totalDurationMs ?? null,
       workflowName: log.workflowName || '',
-      cost: log.costTotal != null ? { total: Number(log.costTotal) } : undefined,
+      cost: projectCostTotal(log.costTotal, projection) ?? undefined,
       overview,
       note: `For a block's input/output/error, or to grep the trace, call ${QueryLogs.id} with executionId: '${log.executionId}' — view: 'full' (scope with blockId or blockName), or pattern to grep.`,
     }

@@ -1,30 +1,56 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { getSession } from '@/lib/auth'
-import { getUserSettings } from '@/lib/users/queries'
+import { listCredentialGroupsContract } from '@/lib/api/contracts/credential-groups'
+import { internalSessionAuth } from '@/lib/api/server/routes/internal-json-route'
+import { listCredentialGroupSettings } from '@/lib/credential-groups/application/manage-groups'
+import { prefetchCurrentUserSettings } from '@/lib/settings/prefetch-current-user-settings'
+import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
-  GENERAL_SETTINGS_STALE_TIME,
-  generalSettingsKeys,
-  mapGeneralSettingsResponse,
-} from '@/hooks/queries/general-settings'
+  CREDENTIAL_GROUP_LIST_STALE_TIME,
+  credentialGroupKeys,
+} from '@/hooks/queries/utils/credential-group-queries'
+
+/** Prefetches credential groups through the route's authorization and response boundaries. */
+async function prefetchCredentialGroups(
+  queryClient: QueryClient,
+  { workspaceId }: SettingsSectionPrefetchContext
+) {
+  return queryClient.prefetchQuery({
+    queryKey: credentialGroupKeys.list(workspaceId),
+    queryFn: async () => {
+      const principal = await internalSessionAuth.authenticate()
+      const result = await listCredentialGroupSettings.execute({
+        principal,
+        input: { workspaceId },
+      })
+      /**
+       * Hydrates the whole response envelope, matching what `fetchCredentialGroupSettings` caches
+       * under this key. Narrowing to the groups array here would seed the shared entry with a
+       * shape its consumers do not read, so every one of them would see an empty list until the
+       * first refetch replaced it.
+       */
+      return listCredentialGroupsContract.response.schema.parse(result)
+    },
+    staleTime: CREDENTIAL_GROUP_LIST_STALE_TIME,
+  })
+}
+
+export interface SettingsSectionPrefetchContext {
+  workspaceId: string
+}
 
 /**
- * Prefetch general settings server-side via the shared data layer.
- *
- * Uses the same query key and mapper as the client `useGeneralSettings` hook, so the
- * hydrated entry is indistinguishable from one a client fetch produced.
- *
- * Callers must `await` this. Only a settled query is dehydrated, so an unawaited prefetch
- * is dropped from the payload entirely and the panel waterfalls on every load as if it had
- * never been prefetched.
+ * First-paint prefetches keyed by section. Keep this sparse: each entry blocks dehydration,
+ * must preserve authorization and route projection, and must match the client hook's cache shape.
+ * Never bypass a route that redacts sensitive fields.
  */
-export function prefetchGeneralSettings(queryClient: QueryClient) {
-  return queryClient.prefetchQuery({
-    queryKey: generalSettingsKeys.settings(),
-    queryFn: async () => {
-      const session = await getSession()
-      const data = await getUserSettings(session?.user?.id ?? null)
-      return mapGeneralSettingsResponse(data)
-    },
-    staleTime: GENERAL_SETTINGS_STALE_TIME,
-  })
+export const SECTION_PREFETCHERS: Partial<
+  Record<
+    SettingsSection,
+    (queryClient: QueryClient, context: SettingsSectionPrefetchContext) => Promise<unknown>
+  >
+> = {
+  general: (queryClient) => prefetchCurrentUserSettings(queryClient),
+  billing: (queryClient) => prefetchCurrentUserSettings(queryClient),
+  admin: (queryClient) => prefetchCurrentUserSettings(queryClient),
+  'credential-groups': prefetchCredentialGroups,
 }

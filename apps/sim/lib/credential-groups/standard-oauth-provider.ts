@@ -1,17 +1,18 @@
 import { randomBytes } from 'node:crypto'
+import { normalizeEmail } from '@sim/utils/string'
 import {
   applyDefaultAccessTokenExpiry,
   createAuthorizationURL,
   type OAuth2Tokens,
   validateAuthorizationCode,
-} from '@better-auth/core/oauth2'
-import { normalizeEmail } from '@sim/utils/string'
+} from 'better-auth/oauth2'
 import {
   type ConnectorProviderConfig,
+  getManagedOAuthConnectorPolicy,
   getManagedOAuthConnectorProviderConfig,
+  type ManagedOAuthConnectorConfig,
 } from '@/lib/auth/connectors/managed-oauth'
 import { readResponseJsonWithLimit } from '@/lib/core/utils/stream-limits'
-import { getBaseUrl } from '@/lib/core/utils/urls'
 import { credentialGroupOAuthNonceMatches } from '@/lib/credential-groups/oauth-state'
 import type {
   CredentialGroupProviderAdapter,
@@ -34,9 +35,30 @@ interface OAuthEndpoints {
   tokenEndpoint: string
 }
 
+/**
+ * RFC 6749 §7.1 defines `token_type` as case-insensitive, and Better Auth passes the provider's
+ * raw `token_type` through untouched. Several providers answer with lowercase `bearer`, so an
+ * exact match would reject a perfectly valid grant as an incomplete authorization.
+ */
+function isBearerTokenType(tokenType: string | undefined): boolean {
+  return tokenType?.toLowerCase() === 'bearer'
+}
+
 interface CurrentStandardOAuthProvider {
   connector: ConnectorProviderConfig
   policy: CredentialGroupProviderPolicy
+}
+
+function getRedirectUri(
+  provider: CredentialGroupStandardOAuthProvider,
+  current: CurrentStandardOAuthProvider
+): string {
+  if (!current.connector.redirectURI) {
+    throw new CredentialGroupProviderConfigurationError(
+      `${getCredentialGroupProviderService(provider).name} OAuth callback is not configured`
+    )
+  }
+  return current.connector.redirectURI
 }
 
 function staticParams(
@@ -114,6 +136,24 @@ async function resolveOAuthEndpoints(
   }
 }
 
+/**
+ * The provider's scope policy on its own. Comparing scopes needs no OAuth
+ * client, so a saved option can be validated against a connector wherever the
+ * client is not configured, which `getCurrentProvider` would refuse.
+ */
+function getScopePolicy(
+  provider: CredentialGroupStandardOAuthProvider
+): ManagedOAuthConnectorConfig {
+  const service = getCredentialGroupProviderService(provider)
+  const policy = getManagedOAuthConnectorPolicy(service.providerId)
+  if (!policy) {
+    throw new CredentialGroupProviderConfigurationError(
+      `Managed ${service.name} authorization is not configured`
+    )
+  }
+  return policy
+}
+
 function getCurrentProvider(
   provider: CredentialGroupStandardOAuthProvider
 ): CurrentStandardOAuthProvider {
@@ -127,7 +167,7 @@ function getCurrentProvider(
   const requiredScopes = [
     ...new Set([...(connector.scopes ?? []), ...connector.managedOAuth.additionalScopes]),
   ]
-  if (requiredScopes.length === 0) {
+  if (requiredScopes.length === 0 && !connector.managedOAuth.scopeless) {
     throw new CredentialGroupProviderConfigurationError(
       `Managed ${service.name} authorization has no scope policy`
     )
@@ -215,7 +255,7 @@ export function createStandardOAuthCredentialGroupProviderAdapter(
         current.connector,
         getCredentialGroupProviderService(provider).name
       )
-      const redirectUri = `${getBaseUrl()}/api/credential-groups/oauth/${provider}/callback`
+      const redirectUri = getRedirectUri(provider, current)
       const codeVerifier = managed.pkce ? generatePkceVerifier() : undefined
       return {
         redirectUri,
@@ -237,14 +277,14 @@ export function createStandardOAuthCredentialGroupProviderAdapter(
             accessType: current.connector.accessType,
             responseType: current.connector.responseType,
             responseMode: current.connector.responseMode,
-            loginHint: context.email,
+            loginHint: managed.includeLoginHint ? context.email : undefined,
             additionalParams: {
               ...staticParams(
                 current.connector.authorizationUrlParams,
                 'OAuth authorization parameters'
               ),
               ...managed.authorizationUrlParams,
-              nonce,
+              ...(managed.nonceVerification === 'id_token' ? { nonce } : {}),
             },
           })
           return authorizationUrl.toString()
@@ -254,7 +294,7 @@ export function createStandardOAuthCredentialGroupProviderAdapter(
     async exchangeAndVerify({ context, attempt, code, policy }) {
       const current = getCurrentProvider(provider)
       assertCurrentPolicy(policy, current.policy)
-      const redirectUri = `${getBaseUrl()}/api/credential-groups/oauth/${provider}/callback`
+      const redirectUri = getRedirectUri(provider, current)
       if (attempt.redirectUri !== redirectUri) {
         throw new CredentialGroupOAuthError('Authorization state is invalid or expired.', 400)
       }
@@ -279,7 +319,7 @@ export function createStandardOAuthCredentialGroupProviderAdapter(
           502
         )
       }
-      if (tokens.tokenType !== 'Bearer' || !tokens.accessToken) {
+      if (!isBearerTokenType(tokens.tokenType) || !tokens.accessToken) {
         throw new CredentialGroupOAuthError(
           `${service.name} returned an incomplete authorization.`,
           502
@@ -297,11 +337,10 @@ export function createStandardOAuthCredentialGroupProviderAdapter(
           502
         )
       }
-      if (
-        !identity.emailVerified ||
-        !identity.nonce ||
-        !credentialGroupOAuthNonceMatches(identity.nonce, attempt.nonceHash)
-      ) {
+      const nonceMatches =
+        managed.nonceVerification === 'state_only' ||
+        (identity.nonce && credentialGroupOAuthNonceMatches(identity.nonce, attempt.nonceHash))
+      if (!identity.emailVerified || !nonceMatches) {
         throw new CredentialGroupOAuthError(
           `${service.name} returned an invalid identity token.`,
           502
@@ -338,10 +377,7 @@ export function createStandardOAuthCredentialGroupProviderAdapter(
       }
     },
     hasRequiredScopes(grantedScopes, requiredScopes) {
-      return getCurrentProvider(provider).connector.managedOAuth.hasRequiredScopes(
-        grantedScopes,
-        requiredScopes
-      )
+      return getScopePolicy(provider).hasRequiredScopes(grantedScopes, requiredScopes)
     },
     async refreshToken(refreshToken) {
       return refreshOAuthToken(getCurrentProvider(provider).policy.providerId, refreshToken)

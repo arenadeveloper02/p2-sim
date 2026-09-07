@@ -57,6 +57,16 @@ type ParsedWorkspaceFileArgs = {
 const PATCH_PREVIEW_SNAPSHOT_INTERVAL_MS = 80
 const DELTA_PREVIEW_CHECKPOINT_INTERVAL_MS = 1000
 
+/** Go Copilot `prepare_file_edit` and Arena Copilot `workspace_file` declare the same intent. */
+function isPrepareFileEditTool(toolName: string): boolean {
+  return toolName === 'prepare_file_edit' || toolName === 'workspace_file'
+}
+
+/** Go Copilot `apply_file_edit` and Arena Copilot `edit_content` stream the file body. */
+function isApplyFileEditTool(toolName: string): boolean {
+  return toolName === 'apply_file_edit' || toolName === 'edit_content'
+}
+
 function asJsonRecord(value: unknown): JsonRecord | undefined {
   return isRecordLike(value) ? (value as JsonRecord) : undefined
 }
@@ -381,7 +391,7 @@ export async function processFilePreviewStreamEvent(input: {
 
   // Scope the in-flight intent to the invoking file subagent's channel (its
   // outer tool_use id) so two file agents streaming concurrently never read or
-  // overwrite each other's intent. workspace_file and edit_content from the same
+  // overwrite each other's intent. prepare_file_edit and apply_file_edit from the same
   // file agent share this channel id, so they pair up; siblings stay isolated.
   const channelId = streamEvent.scope?.parentToolCallId ?? ''
   const getIntent = (): FileIntent | null => context.activeFileIntents.get(channelId) ?? null
@@ -392,7 +402,7 @@ export async function processFilePreviewStreamEvent(input: {
     context.activeFileIntents.delete(channelId)
   }
 
-  if (isToolCallStreamEvent(streamEvent) && streamEvent.payload.toolName === 'workspace_file') {
+  if (isToolCallStreamEvent(streamEvent) && isPrepareFileEditTool(streamEvent.payload.toolName)) {
     const toolCallId = streamEvent.payload.toolCallId
     const parsedArgs = parseWorkspaceFileArgs(streamEvent.payload.arguments)
     if (toolCallId && parsedArgs) {
@@ -407,7 +417,7 @@ export async function processFilePreviewStreamEvent(input: {
       const { fileId, fileName } = target
 
       const isContentOp = isContentOperation(operation)
-      // Per-channel: a re-declared workspace_file just overwrites THIS channel's
+      // Per-channel: a re-declared prepare_file_edit just overwrites THIS channel's
       // slot. No cross-message intent clearing — that would wipe a concurrent
       // sibling file agent's pending intent.
       const intent: FileIntent = {
@@ -450,12 +460,12 @@ export async function processFilePreviewStreamEvent(input: {
 
         await emitPreviewEvent(streamEvent, options, {
           toolCallId,
-          toolName: 'workspace_file',
+          toolName: 'prepare_file_edit',
           previewPhase: 'file_preview_start',
         })
         await emitPreviewEvent(streamEvent, options, {
           toolCallId,
-          toolName: 'workspace_file',
+          toolName: 'prepare_file_edit',
           previewPhase: 'file_preview_target',
           operation,
           target: {
@@ -468,7 +478,7 @@ export async function processFilePreviewStreamEvent(input: {
         if (edit) {
           await emitPreviewEvent(streamEvent, options, {
             toolCallId,
-            toolName: 'workspace_file',
+            toolName: 'prepare_file_edit',
             previewPhase: 'file_preview_edit_meta',
             edit,
           })
@@ -480,7 +490,7 @@ export async function processFilePreviewStreamEvent(input: {
   const workspaceResultIntent = getIntent()
   if (
     isToolResultStreamEvent(streamEvent) &&
-    streamEvent.payload.toolName === 'workspace_file' &&
+    isPrepareFileEditTool(streamEvent.payload.toolName) &&
     workspaceResultIntent &&
     isContentOperation(workspaceResultIntent.operation)
   ) {
@@ -525,12 +535,12 @@ export async function processFilePreviewStreamEvent(input: {
 
       await emitPreviewEvent(streamEvent, options, {
         toolCallId: intent.toolCallId,
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         previewPhase: 'file_preview_start',
       })
       await emitPreviewEvent(streamEvent, options, {
         toolCallId: intent.toolCallId,
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         previewPhase: 'file_preview_target',
         operation: intent.operation,
         target: {
@@ -543,7 +553,7 @@ export async function processFilePreviewStreamEvent(input: {
       if (intent.edit) {
         await emitPreviewEvent(streamEvent, options, {
           toolCallId: intent.toolCallId,
-          toolName: 'workspace_file',
+          toolName: 'prepare_file_edit',
           previewPhase: 'file_preview_edit_meta',
           edit: intent.edit,
         })
@@ -554,7 +564,7 @@ export async function processFilePreviewStreamEvent(input: {
   const patchDeleteIntent = getIntent()
   if (
     isToolResultStreamEvent(streamEvent) &&
-    streamEvent.payload.toolName === 'workspace_file' &&
+    isPrepareFileEditTool(streamEvent.payload.toolName) &&
     patchDeleteIntent &&
     isContentOperation(patchDeleteIntent.operation) &&
     patchDeleteIntent.operation === 'patch' &&
@@ -593,7 +603,7 @@ export async function processFilePreviewStreamEvent(input: {
       await persistFilePreviewSession(nextSession)
       await emitPreviewEvent(streamEvent, options, {
         toolCallId: nextSession.toolCallId,
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         previewPhase: 'file_preview_content',
         content: previewText,
         contentMode: 'snapshot',
@@ -608,9 +618,10 @@ export async function processFilePreviewStreamEvent(input: {
   }
 
   /**
-   * Seeds or updates the in-flight preview from decoded `edit_content` text.
-   * Shared by streamed `args_delta` (Go) and a full `arguments.content` call
-   * frame (Arena Copilot executes the tool in-process and never streams deltas).
+   * Seeds or updates the in-flight preview from decoded file-body text.
+   * Shared by streamed `args_delta` (Go `apply_file_edit`) and a full
+   * `arguments.content` call frame (Arena Copilot `edit_content` executes
+   * in-process and never streams deltas).
    */
   const applyStreamedEditContent = async (streamedContent: string): Promise<void> => {
     const editIntent = getIntent()
@@ -682,8 +693,8 @@ export async function processFilePreviewStreamEvent(input: {
     // collaborative editor for this file is open, that client applies the stream to the shared
     // doc as minimal CRDT diffs (see `applyStreamedMarkdownToLiveDoc` in the editor), which
     // renders smoothly locally AND broadcasts to every peer — so a server-side streaming merge
-    // would double-write the shared doc. The final `edit_content` durable write still reconciles
-    // the file and seeds any late joiner.
+    // would double-write the shared doc. The final durable write still reconciles the file and
+    // seeds any late joiner.
 
     if (
       nextSession.operation === 'patch' &&
@@ -713,7 +724,7 @@ export async function processFilePreviewStreamEvent(input: {
 
     await emitPreviewEvent(streamEvent, options, {
       toolCallId: nextSession.toolCallId,
-      toolName: 'workspace_file',
+      toolName: 'prepare_file_edit',
       previewPhase: 'file_preview_content',
       content: previewUpdate.content,
       contentMode: previewUpdate.contentMode,
@@ -726,7 +737,10 @@ export async function processFilePreviewStreamEvent(input: {
     })
   }
 
-  if (isToolArgsDeltaStreamEvent(streamEvent) && streamEvent.payload.toolName === 'edit_content') {
+  if (
+    isToolArgsDeltaStreamEvent(streamEvent) &&
+    isApplyFileEditTool(streamEvent.payload.toolName)
+  ) {
     const toolCallId = streamEvent.payload.toolCallId
     const delta = streamEvent.payload.argumentsDelta
     const stateForTool = editContentState.get(toolCallId) ?? { raw: '' }
@@ -741,7 +755,7 @@ export async function processFilePreviewStreamEvent(input: {
     editContentState.set(toolCallId, stateForTool)
   }
 
-  if (isToolCallStreamEvent(streamEvent) && streamEvent.payload.toolName === 'edit_content') {
+  if (isToolCallStreamEvent(streamEvent) && isApplyFileEditTool(streamEvent.payload.toolName)) {
     const toolCallId = streamEvent.payload.toolCallId
     const args = asJsonRecord(streamEvent.payload.arguments)
     const fullContent = typeof args?.content === 'string' ? args.content : undefined
@@ -756,7 +770,7 @@ export async function processFilePreviewStreamEvent(input: {
   const editResultIntent = getIntent()
   if (
     isToolResultStreamEvent(streamEvent) &&
-    streamEvent.payload.toolName === 'edit_content' &&
+    isApplyFileEditTool(streamEvent.payload.toolName) &&
     editResultIntent
   ) {
     const currentPreview = filePreviewState.get(editResultIntent.toolCallId)
@@ -774,7 +788,7 @@ export async function processFilePreviewStreamEvent(input: {
       })
       await emitPreviewEvent(streamEvent, options, {
         toolCallId: currentPreview.session.toolCallId,
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         previewPhase: 'file_preview_content',
         content: currentPreview.session.previewText,
         contentMode: 'snapshot',
@@ -808,7 +822,7 @@ export async function processFilePreviewStreamEvent(input: {
 
     await emitPreviewEvent(streamEvent, options, {
       toolCallId: editResultIntent.toolCallId,
-      toolName: 'workspace_file',
+      toolName: 'prepare_file_edit',
       previewPhase: 'file_preview_complete',
       fileId: editResultIntent.target.fileId,
       output: streamEvent.payload.output,

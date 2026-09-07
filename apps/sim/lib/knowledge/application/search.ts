@@ -1,3 +1,4 @@
+import { type Principal, resolvePrincipalSubjectUserId } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
@@ -19,6 +20,8 @@ import {
   isDurableSecretProvenanceEnforced,
   reportUnrecordedDurableProvenance,
 } from '@/lib/execution/durable-secret-provenance-enforcement'
+import { createKnowledgeAccessProvider } from '@/lib/knowledge/access/scope'
+import type { KnowledgeAccessProvider } from '@/lib/knowledge/access/types'
 import { defineAuthorizedKnowledgeUseCase } from '@/lib/knowledge/application/authorized-knowledge-use-case'
 import {
   KnowledgeUsageLimitExceededError,
@@ -32,12 +35,13 @@ import {
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
 import { getEmbeddingModelInfo } from '@/lib/knowledge/embedding-models'
+import { generateSearchEmbedding } from '@/lib/knowledge/embeddings'
 import { runWithKnowledgeModelInputProvenance } from '@/lib/knowledge/model-input-provenance'
 import { rerank } from '@/lib/knowledge/reranker'
 import type { RerankerStatus } from '@/lib/knowledge/reranker-models'
+import { resolveKnowledgeSearchDefaults } from '@/lib/knowledge/search/defaults'
 import {
   executeKnowledgeSearch,
-  generateSearchEmbedding,
   getDocumentMetadataByIds,
   type SearchResult,
 } from '@/lib/knowledge/search/queries'
@@ -101,6 +105,8 @@ export interface SearchKnowledgeInput {
 
 type KnowledgeSearchContext = KnowledgeResourceContext & {
   knowledgeBases: KnowledgeBaseWithCounts[]
+  /** What the caller may read across the searched bases; resolved from the principal, never from input. */
+  access: KnowledgeAccessProvider
 }
 
 export interface KnowledgeSearchItem {
@@ -111,6 +117,10 @@ export interface KnowledgeSearchItem {
   documentId: string
   documentName: string | null
   sourceUrl: string | null
+  /** When the source last changed the document; null for uploads and sources that do not say. */
+  sourceModifiedAt: Date | null
+  /** The connector the document was synced through; null for an upload. */
+  connectorType: string | null
   content: string
   chunkIndex: number
   metadata: Record<string, unknown>
@@ -141,11 +151,14 @@ export interface SearchKnowledgeResult {
   cost?: KnowledgeSearchCost
   workspaceId?: string
   userId: string
+  /** Whether results were filtered as a person or as the workspace; telemetry only, never presented. */
+  accessScopeKind: 'user' | 'workspace'
   resultSecretRegistry?: ResolvedSecretTraceRegistry
 }
 
 async function resolveKnowledgeSearchContext(
-  input: SearchKnowledgeInput
+  input: SearchKnowledgeInput,
+  principal: Principal
 ): Promise<KnowledgeSearchContext> {
   if (
     input.knowledgeBaseIds.length < 1 ||
@@ -202,6 +215,7 @@ async function resolveKnowledgeSearchContext(
       workspaceId: undefined,
       legacyPersonalOwnerUserId,
       knowledgeBases: knowledgeBases as KnowledgeBaseWithCounts[],
+      access: createKnowledgeAccessProvider(principal, {}),
     }
   }
   const workspaceContext = await resolveKnowledgeWorkspaceContext({
@@ -210,13 +224,14 @@ async function resolveKnowledgeSearchContext(
   return {
     ...workspaceContext,
     knowledgeBases: knowledgeBases as KnowledgeBaseWithCounts[],
+    access: createKnowledgeAccessProvider(principal, { workspaceId: canonicalWorkspaceId }),
   }
 }
 
 export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.search,
-  resolveContext: ({ input }: { input: SearchKnowledgeInput }) =>
-    resolveKnowledgeSearchContext(input),
+  resolveContext: ({ principal, input }: { principal: Principal; input: SearchKnowledgeInput }) =>
+    resolveKnowledgeSearchContext(input, principal),
   async execute({ principal, input, context }) {
     const requestId = generateRequestId()
     const hasQuery = Boolean(input.query?.trim())
@@ -276,6 +291,14 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
           generateSearchEmbedding(input.query!, embeddingModel, context.workspaceId)
         )
       : Promise.resolve(null)
+    /** Resolved alongside the embedding call; both are needed before the first leg runs. */
+    const accessPromise = context.access.get()
+    const searchDefaults = await resolveKnowledgeSearchDefaults({
+      workspaceId: context.workspaceId,
+      /** The signed-in person, if any; never the billing owner or a key's creator. */
+      userId: resolvePrincipalSubjectUserId(principal) ?? undefined,
+      requestedMode: input.searchMode,
+    })
     const useReranker = Boolean(input.rerankerEnabled && hasQuery)
     const candidateTopK = useReranker
       ? input.rerankerInputCount !== undefined
@@ -285,10 +308,13 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
           )
         : Math.min(KNOWLEDGE_SEARCH_COST_POLICY.maxTopK, input.topK * 4)
       : input.topK
+    const access = await accessPromise
     let rows = await executeKnowledgeSearch({
       knowledgeBaseIds,
       topK: candidateTopK,
-      searchMode: input.searchMode ?? 'vector',
+      access,
+      searchMode: searchDefaults.searchMode,
+      boostRecency: searchDefaults.boostRecency,
       query: input.query,
       queryVector: hasQuery
         ? JSON.stringify((await queryEmbeddingPromise)?.embedding ?? null)
@@ -334,7 +360,7 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
           affectedCount: rows.length,
           workspaceId: context.workspaceId,
         })
-        provenanceSnapshot = { imported: false, documentMetadata: {} }
+        provenanceSnapshot = { imported: false, unrecordedCount: 0, documentMetadata: {} }
       }
     }
 
@@ -480,14 +506,21 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
       })
     )
     const tagMaps = new Map(tagDefinitionEntries)
-    const basicDocumentMetadata = provenanceSnapshot
-      ? {}
-      : await getDocumentMetadataByIds(rows.map((row) => row.documentId))
+    /**
+     * Always read: the provenance snapshot vouches for the name, URL, and tags
+     * a model may see, but the source card's modified time and connector type
+     * are only carried here, under the same access predicate as the search.
+     */
+    const basicDocumentMetadata = await getDocumentMetadataByIds(
+      rows.map((row) => row.documentId),
+      access
+    )
     const results = rows.map((row): KnowledgeSearchItem => {
       const metadata: Record<string, unknown> = {}
       const tagMap = tagMaps.get(row.knowledgeBaseId)
       const provenanceDocument = provenanceSnapshot?.documentMetadata[row.documentId]
-      const document = provenanceDocument ?? basicDocumentMetadata[row.documentId]
+      const basicDocument = basicDocumentMetadata[row.documentId]
+      const document = provenanceDocument ?? basicDocument
       for (const slot of ALL_TAG_SLOTS) {
         const value =
           provenanceDocument && slot.startsWith('tag')
@@ -504,6 +537,8 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
         documentId: row.documentId,
         documentName: document?.filename ?? null,
         sourceUrl: document?.sourceUrl ?? null,
+        sourceModifiedAt: basicDocument?.sourceModifiedAt ?? null,
+        connectorType: basicDocument?.connectorType ?? null,
         content: row.content,
         chunkIndex: row.chunkIndex,
         metadata,
@@ -511,7 +546,9 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
         ...(rerankerScore !== undefined ? { rerankerScore } : {}),
       }
     })
-    if (registry && provenanceSnapshot?.imported) {
+    if (registry && provenanceSnapshot) {
+      const knowledgeEnforced = isDurableSecretProvenanceEnforced('knowledge')
+      let unrecordedCount = provenanceSnapshot.unrecordedCount
       for (const [documentId, document] of Object.entries(provenanceSnapshot.documentMetadata)) {
         const renderedMetadata = results
           .filter((result) => result.documentId === documentId)
@@ -521,27 +558,32 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
             metadata: result.metadata,
           }))
         if (renderedMetadata.length === 0) continue
-        const stagingRegistry = new ResolvedSecretTraceRegistry([], {
-          userId,
-          workspaceId: context.workspaceId,
-        })
-        const imported = await importDurableSecretProvenance(
-          stagingRegistry,
-          document.provenance,
-          renderedMetadata,
-          'knowledge'
-        )
-        if (imported && !stagingRegistry.isPermanentlyIncomplete()) {
-          registry.mergeToolCallRegistry(stagingRegistry)
-        } else if (isDurableSecretProvenanceEnforced('knowledge')) {
+        if (document.provenance.status === 'unknown' && !knowledgeEnforced) unrecordedCount += 1
+        if (
+          !(await importDurableSecretProvenance(
+            registry,
+            document.provenance,
+            renderedMetadata,
+            'knowledge',
+            { reportUnrecorded: false }
+          ))
+        ) {
           registry.markIncomplete('knowledge-result-provenance-unavailable')
-        } else {
-          reportUnrecordedDurableProvenance({
-            surface: 'knowledge',
-            cause: 'row-sidecar-not-exact',
-            workspaceId: context.workspaceId,
-          })
         }
+      }
+      /**
+       * One entry for the whole search — chunks and rendered metadata are one read. Skipped when
+       * the registry latched: a latched read never reaches a model, and this entry exists to say a
+       * fail-open read went ahead unvouched.
+       */
+      if (unrecordedCount > 0 && !registry.isPermanentlyIncomplete()) {
+        reportUnrecordedDurableProvenance({
+          surface: 'knowledge',
+          cause: 'durable-provenance-unknown',
+          affectedCount: unrecordedCount,
+          workspaceId: context.workspaceId,
+          actorUserId: userId,
+        })
       }
     }
     const cost = baseCost
@@ -576,6 +618,7 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
       cost,
       ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
       userId,
+      accessScopeKind: access.kind,
       resultSecretRegistry: registry,
     }
   },
@@ -584,6 +627,7 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
       knowledgeBaseId: result.knowledgeBaseId,
       resultsCount: result.totalResults,
       workspaceId: context.workspaceId,
+      accessScopeKind: result.accessScopeKind,
     })
   },
 })

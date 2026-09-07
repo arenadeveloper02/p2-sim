@@ -63,8 +63,8 @@ describe('prompt caching capability', () => {
 
   it('reports the vendor minimum prefix, raised for Haiku', () => {
     expect(getPromptCachingMinimumTokens('claude-sonnet-5')).toBe(1024)
-    expect(getPromptCachingMinimumTokens('claude-haiku-4-5')).toBe(2048)
-    expect(getPromptCachingMinimumTokens('azure-anthropic/claude-haiku-4-5')).toBe(2048)
+    expect(getPromptCachingMinimumTokens('claude-haiku-4-5')).toBe(4096)
+    expect(getPromptCachingMinimumTokens('azure-anthropic/claude-haiku-4-5')).toBe(4096)
     expect(getPromptCachingMinimumTokens('gpt-5.5')).toBeNull()
   })
 })
@@ -273,6 +273,8 @@ describe('zai provider definition', () => {
   const zai = PROVIDER_DEFINITIONS.zai
 
   const expectedModels = [
+    { id: 'glm-5.3', contextWindow: 1000000 },
+    { id: 'glm-5.3-flash', contextWindow: 1000000 },
     { id: 'glm-5.2', contextWindow: 1000000 },
     { id: 'glm-5.1', contextWindow: 200000 },
     { id: 'glm-5', contextWindow: 200000 },

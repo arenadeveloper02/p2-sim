@@ -9,6 +9,12 @@ import type {
   CredentialGroupOption,
   UpdateCredentialGroupBody,
 } from '@/lib/api/contracts/credential-groups'
+import { getManagedMcpConnectorIcon } from '@/lib/credential-groups/managed-mcp-connector-icons'
+import {
+  MANAGED_MCP_CONNECTOR_IDS,
+  MANAGED_MCP_CONNECTORS,
+  type ManagedMcpConnectorId,
+} from '@/lib/credential-groups/managed-mcp-connectors'
 import {
   CREDENTIAL_GROUP_PROVIDER_IDS,
   type CredentialGroupProvider,
@@ -19,15 +25,23 @@ import {
 } from '@/lib/credential-groups/providers'
 import { SLACK_CUSTOM_BOT_PROVIDER_ID } from '@/lib/oauth/types'
 import { RowActionsMenu } from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
+import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import {
   RESOURCE_LIST_STACK,
   SettingsResourceRow,
 } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { SettingRow } from '@/ee/components/setting-row'
+import { DatabricksMcpConnectorModal } from '@/ee/credential-groups/components/databricks-mcp-connector-modal'
 import { SlackManagedUsersModal } from '@/ee/credential-groups/components/slack-managed-users-modal'
-import { useUpdateCredentialGroup } from '@/hooks/queries/credential-groups'
+import {
+  useCreateCredentialGroupMcpConnector,
+  useCredentialGroups,
+  useDeleteCredentialGroupMcpConnector,
+  useUpdateCredentialGroup,
+} from '@/hooks/queries/credential-groups'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import { useMcpServers } from '@/hooks/queries/mcp'
 
 /** Stable identity so a pending/errored credentials query cannot churn the modal's `bots` prop. */
 const EMPTY_SLACK_BOTS: WorkspaceCredential[] = []
@@ -35,6 +49,8 @@ const EMPTY_SLACK_BOTS: WorkspaceCredential[] = []
 interface CredentialGroupDetailsProps {
   credentialGroup: CredentialGroup
   workspaceId: string
+  /** Filters the account types offered below; owned by the panel header's search field. */
+  providerSearch: string
   /** Edited name; committed by the panel header's Save action, which owns the dirty state. */
   name: string
   onNameChange: (name: string) => void
@@ -61,12 +77,22 @@ function toOptionUpdateInput(
 export function CredentialGroupDetails({
   credentialGroup,
   workspaceId,
+  providerSearch,
   name,
   onNameChange,
   description,
   onDescriptionChange,
 }: CredentialGroupDetailsProps) {
   const updateGroup = useUpdateCredentialGroup()
+  const createMcpConnector = useCreateCredentialGroupMcpConnector()
+  const deleteMcpConnector = useDeleteCredentialGroupMcpConnector()
+  /**
+   * Reads the same cache entry the list view already populated, so the deployment's configured
+   * providers arrive without a second request.
+   */
+  const credentialGroups = useCredentialGroups(workspaceId)
+  const availableProviders = credentialGroups.data?.availableProviders
+  const mcpServers = useMcpServers(workspaceId)
   const slackBots = useWorkspaceCredentials({
     workspaceId,
     type: 'service_account',
@@ -74,8 +100,13 @@ export function CredentialGroupDetails({
   })
   const [slackSetup, setSlackSetup] = useState<{ credentialId?: string } | null>(null)
   const [removingProvider, setRemovingProvider] = useState<CredentialGroupProvider | null>(null)
+  const [databricksSetupOpen, setDatabricksSetupOpen] = useState(false)
+  const [removingMcpConnector, setRemovingMcpConnector] = useState<ManagedMcpConnectorId | null>(
+    null
+  )
 
-  const isUpdating = updateGroup.isPending
+  const isUpdating =
+    updateGroup.isPending || createMcpConnector.isPending || deleteMcpConnector.isPending
 
   const updateOptions = async (
     options: NonNullable<UpdateCredentialGroupBody['options']>,
@@ -132,6 +163,69 @@ export function CredentialGroupDetails({
     if (await updateOptions(options, `${service.name} removed`)) setRemovingProvider(null)
   }
 
+  const addMcpConnector = async (connectorId: Exclude<ManagedMcpConnectorId, 'databricks'>) => {
+    try {
+      await createMcpConnector.mutateAsync({
+        workspaceId,
+        groupId: credentialGroup.id,
+        body: { connectorId },
+      })
+      toast.success(`${MANAGED_MCP_CONNECTORS[connectorId].name} added`)
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not add managed MCP connector'))
+    }
+  }
+
+  const handleRemoveMcpConnector = async () => {
+    if (!removingMcpConnector) return
+    const connector = MANAGED_MCP_CONNECTORS[removingMcpConnector]
+    try {
+      await deleteMcpConnector.mutateAsync({
+        workspaceId,
+        groupId: credentialGroup.id,
+        connectorId: removingMcpConnector,
+      })
+      toast.success(`${connector.name} removed`)
+      setRemovingMcpConnector(null)
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Could not remove managed MCP connector'))
+    }
+  }
+
+  /**
+   * A provider whose OAuth client this deployment has not configured can never finish an
+   * enrollment, so it is not offered — but one already on the group stays listed regardless, or
+   * the row that removes it would disappear along with it.
+   */
+  const configuredProviders = new Set(credentialGroup.options.map((option) => option.provider))
+  const offerableProviders = availableProviders ? new Set(availableProviders) : null
+  const providerQuery = providerSearch.trim().toLowerCase()
+  const shownProviders = CREDENTIAL_GROUP_PROVIDER_IDS.filter((provider) => {
+    if (
+      !configuredProviders.has(provider) &&
+      offerableProviders &&
+      !offerableProviders.has(provider)
+    ) {
+      return false
+    }
+    if (!providerQuery) return true
+    return getCredentialGroupProviderService(provider).name.toLowerCase().includes(providerQuery)
+  })
+  const shownMcpConnectors = MANAGED_MCP_CONNECTOR_IDS.filter((connectorId) => {
+    if (!providerQuery) return true
+    const connector = MANAGED_MCP_CONNECTORS[connectorId]
+    return (
+      connector.name.toLowerCase().includes(providerQuery) ||
+      connector.description.toLowerCase().includes(providerQuery)
+    )
+  })
+  const databricksServerSummary = credentialGroup.mcpServers.find(
+    (server) => server.managedConnectorId === 'databricks'
+  )
+  const databricksServer = databricksServerSummary
+    ? mcpServers.data?.find((server) => server.id === databricksServerSummary.id)
+    : undefined
+
   return (
     <>
       <SettingsSection label='Group details'>
@@ -148,7 +242,7 @@ export function CredentialGroupDetails({
               error={!name.trim()}
             />
           </SettingRow>
-          <SettingRow label='Description' optional htmlFor='credential-group-description'>
+          <SettingRow label='Description' htmlFor='credential-group-description'>
             <ChipTextarea
               id='credential-group-description'
               value={description}
@@ -161,8 +255,15 @@ export function CredentialGroupDetails({
       </SettingsSection>
 
       <SettingsSection label='Accounts people can connect'>
+        {shownProviders.length === 0 ? (
+          <SettingsEmptyState variant='inline'>
+            {providerSearch.trim()
+              ? `No account types found matching "${providerSearch}"`
+              : 'No account types are available. Configure an OAuth client to offer one.'}
+          </SettingsEmptyState>
+        ) : null}
         <div className={RESOURCE_LIST_STACK}>
-          {CREDENTIAL_GROUP_PROVIDER_IDS.map((provider) => {
+          {shownProviders.map((provider) => {
             const service = getCredentialGroupProviderService(provider)
             const support = getCredentialGroupProviderSupport(provider)
             const option = credentialGroup.options.find(
@@ -246,6 +347,68 @@ export function CredentialGroupDetails({
         </div>
       </SettingsSection>
 
+      <SettingsSection label='MCP apps people can connect'>
+        {shownMcpConnectors.length === 0 ? (
+          <SettingsEmptyState variant='inline'>
+            {providerSearch.trim()
+              ? `No MCP apps found matching "${providerSearch}"`
+              : 'No managed MCP apps are available.'}
+          </SettingsEmptyState>
+        ) : null}
+        <div className={RESOURCE_LIST_STACK}>
+          {shownMcpConnectors.map((connectorId) => {
+            const connector = MANAGED_MCP_CONNECTORS[connectorId]
+            const server = credentialGroup.mcpServers.find(
+              (candidate) => candidate.managedConnectorId === connectorId
+            )
+            const ConnectorIcon = getManagedMcpConnectorIcon(connectorId)
+            return (
+              <SettingsResourceRow
+                key={connectorId}
+                icon={<ConnectorIcon aria-hidden />}
+                title={server?.name ?? connector.name}
+                description={connector.description}
+                badge={server ? <ChipTag variant='gray'>Added</ChipTag> : undefined}
+                trailing={
+                  server ? (
+                    <RowActionsMenu
+                      label={`${connector.name} actions`}
+                      actions={[
+                        ...(connectorId === 'databricks'
+                          ? [
+                              {
+                                label: 'Edit',
+                                onSelect: () => setDatabricksSetupOpen(true),
+                                disabled: isUpdating || !databricksServer,
+                              },
+                            ]
+                          : []),
+                        {
+                          label: 'Remove',
+                          destructive: true,
+                          onSelect: () => setRemovingMcpConnector(connectorId),
+                          disabled: isUpdating,
+                        },
+                      ]}
+                    />
+                  ) : (
+                    <Chip
+                      disabled={isUpdating}
+                      onClick={() => {
+                        if (connectorId === 'databricks') setDatabricksSetupOpen(true)
+                        else void addMcpConnector(connectorId)
+                      }}
+                    >
+                      {connectorId === 'databricks' ? 'Set up' : 'Add'}
+                    </Chip>
+                  )
+                }
+              />
+            )
+          })}
+        </div>
+      </SettingsSection>
+
       <SlackManagedUsersModal
         open={slackSetup !== null}
         workspaceId={workspaceId}
@@ -257,6 +420,14 @@ export function CredentialGroupDetails({
         isLoading={slackBots.isPending}
         error={slackBots.error}
         initialCredentialId={slackSetup?.credentialId}
+      />
+
+      <DatabricksMcpConnectorModal
+        open={databricksSetupOpen}
+        onOpenChange={setDatabricksSetupOpen}
+        workspaceId={workspaceId}
+        credentialGroupId={credentialGroup.id}
+        server={databricksServer}
       />
 
       <ChipConfirmModal
@@ -271,6 +442,22 @@ export function CredentialGroupDetails({
         confirm={{
           label: isUpdating ? 'Removing...' : 'Remove',
           onClick: handleRemoveProvider,
+          disabled: isUpdating,
+        }}
+      />
+
+      <ChipConfirmModal
+        open={Boolean(removingMcpConnector)}
+        onOpenChange={(open) => !open && !isUpdating && setRemovingMcpConnector(null)}
+        srTitle='Remove MCP app'
+        title={`Remove ${
+          removingMcpConnector ? MANAGED_MCP_CONNECTORS[removingMcpConnector].name : 'MCP app'
+        }`}
+        text='People will no longer be able to connect this app. Existing OAuth grants and saved tool metadata will be revoked.'
+        dismissLabel='Cancel'
+        confirm={{
+          label: isUpdating ? 'Removing...' : 'Remove',
+          onClick: handleRemoveMcpConnector,
           disabled: isUpdating,
         }}
       />

@@ -14,8 +14,18 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # The diff-based audits below need a base commit to read, and the default
+      # depth of 1 clones a single commit with no parent. They normally fetch
+      # their base by SHA (see "Resolve base ref"), so this depth only covers the
+      # `HEAD~1` fallback — but without it that fallback resolves to nothing.
+      #
+      # Worth stating because the failure was invisible for so long: the migration
+      # audit read the resulting `git diff` failure as "no migrations changed" and
+      # exited 0, so it had never actually run on a push build.
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 2
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -106,15 +116,40 @@ jobs:
 
           echo "✅ All env flags are properly configured"
 
-      - name: Check block registry invariants
+      # One fetch for both base-ref audits, and no `|| true`: a swallowed fetch leaves
+      # the base ref absent, which neither audit can tell apart from a branch that
+      # changed nothing. The block-registry check at least degrades to a visible
+      # `⚠ … skipping` line; the migration audit printed `✓ No new migrations to
+      # check` and exited 0, clearing the only guard on production DDL.
+      #
+      # Depth stays at 1 — without a merge-base the migration audit diffs the two
+      # tips, which under `--diff-filter=AM` is exactly the migrations new here.
+      # Resolved once for both diff-based audits, and never with `|| true`: a
+      # swallowed fetch leaves the base absent, which neither audit can tell apart
+      # from a branch that changed nothing.
+      #
+      # On push the base is `github.event.before`, the tip the branch had before
+      # this push — not `HEAD~1`, which names only the last commit and would let a
+      # multi-commit push slip every earlier commit's migrations past the audit.
+      # It is fetched by SHA at depth 1; the audits diff two tips and need no
+      # common ancestry. An all-zero `before` means the branch is new and has no
+      # predecessor to diff, so `HEAD~1` remains the fallback there.
+      - name: Resolve base ref for diff-based audits
+        id: audit_base
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE_REF="origin/${{ github.base_ref }}"
-            git fetch --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
+            git fetch --depth=1 origin "${{ github.base_ref }}"
+            echo "ref=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.before }}" ] &&
+               [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --depth=1 origin "${{ github.event.before }}"
+            echo "ref=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
           else
-            BASE_REF="HEAD~1"
+            echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
           fi
-          bun run apps/sim/scripts/check-block-registry.ts "$BASE_REF"
+
+      - name: Check block registry invariants
+        run: bun run apps/sim/scripts/check-block-registry.ts "${{ steps.audit_base.outputs.ref }}"
 
       - name: Lint code
         run: bun run lint:check
@@ -125,15 +160,11 @@ jobs:
       - name: Repo audits
         run: bun run check:audits
 
+      - name: Verify docs manifest is in sync
+        run: bun run docs-manifest:check
+
       - name: Migration safety (zero-downtime) audit
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE_REF="origin/${{ github.base_ref }}"
-            git fetch --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
-          else
-            BASE_REF="HEAD~1"
-          fi
-          bun run check:migrations "$BASE_REF"
+        run: bun run check:migrations "${{ steps.audit_base.outputs.ref }}"
 
       # Every workspace, not just realtime. packages/emcn, packages/utils,
       # apps/desktop and apps/docs had no type check in CI at all; apps/sim's
@@ -151,13 +182,19 @@ jobs:
 
       # Runs the setup CLI's Bun tests plus each workspace's Vitest suite,
       # without `--coverage`. See the Codecov note below.
+      #
+      # apps/sim runs only its first shard here; `test-shard` below runs the
+      # others. That suite is bound by the single Vite server thread that feeds
+      # every worker — wall time is flat from 4 to 13 workers — so a bigger
+      # runner buys nothing and each extra runner takes a proportional slice.
       - name: Run tests
         env:
           NODE_OPTIONS: '--no-warnings --max-old-space-size=8192'
           NEXT_PUBLIC_APP_URL: 'https://www.sim.ai'
           DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/simstudio'
-          ENCRYPTION_KEY: '7cf672e460e430c1fba707575c2b0e2ad5a99dddf9b7b7e3b5646e630861db1c' # dummy key for CI only
+          ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000' # dummy key for CI only
           TURBO_CACHE_DIR: .turbo
+          SIM_TEST_SHARD: 1/3
         run: bun run test
 
       - name: Check schema and migrations are in sync
@@ -172,6 +209,72 @@ jobs:
             exit 1
           fi
           echo "✅ Schema and migrations are in sync"
+
+  # The remaining shards of apps/sim's Vitest suite. Everything else — lint,
+  # the audits, type-check, the other workspaces' suites — lives in
+  # `test-build` with shard 1; these jobs exist only because that suite cannot
+  # go faster on one machine (see the "Run tests" note there). Three shards
+  # put each runner at roughly the fixed cost of checkout + install. The Turbo
+  # cache disk gets its own key so the shards' entries do not evict each other.
+  test-shard:
+    name: Test (shard ${{ matrix.shard }})
+    runs-on: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-8vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [2, 3]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24
+
+      - name: Mount Bun cache
+        uses: ./.github/actions/cache-mount
+        with:
+          provider: ${{ vars.CI_PROVIDER }}
+          key: ${{ github.repository }}-bun-cache-${{ github.event_name }}${{ github.event.pull_request.head.repo.fork && '-fork' || '' }}
+          path: ~/.bun/install/cache
+
+      - name: Mount node_modules
+        uses: ./.github/actions/cache-mount
+        with:
+          provider: ${{ vars.CI_PROVIDER }}
+          key: ${{ github.repository }}-node-modules-${{ github.event_name }}${{ github.event.pull_request.head.repo.fork && '-fork' || '' }}-${{ hashFiles('bun.lock') }}
+          path: ./node_modules
+
+      - name: Mount Turbo cache
+        uses: ./.github/actions/cache-mount
+        with:
+          provider: ${{ vars.CI_PROVIDER }}
+          key: ${{ github.repository }}-turbo-cache-shard-${{ matrix.shard }}-${{ github.event_name }}${{ github.event.pull_request.head.repo.fork && '-fork' || '' }}
+          path: ./.turbo
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Install ripgrep
+        run: command -v rg || (sudo apt-get update && sudo apt-get install -y ripgrep)
+
+      - name: Run tests (apps/sim shard ${{ matrix.shard }}/3)
+        env:
+          NODE_OPTIONS: '--no-warnings --max-old-space-size=8192'
+          NEXT_PUBLIC_APP_URL: 'https://www.sim.ai'
+          DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/simstudio'
+          ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000' # dummy key for CI only
+          TURBO_CACHE_DIR: .turbo
+          SIM_TEST_SHARD: ${{ matrix.shard }}/3
+        run: bunx turbo run test --filter=@sim/app
 
   # Next.js production build, in parallel with lint + tests. Sticky disks are
   # cloned from the last committed snapshot per job and committed last-writer-
@@ -264,6 +367,6 @@ jobs:
           STRIPE_WEBHOOK_SECRET: 'dummy_secret_for_ci_only'
           RESEND_API_KEY: 'dummy_key_for_ci_only'
           AWS_REGION: 'us-west-2'
-          ENCRYPTION_KEY: '7cf672e460e430c1fba707575c2b0e2ad5a99dddf9b7b7e3b5646e630861db1c' # dummy key for CI only
+          ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000' # dummy key for CI only
           TURBO_CACHE_DIR: .turbo
         run: bunx turbo run build --filter=@sim/app

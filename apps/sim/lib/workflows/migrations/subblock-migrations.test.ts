@@ -11,8 +11,10 @@ import * as blocksBarrel from '@/blocks'
 import { getBlock as getRealBlock } from '@/blocks/registry'
 import {
   backfillCanonicalModes,
+  migrateCanonicalModeIds,
   migrateSubblockIds,
   SUBBLOCK_ID_MIGRATIONS,
+  SUBBLOCK_OPERATION_VALUE_MIGRATIONS,
 } from './subblock-migrations'
 
 /**
@@ -65,16 +67,80 @@ describe('_removed_ prefix invariant', () => {
 describe('migration targets', () => {
   it('every rename points at a subblock that still exists', () => {
     const offenders: string[] = []
-    for (const [blockType, renames] of Object.entries(SUBBLOCK_ID_MIGRATIONS)) {
+    for (const [blockType, migrations] of Object.entries(SUBBLOCK_ID_MIGRATIONS)) {
       const config = getAllBlocks().find((block) => block.type === blockType)
       if (!config) {
         offenders.push(`${blockType} (block not registered)`)
         continue
       }
       const liveIds = new Set((config.subBlocks ?? []).map((subBlock) => subBlock.id))
-      for (const [legacyId, currentId] of Object.entries(renames)) {
-        if (currentId.startsWith('_removed_')) continue
-        if (!liveIds.has(currentId)) offenders.push(`${blockType}.${legacyId} -> ${currentId}`)
+      for (const { from, to } of migrations) {
+        if (to.startsWith('_removed_')) continue
+        if (!liveIds.has(to)) offenders.push(`${blockType}.${from} -> ${to}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  /**
+   * A scope naming an operation the block cannot select never fires, so the
+   * legacy value it was added to rescue stays stranded — a silent no-op that
+   * reads as a shipped fix.
+   */
+  it('every operation scope names an operation the block offers', () => {
+    const offenders: string[] = []
+    for (const [blockType, migrations] of Object.entries(SUBBLOCK_ID_MIGRATIONS)) {
+      const config = getAllBlocks().find((block) => block.type === blockType)
+      const operationConfig = config?.subBlocks?.find((subBlock) => subBlock.id === 'operation')
+      const offered = new Set(
+        (Array.isArray(operationConfig?.options) ? operationConfig.options : []).map((option) =>
+          typeof option === 'string' ? option : ((option as { id?: string }).id ?? '')
+        )
+      )
+      for (const { from, to, whenOperation } of migrations) {
+        for (const operation of whenOperation ?? []) {
+          if (!offered.has(operation))
+            offenders.push(`${blockType}.${from} -> ${to} @ ${operation}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('every operation-value rewrite targets an option the block still offers', () => {
+    const offenders: string[] = []
+    for (const [blockType, mapping] of Object.entries(SUBBLOCK_OPERATION_VALUE_MIGRATIONS)) {
+      const config = getAllBlocks().find((block) => block.type === blockType)
+      if (!config) {
+        offenders.push(`${blockType} (block not registered)`)
+        continue
+      }
+      const operationConfig = config.subBlocks?.find((subBlock) => subBlock.id === 'operation')
+      const offered = new Set(
+        (Array.isArray(operationConfig?.options) ? operationConfig.options : []).map((option) =>
+          typeof option === 'string' ? option : ((option as { id?: string }).id ?? '')
+        )
+      )
+      for (const [from, to] of Object.entries(mapping)) {
+        if (!offered.has(to)) offenders.push(`${blockType}.${from} -> ${to}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  /**
+   * An unconditional rename off an id that is still a live control steals that
+   * control's value on every load. Every such rename must be operation-scoped.
+   */
+  it('never renames off an id that is still a live control, unscoped', () => {
+    const offenders: string[] = []
+    for (const [blockType, migrations] of Object.entries(SUBBLOCK_ID_MIGRATIONS)) {
+      const config = getAllBlocks().find((block) => block.type === blockType)
+      if (!config) continue
+      const liveIds = new Set((config.subBlocks ?? []).map((subBlock) => subBlock.id))
+      for (const { from, to, whenOperation } of migrations) {
+        if (whenOperation) continue
+        if (liveIds.has(from)) offenders.push(`${blockType}.${from} -> ${to}`)
       }
     }
     expect(offenders).toEqual([])
@@ -82,6 +148,33 @@ describe('migration targets', () => {
 })
 
 describe('migrateSubblockIds', () => {
+  it('rewrites legacy Semrush operations and Position Tracking URL field', () => {
+    const input: Record<string, BlockState> = {
+      b1: makeBlock({
+        type: 'semrush',
+        subBlocks: {
+          operation: {
+            id: 'operation',
+            type: 'dropdown',
+            value: 'tracking_position_organic',
+          },
+          trackingUrl: {
+            id: 'trackingUrl',
+            type: 'short-input',
+            value: '*.example.com/*',
+          },
+        },
+      }),
+    }
+
+    const { blocks, migrated } = migrateSubblockIds(input)
+
+    expect(migrated).toBe(true)
+    expect(blocks.b1.subBlocks.operation.value).toBe('semrush_organic_positions')
+    expect(blocks.b1.subBlocks.url.value).toBe('*.example.com/*')
+    expect(blocks.b1.subBlocks.trackingUrl).toBeUndefined()
+  })
+
   it('should preserve Instagram insight metrics after the subblock rename', () => {
     const input: Record<string, BlockState> = {
       b1: makeBlock({
@@ -117,9 +210,9 @@ describe('migrateSubblockIds', () => {
             // Every legacy id in the map, so a rename added later without a
             // matching assertion still fails here.
             ...Object.fromEntries(
-              Object.keys(SUBBLOCK_ID_MIGRATIONS.snowflake).map((legacyId) => [
-                legacyId,
-                { id: legacyId, type: 'short-input', value: `value-${legacyId}` },
+              SUBBLOCK_ID_MIGRATIONS.snowflake.map(({ from }) => [
+                from,
+                { id: from, type: 'short-input', value: `value-${from}` },
               ])
             ),
           },
@@ -131,12 +224,10 @@ describe('migrateSubblockIds', () => {
       expect(migrated).toBe(true)
       // The advanced text members, not the pickers: a migrated block has no
       // credential yet, so a picker could not hydrate the stored name.
-      for (const [legacyId, currentId] of Object.entries(SUBBLOCK_ID_MIGRATIONS.snowflake)) {
-        if (currentId.startsWith('_removed_')) continue
-        expect(blocks.b1.subBlocks[currentId]?.value, `${legacyId} -> ${currentId}`).toBe(
-          `value-${legacyId}`
-        )
-        expect(blocks.b1.subBlocks[legacyId], legacyId).toBeUndefined()
+      for (const { from, to } of SUBBLOCK_ID_MIGRATIONS.snowflake) {
+        if (to.startsWith('_removed_')) continue
+        expect(blocks.b1.subBlocks[to]?.value, `${from} -> ${to}`).toBe(`value-${from}`)
+        expect(blocks.b1.subBlocks[from], from).toBeUndefined()
       }
     })
 
@@ -488,12 +579,284 @@ describe('migrateSubblockIds', () => {
     })
   })
 
+  describe('servicenow block', () => {
+    it('moves a legacy Read Records projection onto readFields', () => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_read_record' },
+            fields: {
+              id: 'fields',
+              type: 'short-input',
+              value: 'number,short_description,priority',
+            },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(true)
+      expect(blocks.b1.subBlocks.readFields.value).toBe('number,short_description,priority')
+      expect(blocks.b1.subBlocks.fields).toBeUndefined()
+    })
+
+    /**
+     * The shipped block shared `fields` between the Create/Update Record JSON
+     * body and the Read Records projection, and a subblock value survives an
+     * operation switch. So `operation: servicenow_read_record` holding a JSON
+     * body under `fields` is a reachable saved state, and promoting that body
+     * onto `readFields` would send it as `sysparm_fields`.
+     */
+    it('leaves a Create Record JSON body under fields when the operation was switched to Read Records', () => {
+      const body = '{\n  "short_description": "Issue description",\n  "priority": "1"\n}'
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_read_record' },
+            fields: { id: 'fields', type: 'code', value: body },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(false)
+      expect(blocks.b1.subBlocks.readFields).toBeUndefined()
+      expect(blocks.b1.subBlocks.fields.value).toBe(body)
+    })
+
+    /**
+     * A scalar body carries no `{` or `[`, so a prefix check would have read it
+     * as a field list. Parsing is what separates the two spaces.
+     */
+    it.each([
+      ['a boolean', 'true'],
+      ['a quoted string', '"short_description"'],
+      ['a number', '42'],
+      ['null', 'null'],
+    ])('leaves %s under fields rather than promoting it to a projection', (_label, body) => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_read_record' },
+            fields: { id: 'fields', type: 'code', value: body },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(false)
+      expect(blocks.b1.subBlocks.readFields).toBeUndefined()
+      expect(blocks.b1.subBlocks.fields.value).toBe(body)
+    })
+
+    /**
+     * A saved body is not always well-formed JSON — it can be a half-typed
+     * draft or carry an unquoted `<block.output>` reference. Migrating one
+     * moves it to `readFields` AND drops the original key, so the draft is
+     * gone. The field-list shape is what rejects these; parseability cannot.
+     */
+    it.each([
+      ['a half-typed body', '{\n  "short_description": '],
+      ['an unquoted block reference', '{ "short_description": <agent.content> }'],
+      ['a trailing-comma body', '{ "priority": "1", }'],
+      ['a quoted field name', '"short_description"'],
+    ])('leaves %s under fields', (_label, body) => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_read_record' },
+            fields: { id: 'fields', type: 'code', value: body },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(false)
+      expect(blocks.b1.subBlocks.readFields).toBeUndefined()
+      expect(blocks.b1.subBlocks.fields.value).toBe(body)
+    })
+
+    it('still migrates a dotted-walk projection', () => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_read_record' },
+            fields: { id: 'fields', type: 'short-input', value: 'number, cmdb_ci.name, sys_id' },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(true)
+      expect(blocks.b1.subBlocks.readFields.value).toBe('number, cmdb_ci.name, sys_id')
+    })
+
+    it('leaves a JSON array value under fields as well', () => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_read_record' },
+            fields: { id: 'fields', type: 'code', value: '["short_description"]' },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(false)
+      expect(blocks.b1.subBlocks.readFields).toBeUndefined()
+      expect(blocks.b1.subBlocks.fields.value).toBe('["short_description"]')
+    })
+
+    it('leaves the JSON body alone on create', () => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'servicenow',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'servicenow_create_record' },
+            fields: { id: 'fields', type: 'code', value: '{"short_description":"x"}' },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(false)
+      expect(blocks.b1.subBlocks.readFields).toBeUndefined()
+      expect(blocks.b1.subBlocks.fields.value).toBe('{"short_description":"x"}')
+    })
+  })
+
+  /**
+   * `okta_remove_user_from_app` reached the block in #6741 (`d45dad7e8b`),
+   * whose only release tag is v0.8.3 — the same release that split `sendEmail`
+   * into `sendDeactivationEmail`. In v0.8.2 the operation does not exist and
+   * `sendEmail` covers only activate/deactivate/reset/delete, so no saved state
+   * can hold a remove-from-app preference under `sendEmail`, and widening the
+   * scope would only let an activation-era value be promoted.
+   */
+  describe('okta block', () => {
+    it('renames the deactivation half of the shared send-email switch', () => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'okta',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'okta_deactivate_user' },
+            sendEmail: { id: 'sendEmail', type: 'switch', value: 'true' },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(true)
+      expect(blocks.b1.subBlocks.sendDeactivationEmail.value).toBe('true')
+      expect(blocks.b1.subBlocks.sendEmail).toBeUndefined()
+    })
+
+    it('leaves the activation half on sendEmail', () => {
+      const input: Record<string, BlockState> = {
+        b1: makeBlock({
+          type: 'okta',
+          subBlocks: {
+            operation: { id: 'operation', type: 'dropdown', value: 'okta_activate_user' },
+            sendEmail: { id: 'sendEmail', type: 'switch', value: 'false' },
+          },
+        }),
+      }
+
+      const { blocks, migrated } = migrateSubblockIds(input)
+
+      expect(migrated).toBe(false)
+      expect(blocks.b1.subBlocks.sendEmail.value).toBe('false')
+      expect(blocks.b1.subBlocks.sendDeactivationEmail).toBeUndefined()
+    })
+  })
+
   it('should handle blocks with empty subBlocks', () => {
     const input: Record<string, BlockState> = {
       b1: makeBlock({ type: 'knowledge', subBlocks: {} }),
     }
 
     const { migrated } = migrateSubblockIds(input)
+
+    expect(migrated).toBe(false)
+  })
+})
+
+describe('migrateCanonicalModeIds', () => {
+  function mistralBlock(data: Record<string, unknown>, subBlocks: Record<string, unknown>) {
+    return makeBlock({ type: 'mistral_parse_v3', data, subBlocks } as never)
+  }
+
+  it('carries the selection across the document -> file rename', () => {
+    const { blocks, migrated } = migrateCanonicalModeIds({
+      b1: mistralBlock({ canonicalModes: { document: 'advanced' } }, {}),
+    })
+
+    expect(migrated).toBe(true)
+    const modes = blocks.b1.data?.canonicalModes as Record<string, string>
+    expect(modes).toEqual({ file: 'advanced' })
+  })
+
+  /**
+   * The case the backfill alone cannot recover. `setBlockCanonicalMode` writes
+   * the mode without clearing the sibling, so a workflow that uploaded a file,
+   * switched to advanced, then typed a reference holds both values — and
+   * `resolveCanonicalMode` prefers basic whenever the basic side is populated.
+   * Without the rename the run would silently switch to the uploaded file.
+   */
+  it('preserves advanced when both sides hold a value, which the backfill would not', () => {
+    const both = {
+      fileUpload: { id: 'fileUpload', type: 'file-upload', value: { name: 'a.pdf' } },
+      fileReference: { id: 'fileReference', type: 'short-input', value: '<block.file>' },
+    }
+
+    const { blocks } = migrateCanonicalModeIds({
+      b1: mistralBlock({ canonicalModes: { document: 'advanced' } }, both),
+    })
+    expect((blocks.b1.data?.canonicalModes as Record<string, string>).file).toBe('advanced')
+
+    // Same input through the backfill alone resolves to basic — the regression
+    // this migration exists to prevent.
+    const { blocks: backfilled } = backfillCanonicalModes({
+      b1: mistralBlock({ canonicalModes: {} }, both),
+    })
+    expect((backfilled.b1.data?.canonicalModes as Record<string, string>).file).toBe('basic')
+  })
+
+  it('leaves a block that already stores the current id alone', () => {
+    const { blocks, migrated } = migrateCanonicalModeIds({
+      b1: mistralBlock({ canonicalModes: { file: 'basic' } }, {}),
+    })
+
+    expect(migrated).toBe(false)
+    expect(blocks.b1.data?.canonicalModes).toEqual({ file: 'basic' })
+  })
+
+  it('prefers a value already written under the current id over the legacy one', () => {
+    const { blocks } = migrateCanonicalModeIds({
+      b1: mistralBlock({ canonicalModes: { document: 'advanced', file: 'basic' } }, {}),
+    })
+
+    expect(blocks.b1.data?.canonicalModes).toEqual({ file: 'basic' })
+  })
+
+  it('does not touch a block type with no canonical rename', () => {
+    const { migrated } = migrateCanonicalModeIds({
+      b1: makeBlock({ type: 'knowledge', data: { canonicalModes: { document: 'advanced' } } }),
+    })
 
     expect(migrated).toBe(false)
   })

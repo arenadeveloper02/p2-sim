@@ -921,7 +921,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[768px]'>
           <ChatInput
-            onSubmit={(value, files) => {
+            onSubmit={(value, _isVoiceInput, files) => {
               void handleSendMessage(value, files)
             }}
             isStreaming={isStreamingResponse}

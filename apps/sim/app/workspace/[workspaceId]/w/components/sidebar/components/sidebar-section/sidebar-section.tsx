@@ -1,7 +1,7 @@
 'use client'
 
 import { type ReactNode, useState } from 'react'
-import { cn, disclosureChevronClass, Expandable, ExpandableContent } from '@sim/emcn'
+import { cn, disclosureChevronClass, Expandable, ExpandableContent, OverflowText } from '@sim/emcn'
 import { ChevronDown } from '@sim/emcn/icons'
 
 /**
@@ -60,14 +60,15 @@ export function SidebarSection({
   }
 
   const label = (
-    <span className='sidebar-collapse-hide min-w-0 truncate text-[var(--text-muted)] text-caption'>
-      {title}
-    </span>
+    <OverflowText
+      label={title}
+      className='sidebar-collapse-hide text-[var(--text-muted)] text-caption'
+    />
   )
 
   return (
     <div className={cn('group/section flex flex-col', className)}>
-      <div className='flex h-[18px] flex-shrink-0 items-center'>
+      <div className='flex h-[18px] shrink-0 items-center'>
         {railCollapsed ? (
           <div className={TITLE_ROW_CLASS}>{label}</div>
         ) : (
@@ -94,10 +95,10 @@ export function SidebarSection({
           </button>
         )}
         {/* Carries the gutter the row gave up so the toggle can reach the rail's edge. */}
-        {action ? <div className='flex flex-shrink-0 items-center pr-4'>{action}</div> : null}
+        {action ? <div className='flex shrink-0 items-center pr-4'>{action}</div> : null}
       </div>
       <Expandable expanded={railCollapsed || expanded}>
-        <ExpandableContent className={cn(!animationsEnabled && '!animate-none')}>
+        <ExpandableContent className={cn(!animationsEnabled && 'animate-none!')}>
           {/* The header gap pads an inner wrapper rather than the animated element:
               `collapsible-up`/`-down` interpolate height alone, so a margin here would
               hold its full 6px for the whole close and then vanish on unmount, snapping

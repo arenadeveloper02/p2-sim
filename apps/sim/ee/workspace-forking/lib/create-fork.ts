@@ -39,6 +39,7 @@ import {
 } from '@/ee/workspace-forking/lib/copy/storage-quota'
 import { buildForkWorkflowIdMap } from '@/ee/workspace-forking/lib/copy/workflow-id-map'
 import { copyForkWorkflowMcpAttachments } from '@/ee/workspace-forking/lib/copy/workflow-mcp-attachments'
+import { ForkError } from '@/ee/workspace-forking/lib/lineage/authz'
 import { setForkLockTimeout } from '@/ee/workspace-forking/lib/lineage/lineage'
 import {
   type ForkBlockPair,
@@ -52,7 +53,10 @@ import {
 } from '@/ee/workspace-forking/lib/mapping/mapping-store'
 import { deriveForkBlockId } from '@/ee/workspace-forking/lib/remap/block-identity'
 import { createForkBootstrapTransform } from '@/ee/workspace-forking/lib/remap/fork-bootstrap'
-import { collectReferencedDocumentIds } from '@/ee/workspace-forking/lib/remap/reference-scan'
+import {
+  collectReferencedDocumentIds,
+  collectReferencedFileFolderPaths,
+} from '@/ee/workspace-forking/lib/remap/reference-scan'
 import type { ForkRemapKind } from '@/ee/workspace-forking/lib/remap/remap-references'
 
 const logger = createLogger('WorkspaceForkCreate')
@@ -149,6 +153,12 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
       return sourceState ? [sourceState] : []
     })
   )
+  const referencedFileFolderPaths = collectReferencedFileFolderPaths(
+    deployedWorkflows.flatMap((wf) => {
+      const sourceState = sourceStates.get(wf.id)
+      return sourceState ? [sourceState] : []
+    })
+  )
 
   const forkedWorkflowNames: string[] = []
   let forkedResourceNames: ForkCopiedResourceNames = {
@@ -161,6 +171,61 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
   }
   const { result, blobTasks, contentPlan, contentRefMaps } = await db.transaction(async (tx) => {
     await setForkLockTimeout(tx)
+    /**
+     * The lock alone is not enough: `policy.organizationId` was captured by
+     * `assertCanFork` BEFORE this transaction, so a re-home that commits in
+     * between leaves us locking the organization the parent has already left
+     * and inserting the child there, which is the exact cross-organization
+     * edge the lock was added to prevent. Re-read the parent under the lock
+     * and refuse if it moved; the caller can retry against the new
+     * organization.
+     */
+    const [currentSource] = await tx
+      .select({ organizationId: workspace.organizationId })
+      .from(workspace)
+      .where(eq(workspace.id, source.id))
+      /**
+       * The row lock IS the serialization, and deliberately the only one.
+       *
+       * A fork parent and child must always share an organization. Every writer
+       * that can re-home the parent takes `FOR NO KEY UPDATE` on its row: the
+       * admin workspace move, and `lockWorkspaceRowsForPayerChanges` on the
+       * organization-attach path. Locking it here makes those wait, and the
+       * comparison below then sees their committed result.
+       *
+       * Scope, stated plainly. This closes the ordering the admin move
+       * introduces: a re-home that commits first can no longer be forked
+       * against a stale policy. It does NOT close the reverse ordering, where
+       * a fork commits while a bulk attach or detach is already waiting on
+       * this row with a workspace list snapshotted before the child existed.
+       * That batch would then re-home the parent alone. It is a pre-existing
+       * gap in `attachOwnedWorkspacesToOrganizationTx` and
+       * `detachOrganizationWorkspacesTx`, not one the move creates, and
+       * closing it needs the descendant closure, the disclosure set, and the
+       * advisory-lock plan to move together. Tracked separately rather than
+       * half-fixed here, because a partial repair at commit time is strictly
+       * worse than a documented gap.
+       *
+       * An organization mutation lock was tried here and removed: it bought
+       * nothing the row lock does not already provide, could not cover a null
+       * policy organization at all, and cost three real problems. A lock-order
+       * inversion against invitation acceptance (which takes the workspace row
+       * before the organization lock), a 5s timeout overwriting this
+       * transaction's 10s one, and an organization-wide lock held across the
+       * whole content copy.
+       */
+      .for('no key update')
+      .limit(1)
+    if (!currentSource) {
+      throw new ForkError('Source workspace no longer exists', 404)
+    }
+    if ((currentSource.organizationId ?? null) !== (policy.organizationId ?? null)) {
+      throw new ForkError(
+        'The source workspace changed organizations while this fork was being created. Try again.',
+        409
+      )
+    }
+
     const now = new Date()
 
     await tx.insert(workspace).values({
@@ -221,6 +286,7 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
       childWorkspaceId,
       userId,
       fileIds: selection.files,
+      folderPaths: Array.from(referencedFileFolderPaths),
       now,
     })
 
@@ -230,7 +296,7 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
     // fork copies only DEPLOYED workflows, so folders holding none would be created empty in
     // the child and are pruned instead. The file/table/knowledge-base trees are mirrored
     // separately by their own copies and merged in below.
-    const workflowFolderIdMap = await resolveForkFolderMapping({
+    const { folderIdMap: workflowFolderIdMap } = await resolveForkFolderMapping({
       tx,
       sourceWorkspaceId: source.id,
       targetWorkspaceId: childWorkspaceId,
@@ -278,11 +344,16 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
 
     const resolveCopied = (kind: ForkRemapKind, sourceId: string): string | null => {
       if (kind === 'file') return fileResult.keyMap.get(sourceId) ?? null
+      if (kind === 'file-folder') return fileResult.folderPathMap.get(sourceId) ?? null
       const resourceType = FORK_KIND_TO_RESOURCE_TYPE[kind]
       if (!resourceType) return null
       return resourceResult.idMap.get(resourceType)?.get(sourceId) ?? null
     }
     const transform = createForkBootstrapTransform(resolveCopied)
+    // No block-type transform here: custom blocks are never copied into a fork and a fresh
+    // fork has no mappings yet, so a placed custom block necessarily keeps the parent's type.
+    // It surfaces as an unmapped reference in the sync view (via `scanWorkflowReferences`) and
+    // blocks the first promote until the environment's own block is mapped to it.
 
     // The child is brand new, so this loads an empty registry; name collisions can only
     // arise among the copied workflows themselves, which the in-loop claims resolve.
@@ -376,7 +447,16 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
         variables: {},
       })
       const { workflowState } = buildDefaultWorkflowArtifacts()
-      await saveWorkflowToNormalizedTables(defaultWorkflowId, workflowState, tx)
+      await saveWorkflowToNormalizedTables(
+        defaultWorkflowId,
+        workflowState,
+        {
+          /** Actorless: a fork's starter graph is seeded by the platform, not authored. */
+          workspaceId: null,
+          subjectUserId: null,
+        },
+        tx
+      )
     }
 
     const seedEntries: ForkMappingUpsert[] = []
@@ -398,6 +478,13 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
         resourceType: 'file',
         parentResourceId: sourceKey,
         childResourceId: childKey,
+      })
+    }
+    for (const [sourcePath, childPath] of fileResult.folderPathMap) {
+      seedEntries.push({
+        resourceType: 'file_folder',
+        parentResourceId: sourcePath,
+        childResourceId: childPath,
       })
     }
     await seedEdgeMappings(tx, childWorkspaceId, userId, seedEntries)
@@ -473,6 +560,8 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
         tables: contentPlan.tables.length,
         knowledgeBases: contentPlan.knowledgeBases.length,
         files: blobTasks.length,
+        skills: contentPlan.skills.length,
+        documents: contentPlan.documents.length,
         workflowNames: forkedWorkflowNames,
         tableNames: forkedResourceNames.tables,
         knowledgeBaseNames: forkedResourceNames.knowledgeBases,

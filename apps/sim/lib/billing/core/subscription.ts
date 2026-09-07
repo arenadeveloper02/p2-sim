@@ -24,6 +24,7 @@ import {
 import { getCustomerId } from '@/lib/billing/stripe-payment-method'
 import {
   checkEnterprisePlan,
+  checkOrgPlan,
   checkProPlan,
   checkTeamPlan,
   ENTITLED_SUBSCRIPTION_STATUSES,
@@ -528,7 +529,44 @@ export async function isEnterpriseOrgAdminOrOwner(userId: string): Promise<boole
   }
 }
 
-async function resolveOrganizationEnterprisePlan(organizationId: string): Promise<boolean> {
+/**
+ * Whether an organization's entitlement actually comes from its subscription
+ * row, as opposed to being granted by deployment configuration.
+ *
+ * `resolveOrganizationEnterprisePlan` short-circuits to `true` in two modes —
+ * billing disabled, and self-hosted with access control enabled — where no
+ * `subscription` row need exist at all. Anything that wants to re-verify an
+ * entitlement against the subscription table must consult this first, or it
+ * will read a missing row as a lapse and refuse work that should proceed.
+ * Exported so those callers cannot drift from the short-circuits below.
+ */
+export function isSubscriptionBackedEntitlement(): boolean {
+  return isBillingEnabled && !(isAccessControlEnabled && !isHosted)
+}
+
+/**
+ * What a billing-read failure resolves to for the Enterprise gate.
+ *
+ * `'return-false'` (the default) fails closed for a *feature* gate: the feature
+ * is hidden, and the worst outcome is a button that is briefly missing.
+ *
+ * `'throw'` is for callers where "no Enterprise plan" is not a smaller answer
+ * but a different regime. Access Control resolves to `config: null` when the
+ * organization is not entitled, and `null` means *every* capability allowed and
+ * every allowlist off — so a swallowed subscription-read failure would silently
+ * disable the whole permission-group regime for the request instead of
+ * surfacing an error. Those callers must pass `'throw'`.
+ *
+ * A primitive rather than an options object on purpose: `cache()` keys on the
+ * argument list, and a fresh object literal per call would miss the memo every
+ * time.
+ */
+export type EnterprisePlanErrorPolicy = 'return-false' | 'throw'
+
+async function resolveOrganizationEnterprisePlan(
+  organizationId: string,
+  onError: EnterprisePlanErrorPolicy = 'return-false'
+): Promise<boolean> {
   try {
     if (!isBillingEnabled) {
       return true
@@ -542,7 +580,16 @@ async function resolveOrganizationEnterprisePlan(organizationId: string): Promis
       return false
     }
 
-    const orgSub = await getOrganizationSubscriptionUsable(organizationId)
+    /**
+     * The subscription read soft-fails to `null` by default, which would arrive
+     * here as an ordinary "no usable subscription" and return a successful
+     * `false` — the catch below never sees it. A caller that asked to throw
+     * needs that failure propagated too.
+     */
+    const orgSub = await getOrganizationSubscriptionUsable(
+      organizationId,
+      onError === 'throw' ? { onError: 'throw' } : {}
+    )
 
     return (
       !!orgSub &&
@@ -557,6 +604,72 @@ async function resolveOrganizationEnterprisePlan(organizationId: string): Promis
     )
   } catch (error) {
     logger.error('Error checking organization enterprise plan status', { error, organizationId })
+    if (onError === 'throw') {
+      throw error
+    }
+    return false
+  }
+}
+
+/**
+ * Resolves whether an organization holds a paying organization plan — Pro for
+ * Teams, Max for Teams, or Enterprise — without request memoization.
+ *
+ * Gates features every paying organization gets, as opposed to
+ * {@link resolveOrganizationEnterprisePlan}, which gates the Enterprise-only
+ * tier. A billing-blocked organization resolves false either way.
+ */
+interface ResolveOrganizationPlanOptions {
+  /**
+   * What a billing-read failure resolves to. `'return-false'` (default) fails
+   * closed, which is what a one-shot gate wants. A caller that *caches* the
+   * answer must pass `'throw'`: a swallowed failure is indistinguishable from a
+   * real plan lapse, so caching it would hold the gate shut for the whole TTL
+   * over what may be a momentary outage.
+   */
+  onError?: 'return-false' | 'throw'
+}
+
+export async function resolveOrganizationPlan(
+  organizationId: string,
+  options: ResolveOrganizationPlanOptions = {}
+): Promise<boolean> {
+  try {
+    if (!isBillingEnabled) {
+      return true
+    }
+
+    /**
+     * The block state and the subscription row are independent reads, so they
+     * go out together — this runs on the workflow execution path, where a
+     * second serial round trip is per-block latency. A blocked organization
+     * pays for one subscription read it does not use, which is the rare case.
+     */
+    const [blocked, orgSub] = await Promise.all([
+      isOrganizationBillingBlocked(organizationId),
+      /**
+       * The subscription read soft-fails to `null` by default, which would
+       * arrive here as a perfectly ordinary "no usable subscription" and return
+       * a successful `false` — the outer catch never sees it. A caller that
+       * asked to throw needs that failure propagated too, or a cached answer
+       * would still record an outage as a plan lapse.
+       */
+      getOrganizationSubscriptionUsable(
+        organizationId,
+        options.onError === 'throw' ? { onError: 'throw' } : {}
+      ),
+    ])
+
+    if (blocked) {
+      return false
+    }
+
+    return !!orgSub && checkOrgPlan(orgSub)
+  } catch (error) {
+    logger.error('Error checking organization plan status', { error, organizationId })
+    if (options.onError === 'throw') {
+      throw error
+    }
     return false
   }
 }
@@ -566,7 +679,15 @@ async function resolveOrganizationEnterprisePlan(organizationId: string): Promis
  * Used for Access Control (Permission Groups) feature gating
  *
  * Request-memoized: a settings render gates several sections on the same
- * organization's plan, and it cannot change mid-render.
+ * organization's plan, and it cannot change mid-render. `cache()` keys on the
+ * whole argument list, so the default and `'throw'` policies memoize
+ * separately — a request that mixes both pays for two reads, and a rejection is
+ * replayed to every later caller that asked for the same policy, which is the
+ * fail-closed behavior those callers want.
+ *
+ * Pass `'throw'` from any caller for which a swallowed read failure would read
+ * as a *permissive* answer rather than a restrictive one — see
+ * {@link EnterprisePlanErrorPolicy}.
  */
 export const isOrganizationOnEnterprisePlan = cache(resolveOrganizationEnterprisePlan)
 
@@ -657,6 +778,15 @@ interface WorkspaceTierAccessOptions {
    * so a missing workspace never reads as "safe to destroy".
    */
   onMissingWorkspace?: boolean
+  /**
+   * What a subscription-read failure resolves to. By default the reads soft-fail
+   * to "no subscription", which a one-shot gate correctly reads as a denial. A
+   * caller that *caches* the answer must pass `'throw'`: a swallowed failure is
+   * indistinguishable from a real lapse, and caching it would hold the gate
+   * shut for a whole TTL over a momentary outage. Honored on the `retention`
+   * reads, which are the only ones a cached caller uses.
+   */
+  onError?: 'return-null' | 'throw'
 }
 
 /**
@@ -686,7 +816,8 @@ async function hasWorkspaceTierAccess(
   isTierEntitled: (plan: string) => boolean,
   options: WorkspaceTierAccessOptions = {}
 ): Promise<boolean> {
-  const { intent = 'active-use', onMissingWorkspace = false } = options
+  const { intent = 'active-use', onMissingWorkspace = false, onError } = options
+  const readOptions = onError === 'throw' ? ({ onError: 'throw' } as const) : {}
 
   const { getWorkspaceWithOwner } = await import('@/lib/workspaces/permissions/utils')
   const ws = await getWorkspaceWithOwner(workspaceId, { includeArchived: true })
@@ -695,11 +826,14 @@ async function hasWorkspaceTierAccess(
   if (intent === 'retention') {
     if (ws.organizationId) {
       const { getOrganizationSubscription } = await import('@/lib/billing/core/billing')
-      const orgSub = await getOrganizationSubscription(ws.organizationId)
+      const orgSub = await getOrganizationSubscription(ws.organizationId, readOptions)
       return !!orgSub && isTierEntitled(orgSub.plan)
     }
 
-    const billedSub = await getHighestPriorityPersonalSubscription(ws.billedAccountUserId)
+    const billedSub = await getHighestPriorityPersonalSubscription(
+      ws.billedAccountUserId,
+      readOptions
+    )
     return !!billedSub && isTierEntitled(billedSub.plan)
   }
 
@@ -830,10 +964,11 @@ export async function hasWorkspaceLiveSyncAccess(workspaceId: string): Promise<b
  * provider compute and storage, so this deliberately sits above the plain paid
  * tier.
  *
- * Existing Function execution deliberately does not consult it (see
- * `resolveWorkspaceSandbox`), so a workspace that downgrades keeps running the
- * sandboxes it already built. New Copilot discovery, mutations, attachments,
- * and direct function_execute selections do re-check it.
+ * Function execution consults the retention variant,
+ * {@link hasWorkspaceSandboxRetentionAccess}, so a payment retry never fails a
+ * running workflow while a terminal downgrade does. Copilot discovery,
+ * mutations, attachments, and direct run_function selections re-check this
+ * usable-plan gate.
  */
 export async function hasWorkspaceSandboxAccess(workspaceId: string): Promise<boolean> {
   try {
@@ -843,6 +978,43 @@ export async function hasWorkspaceSandboxAccess(workspaceId: string): Promise<bo
     return await hasMaxTierWorkspaceAccess(workspaceId)
   } catch (error) {
     logger.error('Error checking workspace sandbox access', { error, workspaceId })
+    return false
+  }
+}
+
+/**
+ * Whether a workspace may keep EXECUTING the sandboxes already attached to its
+ * Function blocks.
+ *
+ * Unlike {@link hasWorkspaceSandboxAccess}, which gates authoring on a *usable*
+ * subscription, this uses the retention status set — `active` or `past_due`,
+ * block state ignored — so a transient payment failure never turns a deployed
+ * workflow into a run-time outage. Only a terminal lapse (cancelled, downgraded
+ * off Max/Enterprise, or gone) fails the block. The deployment overrides
+ * short-circuit exactly as they do for authoring.
+ *
+ * The execution path reads this through a bounded cache
+ * (`hasWorkspaceSandboxRetentionAccessCached`), which is why `onError: 'throw'`
+ * exists: a swallowed read failure is indistinguishable from a real lapse, and
+ * caching it would hold every Function block shut for a whole TTL over a
+ * momentary outage. The default keeps the one-shot fail-closed behavior.
+ */
+export async function hasWorkspaceSandboxRetentionAccess(
+  workspaceId: string,
+  options: { onError?: 'return-false' | 'throw' } = {}
+): Promise<boolean> {
+  try {
+    if (!isSandboxesEnabled) return false
+    if (isSandboxDeploymentEntitled) return true
+    if (!isBillingEnabled) return false
+    return await hasWorkspaceTierAccess(workspaceId, isMaxTier, {
+      intent: 'retention',
+      onMissingWorkspace: true,
+      ...(options.onError === 'throw' ? { onError: 'throw' as const } : {}),
+    })
+  } catch (error) {
+    logger.error('Error checking workspace sandbox retention access', { error, workspaceId })
+    if (options.onError === 'throw') throw error
     return false
   }
 }

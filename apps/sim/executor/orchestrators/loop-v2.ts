@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import { isExecutionCancelled } from '@/lib/execution/cancellation'
 import { executeInIsolatedVM } from '@/lib/execution/isolated-vm'
 import { compactSubflowResults } from '@/lib/execution/payloads/serializer'
 import { isLikelyReferenceSegment } from '@/lib/workflows/sanitization/references'
@@ -274,13 +274,9 @@ export class LoopOrchestratorV2 {
       }
     }
 
-    const useRedis = isRedisCancellationEnabled() && !!ctx.executionId
-    let isCancelled = false
-    if (useRedis) {
-      isCancelled = await isExecutionCancelled(ctx.executionId!)
-    } else {
-      isCancelled = ctx.abortSignal?.aborted ?? false
-    }
+    const isCancelled = ctx.executionId
+      ? await isExecutionCancelled(ctx.executionId)
+      : (ctx.abortSignal?.aborted ?? false)
     if (isCancelled) {
       logger.info('Loop execution cancelled', { loopId, iteration: scope.iteration })
       return await this.createExitResult(ctx, loopId, scope)

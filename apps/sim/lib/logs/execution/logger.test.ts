@@ -1519,7 +1519,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
     expect(lastEntries()).toEqual([
       expect.objectContaining({
-        category: 'model',
+        category: 'model_unbilled',
         description: 'gpt-4o',
         cost: 0,
         metadata: { inputTokens: 120, outputTokens: 45 },

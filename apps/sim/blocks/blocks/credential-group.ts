@@ -1,5 +1,5 @@
 import { GridOffset } from '@sim/emcn/icons'
-import { getCredentialGroupProviderService } from '@/lib/credential-groups/providers'
+import { CREDENTIAL_GROUP_EVENT_TRIGGER_ID } from '@/lib/credential-groups/trigger-constants'
 import {
   type CanonicalGroup,
   resolveActiveCanonicalValue,
@@ -9,11 +9,12 @@ import type { BlockConfig } from '@/blocks/types'
 import {
   CREDENTIAL_GROUP_LIST_STALE_TIME,
   credentialGroupKeys,
-  fetchCredentialGroupList,
+  fetchCredentialGroupSettings,
 } from '@/hooks/queries/utils/credential-group-queries'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { getTrigger } from '@/triggers'
 
 const CREDENTIAL_GROUP_CANONICAL_GROUP = {
   canonicalId: 'credentialGroupId',
@@ -31,11 +32,12 @@ async function fetchCachedCredentialGroups() {
   const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
   if (!workspaceId) return []
 
-  return getQueryClient().fetchQuery({
+  const settings = await getQueryClient().fetchQuery({
     queryKey: credentialGroupKeys.list(workspaceId),
-    queryFn: ({ signal }) => fetchCredentialGroupList(workspaceId, signal),
+    queryFn: ({ signal }) => fetchCredentialGroupSettings(workspaceId, signal),
     staleTime: CREDENTIAL_GROUP_LIST_STALE_TIME,
   })
+  return settings.credentialGroups
 }
 
 function resolveCredentialGroupIdForBlock(blockId: string): string | null {
@@ -62,6 +64,14 @@ interface CredentialGroupBlockOutput {
       providerSubjectId: string
       providerTenantId: string | null
     }>
+    mcpConnections: Array<{
+      credentialId: string
+      email: string
+      displayName: string
+      mcpServerId: string
+      mcpServerName: string
+      toolNames: string[]
+    }>
     credentialGroups: Array<{
       id: string
       name: string
@@ -84,28 +94,43 @@ interface CredentialGroupBlockOutput {
     status: string
     invitedAt: string
     expiresAt: string
+    invitationLink: string
     count: number
     hasMore: boolean
     nextCursor: string | null
   }
 }
 
-const GROUP_OPERATIONS = ['list_credentials', 'send_invite', 'list_people'] as const
-const LIST_OPERATIONS = ['list_credentials', 'list_people', 'list_groups'] as const
+const INVITE_OPERATIONS = ['send_invite', 'get_invite_link'] as const
+const GROUP_OPERATIONS = [
+  'list_credentials',
+  'list_mcp_connections',
+  ...INVITE_OPERATIONS,
+  'list_people',
+] as const
+const LIST_OPERATIONS = [
+  'list_credentials',
+  'list_mcp_connections',
+  'list_people',
+  'list_groups',
+] as const
 
 export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
   type: 'credential_group',
   name: 'Credential Groups',
-  description: 'Invite people and use credentials collected by Credential Groups',
+  description: 'Invite people and use credentials or MCP connections from Credential Groups',
   longDescription:
-    'List usable managed credentials, inspect invited people, send an account-connection invitation, or discover Credential Groups in the current workspace. The block returns credential IDs and account metadata without exposing OAuth tokens.',
+    'List usable managed credentials or MCP connections, inspect invited people, send or generate an account-connection invitation, or discover Credential Groups in the current workspace. The block returns credential IDs and account metadata without exposing OAuth tokens.',
   bestPractices: `
-  - Use "List Credentials" with a ForEach loop to run a provider block once for every connected account.
-  - Filter by email to select credentials belonging to one invited person, by provider to select one account type, or by both for an exact match.
+  - "List Credentials" returns every active credential. Filter by email to select one enrolled person, by provider to select one account type, or by both for an exact match.
+  - Provider blocks can use the current actor's enrolled credential by default. Using another enrollment requires an explicit workflow access grant.
+  - With a workflow access grant, use "List Credentials" with a ForEach loop to run a provider block once for every connected account.
   - Continue with nextCursor until hasMore is false when a list operation returns multiple pages.
   - "List Credentials" returns active, usable credentials only. Reconnect-needed and revoked credentials are excluded.
+  - "List MCP Connections" returns explicit managed MCP credential IDs and tool names. Pass one credentialId to an advanced MCP server tool.
   - Use "List People" to inspect invitation and connection progress without exposing credential secrets.
   - "Send Invite" sends one email. Use a loop when invitations should come from a dynamic list.
+  - "Get Invite Link" issues a fresh seven-day bearer link without sending email. It invalidates the previous link for that email, so treat the output as a secret.
   `,
   docsLink: 'https://docs.sim.ai/workflows/blocks/credential-group',
   bgColor: '#8B5CF6',
@@ -124,10 +149,28 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
           { text: ', from', field: ['providerFilter', 'manualProviderIds'] },
           { text: ', up to', field: 'limit', after: 'credentials' },
         ],
+        list_mcp_connections: [
+          {
+            text: 'List MCP connections from',
+            field: ['credentialGroup', 'manualCredentialGroup'],
+            core: true,
+          },
+          { text: ', for', field: 'email' },
+          { text: ', on server', field: 'mcpServerId' },
+          { text: ', up to', field: 'limit', after: 'connections' },
+        ],
         send_invite: [
           { text: 'Invite', field: 'email', core: true },
           {
             text: 'to',
+            field: ['credentialGroup', 'manualCredentialGroup'],
+            core: true,
+          },
+        ],
+        get_invite_link: [
+          { text: 'Get invite link for', field: 'email', core: true },
+          {
+            text: 'in',
             field: ['credentialGroup', 'manualCredentialGroup'],
             core: true,
           },
@@ -153,7 +196,9 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       type: 'dropdown',
       options: [
         { label: 'List Credentials', id: 'list_credentials' },
+        { label: 'List MCP Connections', id: 'list_mcp_connections' },
         { label: 'Send Invite', id: 'send_invite' },
+        { label: 'Get Invite Link', id: 'get_invite_link' },
         { label: 'List People', id: 'list_people' },
         { label: 'List Credential Groups', id: 'list_groups' },
       ],
@@ -163,23 +208,11 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       id: 'credentialGroup',
       title: 'Credential Group',
       type: 'dropdown',
-      options: [],
+      selectorKey: 'workspace.credentialGroups',
       required: { field: 'operation', value: [...GROUP_OPERATIONS] },
       mode: 'basic',
       canonicalParamId: 'credentialGroupId',
       condition: { field: 'operation', value: [...GROUP_OPERATIONS] },
-      fetchOptions: async () => {
-        const groups = await fetchCachedCredentialGroups()
-        return groups
-          .filter((group) => group.status === 'active')
-          .map((group) => ({ label: group.name, id: group.id }))
-          .sort((a, b) => a.label.localeCompare(b.label))
-      },
-      fetchOptionById: async (_blockId: string, optionId: string) => {
-        const groups = await fetchCachedCredentialGroups()
-        const group = groups.find((candidate) => candidate.id === optionId)
-        return group ? { label: group.name, id: group.id } : null
-      },
     },
     {
       id: 'manualCredentialGroup',
@@ -195,7 +228,7 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       id: 'email',
       title: 'Email',
       type: 'short-input',
-      required: { field: 'operation', value: 'send_invite' },
+      required: { field: 'operation', value: [...INVITE_OPERATIONS] },
       placeholder: 'person@example.com',
       condition: { field: 'operation', value: [...GROUP_OPERATIONS] },
     },
@@ -203,44 +236,14 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       id: 'providerFilter',
       title: 'Provider',
       type: 'dropdown',
+      selectorKey: 'workspace.credentialGroupProviders',
       multiSelect: true,
       emptyIsValid: true,
-      options: [],
       required: false,
       mode: 'basic',
       canonicalParamId: 'credentialProviderIds',
       dependsOn: ['credentialGroupId'],
       condition: { field: 'operation', value: 'list_credentials' },
-      fetchOptions: async (blockId: string) => {
-        const credentialGroupId = resolveCredentialGroupIdForBlock(blockId)
-        if (!credentialGroupId) return []
-        const groups = await fetchCachedCredentialGroups()
-        const group = groups.find((candidate) => candidate.id === credentialGroupId)
-        if (!group) return []
-        return group.options
-          .filter((option) => option.status === 'active')
-          .map((option) => {
-            const service = getCredentialGroupProviderService(option.provider)
-            return { id: service.providerId, label: service.name }
-          })
-          .sort((a, b) => a.label.localeCompare(b.label))
-      },
-      fetchOptionById: async (blockId: string, optionId: string) => {
-        const credentialGroupId = resolveCredentialGroupIdForBlock(blockId)
-        if (!credentialGroupId) return null
-        const groups = await fetchCachedCredentialGroups()
-        const group = groups.find((candidate) => candidate.id === credentialGroupId)
-        const option = group?.options.find(
-          (candidate) =>
-            candidate.status === 'active' &&
-            getCredentialGroupProviderService(candidate.provider).providerId === optionId
-        )
-        if (!option) return null
-        return {
-          id: optionId,
-          label: getCredentialGroupProviderService(option.provider).name,
-        }
-      },
     },
     {
       id: 'manualProviderIds',
@@ -252,6 +255,15 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       dependsOn: ['credentialGroupId'],
       placeholder: '["google-email", "slack"] — leave empty for all providers',
       condition: { field: 'operation', value: 'list_credentials' },
+    },
+    {
+      id: 'mcpServerId',
+      title: 'MCP Server ID',
+      type: 'short-input',
+      required: false,
+      mode: 'advanced',
+      placeholder: 'mcp-... — leave empty for all MCP servers',
+      condition: { field: 'operation', value: 'list_mcp_connections' },
     },
     {
       id: 'peopleStatuses',
@@ -285,21 +297,27 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       placeholder: 'nextCursor from a previous page',
       condition: { field: 'operation', value: [...LIST_OPERATIONS] },
     },
+    ...getTrigger(CREDENTIAL_GROUP_EVENT_TRIGGER_ID).subBlocks,
   ],
   tools: { access: [] },
   inputs: {
     operation: {
       type: 'string',
-      description: "'list_credentials', 'send_invite', 'list_people', or 'list_groups'",
+      description:
+        "'list_credentials', 'list_mcp_connections', 'send_invite', 'get_invite_link', 'list_people', or 'list_groups'",
     },
     credentialGroupId: { type: 'string', description: 'Credential Group ID' },
     email: {
       type: 'string',
-      description: 'Recipient email for invites or exact email filter for list operations',
+      description: 'Recipient email for invites or an optional credential/people-list filter',
     },
     credentialProviderIds: {
       type: 'json',
       description: 'Optional OAuth provider IDs to include when listing credentials',
+    },
+    mcpServerId: {
+      type: 'string',
+      description: 'Optional root MCP server ID to include when listing MCP connections',
     },
     peopleStatuses: {
       type: 'json',
@@ -314,6 +332,12 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       description:
         'Usable credential references (credentialId, email, displayName, providerId, providerSubjectId, providerTenantId)',
       condition: { field: 'operation', value: 'list_credentials' },
+    },
+    mcpConnections: {
+      type: 'json',
+      description:
+        'Usable MCP connection references (credentialId, email, displayName, mcpServerId, mcpServerName, toolNames)',
+      condition: { field: 'operation', value: 'list_mcp_connections' },
     },
     credentialGroups: {
       type: 'json',
@@ -330,27 +354,32 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
     enrollmentId: {
       type: 'string',
       description: 'Enrollment ID created or refreshed by the invitation',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     email: {
       type: 'string',
       description: 'Normalized invitation recipient email',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     status: {
       type: 'string',
       description: 'Invitation status',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     invitedAt: {
       type: 'string',
       description: 'Invitation timestamp',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     expiresAt: {
       type: 'string',
       description: 'Invitation expiration timestamp',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
+    },
+    invitationLink: {
+      type: 'string',
+      description: 'Fresh bearer invitation link for the recipient',
+      condition: { field: 'operation', value: 'get_invite_link' },
     },
     count: {
       type: 'number',
@@ -367,5 +396,9 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       description: 'Cursor for the next page, or null on the last page',
       condition: { field: 'operation', value: [...LIST_OPERATIONS] },
     },
+  },
+  triggers: {
+    enabled: true,
+    available: [CREDENTIAL_GROUP_EVENT_TRIGGER_ID],
   },
 }

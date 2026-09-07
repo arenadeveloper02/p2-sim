@@ -9,12 +9,14 @@ const {
   mockGetApiKeyWithBYOK,
   mockExecuteRequest,
   mockFilterModelSafeWorkspaceFileAttachments,
+  mockExecuteTool,
   mockUploadLargeFilesToProvider,
 } = vi.hoisted(() => ({
   mockAttachLargeFileRemoteUrls: vi.fn(),
   mockGetApiKeyWithBYOK: vi.fn(),
   mockExecuteRequest: vi.fn(),
   mockFilterModelSafeWorkspaceFileAttachments: vi.fn(async (attachments: unknown[]) => attachments),
+  mockExecuteTool: vi.fn(async () => ({ success: true, output: {} })),
   mockUploadLargeFilesToProvider: vi.fn(),
 }))
 
@@ -39,9 +41,16 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () 
     mockFilterModelSafeWorkspaceFileAttachments(...args),
 }))
 
+vi.mock('@/tools', () => ({
+  executeTool: (...args: unknown[]) => mockExecuteTool(...args),
+}))
+
+import type { NormalizedBlockOutput, StreamingExecution } from '@/executor/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { executeProviderRequest } from '@/providers'
-import type { ProviderResponse } from '@/providers/types'
+import { executeProviderTool } from '@/providers/runtime-context'
+import type { AgentStreamEvent } from '@/providers/stream-events'
+import type { ProviderResponse, ProviderToolConfig } from '@/providers/types'
 
 const HOSTED_RATE_INPUT_COST = 0.340285
 const HOSTED_RATE_OUTPUT_COST = 0.0387
@@ -90,6 +99,101 @@ function makeAnthropicResponse(): ProviderResponse {
     },
   }
 }
+
+function makeProviderTool(id: string, credential: string): ProviderToolConfig {
+  return {
+    id,
+    description: id,
+    params: { oauthCredential: credential },
+    parameters: { type: 'object', properties: {}, required: [] },
+  }
+}
+
+describe('executeProviderRequest — tool identities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sends unique opaque ids and projects provider aliases out of the response', async () => {
+    const tools = [
+      makeProviderTool('gmail_send', 'credential-a'),
+      makeProviderTool('gmail_send', 'credential-b'),
+    ]
+    mockExecuteRequest.mockImplementationOnce(async (request) => {
+      const alias = request.tools[1].id
+      expect(request.tools.map((tool: ProviderToolConfig) => tool.id)).toEqual([
+        'gmail_send',
+        'gmail_send__sim_2',
+      ])
+      expect(alias).not.toContain('credential-b')
+      return {
+        content: 'sent',
+        model: 'test-model',
+        toolCalls: [{ name: alias, arguments: {} }],
+        timing: {
+          startTime: 'start',
+          endTime: 'end',
+          duration: 1,
+          timeSegments: [{ type: 'tool', name: alias, startTime: 0, endTime: 1, duration: 1 }],
+        },
+      }
+    })
+
+    const response = (await executeProviderRequest('anthropic', {
+      model: 'test-model',
+      tools,
+    })) as ProviderResponse
+
+    expect(response.toolCalls?.[0].name).toBe('gmail_send')
+    expect(response.timing?.timeSegments?.[0].name).toBe('gmail_send')
+    expect(tools[1].params.oauthCredential).toBe('credential-b')
+  })
+
+  it('keeps the alias map active while a streaming provider executes the selected instance', async () => {
+    const tools = [
+      makeProviderTool('gmail_send', 'credential-a'),
+      makeProviderTool('gmail_send', 'credential-b'),
+    ]
+    mockExecuteRequest.mockImplementationOnce(async (request) => {
+      const selected = request.tools[1] as ProviderToolConfig
+      const output: NormalizedBlockOutput = {
+        toolCalls: { list: [], count: 0 },
+        providerTiming: { startTime: 'start', endTime: 'end', duration: 0, timeSegments: [] },
+      }
+      return {
+        streamFormat: 'agent-events-v1',
+        stream: new ReadableStream<AgentStreamEvent>({
+          async pull(controller) {
+            await executeProviderTool(selected.id, selected.params)
+            output.toolCalls = { list: [{ name: selected.id }], count: 1 }
+            controller.enqueue({ type: 'tool_call_start', id: 'call-1', name: selected.id })
+            controller.close()
+          },
+        }),
+        execution: { success: true, output },
+      }
+    })
+
+    const response = await executeProviderRequest('anthropic', {
+      model: 'test-model',
+      tools,
+    })
+    expect(response).not.toBeInstanceOf(ReadableStream)
+    expect(response).toHaveProperty('stream')
+    const streaming = response as StreamingExecution
+    const reader = (streaming.stream as ReadableStream<AgentStreamEvent>).getReader()
+    const event = await reader.read()
+    await reader.read()
+
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'gmail_send',
+      { oauthCredential: 'credential-b' },
+      expect.any(Object)
+    )
+    expect(event.value).toEqual({ type: 'tool_call_start', id: 'call-1', name: 'gmail_send' })
+    expect(streaming.execution.output.toolCalls?.list[0].name).toBe('gmail_send')
+  })
+})
 
 describe('executeProviderRequest — BYOK regression', () => {
   beforeEach(() => {
@@ -172,6 +276,33 @@ describe('executeProviderRequest — BYOK regression', () => {
 
     expect(result.cost?.toolCost).toBeCloseTo(0.005, 8)
     expect(result.cost?.total).toBeCloseTo(0.00675, 8)
+  })
+
+  it('adds failed Function cost once alongside successful tool results', async () => {
+    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-byok', isBYOK: true })
+    mockExecuteTool.mockResolvedValueOnce({
+      success: false,
+      output: { cost: { total: 0.004 } },
+      error: 'execution failed',
+    })
+    mockExecuteRequest.mockImplementationOnce(async () => {
+      const execution = await executeProviderTool('function_execute', {})
+      expect(execution.rawResponse.success).toBe(false)
+      return {
+        ...makeAnthropicResponse(),
+        toolResults: [{ cost: { total: 0.005 } }],
+      } as ProviderResponse
+    })
+
+    const result = (await executeProviderRequest('anthropic', {
+      model: 'claude-opus-4-6',
+      workspaceId: 'ws-1',
+      tools: [makeProviderTool('function_execute', 'credential')],
+    })) as ProviderResponse
+
+    expect(result.cost).toMatchObject({ input: 0, output: 0 })
+    expect(result.cost?.toolCost).toBeCloseTo(0.009, 8)
+    expect(result.cost?.total).toBeCloseTo(0.009, 8)
   })
 
   /**

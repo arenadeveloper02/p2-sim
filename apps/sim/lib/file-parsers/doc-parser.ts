@@ -1,29 +1,26 @@
 import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { createLogger } from '@sim/logger'
-import type { FileParseResult, FileParser } from '@/lib/file-parsers/types'
+import { FileParserError } from '@/lib/file-parsers/errors'
+import { parseOfficeText } from '@/lib/file-parsers/officeparser-module'
+import type { FileParseOptions, FileParseResult, FileParser } from '@/lib/file-parsers/types'
 import { sanitizeTextForUTF8 } from '@/lib/file-parsers/utils'
 import { assertOoxmlArchiveWithinLimits } from '@/lib/file-parsers/zip-guard'
 
 const logger = createLogger('DocParser')
 
 export class DocParser implements FileParser {
-  async parseFile(filePath: string): Promise<FileParseResult> {
-    try {
-      if (!filePath) {
-        throw new Error('No file path provided')
-      }
-
-      if (!existsSync(filePath)) {
-        throw new Error(`File not found: ${filePath}`)
-      }
-
-      const buffer = await readFile(filePath)
-      return this.parseBuffer(buffer)
-    } catch (error) {
-      logger.error('DOC file parsing error:', error)
-      throw new Error(`Failed to parse DOC file: ${(error as Error).message}`)
+  async parseFile(filePath: string, options: FileParseOptions = {}): Promise<FileParseResult> {
+    if (!filePath) {
+      throw new Error('No file path provided')
     }
+
+    if (!existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`)
+    }
+
+    const buffer = await readFile(filePath, { signal: options.signal })
+    return this.parseBuffer(buffer, options)
   }
 
   /**
@@ -32,17 +29,17 @@ export class DocParser implements FileParser {
    * zip-bomb guard must run here exactly as it does in the docx/pptx/xlsx
    * parsers. It no-ops for genuine legacy OLE `.doc` buffers.
    */
-  async parseBuffer(buffer: Buffer): Promise<FileParseResult> {
+  async parseBuffer(buffer: Buffer, options: FileParseOptions = {}): Promise<FileParseResult> {
     try {
+      options.signal?.throwIfAborted()
       if (!buffer || buffer.length === 0) {
-        throw new Error('Empty buffer provided')
+        throw new FileParserError('empty_input', 'Empty buffer provided')
       }
 
       assertOoxmlArchiveWithinLimits(buffer)
 
       try {
-        const officeParser = await import('officeparser')
-        const result = await officeParser.parseOfficeAsync(buffer)
+        const result = await parseOfficeText(buffer, options)
 
         if (result) {
           const resultString = typeof result === 'string' ? result : String(result)
@@ -59,12 +56,14 @@ export class DocParser implements FileParser {
           }
         }
       } catch (officeError) {
+        options.signal?.throwIfAborted()
         logger.warn('officeparser failed, trying mammoth:', officeError)
       }
 
       try {
         const mammoth = await import('mammoth')
         const result = await mammoth.extractRawText({ buffer })
+        options.signal?.throwIfAborted()
 
         if (result.value && result.value.trim().length > 0) {
           const content = sanitizeTextForUTF8(result.value.trim())
@@ -78,13 +77,15 @@ export class DocParser implements FileParser {
           }
         }
       } catch (mammothError) {
+        options.signal?.throwIfAborted()
         logger.warn('mammoth failed:', mammothError)
       }
 
+      options.signal?.throwIfAborted()
       return this.fallbackExtraction(buffer)
     } catch (error) {
       logger.error('DOC parsing error:', error)
-      throw new Error(`Failed to parse DOC buffer: ${(error as Error).message}`)
+      throw error
     }
   }
 
@@ -131,6 +132,7 @@ export class DocParser implements FileParser {
       content,
       metadata: {
         extractionMethod: 'fallback',
+        degraded: true,
         characterCount: content.length,
         warning: 'Basic text extraction used. For better results, convert to DOCX format.',
       },

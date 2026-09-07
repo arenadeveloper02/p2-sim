@@ -85,13 +85,6 @@ vi.mock('@/lib/core/config/env', () => ({
     typeof value === 'string' ? value.toLowerCase() === 'false' || value === '0' : value === false,
 }))
 
-vi.mock('@/lib/uploads/setup', () => ({
-  S3_CONFIG: {
-    bucket: 'test-bucket',
-    region: 'test-region',
-  },
-}))
-
 vi.mock('@/lib/uploads/config', () => ({
   S3_CONFIG: mockS3Config,
   S3_KB_CONFIG: {
@@ -464,6 +457,36 @@ describe('S3 Client', () => {
         downloadFromS3('large-file.txt', { bucket: 'test-bucket', region: 'test-region' }, 10)
       ).rejects.toThrow('storage download exceeds maximum size')
       expect(mockDestroy).toHaveBeenCalledWith(expect.any(Error))
+    })
+
+    it('forwards cancellation to the S3 request and stream reader', async () => {
+      const controller = new AbortController()
+      const mockDestroy = vi.fn()
+      const mockStream = {
+        destroy: mockDestroy,
+        on: vi.fn(() => mockStream),
+        off: vi.fn(() => mockStream),
+      }
+      mockSend.mockResolvedValueOnce({
+        Body: mockStream,
+        $metadata: { httpStatusCode: 200 },
+      })
+
+      const download = downloadFromS3(
+        'test-file.txt',
+        { bucket: 'test-bucket', region: 'test-region' },
+        undefined,
+        controller.signal
+      )
+      await vi.waitFor(() => expect(mockStream.on).toHaveBeenCalled())
+      controller.abort(new Error('cancelled'))
+
+      await expect(download).rejects.toThrow('cancelled')
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ abortSignal: controller.signal })
+      )
+      expect(mockDestroy).toHaveBeenCalledWith()
     })
 
     it('should handle S3 client errors', async () => {

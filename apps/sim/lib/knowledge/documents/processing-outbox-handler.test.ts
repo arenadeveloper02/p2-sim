@@ -21,6 +21,7 @@ vi.mock('@/lib/knowledge/documents/processing-claim', () => ({
 
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { OutboxEventContext } from '@/lib/core/outbox/service'
+import { SYSTEM_ACCESS_SCOPE } from '@/lib/knowledge/access/types'
 import { KNOWLEDGE_DOCUMENT_PROCESSING_OUTBOX_EVENT } from '@/lib/knowledge/documents/processing-outbox-event'
 import { knowledgeDocumentProcessingOutboxHandlers } from '@/lib/knowledge/documents/processing-outbox-handler'
 
@@ -75,14 +76,23 @@ describe('knowledge document processing outbox handler', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getKnowledgeDocument.mockResolvedValue(DOCUMENT)
-    mocks.processDocumentsWithQueue.mockResolvedValue(undefined)
+    mocks.processDocumentsWithQueue.mockResolvedValue({
+      requested: 1,
+      accepted: 1,
+      failed: 0,
+      failedDocumentIds: [],
+    })
     mocks.reclaimStaleDocumentProcessingClaim.mockResolvedValue(false)
   })
 
   it('dispatches the authoritative document with the stable outbox event id', async () => {
     await handler()(PAYLOAD, createContext('outbox-event-stable'))
 
-    expect(mocks.getKnowledgeDocument).toHaveBeenCalledWith('knowledge-base-1', 'document-1')
+    expect(mocks.getKnowledgeDocument).toHaveBeenCalledWith(
+      'knowledge-base-1',
+      'document-1',
+      SYSTEM_ACCESS_SCOPE
+    )
     expect(mocks.processDocumentsWithQueue).toHaveBeenCalledWith(
       [
         {
@@ -169,6 +179,19 @@ describe('knowledge document processing outbox handler', () => {
     mocks.processDocumentsWithQueue.mockRejectedValueOnce(failure)
 
     await expect(handler()(PAYLOAD, createContext())).rejects.toBe(failure)
+  })
+
+  it('keeps the event retryable when dispatch returns a zero-acceptance failure', async () => {
+    mocks.processDocumentsWithQueue.mockResolvedValueOnce({
+      requested: 1,
+      accepted: 0,
+      failed: 1,
+      failedDocumentIds: ['document-1'],
+    })
+
+    await expect(handler()(PAYLOAD, createContext())).rejects.toThrow(
+      'processing dispatch was not accepted'
+    )
   })
 
   it('fails fast on malformed durable processing options', async () => {

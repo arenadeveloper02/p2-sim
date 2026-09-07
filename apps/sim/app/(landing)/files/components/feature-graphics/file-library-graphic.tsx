@@ -82,7 +82,7 @@ function OwnerBadge({ row }: { row: LibraryRow }) {
  * claim. The newest record - an agent's report, written seconds ago - is
  * the selected row: it sits on a solid white card wearing the family's
  * highlight chrome exactly (`--white` fill, 1px `--border-1` hairline,
- * `rounded-xl`, `shadow-sm`), while older rows rest directly on the tile
+ * `rounded-xl`, `shadow-xs`), while older rows rest directly on the tile
  * and quieten with age until a mask gradient dissolves the oldest.
  *
  * Motion (from `file-library-graphic.module.css`): the rows stamp in top
@@ -104,7 +104,7 @@ export function FileLibraryGraphic() {
       >
         <div className='w-full max-w-[312px] sm:max-lg:[@container(min-width:500px)]:max-w-[400px]'>
           <div className='mb-4 flex items-center justify-between'>
-            <span className='font-medium text-[var(--text-primary)] text-base'>Files</span>
+            <span className='text-[var(--text-primary)] text-base'>Files</span>
             <ChipTag variant='mono' className='bg-[var(--surface-6)]'>
               Shared
             </ChipTag>
@@ -121,12 +121,12 @@ export function FileLibraryGraphic() {
                     'flex items-center gap-3 px-3 py-2.5',
                     ROW_STEP_CLASSES[index],
                     newest &&
-                      'rounded-xl border border-[var(--border-1)] bg-[var(--white)] shadow-sm'
+                      'rounded-xl border border-[var(--border-1)] bg-[var(--white)] shadow-xs'
                   )}
                 >
                   <OwnerBadge row={row} />
                   <span className='min-w-0 flex-1'>
-                    <span className={cn('block truncate font-medium text-small', ROW_TONES[index])}>
+                    <span className={cn('block truncate text-small', ROW_TONES[index])}>
                       {row.name}
                     </span>
                     <span className='block truncate text-[var(--text-muted)] text-caption'>

@@ -4,11 +4,18 @@ import { createLogger } from '@sim/logger'
 import { permissionSatisfies } from '@sim/platform-authz/workspace'
 import { and, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { knowledgeAccessCondition } from '@/lib/knowledge/access/predicate'
+import {
+  resolveUserKnowledgeAccessScope,
+  WORKSPACE_ACCESS_SCOPE,
+} from '@/lib/knowledge/access/scope'
+import type { KnowledgeAccessScope, SystemAccessScope } from '@/lib/knowledge/access/types'
 import { getFileMetadata } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { extractOrganizationIdFromOrgLogoKey } from '@/lib/uploads/contexts/org-logos/utils'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
+import { isWorkspaceScopedContext } from '@/lib/uploads/shared/types'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import {
   getUserEntityPermissions,
@@ -47,7 +54,14 @@ function workspacePermissionSatisfies(
 }
 
 /**
- * Lookup workspace file by storage key from database
+ * Lookup the workspace-scoped binding for a storage key.
+ *
+ * Matches either context stored under the `workspace/` prefix rather than
+ * `workspace` alone: the prefix does not say which module owns the object, and
+ * both are authorized identically here — by membership of the owning workspace.
+ * Filtering to one of them would silently miss the other and fall through to the
+ * weaker object-metadata path, which cannot see a soft delete.
+ *
  * @param key Storage key to lookup
  * @returns Workspace file info or null if not found
  */
@@ -58,7 +72,8 @@ async function lookupWorkspaceFileByKey(
   try {
     const { includeDeleted = false } = options ?? {}
     // Priority 1: Check new workspaceFiles table
-    const fileRecord = await getFileMetadataByKey(key, 'workspace', { includeDeleted })
+    const record = await getFileMetadataByKey(key, undefined, { includeDeleted })
+    const fileRecord = isWorkspaceScopedContext(record?.context) ? record : undefined
 
     if (fileRecord) {
       return {
@@ -136,7 +151,7 @@ export async function verifyFileAccess(
   customConfig?: StorageConfig,
   context?: StorageContext | 'general',
   isLocal?: boolean,
-  options?: { requireWrite?: boolean }
+  options?: { requireWrite?: boolean; knowledgeAccess?: KnowledgeFileAccess }
 ): Promise<boolean> {
   const requireWrite = options?.requireWrite ?? false
   try {
@@ -162,7 +177,7 @@ export async function verifyFileAccess(
     }
 
     // 1. Workspace / mothership files: Check database first (most reliable for both local and cloud)
-    if (inferredContext === 'workspace' || inferredContext === 'mothership') {
+    if (isWorkspaceScopedContext(inferredContext)) {
       return await verifyWorkspaceFileAccess(cloudKey, userId, customConfig, isLocal, requireWrite)
     }
 
@@ -178,7 +193,7 @@ export async function verifyFileAccess(
 
     // 4. KB files: kb/filename
     if (inferredContext === 'knowledge-base') {
-      return await verifyKBFileAccess(cloudKey, userId, customConfig)
+      return await verifyKBFileAccess(cloudKey, userId, customConfig, options?.knowledgeAccess)
     }
 
     // 5. Chat files: chat/filename
@@ -208,9 +223,12 @@ async function verifyWorkspaceFileAccess(
   requireWrite = false
 ): Promise<boolean> {
   try {
-    const anyWorkspaceFileRecord = await getFileMetadataByKey(cloudKey, 'workspace', {
+    const anyRecord = await getFileMetadataByKey(cloudKey, undefined, {
       includeDeleted: true,
     })
+    const anyWorkspaceFileRecord = isWorkspaceScopedContext(anyRecord?.context)
+      ? anyRecord
+      : undefined
     if (anyWorkspaceFileRecord?.deletedAt) {
       logger.warn('Workspace file access denied for archived file', {
         userId,
@@ -499,7 +517,14 @@ async function verifyCopilotFileAccess(
  * signal only: it reflects whether the file is still part of a live KB, not who
  * owns it (ownership comes from the binding).
  */
-async function hasActiveKbDocumentForKey(cloudKey: string, workspaceId: string): Promise<boolean> {
+/** A reader once resolved: a person's or the workspace's tokens, or the system reading its own rows. */
+type ResolvedKnowledgeFileAccess = KnowledgeAccessScope | SystemAccessScope
+
+async function hasActiveKbDocumentForKey(
+  cloudKey: string,
+  workspaceId: string,
+  access: ResolvedKnowledgeFileAccess
+): Promise<boolean> {
   const rows = await db
     .select({ id: document.id })
     .from(document)
@@ -511,12 +536,33 @@ async function hasActiveKbDocumentForKey(cloudKey: string, workspaceId: string):
         eq(document.userExcluded, false),
         isNull(document.archivedAt),
         isNull(document.deletedAt),
-        isNull(knowledgeBase.deletedAt)
+        isNull(knowledgeBase.deletedAt),
+        knowledgeAccessCondition(access)
       )
     )
     .limit(1)
 
   return rows.length > 0
+}
+
+/**
+ * How a KB file read identifies the reader for document access. `'user'` is
+ * for a session-authenticated person; a resolved scope is for a caller that
+ * already holds one (an execution with a principal). The system scope is for
+ * a background job reading a connector-owned row it is processing, which in
+ * members mode is hidden until the sync materializes its readers. Anything
+ * else — an internal token, a tool running with the workflow owner's id —
+ * reads as the workspace, never as the person whose id it happens to carry.
+ */
+export type KnowledgeFileAccess = 'user' | ResolvedKnowledgeFileAccess
+
+async function resolveKnowledgeFileAccess(
+  knowledgeAccess: KnowledgeFileAccess | undefined,
+  userId: string,
+  workspaceId: string
+): Promise<ResolvedKnowledgeFileAccess> {
+  if (knowledgeAccess === 'user') return resolveUserKnowledgeAccessScope(userId, workspaceId)
+  return knowledgeAccess ?? WORKSPACE_ACCESS_SCOPE
 }
 
 /**
@@ -536,7 +582,8 @@ async function hasActiveKbDocumentForKey(cloudKey: string, workspaceId: string):
 async function verifyKBFileAccess(
   cloudKey: string,
   userId: string,
-  customConfig?: StorageConfig
+  customConfig?: StorageConfig,
+  knowledgeAccess?: KnowledgeFileAccess
 ): Promise<boolean> {
   try {
     const binding = await getFileMetadataByKey(cloudKey, 'knowledge-base', {
@@ -566,10 +613,12 @@ async function verifyKBFileAccess(
       return false
     }
 
-    if (!(await hasActiveKbDocumentForKey(cloudKey, binding.workspaceId))) {
-      logger.warn('KB file access denied: no active document references the file', {
+    const access = await resolveKnowledgeFileAccess(knowledgeAccess, userId, binding.workspaceId)
+    if (!(await hasActiveKbDocumentForKey(cloudKey, binding.workspaceId, access))) {
+      logger.warn('KB file access denied: no readable document references the file', {
         userId,
         cloudKey,
+        accessScopeKind: access.kind,
       })
       return false
     }

@@ -18,6 +18,7 @@ import {
   type ComboboxOption,
   cn,
   handleKeyboardActivation,
+  OverflowText,
   Search,
 } from '@sim/emcn'
 import { ArrowLeft, Plus } from '@sim/emcn/icons'
@@ -29,13 +30,26 @@ import {
   type OAuthProvider,
 } from '@/lib/oauth'
 import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
+import {
+  ConnectorAccessField,
+  type ConnectorAccessSelection,
+} from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connector-access-field/connector-access-field'
 import { ConnectorConfigFields } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connector-config-fields'
 import { hasWorkspaceMaxConnectorAccess } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connector-entitlements'
-import { SYNC_INTERVALS } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/consts'
+import {
+  BROWSE_WITH_HINT,
+  SYNC_INTERVALS,
+} from '@/app/workspace/[workspaceId]/knowledge/[id]/components/consts'
 import { MaxBadge } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/max-badge'
 import { useConnectorConfigFields } from '@/app/workspace/[workspaceId]/knowledge/[id]/hooks/use-connector-config-fields'
+import {
+  memberCapFieldIds,
+  useConnectorMemberGroupOptions,
+} from '@/app/workspace/[workspaceId]/knowledge/[id]/hooks/use-connector-member-group-options'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { getBlock } from '@/blocks'
+import { withBrandIcon } from '@/blocks/brand-icon'
 import { getTileIconColorClass } from '@/blocks/icon-color'
 import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
 import type { ConnectorMeta } from '@/connectors/types'
@@ -44,6 +58,8 @@ import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
 import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 
 const CONNECTOR_ENTRIES = Object.entries(CONNECTOR_META_REGISTRY)
+
+const WORKSPACE_ACCESS: ConnectorAccessSelection = { accessMode: 'workspace' }
 
 interface AddConnectorModalProps {
   open: boolean
@@ -66,6 +82,7 @@ export function AddConnectorModal({
   const [selectedType, setSelectedType] = useState<string | null>(initialConnectorType ?? null)
   const [syncInterval, setSyncInterval] = useState(1440)
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
+  const [access, setAccess] = useState<ConnectorAccessSelection>(WORKSPACE_ACCESS)
   const [disabledTagIds, setDisabledTagIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState<string | null>(null)
   const [showOAuthModal, setShowOAuthModal] = useState(false)
@@ -75,13 +92,28 @@ export function AddConnectorModal({
   const [searchTerm, setSearchTerm] = useState('')
 
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { ownerBilling } = useWorkspaceHostContext()
+  const { ownerBilling, features } = useWorkspaceHostContext()
+  const { canAdmin } = useUserPermissionsContext()
+  const memberAccessAvailable = features?.knowledgeMemberAccess === true
   const { mutate: createConnector, isPending: isCreating } = useCreateConnector()
 
   const hasMaxAccess = hasWorkspaceMaxConnectorAccess(ownerBilling)
 
   const connectorConfig = selectedType ? CONNECTOR_META_REGISTRY[selectedType] : null
   const isApiKeyMode = connectorConfig?.auth.mode === 'apiKey'
+  const isMembersMode = access.accessMode === 'members'
+  const groupOptions = useConnectorMemberGroupOptions({
+    workspaceId,
+    connectorConfig,
+    enabled: canAdmin && memberAccessAvailable,
+  })
+  /** Several groups collect this provider's accounts: the admin has to say which. */
+  const membersChoiceOpen =
+    isMembersMode && groupOptions.needsChoice && !access.credentialGroupOptionId
+  const hiddenCapFieldIds = useMemo(
+    () => memberCapFieldIds(connectorConfig, access.accessMode),
+    [connectorConfig, access.accessMode]
+  )
   /** True when the connector declares its key optional (public sources need none). */
   const isApiKeyOptional =
     connectorConfig?.auth.mode === 'apiKey' && connectorConfig.auth.optional === true
@@ -138,6 +170,7 @@ export function AddConnectorModal({
     setSelectedType(type)
     setSourceConfig({})
     setSelectedCredentialId(null)
+    setAccess(WORKSPACE_ACCESS)
     setApiKeyValue('')
     setApiKeyFocused(false)
     setDisabledTagIds(new Set())
@@ -164,6 +197,8 @@ export function AddConnectorModal({
     if (!connectorConfig) return false
     if (isApiKeyMode) {
       if (!isApiKeyOptional && !apiKeyValue.trim()) return false
+    } else if (isMembersMode) {
+      if (membersChoiceOpen) return false
     } else {
       if (!effectiveCredentialId) return false
     }
@@ -171,12 +206,16 @@ export function AddConnectorModal({
     for (const field of connectorConfig.configFields) {
       if (!field.required) continue
       if (!isFieldVisible(field)) continue
+      if (hiddenCapFieldIds.has(field.id)) continue
       if (!isFieldPopulated(field)) return false
     }
     return true
   }, [
     connectorConfig,
     isApiKeyMode,
+    isMembersMode,
+    membersChoiceOpen,
+    hiddenCapFieldIds,
     isApiKeyOptional,
     apiKeyValue,
     effectiveCredentialId,
@@ -191,6 +230,7 @@ export function AddConnectorModal({
 
     const resolvedConfig: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(resolveSourceConfig())) {
+      if (hiddenCapFieldIds.has(key)) continue
       if (Array.isArray(value)) {
         if (value.length > 0) resolvedConfig[key] = value
       } else if (typeof value === 'string') {
@@ -215,7 +255,13 @@ export function AddConnectorModal({
           ? apiKeyValue.trim()
             ? { apiKey: apiKeyValue }
             : {}
-          : { credentialId: effectiveCredentialId! }),
+          : isMembersMode
+            ? {
+                accessMode: 'members' as const,
+                credentialGroupId: access.credentialGroupId,
+                credentialGroupOptionId: access.credentialGroupOptionId,
+              }
+            : { credentialId: effectiveCredentialId! }),
         sourceConfig: finalSourceConfig,
         syncIntervalMinutes: syncInterval,
       },
@@ -301,6 +347,17 @@ export function AddConnectorModal({
             </div>
           ) : connectorConfig ? (
             <>
+              {!isApiKeyMode && memberAccessAvailable && (
+                <ConnectorAccessField
+                  connectorConfig={connectorConfig}
+                  value={access}
+                  onChange={setAccess}
+                  groupOptions={groupOptions}
+                  canAdmin={canAdmin}
+                  disabled={isCreating}
+                />
+              )}
+
               {isApiKeyMode ? (
                 <ChipModalField
                   type='custom'
@@ -325,14 +382,18 @@ export function AddConnectorModal({
                   />
                 </ChipModalField>
               ) : (
-                <ChipModalField type='custom' title='Account'>
+                <ChipModalField
+                  type='custom'
+                  title={isMembersMode ? 'Browse with' : 'Account'}
+                  hint={isMembersMode ? BROWSE_WITH_HINT : undefined}
+                >
                   <ChipCombobox
                     options={[
                       ...credentials.map(
                         (cred): ComboboxOption => ({
                           label: cred.name || cred.provider,
                           value: cred.id,
-                          icon: connectorConfig.icon,
+                          icon: withBrandIcon(connectorConfig.icon),
                         })
                       ),
                       {
@@ -362,7 +423,9 @@ export function AddConnectorModal({
                 credentialId={effectiveCredentialId}
                 canonicalGroups={canonicalGroups}
                 canonicalModes={canonicalModes}
-                isFieldVisible={isFieldVisible}
+                isFieldVisible={(field) =>
+                  isFieldVisible(field) && !hiddenCapFieldIds.has(field.id)
+                }
                 onFieldChange={handleFieldChange}
                 onToggleCanonicalMode={toggleCanonicalMode}
                 disabled={isCreating}
@@ -402,7 +465,7 @@ export function AddConnectorModal({
                         <span className='min-w-0 flex-1 truncate text-[var(--text-primary)]'>
                           {tagDef.displayName}
                         </span>
-                        <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>
+                        <span className='shrink-0 text-[var(--text-muted)] text-xs'>
                           ({tagDef.fieldType})
                         </span>
                       </div>
@@ -438,7 +501,13 @@ export function AddConnectorModal({
           <ChipModalFooter
             onCancel={() => onOpenChange(false)}
             primaryAction={{
-              label: isCreating ? 'Connecting…' : 'Connect & Sync',
+              label: isCreating
+                ? isMembersMode
+                  ? 'Creating…'
+                  : 'Connecting…'
+                : isMembersMode
+                  ? 'Create & Invite'
+                  : 'Connect & Sync',
               onClick: handleSubmit,
               disabled: !canSubmit || isCreating,
             }}
@@ -488,7 +557,7 @@ function ConnectorTypeCard({ type, config, onClick }: ConnectorTypeCardProps) {
       className='flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover-hover:bg-[var(--surface-active)]'
       onClick={onClick}
     >
-      <div className='size-9 flex-shrink-0'>
+      <div className='size-9 shrink-0'>
         <div
           className={cn(
             'flex size-full items-center justify-center rounded-xl border',
@@ -507,10 +576,13 @@ function ConnectorTypeCard({ type, config, onClick }: ConnectorTypeCardProps) {
         </div>
       </div>
       <div className='flex min-w-0 flex-1 flex-col'>
-        <span className='truncate text-[var(--text-body)] text-sm'>{config.name}</span>
-        <span className='truncate text-[var(--text-muted)] text-caption'>{config.description}</span>
+        <OverflowText label={config.name} className='text-[var(--text-body)] text-sm' />
+        <OverflowText
+          label={config.description}
+          className='text-[var(--text-muted)] text-caption'
+        />
       </div>
-      <ArrowRight className='size-4 flex-shrink-0 text-[var(--text-icon)]' />
+      <ArrowRight className='size-4 shrink-0 text-[var(--text-icon)]' />
     </button>
   )
 }

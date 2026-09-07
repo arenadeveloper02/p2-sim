@@ -47,18 +47,19 @@ afterEach(() => {
   Object.assign(env, envSnapshot)
 })
 
+import { WORKSPACE_ACCESS_SCOPE } from '@/lib/knowledge/access/scope'
+import { generateSearchEmbedding } from '@/lib/knowledge/embeddings'
 import {
   executeKeywordSearch,
   executeKnowledgeSearch,
   fuseByReciprocalRank,
-  generateSearchEmbedding,
   getQueryStrategy,
   handleTagAndVectorSearch,
   handleTagOnlySearch,
   handleVectorOnlySearch,
-  RRF_K,
   type SearchResult,
 } from '@/lib/knowledge/search/queries'
+import { RRF_K } from '@/lib/knowledge/search/recency'
 
 /** Minimal SearchResult builder — only the fields fusion and ordering read. */
 function makeResult(id: string, distance = 0.1): SearchResult {
@@ -89,6 +90,20 @@ function makeResult(id: string, distance = 0.1): SearchResult {
   }
 }
 
+const TEST_EMBEDDING = [0.1, 0.2, 0.3, ...Array.from({ length: 1533 }, () => 0)]
+
+function mockNextEmbeddingResponse(): void {
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        data: [{ embedding: TEST_EMBEDDING, index: 0 }],
+        usage: { prompt_tokens: 1, total_tokens: 1 },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )
+  )
+}
+
 describe('Knowledge Search Utils', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -103,6 +118,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when no filters provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [],
       }
@@ -115,6 +131,7 @@ describe('Knowledge Search Utils', () => {
     it('should accept valid parameters for tag-only search', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
       }
@@ -131,6 +148,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when queryVector not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         distanceThreshold: 0.8,
       }
@@ -143,6 +161,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when distanceThreshold not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
       }
@@ -155,6 +174,7 @@ describe('Knowledge Search Utils', () => {
     it('should accept valid parameters for vector-only search', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
         distanceThreshold: 0.8,
@@ -172,6 +192,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when no filters provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [],
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -186,6 +207,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when queryVector not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
         distanceThreshold: 0.8,
@@ -199,6 +221,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when distanceThreshold not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -212,6 +235,7 @@ describe('Knowledge Search Utils', () => {
     it('should accept valid parameters for tag and vector search', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -368,6 +392,7 @@ describe('Knowledge Search Utils', () => {
     it('returns nothing for a whitespace-only query without touching the database', async () => {
       const results = await executeKeywordSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: '   ',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -383,6 +408,7 @@ describe('Knowledge Search Utils', () => {
 
       await executeKeywordSearch({
         knowledgeBaseIds,
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: 'PROJ-1234',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -402,6 +428,7 @@ describe('Knowledge Search Utils', () => {
 
       const results = await executeKeywordSearch({
         knowledgeBaseIds: ['kb-1'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: 'PROJ-1234',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -427,6 +454,7 @@ describe('Knowledge Search Utils', () => {
 
       await executeKeywordSearch({
         knowledgeBaseIds,
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: 'PROJ-1234',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -445,6 +473,7 @@ describe('Knowledge Search Utils', () => {
       await expect(
         executeKnowledgeSearch({
           knowledgeBaseIds: ['kb-123'],
+          access: WORKSPACE_ACCESS_SCOPE,
           topK: 10,
           searchMode: 'hybrid',
         })
@@ -455,6 +484,7 @@ describe('Knowledge Search Utils', () => {
       await expect(
         executeKnowledgeSearch({
           knowledgeBaseIds: ['kb-123'],
+          access: WORKSPACE_ACCESS_SCOPE,
           topK: 10,
           searchMode: 'hybrid',
           query: 'PROJ-1234',
@@ -467,6 +497,7 @@ describe('Knowledge Search Utils', () => {
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'vector',
         query: 'PROJ-1234',
@@ -478,13 +509,19 @@ describe('Knowledge Search Utils', () => {
     })
 
     it('runs both legs and fuses them in hybrid mode', async () => {
-      // Vector leg, then the keyword leg's ranking pass, then its hydration pass.
-      queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
+      /**
+       * Chains dequeue in creation order. Hybrid legs over-fetch past the
+       * plain scan's candidate pool, so the vector leg opens its transaction
+       * and applies the scan settings before selecting: the keyword ranking
+       * pass is built first, then the vector select, then hydration.
+       */
       queueTableRows(schemaMock.embedding, [{ id: 'keyword-hit', keywordRank: 0.9 }])
+      queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
       queueTableRows(schemaMock.embedding, [makeResult('keyword-hit')])
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'hybrid',
         query: 'PROJ-1234',
@@ -496,6 +533,8 @@ describe('Knowledge Search Utils', () => {
     })
 
     it('falls back to vector results when the keyword leg fails', async () => {
+      /** The failing ranking chain is still built first and takes the first queued set. */
+      queueTableRows(schemaMock.embedding, [{ id: 'never-ranked', keywordRank: 0 }])
       queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
 
       /**
@@ -515,6 +554,7 @@ describe('Knowledge Search Utils', () => {
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'hybrid',
         query: 'PROJ-1234',
@@ -529,6 +569,7 @@ describe('Knowledge Search Utils', () => {
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'hybrid',
         structuredFilters: [
@@ -553,12 +594,7 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       const result = await generateSearchEmbedding('test query')
 
@@ -570,7 +606,7 @@ describe('Knowledge Search Utils', () => {
           }),
         })
       )
-      expect(result.embedding).toEqual([0.1, 0.2, 0.3])
+      expect(result.embedding).toEqual(TEST_EMBEDDING)
 
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
@@ -583,12 +619,7 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       const result = await generateSearchEmbedding('test query')
 
@@ -600,7 +631,7 @@ describe('Knowledge Search Utils', () => {
           }),
         })
       )
-      expect(result.embedding).toEqual([0.1, 0.2, 0.3])
+      expect(result.embedding).toEqual(TEST_EMBEDDING)
 
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
@@ -616,12 +647,7 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       await generateSearchEmbedding('test query')
 
@@ -645,12 +671,7 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       await generateSearchEmbedding('test query', 'text-embedding-3-small')
 
@@ -733,12 +754,7 @@ describe('Knowledge Search Utils', () => {
         KB_OPENAI_MODEL_NAME: 'text-embedding-ada-002',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       await generateSearchEmbedding('test query')
 
@@ -764,12 +780,7 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       await generateSearchEmbedding('test query', 'text-embedding-3-small')
 
@@ -792,12 +803,7 @@ describe('Knowledge Search Utils', () => {
     it('projects verified provenance only in the model-bound embedding payload', async () => {
       Object.keys(env).forEach((key) => delete (env as any)[key])
       Object.assign(env, { OPENAI_API_KEY: 'test-openai-key' })
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       const registry = new ResolvedSecretTraceRegistry([
         { name: 'TOKEN', plaintext: 'secret-value', encryptedValue: 'encrypted-token' },

@@ -331,7 +331,12 @@ async function executeChatCompletionsRequest(
             }
           }
 
-          const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+          const { toolParams, executionParams } = prepareToolExecution(
+            tool,
+            toolArgs,
+            request,
+            toolCall.id
+          )
           const { rawResponse, modelResponse } = await executeProviderTool(
             toolName,
             executionParams,
@@ -669,7 +674,11 @@ export const azureOpenAIProvider: ProviderConfig = {
 
     let pinnedFetch: typeof fetch | undefined
     if (userProvidedEndpoint) {
-      const validation = await validateUrlWithDNS(userProvidedEndpoint, 'azureEndpoint')
+      const validation = await validateUrlWithDNS(
+        userProvidedEndpoint,
+        'azureEndpoint',
+        'configuredEndpoint'
+      )
       if (!validation.isValid) {
         logger.warn('Blocked SSRF attempt via azureEndpoint', {
           endpoint: userProvidedEndpoint,
@@ -677,10 +686,7 @@ export const azureOpenAIProvider: ProviderConfig = {
         })
         throw new Error(`Invalid Azure OpenAI endpoint: ${validation.error}`)
       }
-      if (!validation.resolvedIP) {
-        throw new Error('Invalid Azure OpenAI endpoint: could not resolve a pinnable IP address')
-      }
-      pinnedFetch = createPinnedFetch(validation.resolvedIP)
+      pinnedFetch = createPinnedFetch(validation.resolvedIP, { profile: 'configuredEndpoint' })
     }
 
     const apiKey = request.apiKey

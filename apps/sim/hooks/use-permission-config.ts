@@ -15,16 +15,20 @@ import {
   resolveIntegrationAvailabilityStateForVisibility,
 } from '@/lib/integrations/availability'
 import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
-import { intersectIntegrationAllowlists } from '@/lib/permission-groups/integration-allowlist'
 import {
   DEFAULT_PERMISSION_GROUP_CONFIG,
   type PermissionGroupConfig,
-} from '@/lib/permission-groups/types'
+} from '@/lib/permission-groups/fields'
+import {
+  intersectAccessControlAllowlists,
+  resolveAccessControlBlockType,
+} from '@/lib/permission-groups/integration-allowlist'
+import { createModelAccessGate } from '@/lib/permission-groups/model-access'
+import { createToolAccessGate } from '@/lib/permission-groups/operation-access'
 import { useOptionalWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { overlayVisibility } from '@/blocks/visibility/context'
 import { useUserPermissionConfig } from '@/ee/access-control/hooks/permission-groups'
-import { findProviderFromModel } from '@/providers/utils'
 
 export interface PermissionConfigResult {
   config: PermissionGroupConfig
@@ -50,11 +54,13 @@ const allowedIntegrationsKeys = {
   env: () => [...allowedIntegrationsKeys.all, 'env'] as const,
 }
 
+export const ALLOWED_INTEGRATIONS_STALE_TIME = 5 * 60 * 1000
+
 function useAllowedIntegrationsFromEnv() {
   return useQuery<GetAllowedIntegrationsResponse>({
     queryKey: allowedIntegrationsKeys.env(),
     queryFn: ({ signal }) => requestJson(getAllowedIntegrationsContract, { signal }),
-    staleTime: 5 * 60 * 1000,
+    staleTime: ALLOWED_INTEGRATIONS_STALE_TIME,
   })
 }
 
@@ -81,10 +87,31 @@ export function usePermissionConfig(): PermissionConfigResult {
   const isInPermissionGroup = !!permissionData?.permissionGroupId
   const isOrgAdmin = permissionData?.isOrgAdmin === true
 
-  const mergedAllowedIntegrations = useMemo(() => {
-    const envAllowlist = envAllowlistData?.allowedIntegrations ?? null
-    return intersectIntegrationAllowlists(config.allowedIntegrations, envAllowlist)
-  }, [config.allowedIntegrations, envAllowlistData])
+  /**
+   * Both sides of the membership test are judged as the current block, so a
+   * policy naming a retired id — `ALLOWED_INTEGRATIONS=slack` — still permits
+   * the successor the editor offers.
+   *
+   * Each policy is canonicalized *before* the two are intersected, not after: a
+   * group naming `slack` and an env allowlist naming `slack_v2` intersect to
+   * nothing textually, hiding an integration both policies allow. This is the
+   * same helper the server gates use — `mergeEnvAllowlist` for the config the
+   * catalog reads, `allowedIntegrationTypes` for the block and selector gates —
+   * so what this hook shows and what the server permits cannot disagree.
+   */
+  const allowedAccessControlTypes = useMemo(
+    () =>
+      intersectAccessControlAllowlists(
+        config.allowedIntegrations,
+        envAllowlistData?.allowedIntegrations ?? null
+      ),
+    [config.allowedIntegrations, envAllowlistData]
+  )
+
+  const mergedAllowedIntegrations = useMemo(
+    () => (allowedAccessControlTypes === null ? null : [...allowedAccessControlTypes]),
+    [allowedAccessControlTypes]
+  )
 
   const integrationAvailability = useMemo(() => {
     const visibility = overlayVisibility()
@@ -114,47 +141,24 @@ export function usePermissionConfig(): PermissionConfigResult {
         return false
       }
       if (isBlockTypeAccessControlExempt(blockType)) return true
-      if (mergedAllowedIntegrations === null) return true
-      return mergedAllowedIntegrations.includes(normalizedBlockType)
+      if (allowedAccessControlTypes === null) return true
+      return allowedAccessControlTypes.has(resolveAccessControlBlockType(normalizedBlockType))
     }
-  }, [hostContext?.features?.credentialGroups, integrationAvailability, mergedAllowedIntegrations])
+  }, [hostContext?.features?.credentialGroups, integrationAvailability, allowedAccessControlTypes])
 
-  const isProviderAllowed = useMemo(() => {
-    return (providerId: string) => {
-      if (config.allowedModelProviders === null) return true
-      return config.allowedModelProviders.includes(providerId)
-    }
-  }, [config.allowedModelProviders])
-
-  /** Indexed so the per-model check stays O(1) over a long denylist. */
-  const deniedModelSet = useMemo(
-    () => new Set(config.deniedModels.map((denied) => denied.toLowerCase())),
-    [config.deniedModels]
+  const isModelUsable = useMemo(
+    () =>
+      createModelAccessGate({
+        deniedModels: config.deniedModels,
+        allowedModelProviders: config.allowedModelProviders,
+      }),
+    [config.deniedModels, config.allowedModelProviders]
   )
 
-  const isModelAllowed = useMemo(() => {
-    return (model: string) => !deniedModelSet.has(model.toLowerCase())
-  }, [deniedModelSet])
-
-  const isModelUsable = useMemo(() => {
-    return (model: string) => {
-      if (!isModelAllowed(model)) return false
-      const providerId = findProviderFromModel(model)
-      /* Only chat models resolve to a provider. A `model` field holding an
-         embedding, speech, image or video id is not a provider choice, so the
-         provider allowlist has nothing to say about it — judging it anyway
-         would read every such id as Ollama and reject it. */
-      if (!providerId) return true
-      return isProviderAllowed(providerId)
-    }
-  }, [isModelAllowed, isProviderAllowed])
-
-  /** Indexed so the per-tool check stays O(1) over a long denylist. */
-  const deniedToolSet = useMemo(() => new Set(config.deniedTools), [config.deniedTools])
-
-  const isToolAllowed = useMemo(() => {
-    return (toolId: string) => !deniedToolSet.has(toolId)
-  }, [deniedToolSet])
+  const isToolAllowed = useMemo(
+    () => createToolAccessGate(config.deniedTools),
+    [config.deniedTools]
+  )
 
   const filterBlocks = useMemo(() => {
     return <T extends { type: string }>(blocks: T[]): T[] => {

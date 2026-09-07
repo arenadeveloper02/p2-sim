@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  organizationRoleSchema,
   type PiiRedactionSettings,
   piiRedactionSettingsSchema,
   retentionOverridesSchema,
@@ -16,9 +17,6 @@ const numericResponseSchema = z.preprocess((value) => {
   return Number.isFinite(parsed) ? parsed : value
 }, z.number())
 
-export const organizationRoleSchema = z.enum(['owner', 'admin', 'member'], {
-  error: 'Invalid role',
-})
 export const organizationParamsSchema = z.object({
   id: z.string().min(1),
 })
@@ -30,7 +28,9 @@ export const organizationMemberParamsSchema = z.object({
 
 export const organizationMemberQuerySchema = z
   .object({
-    include: z.string().optional(),
+    include: z.enum(['usage']).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
   })
   .passthrough()
 
@@ -96,8 +96,6 @@ const organizationDataRetentionDataSchema = z.object({
   defaults: organizationRetentionValuesSchema,
   configured: organizationRetentionValuesSchema,
   effective: organizationRetentionValuesSchema,
-  piiRedactionEnabled: z.boolean(),
-  piiGranularRedactionEnabled: z.boolean(),
 })
 
 export type OrganizationDataRetention = z.output<typeof organizationDataRetentionDataSchema>
@@ -322,6 +320,12 @@ export const listOrganizationMembersResponseSchema = z
     success: z.boolean(),
     data: z.array(organizationMemberUsageSchema),
     total: z.number(),
+    pagination: z.object({
+      total: z.number().int().min(0),
+      limit: z.number().int().min(1).max(100),
+      offset: z.number().int().min(0),
+      hasMore: z.boolean(),
+    }),
     userRole: organizationRoleSchema,
     hasAdminAccess: z.boolean(),
   })
@@ -691,6 +695,41 @@ export const createOrganizationContract = defineRouteContract({
       success: z.boolean(),
       organizationId: z.string(),
       created: z.boolean(),
+    }),
+  },
+})
+
+export const organizationBillingSummarySchema = z.object({
+  organizationId: z.string().min(1),
+  subscriptionState: z.enum(['active', 'free', 'lapsed']),
+  subscriptionPlan: z.string().min(1),
+  subscriptionStatus: z.string().nullable(),
+  creditBalance: z.number(),
+  billingInterval: z.enum(['month', 'year']),
+  cancelAtPeriodEnd: z.boolean(),
+  totalSeats: z.number().int().min(0),
+  totalCurrentUsage: z.number().min(0),
+  totalUsageLimit: z.number().min(0),
+  minimumBillingAmount: z.number().min(0),
+  billingPeriodEnd: z.string().nullable(),
+  billingBlocked: z.boolean(),
+  billingBlockedReason: z.enum(['payment_failed', 'dispute']).nullable(),
+  blockedByOrgOwner: z.boolean(),
+  upgradeWorkspaceId: workspaceIdSchema.nullable(),
+  userRole: z.enum(['admin', 'owner']),
+})
+
+export type OrganizationBillingSummary = z.output<typeof organizationBillingSummarySchema>
+
+export const getOrganizationBillingSummaryContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]/billing-summary',
+  params: organizationParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      data: organizationBillingSummarySchema,
     }),
   },
 })

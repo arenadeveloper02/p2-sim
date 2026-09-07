@@ -1,6 +1,10 @@
 import path from 'node:path'
 import { createLogger } from '@sim/logger'
 import { NextResponse } from 'next/server'
+import {
+  isPayloadSizeLimitError,
+  readNodeStreamToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { sanitizeFileKey } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('FilesUtils')
@@ -261,11 +265,21 @@ export function encodeFilenameForHeader(storageKey: string): string {
 }
 
 export function createFileResponse(file: FileResponse): NextResponse {
-  const { contentType, disposition } = getSecureFileHeaders(file.filename, file.contentType)
+  // Sim pages store an extensionless name and serve/download as compiled
+  // HTML — re-append the extension so the saved file opens in a browser.
+  // Decided from the CALLER's content type (getSecureFileHeaders downgrades
+  // text/html), and BEFORE the header decision, so the .html name gets the
+  // same forced-attachment treatment a legacy .html file gets.
+  const servedFilename =
+    file.contentType === 'text/html' && !/\.[A-Za-z0-9]{1,8}$/.test(file.filename)
+      ? `${file.filename}.html`
+      : file.filename
+
+  const { contentType, disposition } = getSecureFileHeaders(servedFilename, file.contentType)
 
   const headers: Record<string, string> = {
     'Content-Type': contentType,
-    'Content-Disposition': `${disposition}; ${encodeFilenameForHeader(file.filename)}`,
+    'Content-Disposition': `${disposition}; ${encodeFilenameForHeader(servedFilename)}`,
     // Default to PRIVATE: this response is served only after access verification, so it must never be
     // stored by a shared cache/CDN and re-served cross-user. Genuinely public assets (avatars, OG images,
     // workspace logos) pass an explicit `cacheControl` (see PUBLIC_ASSET_CACHE_CONTROL in the serve route).
@@ -282,7 +296,16 @@ export function createFileResponse(file: FileResponse): NextResponse {
 
 export function createErrorResponse(error: Error, status = 500): NextResponse {
   const statusCode =
-    error instanceof FileNotFoundError ? 404 : error instanceof InvalidRequestError ? 400 : status
+    error instanceof FileNotFoundError
+      ? 404
+      : error instanceof InvalidRequestError
+        ? 400
+        : // A file too large to hold resident is the caller asking for something this
+          // route will not do, not a server fault — 413 keeps it out of the 5xx alarms
+          // and tells the client retrying is pointless.
+          isPayloadSizeLimitError(error)
+          ? 413
+          : status
 
   return NextResponse.json(
     {
@@ -291,6 +314,33 @@ export function createErrorResponse(error: Error, status = 500): NextResponse {
     },
     { status: statusCode }
   )
+}
+
+/**
+ * Reads a local upload into memory under a hard byte ceiling.
+ *
+ * The self-hosted mirror of the `maxBytes` every cloud provider download takes:
+ * a bare `readFile` inherits the 5 GB admission ceiling workspace files are stored
+ * under and allocates all of it inside the shared app process.
+ *
+ * The limit is enforced on the bytes as they arrive, through the same bounded-stream
+ * reader the S3/Blob/GCS downloads use, rather than by checking `stat` and then
+ * reading. A declared size only describes the file at the moment it was measured, so
+ * a stat-then-read pair admits whatever the file becomes in between — the cloud
+ * providers check `ContentLength` too, but never trust it as the only bound.
+ */
+export async function readLocalFileWithinLimit(
+  filePath: string,
+  maxBytes: number,
+  label: string
+): Promise<Buffer> {
+  const { createReadStream } = await import('fs')
+  const stream = createReadStream(filePath)
+  try {
+    return await readNodeStreamToBufferWithLimit(stream, { maxBytes, label })
+  } finally {
+    stream.destroy()
+  }
 }
 
 export function createSuccessResponse(data: ApiSuccessResponse): NextResponse {

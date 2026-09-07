@@ -147,13 +147,12 @@ export async function buildLocalCopilotContext(
       .limit(1)
       .then((rows) => rows[0]),
   ])
-  const currentUser =
-    currentUserRow?.email?.trim()
-      ? {
-          email: currentUserRow.email.trim(),
-          ...(currentUserRow.name?.trim() ? { name: currentUserRow.name.trim() } : {}),
-        }
-      : undefined
+  const currentUser = currentUserRow?.email?.trim()
+    ? {
+        email: currentUserRow.email.trim(),
+        ...(currentUserRow.name?.trim() ? { name: currentUserRow.name.trim() } : {}),
+      }
+    : undefined
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
   // Prefer the unified snapshot as the single inventory source; fall back to the
   // legacy per-resource loaders only when the snapshot is unavailable.

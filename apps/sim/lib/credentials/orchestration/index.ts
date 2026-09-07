@@ -11,7 +11,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { asOrchestrationError, OrchestrationError } from '@/lib/core/orchestration/types'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { listSlackCredentialGroupConfigurationsForBot } from '@/lib/credential-groups/provider-configuration'
 import {
@@ -30,21 +30,23 @@ import {
   deleteOrphanedOAuthAccount,
 } from '@/lib/credentials/deletion'
 import { slackCustomBotDisplayName } from '@/lib/credentials/display-name'
+import { lockPersonalEnvMap, lockWorkspaceEnvMap } from '@/lib/credentials/env-locks'
 import {
+  deletePersonalEnvCredentialForUser,
   deleteWorkspaceEnvCredentials,
-  syncPersonalEnvCredentialsForUser,
 } from '@/lib/credentials/environment'
+import type { ServiceAccountFieldId } from '@/lib/credentials/service-account-fields'
 import {
   ServiceAccountSecretError,
   verifyAndBuildServiceAccountSecret,
 } from '@/lib/credentials/service-account-secret'
 import { TokenServiceAccountValidationError } from '@/lib/credentials/token-service-accounts/errors'
+import { invalidateEffectiveDecryptedEnvCache } from '@/lib/environment/utils'
 import {
   GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID,
   SLACK_CUSTOM_BOT_PROVIDER_ID,
   SLACK_CUSTOM_BOT_SECRET_TYPE,
 } from '@/lib/oauth/types'
-import { captureServerEvent } from '@/lib/posthog/server'
 import {
   listAccountsToDisconnect,
   unlinkUnipileAccountsFromProvider,
@@ -65,6 +67,27 @@ export {
   performCreateCredential,
   statusForCredentialOrchestrationError,
 } from './credential-create'
+
+/**
+ * Every secret field a reconnect can carry. Only a `service_account` credential
+ * has somewhere to store them, so this doubles as the set a non-service-account
+ * update must refuse rather than silently drop.
+ */
+const ROTATABLE_SECRET_FIELDS: readonly ServiceAccountFieldId[] = [
+  'serviceAccountJson',
+  'signingSecret',
+  'botToken',
+  'apiToken',
+  'domain',
+  'clientId',
+  'clientSecret',
+  'certificateId',
+  'orgId',
+  'dataCenter',
+  'authMethod',
+  'privateKey',
+  'username',
+]
 
 /**
  * Google's stored blob is the raw GCP JSON key, whose own `type` discriminator
@@ -158,6 +181,8 @@ interface CredentialActorParams {
 export interface PerformUpdateCredentialParams extends CredentialActorParams {
   displayName?: string
   description?: string | null
+  /** Workspace-secret redaction opt-out; rejected for every type but env_workspace. */
+  unredacted?: boolean
   serviceAccountJson?: string
   /** Slack custom-bot secret rotation (reconnect). */
   signingSecret?: string
@@ -198,9 +223,37 @@ export async function updateCredentialRecord(
   params: UpdateCredentialRecordParams
 ): Promise<PerformCredentialResult> {
   try {
+    // A description is teammate-facing, so it is meaningless on `env_personal`:
+    // those rows are per-workspace mirrors of one user-global secret, and every
+    // reader already hides or nulls the field for them. Rejected here rather than
+    // at one adapter, so no surface can write data every reader hides — and said
+    // plainly, since dropping the field would fall through to the generic
+    // "no updatable fields" error and explain nothing.
+    if (params.description !== undefined && params.credential.type === 'env_personal') {
+      return {
+        success: false,
+        error: 'A personal secret cannot have a description; it is not shared with teammates.',
+        errorCode: 'validation',
+      }
+    }
+
+    // Redaction only guards a shared workspace value, so the opt-out is meaningless on any
+    // other credential type. Rejected here, at the same layer as the description rule, so no
+    // surface can write a flag every reader would then have to special-case away.
+    if (params.unredacted !== undefined && params.credential.type !== 'env_workspace') {
+      return {
+        success: false,
+        error: 'Only workspace secrets can be marked visible (unredacted).',
+        errorCode: 'validation',
+      }
+    }
+
     const updates: Record<string, unknown> = {}
     if (params.description !== undefined) {
       updates.description = params.description ?? null
+    }
+    if (params.unredacted !== undefined) {
+      updates.unredacted = params.unredacted
     }
     if (
       params.displayName !== undefined &&
@@ -213,23 +266,28 @@ export async function updateCredentialRecord(
     // secret is re-verified against the provider and re-encrypted through the
     // same builder the create path uses, so the rotation also yields the new
     // principal's derived display name and audit metadata.
-    const hasRotationSecret =
-      params.serviceAccountJson !== undefined ||
-      params.signingSecret !== undefined ||
-      params.botToken !== undefined ||
-      params.apiToken !== undefined ||
-      params.domain !== undefined ||
-      params.clientId !== undefined ||
-      params.clientSecret !== undefined ||
-      params.certificateId !== undefined ||
-      params.orgId !== undefined ||
-      params.dataCenter !== undefined ||
-      params.authMethod !== undefined ||
-      params.privateKey !== undefined ||
-      params.username !== undefined
+    const submittedSecretFields = ROTATABLE_SECRET_FIELDS.filter(
+      (field) => params[field] !== undefined
+    )
+    const hasRotationSecret = submittedSecretFields.length > 0
+
+    // Only a service account stores a rotatable secret blob. Every other type
+    // reaches the rotation branch below and falls straight through it, so an
+    // OAuth credential sent `{ displayName, apiToken }` used to answer 200 with
+    // the token silently discarded — the caller believing it had rotated a
+    // secret. Refused here rather than at one contract: the credential's type
+    // is only known once the row is loaded, so no request schema can decide it.
+    if (hasRotationSecret && params.credential.type !== 'service_account') {
+      return {
+        success: false,
+        error: `A ${params.credential.type} credential has no rotatable secret; ${submittedSecretFields.join(', ')} cannot be updated. Reconnect the credential instead.`,
+        errorCode: 'validation',
+      }
+    }
+
     let rotatedSlackBotUserId: string | undefined
     let rotatedAuditMetadata: Record<string, string> | undefined
-    if (hasRotationSecret && params.credential.type === 'service_account') {
+    if (hasRotationSecret) {
       const providerId = params.credential.providerId ?? ''
 
       // A reconnect rebuilds the secret blob from the submitted fields only, and
@@ -374,6 +432,13 @@ export async function updateCredentialRecord(
     updates.updatedAt = new Date()
     await db.update(credential).set(updates).where(eq(credential.id, params.credentialId))
 
+    // The flag rides the environment snapshot into every run's redaction catalog, so a flip
+    // must not serve stale from the same-process snapshot cache. Cross-process readers are
+    // bounded by that cache's short TTL instead.
+    if (updates.unredacted !== undefined) {
+      invalidateEffectiveDecryptedEnvCache({ workspaceId: params.credential.workspaceId })
+    }
+
     // Reconnecting to a recreated Slack app changes the bot user id, but each
     // deployed webhook cached the old one at deploy for reaction self-drop.
     // Propagate the rotated id to the credential's live custom-bot webhooks so
@@ -389,12 +454,16 @@ export async function updateCredentialRecord(
     }
 
     const updatedFields = auditUpdatedFields(updates)
+    const auditMetadata =
+      params.unredacted === undefined
+        ? rotatedAuditMetadata
+        : { ...(rotatedAuditMetadata ?? {}), unredacted: params.unredacted }
     return {
       success: true,
       workspaceId: params.credential.workspaceId,
       updatedFields,
       previousDisplayName: params.credential.displayName,
-      auditMetadata: rotatedAuditMetadata,
+      auditMetadata,
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes('unique')) {
@@ -502,29 +571,44 @@ export async function deleteCredentialRecord(
     if (!credentialRow.envKey || !credentialRow.envOwnerUserId) {
       throw new Error('Personal environment credential is missing its source identity')
     }
-    const [personalRow] = await db
-      .select({ variables: environment.variables })
-      .from(environment)
-      .where(eq(environment.userId, credentialRow.envOwnerUserId))
-      .limit(1)
-    const current = { ...((personalRow?.variables as Record<string, string> | null) ?? {}) }
-    delete current[credentialRow.envKey]
-    await db
-      .insert(environment)
-      .values({
-        id: credentialRow.envOwnerUserId,
-        userId: credentialRow.envOwnerUserId,
-        variables: current,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [environment.userId],
-        set: { variables: current, updatedAt: new Date() },
-      })
-    await syncPersonalEnvCredentialsForUser({
-      userId: credentialRow.envOwnerUserId,
-      envKeys: Object.keys(current),
+    const { envKey, envOwnerUserId } = credentialRow
+    /**
+     * Same read-modify-write on the personal map, under the same lock its
+     * other writers take, with the mirrors removed in the same transaction.
+     *
+     * Targeted rather than a reconcile: the reconcile prunes every mirror
+     * absent from a caller-supplied key list, so a secret added between the
+     * read and the prune lost its mirror while its value survived. Deleting
+     * this one key's mirrors cannot strand another secret, and the lock order
+     * — map, then user identity — is the one `setPersonalSecret` already takes.
+     */
+    await db.transaction(async (tx) => {
+      await lockPersonalEnvMap(tx, envOwnerUserId)
+
+      const [personalRow] = await tx
+        .select({ variables: environment.variables })
+        .from(environment)
+        .where(eq(environment.userId, envOwnerUserId))
+        .limit(1)
+      const variables = { ...((personalRow?.variables as Record<string, string> | null) ?? {}) }
+      delete variables[envKey]
+      await tx
+        .insert(environment)
+        .values({
+          id: envOwnerUserId,
+          userId: envOwnerUserId,
+          variables,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [environment.userId],
+          set: { variables, updatedAt: new Date() },
+        })
+      await deletePersonalEnvCredentialForUser({ userId: envOwnerUserId, envKey, executor: tx })
     })
+    // The value is gone; without this it stays resolvable from the cache for
+    // its TTL, as the dedicated delete paths already recognise.
+    invalidateEffectiveDecryptedEnvCache({ userId: envOwnerUserId })
     return true
   }
 
@@ -532,34 +616,48 @@ export async function deleteCredentialRecord(
     if (!credentialRow.envKey) {
       throw new Error('Workspace environment credential is missing its source identity')
     }
-    const [workspaceRow] = await db
-      .select({
-        id: workspaceEnvironment.id,
-        createdAt: workspaceEnvironment.createdAt,
-        variables: workspaceEnvironment.variables,
+    const { envKey, workspaceId } = credentialRow
+    /**
+     * The whole variables map is read, edited and written back, so this has to
+     * hold the same lock every other writer of that map takes — without it a
+     * secret written concurrently is read before the write and dropped by this
+     * write-back. The credential row goes in the same transaction so the row
+     * and the value it describes cannot outlive each other.
+     */
+    await db.transaction(async (tx) => {
+      await lockWorkspaceEnvMap(tx, workspaceId)
+
+      const [workspaceRow] = await tx
+        .select({
+          id: workspaceEnvironment.id,
+          createdAt: workspaceEnvironment.createdAt,
+          variables: workspaceEnvironment.variables,
+        })
+        .from(workspaceEnvironment)
+        .where(eq(workspaceEnvironment.workspaceId, workspaceId))
+        .limit(1)
+      const current = { ...((workspaceRow?.variables as Record<string, string> | null) ?? {}) }
+      delete current[envKey]
+      await tx
+        .insert(workspaceEnvironment)
+        .values({
+          id: workspaceRow?.id ?? generateId(),
+          workspaceId,
+          variables: current,
+          createdAt: workspaceRow?.createdAt ?? new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [workspaceEnvironment.workspaceId],
+          set: { variables: current, updatedAt: new Date() },
+        })
+      await deleteWorkspaceEnvCredentials({
+        workspaceId,
+        removedKeys: [envKey],
+        executor: tx,
       })
-      .from(workspaceEnvironment)
-      .where(eq(workspaceEnvironment.workspaceId, credentialRow.workspaceId))
-      .limit(1)
-    const current = { ...((workspaceRow?.variables as Record<string, string> | null) ?? {}) }
-    delete current[credentialRow.envKey]
-    await db
-      .insert(workspaceEnvironment)
-      .values({
-        id: workspaceRow?.id ?? generateId(),
-        workspaceId: credentialRow.workspaceId,
-        variables: current,
-        createdAt: workspaceRow?.createdAt ?? new Date(),
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [workspaceEnvironment.workspaceId],
-        set: { variables: current, updatedAt: new Date() },
-      })
-    await deleteWorkspaceEnvCredentials({
-      workspaceId: credentialRow.workspaceId,
-      removedKeys: [credentialRow.envKey],
     })
+    invalidateEffectiveDecryptedEnvCache({ workspaceId })
     return true
   }
 
@@ -588,90 +686,4 @@ export async function deleteCredentialRecord(
     workspaceId: credentialRow.workspaceId,
     reason: params.reason,
   })
-}
-
-/** Preserves the legacy callers while application adapters migrate to the manager above. */
-export async function performDeleteCredential(
-  params: CredentialActorParams
-): Promise<PerformCredentialResult> {
-  try {
-    const access = await getCredentialActorContext(params.credentialId, params.userId)
-    if (!access.credential) {
-      return { success: false, error: 'Credential not found', errorCode: 'not_found' }
-    }
-    if (access.credential.type === 'managed_oauth') {
-      return { success: false, error: 'Credential not found', errorCode: 'not_found' }
-    }
-    if (!access.hasWorkspaceAccess || !access.isAdmin) {
-      return {
-        success: false,
-        error: 'Credential admin permission required',
-        errorCode: 'forbidden',
-      }
-    }
-    if (params.allowedTypes && !params.allowedTypes.includes(access.credential.type)) {
-      return {
-        success: false,
-        error: `Only ${params.allowedTypes.join(', ')} credentials can be managed with this tool.`,
-        errorCode: 'validation',
-      }
-    }
-
-    const reason = params.reason ?? 'user_delete'
-    await deleteCredentialRecord({ credential: access.credential, reason })
-
-    captureServerEvent(
-      params.userId,
-      'credential_deleted',
-      {
-        credential_type: access.credential.type,
-        provider_id:
-          access.credential.providerId ?? access.credential.envKey ?? params.credentialId,
-        workspace_id: access.credential.workspaceId,
-      },
-      { groups: { workspace: access.credential.workspaceId } }
-    )
-
-    const envDescription =
-      access.credential.type === 'env_personal'
-        ? `Deleted personal env credential "${access.credential.envKey}"`
-        : access.credential.type === 'env_workspace'
-          ? `Deleted workspace env credential "${access.credential.envKey}"`
-          : `Deleted ${access.credential.type} credential "${access.credential.displayName}" (${reason})`
-    recordAudit({
-      workspaceId: access.credential.workspaceId,
-      actorId: params.userId,
-      actorName: params.actorName ?? undefined,
-      actorEmail: params.actorEmail ?? undefined,
-      action: AuditAction.CREDENTIAL_DELETED,
-      resourceType: AuditResourceType.CREDENTIAL,
-      resourceId: params.credentialId,
-      resourceName: access.credential.displayName,
-      description: envDescription,
-      metadata: {
-        reason,
-        credentialType: access.credential.type,
-        providerId: access.credential.providerId,
-        accountId: access.credential.accountId,
-        envKey: access.credential.envKey,
-      },
-      request: params.request,
-    })
-
-    return { success: true, workspaceId: access.credential.workspaceId }
-  } catch (error) {
-    const orchestrationError = asOrchestrationError(error)
-    if (orchestrationError) {
-      if (orchestrationError.code !== 'not_found' && orchestrationError.code !== 'conflict') {
-        throw orchestrationError
-      }
-      return {
-        success: false,
-        error: orchestrationError.message,
-        errorCode: orchestrationError.code,
-      }
-    }
-    logger.error('Failed to delete credential', { error })
-    return { success: false, error: 'Internal server error', errorCode: 'internal' }
-  }
 }

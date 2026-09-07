@@ -1,3 +1,4 @@
+import type { WorkflowExecutionPrincipal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { isRecordLike, omit } from '@sim/utils/object'
@@ -47,14 +48,6 @@ import { navigatePathAsync } from '@/executor/variables/resolvers/reference-asyn
 import type { ToolCallEndStatus } from '@/providers/stream-events'
 import { DEFAULT_MAX_THINKING_CHARS } from '@/providers/stream-pump'
 
-/**
- * Extended streaming execution type that includes blockId on the execution.
- * The runtime passes blockId but the base StreamingExecution type doesn't declare it.
- */
-interface StreamingExecutionWithBlockId extends Omit<StreamingExecution, 'execution'> {
-  execution?: StreamingExecution['execution'] & { blockId?: string }
-}
-
 const logger = createLogger('WorkflowStreaming')
 
 const DANGEROUS_KEYS = ['__proto__', 'constructor', 'prototype']
@@ -94,7 +87,7 @@ interface StreamingConfig {
 
 export type StreamingExecutorFn = (callbacks: {
   onStream: (streamingExec: StreamingExecution) => Promise<void>
-  onBlockComplete: (blockId: string, output: unknown) => Promise<void>
+  onBlockComplete: (blockId: string, output: unknown, outputBlockId?: string) => Promise<void>
   abortSignal: AbortSignal
   /** Mirrors `streamConfig.sessionUserId` for `executeWorkflow` / Arena token resolution. */
   sessionUserId?: string | null
@@ -111,6 +104,8 @@ export interface StreamingResponseOptions {
   workspaceId?: string
   workflowId?: string
   userId?: string
+  /** The principal behind the run; knowledge-base files in the output are read as them. */
+  principal?: WorkflowExecutionPrincipal
   /** Incoming fetch/request abort — combined with the stream timeout. */
   requestSignal?: AbortSignal
   /** Used with the independent event policies to negotiate agent-events SSE. */
@@ -225,6 +220,7 @@ type OutputExtractionContext = Pick<
   | 'fileKeys'
   | 'allowLargeValueWorkflowScope'
   | 'userId'
+  | 'principal'
 > & { base64MaxBytes?: number }
 
 async function extractOutputValue(
@@ -242,6 +238,7 @@ async function extractOutputValue(
       fileKeys: context.fileKeys,
       allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
       userId: context.userId,
+      principal: context.principal,
       metadata: { requestId: context.requestId },
       base64MaxBytes: context.base64MaxBytes,
     },
@@ -324,6 +321,7 @@ function buildMaterializationContext(
     fileKeys: context.fileKeys,
     allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
     userId: context.userId,
+    principal: context.principal,
   }
 }
 
@@ -861,8 +859,8 @@ export async function createStreamingResponse(
        * Subscribe synchronously before the first await so the executor pump
        * can attach sinks before pulling provider chunks.
        */
-      const onStreamCallback = async (streamingExec: StreamingExecutionWithBlockId) => {
-        const blockId = streamingExec.execution?.blockId
+      const onStreamCallback = async (streamingExec: StreamingExecution) => {
+        const blockId = streamingExec.blockId
         if (!blockId) {
           logger.warn(`[${requestId}] Streaming execution missing blockId`)
           return
@@ -967,19 +965,24 @@ export async function createStreamingResponse(
       const includeFileBase64 = streamConfig.includeFileBase64 ?? true
       const base64MaxBytes = streamConfig.base64MaxBytes
 
-      const onBlockCompleteCallback = async (blockId: string, output: unknown) => {
-        state.completedBlockIds.add(blockId)
+      const onBlockCompleteCallback = async (
+        blockId: string,
+        output: unknown,
+        outputBlockId?: string
+      ) => {
+        const selectedOutputBlockId = outputBlockId ?? blockId
+        state.completedBlockIds.add(selectedOutputBlockId)
 
         if (!streamConfig.selectedOutputs?.length) {
           return
         }
 
-        if (state.streamedChunks.has(blockId)) {
+        if (state.streamedChunks.has(selectedOutputBlockId)) {
           return
         }
 
         const matchingOutputs = getSelectedOutputDescriptors(streamConfig.selectedOutputs).filter(
-          (descriptor) => descriptor.blockId === blockId
+          (descriptor) => descriptor.blockId === selectedOutputBlockId
         )
 
         /**
@@ -1010,6 +1013,7 @@ export async function createStreamingResponse(
               fileKeys: options.fileKeys,
               allowLargeValueWorkflowScope: options.allowLargeValueWorkflowScope,
               userId: options.userId,
+              principal: options.principal,
               base64MaxBytes: Math.min(
                 base64MaxBytes ?? MAX_INLINE_MATERIALIZATION_BYTES,
                 getBase64DecodedByteBudget(remainingBytes)
@@ -1054,14 +1058,14 @@ export async function createStreamingResponse(
                 getInlineJsonByteLength(hydratedOutput) ?? 0,
                 Buffer.byteLength(formattedOutput, 'utf8')
               )
-              sendChunk(blockId, formattedOutput, {
+              sendChunk(selectedOutputBlockId, formattedOutput, {
                 selectedOutputKey: descriptor.key,
                 selectedOutputBytes,
               })
             }
           } catch (error) {
             logger.warn(`[${requestId}] Failed to materialize selected output`, {
-              blockId,
+              blockId: selectedOutputBlockId,
               outputId: descriptor.outputId,
               ...projectResolvedSecretDiagnosticError(error, undefined),
             })
@@ -1069,7 +1073,7 @@ export async function createStreamingResponse(
             state.selectedOutputError ??= errorMessage
             const frame: ChatStreamErrorFrame = {
               event: 'error',
-              blockId,
+              blockId: selectedOutputBlockId,
               error: errorMessage,
             }
             controller.enqueue(encodeSSE(frame))
@@ -1175,6 +1179,7 @@ export async function createStreamingResponse(
                 fileKeys: result.metadata?.fileKeys ?? options.fileKeys,
                 allowLargeValueWorkflowScope: options.allowLargeValueWorkflowScope,
                 userId: options.userId,
+                principal: options.principal,
                 redactToolPayloads: streamConfig.isSecureMode === true,
               }
             )

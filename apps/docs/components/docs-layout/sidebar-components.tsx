@@ -7,7 +7,6 @@ import type { Folder, Item, Separator } from 'fumadocs-core/page-tree'
 import { useSidebar } from 'fumadocs-ui/components/sidebar/base'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { i18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 function SidebarChevron({ open, className }: { open: boolean; className?: string }) {
@@ -22,23 +21,8 @@ function SidebarChevron({ open, className }: { open: boolean; className?: string
   )
 }
 
-const LANG_PREFIXES = i18n.languages.map((l) => `/${l}`)
-
-function stripLangPrefix(path: string): string {
-  for (const prefix of LANG_PREFIXES) {
-    if (path === prefix) return '/'
-    if (path.startsWith(`${prefix}/`)) return path.slice(prefix.length)
-  }
-  return path
-}
-
 function isActive(url: string, pathname: string, nested = true): boolean {
-  const normalizedPathname = stripLangPrefix(pathname)
-  const normalizedUrl = stripLangPrefix(url)
-  return (
-    normalizedUrl === normalizedPathname ||
-    (nested && normalizedPathname.startsWith(`${normalizedUrl}/`))
-  )
+  return url === pathname || (nested && pathname.startsWith(`${url}/`))
 }
 
 /**
@@ -85,23 +69,12 @@ export function SidebarItem({ item }: { item: Item }) {
   )
 }
 
-function isApiReferenceFolder(node: Folder): boolean {
-  if (node.index?.url.includes('/api-reference/')) return true
-  for (const child of node.children) {
-    if (child.type === 'page' && child.url.includes('/api-reference/')) return true
-    if (child.type === 'folder' && isApiReferenceFolder(child)) return true
-  }
-  return false
-}
-
 export function SidebarFolder({ item, children }: { item: Folder; children: ReactNode }) {
   const pathname = usePathname()
   const { prefetch } = useSidebar()
   const hasActiveChild = checkHasActiveChild(item, pathname)
-  const isApiRef = isApiReferenceFolder(item)
-  const isOnApiRefPage = stripLangPrefix(pathname).startsWith('/api-reference')
   const hasChildren = item.children.length > 0
-  const defaultOpen = hasActiveChild || (isApiRef && isOnApiRefPage)
+  const defaultOpen = hasActiveChild
   const [manualOpen, setManualOpen] = useState<{ pathname: string; open: boolean } | null>(null)
   const open = manualOpen?.pathname === pathname ? manualOpen.open : defaultOpen
   const toggleOpen = () => setManualOpen({ pathname, open: !open })
@@ -147,6 +120,7 @@ export function SidebarFolder({ item, children }: { item: Folder; children: Reac
                   chipHoverSurfaceClass
                 )}
                 aria-label={open ? 'Collapse' : 'Expand'}
+                aria-expanded={open}
               >
                 <SidebarChevron open={open} className='text-[var(--text-icon)]' />
               </button>
@@ -155,6 +129,7 @@ export function SidebarFolder({ item, children }: { item: Folder; children: Reac
         ) : (
           <button
             onClick={toggleOpen}
+            aria-expanded={open}
             className={cn(
               'flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
               'text-[var(--text-body)]',

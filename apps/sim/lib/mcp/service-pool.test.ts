@@ -101,6 +101,9 @@ const SERVER_ROW = {
 }
 
 vi.mock('@/lib/mcp/domain-check', () => ({
+  MCP_EGRESS_PROFILE: 'selfHostedService',
+  OAUTH_EGRESS_PROFILE: 'contentFetch',
+  McpSsrfError: class McpSsrfError extends Error {},
   isMcpDomainAllowed: () => true,
   validateMcpDomain: () => {},
   validateMcpServerSsrf: async () => '203.0.113.10',
@@ -109,7 +112,7 @@ vi.mock('@/lib/mcp/oauth', () => ({
   getOrCreateOauthRow: vi.fn(),
   loadPreregisteredClient: vi.fn(),
   SimMcpOauthProvider: vi.fn(),
-  withMcpOauthRefreshLock: vi.fn(),
+  withMcpOauthRefreshLock: vi.fn((_id: string, fn: () => Promise<unknown>) => fn()),
 }))
 vi.mock('@/lib/mcp/resolve-config', () => ({
   resolveMcpConfigEnvVars: (...args: unknown[]) => mockResolveEnvVars(...args),

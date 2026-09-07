@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { resolveBlockRetryConfig } from '@sim/workflow-types/workflow'
-import type { Edge } from 'reactflow'
+import type { Edge } from '@xyflow/react'
 import type { CanonicalModeOverrides } from '@/lib/workflows/subblocks/visibility'
 import {
   buildCanonicalIndex,
@@ -22,6 +22,7 @@ import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { getToolParams } from '@/tools/metadata'
+import { expandSubBlockValueToParams } from '@/tools/param-shape'
 
 const logger = createLogger('Serializer')
 
@@ -439,7 +440,12 @@ export class Serializer {
       subBlocks[subBlock.id] = {
         id: subBlock.id,
         type: subBlock.type,
-        value: serializedBlock.config.params[subBlock.id] ?? null,
+        // A checkbox-list serializes to one param per OPTION, so its own id holds
+        // nothing — rebuild the record from those params to keep the round trip lossless.
+        value:
+          collectSubBlockValueFromParams(subBlock, serializedBlock.config.params) ??
+          serializedBlock.config.params[subBlock.id] ??
+          null,
       }
     })
 
@@ -463,6 +469,27 @@ export class Serializer {
       ...(serializedBlock.retry ? { retry: serializedBlock.retry } : {}),
     }
   }
+}
+
+/**
+ * The stored value of a sub-block whose params are spread across several keys, i.e. the
+ * inverse of {@link expandSubBlockValueToParams}. `undefined` for every other sub-block,
+ * which reads its value straight off its own id.
+ */
+function collectSubBlockValueFromParams(
+  subBlock: SubBlockConfig,
+  params: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!expandSubBlockValueToParams(subBlock, {})) return undefined
+
+  const options = Array.isArray(subBlock.options) ? subBlock.options : []
+  const value: Record<string, unknown> = {}
+  for (const option of options) {
+    if (!option || typeof option !== 'object' || !('id' in option) || !option.id) continue
+    const optionId = String(option.id)
+    if (Object.hasOwn(params, optionId)) value[optionId] = params[optionId]
+  }
+  return Object.keys(value).length > 0 ? value : undefined
 }
 
 /** A canonical pair where the active member is empty but an inactive member holds a value that will be silently dropped. */
@@ -528,6 +555,10 @@ export function extractBlockParams(block: BlockState, workspaceId?: string): Rec
     isCustomBlock && blockConfig.subBlocks.some((config) => !RESERVED_PARAMS.has(config.id))
   const isTriggerContext = block.triggerMode ?? false
   const isTriggerCategory = blockConfig.category === 'triggers'
+  // The serializer filters BEFORE it resolves, which is why execution has always been correct
+  // here even unscoped — see `getCanonicalSubBlocksForSurface`.
+  // canonical-index-unscoped: `shouldSerializeSubBlock` drops the inactive surface's members, and
+  // the collapse below reads `params` (the filtered map), never `allValues`.
   const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks)
   const allValues = buildSubBlockValues(block.subBlocks)
 
@@ -578,7 +609,17 @@ export function extractBlockParams(block: BlockState, workspaceId?: string): Rec
         isLegacyAgentField ||
         isCustomBlockInputField)
     ) {
-      params[id] = subBlock.value
+      // A checkbox-list groups several boolean params behind one field, so it projects
+      // onto its option ids rather than its own id — which no tool declares.
+      const expanded = matchingConfigs.reduce<Record<string, boolean> | null>(
+        (found, config) => found ?? expandSubBlockValueToParams(config, subBlock.value),
+        null
+      )
+      if (expanded) {
+        Object.assign(params, expanded)
+      } else {
+        params[id] = subBlock.value
+      }
     }
   })
 
@@ -616,17 +657,16 @@ export function extractBlockParams(block: BlockState, workspaceId?: string): Rec
   Object.values(canonicalIndex.groupsById).forEach((group) => {
     const { basicValue, advancedValue } = getCanonicalValues(group, allValues)
     const hasExplicitOverride = canonicalModeOverrides?.[group.canonicalId] != null
-    const pairMode =
-      hasExplicitOverride || !legacyAdvancedMode
-        ? resolveCanonicalMode(group, allValues, canonicalModeOverrides)
-        : 'advanced'
-    let chosen = pairMode === 'advanced' ? advancedValue : basicValue
-    if (!isNonEmptyValue(chosen)) {
-      const fallback = isNonEmptyValue(advancedValue) ? advancedValue : basicValue
-      if (isNonEmptyValue(fallback)) {
-        chosen = fallback
-      }
-    }
+    // Legacy `advancedMode: true` (a block flag the editor no longer writes) means "the advanced
+    // member of a PAIR wins". A group with no advanced member has nothing for it to select, so it
+    // must resolve normally - forcing 'advanced' there leaves `chosen` undefined while the sourceIds
+    // sweep below still deletes the basic member, dropping the value the block actually holds.
+    // Mirrors the `isCanonicalPair` guard `shouldSerializeSubBlock` already applies upstream.
+    const legacyAdvancedWins = legacyAdvancedMode && !hasExplicitOverride && isCanonicalPair(group)
+    const pairMode = legacyAdvancedWins
+      ? 'advanced'
+      : resolveCanonicalMode(group, allValues, canonicalModeOverrides)
+    const chosen = pairMode === 'advanced' ? advancedValue : basicValue
 
     const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
     sourceIds.forEach((id) => delete params[id])
@@ -685,6 +725,8 @@ export function collectBlockFieldIssues(
   const displayAdvancedOptions = block.advancedMode ?? false
   const isTriggerContext = block.triggerMode ?? false
   const isTriggerCategory = blockConfig.category === 'triggers'
+  // canonical-index-unscoped: same filter-then-resolve ordering as `extractBlockParams`, and a
+  // trigger-mode block returns above before reaching here at all.
   const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks || [])
   const canonicalModeOverrides = block.data?.canonicalModes
   const allValues = buildSubBlockValues(block.subBlocks)

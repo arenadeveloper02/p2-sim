@@ -169,18 +169,36 @@ describe.concurrent('Blocks Module', () => {
       expect(block).toBeDefined()
       expect(block?.hideFromToolbar).toBe(false)
       expect(block?.subBlocks[0].options?.map((option) => option.id)).toEqual([
+        'file_list',
         'file_read',
         'file_get_content',
+        'file_search',
         'file_fetch',
         'file_write',
         'file_append',
+        'file_edit',
         'file_compress',
         'file_decompress',
         'file_manage_sharing',
+        'file_create_folder',
+        'file_update_folder',
+        'file_delete_folder',
+        'file_restore_folder',
+        'file_move',
       ])
+      expect(block?.tools.config?.tool({ operation: 'file_list' })).toBe('file_list')
+      expect(block?.tools.config?.tool({ operation: 'file_delete_folder' })).toBe(
+        'file_delete_folder'
+      )
       expect(block?.tools.config?.tool({ operation: 'file_compress' })).toBe('file_compress')
       expect(block?.tools.config?.tool({ operation: 'file_decompress' })).toBe('file_decompress')
-      expect(block?.subBlocks.find((subBlock) => subBlock.id === 'readFile')?.multiple).toBe(true)
+      expect(block?.subBlocks.find((subBlock) => subBlock.id === 'readFile')?.folderScope).toEqual({
+        fieldId: 'folderSelection',
+        recursiveFieldId: 'folderIncludeSubfolders',
+      })
+      expect(block?.subBlocks.find((subBlock) => subBlock.id === 'folderSelection')?.mode).toBe(
+        'basic'
+      )
       expect(block?.tools.config?.tool({ operation: 'file_read' })).toBe('file_read')
       expect(block?.tools.config?.tool({ operation: 'file_get_content' })).toBe('file_get_content')
       expect(block?.tools.config?.tool({ operation: 'file_fetch' })).toBe('file_fetch')
@@ -610,6 +628,7 @@ describe.concurrent('Blocks Module', () => {
         'variables-input',
         'messages-input',
         'workflow-selector',
+        'workflow-output-selector',
         'workflow-input-mapper',
         'text',
         'router-input',
@@ -882,6 +901,37 @@ describe.concurrent('Blocks Module', () => {
       expect(replacement?.hideFromToolbar).not.toBe(true)
     })
 
+    it('should keep the legacy table block registered but out of discovery', () => {
+      const legacy = getBlock('table')
+      const replacement = getBlock('table_v2')
+
+      // Placed instances must keep resolving and executing.
+      expect(legacy).toBeDefined()
+      expect(legacy?.tools.access).toContain('table_query_rows')
+      // ...while the block itself is gone from the toolbar, search, and mentions.
+      expect(legacy?.hideFromToolbar).toBe(true)
+      expect(legacy?.sunset).toEqual({ status: 'legacy', replacedBy: 'table_v2' })
+      expect(replacement).toBeDefined()
+      expect(replacement?.hideFromToolbar).not.toBe(true)
+      // GA: the reveal gate is gone, so it no longer depends on block-visibility.
+      expect(replacement?.preview).toBeUndefined()
+      expect(replacement?.tools.access).toContain('table_query_rows_v2')
+    })
+
+    /**
+     * Webhook execution gates on `triggers.enabled` at runtime, not on
+     * discovery, so hiding v1 must not disable the trigger it hosts — every
+     * deployed v1 table-trigger workflow depends on it staying live. Both
+     * versions host the same trigger id.
+     */
+    it("should keep the legacy table block's trigger enabled", () => {
+      expect(getBlock('table')?.triggers).toEqual({
+        enabled: true,
+        available: ['table_new_row'],
+      })
+      expect(getBlock('table_v2')?.triggers?.available).toContain('table_new_row')
+    })
+
     /**
      * `openai_embeddings` is an alias of `embeddings_openai`, so the legacy
      * block's runtime payload gained `provider` and `dimensions`. Undeclared,
@@ -934,7 +984,7 @@ describe.concurrent('Blocks Module', () => {
           (sb) => sb.id === 'model' && sb.condition?.value === provider
         )
         if (provider === 'openrouter') {
-          expect(modelSubBlock?.fetchOptions).toBeTypeOf('function')
+          expect(modelSubBlock?.selectorKey).toBeTypeOf('string')
         } else {
           expect(
             Array.isArray(modelSubBlock?.options) ? modelSubBlock.options.length : 0

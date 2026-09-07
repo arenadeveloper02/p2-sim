@@ -1,3 +1,7 @@
+import {
+  BROWSER_WAIT_FOR_RENDERER_GRACE_MS,
+  normalizeBrowserWaitForTimeoutMs,
+} from '@sim/browser-protocol'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { isRecordLike } from '@sim/utils/object'
@@ -20,35 +24,35 @@ import {
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import {
-  BrowserRequestTakeover,
-  CrawlWebsite,
-  CreateFile,
+  ApplyFileEdit,
+  CreateEmptyFile,
   CreateWorkflow,
-  DeployApi,
-  DeployChat,
-  DeployCustomBlock,
-  DeployMcp,
-  DownloadToWorkspaceFile,
-  EditContent,
+  DeployAsApi,
+  DeployAsChat,
+  DeployAsMcp,
+  DownloadFile,
   Ffmpeg,
-  FunctionExecute,
+  GenerateApiKey,
   GenerateAudio,
   GenerateImage,
   GenerateVideo,
-  KnowledgeBase,
   LoadDeployment,
-  MaterializeFile,
+  ManageKnowledgeBase,
   Media,
+  PrepareFileEdit,
   PromoteToLive,
+  PublishCustomBlock,
   Redeploy,
   Run,
   RunBlock,
   RunCode,
   RunFromBlock,
+  RunFunction,
   RunWorkflow,
   RunWorkflowUntilBlock,
+  SaveUpload,
   Search,
-  WorkspaceFile,
+  WebCrawl,
 } from '@/lib/copilot/generated/tool-catalog-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { publishToolConfirmation } from '@/lib/copilot/persistence/tool-confirm'
@@ -61,7 +65,10 @@ import {
   setTerminalToolCallState,
 } from '@/lib/copilot/request/tool-call-state'
 import { maybeWriteOutputToFile } from '@/lib/copilot/request/tools/files'
-import { inspectToolResultForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
+import {
+  describeWithholdingCause,
+  inspectToolResultForCopilot,
+} from '@/lib/copilot/request/tools/resolved-secret-result'
 import { handleResourceSideEffects } from '@/lib/copilot/request/tools/resources'
 import {
   maybeWriteOutputToTable,
@@ -216,7 +223,7 @@ const LONG_RUNNING_TOOL_IDS: ReadonlySet<string> = new Set([
   RunFromBlock.id,
   RunWorkflow.id,
   RunWorkflowUntilBlock.id,
-  FunctionExecute.id,
+  RunFunction.id,
   RunCode.id,
   GenerateImage.id,
   GenerateAudio.id,
@@ -224,17 +231,17 @@ const LONG_RUNNING_TOOL_IDS: ReadonlySet<string> = new Set([
   Ffmpeg.id,
   Media.id,
   Search.id,
-  CrawlWebsite.id,
-  KnowledgeBase.id,
-  DownloadToWorkspaceFile.id,
-  CreateFile.id,
-  EditContent.id,
-  MaterializeFile.id,
-  WorkspaceFile.id,
-  DeployApi.id,
-  DeployChat.id,
-  DeployCustomBlock.id,
-  DeployMcp.id,
+  WebCrawl.id,
+  ManageKnowledgeBase.id,
+  DownloadFile.id,
+  CreateEmptyFile.id,
+  ApplyFileEdit.id,
+  SaveUpload.id,
+  PrepareFileEdit.id,
+  DeployAsApi.id,
+  DeployAsChat.id,
+  PublishCustomBlock.id,
+  DeployAsMcp.id,
   Redeploy.id,
   LoadDeployment.id,
   PromoteToLive.id,
@@ -247,21 +254,22 @@ export function toolWatchdogTimeoutMs(toolName: string | undefined): number {
 }
 
 /**
- * How long the resume gate may wait on one pending tool call. Null means the
- * tool is durably waiting on a person and has no deadline.
- *
- * A call sitting on a permission prompt is waiting on a person, not on the
- * executor, so the tool's own watchdog is the wrong bound — the 60s default
- * would force-fail the prompt while the user was still reading it. Such a call
- * gets the long-running budget, which matches the gate's own wait timeout.
+ * How long the resume gate may wait on one pending tool call. Permission
+ * prompts receive the long-running budget, while `browser_wait_for` receives
+ * its normalized requested timeout plus renderer delivery grace.
  */
 export function pendingToolWaitBudgetMs(
-  toolCall: Pick<ToolCallState, 'name' | 'status'> | undefined
-): number | null {
-  if (toolCall?.name === BrowserRequestTakeover.id && toolCall.status === 'executing') {
-    return null
-  }
+  toolCall:
+    | (Pick<ToolCallState, 'name' | 'status'> & Partial<Pick<ToolCallState, 'params'>>)
+    | undefined
+): number {
   if (toolCall?.status === 'awaiting_approval') return TOOL_WATCHDOG_LONG_RUNNING_MS
+  if (toolCall?.name === 'browser_wait_for') {
+    return (
+      normalizeBrowserWaitForTimeoutMs(toolCall.params?.timeoutMs) +
+      BROWSER_WAIT_FOR_RENDERER_GRACE_MS
+    )
+  }
   return toolWatchdogTimeoutMs(toolCall?.name)
 }
 
@@ -497,6 +505,8 @@ async function executeToolAndReportInner(
     })
   }
 
+  // Loads the handler map on first use; the abort check below covers that wait.
+  await ensureHandlersRegistered()
   if (abortRequested(context, execContext, options)) {
     markToolCallCancelled('Request aborted before tool execution')
     markToolResultSeen(toolCall.id)
@@ -600,7 +610,6 @@ async function executeToolAndReportInner(
   }
 
   try {
-    ensureHandlersRegistered()
     let result = await executeToolWithWatchdog(toolCall, toolExecutionContext)
     if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
       endToolSpanFromTerminalState()
@@ -609,7 +618,8 @@ async function executeToolAndReportInner(
     if (abortRequested(context, execContext, options)) {
       const copilotResult = inspectToolResultForCopilot(
         result,
-        toolExecutionContext.resolvedSecretTraceRegistry
+        toolExecutionContext.resolvedSecretTraceRegistry,
+        toolCall.name
       ).result
       markToolCallCancelled('Request aborted during tool execution')
       markToolResultSeen(toolCall.id)
@@ -725,7 +735,8 @@ async function executeToolAndReportInner(
     }
     const projection = inspectToolResultForCopilot(
       result,
-      toolExecutionContext.resolvedSecretTraceRegistry
+      toolExecutionContext.resolvedSecretTraceRegistry,
+      toolCall.name
     )
     const copilotResult = projection.result
     mergeToolRegistry(projection.safe)
@@ -734,6 +745,21 @@ async function executeToolAndReportInner(
     toolSpan.attributes = {
       ...toolSpan.attributes,
       ...summarizeToolResultForSpan(copilotResult),
+      ...(projection.safe
+        ? {}
+        : { resultWithheld: true, ...describeWithholdingCause(projection.cause) }),
+    }
+    if (!projection.safe) {
+      // A withheld SUCCESS otherwise leaves no trace anywhere: the span reads
+      // ok and the model just sees a bare `{success: true}` with no output.
+      // The cause is what says whether a guard latched, no catalog was built,
+      // or the payload itself was unprojectable — three different fixes.
+      logger.warn('Tool result withheld by egress projection', {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        runtimeSucceeded: result.success,
+        ...describeWithholdingCause(projection.cause),
+      })
     }
 
     setTerminalToolCallState(toolCall, {
@@ -807,8 +833,12 @@ async function executeToolAndReportInner(
       return cancelledCompletion('Request aborted before tool result delivery')
     }
 
-    // Fire-and-forget: notify the copilot backend that the tool completed.
-    // IMPORTANT: We must NOT await this — the Go backend may block on the
+    // A newly generated API key is intentionally included only in this
+    // live/replay client event. Model-facing results and long-term chat records stay redacted.
+    const clientEventOutput =
+      toolCall.name === GenerateApiKey.id && modelSucceeded && hasOutputValue(copilotResult)
+        ? copilotResult.output
+        : terminalData
     const resultEvent: StreamEvent = {
       type: MothershipStreamV1EventType.tool,
       payload: {
@@ -818,7 +848,7 @@ async function executeToolAndReportInner(
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.result,
         success: modelSucceeded,
-        output: terminalData,
+        output: clientEventOutput,
         ...(modelSucceeded
           ? { status: MothershipStreamV1ToolOutcome.success }
           : { status: MothershipStreamV1ToolOutcome.error, error: terminalMessage }),
@@ -856,7 +886,8 @@ async function executeToolAndReportInner(
     const thrownMessage = toError(error).message
     const projection = inspectToolResultForCopilot(
       { success: false, error: thrownMessage },
-      toolExecutionContext.resolvedSecretTraceRegistry
+      toolExecutionContext.resolvedSecretTraceRegistry,
+      toolCall.name
     )
     const copilotError = projection.result
     mergeToolRegistry(projection.safe)

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import { MAX_OAUTH_CODE_LENGTH, workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import type {
   ContractBody,
   ContractBodyInput,
@@ -113,6 +113,7 @@ export const oauthTokenPostHeadersSchema = z.object({
 
 const oauthTokenResponseSchema = z.object({
   accessToken: z.string(),
+  credentialType: z.enum(['oauth', 'managed_oauth', 'service_account']).optional(),
   idToken: z.string().optional(),
   instanceUrl: z.string().optional(),
   /** Zoho Desk — the data-center-scoped Desk REST base for this credential. */
@@ -157,13 +158,6 @@ export const shopifyCallbackQuerySchema = z.object({
   code: z.string().optional(),
   state: z.string().optional(),
   shop: z.string().optional(),
-})
-
-export const shopifyStoreCookieSchema = z.object({
-  accessToken: z.string().min(1),
-  shopDomain: z.string().min(1),
-  scope: z.string().optional(),
-  returnUrl: z.string().optional(),
 })
 
 const SHOPIFY_SHOP_DOMAIN_REGEX = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\.myshopify\.com$/
@@ -229,7 +223,6 @@ export const trelloCallbackContract = defineRouteContract({
 })
 
 const MAX_OAUTH_RETURN_URL_LENGTH = 2048
-const MAX_OAUTH_CODE_LENGTH = 8192
 const MAX_OAUTH_STATE_LENGTH = 256
 const MAX_OAUTH_ERROR_LENGTH = 2048
 

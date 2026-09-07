@@ -1,7 +1,7 @@
 import type { GmailMarkReadParams, GmailToolResponse } from '@/tools/gmail/types'
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const gmailDeleteTool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+export const gmailDeleteTool: InternalToolConfig<GmailMarkReadParams, GmailToolResponse> = {
   id: 'gmail_delete',
   name: 'Gmail Delete',
   description: 'Delete a Gmail message (move to trash)',
@@ -27,13 +27,8 @@ export const gmailDeleteTool: ToolConfig<GmailMarkReadParams, GmailToolResponse>
     },
   },
 
-  request: {
-    url: '/api/tools/gmail/delete',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: GmailMarkReadParams) => ({
+  operation: {
+    input: (params: GmailMarkReadParams) => ({
       accessToken: params.accessToken,
       messageId: params.messageId,
     }),
@@ -76,14 +71,23 @@ export const gmailDeleteTool: ToolConfig<GmailMarkReadParams, GmailToolResponse>
   },
 }
 
-export const gmailDeleteV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+interface GmailModifyV2Response {
+  success: boolean
+  output: {
+    id?: string
+    threadId?: string
+    labelIds?: string[]
+  }
+}
+
+export const gmailDeleteV2Tool: InternalToolConfig<GmailMarkReadParams, GmailModifyV2Response> = {
   id: 'gmail_delete_v2',
   name: 'Gmail Delete',
   description: 'Delete a Gmail message (move to trash)',
   version: '2.0.0',
   oauth: gmailDeleteTool.oauth,
   params: gmailDeleteTool.params,
-  request: gmailDeleteTool.request,
+  operation: gmailDeleteTool.operation,
   transformResponse: async (response) => {
     return await gmailDeleteTool.transformResponse!(response)
   },

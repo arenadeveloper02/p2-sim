@@ -1,9 +1,11 @@
+import type { WorkflowExecutionAuthority, WorkflowExecutionPrincipal } from '@sim/auth/principal'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { TraceSpan } from '@/lib/logs/types'
-import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
+import type { PermissionGroupConfig } from '@/lib/permission-groups/fields'
 import type { BlockOutput } from '@/blocks/types'
 import type {
   ChildWorkflowContext,
+  ExecutionCallbacks,
   IterationContext,
   ParentIteration,
   PiiBlockOutputRedaction,
@@ -239,6 +241,17 @@ export type ExecutionControlOutputFieldName = (typeof EXECUTION_CONTROL_OUTPUT_F
 /** Start block output key that carries trusted, server-injected run metadata. */
 export const START_BLOCK_METADATA_FIELD = 'metadata'
 
+/** Authenticated human or provider subject safe to expose to workflow authors. */
+export type StartBlockRunSubject =
+  | { kind: 'sim_user'; userId: string; email: string }
+  | { kind: 'authenticated_email'; email: string }
+  | {
+      kind: 'external_user'
+      provider: string
+      tenantId: string
+      subjectId: string
+    }
+
 /**
  * Trusted run metadata surfaced under `<start.metadata.*>` when the Start
  * block's "Add run metadata" toggle is enabled. Built server-side from the
@@ -249,7 +262,7 @@ export const START_BLOCK_METADATA_FIELD = 'metadata'
  * authoring-time-known identity.
  */
 export interface StartBlockRunMetadata {
-  userEmail?: string | null
+  subject?: StartBlockRunSubject | null
   workspaceId?: string | null
   workflowId?: string | null
   executionId?: string
@@ -289,6 +302,21 @@ export interface BlockLog {
    * while preserving data for trace-spans processing.
    */
   childTraceSpans?: TraceSpan[]
+  /**
+   * A custom block's child run, which executes under its own execution id against
+   * the SOURCE workspace. Only the opaque id crosses the invocation boundary — the
+   * child's spans stay on its own log row and are joined at READ time. Written only
+   * for a block whose publisher opted its runs into consumer traces — the presence of
+   * this id IS that permission. Kept off `output` for the same reason
+   * {@link childTraceSpans} is.
+   */
+  childExecution?: { executionId: string }
+  /**
+   * A custom block ran a child whose publisher has not opened it to consumers, so no
+   * `childExecution` handle exists to join. Recorded because a boundary span with
+   * no children is otherwise indistinguishable from a leaf block.
+   */
+  childTraceDisabled?: boolean
   /** Internal encrypted sidecar used only for causal display projection. */
   displayResolvedSecretTraceProvenance?: ResolvedSecretTraceProvenanceV1
 }
@@ -318,6 +346,25 @@ interface ExecutionMetadata {
   userId?: string
   sessionUserId?: string
   workflowUserId?: string
+  /**
+   * Person whose permission group gates what this run's tools, models and
+   * blocks may do — the *gate*, deliberately separate from {@link userId},
+   * which is the billing/rate actor and the credential subject.
+   *
+   * The two coincide for a session-triggered run and diverge whenever the
+   * trigger has no acting person to charge: a table cell dispatched by a
+   * workspace API key attributes to the workspace's billing owner, and gating
+   * on that bystander is wrong in both directions — it applies a denylist
+   * nobody meant to apply, and it skips the one belonging to whoever actually
+   * asked.
+   *
+   * Tri-state on purpose. `undefined` means the trigger declares no separate
+   * gate, so the gate stays on {@link userId} (every surface that has always
+   * had one acting person). A declared `string` gates on that person; a
+   * declared `null` is an actorless run and applies no group gate at all.
+   */
+  capabilityGovernedUserId?: string | null
+  principal?: WorkflowExecutionPrincipal
   executionId?: string
   triggerType?: string
   triggerBlockId?: string
@@ -348,9 +395,11 @@ export interface BlockState {
  * publisher-owned child execution after opening their own source-workspace log row.
  */
 export interface ExecutorDelegationOrigin {
-  subjectUserId: string
+  subjectUserId?: string
   workflowId: string
   executionId?: string
+  principal?: WorkflowExecutionPrincipal
+  currentWorkflow?: WorkflowExecutionAuthority
 }
 
 export interface ExecutionContext {
@@ -362,6 +411,8 @@ export interface ExecutionContext {
   fileKeys?: string[]
   allowLargeValueWorkflowScope?: boolean
   userId?: string
+  /** Original authenticated caller for resource-policy decisions. */
+  principal?: WorkflowExecutionPrincipal
   /** Trusted origin for signed executor delegation, distinct from the currently executing child. */
   executorDelegationOrigin?: ExecutorDelegationOrigin
   isDeployedContext?: boolean
@@ -372,6 +423,31 @@ export interface ExecutionContext {
 
   permissionConfig?: PermissionGroupConfig | null
   permissionConfigLoaded?: boolean
+
+  /**
+   * Resolved display names for the resources an agent tool is bound to, keyed `${kind}:${id}`,
+   * with `null` recording a miss so it is not retried. Shared across the whole run: an agent block
+   * inside a loop re-formats its tools every iteration, and its bound resources do not change.
+   *
+   * A Map rather than plain fields on purpose — `blockCtx` is a shallow clone of this context per
+   * block execution, so only a shared reference survives; a scalar written here would be lost.
+   */
+  toolBindingLabelCache?: Map<string, string | null>
+
+  /**
+   * Files produced during this execution, indexed by {@link UserFile.id}, so a
+   * model can name one by id in a tool argument and the runtime can hydrate it
+   * into the full object.
+   *
+   * Needed because a file an agent has just seen — a Gmail attachment fetched
+   * moments ago in the same turn — lives only in that turn's tool results, not
+   * in any block state or workspace row, so nothing else can resolve it. The
+   * index only *selects*; every read is still authorized on its own.
+   *
+   * A Map for the same reason as {@link toolBindingLabelCache}: `blockCtx` is a
+   * shallow clone per block execution, so only a shared reference survives.
+   */
+  executionFilesById?: Map<string, UserFile>
 
   blockStates: ReadonlyMap<string, BlockState>
   executedBlocks: ReadonlySet<string>
@@ -536,6 +612,34 @@ export interface ExecutionContext {
   callChain?: string[]
 
   /**
+   * The Sim user watching this run's live block stream, when there is exactly one
+   * and they are a known, authenticated workspace member — i.e. an editor/manual
+   * run. Deliberately UNSET on chat deployments, public API, webhook, and schedule
+   * runs, whose stream consumer may be an anonymous external visitor.
+   *
+   * Whether a custom block may stream the SOURCE workflow's block events is the
+   * publisher's decision, not this viewer's — but that decision covers the ORG, so it
+   * still requires a stream with an identified consumer. This field is the proof of
+   * one; absent, the boundary holds and every anonymous-consumer surface is
+   * fail-closed by default.
+   */
+  liveTraceViewerUserId?: string
+
+  /**
+   * Block callbacks that ONLY emit to the live stream — they never write the invoking
+   * run's progress markers. `onBlockStart`/`onBlockComplete` above are persist-then-emit
+   * composites: on the invoking run they write block names and I/O into that run's
+   * `LoggingSession` before reaching the stream.
+   *
+   * A custom block's child must reach the emit half and never the persist half. The
+   * stream is gated on the publisher's trace policy AND an identified consumer, but a
+   * persisted marker is keyed by the PARENT execution and is readable by anyone with
+   * parent-workspace access on any surface — so persisting the source workflow's block
+   * names there would leak them past the gate entirely.
+   */
+  liveStreamCallbacks?: Pick<ExecutionCallbacks, 'onBlockStart' | 'onBlockComplete'>
+
+  /**
    * Counter for generating monotonically increasing execution order values.
    * Starts at 0 and increments for each block. Use getNextExecutionOrder() to access.
    */
@@ -570,6 +674,12 @@ export interface ExecutionResult {
 }
 
 export interface StreamingExecution {
+  /** Selected block identity: a root block ID or `childWorkflowId.blockRef`. */
+  blockId?: string
+  /** Internal identity that disambiguates repeated invocations of one child workflow. */
+  childWorkflowInstanceId?: string
+  /** Per-run invocation order, unique across loop and parallel executions. */
+  executionOrder?: number
   /**
    * Provider stream payload. Format is declared by {@link streamFormat}:
    * - `'text'` (default): UTF-8 answer bytes (`ReadableStream<Uint8Array>`)
@@ -619,29 +729,45 @@ interface BlockExecutor {
   ): Promise<BlockOutput>
 }
 
+/**
+ * Per-invocation identity for one run of one block.
+ *
+ * `executionOrder` is the field a `keyed` delivery derives its idempotency token
+ * from. It is assigned once, before the block executor's retry wrapper, and is
+ * distinct per loop iteration and per parallel branch — so it is both stable
+ * across every retry layer and distinguishing between logically separate
+ * invocations. Both halves are required; see `KeyedDeliveryContext`.
+ */
+export interface BlockNodeMetadata {
+  nodeId: string
+  loopId?: string
+  parallelId?: string
+  branchIndex?: number
+  branchTotal?: number
+  originalBlockId?: string
+  isLoopNode?: boolean
+  executionOrder?: number
+}
+
 export interface BlockHandler {
   canHandle(block: SerializedBlock): boolean
 
+  /**
+   * `nodeMetadata` is optional so the many handlers that do not need an
+   * invocation identity keep their three-parameter signature.
+   */
   execute(
     ctx: ExecutionContext,
     block: SerializedBlock,
-    inputs: Record<string, any>
+    inputs: Record<string, any>,
+    nodeMetadata?: BlockNodeMetadata
   ): Promise<BlockOutput | StreamingExecution>
 
   executeWithNode?: (
     ctx: ExecutionContext,
     block: SerializedBlock,
     inputs: Record<string, any>,
-    nodeMetadata: {
-      nodeId: string
-      loopId?: string
-      parallelId?: string
-      branchIndex?: number
-      branchTotal?: number
-      originalBlockId?: string
-      isLoopNode?: boolean
-      executionOrder?: number
-    }
+    nodeMetadata: BlockNodeMetadata
   ) => Promise<BlockOutput | StreamingExecution>
 }
 

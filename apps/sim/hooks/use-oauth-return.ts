@@ -23,6 +23,7 @@ import {
   setOAuthChatAttemptStatus,
 } from '@/lib/credentials/oauth-chat-attempt'
 import { getDesktopBridge } from '@/lib/desktop'
+import { stripMicrosoftDataverseEnvironmentFromOAuthCallback } from '@/lib/oauth/microsoft-dataverse'
 import {
   handleUnipileHostedRedirect,
   readAndClearUnipileHostedRedirectParams,
@@ -30,9 +31,9 @@ import {
 import { oauthConnectionsKeys } from '@/hooks/queries/oauth/oauth-connections'
 import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 import { requireWorkspaceCredentialListResponse } from '@/hooks/queries/utils/fetch-workspace-credentials'
+import { SETTINGS_RETURN_URL_KEY } from '@/hooks/use-settings-navigation'
 
 const OAUTH_CREDENTIAL_UPDATED_EVENT = 'oauth-credentials-updated'
-const SETTINGS_RETURN_URL_KEY = 'settings-return-url'
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000
 
 export interface OAuthResultMessage {
@@ -111,6 +112,15 @@ function clearOAuthChatAttemptParam(): void {
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }
 
+function clearDataverseOAuthEnvironmentParam(): void {
+  const current = window.location.href
+  const cleaned = stripMicrosoftDataverseEnvironmentFromOAuthCallback(current)
+  if (cleaned !== current) {
+    const url = new URL(cleaned)
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+}
+
 const VERIFY_ATTEMPT_TRIES = 4
 const VERIFY_BACKOFF_BASE_MS = 400
 
@@ -182,6 +192,7 @@ export function useOAuthReturnRouter() {
   const chatAttemptHandledRef = useRef(false)
 
   useEffect(() => {
+    clearDataverseOAuthEnvironmentParam()
     let isChatAttemptReturn = false
     if (!chatAttemptHandledRef.current) {
       const attemptId = new URL(window.location.href).searchParams.get(OAUTH_CHAT_ATTEMPT_PARAM)
@@ -286,6 +297,7 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
   const handledRef = useRef(false)
 
   useEffect(() => {
+    clearDataverseOAuthEnvironmentParam()
     if (handledRef.current) return
 
     const redirectParams = readAndClearUnipileHostedRedirectParams()
@@ -346,6 +358,7 @@ export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
   const handledRef = useRef(false)
 
   useEffect(() => {
+    clearDataverseOAuthEnvironmentParam()
     if (handledRef.current) return
 
     const redirectParams = readAndClearUnipileHostedRedirectParams()

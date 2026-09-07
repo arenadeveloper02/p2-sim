@@ -1,24 +1,45 @@
 import { createLogger } from '@sim/logger'
 import { NextResponse } from 'next/server'
 import { validationErrorResponseFromError } from '@/lib/api/server'
+import {
+  resolveUserKnowledgeAccessScope,
+  WORKSPACE_ACCESS_SCOPE,
+} from '@/lib/knowledge/access/scope'
+import type { KnowledgeAccessScope } from '@/lib/knowledge/access/types'
 import { getKnowledgeBaseById } from '@/lib/knowledge/service'
 import type { KnowledgeBaseWithCounts } from '@/lib/knowledge/types'
-import { type RateLimitResult, validateWorkspaceAccess } from '@/app/api/v1/middleware'
+import {
+  type RateLimitResult,
+  type V1RouteCapability,
+  validateWorkspaceAccess,
+} from '@/app/api/v1/middleware'
 
 const logger = createLogger('V1KnowledgeAPI')
 
 /**
- * Fetches a KB by ID, validates it exists, belongs to the workspace,
- * and the user has permission. Returns the KB or a NextResponse error.
+ * Fetches a KB by ID, validates it exists, belongs to the workspace, the user
+ * has permission, and the caller's permission group grants `capability`.
+ * Returns the KB or a NextResponse error.
+ *
+ * `capability` is required rather than defaulted to `knowledge.use` because
+ * uploading a document is withheld separately (`knowledge.upload`), and a
+ * default would let a route added later inherit a gate nobody chose for it.
  */
 export async function resolveKnowledgeBase(
   id: string,
   workspaceId: string,
   userId: string,
   rateLimit: RateLimitResult,
+  capability: V1RouteCapability,
   level: 'read' | 'write' = 'read'
 ): Promise<{ kb: KnowledgeBaseWithCounts } | NextResponse> {
-  const accessError = await validateWorkspaceAccess(rateLimit, userId, workspaceId, level)
+  const accessError = await validateWorkspaceAccess(
+    rateLimit,
+    userId,
+    workspaceId,
+    capability,
+    level
+  )
   if (accessError) return accessError
 
   const kb = await getKnowledgeBaseById(id)
@@ -29,6 +50,19 @@ export async function resolveKnowledgeBase(
     return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
   }
   return { kb }
+}
+
+/**
+ * The document-access scope of a v1 API caller. A personal key acts as its
+ * user; a workspace key has no person behind it and reads as the workspace.
+ */
+export async function resolveV1KnowledgeAccessScope(
+  userId: string,
+  rateLimit: { keyType?: 'personal' | 'workspace' },
+  workspaceId: string | undefined
+): Promise<KnowledgeAccessScope> {
+  if (rateLimit.keyType === 'workspace') return WORKSPACE_ACCESS_SCOPE
+  return resolveUserKnowledgeAccessScope(userId, workspaceId)
 }
 
 /**

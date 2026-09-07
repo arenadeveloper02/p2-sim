@@ -14,10 +14,14 @@ vi.mock('@/lib/core/security/input-validation.server', () => ({
 import { secureFetchWithRetry } from './secure-fetch.server'
 import {
   fetchWithRetry,
+  getRetryAfterMs,
   type HTTPError,
   hasRateLimitEvidence,
+  isRateLimitError,
   isRetryableError,
+  readBoundedHttpErrorPayload,
   resolveRetryDelayMs,
+  retryWithExponentialBackoff,
 } from './utils'
 
 /** Case-insensitive header reader over a plain lowercase-keyed record. */
@@ -43,7 +47,35 @@ function fakeResponse(
   }
 }
 
-const FAST_RETRY = { initialDelayMs: 1, maxDelayMs: 2, maxRetries: 3 }
+const FAST_RETRY = { initialDelayMs: 1, maxDelayMs: 2, maxRetries: 3, retryBudgetMs: 1_000 }
+
+describe('readBoundedHttpErrorPayload', () => {
+  it('returns a typed failure and cancels a response body that exceeds 64KiB', async () => {
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024 + 1))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+
+    const result = await readBoundedHttpErrorPayload(new Response(body))
+
+    expect(result).toEqual({ ok: false, reason: 'too_large' })
+    expect(cancelled).toBe(true)
+  })
+
+  it('reports an unreadable body as unavailable without observed size evidence', async () => {
+    const result = await readBoundedHttpErrorPayload({
+      body: null,
+      headers: { get: () => null },
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'unavailable' })
+  })
+})
 
 describe('isRetryableError', () => {
   describe('retryable status codes', () => {
@@ -65,6 +97,10 @@ describe('isRetryableError', () => {
     it.concurrent('returns true for 504 on Error with status', () => {
       const error = Object.assign(new Error('Gateway Timeout'), { status: 504 })
       expect(isRetryableError(error)).toBe(true)
+    })
+
+    it.concurrent.each([520, 522])('returns true for transient Cloudflare status %i', (status) => {
+      expect(isRetryableError({ status })).toBe(true)
     })
 
     it.concurrent('returns true for plain object with status 429', () => {
@@ -323,8 +359,7 @@ describe('resolveRetryDelayMs', () => {
   /**
    * GitHub and X stamp their rate-limit headers on every response. Without the
    * evidence gate a transient 502 would be handed the rest of the hourly window
-   * as its wait, which the retry loop clamps to a flat maxDelayMs on every
-   * attempt — replacing the exponential ladder with 5x the wall-clock stall.
+   * as its wait instead of following the exponential backoff ladder.
    */
   it.concurrent('ignores a reset header when the quota is NOT exhausted', () => {
     expect(
@@ -378,7 +413,7 @@ describe('resolveRetryDelayMs', () => {
   })
 
   /** The 30s default cap in `parseRetryAfter` must not truncate the value here. */
-  it.concurrent('does not truncate a long Retry-After — the retry loop owns the cap', () => {
+  it.concurrent('does not truncate a long Retry-After — retry policy owns admission', () => {
     expect(resolveRetryDelayMs(headers({ 'retry-after': '900' }), NOW)).toBe(900_000)
   })
 })
@@ -388,6 +423,7 @@ describe('fetchWithRetry rate-limit handling', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    vi.useRealTimers()
   })
 
   /** Builds a Response-shaped object with real case-insensitive Headers. */
@@ -407,7 +443,7 @@ describe('fetchWithRetry rate-limit handling', () => {
       .mockResolvedValueOnce(
         response(403, {
           'x-ratelimit-remaining': '0',
-          'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 1),
+          'retry-after': '0.001',
         })
       )
       .mockResolvedValueOnce(response(200))
@@ -417,6 +453,66 @@ describe('fetchWithRetry rate-limit handling', () => {
 
     expect(result.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([520, 522])('retries transient Cloudflare status %i and succeeds', async (status) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(status))
+      .mockResolvedValueOnce(response(200))
+    globalThis.fetch = fetchMock
+
+    const result = await fetchWithRetry('https://api.fireflies.ai/graphql', {}, FAST_RETRY)
+
+    expect(result.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds the provider body carried by a retry error', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('x'.repeat(70 * 1024), {
+        status: 522,
+        statusText: 'Connection timed out',
+      })
+    )
+    globalThis.fetch = fetchMock
+
+    const error = await fetchWithRetry(
+      'https://api.fireflies.ai/graphql',
+      {},
+      {
+        ...FAST_RETRY,
+        maxRetries: 0,
+      }
+    ).then(
+      () => undefined,
+      (caught) => caught as Error
+    )
+
+    expect(error?.message).toContain('response body omitted')
+    expect(error?.message.length).toBeLessThan(500)
+  })
+
+  it('omits a provider-controlled response body from the retry error', async () => {
+    const providerControlledMarker = 'provider-controlled-response-marker'
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ diagnostic: providerControlledMarker }), {
+        status: 522,
+        statusText: `Connection timed out: ${providerControlledMarker}`,
+      })
+    )
+
+    const error = await fetchWithRetry(
+      'https://api.fireflies.ai/graphql',
+      {},
+      { ...FAST_RETRY, maxRetries: 0 }
+    ).then(
+      () => undefined,
+      (caught) => caught as Error
+    )
+
+    expect(error?.message).toContain('[response body omitted]')
+    expect(error?.message).not.toContain(providerControlledMarker)
   })
 
   it('does not retry an authorization 403 with quota remaining', async () => {
@@ -429,26 +525,81 @@ describe('fetchWithRetry rate-limit handling', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('derives the wait from x-rate-limit-reset on a 429 with no Retry-After (X)', async () => {
+  it('does not retry GitHub before a reset beyond the operation budget', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        response(429, {
-          'x-rate-limit-remaining': '0',
-          'x-rate-limit-reset': String(Math.floor(Date.now() / 1000) + 900),
+        response(403, {
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 900),
         })
       )
       .mockResolvedValueOnce(response(200))
     globalThis.fetch = fetchMock
 
-    const started = Date.now()
-    // maxDelayMs clamps the 15-minute window down to 2ms for this test.
-    const result = await fetchWithRetry('https://api.twitter.com/2/users', {}, FAST_RETRY)
+    const error = await fetchWithRetry('https://api.github.com/repos', {}, FAST_RETRY).then(
+      () => undefined,
+      (caught) => caught as Error
+    )
 
-    expect(result.status).toBe(200)
+    expect(error?.message).toBe('HTTP 403 - upstream rate limit exceeded')
+    expect(getRetryAfterMs(error)).toBeGreaterThan(899_000)
+    expect(getRetryAfterMs(error)).toBeLessThanOrEqual(900_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels an omitted rate-limit response body before throwing', async () => {
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true
+      },
+    })
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 429,
+        headers: { 'retry-after': '900' },
+      })
+    )
+
+    await expect(
+      fetchWithRetry('https://api.github.com/repos', {}, { ...FAST_RETRY, maxRetries: 0 })
+    ).rejects.toThrow('HTTP 429 - upstream rate limit exceeded')
+    expect(cancelled).toBe(true)
+  })
+
+  it('waits until an admitted x-rate-limit-reset instant before retrying', async () => {
+    vi.useFakeTimers()
+    const now = 1_700_000_000_000
+    vi.setSystemTime(now)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response(429, {
+          'x-rate-limit-remaining': '0',
+          'x-rate-limit-reset': String(now / 1000 + 1),
+        })
+      )
+      .mockResolvedValueOnce(response(200))
+    globalThis.fetch = fetchMock
+
+    const result = fetchWithRetry(
+      'https://api.twitter.com/2/users',
+      {},
+      {
+        maxRetries: 1,
+        initialDelayMs: 1,
+        maxDelayMs: 10,
+        maxRetryAfterMs: 1_500,
+        retryBudgetMs: 1_500,
+      }
+    )
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(result).resolves.toMatchObject({ status: 200 })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    // Clamped by maxDelayMs, so the reset window never stalls the loop.
-    expect(Date.now() - started).toBeLessThan(1000)
   })
 
   /**
@@ -476,6 +627,154 @@ describe('fetchWithRetry rate-limit handling', () => {
   })
 })
 
+describe('getRetryAfterMs', () => {
+  it('finds a validated retry delay through an error cause chain', () => {
+    const providerError = Object.assign(new Error('rate limited'), { retryAfterMs: 45_000 })
+    expect(getRetryAfterMs(new Error('connector failed', { cause: providerError }))).toBe(45_000)
+  })
+
+  it.each([undefined, null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, '30000'])(
+    'ignores an invalid retry delay: %s',
+    (retryAfterMs) => {
+      expect(getRetryAfterMs(Object.assign(new Error('invalid'), { retryAfterMs }))).toBeUndefined()
+    }
+  )
+})
+
+describe('isRateLimitError', () => {
+  it('accepts a 429 without requiring response headers', () => {
+    expect(isRateLimitError(Object.assign(new Error('throttled'), { status: 429 }))).toBe(true)
+  })
+
+  it('accepts a GitHub 403 only with structured rate-limit evidence', () => {
+    expect(
+      isRateLimitError(
+        Object.assign(new Error('forbidden'), {
+          status: 403,
+          headers: headers({ 'x-ratelimit-remaining': '0' }),
+        })
+      )
+    ).toBe(true)
+    expect(isRateLimitError(Object.assign(new Error('forbidden'), { status: 403 }))).toBe(false)
+  })
+
+  it('finds a structured rate-limit rejection through an error cause chain', () => {
+    const providerError = Object.assign(new Error('throttled'), { status: 429 })
+    expect(isRateLimitError(new Error('hydration failed', { cause: providerError }))).toBe(true)
+  })
+
+  it('accepts a provider-normalized throttle without HTTP rate-limit headers', () => {
+    expect(
+      isRateLimitError(
+        Object.assign(new Error('Google Drive API request failed with HTTP 403'), {
+          status: 403,
+          rateLimited: true,
+        })
+      )
+    ).toBe(true)
+  })
+
+  it('does not classify retryable text or transient HTTP failures as provider throttling', () => {
+    expect(isRateLimitError(new Error('rate limit exceeded'))).toBe(false)
+    expect(isRateLimitError(Object.assign(new Error('unavailable'), { status: 503 }))).toBe(false)
+  })
+})
+
+describe('retryWithExponentialBackoff retry budget', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('honors an admitted server delay without making an early request', async () => {
+    vi.useFakeTimers()
+    const retryable = Object.assign(new Error('rate limited'), {
+      status: 429,
+      retryAfterMs: 120,
+    })
+    const operation = vi.fn().mockRejectedValueOnce(retryable).mockResolvedValueOnce('ok')
+
+    const result = retryWithExponentialBackoff(operation, {
+      maxRetries: 1,
+      initialDelayMs: 10,
+      maxDelayMs: 30,
+      retryBudgetMs: 150,
+    })
+
+    await vi.advanceTimersByTimeAsync(119)
+    expect(operation).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(result).resolves.toBe('ok')
+    expect(operation).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry when the server delay exceeds the operation budget', async () => {
+    const retryable = Object.assign(new Error('rate limited'), {
+      status: 429,
+      retryAfterMs: 120,
+    })
+    const operation = vi.fn().mockRejectedValue(retryable)
+
+    await expect(
+      retryWithExponentialBackoff(operation, {
+        maxRetries: 3,
+        initialDelayMs: 1,
+        maxDelayMs: 30,
+        retryBudgetMs: 100,
+      })
+    ).rejects.toThrow('rate limited')
+    expect(operation).toHaveBeenCalledOnce()
+  })
+
+  it('does not treat the legacy per-wait ceiling as a cumulative retry budget', async () => {
+    vi.useFakeTimers()
+    const retryable = Object.assign(new Error('service unavailable'), { status: 503 })
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(retryable)
+      .mockRejectedValueOnce(retryable)
+      .mockResolvedValueOnce('ok')
+
+    const result = retryWithExponentialBackoff(operation, {
+      maxRetries: 2,
+      initialDelayMs: 10,
+      maxDelayMs: 20,
+      maxRetryAfterMs: 15,
+    })
+
+    await vi.runAllTimersAsync()
+    await expect(result).resolves.toBe('ok')
+    expect(operation).toHaveBeenCalledTimes(3)
+  })
+
+  it('cancels a retry wait without starting another attempt', async () => {
+    const controller = new AbortController()
+    const operation = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('service unavailable'), { status: 503 }))
+    const result = retryWithExponentialBackoff(operation, {
+      maxRetries: 2,
+      initialDelayMs: 60_000,
+      signal: controller.signal,
+    })
+
+    await vi.waitFor(() => expect(operation).toHaveBeenCalledOnce())
+    controller.abort()
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' })
+    expect(operation).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    { retryBudgetMs: Number.NaN },
+    { retryBudgetMs: Number.POSITIVE_INFINITY },
+    { maxRetryAfterMs: -1 },
+  ])('rejects invalid retry timing options: %o', async (invalid) => {
+    await expect(retryWithExponentialBackoff(async () => 'ok', invalid)).rejects.toThrow(
+      /finite non-negative/
+    )
+  })
+})
+
 describe('secureFetchWithRetry', () => {
   beforeEach(() => {
     mockSecureFetchWithValidation.mockReset()
@@ -487,13 +786,18 @@ describe('secureFetchWithRetry', () => {
     const response = await secureFetchWithRetry('https://example.com/api', {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      profile: 'configuredEndpoint',
     })
 
     expect(response.status).toBe(200)
     expect(mockSecureFetchWithValidation).toHaveBeenCalledTimes(1)
     const [url, options, paramName] = mockSecureFetchWithValidation.mock.calls[0]
     expect(url).toBe('https://example.com/api')
-    expect(options).toMatchObject({ method: 'GET', headers: { Accept: 'application/json' } })
+    expect(options).toMatchObject({
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      profile: 'configuredEndpoint',
+    })
     expect(paramName).toBe('url')
   })
 
@@ -503,7 +807,11 @@ describe('secureFetchWithRetry', () => {
     )
 
     await expect(
-      secureFetchWithRetry('https://attacker.test', { method: 'GET' }, FAST_RETRY)
+      secureFetchWithRetry(
+        'https://attacker.test',
+        { method: 'GET', profile: 'configuredEndpoint' },
+        FAST_RETRY
+      )
     ).rejects.toThrow('blocked IP address')
 
     expect(mockSecureFetchWithValidation).toHaveBeenCalledTimes(1)
@@ -516,7 +824,7 @@ describe('secureFetchWithRetry', () => {
 
     const response = await secureFetchWithRetry(
       'https://example.com/api',
-      { method: 'GET' },
+      { method: 'GET', profile: 'configuredEndpoint' },
       FAST_RETRY
     )
 
@@ -529,7 +837,7 @@ describe('secureFetchWithRetry', () => {
 
     const response = await secureFetchWithRetry(
       'https://example.com/api',
-      { method: 'GET' },
+      { method: 'GET', profile: 'configuredEndpoint' },
       FAST_RETRY
     )
 
@@ -537,17 +845,21 @@ describe('secureFetchWithRetry', () => {
     expect(mockSecureFetchWithValidation).toHaveBeenCalledTimes(1)
   })
 
-  it('forwards allowHttp / timeout / maxResponseBytes to the pinned fetch', async () => {
+  it('forwards the egress profile, timeout and maxResponseBytes to the pinned fetch', async () => {
     mockSecureFetchWithValidation.mockResolvedValue(fakeResponse(200))
 
     await secureFetchWithRetry(
       'http://localhost:9000',
-      { method: 'GET' },
-      { allowHttp: true, timeout: 5000, maxResponseBytes: 1024, ...FAST_RETRY }
+      { method: 'GET', profile: 'configuredEndpoint' },
+      { timeout: 5000, maxResponseBytes: 1024, ...FAST_RETRY }
     )
 
     const [, options] = mockSecureFetchWithValidation.mock.calls[0]
-    expect(options).toMatchObject({ allowHttp: true, timeout: 5000, maxResponseBytes: 1024 })
+    expect(options).toMatchObject({
+      profile: 'configuredEndpoint',
+      timeout: 5000,
+      maxResponseBytes: 1024,
+    })
   })
 
   /**
@@ -561,7 +873,7 @@ describe('secureFetchWithRetry', () => {
         fakeResponse(403, {
           headers: {
             'x-ratelimit-remaining': '0',
-            'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 1),
+            'retry-after': '0.001',
           },
         })
       )
@@ -569,7 +881,7 @@ describe('secureFetchWithRetry', () => {
 
     const response = await secureFetchWithRetry(
       'https://api.github.com/repos',
-      { method: 'GET' },
+      { method: 'GET', profile: 'configuredEndpoint' },
       FAST_RETRY
     )
 
@@ -584,7 +896,7 @@ describe('secureFetchWithRetry', () => {
 
     const response = await secureFetchWithRetry(
       'https://api.github.com/repos',
-      { method: 'GET' },
+      { method: 'GET', profile: 'configuredEndpoint' },
       FAST_RETRY
     )
 
@@ -599,11 +911,30 @@ describe('secureFetchWithRetry', () => {
 
     const response = await secureFetchWithRetry(
       'https://example.com/api',
-      { method: 'GET' },
+      { method: 'GET', profile: 'configuredEndpoint' },
       FAST_RETRY
     )
 
     expect(response.status).toBe(200)
     expect(mockSecureFetchWithValidation).toHaveBeenCalledTimes(2)
+  })
+
+  it('omits a provider-controlled response body from the secure retry error', async () => {
+    const providerControlledMarker = 'provider-controlled-response-marker'
+    mockSecureFetchWithValidation.mockResolvedValue(
+      new Response(providerControlledMarker, { status: 503 }) as never
+    )
+
+    const error = await secureFetchWithRetry(
+      'https://gitlab.example.com/api/v4/projects',
+      { method: 'GET', profile: 'configuredEndpoint' },
+      { ...FAST_RETRY, maxRetries: 0 }
+    ).then(
+      () => undefined,
+      (caught) => caught as Error
+    )
+
+    expect(error?.message).toContain('[response body omitted]')
+    expect(error?.message).not.toContain(providerControlledMarker)
   })
 })
