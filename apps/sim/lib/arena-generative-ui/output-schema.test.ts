@@ -236,6 +236,42 @@ describe('outputSchemaFromSample', () => {
     expect(names.some((name) => name.includes('.output.'))).toBe(false)
   })
 
+  it('strips a workflow { output, input, email } envelope so enhance binds coverage_report.summary', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify({
+        output: {
+          gap_analysis: { coverage_gaps: [{ gap: 'g' }] },
+          coverage_report: {
+            overall_score: 82,
+            passed: true,
+            summary: 'ok',
+            criteria: [{ justification: 'j', name: 'citations', score: 1, passed: true }],
+          },
+          enhanced_article: 'article',
+        },
+        input: { article_url: 'https://example.com', article_text: 't', content_type: 'blog' },
+        email: 'ada@example.com',
+      })
+    ).map((field) => field.name)
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'email',
+        'input.article_url',
+        'coverage_report.overall_score',
+        'coverage_report.passed',
+        'coverage_report.summary',
+        'coverage_report.criteria[].justification',
+        'coverage_report.criteria[].name',
+        'coverage_report.criteria[].score',
+        'coverage_report.criteria[].passed',
+        'enhanced_article',
+      ])
+    )
+    expect(names).not.toContain('output')
+    expect(names.some((name) => name.startsWith('output.'))).toBe(false)
+  })
+
   it('roots an array response under result, matching host state', () => {
     expect(outputSchemaFromSample('[{"title":"First"}]')).toEqual([
       { name: 'result', type: 'array' },
@@ -509,6 +545,27 @@ describe('effectiveOutputSchema', () => {
         ],
       }).map((field) => field.name)
     ).toEqual(['result', 'result[].coverage_report', 'result[].coverage_report.summary'])
+  })
+
+  it('strips a stored top-level output envelope so generate binds coverage_report.summary', () => {
+    expect(
+      effectiveOutputSchema({
+        outputSchema: [
+          { name: 'output', type: 'object' },
+          { name: 'input', type: 'object' },
+          { name: 'email', type: 'string' },
+          { name: 'output.coverage_report', type: 'object' },
+          { name: 'output.coverage_report.summary', type: 'string' },
+          { name: 'input.article_url', type: 'string' },
+        ],
+      }).map((field) => field.name)
+    ).toEqual([
+      'input',
+      'email',
+      'input.article_url',
+      'coverage_report',
+      'coverage_report.summary',
+    ])
   })
 })
 

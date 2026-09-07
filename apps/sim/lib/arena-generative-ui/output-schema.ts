@@ -88,7 +88,48 @@ export function unwrapPastedSample(data: unknown, depth = 0): unknown {
   if (nested !== undefined) {
     return unwrapPastedSample(nested, depth + 1)
   }
+  const spread = spreadWorkflowOutputEnvelope(record)
+  if (spread) {
+    return unwrapPastedSample(spread, depth + 1)
+  }
   return data
+}
+
+const WORKFLOW_OUTPUT_SIBLINGS = new Set([
+  'input',
+  'email',
+  'conversationId',
+  'files',
+  'id',
+  'createdAt',
+  'updatedAt',
+  'timestamp',
+  'error',
+  'status',
+])
+
+/**
+ * Workflow `finalOutput` is often `{ output: { coverage_report }, input, email }`.
+ * Spread the object `output` onto the same record so last-run fields are
+ * `coverage_report.summary`, not `output.coverage_report.summary`.
+ */
+function spreadWorkflowOutputEnvelope(
+  record: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const output = record.output
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return undefined
+  }
+  const rest = Object.entries(record).filter(
+    ([key]) => key !== 'output' && !isActionTelemetryRoot(key)
+  )
+  if (rest.length === 0) {
+    return undefined
+  }
+  if (!rest.every(([key]) => WORKFLOW_OUTPUT_SIBLINGS.has(key))) {
+    return undefined
+  }
+  return { ...(output as Record<string, unknown>), ...Object.fromEntries(rest) }
 }
 
 function singletonEnvelopeObject(record: Record<string, unknown>): unknown {
@@ -158,7 +199,7 @@ export function deriveOutputSchema(data: unknown): {
   const isPlainObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
   const fields: ArenaGenerativeSchemaField[] = []
   const truncated = collectFields(parsed, isPlainObject ? '' : NON_OBJECT_ROOT_PATH, 0, fields)
-  return { fields: rewriteArrayItemSingletonEnvelope(fields), truncated }
+  return { fields: rewriteOutputEnvelopes(fields), truncated }
 }
 
 /**
@@ -232,9 +273,9 @@ function schemaFromStoredSample(
 /**
  * Drops Response-block envelope rows so layout plans bind the body. A string
  * `data` (or unwrapped `result`) is omitted — host prose uses `content`. An
- * object `output` on array items is rewritten the same way last-run derivation
- * does, so a stored `result[].output.coverage_report.summary` becomes
- * `result[].coverage_report.summary` before generate copies host keys.
+ * object `output` envelope — top-level `{ output, input, email }` or
+ * `result[].output` — is rewritten so a stored `output.coverage_report.summary`
+ * becomes `coverage_report.summary` before generate copies host keys.
  */
 export function unwrapHttpEnvelopeSchemaFields(
   schema: ArenaGenerativeSchemaField[]
@@ -248,7 +289,7 @@ export function unwrapHttpEnvelopeSchemaFields(
     if (!dataType || dataType === 'string') {
       return []
     }
-    return rewriteArrayItemSingletonEnvelope(
+    return rewriteOutputEnvelopes(
       named
         .filter(
           (field) =>
@@ -261,7 +302,7 @@ export function unwrapHttpEnvelopeSchemaFields(
   if (named.length === 1 && named[0].name === 'result' && named[0].type === 'string') {
     return []
   }
-  return rewriteArrayItemSingletonEnvelope(named)
+  return rewriteOutputEnvelopes(named)
 }
 
 function isHttpEnvelopeOnlySchema(fields: Array<{ name: string }>): boolean {
@@ -448,6 +489,56 @@ function isEmptySchemaValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+function rewriteOutputEnvelopes(
+  fields: ArenaGenerativeSchemaField[]
+): ArenaGenerativeSchemaField[] {
+  return rewriteTopLevelOutputEnvelope(rewriteArrayItemSingletonEnvelope(fields))
+}
+
+/**
+ * `{ output: { coverage_report }, input, email }` last-run rows keep `output.`
+ * in stored schemas. Lift those children so generate binds `coverage_report.summary`.
+ */
+function rewriteTopLevelOutputEnvelope(
+  fields: ArenaGenerativeSchemaField[]
+): ArenaGenerativeSchemaField[] {
+  const outputRow = fields.find((field) => field.name === 'output')
+  if (outputRow?.type === 'string') {
+    return fields
+  }
+  const hasChildren = fields.some(
+    (field) => field.name.startsWith('output.') || field.name.startsWith('output[')
+  )
+  if (!hasChildren) {
+    return fields
+  }
+  const kept: ArenaGenerativeSchemaField[] = []
+  const seen = new Set<string>()
+  for (const field of fields) {
+    if (field.name === 'output' || field.name.startsWith('output.') || field.name.startsWith('output[')) {
+      continue
+    }
+    if (seen.has(field.name)) continue
+    seen.add(field.name)
+    kept.push(field)
+  }
+  for (const field of fields) {
+    if (field.name === 'output') continue
+    let name = field.name
+    if (name.startsWith('output.')) {
+      name = name.slice('output.'.length)
+    } else if (name.startsWith('output[')) {
+      name = `${NON_OBJECT_ROOT_PATH}${name.slice('output'.length)}`
+    } else {
+      continue
+    }
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    kept.push({ ...field, name })
+  }
+  return kept
 }
 
 /**
