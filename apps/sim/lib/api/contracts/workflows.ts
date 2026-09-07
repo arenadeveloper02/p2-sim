@@ -12,6 +12,7 @@ import {
   workspaceIdSchema,
 } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import { MAX_OUTPUT_SCHEMA_FIELDS } from '@/lib/arena-generative-ui/output-schema'
 import { MAX_WORKFLOW_EXECUTION_TIMEOUT_SECONDS } from '@/lib/billing/execution-timeout-defaults'
 import { PRIVATE_SECRET_PROVENANCE_FIELD } from '@/lib/execution/private-tool-metadata'
 
@@ -557,7 +558,7 @@ const lastSuccessfulOutputSchemaFieldSchema = z.object({
 })
 
 const lastSuccessfulWorkflowOutputSchemaResponseSchema = z.object({
-  outputSchema: z.array(lastSuccessfulOutputSchemaFieldSchema).max(40),
+  outputSchema: z.array(lastSuccessfulOutputSchemaFieldSchema).max(MAX_OUTPUT_SCHEMA_FIELDS),
   warnings: z.array(z.string().min(1).max(400)).max(4),
   found: z.boolean(),
 })

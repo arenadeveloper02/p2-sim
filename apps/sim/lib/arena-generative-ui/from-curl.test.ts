@@ -170,9 +170,9 @@ describe('httpBindingFromCurl output format', () => {
     })
     expect(binding.outputSchema).toEqual([
       { name: 'articles', type: 'array' },
+      { name: 'count', type: 'number' },
       { name: 'articles[].title', type: 'string' },
       { name: 'articles[].url', type: 'string' },
-      { name: 'count', type: 'number' },
     ])
     expect(binding.outputSchemaSource).toBe('sample')
     expect(binding.outputSample).toBe(

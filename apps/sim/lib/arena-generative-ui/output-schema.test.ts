@@ -3,8 +3,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  deriveOutputSchema,
   effectiveOutputSchema,
   layoutOutputSchemaFromBinding,
+  MAX_OUTPUT_SCHEMA_FIELDS,
   namedSchemaFields,
   OUTPUT_HINT_MAX_LENGTH,
   outputLayoutFromSample,
@@ -65,9 +67,9 @@ describe('outputSchemaFromSample', () => {
       )
     ).toEqual([
       { name: 'articles', type: 'array' },
+      { name: 'count', type: 'number' },
       { name: 'articles[].title', type: 'string' },
       { name: 'articles[].score', type: 'number' },
-      { name: 'count', type: 'number' },
     ])
   })
 
@@ -212,11 +214,112 @@ describe('outputSchemaFromSample', () => {
     expect(outputSchemaFromSample('42')).toEqual([{ name: 'result', type: 'number' }])
   })
 
-  it('caps the derived list at 40 fields', () => {
+  it('caps the derived list at MAX_OUTPUT_SCHEMA_FIELDS', () => {
     const sample = JSON.stringify(
-      Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`field${index}`, 'value']))
+      Object.fromEntries(
+        Array.from({ length: MAX_OUTPUT_SCHEMA_FIELDS + 20 }, (_, index) => [
+          `field${index}`,
+          'value',
+        ])
+      )
     )
-    expect(outputSchemaFromSample(sample)).toHaveLength(40)
+    expect(outputSchemaFromSample(sample)).toHaveLength(MAX_OUTPUT_SCHEMA_FIELDS)
+    expect(deriveOutputSchema(JSON.parse(sample)).truncated).toBe(true)
+  })
+
+  it('keeps later coverage_report keys when earlier nested arrays are large', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify([
+        {
+          output: {
+            gap_analysis: {
+              coverage_gaps: [
+                {
+                  gap: 'g',
+                  severity: 'high',
+                  why_it_matters: 'w',
+                  suggested_fix: 'f',
+                },
+              ],
+              missing_entities: [{ entity: 'e', why_it_matters: 'w', suggested_mention: 'm' }],
+              structure_issues: [{ issue: 'i', why_it_hurts: 'h', suggested_change: 'c' }],
+            },
+            recommendations: {
+              recommendations: [
+                {
+                  placement: 'p',
+                  priority: 'high',
+                  rationale: 'r',
+                  recommendation: 'rec',
+                },
+              ],
+              faq_suggestions: [{ question: 'q', suggested_answer: 'a', why_it_matters: 'w' }],
+              citation_opportunities: [
+                {
+                  claim_or_stat: 'c',
+                  placement: 'p',
+                  source_name: 'n',
+                  source_url: 'https://example.com',
+                },
+              ],
+            },
+            enhanced_article: 'article',
+            coverage_report: {
+              faq_added: true,
+              faq_questions_added: ['q1'],
+              citations_count: 1,
+              citations_found: [
+                { claim: 'c', source_name: 'n', source_url: 'https://example.com' },
+              ],
+              overall_score: 82,
+              passed: true,
+              summary: 'ok',
+              criteria: [{ name: 'citations', score: 1, passed: true, notes: 'n' }],
+            },
+          },
+        },
+      ])
+    ).map((field) => field.name)
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'result[].output.coverage_report.overall_score',
+        'result[].output.coverage_report.passed',
+        'result[].output.coverage_report.summary',
+        'result[].output.coverage_report.criteria',
+        'result[].output.coverage_report.citations_found[].claim',
+      ])
+    )
+  })
+
+  it('unions object keys from later array items, not only the first', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify([
+        { output: { coverage_report: { faq_added: true } } },
+        {
+          output: {
+            coverage_report: {
+              faq_added: true,
+              overall_score: 82,
+              passed: true,
+              summary: 'ok',
+              criteria: [{ name: 'citations' }],
+            },
+          },
+        },
+      ])
+    ).map((field) => field.name)
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'result[].output.coverage_report.faq_added',
+        'result[].output.coverage_report.overall_score',
+        'result[].output.coverage_report.passed',
+        'result[].output.coverage_report.summary',
+        'result[].output.coverage_report.criteria',
+        'result[].output.coverage_report.criteria[].name',
+      ])
+    )
   })
 
   it('keeps only names and types, never sample values', () => {

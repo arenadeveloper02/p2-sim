@@ -2,7 +2,10 @@ import { truncate } from '@sim/utils/string'
 import { isActionTelemetryRoot, parseJsonLiteral } from '@/lib/arena-generative-ui/types'
 
 const MAX_DEPTH = 3
-const MAX_FIELDS = 40
+/** Max flattened name/type rows kept from a sample or last-run body. */
+export const MAX_OUTPUT_SCHEMA_FIELDS = 80
+/** First and last items sampled when unioning an array's element shape. */
+const MAX_ARRAY_ITEMS_SAMPLED = 12
 /** Max characters kept from a streamed prose example in `outputHint`. */
 export const OUTPUT_HINT_MAX_LENGTH = 2000
 /** Max characters kept from Sample response so the modal can show the paste again. */
@@ -112,14 +115,27 @@ function singletonEnvelopeObject(record: Record<string, unknown>): unknown {
  *
  * Action/Response envelopes are stripped first. Names are usable as `statePath`
  * values: an object body merges its keys (`run_data.history`, `history[].id`),
- * while an array or scalar lands under `result`. Arrays are described from their
- * first element. Walks at most 3 object levels after unwrap and returns at most
- * 40 fields, truncating silently.
+ * while an array or scalar lands under `result`. Array items are unioned from
+ * sampled elements (not only the first). Walks breadth-first so later sibling
+ * keys are not dropped in favor of earlier nested columns. At most 3 object
+ * levels after unwrap and {@link MAX_OUTPUT_SCHEMA_FIELDS} rows; extra keys
+ * are omitted and `truncated` is set on {@link deriveOutputSchema}.
  */
 export function outputSchemaFromSample(sample: string): ArenaGenerativeSchemaField[] {
+  return deriveOutputSchemaFromSample(sample).fields
+}
+
+/**
+ * Same walk as {@link outputSchemaFromSample}, including whether the field cap
+ * hid remaining keys.
+ */
+export function deriveOutputSchemaFromSample(sample: string): {
+  fields: ArenaGenerativeSchemaField[]
+  truncated: boolean
+} {
   const trimmed = sample.trim()
   if (!trimmed) {
-    return []
+    return { fields: [], truncated: false }
   }
   let parsed: unknown
   try {
@@ -127,11 +143,22 @@ export function outputSchemaFromSample(sample: string): ArenaGenerativeSchemaFie
   } catch {
     throw new Error('Output format must be valid JSON')
   }
-  parsed = unwrapPastedSample(parsed)
+  return deriveOutputSchema(parsed)
+}
+
+/**
+ * Derives output schema fields from an already-parsed value (last-run
+ * `finalOutput` or a JSON sample). Envelopes are stripped first.
+ */
+export function deriveOutputSchema(data: unknown): {
+  fields: ArenaGenerativeSchemaField[]
+  truncated: boolean
+} {
+  const parsed = unwrapPastedSample(data)
   const isPlainObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
   const fields: ArenaGenerativeSchemaField[] = []
-  collectFields(parsed, isPlainObject ? '' : NON_OBJECT_ROOT_PATH, 0, fields)
-  return fields
+  const truncated = collectFields(parsed, isPlainObject ? '' : NON_OBJECT_ROOT_PATH, 0, fields)
+  return { fields, truncated }
 }
 
 /**
@@ -256,17 +283,38 @@ function renameDataEnvelopeRoot(name: string, dataType: string): string {
 /**
  * `depth` counts object levels only; the `[]` element hop is notation, not
  * nesting, so `articles[].title` stays at the same depth as `meta.total`.
+ * Breadth-first so sibling keys of `coverage_report` are recorded before nested
+ * columns from earlier objects consume the field budget.
  */
 function collectFields(
   value: unknown,
   path: string,
   depth: number,
   fields: ArenaGenerativeSchemaField[]
+): boolean {
+  const queue: Array<{ value: unknown; path: string; depth: number }> = [{ value, path, depth }]
+  let index = 0
+  while (index < queue.length) {
+    if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) {
+      return true
+    }
+    const current = queue[index]
+    index += 1
+    enqueueSchemaNode(current, fields, queue)
+  }
+  return false
+}
+
+function enqueueSchemaNode(
+  current: { value: unknown; path: string; depth: number },
+  fields: ArenaGenerativeSchemaField[],
+  queue: Array<{ value: unknown; path: string; depth: number }>
 ): void {
+  const { value, path, depth } = current
   if (path && isActionTelemetryRoot(path)) {
     return
   }
-  if (fields.length >= MAX_FIELDS) {
+  if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) {
     return
   }
   const depthCap = path.includes('[]') ? MAX_DEPTH + 2 : MAX_DEPTH
@@ -279,23 +327,20 @@ function collectFields(
     if (path) {
       fields.push({ name: path, type: 'array' })
     }
-    /** An empty array says nothing about its elements, so claim nothing. */
     if (value.length > 0) {
-      collectFields(value[0], `${path}[]`, depth, fields)
+      queue.push({ value: representativeArrayItem(value), path: `${path}[]`, depth })
     }
     return
   }
 
   if (value && typeof value === 'object') {
-    /** A `[]` path already carries `array` from its parent entry. */
     if (path && !path.endsWith('[]')) {
       fields.push({ name: path, type: 'object' })
     }
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      if (fields.length >= MAX_FIELDS) return
       const nestedPath = path ? `${path}.${key}` : key
       if (isActionTelemetryRoot(nestedPath)) continue
-      collectFields(nested, nestedPath, depth + 1, fields)
+      queue.push({ value: nested, path: nestedPath, depth: depth + 1 })
     }
     return
   }
@@ -313,7 +358,7 @@ function recordArraysAtCap(
   if (path && isActionTelemetryRoot(path)) {
     return
   }
-  if (fields.length >= MAX_FIELDS) {
+  if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) {
     return
   }
   if (Array.isArray(value)) {
@@ -326,13 +371,74 @@ function recordArraysAtCap(
     return
   }
   for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    if (fields.length >= MAX_FIELDS) return
+    if (fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) return
     const nestedPath = `${path}.${key}`
     if (isActionTelemetryRoot(nestedPath)) continue
     if (Array.isArray(nested)) {
       fields.push({ name: nestedPath, type: 'array' })
     }
   }
+}
+
+function representativeArrayItem(items: unknown[]): unknown {
+  const sampled = sampleArrayItems(items)
+  const objects = sampled.filter(isPlainRecord)
+  if (objects.length === 0) {
+    return sampled[0]
+  }
+  let merged: Record<string, unknown> = {}
+  for (const object of objects) {
+    merged = mergeSchemaObjects(merged, object)
+  }
+  return merged
+}
+
+function sampleArrayItems(items: unknown[]): unknown[] {
+  if (items.length <= MAX_ARRAY_ITEMS_SAMPLED) {
+    return items
+  }
+  const half = MAX_ARRAY_ITEMS_SAMPLED / 2
+  return [...items.slice(0, half), ...items.slice(-half)]
+}
+
+function mergeSchemaObjects(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...left }
+  for (const [key, value] of Object.entries(right)) {
+    if (!Object.hasOwn(merged, key)) {
+      merged[key] = value
+      continue
+    }
+    merged[key] = mergeSchemaValues(merged[key], value)
+  }
+  return merged
+}
+
+function mergeSchemaValues(left: unknown, right: unknown): unknown {
+  if (isPlainRecord(left) && isPlainRecord(right)) {
+    return mergeSchemaObjects(left, right)
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    const item = representativeArrayItem([...sampleArrayItems(left), ...sampleArrayItems(right)])
+    return item === undefined ? [] : [item]
+  }
+  if (isEmptySchemaValue(left) && !isEmptySchemaValue(right)) {
+    return right
+  }
+  return left
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isEmptySchemaValue(value: unknown): boolean {
+  if (value == null || value === '') return true
+  if (Array.isArray(value)) return value.length === 0
+  if (isPlainRecord(value)) return Object.keys(value).length === 0
+  return false
 }
 
 function schemaTypeFromValue(value: unknown): string {

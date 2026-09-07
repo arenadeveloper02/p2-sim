@@ -17,6 +17,7 @@ vi.mock('@/lib/logs/execution/trace-store', () => ({
 
 import {
   LAST_RUN_EMPTY_LIST_WARNING,
+  LAST_RUN_FIELD_CAP_WARNING,
   LAST_RUN_STALE_WARNING,
   LAST_RUN_TRUNCATED_WARNING,
   loadLastSuccessfulRunOutputSchema,
@@ -154,6 +155,22 @@ describe('loadLastSuccessfulRunOutputSchema', () => {
     })
 
     expect(result.warnings).toEqual([LAST_RUN_STALE_WARNING])
+  })
+
+  it('warns when the schema field cap hid remaining keys', async () => {
+    queueCompletedRun()
+    mockMaterializeExecutionData.mockResolvedValueOnce({
+      finalOutput: Object.fromEntries(
+        Array.from({ length: 120 }, (_, index) => [`field${index}`, 'value'])
+      ),
+    })
+
+    const result = await loadLastSuccessfulRunOutputSchema('wf-history', {
+      activeDeploymentVersionId: 'deploy-current',
+    })
+
+    expect(result.warnings).toEqual([LAST_RUN_FIELD_CAP_WARNING])
+    expect(result.fields.length).toBeGreaterThan(0)
   })
 
   it('warns when execution data was truncated', async () => {
