@@ -33,7 +33,7 @@ Sim lets teams create agents visually with the workflow builder, conversationall
 - **Knowledge Base**: Document store used for retrieval-augmented generation
 
 Website: https://app.thearena.ai
-App: https://app.thearena.ai/hub/agents
+App: https://app.thearena.ai/agents
 Docs: https://docs.sim.ai
 GitHub: https://github.com/simstudioai/sim
 Region: global
