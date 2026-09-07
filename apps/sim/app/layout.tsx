@@ -3,9 +3,9 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { BrandedLayout } from '@/components/branded-layout'
-import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { generateBrandedMetadata, generateThemeCSS } from '@/ee/whitelabeling'
 import '@/app/_styles/globals.css'
+import { getCreditsPerDollarFromMasterConfig } from '@/lib/billing/credits/master-config'
 import { getEnv } from '@/lib/core/config/env'
 import {
   isChatEnabled,
@@ -13,10 +13,12 @@ import {
   isReactGrabEnabled,
   isReactScanEnabled,
 } from '@/lib/core/config/env-flags'
+import { CreditConversionConfigScript } from '@/app/_shell/credit-conversion-config-script'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
+import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
@@ -49,12 +51,14 @@ function useRuntimePublicEnvScript(): boolean {
   return appUrl !== 'https://www.sim.ai' && appUrl !== 'https://www.staging.sim.ai'
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const creditsPerDollar = await getCreditsPerDollarFromMasterConfig()
   const themeCSS = generateThemeCSS()
 
   return (
     <html lang='en' suppressHydrationWarning>
       <head>
+        <CreditConversionConfigScript creditsPerDollar={creditsPerDollar} />
         {isReactScanEnabled && (
           <Script
             src='https://unpkg.com/react-scan/dist/auto.global.js'

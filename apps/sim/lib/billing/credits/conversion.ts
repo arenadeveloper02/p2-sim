@@ -1,15 +1,49 @@
 /**
  * Credit conversion utilities.
  * All DB values remain in dollars; these helpers convert at API/UI boundaries only.
- * 1 credit = $0.005 (i.e. $1 = 200 credits)
+ * The runtime value is loaded from master_config when available.
  */
 
-import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
+import { CREDITS_PER_DOLLAR, ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 
-export const CREDIT_MULTIPLIER = 200
+export const CREDIT_MULTIPLIER = CREDITS_PER_DOLLAR
+
+const RUNTIME_CREDITS_PER_DOLLAR_KEY = '__SIM_CREDITS_PER_DOLLAR__'
+
+type RuntimeGlobal = typeof globalThis & {
+  [RUNTIME_CREDITS_PER_DOLLAR_KEY]?: unknown
+}
+
+let serverCreditsPerDollar = CREDITS_PER_DOLLAR
+
+function parseCreditsPerDollar(value: unknown): number | null {
+  if (typeof value !== 'number') return null
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+/**
+ * Returns the resolved credits-per-dollar value for the current runtime.
+ */
+export function getCreditsPerDollar(): number {
+  const runtimeGlobal = globalThis as RuntimeGlobal
+  const runtimeValue = parseCreditsPerDollar(runtimeGlobal[RUNTIME_CREDITS_PER_DOLLAR_KEY])
+  return runtimeValue ?? serverCreditsPerDollar
+}
+
+/**
+ * Publishes the server-resolved credits-per-dollar value for synchronous
+ * conversion helpers and the browser runtime configuration.
+ */
+export function setCreditsPerDollar(value: number): void {
+  const parsed = parseCreditsPerDollar(value)
+  if (parsed === null) return
+  serverCreditsPerDollar = parsed
+  const runtimeGlobal = globalThis as RuntimeGlobal
+  runtimeGlobal[RUNTIME_CREDITS_PER_DOLLAR_KEY] = parsed
+}
 
 export function dollarsToCredits(dollars: number): number {
-  return Math.round(dollars * CREDIT_MULTIPLIER)
+  return Math.round(dollars * getCreditsPerDollar())
 }
 
 /**
@@ -18,7 +52,7 @@ export function dollarsToCredits(dollars: number): number {
  * credit-denominated input (e.g. per-member usage limits).
  */
 export function creditsToDollars(credits: number): number {
-  return credits / CREDIT_MULTIPLIER
+  return credits / getCreditsPerDollar()
 }
 
 /**
@@ -119,12 +153,13 @@ export function apportionCredits<K extends string>(
   }))
 
   const totalDollars = sanitized.reduce((sum, c) => sum + c.dollars, 0)
-  const targetCredits = dollarsToCredits(totalDollars)
+  const creditsPerDollar = getCreditsPerDollar()
+  const targetCredits = Math.round(totalDollars * creditsPerDollar)
 
   const exact = sanitized.map((c) => ({
     key: c.key,
-    floor: Math.floor(c.dollars * CREDIT_MULTIPLIER),
-    frac: c.dollars * CREDIT_MULTIPLIER - Math.floor(c.dollars * CREDIT_MULTIPLIER),
+    floor: Math.floor(c.dollars * creditsPerDollar),
+    frac: c.dollars * creditsPerDollar - Math.floor(c.dollars * creditsPerDollar),
   }))
 
   for (const c of exact) result[c.key] = c.floor
@@ -142,7 +177,7 @@ export function apportionCredits<K extends string>(
 /**
  * Format a dollar amount as a comma-separated credit string.
  * Values at or above the on-demand unlimited threshold display as ∞.
- * @example formatCredits(20) => "2,000"
+ * @example formatCredits(20) => "1,300"
  * @example formatCredits(999999) => "∞"
  */
 export function formatCredits(dollars: number): string {

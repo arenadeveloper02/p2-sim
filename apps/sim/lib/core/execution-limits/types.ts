@@ -16,15 +16,15 @@ interface ExecutionTimeoutConfig {
 
 const DEFAULT_SYNC_TIMEOUTS_SECONDS = {
   free: 300,
-  pro: 3000,
-  team: 3000,
+  pro: 120,
+  team: 300,
   enterprise: 3000,
 } as const
 
 const DEFAULT_ASYNC_TIMEOUTS_SECONDS = {
-  free: 5400,
-  pro: 5400,
-  team: 5400,
+  free: 300,
+  pro: 300,
+  team: 600,
   enterprise: 5400,
 } as const
 
