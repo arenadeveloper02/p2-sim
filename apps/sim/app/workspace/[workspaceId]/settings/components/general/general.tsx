@@ -570,7 +570,7 @@ export function General() {
               />
             </div>
             <p className='text-[var(--text-muted)] text-small'>
-              We use OpenTelemetry to collect anonymous usage data to improve Sim. You can opt-out
+              We use OpenTelemetry to collect anonymous usage data to improve Arena. You can opt-out
               at any time.
             </p>
           </div>
