@@ -14,6 +14,7 @@ import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { arenaThemePubSub } from '@/lib/users/arena-theme-pubsub'
 import { getUserSettings } from '@/lib/users/queries'
 
 const logger = createLogger('ArenaUserSettingsAPI')
@@ -113,6 +114,8 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
+    const normalizedEmail = normalizeEmail(emailId)
+
     await db
       .insert(settings)
       .values({
@@ -129,7 +132,13 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
         },
       })
 
-    logger.info(`[${requestId}] Arena theme updated`, { emailId, theme })
+    arenaThemePubSub?.publishThemeChanged({
+      userId,
+      emailId: normalizedEmail,
+      theme,
+    })
+
+    logger.info(`[${requestId}] Arena theme updated`, { emailId: normalizedEmail, theme })
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error: unknown) {
     logger.error(`[${requestId}] Arena settings update error`, error)
