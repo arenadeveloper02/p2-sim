@@ -24,7 +24,7 @@ import { Input } from '../input/input'
 import { OverflowText } from '../overflow-text/overflow-text'
 import { Popover, PopoverAnchor, PopoverContent, PopoverScrollArea } from '../popover/popover'
 
-const comboboxVariants = cva(
+export const comboboxVariants = cva(
   'flex w-full rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 font-sans text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {

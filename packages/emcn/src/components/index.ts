@@ -107,6 +107,7 @@ export {
   Combobox,
   type ComboboxOption,
   type ComboboxOptionGroup,
+  comboboxVariants,
 } from './combobox/combobox'
 export {
   DropdownMenu,

@@ -1,5 +1,7 @@
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { stripVersionSuffix } from '@sim/utils/string'
-import * as Papa from 'papaparse'
+import { parse as parseCsv } from 'csv-parse/sync'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   normalizeRecord,
@@ -13,6 +15,8 @@ import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
 import { environmentKeys } from '@/hooks/queries/environment'
 import { tools } from '@/tools/registry'
 import type { ExecutableToolConfig, InternalToolConfig } from '@/tools/types'
+
+const logger = createLogger('ToolUtils')
 
 /**
  * Strips version suffix (_v2, _v3, etc.) from a tool ID or name.
@@ -689,11 +693,11 @@ export interface CsvParseResult {
   /**
    * Any parsing errors encountered
    */
-  errors: Papa.ParseError[]
+  errors: Array<{ message: string }>
 }
 
 /**
- * Generic CSV parser for API responses using papaparse.
+ * Generic CSV parser for API responses using `csv-parse`.
  * Supports different delimiters (comma, semicolon, tab) and can be used by any tool
  * that receives CSV responses from external APIs.
  *
@@ -734,50 +738,39 @@ export function parseCsvResponse(csvText: string, options: CsvParseOptions = {})
   }
 
   try {
-    const parseOptions: Papa.ParseConfig = {
+    const allRows = parseCsv(csvText, {
       delimiter,
-      header,
-      skipEmptyLines,
-      transformHeader: trimHeaders
-        ? (header: string) => String(header).trim()
-        : (header: string) => String(header),
-      transform: trimValues
-        ? (value: string) => String(value || '').trim()
-        : (value: string) => String(value || ''),
-    }
-
-    const parseResult = Papa.parse<string[] | Record<string, string>>(csvText, parseOptions)
-
-    // Log parsing errors if any (non-fatal)
-    if (parseResult.errors && parseResult.errors.length > 0) {
-      logger.warn('CSV parsing warnings', {
-        errors: parseResult.errors,
-        errorCount: parseResult.errors.length,
-      })
-    }
+      columns: false,
+      skip_empty_lines: skipEmptyLines,
+      trim: trimValues,
+      relax_column_count: true,
+      bom: true,
+    }) as string[][]
 
     let headers: string[] = []
     let data: Array<Record<string, string>> | string[][]
     let totalRows: number
 
     if (header) {
-      // Headers are in meta.fields when header: true
-      headers = parseResult.meta.fields || []
-      data = parseResult.data as Array<Record<string, string>>
+      headers = (allRows[0] ?? []).map((column) =>
+        trimHeaders ? String(column).trim() : String(column)
+      )
+      data = allRows.slice(1).map((row) => {
+        const record: Record<string, string> = {}
+        for (let i = 0; i < headers.length; i++) {
+          record[headers[i]] = String(row[i] ?? '')
+        }
+        return record
+      })
+      totalRows = data.length
+    } else if (allRows.length > 0) {
+      headers = allRows[0] || []
+      data = allRows.slice(1)
       totalRows = data.length
     } else {
-      // First row is treated as data when header: false
-      const allRows = parseResult.data as string[][]
-      if (allRows.length > 0) {
-        // Use first row as headers for consistency
-        headers = allRows[0] || []
-        data = allRows.slice(1)
-        totalRows = data.length
-      } else {
-        headers = []
-        data = []
-        totalRows = 0
-      }
+      headers = []
+      data = []
+      totalRows = 0
     }
 
     logger.info('CSV parsed successfully', {
@@ -785,7 +778,6 @@ export function parseCsvResponse(csvText: string, options: CsvParseOptions = {})
       header,
       totalRows,
       columnCount: headers.length,
-      hasErrors: parseResult.errors && parseResult.errors.length > 0,
     })
 
     return {
@@ -793,16 +785,15 @@ export function parseCsvResponse(csvText: string, options: CsvParseOptions = {})
       headers,
       totalRows,
       rawCsv: csvText,
-      errors: parseResult.errors || [],
+      errors: [],
     }
   } catch (error) {
+    const message = getErrorMessage(error, 'Unknown CSV parse error')
     logger.error('CSV parsing failed', {
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
       delimiter,
       preview: csvText.substring(0, 200),
     })
-    throw new Error(
-      `Failed to parse CSV response: ${error instanceof Error ? error.message : String(error)}`
-    )
+    throw new Error(`Failed to parse CSV response: ${message}`)
   }
 }

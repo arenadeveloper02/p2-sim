@@ -4,10 +4,26 @@
 import { describe, expect, it } from 'vitest'
 import {
   apportionCredits,
+  CREDITS_PER_DOLLAR_ATTRIBUTE,
+  creditsPerDollarHtmlAttributes,
   creditsToDollars,
   dollarsToCredits,
   formatCreditCost,
 } from '@/lib/billing/credits/conversion'
+
+describe('creditsPerDollarHtmlAttributes', () => {
+  it('publishes a positive finite rate on the html attribute', () => {
+    expect(creditsPerDollarHtmlAttributes(65)).toEqual({
+      [CREDITS_PER_DOLLAR_ATTRIBUTE]: '65',
+    })
+  })
+
+  it('omits the attribute for non-positive or non-finite values', () => {
+    expect(creditsPerDollarHtmlAttributes(0)).toEqual({})
+    expect(creditsPerDollarHtmlAttributes(-1)).toEqual({})
+    expect(creditsPerDollarHtmlAttributes(Number.NaN)).toEqual({})
+  })
+})
 
 describe('creditsToDollars', () => {
   it('converts credits to dollars at 65 credits per dollar', () => {

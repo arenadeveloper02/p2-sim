@@ -13,7 +13,6 @@ import { General } from '@/app/workspace/[workspaceId]/settings/components/gener
 import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import {
   getSettingsSectionMeta,
-  isBillingEnabled,
   isPlatformAdminSettingsSection,
   type SettingsSection,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -158,7 +157,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const isBillingSection = normalizedSection === 'billing' || normalizedSection === 'arena-billing'
   const canManageBilling = canManageWorkspaceBilling(hostContext, session?.user?.id)
   const billingRedirectToUsage =
-    isBillingEnabled && isBillingSection && !sessionLoading && !canManageBilling
+    billingEnabled && isBillingSection && !sessionLoading && !canManageBilling
 
   const effectiveSection =
     !billingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
@@ -199,7 +198,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       )}
       {effectiveSection === 'custom-blocks' && <CustomBlocks />}
       {effectiveSection === 'usage' && <Usage />}
-      {isBillingEnabled && effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}
+      {effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}
       {effectiveSection === 'audit-logs' && organizationId && (
         <AuditLogs organizationId={organizationId} />
       )}

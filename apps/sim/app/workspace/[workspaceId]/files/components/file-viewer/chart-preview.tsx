@@ -3,7 +3,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { EChartsOption } from 'echarts'
-import { useTheme } from 'next-themes'
 import { buildChartRenderOption } from '@/lib/charts/option'
 import {
   CHART_ROWS_DEFAULT,
@@ -13,6 +12,7 @@ import {
   parseChartSpec,
   shapeTableRows,
 } from '@/lib/charts/spec'
+import { useTheme } from '@/app/_shell/providers/theme-provider'
 import { useTable, useTableRowsSample } from '@/hooks/queries/tables'
 import { PreviewLoadingFrame } from './preview-shared'
 

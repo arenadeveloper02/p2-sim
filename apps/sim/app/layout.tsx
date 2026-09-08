@@ -4,6 +4,10 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { BrandedLayout } from '@/components/branded-layout'
+import {
+  creditsPerDollarHtmlAttributes,
+  setCreditsPerDollar,
+} from '@/lib/billing/credits/conversion'
 import { getCreditsPerDollarFromMasterConfig } from '@/lib/billing/credits/master-config'
 import {
   isChatEnabled,
@@ -13,12 +17,12 @@ import {
 } from '@/lib/core/config/env-flags'
 import { ArenaSessionShell } from '@/app/_shell/arena-session-shell'
 import { ConsentProvider } from '@/app/_shell/consent/consent-provider'
-import { CreditConversionConfigScript } from '@/app/_shell/credit-conversion-config-script'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { PasteAdmissionGuard } from '@/app/_shell/paste-admission-guard'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
+import { themeFoucScriptSource } from '@/app/_shell/providers/light-forced-segments'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
@@ -43,6 +47,7 @@ export const metadata: Metadata = generateBrandedMetadata()
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const creditsPerDollar = await getCreditsPerDollarFromMasterConfig()
+  setCreditsPerDollar(creditsPerDollar)
   const themeCSS = generateThemeCSS()
   const application = (
     <ToastProvider>
@@ -68,9 +73,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   )
 
   return (
-    <html lang='en' suppressHydrationWarning {...publicEnvHtmlAttributes()}>
+    <html
+      lang='en'
+      suppressHydrationWarning
+      {...publicEnvHtmlAttributes()}
+      {...creditsPerDollarHtmlAttributes(creditsPerDollar)}
+    >
       <head>
-        <CreditConversionConfigScript creditsPerDollar={creditsPerDollar} />
+        <Script
+          id='theme-fouc'
+          strategy='beforeInteractive'
+          dangerouslySetInnerHTML={{ __html: themeFoucScriptSource() }}
+        />
         {isReactScanEnabled && (
           <Script
             src='https://unpkg.com/react-scan/dist/auto.global.js'

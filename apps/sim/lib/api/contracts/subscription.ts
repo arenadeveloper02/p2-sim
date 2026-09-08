@@ -247,6 +247,11 @@ export const organizationUsageLimitApiResponseSchema = z
   })
   .passthrough()
 
+export const purchaseCreditsBodySchema = z.object({
+  amount: z.number().min(10).max(1000),
+  requestId: z.string().uuid(),
+})
+
 export const billingPortalBodySchema = z.object({
   context: z.enum(['user', 'organization']).optional().default('user'),
   organizationId: z.string().min(1).optional(),
@@ -350,6 +355,16 @@ export const updateUsageLimitContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: z.union([usageLimitApiResponseSchema, organizationUsageLimitApiResponseSchema]),
+  },
+})
+
+export const purchaseCreditsContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/billing/credits',
+  body: purchaseCreditsBodySchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema,
   },
 })
 
