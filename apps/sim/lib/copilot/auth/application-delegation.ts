@@ -11,6 +11,7 @@ export interface CopilotExecutionContext {
   executionId?: string
   toolCallId?: string
   copilotToolExecution?: boolean
+  copilotInteractionMode?: 'interactive' | 'headless'
 }
 
 export interface TrustedCopilotExecutionContext extends CopilotExecutionContext {
@@ -20,9 +21,20 @@ export interface TrustedCopilotExecutionContext extends CopilotExecutionContext 
   copilotToolExecution: true
 }
 
+export interface TrustedInteractiveCopilotExecutionContext extends TrustedCopilotExecutionContext {
+  copilotInteractionMode: 'interactive'
+}
+
+export class InteractiveCopilotExecutionRequiredError extends Error {
+  constructor() {
+    super('Live platform context is available only in an interactive Copilot session.')
+    this.name = 'InteractiveCopilotExecutionRequiredError'
+  }
+}
+
 export type CopilotResourceScope = Pick<
   NonNullable<DelegatedPrincipal['resourceScope']>,
-  'fileId' | 'tableId'
+  'fileId' | 'tableId' | 'credentialId'
 >
 
 export interface CopilotDelegationConfiguration {
@@ -76,7 +88,21 @@ export function requireTrustedCopilotExecutionContext(
     ...(context.executionId ? { executionId: context.executionId } : {}),
     toolCallId: context.toolCallId,
     copilotToolExecution: true,
+    ...(context.copilotInteractionMode
+      ? { copilotInteractionMode: context.copilotInteractionMode }
+      : {}),
   })
+}
+
+/** Restricts sensitive live platform reads to a server-classified interactive lifecycle. */
+export function requireInteractiveCopilotExecutionContext(
+  context: CopilotExecutionContext | undefined
+): TrustedInteractiveCopilotExecutionContext {
+  const trustedContext = requireTrustedCopilotExecutionContext(context)
+  if (trustedContext.copilotInteractionMode !== 'interactive') {
+    throw new InteractiveCopilotExecutionRequiredError()
+  }
+  return trustedContext as TrustedInteractiveCopilotExecutionContext
 }
 
 /** Creates a bounded Copilot principal from an explicitly trusted server lifecycle. */
@@ -99,11 +125,17 @@ export function createTrustedCopilotPrincipal(
   if (options.resourceScope?.tableId !== undefined) {
     requireNonEmpty(options.resourceScope.tableId, 'a valid table scope')
   }
+  if (options.resourceScope?.credentialId !== undefined) {
+    requireNonEmpty(options.resourceScope.credentialId, 'a valid credential scope')
+  }
 
   const issuedAt = new Date()
   const resourceScope = Object.freeze({
     ...(options.resourceScope?.fileId ? { fileId: options.resourceScope.fileId } : {}),
     ...(options.resourceScope?.tableId ? { tableId: options.resourceScope.tableId } : {}),
+    ...(options.resourceScope?.credentialId
+      ? { credentialId: options.resourceScope.credentialId }
+      : {}),
     ...(input.chatId ? { chatId: input.chatId } : {}),
     ...(input.executionId ? { executionId: input.executionId } : {}),
   })

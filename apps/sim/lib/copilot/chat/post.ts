@@ -12,6 +12,12 @@ import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
+import { chatOperations } from '@/lib/copilot/application/operations'
+import { withAskModeContext } from '@/lib/copilot/chat/ask-mode'
+import {
+  DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH,
+  DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH,
+} from '@/lib/copilot/chat/desktop-capabilities'
 import { type ChatLoadResult, resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat/payload'
@@ -63,6 +69,8 @@ import {
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import type { AtomicClaimResult } from '@/lib/core/idempotency'
 import { chatSendIdempotency } from '@/lib/core/idempotency'
+import { isWorkspaceCapabilityWithheld } from '@/lib/permission-groups/capability-assertions'
+import { capabilityRefusalResponse } from '@/lib/permission-groups/capability-response'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
 import {
@@ -71,10 +79,10 @@ import {
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
 import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 import {
   remapLegacyLocalCopilotCatalogId,
   resolveLocalCopilotRequestCatalogId,
@@ -328,9 +336,9 @@ const ChatMessageSchema = z.object({
       terminals: z
         .array(
           z.object({
-            id: z.string().max(64),
-            cwd: z.string().max(1024).optional(),
-            running: z.string().max(1024).optional(),
+            id: z.string().max(DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH),
+            cwd: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
+            running: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
             interactive: z.boolean().optional(),
             active: z.boolean().optional(),
           })
@@ -500,9 +508,19 @@ async function resolveAgentContexts(params: {
   message: string
   workspaceId?: string
   chatId?: string
+  resolvedSecretTraceRegistry?: ExecutionContext['resolvedSecretTraceRegistry']
   requestId: string
 }): Promise<Array<{ type: string; content: string; tag?: string; path?: string }>> {
-  const { contexts, resourceAttachments, userId, message, workspaceId, chatId, requestId } = params
+  const {
+    contexts,
+    resourceAttachments,
+    userId,
+    message,
+    workspaceId,
+    chatId,
+    resolvedSecretTraceRegistry,
+    requestId,
+  } = params
 
   let agentContexts: Array<{ type: string; content: string; tag?: string; path?: string }> = []
 
@@ -513,7 +531,8 @@ async function resolveAgentContexts(params: {
         userId,
         message,
         workspaceId,
-        chatId
+        chatId,
+        resolvedSecretTraceRegistry
       )
     } catch (error) {
       logger.error(`[${requestId}] Failed to process contexts`, error)
@@ -985,7 +1004,7 @@ async function resolveBranch(params: {
           workspaceId: requestedWorkspaceId,
           userId: payloadParams.userId,
           userMessageId: payloadParams.userMessageId,
-          mode: 'agent',
+          mode: mode ?? 'agent',
           model: localCatalogId || '',
           contexts: payloadParams.contexts,
           mcpServerIds: payloadParams.mcpServerIds,
@@ -1012,7 +1031,7 @@ async function resolveBranch(params: {
         chatId,
         messageId,
         userTimezone,
-        requestMode: 'agent',
+        requestMode: mode ?? 'agent',
       }),
   }
 }
@@ -1152,7 +1171,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       executionId,
       runId,
       transport: CopilotTransport.Stream,
-      userMessagePreview: body.message,
     })
     if (otelRoot.requestId) {
       requestId = otelRoot.requestId
@@ -1167,10 +1185,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     if (authenticatedUserEmail) {
       otelRoot.span.setAttribute(TraceAttr.UserEmail, authenticatedUserEmail)
     }
-    // `setInputMessages` is internally gated on
-    // OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT; safe to call.
-    otelRoot.setInputMessages({ userMessage: body.message })
-
     // Wrap the rest of the handler so nested spans attach to the
     // root via AsyncLocalStorage (otherwise they orphan into new traces).
     const activeOtelRoot = otelRoot
@@ -1202,6 +1216,54 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         activeOtelRoot.finish('error')
         return branch
       }
+
+      /**
+       * permission-group-enforced: copilot.use — Chat is a raw handler rather
+       * than a workspace operation, so the authorization funnel never sees it.
+       * The capability is read off `chatOperations.send` rather than restated,
+       * so the assertion and the refusal cannot drift from the declaration a
+       * declarative surface would enforce — including the `'none'` case, where
+       * a declarative surface asserts nothing and so does this.
+       *
+       * Gated on the workspace the turn actually lands in, which is the one
+       * `resolveBranch` just resolved rather than the one the request asked
+       * for. A send naming `workflowId` resolves the workflow's own workspace
+       * and ignores any `workspaceId` beside it, so reading the request's copy
+       * would aim the check at a workspace the chat never touches — or, with
+       * no `workspaceId` sent at all, skip it entirely. A branch that resolves
+       * no workspace is governed by no group.
+       *
+       * Still ahead of everything durable: no chat is resolved, no pending
+       * stream lock is taken and no run is created, which also settles the
+       * resume stream — with no run there is nothing to replay. The send claim
+       * taken above is released by the `finally`, so a refused send leaves a
+       * later retry free to start a turn.
+       */
+      const chatCapability = chatOperations.send.capability
+      if (
+        branch.workspaceId &&
+        chatCapability !== 'none' &&
+        (await isWorkspaceCapabilityWithheld(
+          authenticatedUserId,
+          branch.workspaceId,
+          chatCapability
+        ))
+      ) {
+        activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 403)
+        activeOtelRoot.finish('error')
+        return capabilityRefusalResponse(chatCapability)
+      }
+
+      /* Prompt content is captured only once the turn is going to run. Both
+         calls are internally gated on
+         OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, but the gate is on
+         whether capture is enabled at all, not on whether this caller may send
+         — so stamping them at span start exported the message of every turn the
+         capability check above then refused. Every refusal ahead of this point
+         (a rejected branch, a withheld `copilot.use`) now records the shape of
+         the request and none of its content. */
+      activeOtelRoot.setUserMessagePreview(body.message)
+      activeOtelRoot.setInputMessages({ userMessage: body.message })
 
       let currentChat: ChatLoadResult['chat'] = null
       let conversationHistory: unknown[] = []
@@ -1467,7 +1529,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           }),
         activeOtelRoot.context
       )
-      const agentContextsPromise = executionContextPromise.then(() => {
+      const agentContextsPromise = executionContextPromise.then((executionContext) => {
         return withCopilotSpan(
           TraceSpan.CopilotChatResolveAgentContexts,
           {
@@ -1482,6 +1544,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
               message: body.message,
               workspaceId,
               chatId: actualChatId,
+              resolvedSecretTraceRegistry: executionContext.resolvedSecretTraceRegistry,
               requestId,
             }),
           activeOtelRoot.context
@@ -1511,6 +1574,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       // typed snapshot Go diffs into baseline+delta messages.
       const workspaceContext = workspaceSnapshot?.markdown
       const vfs = workspaceSnapshot?.snapshot
+      const turnContexts = withAskModeContext(agentContexts, body.mode)
 
       executionContext.userPermission = userPermission ?? undefined
 
@@ -1534,7 +1598,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userId: authenticatedUserId,
                 userMessageId,
                 chatId: actualChatId,
-                contexts: agentContexts,
+                contexts: turnContexts,
                 mcpServerIds,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,
@@ -1562,7 +1626,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userId: authenticatedUserId,
                 userMessageId,
                 chatId: actualChatId,
-                contexts: agentContexts,
+                contexts: turnContexts,
                 mcpServerIds,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,

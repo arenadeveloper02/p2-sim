@@ -11,7 +11,7 @@ const { mockLineChart } = vi.hoisted(() => ({
   )),
 }))
 
-vi.mock('@/app/workspace/[workspaceId]/logs/components/dashboard/components', () => ({
+vi.mock('@/components/charts', () => ({
   LineChart: mockLineChart,
 }))
 

@@ -1,89 +1,49 @@
-import { internalKnowledgeSearchContract } from '@/lib/api/contracts/knowledge'
-import { defineInternalJsonRoute, internalRateLimits } from '@/lib/api/server/routes'
-import { OrchestrationError } from '@/lib/core/orchestration/types'
+import { searchWorkspaceKnowledgeContract } from '@/lib/api/contracts/knowledge'
 import {
-  internalKnowledgeAuthType,
-  resolveInternalKnowledgeBillingAttribution,
-} from '@/lib/knowledge/api/internal-route'
-import {
-  internalKnowledgeErrorPolicies,
-  internalKnowledgeSessionOrExecutorAuth,
-} from '@/lib/knowledge/api/route-policies'
+  defineInternalJsonRoute,
+  internalRateLimits,
+  internalSessionAuth,
+} from '@/lib/api/server/routes'
+import { internalKnowledgeErrorPolicies } from '@/lib/knowledge/api/route-policies'
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
 import { searchKnowledge } from '@/lib/knowledge/application/search'
-import { prepareKnowledgeModelInputProvenance } from '@/lib/knowledge/model-input-provenance'
-import { finalizeKnowledgeRegistryResponse } from '@/app/api/knowledge/secret-provenance'
+import { sourceAuthor } from '@/lib/knowledge/search/author'
 
 export const POST = defineInternalJsonRoute({
-  contract: internalKnowledgeSearchContract,
-  auth: internalKnowledgeSessionOrExecutorAuth,
+  contract: searchWorkspaceKnowledgeContract,
+  auth: internalSessionAuth,
   operation: knowledgeOperations.search,
   rateLimit: internalRateLimits.none({
-    reason: 'Preserve existing internal Knowledge-search behavior',
+    reason: 'A person typing queries; the embedding call is metered against their workspace',
   }),
   errorPolicy: internalKnowledgeErrorPolicies.search,
-  parseOptions: { maxBodyBytes: 2 * 1024 * 1024 },
-  mapInput: ({ body }, { principal, request }) => ({
-    knowledgeBaseIds: Array.isArray(body.knowledgeBaseIds)
-      ? body.knowledgeBaseIds
-      : [body.knowledgeBaseIds],
+  mapInput: ({ body }) => ({
+    workspaceId: body.workspaceId,
+    knowledgeBaseIds: body.knowledgeBaseIds,
     query: body.query,
     topK: body.topK,
-    tagFilters: body.tagFilters,
-    searchMode: body.searchMode,
-    rerankerEnabled: body.rerankerEnabled,
-    rerankerModel: body.rerankerModel,
-    rerankerInputCount: body.rerankerInputCount,
-    rerankerApiKey: body.rerankerApiKey,
-    skipUsageBilling: body.skipUsageBilling,
-    resolveBillingAttribution: (workspaceId: string) =>
-      resolveInternalKnowledgeBillingAttribution(request, principal, workspaceId),
-    prepareModelInputProvenance: async ({
-      userId,
-      workspaceId,
-    }: {
-      userId: string
-      workspaceId: string
-    }) => {
-      const prepared = await prepareKnowledgeModelInputProvenance({
-        headers: request.headers,
-        payload: body,
-        isInternalRequest: principal.kind === 'delegated',
-        userId,
-        workspaceId,
-        modelInput: body.query,
-      })
-      if (!prepared.success) throw new OrchestrationError('validation', prepared.error)
-      return prepared.registry
-    },
   }),
   useCase: searchKnowledge,
-  present: (result) => ({
-    success: true as const,
-    data: {
-      results: result.results.map(({ embeddingId, ...item }) => ({
-        ...item,
-        knowledgeBaseId: item.knowledgeBaseId ?? result.knowledgeBaseId,
-        chunkId: embeddingId,
-        ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}),
-      })),
-      query: result.query,
-      knowledgeBaseIds: result.knowledgeBaseIds,
-      knowledgeBaseId: result.knowledgeBaseId,
-      topK: result.topK,
-      totalResults: result.totalResults,
-      ...(result.cost ? { cost: result.cost } : {}),
-    },
-  }),
-  finalizeResponse: ({ request, principal, result, body }) => {
-    if (!result.resultSecretRegistry) {
-      throw new Error('Internal Knowledge search did not produce a provenance registry')
+  present: ({ results, knowledgeBases }, { input }) => {
+    const knowledgeBaseNames = new Map(knowledgeBases.map((kb) => [kb.id, kb.name]))
+    return {
+      success: true as const,
+      data: {
+        query: input.query ?? '',
+        results: results.map((result) => ({
+          documentId: result.documentId,
+          knowledgeBaseId: result.knowledgeBaseId,
+          knowledgeBaseName: knowledgeBaseNames.get(result.knowledgeBaseId) ?? '',
+          documentName: result.documentName,
+          sourceUrl: result.sourceUrl,
+          connectorType: result.connectorType,
+          sourceModifiedAt: result.sourceModifiedAt?.toISOString() ?? null,
+          author: sourceAuthor(result.metadata),
+          content: result.content,
+          chunkIndex: result.chunkIndex,
+          similarity: result.similarity,
+        })),
+      },
     }
-    return finalizeKnowledgeRegistryResponse({
-      request,
-      authType: internalKnowledgeAuthType(principal),
-      body,
-      registry: result.resultSecretRegistry,
-    })
   },
 })

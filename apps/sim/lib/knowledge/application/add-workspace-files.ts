@@ -23,11 +23,8 @@ import {
   resolveActiveKnowledgeBaseContext,
 } from '@/lib/knowledge/application/contexts'
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
-import {
-  createSingleDocument,
-  type DocumentData,
-  processDocumentsWithQueue,
-} from '@/lib/knowledge/documents/service'
+import { dispatchDocumentProcessing } from '@/lib/knowledge/documents/processing-dispatch'
+import { createSingleDocument, type DocumentData } from '@/lib/knowledge/documents/service'
 import { StorageService } from '@/lib/uploads'
 import {
   loadActiveWorkspaceFileContext,
@@ -125,8 +122,10 @@ async function prepareWorkspaceFile(
 export const addWorkspaceFilesToKnowledgeBase = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.addWorkspaceFiles,
   async resolveContext({
+    principal,
     input,
   }: {
+    principal: Principal
     input: AddWorkspaceFilesToKnowledgeBaseInput
   }): Promise<AddWorkspaceFilesContext> {
     const fileReferences = requireBoundedKnowledgeBatch(
@@ -135,7 +134,7 @@ export const addWorkspaceFilesToKnowledgeBase = defineAuthorizedKnowledgeUseCase
       ADD_WORKSPACE_FILES_COST_POLICY.maxItems
     )
     return {
-      ...(await resolveActiveKnowledgeBaseContext(input)),
+      ...(await resolveActiveKnowledgeBaseContext(input, principal)),
       fileReferences,
     }
   },
@@ -217,18 +216,12 @@ export const addWorkspaceFilesToKnowledgeBase = defineAuthorizedKnowledgeUseCase
           fileSize: document.fileSize,
           mimeType: document.mimeType,
         }
-        processDocumentsWithQueue(
-          [processingDocument],
-          context.knowledgeBaseId,
-          {},
+        void dispatchDocumentProcessing({
+          documents: [processingDocument],
+          knowledgeBaseId: context.knowledgeBaseId,
+          processingOptions: {},
           requestId,
-          billingAttribution
-        ).catch((error: unknown) => {
-          logger.error('Knowledge document processing pipeline failed', {
-            knowledgeBaseId: context.knowledgeBaseId,
-            documentId: document.id,
-            error,
-          })
+          billingAttribution,
         })
         added.push({
           documentId: document.id,

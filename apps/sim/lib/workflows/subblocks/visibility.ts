@@ -1,5 +1,5 @@
+import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/env-flags'
 import { WORKSPACE_ID_CONDITION_KEY } from '@/lib/workspaces/is-admin-workspace'
 import type { SubBlockConfig } from '@/blocks/types'
 
@@ -123,6 +123,45 @@ export function buildCanonicalIndex(subBlocks: SubBlockConfig[]): CanonicalIndex
   })
 
   return { groupsById, canonicalIdBySubBlockId }
+}
+
+/**
+ * The subblocks that define a block's canonical groups on the surface it is being rendered or
+ * resolved on.
+ *
+ * A block that is both an action and a trigger holds ONE `subBlocks` array: its own fields plus
+ * its trigger's, spread in after them. Those two sets routinely share a `canonicalParamId` while
+ * using DIFFERENT ids — Webflow's `siteSelector`/`manualSiteId` (action) and `triggerSiteId`
+ * (trigger) are all `siteId`. Indexed together they collapse into one group whose `basicId`
+ * belongs to the other surface, so the trigger member matches neither `basicId` nor `advancedIds`
+ * and every group-relative question about it answers wrong: {@link isSubBlockVisibleForMode} hides
+ * it outright, and {@link resolveDependencyValue} answers with the dormant surface's stale value.
+ *
+ * The serializer is deliberately exempt and keeps the unscoped index: `shouldSerializeSubBlock`
+ * drops the inactive surface's members BEFORE the canonical collapse reads them, so it resolves
+ * against a value map the dormant surface cannot appear in. That filter-then-resolve ordering is
+ * the whole reason execution has always been correct here. Every other caller resolves against the
+ * block's FULL value map, so for them the scoping has to live in the index instead.
+ *
+ * Only the trigger surface is filtered. The action surface keeps the whole array because a trigger
+ * member is already excluded by each caller's own trigger-mode filter, and because dropping it
+ * would also drop the `canonicalIdBySubBlockId` entry that lets a legacy alias still resolve
+ * through {@link resolveDependencyValue}. Mirrors `getSelectorContextSubBlocks`.
+ */
+export function getCanonicalSubBlocksForSurface(
+  subBlocks: SubBlockConfig[],
+  triggerSurface: boolean
+): SubBlockConfig[] {
+  if (!triggerSurface) return subBlocks
+  return subBlocks.filter(shouldUseSubBlockForTriggerModeCanonicalIndex)
+}
+
+/** {@link buildCanonicalIndex} over {@link getCanonicalSubBlocksForSurface}'s active set. */
+export function buildCanonicalIndexForSurface(
+  subBlocks: SubBlockConfig[],
+  triggerSurface: boolean
+): CanonicalIndex {
+  return buildCanonicalIndex(getCanonicalSubBlocksForSurface(subBlocks, triggerSurface))
 }
 
 /**
@@ -263,6 +302,29 @@ export function resolveActiveCanonicalValue(
   return mode === 'advanced' ? advancedValue : basicValue
 }
 
+/**
+ * {@link resolveActiveCanonicalValue} addressed by a canonical id or by a member's subblock id,
+ * for a control that reads a SIBLING field without knowing whether that field is half of a pair.
+ *
+ * Strict like its namesake: a pair answers with its active member only, honoring an explicit
+ * toggle, so a dormant half's stale value never scopes a control the run will not scope. A key
+ * outside any group reads its own stored value. Contrast {@link resolveDependencyValue}, whose
+ * cross-mode fallback exists for `dependsOn` gating and is wrong here.
+ */
+export function resolveActiveDependencyValue(
+  dependencyKey: string,
+  values: Record<string, unknown>,
+  canonicalIndex: CanonicalIndex,
+  overrides?: CanonicalModeOverrides
+): unknown {
+  const canonicalId =
+    canonicalIndex.groupsById[dependencyKey]?.canonicalId ||
+    canonicalIndex.canonicalIdBySubBlockId[dependencyKey]
+  const group = canonicalId ? canonicalIndex.groupsById[canonicalId] : undefined
+  if (!group) return values[dependencyKey]
+  return resolveActiveCanonicalValue(group, values, overrides)
+}
+
 /** Extract override entries matching a `${prefix}` key into a bare-`canonicalId`-keyed object. */
 function extractPrefixedModes(
   overrides: CanonicalModeOverrides,
@@ -285,10 +347,15 @@ function extractPrefixedModes(
  * `type` — so that two tool entries of the SAME type (e.g. two Table tools on one Agent block) get
  * independent canonical modes instead of colliding on a shared `${toolType}:${canonicalId}` key.
  *
- * Falls back to the legacy `${legacyToolType}:` prefix (the pre-instance-scoping format) when no
- * index-scoped key matches, so an override saved before this scoping change isn't silently dropped -
- * it keeps applying (type-shared, the old behavior) until the user re-toggles it explicitly, at which
- * point it's rewritten under the new index-scoped key.
+ * The legacy `${legacyToolType}:` prefix (the pre-instance-scoping format) is the BASELINE, with
+ * index-scoped entries layered over it per canonical id, so an override saved before this scoping
+ * change isn't silently dropped - it keeps applying (type-shared, the old behavior) until the user
+ * re-toggles that specific canonical id, at which point the new index-scoped key wins for it alone.
+ *
+ * Merging per key rather than preferring one map wholesale is what keeps a PARTIALLY re-toggled
+ * tool intact. Toggles are written one key at a time (`setBlockCanonicalMode`), so the first toggle
+ * on a legacy tool produces a map holding both formats; returning only the index-scoped side there
+ * would silently revert every canonical id the user had not yet re-toggled back to basic.
  *
  * Returns `undefined` when there are no overrides, no `toolIndex`, and no legacy match.
  */
@@ -300,8 +367,9 @@ export function scopeCanonicalModesForTool(
   if (!overrides) return undefined
   const scoped =
     toolIndex !== undefined ? extractPrefixedModes(overrides, `${toolIndex}:`) : undefined
-  if (scoped) return scoped
-  return legacyToolType ? extractPrefixedModes(overrides, `${legacyToolType}:`) : undefined
+  const legacy = legacyToolType ? extractPrefixedModes(overrides, `${legacyToolType}:`) : undefined
+  if (!scoped) return legacy
+  return legacy ? { ...legacy, ...scoped } : scoped
 }
 
 const INDEX_SCOPED_KEY = /^(\d+):(.+)$/
@@ -470,12 +538,19 @@ export function isSubBlockVisibleForTriggerMode(
 }
 
 /**
- * Resolve the dependency value for a dependsOn key, honoring canonical swaps.
+ * Resolve what a `dependsOn` key currently points at, honoring canonical swaps.
  *
- * When a parent workflow block renders integration tool params flattened by canonical ids
- * (e.g. `oauthCredential`) but `dependsOn` still names the integration subblock id (`credential`),
- * the parent block's canonical index may not map `credential` — treat `oauthCredential` as an
- * alias so gating resolves.
+ * Deliberately PERMISSIVE, unlike {@link resolveActiveCanonicalValue}: it falls back across the
+ * pair and then scans the group's other members, so a dependant stays satisfied whenever the group
+ * holds a usable value anywhere. That is the right answer for a gate ("is my parent chosen yet?")
+ * and the wrong answer for a value read ("what is live?") - use `resolveActiveCanonicalValue` for
+ * the latter, which is why the two differ.
+ *
+ * Pass a {@link buildCanonicalIndexForSurface} index. The member scan predates surface scoping and
+ * was how a trigger alias (`triggerCredentials` under an action `oauthCredential` group) used to be
+ * found at all; a scoped index now makes that alias the group's own `basicId`, so the scan is left
+ * only as the fallback for state the mode backfill has not reached. Handing it an UNSCOPED index on
+ * a trigger-mode block puts the dormant action surface back in scan range.
  */
 export function resolveDependencyValue(
   dependencyKey: string,
@@ -570,7 +645,7 @@ export function isSubBlockHidden(
   subBlock: SubBlockConfig,
   options?: { hosted?: boolean }
 ): boolean {
-  const hosted = options?.hosted ?? isHosted
+  const hosted = options?.hosted ?? getDeploymentShape().hosted
   if (subBlock.hideWhenHosted && hosted) return true
   if (subBlock.hideWhenEnvSet && anyEnvSet(subBlock.hideWhenEnvSet)) return true
   return false

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
 import {
+  assembleCustomBlockInputMapping,
   buildCustomBlockConfig,
   CUSTOM_BLOCK_TILE_COLOR,
   type CustomBlockRow,
@@ -149,5 +150,106 @@ describe('buildCustomBlockConfig', () => {
       empty: '',
     })
     expect(JSON.parse(json as string)).toEqual({ title: 'Acme', count: 3 })
+  })
+})
+
+describe('sourceWorkspaceName', () => {
+  const icon = () => null as never
+
+  it('carries the source workspace so same-named environment copies stay distinguishable', () => {
+    // prod/uat/sandbox copies of one block share a name and differ only by an opaque
+    // `custom_block_<slug>` type. Without the workspace, an allowlist decision in Access
+    // Control — or any other list of blocks — is a coin flip between three identical rows.
+    const prod = buildCustomBlockConfig({ ...row, workspaceName: 'Impl (prod)' }, [], { icon })
+    const uat = buildCustomBlockConfig(
+      { ...row, type: 'custom_block_uat999', workspaceName: 'Impl (uat)' },
+      [],
+      { icon }
+    )
+
+    expect(prod.name).toBe(uat.name)
+    expect(prod.sourceWorkspaceName).toBe('Impl (prod)')
+    expect(uat.sourceWorkspaceName).toBe('Impl (uat)')
+  })
+
+  it('is omitted when the workspace is unknown, so no empty suffix renders', () => {
+    expect(buildCustomBlockConfig(row, [], { icon }).sourceWorkspaceName).toBeUndefined()
+    expect(
+      buildCustomBlockConfig({ ...row, workspaceName: null }, [], { icon }).sourceWorkspaceName
+    ).toBeUndefined()
+  })
+})
+
+describe('assembleCustomBlockInputMapping', () => {
+  const fieldSubBlocks = [
+    { id: 'flag', name: 'flag', type: 'boolean' },
+    { id: 'payload', name: 'payload', type: 'object' },
+    { id: 'name', name: 'name', type: 'string' },
+  ]
+
+  it("decodes a tool row's stringified boolean before handing it to the child", () => {
+    expect(JSON.parse(assembleCustomBlockInputMapping({ flag: 'false' }, fieldSubBlocks))).toEqual({
+      flag: false,
+    })
+    expect(JSON.parse(assembleCustomBlockInputMapping({ flag: 'true' }, fieldSubBlocks))).toEqual({
+      flag: true,
+    })
+  })
+
+  it('leaves a text field alone even when it holds a boolean-looking string', () => {
+    expect(JSON.parse(assembleCustomBlockInputMapping({ name: 'false' }, fieldSubBlocks))).toEqual({
+      name: 'false',
+    })
+  })
+
+  it('still drops reserved keys and untouched fields', () => {
+    expect(
+      JSON.parse(
+        assembleCustomBlockInputMapping(
+          { flag: '', name: '', workflowId: 'wf_1', inputMapping: '{}' },
+          fieldSubBlocks
+        )
+      )
+    ).toEqual({})
+  })
+
+  it('keeps a canvas value that is already typed', () => {
+    expect(JSON.parse(assembleCustomBlockInputMapping({ flag: false }, fieldSubBlocks))).toEqual({
+      flag: false,
+    })
+  })
+})
+
+describe('assembleCustomBlockInputMapping field decoding', () => {
+  const inputFields = [
+    { id: 'flag', name: 'flag', type: 'boolean' },
+    { id: 'count', name: 'count', type: 'number' },
+    { id: 'body', name: 'body', type: 'object' },
+    { id: 'note', name: 'note', type: 'string' },
+  ]
+
+  it('decodes on the DECLARED field type, not the control it renders as', () => {
+    // `number` collects in a text field and `object` in a code editor — both store
+    // strings, so keying on the control would decode neither.
+    expect(
+      JSON.parse(
+        assembleCustomBlockInputMapping(
+          { flag: 'false', count: '3', body: '{"a":1}', note: 'false' },
+          inputFields
+        )
+      )
+    ).toEqual({ flag: false, count: 3, body: { a: 1 }, note: 'false' })
+  })
+
+  it('leaves canvas values, which are already typed, untouched', () => {
+    expect(
+      JSON.parse(assembleCustomBlockInputMapping({ flag: false, count: 3 }, inputFields))
+    ).toEqual({ flag: false, count: 3 })
+  })
+
+  it('passes values through when no fields are known', () => {
+    expect(JSON.parse(assembleCustomBlockInputMapping({ flag: 'false' }))).toEqual({
+      flag: 'false',
+    })
   })
 })

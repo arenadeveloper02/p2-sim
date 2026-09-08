@@ -13,7 +13,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useFolderMap } from '@/hooks/queries/folders'
-import { fetchKnowledgeBase } from '@/hooks/queries/kb/knowledge'
+import { fetchKnowledgeBase, KNOWLEDGE_BASE_DETAIL_STALE_TIME } from '@/hooks/queries/kb/knowledge'
 import { collectDuplicateNames, disambiguateLabelByFolder } from '@/hooks/queries/utils/folder-tree'
 import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
 import { useUserAccessKnowledgeBases } from '@/hooks/use-knowledge'
@@ -75,9 +75,9 @@ export function KnowledgeBaseSelector({
   const selectedKnowledgeBaseQueries = useQueries({
     queries: selectedIds.map((selectedId) => ({
       queryKey: knowledgeKeys.detail(selectedId),
-      queryFn: () => fetchKnowledgeBase(selectedId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchKnowledgeBase(selectedId, signal),
       enabled: Boolean(selectedId),
-      staleTime: 60 * 1000,
+      staleTime: KNOWLEDGE_BASE_DETAIL_STALE_TIME,
     })),
   })
 
@@ -184,6 +184,8 @@ export function KnowledgeBaseSelector({
   const label =
     subBlock.placeholder || (isMultiSelect ? 'Select knowledge bases' : 'Select knowledge base')
 
+  const hasMemberScopedSelection = selectedKnowledgeBases.some((kb) => kb.hasMemberScopedConnector)
+
   return (
     <div className='w-full'>
       {/* Selected knowledge bases display (for multi-select) */}
@@ -256,6 +258,13 @@ export function KnowledgeBaseSelector({
             : undefined
         }
       />
+      {hasMemberScopedSelection && (
+        <p className='mt-1.5 text-[var(--text-muted)] text-caption leading-snug'>
+          Documents synced per member are returned only when the person who triggers the run has
+          connected their account. Scheduled, API, webhook, and chat runs see workspace-visible
+          documents only.
+        </p>
+      )}
     </div>
   )
 }

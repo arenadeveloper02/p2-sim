@@ -291,7 +291,6 @@ const OPENAI_IMAGE_MODELS = [
   'gpt-image-1.5',
   'gpt-image-1',
   'gpt-image-1-mini',
-  'chatgpt-image-latest',
 ] as const
 const OPENAI_IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
 const OPENAI_IMAGE_2_SIZES = [...OPENAI_IMAGE_SIZES, '2560x1440', '3840x2160'] as const

@@ -36,6 +36,7 @@ function makeContext() {
   context.toolPermissions = {
     enabled: true,
     autoAllowed: new Set(),
+    autoAllowPermitted: true,
   }
   context.trace = new TraceCollector()
   return context
@@ -94,7 +95,7 @@ describe('toolCallNeedsApproval', () => {
     expect(toolCallNeedsApproval('terminal', context, {}, false, runCall)).toBe(false)
   })
 
-  it.each(['deploy_api', 'deploy_chat', 'deploy_mcp'])(
+  it.each(['deploy_as_api', 'deploy_as_chat', 'deploy_as_mcp'])(
     'honors the saved permission for a %s undeploy',
     (toolName) => {
       const context = makeContext()
@@ -108,10 +109,10 @@ describe('toolCallNeedsApproval', () => {
 
   it('applies the normal saved permission to code with a secret reference', () => {
     const context = makeContext()
-    context.toolPermissions.autoAllowed.add('function_execute')
+    context.toolPermissions.autoAllowed.add('run_function')
 
     expect(
-      toolCallNeedsApproval('function_execute', context, {}, false, {
+      toolCallNeedsApproval('run_function', context, {}, false, {
         language: 'javascript',
         code: 'return {{API_KEY}}',
       })
@@ -135,7 +136,7 @@ describe('toolCallNeedsApproval', () => {
     context.toolPermissions.enabled = false
 
     expect(
-      toolCallNeedsApproval('function_execute', context, {}, false, {
+      toolCallNeedsApproval('run_function', context, {}, false, {
         language: 'javascript',
         code: 'return {{API_KEY}}',
       })
@@ -213,14 +214,15 @@ describe('gated tools are askable', () => {
         .sort()
     ).toEqual([
       'call_integration_tool',
+      'cancel_workflow_run',
       'delete_workspace_mcp_server',
-      'deploy_api',
-      'deploy_chat',
-      'deploy_mcp',
-      'function_execute',
+      'deploy_as_api',
+      'deploy_as_chat',
+      'deploy_as_mcp',
       'promote_to_live',
       'redeploy',
       'run_code',
+      'run_function',
       'run_workflow',
       'run_workflow_until_block',
       'terminal',
@@ -323,7 +325,7 @@ describe('runGatedToolExecution', () => {
   it('accepts the normal chat-level decision for code with a secret reference', async () => {
     const context = makeContext()
     const toolCall = makeToolCall()
-    toolCall.name = 'function_execute'
+    toolCall.name = 'run_function'
     toolCall.params = { language: 'javascript', code: 'return {{API_KEY}}' }
     const execute = vi.fn().mockResolvedValue({ status: 'success' })
     waitForToolPermissionDecision.mockResolvedValue({
@@ -334,7 +336,7 @@ describe('runGatedToolExecution', () => {
     await gate(context, toolCall, execute, [])
 
     expect(execute).toHaveBeenCalledTimes(1)
-    expect(context.toolPermissions.autoAllowed.has('function_execute')).toBe(true)
+    expect(context.toolPermissions.autoAllowed.has('run_function')).toBe(true)
   })
 
   it('does not suppress later prompts for a one-off allow', async () => {
@@ -410,5 +412,46 @@ describe('runGatedToolExecution', () => {
 
     const call = events.find((event) => event.payload?.phase === 'call')
     expect(call?.payload).toMatchObject({ status: 'executing', toolCallId: 'call-1' })
+  })
+})
+
+describe('when the permission group withholds tool auto-approval', () => {
+  /**
+   * The stored list is what `toolCallNeedsApproval` reads, so an entry saved
+   * before an admin set the key would otherwise keep silencing the prompt for
+   * as long as it sat in the table. Turning the key on has to take effect on
+   * the next call, not on the next entry.
+   */
+  it('prompts for a tool the user already always-allowed', () => {
+    const context = makeContext()
+    context.toolPermissions.autoAllowed.add('terminal')
+    context.toolPermissions.autoAllowPermitted = false
+
+    expect(toolCallNeedsApproval('terminal', context, {}, false, { operation: 'run' })).toBe(true)
+  })
+
+  it('leaves an ungated tool ungated', () => {
+    toolRequiresApproval.mockReturnValue(false)
+    const context = makeContext()
+    context.toolPermissions.autoAllowPermitted = false
+
+    expect(toolCallNeedsApproval('gmail_read_v2', context, {}, false)).toBe(false)
+    toolRequiresApproval.mockReturnValue(true)
+  })
+
+  it('does not let an always-allow answer suppress the rest of the turn', async () => {
+    const context = makeContext()
+    context.toolPermissions.autoAllowPermitted = false
+    const toolCall = makeToolCall()
+    waitForToolPermissionDecision.mockResolvedValue({
+      toolCallId: 'call-1',
+      decision: 'always_allow',
+    })
+
+    await gate(context, toolCall, () => Promise.resolve({ status: 'success' }), [])
+
+    // The answer still ran the tool; only its memory is refused.
+    expect(context.toolPermissions.autoAllowed.has('terminal')).toBe(false)
+    expect(toolCallNeedsApproval('terminal', context, {}, false, { operation: 'run' })).toBe(true)
   })
 })

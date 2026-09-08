@@ -28,7 +28,7 @@ const ROW_STEP_CLASSES = [styles.row0, styles.row1, styles.row2] as const
  * match-count mono ChipTag (fill stepped up to `--surface-6` so the pill
  * stays legible on the grey ground), the query itself lifted onto the
  * tile's highlight - a white card in the audit tile's exact chrome
- * (`--white` fill, 1px `--border-1` hairline, rounded, `shadow-sm`) with
+ * (`--white` fill, 1px `--border-1` hairline, rounded, `shadow-xs`) with
  * a blinking caret holding the query - a row of quiet mono filter chips,
  * and the three matched runs as airy rows ruled by 1px `--border-1`
  * hairlines, each pairing the workflow name with its Error badge and
@@ -55,13 +55,13 @@ export function FilterRunsGraphic() {
       >
         <div className='w-full max-w-[312px] sm:max-lg:[@container(min-width:500px)]:max-w-[400px]'>
           <div className='mb-2.5 flex items-center justify-between'>
-            <span className='font-medium text-[var(--text-primary)] text-base'>Search runs</span>
+            <span className='text-[var(--text-primary)] text-base'>Search runs</span>
             <ChipTag variant='mono' className='bg-[var(--surface-6)]'>
               3 matches
             </ChipTag>
           </div>
 
-          <div className='flex items-center gap-2.5 rounded-xl border border-[var(--border-1)] bg-[var(--white)] px-3 py-2 shadow-sm'>
+          <div className='flex items-center gap-2.5 rounded-xl border border-[var(--border-1)] bg-[var(--white)] px-3 py-2 shadow-xs'>
             <Search className='size-[14px] shrink-0 text-[var(--text-icon)]' />
             <span className='min-w-0 truncate text-[var(--text-body)] text-caption'>
               nightly sync
@@ -87,7 +87,7 @@ export function FilterRunsGraphic() {
                   ROW_STEP_CLASSES[index]
                 )}
               >
-                <span className='min-w-0 truncate font-medium text-[var(--text-primary)] text-caption'>
+                <span className='min-w-0 truncate text-[var(--text-primary)] text-caption'>
                   {run.workflow}
                 </span>
                 <span className='flex shrink-0 items-center gap-2.5'>

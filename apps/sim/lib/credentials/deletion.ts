@@ -109,9 +109,14 @@ export async function deleteConnectionCredential(
  * Scoped by `accountId`, not by owner — the caller is already authorized
  * against the credential, which may belong to another user.
  *
- * The reference check is a predicate on the delete: `credential.accountId` is
- * `ON DELETE CASCADE`, so a credential racing a separate check would be reaped
- * by Postgres without {@link clearCredentialRefs} ever running.
+ * The reference check is a predicate on the delete rather than a separate
+ * SELECT, which narrows the race from check-then-act down to a single
+ * statement — it does not close it. The caller issues the credential delete and
+ * this account delete as two statements (`orchestration/index.ts`), so under
+ * READ COMMITTED a `credential` row another workspace commits after this
+ * statement takes its snapshot is invisible here and is then reaped by
+ * `credential.accountId ON DELETE CASCADE` without {@link clearCredentialRefs}
+ * ever running. The window is narrow, but a hit is silent data loss.
  */
 export async function deleteOrphanedOAuthAccount(accountId: string): Promise<void> {
   const deleted = await db
@@ -160,9 +165,9 @@ export async function clearCredentialRefs(
 /**
  * Deactivates app-level trigger webhooks bound to this credential so inbound
  * events stop routing once the account is disconnected. Native Slack and
- * TikTok rows reference it via `providerConfig.credentialId`; custom-bot Slack
- * rows use `routingKey` = the bot credential id. Neither is a foreign key, so
- * neither is covered by CASCADE.
+ * QuickBooks and TikTok rows reference it via `providerConfig.credentialId`;
+ * custom-bot Slack rows use `routingKey` = the bot credential id. None is a
+ * foreign key, so none is covered by CASCADE.
  */
 async function deactivateCredentialBoundWebhooks(credentialId: string): Promise<void> {
   await db
@@ -178,6 +183,10 @@ async function deactivateCredentialBoundWebhooks(credentialId: string): Promise<
           ),
           and(
             eq(schema.webhook.provider, 'tiktok'),
+            sql`${schema.webhook.providerConfig}->>'credentialId' = ${credentialId}`
+          ),
+          and(
+            eq(schema.webhook.provider, 'quickbooks'),
             sql`${schema.webhook.providerConfig}->>'credentialId' = ${credentialId}`
           ),
           and(eq(schema.webhook.provider, 'slack'), eq(schema.webhook.routingKey, credentialId))

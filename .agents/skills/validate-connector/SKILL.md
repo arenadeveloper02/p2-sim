@@ -37,10 +37,15 @@ apps/sim/components/icons.tsx                 # Icon definition for the service
 
 If the connector uses selectors, also read:
 ```
-apps/sim/hooks/selectors/registry.ts         # Selector key definitions
-apps/sim/hooks/selectors/types.ts            # SelectorKey union type
-apps/sim/lib/workflows/subblocks/context.ts  # SELECTOR_CONTEXT_FIELDS
+apps/sim/lib/selectors/manifest.ts            # Browser-safe exhaustive metadata
+apps/sim/lib/selectors/types.ts               # Selector context and option types
+apps/sim/lib/selectors/context.ts             # Active canonical context projection
+apps/sim/lib/selectors/server/registry.ts     # Exhaustive server attachments
+apps/sim/lib/selectors/server/providers/*     # Matching provider attachment
 ```
+
+Apply the `validate-selector` skill to the matching key and provider primitive. There is no client
+provider selector registry.
 
 ## Step 2: Pull API Documentation
 
@@ -154,11 +159,11 @@ For each API endpoint the connector calls:
 - [ ] The connector does NOT hit known API pagination limits silently (e.g., HubSpot search 10k cap)
 
 ### Deletion-Reconciliation Safety (`listingCapped`) — CRITICAL
-The sync engine hard-deletes any stored document absent from a full listing. Audit every path where `listDocuments` can return less than the full source set:
+The sync engine tombstones, then hard-deletes, any stored document absent from a full listing. Audit every path where `listDocuments` can return less than the full source set:
 - [ ] `syncContext.listingCapped = true` is set when a `maxItems`-style cap truncates the listing while more documents exist
 - [ ] `listingCapped` is set when a transient per-item error drops a still-existing document from the listing
 - [ ] `listingCapped` is NOT set when the source is genuinely exhausted (deleted documents must reconcile) or for intentional scope filters (date cutoffs)
-This is the most common connector bug class — verify it explicitly against `sync-engine.ts`'s reconciliation gate.
+Verify it explicitly against `shouldReconcileDeletions` in `sync-engine.ts`.
 
 ### Pagination State Across Pages
 - [ ] `syncContext` is used to cache state across pages (user names, field maps, instance URLs, portal IDs, etc.)
@@ -219,8 +224,17 @@ Connectors where the list API already returns content inline (e.g., Slack messag
   - A `type: 'selector'` field with `selectorKey`, `canonicalParamId`, `mode: 'basic'`
   - A `type: 'short-input'` field with the same `canonicalParamId`, `mode: 'advanced'`
   - `required` is identical on both fields in the pair
-- [ ] `selectorKey` values exist in the selector registry
+- [ ] `selectorKey` values exist in the browser-safe manifest and remote keys have exactly one
+      server attachment
 - [ ] `dependsOn` references selector field `id` values, not `canonicalParamId`
+- [ ] The shared builder projects only the active canonical dependency into an allowlisted
+      `SelectorContextKey`; exact `{{KEY}}` references remain unresolved in the browser
+- [ ] The attachment binds stored credentials to the actor, workspace, and trusted provider/service
+      and declares a reviewed `fixed`, `credential-bound`, or `user-controlled` destination policy
+- [ ] The connector sends workspace scope through the shared selector transport and does not send
+      the full connector configuration
+- [ ] No client provider selector module, browser token request, provider-specific selector request,
+      or selector-only route remains
 
 ### validateConfig
 - [ ] Validates all required fields are present before making API calls
@@ -297,7 +311,7 @@ Group findings by severity:
 - Incorrect response field mapping (accessing wrong path)
 - SOQL/query fields that don't exist on the target object
 - Pagination that silently hits undocumented API limits
-- Missing `syncContext.listingCapped = true` when a cap or transient error truncates the listing — the sync engine hard-deletes the documents absent from the partial listing
+- Missing `syncContext.listingCapped = true` when a cap or transient error truncates the listing — the sync engine tombstones and later hard-deletes the documents absent from the partial listing
 - Missing error handling that would crash the sync
 - `requiredScopes` not a subset of OAuth provider scopes
 - Query/filter injection: user-controlled values interpolated into OData `$filter`, SOQL, or query strings without escaping
@@ -305,6 +319,9 @@ Group findings by severity:
 - `contentHash` mismatch between `listDocuments` stub and `getDocument` return — causes unnecessary re-processing every sync
 - Server/runtime import in `meta.ts` (e.g. `@/lib/knowledge/...`, `input-validation.server`, `fetchWithRetry`) — pulls server-only code into the client bundle and breaks the build
 - Connector missing from `connectors/registry.ts` (the client-safe meta registry) — or its entry there imports the runtime module instead of `meta.ts` — the knowledge UI can't render it
+- A connector selector resolves shared secrets in the browser, lacks scope or credential provider
+  binding, combines hidden authentication with an unsafe user-controlled destination, or forwards
+  protected/provider payload data to the client
 
 **Warning** (incorrect behavior, data quality issues, or convention violations):
 - HTML content not stripped via `htmlToPlainText`
@@ -358,6 +375,8 @@ After fixing, confirm:
 - [ ] Validated data transformation: plain text extraction, HTML stripping, content hashing
 - [ ] Validated tag definitions match mapTags output, correct fieldTypes
 - [ ] Validated config fields: canonical pairs, selector keys, required flags
+- [ ] Validated each dynamic selector through the shared manifest, server attachment, and
+      `selectors.execute` boundary
 - [ ] Validated validateConfig: lightweight check, error messages, retry options
 - [ ] Validated getDocument: null on 404, all content types handled, no redundant re-fetches, syncContext forwarding
 - [ ] Validated fetchWithRetry used for all external calls (no raw fetch), VALIDATE_RETRY_OPTIONS threaded through helpers

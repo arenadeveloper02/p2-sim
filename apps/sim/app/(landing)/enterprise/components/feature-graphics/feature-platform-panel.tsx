@@ -25,7 +25,7 @@ export function FeaturePlatformPanel({
     <div
       aria-hidden='true'
       className={cn(
-        'absolute right-0 bottom-0 left-0 overflow-hidden rounded-tl-xl border-[var(--border-1)] border-t border-l bg-[var(--surface-2)] shadow-sm',
+        'absolute right-0 bottom-0 left-0 overflow-hidden rounded-tl-xl border-[var(--border-1)] border-t border-l bg-[var(--surface-2)] shadow-xs',
         className
       )}
     >
@@ -33,7 +33,7 @@ export function FeaturePlatformPanel({
         <span className='flex size-6 items-center justify-center rounded-md bg-[var(--surface-5)]'>
           <Icon className='size-[14px] text-[var(--text-icon)]' />
         </span>
-        <span className='font-medium text-[var(--text-primary)] text-base'>{title}</span>
+        <span className='text-[var(--text-primary)] text-base'>{title}</span>
       </div>
       {children}
     </div>

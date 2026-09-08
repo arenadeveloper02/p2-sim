@@ -661,7 +661,12 @@ export const bedrockProvider: ProviderConfig = {
               }
             }
 
-            const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+            const { toolParams, executionParams } = prepareToolExecution(
+              tool,
+              toolArgs,
+              request,
+              toolUse.toolUseId
+            )
             const { rawResponse, modelResponse } = await executeProviderTool(
               toolName,
               executionParams,

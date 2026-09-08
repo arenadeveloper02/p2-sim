@@ -1,34 +1,36 @@
 import { toRecord } from '@sim/utils/object'
 import {
-  CreateFile,
+  CreateEmptyFile,
   CreateWorkflow,
-  DownloadToWorkspaceFile,
+  DownloadFile,
   EditWorkflow,
   Ffmpeg,
-  FunctionExecute,
   GenerateAudio,
   GenerateImage,
   GenerateVideo,
   Knowledge,
-  KnowledgeBase,
+  ManageKnowledgeBase,
+  PrepareFileEdit,
   Rm,
+  RunFunction,
+  TableViews,
   UserTable,
-  WorkspaceFile,
 } from '@/lib/copilot/generated/tool-catalog-v1'
-import type { MothershipResource, MothershipResourceType } from './types'
+import type { MothershipResourceType, MothershipResourceUpdate } from './types'
 
-type ChatResource = MothershipResource
+type ChatResource = MothershipResourceUpdate
 type ResourceType = MothershipResourceType
 
 const RESOURCE_TOOL_NAMES: Set<string> = new Set([
   UserTable.id,
-  CreateFile.id,
-  WorkspaceFile.id,
-  DownloadToWorkspaceFile.id,
+  TableViews.id,
+  CreateEmptyFile.id,
+  PrepareFileEdit.id,
+  DownloadFile.id,
   CreateWorkflow.id,
   EditWorkflow.id,
-  FunctionExecute.id,
-  KnowledgeBase.id,
+  RunFunction.id,
+  ManageKnowledgeBase.id,
   Knowledge.id,
   GenerateImage.id,
   GenerateVideo.id,
@@ -52,6 +54,7 @@ function getWorkspaceFileTarget(
 }
 
 const READ_ONLY_TABLE_OPS = new Set(['get', 'get_schema', 'get_row', 'query_rows'])
+const READ_ONLY_VIEW_OPS = new Set(['list_views', 'get_view'])
 const READ_ONLY_KB_OPS = new Set(['get', 'query', 'list_tags', 'get_tag_usage'])
 const READ_ONLY_KNOWLEDGE_ACTIONS = new Set(['listed', 'queried'])
 
@@ -107,8 +110,8 @@ export function extractResourcesFromToolResult(
       return []
     }
 
-    case CreateFile.id:
-    case WorkspaceFile.id: {
+    case CreateEmptyFile.id:
+    case PrepareFileEdit.id: {
       const file = toRecord(data.file)
       if (file.id) {
         return [{ type: 'file', id: file.id as string, title: (file.name as string) || 'File' }]
@@ -121,7 +124,7 @@ export function extractResourcesFromToolResult(
       return []
     }
 
-    case FunctionExecute.id: {
+    case RunFunction.id: {
       if (result.tableId) {
         return [
           {
@@ -143,7 +146,7 @@ export function extractResourcesFromToolResult(
       return []
     }
 
-    case DownloadToWorkspaceFile.id:
+    case DownloadFile.id:
     case GenerateImage.id:
     case GenerateVideo.id:
     case GenerateAudio.id:
@@ -195,7 +198,7 @@ export function extractResourcesFromToolResult(
       return []
     }
 
-    case KnowledgeBase.id: {
+    case ManageKnowledgeBase.id: {
       if (READ_ONLY_KB_OPS.has(getOperation(params) ?? '')) return []
 
       const args = toRecord(params?.args)
@@ -211,6 +214,33 @@ export function extractResourcesFromToolResult(
         return [{ type: 'knowledgebase', id: kbId, title: kbName }]
       }
       return []
+    }
+
+    // The table agent's view tool. A write names the table it touched and — for
+    // create/update/set-default — the view, so the panel opens the table pinned
+    // to that view; a delete opens the table unpinned. Reads open nothing.
+    case TableViews.id: {
+      const operation = getOperation(params) ?? ''
+      if (READ_ONLY_VIEW_OPS.has(operation)) return []
+      const args = toRecord(params?.args)
+      const tableId = (data.tableId as string) ?? (args.tableId as string)
+      if (!tableId) return []
+      const viewId = data.viewId
+      // Pin and unpin are mutually exclusive: the wire contract rejects the
+      // pair, and a merge handed both would apply neither. A delete unpins
+      // regardless of any view id its result happens to carry.
+      return [
+        {
+          type: 'table',
+          id: tableId,
+          title: (data.tableName as string) || 'Table',
+          ...(operation === 'delete_view'
+            ? { clearViewId: true as const }
+            : typeof viewId === 'string' && viewId
+              ? { viewId }
+              : {}),
+        },
+      ]
     }
 
     case Knowledge.id: {
@@ -239,9 +269,9 @@ export function extractResourcesFromToolResult(
 }
 
 const DELETE_CAPABLE_TOOL_RESOURCE_TYPE: Record<string, ResourceType> = {
-  [WorkspaceFile.id]: 'file',
+  [PrepareFileEdit.id]: 'file',
   [UserTable.id]: 'table',
-  [KnowledgeBase.id]: 'knowledgebase',
+  [ManageKnowledgeBase.id]: 'knowledgebase',
   // rm spans categories, so unlike every other entry its resource type comes
   // from each outcome's kind rather than from this map. The entry exists so
   // hasDeleteCapability(rm) holds; the rm case below ignores this value.
@@ -255,7 +285,7 @@ const RM_KIND_RESOURCE_TYPE: Record<string, ResourceType> = {
   workflow: 'workflow',
   workflow_folder: 'folder',
   table: 'table',
-  knowledge_base: 'knowledgebase',
+  manage_knowledge_base: 'knowledgebase',
 }
 
 export function hasDeleteCapability(toolName: string): boolean {
@@ -295,7 +325,7 @@ export function extractDeletedResourcesFromToolResult(
         return [{ type, id, title: leaf ? decodeURIComponent(leaf) : 'Deleted resource' }]
       })
     }
-    case WorkspaceFile.id: {
+    case PrepareFileEdit.id: {
       if (operation !== 'delete') return []
       const target = getWorkspaceFileTarget(params)
       const fileId = (data.id as string) ?? (target.fileId as string) ?? (args.fileId as string)
@@ -320,7 +350,7 @@ export function extractDeletedResourcesFromToolResult(
       return []
     }
 
-    case KnowledgeBase.id: {
+    case ManageKnowledgeBase.id: {
       if (operation !== 'delete') return []
       const deleted = Array.isArray(data.deleted) ? data.deleted : []
       const resources = deleted.flatMap((entry): ChatResource[] => {

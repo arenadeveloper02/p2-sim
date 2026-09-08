@@ -1,7 +1,6 @@
 'use client'
 
 import { cn } from '@sim/emcn'
-import { DEPLOYED_CHAT_DIVIDER, DEPLOYED_CHAT_TEXT_BODY } from '@/app/(interfaces)/chat/constants'
 import {
   parseWelcomeSegments,
   type WelcomeSegment,
@@ -72,8 +71,7 @@ export function WelcomeMessageWithCtas({
             return (
               <span
                 key={`w-text-${index}`}
-                className='whitespace-pre-wrap'
-                style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+                className='whitespace-pre-wrap text-[var(--text-primary)]'
               >
                 {part.value}
               </span>
@@ -90,11 +88,9 @@ export function WelcomeMessageWithCtas({
                   key={`w-query-${index}-${queryIndex}`}
                   type='button'
                   className={cn(
-                    'w-fit max-w-full cursor-pointer rounded-lg border bg-white px-3 py-1.5 text-left font-medium text-[14px] leading-[21px] transition-colors',
-                    'text-[var(--color-ds-text-primary,#2C2D33)]',
-                    'hover:bg-[var(--color-ds-brand-surface,#F3F8FE)] hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+                    'w-fit max-w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5 text-left text-[var(--text-primary)] text-sm leading-[21px] transition-colors',
+                    'hover:bg-[var(--surface-5)]'
                   )}
-                  style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
                   onClick={() => onQueryClick?.(query)}
                   title='Run this query'
                 >
@@ -118,7 +114,7 @@ export function WelcomeMessageWithCtas({
           <button
             key={`w-query-${index}`}
             type='button'
-            className='inline cursor-pointer rounded-sm border-0 bg-transparent p-0 font-medium text-[var(--color-ds-text-link-hover,#155CBA)] underline decoration-[var(--color-ds-text-link-hover,#155CBA)]/40 underline-offset-2 transition-colors hover:decoration-[var(--color-ds-text-link-hover,#155CBA)]'
+            className='inline cursor-pointer rounded-sm border-0 bg-transparent p-0 font-medium text-[var(--text-primary)] underline decoration-[var(--text-primary)]/40 underline-offset-2 transition-colors hover:decoration-[var(--text-primary)]'
             onClick={() => onQueryClick?.(segment.value)}
             title='Run this query'
           >

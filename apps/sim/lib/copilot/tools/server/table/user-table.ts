@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import { executeCopilotTableUseCase } from '@/lib/copilot/application/execute-table-use-case'
 import { executeCopilotResolveWorkflowOutputs } from '@/lib/copilot/application/execute-workflow-use-case'
 import {
@@ -26,7 +27,6 @@ import {
   updateTableColumnUseCase,
 } from '@/lib/table/application/columns'
 import {
-  copilotBatchUpdateRows,
   copilotDeleteRowsByFilter,
   copilotUpdateRowsByFilter,
 } from '@/lib/table/application/copilot-bulk-rows'
@@ -35,6 +35,7 @@ import {
   deleteTableGroupUseCase,
 } from '@/lib/table/application/groups'
 import {
+  batchUpdateTableRows,
   createTableRows,
   deleteTableRow,
   deleteTableRows,
@@ -48,19 +49,22 @@ import {
   readTableUseCase,
   updateTableUseCase,
 } from '@/lib/table/application/tables'
+import { readTableViewUseCase } from '@/lib/table/application/views'
 import { namedRowMapper } from '@/lib/table/cell-format'
 import { isSupportedCurrencyCode } from '@/lib/table/currency'
+import type { TableImportRejectionSummary } from '@/lib/table/jobs/service'
 import { normalizeTablePredicate } from '@/lib/table/query-builder/predicate'
 import { createExactEmptyTableRowSecretProvenance } from '@/lib/table/rows/secret-provenance'
 import { normalizeSelectOptionsInput } from '@/lib/table/select-options'
 import type {
   RowData,
   SortSpec,
+  TablePredicate,
   TablePredicateInput,
   TableSchema,
   WorkflowGroupDependencies,
-  WorkflowGroupDeploymentMode,
 } from '@/lib/table/types'
+import { viewConfigIdsToNames } from '@/lib/table/views/service'
 import type { ResolvedSecretTraceProvenanceV1 } from '@/executor/utils/resolved-secret-trace-registry'
 
 const logger = createLogger('UserTableServerTool')
@@ -76,6 +80,45 @@ type UserTableResult = {
   data?: any
 }
 
+/**
+ * Renders the sentence an import appends when it lost data, mirroring the
+ * `droppedRows` phrasing so the model reads one shape for "the file did not
+ * land whole".
+ *
+ * `rowsRejected` is a FLOOR — one parser failure can discard many source
+ * records and is counted once — so the wording says "at least". Only the first
+ * retained sample is named; the rest ride on `data.rejections` rather than
+ * bloating a model-facing string.
+ *
+ * Returns `''` when nothing was lost, keeping a clean import's message
+ * byte-identical to what it has always been.
+ */
+function rejectionSentence(rejections: TableImportRejectionSummary | undefined): string {
+  if (!rejections) return ''
+  const losses: string[] = []
+  if (rejections.rowsRejected > 0) {
+    losses.push(`at least ${rejections.rowsRejected.toLocaleString()} unreadable row(s)`)
+  }
+  if (rejections.cellsRejected > 0) {
+    losses.push(
+      `${rejections.cellsRejected.toLocaleString()} cell value(s) the column type could not store (kept as null)`
+    )
+  }
+  if (losses.length === 0) return ''
+  const sample = rejections.rejectedSamples[0]
+  const firstFailure = sample
+    ? ` First failure: ${sample.code}${sample.line === null ? '' : ` at line ${sample.line}`}.`
+    : ''
+  return `. Dropped ${losses.join(' and ')} from the file.${firstFailure} See data.rejections for details.`
+}
+
+/**
+ * Copilot's own batch ceiling, deliberately looser than the 1000 the internal
+ * and v2 batch-update contracts declare: Copilot parses no contract, so this is
+ * the only place the tool can refuse an oversized batch with a message the model
+ * can act on rather than a thrown domain error — and a batch it accepts today
+ * must keep working.
+ */
 const MAX_BATCH_SIZE = CSV_MAX_BATCH_SIZE
 
 function resolveAuthorizedWorkflowOutputs(
@@ -89,14 +132,30 @@ function resolveAuthorizedWorkflowOutputs(
   })
 }
 
+/** Names a malformed argument's kind the way the model reads it ("a string", "an array", "null"). */
+function describeValueKind(value: unknown): string {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (Array.isArray(value)) return 'an array'
+  const type = typeof value
+  return type === 'object' ? 'an object' : `a ${type}`
+}
+
 /**
- * Narrows a raw `deploymentMode` arg to the `'live' | 'deployed'` union, or
- * `undefined` when absent/invalid (leaving the group's existing value — which
- * itself defaults to `'live'`). Lets Mothership choose whether a group's
- * per-cell runs execute the live draft or the latest active deployment.
+ * Why a batch_update_rows `updates` element is not the `{ rowId, data }` patch
+ * the catalog's item schema declares, or `null` when it is. The router's Ajv
+ * input validation rejects most of these first; this is the last line for a
+ * payload that reaches the executor, where a string element used to surface
+ * as an opaque "Table operation failed" after `Object.entries(undefined)`
+ * threw deep inside the use case.
  */
-function parseDeploymentMode(value: unknown): WorkflowGroupDeploymentMode | undefined {
-  return value === 'live' || value === 'deployed' ? value : undefined
+function rowUpdateProblem(value: unknown): string | null {
+  if (!isRecordLike(value)) return `is ${describeValueKind(value)}, not a { rowId, data } object`
+  if (typeof value.rowId !== 'string' || value.rowId.length === 0) {
+    return 'is missing a string rowId'
+  }
+  if (!isRecordLike(value.data)) return 'is missing a data object of column → value pairs'
+  return null
 }
 
 /** Validates an optional row limit against the policy for the requested surface operation. */
@@ -145,12 +204,22 @@ async function importRowsProvenanceForModel(
   await registry.importCrossingProvenance(provenance, values, { trusted: true })
 }
 
+/** AND-combines a saved view's predicate with an explicit one; either may be absent. */
+function mergeViewPredicate(
+  viewFilter: TablePredicateInput | undefined,
+  explicit: TablePredicateInput | undefined
+): TablePredicate | undefined {
+  const parts: TablePredicate[] = []
+  if (viewFilter) parts.push(normalizeTablePredicate(viewFilter))
+  if (explicit) parts.push(normalizeTablePredicate(explicit))
+  if (parts.length === 0) return undefined
+  if (parts.length === 1) return parts[0]
+  return { all: parts }
+}
+
 export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult> = {
   name: UserTable.id,
   async execute(params: UserTableArgs, context?: ServerToolContext): Promise<UserTableResult> {
-    const withMessageId = (message: string) =>
-      context?.messageId ? `${message} [messageId:${context.messageId}]` : message
-
     if (!context?.userId) {
       logger.error('Unauthorized attempt to access user table - no authenticated user context')
       throw new Error('Authentication required')
@@ -178,6 +247,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             name: args.name,
             description: args.description,
             schema: normalizeSchemaSelectColumns(args.schema as TableSchema),
+            folderPath: args.folderPath,
             workspaceId,
           })
 
@@ -286,6 +356,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               tableId: args.tableId,
               assertedWorkspaceId: workspaceId,
               strictWrite: false,
+              dataKeying: 'names',
               data: args.data,
               position: args.position as number | undefined,
               secretProvenance: createExactEmptyTableRowSecretProvenance(args.data),
@@ -312,8 +383,15 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
-          if (!args.rows || args.rows.length === 0) {
+          if (!Array.isArray(args.rows) || args.rows.length === 0) {
             return { success: false, message: 'Rows array is required and must not be empty' }
+          }
+          const malformedRow = args.rows.findIndex((row: unknown) => !isRecordLike(row))
+          if (malformedRow !== -1) {
+            return {
+              success: false,
+              message: `rows[${malformedRow}] is ${describeValueKind(args.rows[malformedRow])}, not a row data object. Expected rows: [{ col: val }]`,
+            }
           }
           if (!workspaceId) {
             return { success: false, message: 'Workspace ID is required' }
@@ -329,6 +407,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               tableId: args.tableId,
               assertedWorkspaceId: workspaceId,
               strictWrite: false,
+              dataKeying: 'names',
               rows: sourceRows,
               secretProvenance: sourceRows.map(createExactEmptyTableRowSecretProvenance),
             },
@@ -400,6 +479,31 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
+          // Saved-view scope: the view's stored filter ANDs with any explicit
+          // filter (query-within-the-view), its sort applies only when no
+          // explicit order is given, and layout fields (hidden columns, order,
+          // widths) are ignored — agents always see full rows. Views are
+          // referenced by id only (from views.json or table_views list_views).
+          let viewFilter: TablePredicateInput | undefined
+          let viewSort: SortSpec | undefined
+          let appliedViewName: string | undefined
+          if (typeof args.view === 'string' && args.view.trim() !== '') {
+            const viewId = (args.view as string).trim()
+            const resolved = await executeCopilotTableUseCase(
+              context,
+              readTableViewUseCase,
+              { tableId: args.tableId, workspaceId, viewId },
+              { tableId: args.tableId }
+            )
+            const named = viewConfigIdsToNames(
+              resolved.view.config,
+              (resolved.table.schema as TableSchema).columns
+            )
+            viewFilter = (named.filter as TablePredicateInput | null) ?? undefined
+            viewSort = (named.sort as SortSpec | null) ?? undefined
+            appliedViewName = resolved.view.name
+          }
+
           const queryLimitError = limitError(args.limit, TABLE_LIMITS.MAX_QUERY_LIMIT)
           if (queryLimitError) {
             return { success: false, message: queryLimitError }
@@ -411,10 +515,11 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             {
               tableId: args.tableId,
               assertedWorkspaceId: workspaceId,
-              predicate: args.filter
-                ? normalizeTablePredicate(args.filter as TablePredicateInput)
-                : undefined,
-              sort: args.order as SortSpec | undefined,
+              predicate: mergeViewPredicate(
+                viewFilter,
+                args.filter as TablePredicateInput | undefined
+              ),
+              sort: (args.order as SortSpec | undefined) ?? viewSort,
               limit: args.limit ?? TABLE_LIMITS.MAX_QUERY_LIMIT,
               cursor: args.cursor,
               includeTotal: !args.cursor,
@@ -433,7 +538,9 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           // nextCursor covers both cut kinds (explicit limit or the 5MB byte
           // budget) — either way the truthful signal is "more rows exist". The
           // token is opaque; the agent echoes it back as `cursor` to continue.
-          const countSuffix = result.totalCount != null ? ` of ${result.totalCount}` : ''
+          const viewSuffix = appliedViewName ? ` (view: ${appliedViewName})` : ''
+          const countSuffix =
+            (result.totalCount != null ? ` of ${result.totalCount}` : '') + viewSuffix
           const message = result.nextCursor
             ? `Returned ${result.rows.length}${countSuffix} rows (more available — pass cursor=${result.nextCursor} to continue)`
             : `Returned ${result.rows.length}${countSuffix} rows`
@@ -476,6 +583,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               tableId: args.tableId,
               assertedWorkspaceId: workspaceId,
               strictWrite: false,
+              dataKeying: 'names',
               rowId: args.rowId,
               data: args.data,
               secretProvenance: createExactEmptyTableRowSecretProvenance(args.data),
@@ -625,19 +733,24 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
-          const rawUpdates = (args as Record<string, unknown>).updates as
-            | Array<{ rowId: string; data: Record<string, unknown> }>
-            | undefined
-          const columnName = (args as Record<string, unknown>).columnName as string | undefined
-          const valuesMap = (args as Record<string, unknown>).values as
-            | Record<string, unknown>
-            | undefined
+          const rawUpdates: unknown = (args as Record<string, unknown>).updates
+          const columnName: unknown = (args as Record<string, unknown>).columnName
+          const valuesMap: unknown = (args as Record<string, unknown>).values
 
           let updates: Array<{ rowId: string; data: Record<string, unknown> }>
 
-          if (rawUpdates && rawUpdates.length > 0) {
+          if (Array.isArray(rawUpdates) && rawUpdates.length > 0) {
+            for (let index = 0; index < rawUpdates.length; index += 1) {
+              const problem = rowUpdateProblem(rawUpdates[index])
+              if (problem) {
+                return {
+                  success: false,
+                  message: `updates[${index}] ${problem}. Expected updates: [{ rowId, data: { col: val } }]`,
+                }
+              }
+            }
             updates = rawUpdates
-          } else if (columnName && valuesMap) {
+          } else if (typeof columnName === 'string' && columnName && isRecordLike(valuesMap)) {
             updates = Object.entries(valuesMap).map(([rowId, value]) => ({
               rowId,
               data: { [columnName]: value },
@@ -645,7 +758,8 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           } else {
             return {
               success: false,
-              message: 'Provide either "updates" array or "columnName" + "values" map',
+              message:
+                'Provide either a non-empty "updates" array of { rowId, data } objects or "columnName" + "values" map',
             }
           }
 
@@ -659,11 +773,13 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           assertNotAborted()
           const result = await executeCopilotTableUseCase(
             context,
-            copilotBatchUpdateRows,
+            batchUpdateTableRows,
             {
               tableId: args.tableId,
               assertedWorkspaceId: workspaceId,
               updates: updates as Array<{ rowId: string; data: RowData }>,
+              strictWrite: false,
+              dataKeying: 'names' as const,
             },
             { tableId: args.tableId }
           )
@@ -743,7 +859,11 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             assertNotAborted,
           })
           if (result.kind === 'empty') {
-            return { success: false, message: 'File contains no data rows' }
+            return {
+              success: false,
+              message:
+                'File yielded no readable data rows — it is either empty or every record failed to parse.',
+            }
           }
           const record = result.sourceFile
           if (result.kind === 'background') {
@@ -760,10 +880,11 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           }
 
           const createdMessage = `Created table "${result.table.name}" with ${result.columns.length} columns and ${result.insertedCount.toLocaleString()} rows from "${record.name}"`
-          const message =
+          const limitMessage =
             result.droppedRows > 0
               ? `${createdMessage}. Dropped ${result.droppedRows.toLocaleString()} row(s) that exceed this plan's limit of ${result.maxRowsPerTable.toLocaleString()} rows per table.`
               : createdMessage
+          const message = `${limitMessage}${rejectionSentence(result.rejections)}`
 
           return {
             success: true,
@@ -777,6 +898,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               })),
               rowCount: result.insertedCount,
               sourceFile: record.name,
+              ...(result.rejections ? { rejections: result.rejections } : {}),
             },
           }
         }
@@ -828,14 +950,18 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             }
           }
           if (result.kind === 'empty') {
-            return { success: false, message: 'File contains no data rows' }
+            return {
+              success: false,
+              message:
+                'File yielded no readable data rows — it is either empty or every record failed to parse.',
+            }
           }
           if (result.kind !== 'inline')
             throw new Error('Inline table import returned a background job')
           if (result.mode === 'replace') {
             return {
               success: true,
-              message: `Replaced rows in "${result.table.name}" from "${result.sourceFileName}": deleted ${result.deletedCount}, inserted ${result.insertedCount}`,
+              message: `Replaced rows in "${result.table.name}" from "${result.sourceFileName}": deleted ${result.deletedCount}, inserted ${result.insertedCount}${rejectionSentence(result.rejections)}`,
               data: {
                 tableId: result.table.id,
                 tableName: result.table.name,
@@ -845,12 +971,13 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
                 deletedCount: result.deletedCount,
                 insertedCount: result.insertedCount,
                 sourceFile: result.sourceFileName,
+                ...(result.rejections ? { rejections: result.rejections } : {}),
               },
             }
           }
           return {
             success: true,
-            message: `Imported ${result.insertedCount} rows into "${result.table.name}" from "${result.sourceFileName}" (${result.matchedColumns.length} columns matched)`,
+            message: `Imported ${result.insertedCount} rows into "${result.table.name}" from "${result.sourceFileName}" (${result.matchedColumns.length} columns matched)${rejectionSentence(result.rejections)}`,
             data: {
               tableId: result.table.id,
               tableName: result.table.name,
@@ -859,6 +986,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               skippedColumns: result.skippedColumns,
               rowCount: result.insertedCount,
               sourceFile: result.sourceFileName,
+              ...(result.rejections ? { rejections: result.rejections } : {}),
             },
           }
         }
@@ -1143,7 +1271,6 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
           const dependencies = args.dependencies as WorkflowGroupDependencies | undefined
           const name = args.name as string | undefined
-          const deploymentMode = parseDeploymentMode(args.deploymentMode)
           assertNotAborted()
           const autoRun = args.autoRun === true
           const { table: updated, group } = await executeCopilotCreateWorkflowTableGroup(context, {
@@ -1153,7 +1280,6 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             outputs: rawOutputs,
             name,
             dependencies,
-            deploymentMode,
             autoRun,
           })
           return {
@@ -1195,7 +1321,6 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             dependencies: args.dependencies as WorkflowGroupDependencies | undefined,
             outputs: updateOutputs,
             mappingUpdates,
-            deploymentMode: parseDeploymentMode(args.deploymentMode),
             autoRun: typeof args.autoRun === 'boolean' ? args.autoRun : undefined,
           })
           return {

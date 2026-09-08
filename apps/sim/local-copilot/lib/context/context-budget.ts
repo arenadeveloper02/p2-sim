@@ -1,5 +1,5 @@
 import type { Edge } from 'reactflow'
-import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/estimators'
+import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/accurate'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'

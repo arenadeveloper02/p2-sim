@@ -32,7 +32,7 @@ import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { isDesktopApp } from '@/lib/desktop'
+import { getDesktopBridge } from '@/lib/desktop'
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
@@ -41,6 +41,8 @@ import {
   AttachedFilesList,
   DropOverlay,
   MicButton,
+  MicrophonePermissionHelp,
+  ModeSwitcher,
   PromptEditor,
   SendButton,
   usePromptEditor,
@@ -64,7 +66,7 @@ import {
   LOCAL_COPILOT_PROVIDER_GROUPS,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
-import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
+import { type DraftPayload, useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
@@ -149,6 +151,21 @@ interface UserInputProps {
   onStopGeneration: () => void
   isInitialView?: boolean
   onSendQueuedHead?: () => void
+  /**
+   * Whether the composer offers Search mode. Only the Home composer answers a
+   * search with documents; the workflow copilot always talks to the agent, so
+   * it must not show a mode it cannot honour.
+   */
+  canSearch?: boolean
+  /**
+   * Whether the text is cleared once submitted. A search keeps its query in
+   * the box, the way a search bar does, so it can be read and refined against
+   * the results; a message to the agent clears, since it now lives in the
+   * transcript. Defaults to clearing.
+   */
+  clearOnSubmit?: boolean
+  /** Called when the text becomes empty after having had content, such as a search being cleared. */
+  onCleared?: () => void
   onEditQueuedTail?: () => void
 }
 
@@ -160,6 +177,8 @@ export interface UserInputHandle {
    * names chip with brand icons. Focuses the input and places the caret at the
    * end. Does NOT submit. Safe to call with the same text twice in a row. */
   populatePrompt: (text: string) => void
+  /** Empties the composer and its draft, as a send does; for a question handed to the agent from outside the box. */
+  clear: () => void
 }
 
 /**
@@ -177,6 +196,9 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     isInitialView = true,
     onSendQueuedHead,
     onEditQueuedTail,
+    canSearch = false,
+    clearOnSubmit = true,
+    onCleared,
   },
   ref
 ) {
@@ -201,6 +223,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     setLocalCopilotCatalogId !== undefined
 
   const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
+  const [microphonePermissionHelpOpen, setMicrophonePermissionHelpOpen] = useState(false)
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -254,6 +277,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
   const draftScopeKeyRef = useRef(draftScopeKey)
   draftScopeKeyRef.current = draftScopeKey
+  const clearOnSubmitRef = useRef(clearOnSubmit)
+  clearOnSubmitRef.current = clearOnSubmit
 
   const hasRestoredDraftRef = useRef(false)
   useEffect(() => {
@@ -299,7 +324,18 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only restore
 
+  const onClearedRef = useRef(onCleared)
+  onClearedRef.current = onCleared
+  const hadTextRef = useRef(false)
+  useEffect(() => {
+    const hasText = editor.value.trim().length > 0
+    if (hadTextRef.current && !hasText) onClearedRef.current?.()
+    hadTextRef.current = hasText
+  }, [editor.value])
+
   const isFirstSaveRef = useRef(true)
+  const draftSaveTimerRef = useRef<number | null>(null)
+  const pendingDraftRef = useRef<{ key: string; payload: DraftPayload } | null>(null)
   useEffect(() => {
     if (isFirstSaveRef.current) {
       isFirstSaveRef.current = false
@@ -316,12 +352,31 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         size: f.size,
         ...(f.path ? { path: f.path } : {}),
       }))
-    useMothershipDraftsStore.getState().setDraft(draftScopeKeyRef.current, {
-      text: editor.value,
-      fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
-      contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
-    })
+    pendingDraftRef.current = {
+      key: draftScopeKeyRef.current,
+      payload: {
+        text: editor.value,
+        fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+        contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
+      },
+    }
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+      pendingDraftRef.current = null
+      draftSaveTimerRef.current = null
+    }, 200)
   }, [editor.value, files.attachedFiles, editor.contexts])
+
+  useEffect(
+    () => () => {
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+    },
+    []
+  )
 
   const onContextRemoveRef = useRef(onContextRemove)
   onContextRemoveRef.current = onContextRemove
@@ -367,6 +422,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
    * landing prompt panel as well as curated CTAs. Curated producers opt their
    * bare names in at the store seam (`storeCuratedPrompt`), so prose seeded here
    * is never bare-chipped (the scunthorpe constraint).
+   * An empty seed must not erase a queued message loaded in the same event
+   * that clears the search URL. The mode menu clears its query explicitly.
    */
   useEffect(() => {
     if (defaultValue === prevDefaultValueRef.current) return
@@ -400,11 +457,28 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
   function handleSpeechError(error: SpeechToTextError) {
     if (error === 'microphone-blocked') {
-      toast.error(
-        isDesktopApp()
-          ? 'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.'
-          : 'Microphone access is blocked. Allow it for this site and try again.'
-      )
+      const desktopBridge = getDesktopBridge()
+      if (desktopBridge) {
+        const { openMicrophoneSettings } = desktopBridge
+        toast.error(
+          'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.',
+          openMicrophoneSettings
+            ? {
+                action: {
+                  label: 'Open Settings',
+                  onClick: () => void openMicrophoneSettings(),
+                },
+              }
+            : undefined
+        )
+      } else {
+        toast.error('Microphone access is blocked. Allow it for this site and try again.', {
+          action: {
+            label: 'Show steps',
+            onClick: () => setMicrophonePermissionHelpOpen(true),
+          },
+        })
+      }
       return
     }
     if (error === 'microphone-unavailable') {
@@ -415,6 +489,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   }
 
   const {
+    audioLevelsRef,
     isListening,
     isSupported: isSttSupported,
     toggleListening: rawToggle,
@@ -462,6 +537,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         currentEditor.setContexts(msg.contexts ?? [])
         currentEditor.focusAtEnd()
       },
+      clear: clearComposer,
       populatePrompt: (text: string) => {
         // `text` is a curated prompt, so opt its bare integration names into
         // `@`-mention form before chipification (the auto-mention pipeline only
@@ -570,13 +646,39 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     return () => window.cancelAnimationFrame(raf)
   }, [textareaRef])
 
-  const handleContainerClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest('button')) return
-      textareaRef.current?.focus()
-    },
-    [textareaRef]
-  )
+  /**
+   * Menu rows are excluded alongside buttons: the mode switcher's items are
+   * portaled, so their clicks still bubble here through the React tree.
+   */
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, [role="dialog"], [role="menu"]')) return
+    textareaRef.current?.focus()
+  }
+
+  /** Empties the text, chips, attachments, transcript, and the saved draft in one step. */
+  const clearComposer = useCallback(() => {
+    editorRef.current.clear()
+    sttPrefixRef.current = ''
+    if (draftSaveTimerRef.current !== null) {
+      window.clearTimeout(draftSaveTimerRef.current)
+      draftSaveTimerRef.current = null
+    }
+    pendingDraftRef.current = null
+    if (draftScopeKeyRef.current) {
+      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
+    }
+    /** The chips are gone with the text, and clearing is not a removal to report. */
+    prevSelectedContextsRef.current = []
+    resetTranscript()
+    filesRef.current.clearAttachedFiles()
+  }, [resetTranscript])
+
+  /** Discards the search query while keeping files available for the next agent turn. */
+  const handleLeaveSearch = useCallback(() => {
+    editorRef.current.setValue('')
+    sttPrefixRef.current = ''
+    resetTranscript()
+  }, [resetTranscript])
 
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
@@ -602,15 +704,13 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
       activeContexts.length > 0 ? activeContexts : undefined
     )
-    currentEditor.clear()
-    sttPrefixRef.current = ''
-    if (draftScopeKeyRef.current) {
-      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
-    }
-    resetTranscript()
-    currentFiles.clearAttachedFiles()
-    prevSelectedContextsRef.current = []
-  }, [onSubmit, resetTranscript])
+    /**
+     * A composer that keeps its text (Search mode) keeps its attachments and
+     * chips too: the search took the query alone, and the person may hand the
+     * rest to the agent next.
+     */
+    if (clearOnSubmitRef.current) clearComposer()
+  }, [onSubmit, clearComposer])
 
   /**
    * Enter policy for the editor: mirror canSubmit's uploading guard (Enter
@@ -765,7 +865,14 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
           {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
         </div>
         <div className='flex items-center gap-1.5'>
-          {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
+          {canSearch && <ModeSwitcher onLeaveSearch={handleLeaveSearch} />}
+          {isSttSupported && (
+            <MicButton
+              audioLevelsRef={audioLevelsRef}
+              isListening={isListening}
+              onToggle={toggleListening}
+            />
+          )}
           <SendButton
             isSending={isSending}
             canSubmit={canSubmit}
@@ -785,6 +892,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       />
 
       {files.isDragging && <DropOverlay />}
+
+      <MicrophonePermissionHelp
+        open={microphonePermissionHelpOpen}
+        onOpenChange={setMicrophonePermissionHelpOpen}
+      />
     </div>
   )
 })

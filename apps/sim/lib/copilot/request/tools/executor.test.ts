@@ -73,7 +73,12 @@ vi.mock('@/lib/copilot/request/tools/workflow-context', () => ({
 }))
 
 import { TOOL_WATCHDOG_DEFAULT_MS, TOOL_WATCHDOG_LONG_RUNNING_MS } from '@/lib/copilot/constants'
-import { MothershipStreamV1ToolOutcome } from '@/lib/copilot/generated/mothership-stream-v1'
+import {
+  MothershipStreamV1EventType,
+  MothershipStreamV1ToolOutcome,
+  MothershipStreamV1ToolPhase,
+} from '@/lib/copilot/generated/mothership-stream-v1'
+import { GenerateApiKey } from '@/lib/copilot/generated/tool-catalog-v1'
 import { createStreamingContext } from '@/lib/copilot/request/context/request-context'
 import {
   buildToolExecutionContext,
@@ -110,7 +115,7 @@ describe('toolWatchdogTimeoutMs', () => {
     expect(toolWatchdogTimeoutMs('read')).toBe(TOOL_WATCHDOG_DEFAULT_MS)
   })
 
-  it.each(['deploy_api', 'deploy_chat', 'deploy_mcp', 'redeploy', 'promote_to_live'])(
+  it.each(['deploy_as_api', 'deploy_as_chat', 'deploy_as_mcp', 'redeploy', 'promote_to_live'])(
     'does not undercut deployment tool %s with the default watchdog',
     (toolName) => {
       expect(toolWatchdogTimeoutMs(toolName)).toBe(TOOL_WATCHDOG_LONG_RUNNING_MS)
@@ -119,10 +124,10 @@ describe('toolWatchdogTimeoutMs', () => {
 })
 
 describe('pendingToolWaitBudgetMs', () => {
-  it('does not put a deadline on an executing browser takeover', () => {
-    expect(
-      pendingToolWaitBudgetMs({ name: 'browser_request_takeover', status: 'executing' })
-    ).toBeNull()
+  it('bounds retired browser calls that can no longer be executed by the client', () => {
+    expect(pendingToolWaitBudgetMs({ name: 'browser_request_takeover', status: 'executing' })).toBe(
+      TOOL_WATCHDOG_DEFAULT_MS
+    )
   })
 
   it('waits on a person for as long as the whole turn allows', () => {
@@ -132,6 +137,36 @@ describe('pendingToolWaitBudgetMs', () => {
       TOOL_WATCHDOG_LONG_RUNNING_MS
     )
   })
+
+  it('matches the requested browser_wait_for renderer budget', () => {
+    expect(pendingToolWaitBudgetMs({ name: 'browser_wait_for', status: 'executing' })).toBe(85_000)
+    expect(
+      pendingToolWaitBudgetMs({
+        name: 'browser_wait_for',
+        status: 'executing',
+        params: { timeoutMs: 120_000 },
+      })
+    ).toBe(195_000)
+  })
+
+  it.each([
+    'browser_navigate',
+    'browser_open_url',
+    'browser_go_back',
+    'browser_go_forward',
+    'browser_reload',
+    'browser_open_tab',
+    'browser_switch_tab',
+  ])('includes authorization, queueing, and navigation in the %s budget', (name) => {
+    expect(pendingToolWaitBudgetMs({ name, status: 'executing' })).toBe(130_000)
+  })
+
+  it.each(['browser_snapshot', 'browser_find', 'browser_set_checked', 'browser_click'])(
+    'allows the renderer queue budget for %s',
+    (name) => {
+      expect(pendingToolWaitBudgetMs({ name, status: 'executing' })).toBe(90_000)
+    }
+  )
 
   it('falls back to the tool\u2019s own watchdog once it is actually executing', () => {
     expect(pendingToolWaitBudgetMs({ name: 'terminal_run', status: 'executing' })).toBe(
@@ -329,6 +364,61 @@ describe('executeToolAndReport provenance isolation', () => {
     expect(registry.isComplete()).toBe(true)
     expect(registry.getActiveMatches()).toEqual([])
     expect(JSON.stringify([completion, onEvent.mock.calls])).not.toContain('secret-value')
+  })
+
+  it('reveals a generated API key only in the live client event', async () => {
+    const generatedKey = 'sk-sim-one-time-secret'
+    const statusMessage = 'API key "streaming-test" created.'
+    executeTool.mockResolvedValueOnce({
+      success: true,
+      output: {
+        id: 'key-1',
+        name: 'streaming-test',
+        key: generatedKey,
+        workspaceId: 'workspace-1',
+        message: statusMessage,
+      },
+    })
+    const toolCall: ToolCallState = {
+      id: 'generate-key-call',
+      name: GenerateApiKey.id,
+      status: 'pending',
+      params: { name: 'streaming-test' },
+    }
+
+    const completion = await executeToolAndReport(
+      toolCall.id,
+      buildStreamingContext(toolCall),
+      {
+        userId: 'user-1',
+        workflowId: 'workflow-1',
+        resolvedSecretTraceRegistry: new ResolvedSecretTraceRegistry(),
+      },
+      { onEvent }
+    )
+
+    expect(completion).toEqual({
+      status: MothershipStreamV1ToolOutcome.success,
+      message: 'Tool completed',
+      data: statusMessage,
+    })
+    expect(completeAsyncToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ result: statusMessage })
+    )
+    expect(JSON.stringify([completion, completeAsyncToolCall.mock.calls])).not.toContain(
+      generatedKey
+    )
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: MothershipStreamV1EventType.tool,
+        payload: expect.objectContaining({
+          toolName: GenerateApiKey.id,
+          phase: MothershipStreamV1ToolPhase.result,
+          success: true,
+          output: expect.objectContaining({ key: generatedKey }),
+        }),
+      })
+    )
   })
 })
 

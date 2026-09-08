@@ -21,9 +21,30 @@ import {
 } from '@sim/emcn'
 import { Calendar, Clock, Cursor, Globe, Table as TableIcon } from '@sim/emcn/icons'
 import { AgentIcon, ImageIcon, TTSIcon, VideoIcon } from '@/components/icons'
+import {
+  parseSpecialTags,
+  type SourceTagData,
+} from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import type { ToolCallStatus } from '@/app/workspace/[workspaceId]/home/types'
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
+
+/**
+ * Every distinct `<source>` cited across the given prose, in first-cited order,
+ * for the footer strip. Callers pass the text segments the message actually
+ * renders as its answer.
+ */
+export function collectMessageSources(texts: readonly string[]): SourceTagData[] {
+  const byUrl = new Map<string, SourceTagData>()
+  for (const text of texts) {
+    for (const segment of parseSpecialTags(text, false).segments) {
+      if (segment.type === 'source' && !byUrl.has(segment.data.url)) {
+        byUrl.set(segment.data.url, segment.data)
+      }
+    }
+  }
+  return [...byUrl.values()]
+}
 
 const TOOL_ICONS: Record<string, IconComponent> = {
   mothership: Blimp,
@@ -33,19 +54,19 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   mv: FolderCode,
   cp: Layout,
   mkdir: FolderCode,
-  search_online: Search,
-  scrape_page: Search,
-  get_page_contents: Search,
+  web_search: Search,
+  web_scrape: Search,
+  web_fetch: Search,
   search_library_docs: Library,
-  manage_mcp_tool: Settings,
+  manage_mcp_connection: Settings,
   manage_skill: Asterisk,
   user_memory: Database,
-  function_execute: TerminalWindow,
+  run_function: TerminalWindow,
   run_code: TerminalWindow,
   superagent: Blimp,
   user_table: TableIcon,
-  workspace_file: File,
-  edit_content: File,
+  prepare_file_edit: File,
+  apply_file_edit: File,
   create_workflow: Layout,
   edit_workflow: Pencil,
   workflow: Hammer,
@@ -64,6 +85,7 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   research: Search,
   scout: Search,
   search: Search,
+  platform: Library,
   context_compaction: Asterisk,
   open_resource: Eye,
   file: File,
@@ -76,12 +98,16 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   browser_navigate: Cursor,
   browser_go_back: Cursor,
   browser_go_forward: Cursor,
+  browser_reload: Cursor,
   browser_open_tab: Cursor,
   browser_switch_tab: Cursor,
   browser_close_tab: Cursor,
   browser_list_tabs: Cursor,
+  browser_list_sessions: Globe,
+  browser_list_downloads: File,
   browser_wait_for: Cursor,
   browser_snapshot: Eye,
+  browser_find: Search,
   browser_read_text: File,
   browser_screenshot: Eye,
   browser_extract: Search,
@@ -90,7 +116,9 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   browser_press_key: Cursor,
   browser_scroll: Cursor,
   browser_select_option: Cursor,
+  browser_set_checked: Cursor,
   browser_hover: Cursor,
+  browser_zoom: Eye,
   browser_request_takeover: Cursor,
   terminal: TerminalWindow,
   terminal_run: TerminalWindow,

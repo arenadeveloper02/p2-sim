@@ -14,6 +14,7 @@ import {
   workflowsApiUtilsMock,
   workflowsApiUtilsMockFns,
 } from '@sim/testing'
+import { NextResponse } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -68,15 +69,15 @@ const createMockStream = () => {
 const {
   mockValidateChatAuth,
   mockSetChatAuthCookie,
-  mockValidateAuthToken,
   mockProcessChatFiles,
-  mockUpdateExecutionHistoryData,
+  mockEnforceIpRateLimit,
+  mockEnforceResourceRateLimit,
 } = vi.hoisted(() => ({
   mockValidateChatAuth: vi.fn().mockResolvedValue({ authorized: true }),
   mockSetChatAuthCookie: vi.fn(),
-  mockValidateAuthToken: vi.fn().mockReturnValue(false),
-  mockProcessChatFiles: vi.fn().mockResolvedValue([]),
-  mockUpdateExecutionHistoryData: vi.fn().mockResolvedValue(undefined),
+  mockProcessChatFiles: vi.fn(),
+  mockEnforceIpRateLimit: vi.fn(),
+  mockEnforceResourceRateLimit: vi.fn(),
 }))
 
 const mockCreateErrorResponse = workflowsApiUtilsMockFns.mockCreateErrorResponse
@@ -86,12 +87,6 @@ vi.mock('@sim/db', () => ({
   ...dbChainMock,
   chat: {},
   workflow: {},
-}))
-
-vi.mock('@/lib/core/security/deployment', () => ({
-  validateAuthToken: mockValidateAuthToken,
-  setDeploymentAuthCookie: vi.fn(),
-  isEmailAllowed: vi.fn().mockReturnValue(false),
 }))
 
 vi.mock('@/app/api/chat/utils', () => ({
@@ -221,7 +216,8 @@ describe('Chat Identifier API Route', () => {
     })
 
     mockValidateChatAuth.mockResolvedValue({ authorized: true })
-    mockValidateAuthToken.mockReturnValue(false)
+    mockEnforceIpRateLimit.mockResolvedValue(null)
+    mockEnforceResourceRateLimit.mockResolvedValue(null)
     mockProcessChatFiles.mockResolvedValue([])
     mockUpdateExecutionHistoryData.mockResolvedValue(undefined)
     mockCreateErrorResponse.mockImplementation((message: string, status: number, code?: string) => {
@@ -348,6 +344,18 @@ describe('Chat Identifier API Route', () => {
 
   describe('POST endpoint', () => {
     it('should return chat config on successful authentication', async () => {
+      const passwordDeployment = {
+        ...mockChatResult[0],
+        authType: 'password',
+        password: 'encrypted-password',
+      }
+      dbChainMockFns.select.mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue([passwordDeployment]),
+          }),
+        }),
+      }))
       const req = createMockNextRequest('POST', { password: 'test-password' })
       const params = Promise.resolve({ identifier: 'password-protected-chat' })
 
@@ -361,7 +369,108 @@ describe('Chat Identifier API Route', () => {
       expect(data).toHaveProperty('customizations')
       expect(data.customizations).toHaveProperty('welcomeMessage', 'Welcome to the test chat')
 
-      expect(mockSetChatAuthCookie).toHaveBeenCalled()
+      expect(mockSetChatAuthCookie).toHaveBeenCalledWith(expect.anything(), passwordDeployment)
+    })
+
+    describe('execution rate limit', () => {
+      it.each([
+        ['per-IP', mockEnforceIpRateLimit],
+        ['per-deployment', mockEnforceResourceRateLimit],
+      ])("refuses on the %s bucket before the owner's budget is reserved", async (_, bucket) => {
+        bucket.mockResolvedValue(
+          NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+        )
+        const req = createMockNextRequest('POST', { input: 'drain the wallet' })
+
+        const response = await POST(req, { params: Promise.resolve({ identifier: 'test-chat' }) })
+
+        expect(response.status).toBe(429)
+        expect(preprocessExecution).not.toHaveBeenCalled()
+        expect(createStreamingResponse).not.toHaveBeenCalled()
+        expect(mockProcessChatFiles).not.toHaveBeenCalled()
+      })
+
+      it('debits buckets keyed on the deployment, not the workflow', async () => {
+        const req = createMockNextRequest('POST', { input: 'hello' })
+
+        await POST(req, { params: Promise.resolve({ identifier: 'test-chat' }) })
+
+        expect(mockEnforceIpRateLimit).toHaveBeenCalledWith(
+          'chat-execute',
+          req,
+          expect.objectContaining({ refillIntervalMs: 60_000 }),
+          'chat-id'
+        )
+        expect(mockEnforceResourceRateLimit).toHaveBeenCalledWith(
+          'chat-execute',
+          'chat-id',
+          expect.objectContaining({ refillIntervalMs: 60_000 })
+        )
+      })
+
+      it('leaves the deployment bucket untouched when the IP bucket refuses', async () => {
+        mockEnforceIpRateLimit.mockResolvedValue(NextResponse.json({}, { status: 429 }))
+        const req = createMockNextRequest('POST', { input: 'flood' })
+
+        await POST(req, { params: Promise.resolve({ identifier: 'test-chat' }) })
+
+        expect(mockEnforceResourceRateLimit).not.toHaveBeenCalled()
+      })
+
+      /**
+       * The invariant the ceiling exists to hold. A chat execution debits the
+       * workspace `sync` counter the owner's API, webhook and scheduled runs
+       * share, so a ceiling at or above a plan's own rate never refuses before
+       * that shared counter is drained — the availability half of the attack.
+       * Asserted against every plan, including free, and on burst as well as
+       * sustained rate, since either one reaching the plan bucket first is the
+       * same hole.
+       */
+      it.each(Object.keys(RATE_LIMITS))(
+        'stays under the %s plan sync budget it debits',
+        async (plan) => {
+          const req = createMockNextRequest('POST', { input: 'hello' })
+
+          await POST(req, { params: Promise.resolve({ identifier: 'test-chat' }) })
+
+          const planBucket = RATE_LIMITS[plan as keyof typeof RATE_LIMITS].sync
+          const [, , config] = mockEnforceResourceRateLimit.mock.calls[0]
+          expect(config.refillRate).toBeLessThan(planBucket.refillRate)
+          expect(config.maxTokens).toBeLessThan(planBucket.maxTokens)
+        }
+      )
+
+      /** One host must not be able to take the whole deployment's allowance. */
+      it('holds the per-IP bucket under the per-deployment one', async () => {
+        const req = createMockNextRequest('POST', { input: 'hello' })
+
+        await POST(req, { params: Promise.resolve({ identifier: 'test-chat' }) })
+
+        const [, , ipConfig] = mockEnforceIpRateLimit.mock.calls[0]
+        const [, , deploymentConfig] = mockEnforceResourceRateLimit.mock.calls[0]
+        expect(ipConfig.refillRate).toBeLessThan(deploymentConfig.refillRate)
+      })
+
+      it('leaves the gate-configuration fetch unmetered', async () => {
+        const passwordDeployment = {
+          ...mockChatResult[0],
+          authType: 'password',
+          password: 'encrypted-password',
+        }
+        dbChainMockFns.select.mockImplementation(() => ({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockReturnValue([passwordDeployment]),
+            }),
+          }),
+        }))
+        const req = createMockNextRequest('POST', { password: 'test-password' })
+
+        await POST(req, { params: Promise.resolve({ identifier: 'password-protected-chat' }) })
+
+        expect(mockEnforceIpRateLimit).not.toHaveBeenCalled()
+        expect(mockEnforceResourceRateLimit).not.toHaveBeenCalled()
+      })
     })
 
     it('should return 400 for requests without input', async () => {
@@ -443,6 +552,39 @@ describe('Chat Identifier API Route', () => {
           }),
         })
       )
+    }, 10000)
+
+    it('executes with the email proven by the chat authentication gate', async () => {
+      mockValidateChatAuth.mockResolvedValueOnce({
+        authorized: true,
+        authenticatedEmail: 'person@example.com',
+      })
+      const req = createMockNextRequest('POST', { input: 'Hello world' })
+
+      const response = await POST(req, {
+        params: Promise.resolve({ identifier: 'test-chat' }),
+      })
+      expect(response.status).toBe(200)
+
+      const streamOptions = vi.mocked(createStreamingResponse).mock.calls[0][0]
+      await streamOptions.executeFn({
+        onStream: vi.fn(),
+        onBlockComplete: vi.fn(),
+        abortSignal: new AbortController().signal,
+      })
+
+      expect(vi.mocked(executeWorkflow).mock.calls[0][4]).toMatchObject({
+        principal: {
+          kind: 'system',
+          serviceId: 'chat',
+          workspaceId: 'test-workspace-id',
+          workflowId: 'workflow-id',
+          subject: {
+            kind: 'authenticated_email',
+            email: 'person@example.com',
+          },
+        },
+      })
     }, 10000)
 
     /**

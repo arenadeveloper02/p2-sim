@@ -69,9 +69,9 @@ import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workf
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 const DEPLOYED_MARKDOWN_PROPS = {
-  fontClassName: 'font-poppins font-normal',
-  bodyTextClassName: 'text-[14px] leading-[1.6] text-[#2C2D33]',
-  headingTextClassName: 'font-poppins font-normal text-[14px] leading-[1.6] text-[#2C2D33]',
+  fontClassName: '',
+  bodyTextClassName: 'text-[var(--text-primary)] text-sm leading-[1.6]',
+  headingTextClassName: 'text-[var(--text-primary)] text-sm leading-[1.6]',
 } as const
 
 export interface ChatMessage {
@@ -962,11 +962,8 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[min(80%,560px)]'>
-                  <div className='rounded-[var(--radius-ds-md,8px)] bg-white px-4 py-3'>
-                    <div
-                      className='whitespace-pre-wrap break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                      style={{ color: '#2C2D33' }}
-                    >
+                  <div className='rounded-lg bg-[var(--surface-3)] px-4 py-3'>
+                    <div className='whitespace-pre-wrap break-words text-[var(--text-primary)] text-sm leading-[1.6]'>
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
                       ) : (
@@ -1006,10 +1003,7 @@ export const ArenaClientChatMessage = memo(
             )}
             {(hasRenderableText || isJsonObject || containsBase64Images || hasImageUrl) && (
               <div className='py-1'>
-                <div
-                  className='break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                  style={{ color: '#2C2D33' }}
-                >
+                <div className='break-words text-[var(--text-primary)] text-sm leading-[1.6]'>
                   {renderContent(cleanTextContent)}
                 </div>
               </div>

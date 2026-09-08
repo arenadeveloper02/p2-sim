@@ -1,7 +1,8 @@
 /**
  * @vitest-environment node
  */
-import { dbChainMockFns, resetDbChainMock } from '@sim/testing'
+import { workspace } from '@sim/db/schema'
+import { dbChainMockFns, queueTableRows, resetDbChainMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -14,6 +15,7 @@ const {
   mockFinishBackgroundWork,
   mockScheduleForkContentCopy,
   mockSeedEdgeMappings,
+  mockCollectReferencedFileFolderPaths,
 } = vi.hoisted(() => ({
   mockSumForkCopyBytes: vi.fn(),
   mockAssertForkStorageHeadroom: vi.fn(),
@@ -24,6 +26,7 @@ const {
   mockFinishBackgroundWork: vi.fn(),
   mockScheduleForkContentCopy: vi.fn(),
   mockSeedEdgeMappings: vi.fn(),
+  mockCollectReferencedFileFolderPaths: vi.fn(() => new Set<string>()),
 }))
 
 vi.mock('@/lib/workflows/defaults', () => ({
@@ -60,7 +63,10 @@ vi.mock('@/ee/workspace-forking/lib/copy/storage-quota', () => ({
 vi.mock('@/ee/workspace-forking/lib/copy/copy-workflows', () => ({
   copyWorkflowStateIntoTarget: vi.fn(),
   loadWorkflowNameRegistry: vi.fn(async () => new Map()),
-  resolveForkFolderMapping: vi.fn(async () => new Map()),
+  resolveForkFolderMapping: vi.fn(async () => ({
+    folderIdMap: new Map(),
+    folderPathMap: new Map(),
+  })),
 }))
 vi.mock('@/ee/workspace-forking/lib/copy/deploy-bridge', () => ({
   loadSourceDeployedStates: mockLoadSourceDeployedStates,
@@ -77,9 +83,11 @@ vi.mock('@/ee/workspace-forking/lib/mapping/mapping-store', () => ({
 }))
 vi.mock('@/ee/workspace-forking/lib/remap/fork-bootstrap', () => ({
   createForkBootstrapTransform: vi.fn(() => (subBlocks: unknown) => subBlocks),
+  createForkBlockTypeTransform: vi.fn(() => (blockType: string) => blockType),
 }))
 vi.mock('@/ee/workspace-forking/lib/remap/reference-scan', () => ({
   collectReferencedDocumentIds: vi.fn(() => new Set<string>()),
+  collectReferencedFileFolderPaths: mockCollectReferencedFileFolderPaths,
 }))
 vi.mock('@/lib/workspaces/policy', () => ({
   WORKSPACE_MODE: {
@@ -124,6 +132,12 @@ describe('createFork storage headroom gate', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    /**
+     * The fork transaction re-reads the parent's organization under the lock to
+     * confirm it has not moved since `assertCanFork` captured the policy.
+     * Matches POLICY.organizationId, so the fork proceeds.
+     */
+    queueTableRows(workspace, [{ organizationId: null }])
     mockSumForkCopyBytes.mockResolvedValue(0)
     mockAssertForkStorageHeadroom.mockResolvedValue(undefined)
     mockLoadSourceDeployedStates.mockResolvedValue({
@@ -135,6 +149,7 @@ describe('createFork storage headroom gate', () => {
       idMap: new Map(),
       blobTasks: [],
       folderIdMap: new Map(),
+      folderPathMap: new Map(),
     })
     mockCopyForkResourceContainers.mockResolvedValue({
       idMap: new Map(),
@@ -185,6 +200,24 @@ describe('createFork storage headroom gate', () => {
     expect(mockStartBackgroundWork).not.toHaveBeenCalled()
   })
 
+  it('refuses when the parent changed organizations after the policy was captured', async () => {
+    resetDbChainMock()
+    /**
+     * `assertCanFork` captures `policy.organizationId` before this transaction,
+     * so an admin workspace move committing in between would otherwise leave
+     * the fork locking the organization the parent has already left and
+     * inserting the child there — the cross-organization edge the lock exists
+     * to prevent. The parent is re-read under the lock to catch exactly this.
+     */
+    queueTableRows(workspace, [{ organizationId: 'org-moved-away' }])
+    mockSumForkCopyBytes.mockResolvedValue(0)
+
+    await expect(createFork(forkParams())).rejects.toThrow(
+      'changed organizations while this fork was being created'
+    )
+    expect(dbChainMockFns.insert).not.toHaveBeenCalled()
+  })
+
   it('proceeds under quota, summing exactly the selected files + knowledge bases', async () => {
     mockSumForkCopyBytes.mockResolvedValue(500)
 
@@ -227,6 +260,7 @@ describe('createFork storage headroom gate', () => {
       idMap: new Map([['file-1', 'file-1-copy']]),
       blobTasks: [],
       folderIdMap: new Map(),
+      folderPathMap: new Map(),
     })
 
     await createFork(forkParams({ files: ['file-1'] }))
@@ -237,6 +271,29 @@ describe('createFork storage headroom gate', () => {
       resourceType: 'file',
       parentResourceId: 'workspace/src-ws/a.png',
       childResourceId: 'workspace/child/a.png',
+    })
+  })
+
+  it('mirrors and seeds referenced file folders without selecting their files for copy', async () => {
+    mockCollectReferencedFileFolderPaths.mockReturnValue(new Set(['/Reports']))
+    mockPlanForkFileCopies.mockResolvedValue({
+      keyMap: new Map(),
+      idMap: new Map(),
+      blobTasks: [],
+      folderIdMap: new Map([['folder-src', 'folder-dst']]),
+      folderPathMap: new Map([['/Reports', '/Reports']]),
+    })
+
+    await createFork(forkParams())
+
+    expect(mockPlanForkFileCopies).toHaveBeenCalledWith(
+      expect.objectContaining({ fileIds: [], folderPaths: ['/Reports'] })
+    )
+    const seeded = mockSeedEdgeMappings.mock.calls[0][3] as Array<Record<string, unknown>>
+    expect(seeded).toContainEqual({
+      resourceType: 'file_folder',
+      parentResourceId: '/Reports',
+      childResourceId: '/Reports',
     })
   })
 })

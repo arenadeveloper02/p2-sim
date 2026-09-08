@@ -38,6 +38,7 @@ import {
   TYPE_MS_PER_ATOM,
   WORKFLOW_FOCUS_SCALE,
 } from '@/app/(landing)/components/hero/components/hero-visual/workflow-data'
+import colorMixFallbacks from '@/app/(landing)/components/shared/color-mix-fallbacks/color-mix-fallbacks.module.css'
 
 /**
  * Animated hero visual - the only client island in the hero, decorative and
@@ -299,7 +300,7 @@ const SEND_BUTTON_INK = {
  */
 const LANDING_LOADER_INK = {
   '--tl-grad-inner': 'var(--text-body)',
-  '--tl-grad-outer': 'color-mix(in srgb, var(--text-body) 76%, #fff)',
+  '--tl-grad-outer': 'var(--thinking-loader-outer)',
   '--tl-glow': 'transparent',
 } as CSSProperties
 
@@ -1080,7 +1081,7 @@ export function HeroVisual() {
                   className={cn(
                     'absolute transform-gpu transition-[opacity,transform,width,height,top,left] will-change-transform [transition-duration:520ms] [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]',
                     showKbShell &&
-                      'overflow-hidden rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)]'
+                      'overflow-hidden rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px]'
                   )}
                   style={{
                     left: showKbShell
@@ -1144,6 +1145,7 @@ export function HeroVisual() {
             // layer, so the slide + dock read as smooth sub-pixel motion instead of
             // jittering as the position pixel-snaps each frame.
             'pointer-events-none absolute top-0 left-0 z-20 transform-gpu transition-opacity duration-300 will-change-transform [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]',
+            colorMixFallbacks.loaderOuter,
             loaderFading ? 'opacity-0' : 'opacity-100'
           )}
           style={{ transformOrigin: '0 0' }}

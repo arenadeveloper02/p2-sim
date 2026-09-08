@@ -8,8 +8,19 @@ export {
   DEFAULT_MODEL_BY_PROVIDER,
   findEmbeddingModelInfo,
   resolveDimensions,
+  toOllamaEmbeddingModelId,
 } from '@/lib/embeddings/catalog'
-export { embed, embedKnowledge, embedOpenRouter } from '@/lib/embeddings/client'
+export {
+  BYOK_EMBEDDING_CREDENTIAL_REJECTION_MESSAGE,
+  EMBEDDING_QUOTA_EXHAUSTED_MESSAGE,
+  EmbeddingOutputLimitError,
+  embed,
+  embedKnowledge,
+  embedOpenRouter,
+  getEmbeddingAggregateItemLimit,
+  isBYOKEmbeddingCredentialRejection,
+  isEmbeddingQuotaExhaustion,
+} from '@/lib/embeddings/client'
 export { DEFAULT_OPENROUTER_EMBEDDING_MODEL } from '@/lib/embeddings/openrouter-models'
 export type {
   EmbeddingTaskType,

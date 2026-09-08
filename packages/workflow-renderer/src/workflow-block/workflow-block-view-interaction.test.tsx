@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  */
 import { act } from 'react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ReactFlowProvider } from 'reactflow'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getWorkflowTypeAccent,
@@ -25,8 +25,7 @@ function createView(
   isRunning: boolean,
   isEnabled = true,
   isLocked = false,
-  isExecutionHighlighted = false,
-  isWorkflowRunning = false
+  isExecutionHighlighted = false
 ) {
   return (
     <ReactFlowProvider>
@@ -39,7 +38,6 @@ function createView(
         hasRing={false}
         ringStyles=''
         isRunning={isRunning}
-        isWorkflowRunning={isWorkflowRunning}
         isExecutionHighlighted={isExecutionHighlighted}
         Icon={TestIcon}
         iconBgColor='var(--surface-2)'
@@ -130,7 +128,7 @@ describe('WorkflowBlockView action menu', () => {
     mountedRoots.add(root)
     mountedHosts.add(host)
 
-    act(() => root.render(createView(false, true, false, false, true)))
+    act(() => root.render(createView(false, true, false, false)))
     flushAnimationFrames()
 
     const actionMenuRoot = host.querySelector<HTMLElement>('.group.relative')
@@ -149,7 +147,7 @@ describe('WorkflowBlockView action menu', () => {
     mountedRoots.add(root)
     mountedHosts.add(host)
 
-    act(() => root.render(createView(false, true, false, true, true)))
+    act(() => root.render(createView(false, true, false, true)))
     flushAnimationFrames()
 
     const actionMenuRoot = host.querySelector<HTMLElement>('.group.relative')

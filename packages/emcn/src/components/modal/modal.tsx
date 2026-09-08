@@ -611,12 +611,6 @@ const ModalContent = React.forwardRef<
               e.stopPropagation()
               onEscapeKeyDown?.(e)
             }}
-            onPointerDown={(e) => {
-              e.stopPropagation()
-            }}
-            onPointerUp={(e) => {
-              e.stopPropagation()
-            }}
             onInteractOutside={(e) => {
               /**
                * Radix dispatches outside-interaction events to every open
@@ -686,7 +680,7 @@ const ModalHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
           <Button
             variant='ghost'
             disabled={dismissDisabled}
-            className='relative size-[16px] flex-shrink-0 p-0 before:absolute before:inset-[-14px] before:content-[""]'
+            className='relative size-[16px] shrink-0 p-0 before:absolute before:inset-[-14px] before:content-[""]'
           >
             <X className='size-[16px]' />
             <span className='sr-only'>Close</span>

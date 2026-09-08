@@ -25,9 +25,12 @@ const {
   onScopeSuspended,
   onToolbarCommand,
   openTab,
+  openUrl,
+  openUrlAvailable,
   panelAction,
   reorderTab,
   reorderStoreTab,
+  registerSitePermissionPromptSupport,
   restoreScope,
   nativeSuspendScope,
   setPageState,
@@ -66,9 +69,12 @@ const {
   onScopeSuspended: vi.fn(),
   onToolbarCommand: vi.fn(),
   openTab: vi.fn(),
+  openUrl: vi.fn(),
+  openUrlAvailable: { current: true },
   panelAction: vi.fn(),
   reorderTab: vi.fn(),
   reorderStoreTab: vi.fn(),
+  registerSitePermissionPromptSupport: vi.fn(),
   restoreScope: vi.fn(),
   nativeSuspendScope: vi.fn(async () => true),
   setPageState: vi.fn(),
@@ -107,7 +113,9 @@ vi.mock('@/lib/desktop', () => ({
       onSessionStatus,
       onTabsState,
       openTab,
+      openUrl: openUrlAvailable.current ? openUrl : undefined,
       panelAction,
+      registerSitePermissionPromptSupport,
       reorderTab,
       restoreScope,
       suspendScope: nativeSuspendScope,
@@ -153,6 +161,7 @@ import {
   fillBrowserCredential,
   initBrowserAgentTransport,
   loadBrowserFillOptions,
+  loadBrowserSearchSuggestions,
   migrateBrowserScope,
   onBrowserAddToChat,
   onBrowserFillAvailability,
@@ -162,6 +171,7 @@ import {
   onBrowserOmniboxFocus,
   onBrowserToolbarCommand,
   openBrowserTab,
+  openUrlInNewBrowserTab,
   reorderBrowserTab,
   reportBrowserPanelBounds,
   reportBrowserPanelFocused,
@@ -201,6 +211,8 @@ describe('browser panel transport', () => {
     executeTool.mockReset()
     panelAction.mockClear()
     openTab.mockReset()
+    openUrl.mockReset()
+    openUrlAvailable.current = true
     setTabPinned.mockClear()
     showTabContextMenu.mockClear()
     showToolbarMenu.mockClear()
@@ -210,6 +222,12 @@ describe('browser panel transport', () => {
     setTheme.mockClear()
     discardScope.mockClear()
     disposeScope.mockClear()
+  })
+
+  it('registers renderer-owned site permission prompt support', () => {
+    initBrowserAgentTransport()
+
+    expect(registerSitePermissionPromptSupport).toHaveBeenCalledOnce()
   })
 
   it('opens a browser tab through the acknowledged bridge and applies its state', async () => {
@@ -241,6 +259,51 @@ describe('browser panel transport', () => {
 
     expect(openTab).toHaveBeenCalledWith('chat-test')
     expect(setTabsState).toHaveBeenCalledWith(state)
+  })
+
+  it('opens chat URLs through one acknowledged native operation', async () => {
+    openUrl.mockResolvedValue({
+      scopeId: 'chat-test',
+      activeTabId: '2',
+      tabs: [],
+    })
+
+    await openUrlInNewBrowserTab('https://example.com/docs', 'chat-test')
+
+    expect(openUrl).toHaveBeenCalledWith('https://example.com/docs', 'chat-test')
+    expect(openTab).not.toHaveBeenCalled()
+    expect(panelAction).not.toHaveBeenCalled()
+    expect(setTabsState).toHaveBeenCalledWith({
+      scopeId: 'chat-test',
+      activeTabId: '2',
+      tabs: [],
+    })
+  })
+
+  it('falls back to acknowledged tab creation on older installed shells', async () => {
+    openUrlAvailable.current = false
+    openTab.mockResolvedValue({
+      scopeId: 'chat-test',
+      activeTabId: '2',
+      tabs: [],
+    })
+
+    await openUrlInNewBrowserTab('https://example.com/docs', 'chat-test')
+
+    expect(openTab).toHaveBeenCalledWith('chat-test')
+    expect(panelAction).toHaveBeenCalledWith(
+      { action: 'navigate', url: 'https://example.com/docs' },
+      'chat-test'
+    )
+    expect(setTabsState).toHaveBeenCalledWith({
+      scopeId: 'chat-test',
+      activeTabId: '2',
+      tabs: [],
+    })
+  })
+
+  it('keeps search suggestions local-only on older installed shells', async () => {
+    await expect(loadBrowserSearchSuggestions('sim ai')).resolves.toEqual([])
   })
 
   it('forwards panel bounds directly to the native view', () => {
@@ -442,6 +505,56 @@ describe('browser panel transport', () => {
     expect(cancelActiveTool).toHaveBeenCalledWith('chat-detached')
     settleNative({ ok: false, error: 'cancelled' })
     await expect(execution).rejects.toThrow('cancelled')
+  })
+
+  it('clears the response watchdog when a browser tool settles early', async () => {
+    vi.useFakeTimers()
+    try {
+      executeTool.mockResolvedValue({ ok: true, result: { done: true } })
+      const timersBefore = vi.getTimerCount()
+
+      await expect(
+        executeBrowserTool('tool-fast', 'browser_snapshot', {}, 30_000, 'chat-fast')
+      ).resolves.toEqual({ done: true })
+
+      expect(vi.getTimerCount()).toBe(timersBefore)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the exact native tool when the renderer response watchdog expires', async () => {
+    vi.useFakeTimers()
+    let settleNative: (response: { ok: boolean; error?: string }) => void = () => {}
+    try {
+      executeTool.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            settleNative = resolve
+          })
+      )
+      const onCancel = vi.fn()
+      const execution = executeBrowserTool(
+        'tool-timeout',
+        'browser_snapshot',
+        {},
+        1_000,
+        'chat-timeout',
+        onCancel
+      )
+      const timedOut = expect(execution).rejects.toThrow(
+        'The browser did not respond within 1000ms. Its outcome is unknown'
+      )
+
+      await vi.advanceTimersByTimeAsync(1_000)
+
+      await timedOut
+      expect(cancelTool).toHaveBeenCalledWith('tool-timeout', 'chat-timeout')
+      expect(onCancel).not.toHaveBeenCalled()
+    } finally {
+      settleNative({ ok: false, error: 'cancelled' })
+      vi.useRealTimers()
+    }
   })
 
   it('starts the native scope boundary without waiting for exact cancellation', async () => {

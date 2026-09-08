@@ -1,4 +1,6 @@
+import type { Principal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
+import { ForbiddenOperationError } from '@/lib/core/application/forbidden'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { generateRequestId } from '@/lib/core/utils/request'
 import {
@@ -69,8 +71,8 @@ function requireChunkReadable(context: ActiveKnowledgeDocumentContext): void {
 
 function requireChunkWritable(context: ActiveKnowledgeDocumentContext): void {
   if (context.document.connectorId) {
-    throw new OrchestrationError(
-      'forbidden',
+    throw new ForbiddenOperationError(
+      'CONNECTOR_MANAGED_RESOURCE_READ_ONLY',
       'Chunks from connector-synced documents are read-only'
     )
   }
@@ -101,8 +103,13 @@ function documentTags(context: ActiveKnowledgeDocumentContext) {
 
 export const listKnowledgeChunks = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.listChunks,
-  resolveContext: ({ input }: { input: ListKnowledgeChunksInput }) =>
-    resolveCanonicalActiveKnowledgeDocumentContext(input),
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: ListKnowledgeChunksInput
+  }) => resolveCanonicalActiveKnowledgeDocumentContext(input, principal),
   async execute({ input, context }) {
     requireChunkReadable(context)
     const {
@@ -111,15 +118,20 @@ export const listKnowledgeChunks = defineAuthorizedKnowledgeUseCase({
       assertedWorkspaceId: _scope,
       ...filters
     } = input
-    const result = await queryChunks(documentId, filters, generateRequestId())
+    const result = await queryChunks(
+      documentId,
+      filters,
+      generateRequestId(),
+      await context.access.get()
+    )
     return { ...result, workspaceId: context.workspaceId, documentId }
   },
 })
 
 export const readKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.readChunk,
-  resolveContext: ({ input }: { input: KnowledgeChunkInput }) =>
-    resolveActiveKnowledgeChunkContext(input),
+  resolveContext: ({ principal, input }: { principal: Principal; input: KnowledgeChunkInput }) =>
+    resolveActiveKnowledgeChunkContext(input, principal),
   async execute({ context }) {
     requireChunkReadable(context)
     return {
@@ -132,8 +144,13 @@ export const readKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
 
 export const createKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.createChunk,
-  resolveContext: ({ input }: { input: CreateKnowledgeChunkInput }) =>
-    resolveCanonicalActiveKnowledgeDocumentContext(input),
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: CreateKnowledgeChunkInput
+  }) => resolveCanonicalActiveKnowledgeDocumentContext(input, principal),
   async execute({ principal, input, context }) {
     requireChunkWritable(context)
     if (context.document.processingStatus === 'failed') {
@@ -194,8 +211,13 @@ export const createKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
 
 export const updateKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.updateChunk,
-  resolveContext: ({ input }: { input: UpdateKnowledgeChunkInput }) =>
-    resolveActiveKnowledgeChunkContext(input),
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: UpdateKnowledgeChunkInput
+  }) => resolveActiveKnowledgeChunkContext(input, principal),
   async execute({ principal, input, context }) {
     requireChunkReadable(context)
     requireChunkWritable(context)
@@ -225,8 +247,8 @@ export const updateKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
 
 export const deleteKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.deleteChunk,
-  resolveContext: ({ input }: { input: KnowledgeChunkInput }) =>
-    resolveActiveKnowledgeChunkContext(input),
+  resolveContext: ({ principal, input }: { principal: Principal; input: KnowledgeChunkInput }) =>
+    resolveActiveKnowledgeChunkContext(input, principal),
   async execute({ context }) {
     requireChunkReadable(context)
     requireChunkWritable(context)
@@ -237,8 +259,13 @@ export const deleteKnowledgeChunk = defineAuthorizedKnowledgeUseCase({
 
 export const bulkUpdateKnowledgeChunks = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.bulkChunks,
-  resolveContext: ({ input }: { input: BulkKnowledgeChunksInput }) =>
-    resolveCanonicalActiveKnowledgeDocumentContext(input),
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: BulkKnowledgeChunksInput
+  }) => resolveCanonicalActiveKnowledgeDocumentContext(input, principal),
   async execute({ input, context }) {
     requireChunkWritable(context)
     const result = await batchChunkOperation(

@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { isPlainRecord } from '@sim/utils/object'
 import { normalizeWorkflowEdgeSourceHandle } from '@sim/workflow-types/workflow'
@@ -19,6 +19,7 @@ import {
   processSSEStream,
   SSEEventHandlerError,
   SSEStreamInterruptedError,
+  toStreamInterruptedError,
 } from '@/hooks/use-execution-stream'
 import { useExecutionStore } from '@/stores/execution'
 import type { ConsoleEntry, ConsoleUpdate } from '@/stores/terminal'
@@ -959,7 +960,7 @@ export function handleExecutionCancelledConsole(
   addCancelledConsoleEntry(deps.addConsole, params)
 }
 
-interface WorkflowExecutionOptions {
+export interface WorkflowExecutionOptions {
   workflowId?: string
   workflowInput?: any
   onStream?: (se: StreamingExecution) => Promise<void>
@@ -1013,7 +1014,7 @@ export async function executeWorkflowWithFullLogging(
     if (!isCurrentExecution()) return
     setCurrentExecutionId(wfId, null)
     clearExecutionPointer(wfId)
-    consolePersistence.executionEnded()
+    consolePersistence.persist()
     useExecutionStore.getState().setIsExecuting(wfId, false)
     setActiveBlocks(wfId, new Set())
   }
@@ -1083,7 +1084,10 @@ export async function executeWorkflowWithFullLogging(
       error: errorMessage,
       httpStatus: response.status,
     })
-    throw new Error(errorMessage)
+    // Keep the status and code on the thrown error. Downgrading to a bare Error
+    // discarded both, so callers could not tell a Copilot binding rejection from
+    // any other 4xx — and the reason never reached the agent that could fix it.
+    throw new ExecutionStreamHttpError(errorMessage, response.status, errorCode)
   }
 
   if (!response.body) {
@@ -1231,6 +1235,20 @@ export async function executeWorkflowWithFullLogging(
       'CopilotExecution'
     )
   } catch (error) {
+    const interrupted = toStreamInterruptedError(
+      error,
+      executionIdRef.current,
+      'Execution stream interrupted before a terminal event was received'
+    )
+    if (interrupted) {
+      logger.warn('Execution stream interrupted; preserving execution for reconnect', {
+        workflowId: wfId,
+        executionId: executionIdRef.current,
+        error: getErrorMessage(error),
+      })
+      preserveExecutionForRecovery = true
+      throw interrupted
+    }
     if (error instanceof SSEEventHandlerError || error instanceof SSEStreamInterruptedError) {
       preserveExecutionForRecovery = true
     }

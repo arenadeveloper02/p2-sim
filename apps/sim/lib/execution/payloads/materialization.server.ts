@@ -1,5 +1,7 @@
+import type { Principal } from '@sim/auth/principal'
 import { createLogger, type Logger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import {
@@ -15,19 +17,24 @@ import {
   MAX_INLINE_MATERIALIZATION_BYTES,
 } from '@/lib/execution/payloads/limits'
 import { ExecutionResourceLimitError } from '@/lib/execution/resource-errors'
+import { resolveKnowledgeAccessScope } from '@/lib/knowledge/access/scope'
 import type { StorageContext } from '@/lib/uploads'
 import type { WorkspaceFileSecretProvenanceIdentity } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import {
   bufferToBase64,
   inferContextFromKey,
   isGeneratedDocumentSourceType,
+  isPublicStorageContext,
 } from '@/lib/uploads/utils/file-utils'
 import { downloadServableFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { rebindWorkspaceFileDelegatedPrincipal } from '@/lib/workspace-files/application/delegated-principal'
+import { readWorkspaceFileRecordByKey } from '@/lib/workspace-files/application/read-workspace-file-content-by-key'
 import type { UserFile } from '@/executor/types'
 
 const logger = createLogger('ExecutionPayloadMaterialization')
 
 export interface ExecutionMaterializationContext {
+  principal?: Principal
   workflowId?: string
   workspaceId?: string
   executionId?: string
@@ -244,7 +251,7 @@ function assertExecutionFileScope(key: string, options: ExecutionMaterialization
   }
 }
 
-function getVerifiedStorageContext(file: UserFile): StorageContext {
+function getVerifiedStorageContext(file: Pick<UserFile, 'key' | 'context'>): StorageContext {
   if (!file.key) {
     throw new Error('File content requires a storage key.')
   }
@@ -258,13 +265,48 @@ function getVerifiedStorageContext(file: UserFile): StorageContext {
 }
 
 export async function assertUserFileContentAccess(
-  file: UserFile,
+  file: Pick<UserFile, 'key' | 'context'>,
   options: ExecutionMaterializationContext
 ): Promise<void> {
   const context = getVerifiedStorageContext(file)
 
   if (context === 'execution') {
     assertExecutionFileScope(file.key, options)
+    return
+  }
+
+  if (isPublicStorageContext(context)) {
+    return
+  }
+
+  if (context === 'workspace' && options.principal && options.workspaceId) {
+    const principal =
+      options.principal.kind === 'delegated'
+        ? rebindWorkspaceFileDelegatedPrincipal({
+            principal: options.principal,
+            workspaceId: options.workspaceId,
+            delegationId: `execution-file-read:${options.requestId ?? 'unknown'}`,
+            ...(options.principal.resourceScope?.fileId
+              ? { fileId: options.principal.resourceScope.fileId }
+              : {}),
+            ...(options.principal.resourceScope?.chatId
+              ? { chatId: options.principal.resourceScope.chatId }
+              : {}),
+            ...(options.executionId ? { executionId: options.executionId } : {}),
+          })
+        : options.principal
+    try {
+      await readWorkspaceFileRecordByKey.execute({
+        principal,
+        input: {
+          key: file.key,
+          assertedWorkspaceId: options.workspaceId,
+        },
+      })
+      return
+    } catch (error) {
+      if (!(error instanceof OrchestrationError && error.code === 'not_found')) throw error
+    }
   }
 
   if (!options.userId) {
@@ -272,7 +314,18 @@ export async function assertUserFileContentAccess(
   }
 
   const { verifyFileAccess } = await import('@/app/api/files/authorization')
-  const hasAccess = await verifyFileAccess(file.key, options.userId, undefined, context, false)
+  /**
+   * A knowledge-base file is read as the principal behind the run, when there
+   * is one; `options.userId` alone may be the workflow owner standing in for an
+   * actorless run and must not widen what the run can read.
+   */
+  const knowledgeAccess =
+    context === 'knowledge-base' && options.principal
+      ? await resolveKnowledgeAccessScope(options.principal, { workspaceId: options.workspaceId })
+      : undefined
+  const hasAccess = await verifyFileAccess(file.key, options.userId, undefined, context, false, {
+    knowledgeAccess,
+  })
   if (!hasAccess) {
     throw new Error('File is not available in this execution.')
   }

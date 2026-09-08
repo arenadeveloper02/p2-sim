@@ -33,6 +33,8 @@ import type {
   DesktopOAuthConnectScope,
   DesktopPreferenceKey,
   DesktopPreferences,
+  DesktopServerChangeResult,
+  DesktopServerConfiguration,
   DesktopUpdateState,
   DesktopWindowState,
   DesktopZoomPercent,
@@ -112,6 +114,12 @@ function shellVersion(): string {
 const api: SimDesktopApi = {
   version: shellVersion(),
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('desktop:open-external', url),
+  ...(process.platform === 'darwin' || process.platform === 'win32'
+    ? {
+        openMicrophoneSettings: (): Promise<boolean> =>
+          ipcRenderer.invoke('desktop:open-microphone-settings'),
+      }
+    : {}),
   beginOAuthConnect: (providerId: string, scope?: DesktopOAuthConnectScope): Promise<boolean> =>
     ipcRenderer.invoke('desktop:oauth-connect', providerId, scope),
   onOAuthConnectComplete: (callback: (result: DesktopOAuthConnectResult) => void): (() => void) => {
@@ -123,6 +131,15 @@ const api: SimDesktopApi = {
   },
   offlineRetry: (): void => {
     ipcRenderer.send('offline:retry')
+  },
+  server: {
+    open: (): void => {
+      ipcRenderer.send('server:open')
+    },
+    getConfiguration: (): Promise<DesktopServerConfiguration> =>
+      ipcRenderer.invoke('server:get-configuration'),
+    setOrigin: (origin: string): Promise<DesktopServerChangeResult> =>
+      ipcRenderer.invoke('server:set-origin', origin),
   },
   localFilesystem: (request: LocalFilesystemRequest): Promise<LocalFilesystemResponse> =>
     ipcRenderer.invoke('desktop:local-filesystem', request),
@@ -147,6 +164,8 @@ const api: SimDesktopApi = {
     getPreferences: (): Promise<DesktopPreferences> => ipcRenderer.invoke('desktop:settings:get'),
     setPreference: (key: DesktopPreferenceKey, value: boolean): Promise<DesktopPreferences> =>
       ipcRenderer.invoke('desktop:settings:set', key, value),
+    setBrowserSearchSuggestionsEnabled: (enabled: boolean): Promise<DesktopPreferences> =>
+      ipcRenderer.invoke('desktop:settings:set-browser-search-suggestions', enabled),
     notify: (payload: DesktopNotificationPayload): Promise<boolean> =>
       ipcRenderer.invoke('desktop:settings:notify', payload),
     setBrowserTheme: (theme: DesktopAppearanceTheme): Promise<DesktopPreferences> =>
@@ -178,6 +197,9 @@ const api: SimDesktopApi = {
   },
   browserAgent: {
     supportsAtomicPanelOcclusion: true,
+    registerSitePermissionPromptSupport: (): void => {
+      ipcRenderer.send('browser-agent:register-site-permission-prompt-support')
+    },
     executeTool: (
       toolCallId: string,
       tool: BrowserToolName,
@@ -194,6 +216,8 @@ const api: SimDesktopApi = {
     },
     openTab: (scopeId: string): Promise<BrowserTabsState> =>
       ipcRenderer.invoke('browser-agent:open-tab', scopeId),
+    openUrl: (url: string, scopeId: string): Promise<BrowserTabsState> =>
+      ipcRenderer.invoke('browser-agent:open-url', url, scopeId),
     activateScope: (scopeId: string): Promise<BrowserTabsState> =>
       ipcRenderer.invoke('browser-agent:activate-scope', scopeId),
     restoreScope: (scopeId: string): Promise<BrowserTabsState> =>
@@ -281,6 +305,8 @@ const api: SimDesktopApi = {
       ipcRenderer.invoke('browser-agent:get-tabs-state', scopeId),
     getKnownSessions: (): Promise<BrowserKnownSessionsState> =>
       ipcRenderer.invoke('browser-agent:get-known-sessions'),
+    getSearchSuggestions: (query: string): Promise<string[]> =>
+      ipcRenderer.invoke('browser-agent:search-suggestions', query),
     clearBrowsingData: (kinds?: readonly BrowserDataKind[]): Promise<BrowserKnownSessionsState> =>
       ipcRenderer.invoke('browser-agent:clear-browsing-data', kinds),
     getDownloadsState: (scopeId: string): Promise<BrowserDownloadsState> =>
@@ -435,7 +461,7 @@ const api: SimDesktopApi = {
     write: (terminalId: string, data: string, scopeId: string): void => {
       ipcRenderer.send('terminal:write', terminalId, data, scopeId)
     },
-    paste: (terminalId: string, scopeId: string): Promise<boolean> =>
+    paste: (terminalId: string, scopeId: string) =>
       ipcRenderer.invoke('terminal:paste', terminalId, scopeId),
     resize: (terminalId: string, cols: number, rows: number, scopeId: string): void => {
       ipcRenderer.send('terminal:resize', terminalId, cols, rows, scopeId)
@@ -462,9 +488,6 @@ const api: SimDesktopApi = {
       ipcRenderer.invoke('terminal:dispose-scope', scopeId),
     suspendScope: (scopeId: string): Promise<boolean> =>
       ipcRenderer.invoke('terminal:suspend-scope', scopeId),
-    dispose: (): void => {
-      ipcRenderer.send('terminal:dispose')
-    },
     onData: (
       callback: (terminalId: string, data: string, scopeId: string) => void
     ): (() => void) => {

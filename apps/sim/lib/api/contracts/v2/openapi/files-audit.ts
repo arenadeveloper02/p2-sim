@@ -1,8 +1,8 @@
-import { z } from 'zod'
 import { v2GetAuditLogContract, v2ListAuditLogsContract } from '@/lib/api/contracts/v2/audit-logs'
 import {
   v2AbortFileUploadContract,
   v2BulkDeleteFilesContract,
+  v2BulkDownloadFilesContract,
   v2CompleteFileUploadContract,
   v2CreateFileContract,
   v2CreateFileFolderContract,
@@ -11,20 +11,25 @@ import {
   v2DeleteFileContract,
   v2DeleteFileFolderContract,
   v2DownloadFileContract,
+  v2EditFileContentContract,
   v2GetFileContract,
   v2GetFileShareContract,
+  v2GetFileUploadContract,
   v2ListFileFoldersContract,
   v2ListFilesContract,
   v2MoveFileItemsContract,
+  v2ReadFileTextContract,
   v2RelocateFileFolderContract,
   v2RenameFileContract,
   v2RestoreFileContract,
+  v2RestoreFileFolderContract,
+  v2SearchFileContentContract,
+  v2UnzipFileContract,
   v2UpdateFileContentContract,
   v2UpsertFileShareContract,
 } from '@/lib/api/contracts/v2/files'
 import {
   documentedSchema,
-  ERROR_RESPONSES,
   type ErrorResponseId,
   FOLDER_TREE_TOO_LARGE,
   FULL_SET_LIST,
@@ -35,10 +40,12 @@ import {
   RESOURCE_ERRORS,
   V2_API_KEY_SECURITY,
   V2_API_KEY_SECURITY_SCHEMES,
+  V2_BINARY_DOWNLOAD_HEADERS,
   V2_COMMON_HEADERS,
   V2_ERROR_SCHEMA,
   WORKSPACE_API_KEY_DENIED,
   WORKSPACE_ERRORS,
+  withErrorExamples,
   withRequestBodyErrors,
 } from '@/lib/api/contracts/v2/openapi/shared'
 import {
@@ -47,9 +54,12 @@ import {
   type OpenApiOperationMetadata,
   type OpenApiSuccessMetadata,
 } from '@/lib/api/openapi/types'
+import { MAX_ZIP_DOWNLOAD_FILES } from '@/lib/workspace-files/limits'
 
 const FILE_EXAMPLE = {
   id: 'wf_V1StGXR8z5jdHi6BmyT91',
+  webUrl:
+    'https://www.sim.ai/workspace/a91c4b2e-6d3f-4e8a-b5c7-0d9e2f1a8c64/files/wf_V1StGXR8z5jdHi6BmyT91',
   name: 'data.csv',
   size: 1024,
   type: 'text/csv',
@@ -214,6 +224,42 @@ const declaredRoutes = [
     }
   ),
   defineOpenApiRoute(
+    v2GetFileUploadContract,
+    filesOperation({
+      operationId: 'getFileUpload',
+      summary: 'Get File Upload',
+      description: `Read an upload session's current state — whether it is still accepting bytes, has finalized into a file, or has failed. Use it to decide whether an interrupted transfer can be resumed or should be abandoned. Like every other upload control leg it requires the signed upload token, and is re-authorized against the workspace on each call.`,
+      errors: RESOURCE_ERRORS,
+      success: { description: 'Current upload-session state.' },
+    }),
+    {
+      params: documentedSchema(
+        v2GetFileUploadContract.params,
+        'GetFileUploadParams',
+        'Get upload path parameters',
+        'Upload session selected for reading.'
+      ),
+      query: documentedSchema(
+        v2GetFileUploadContract.query,
+        'GetFileUploadQuery',
+        'Get upload query',
+        'Workspace scope for the upload session.'
+      ),
+      headers: documentedSchema(
+        v2GetFileUploadContract.headers,
+        'GetFileUploadHeaders',
+        'Get upload headers',
+        'Signed upload control token.'
+      ),
+      response: documentedSchema(
+        v2GetFileUploadContract.response.schema,
+        'FileUploadResponse',
+        'File upload response',
+        'Current upload-session state.'
+      ),
+    }
+  ),
+  defineOpenApiRoute(
     v2AbortFileUploadContract,
     filesOperation({
       operationId: 'abortFileUpload',
@@ -326,6 +372,90 @@ const declaredRoutes = [
         'FileUploadResponse',
         'File upload response',
         'Current upload-session state.'
+      ),
+    }
+  ),
+  defineOpenApiRoute(
+    v2ReadFileTextContract,
+    filesOperation({
+      operationId: 'readFileText',
+      summary: 'Read File Text',
+      description: `Return a file's text content, parsed out of the stored bytes. This reads the file; it writes nothing — \`POST /api/v2/files/{fileId}/unzip\` is the endpoint that unzips an archive into the workspace. Answers \`400\` for a type no parser supports, naming the raw-bytes download as the escape hatch, and \`413\` for a file above the extraction ceiling. A generated document is extracted from its compiled artifact rather than its generation source, so one still compiling answers \`409\` and is worth retrying. **\`degraded: true\` means text extraction did not fully succeed and the returned text may be incomplete or synthesized from the file's raw bytes. Do not treat it as authoritative content.** The legacy \`.doc\` and \`.ppt\` parsers deliberately return best-effort content rather than failing, so this flag — not an error status — is how a partial extraction is reported. \`truncated\` separately reports that a parser limit stopped extraction early.`,
+      errors: [...RESOURCE_CONFLICT_ERRORS, 'PayloadTooLarge'],
+      success: { description: 'The extracted text and its extraction-quality flags.' },
+    }),
+    {
+      params: documentedSchema(
+        v2ReadFileTextContract.params,
+        'ReadFileTextParams',
+        'Read file text path parameters',
+        'File selected for text extraction.'
+      ),
+      query: documentedSchema(
+        v2ReadFileTextContract.query,
+        'ReadFileTextQuery',
+        'Read file text query',
+        'Workspace scope and optional source-byte ceiling.'
+      ),
+      response: documentedSchema(
+        v2ReadFileTextContract.response.schema,
+        'FileTextResponse',
+        'File text response',
+        'Text extracted from a workspace file.'
+      ),
+    }
+  ),
+  defineOpenApiRoute(
+    v2BulkDownloadFilesContract,
+    filesOperation({
+      operationId: 'bulkDownloadFiles',
+      summary: 'Bulk Download Files',
+      description: `Stream a selection of workspace files as one zip. Select files by id and folders by path, each as one comma-separated parameter; a folder expands to all its descendants, and a path matching no folder is rejected rather than ignored. Each parameter accepts at most ${MAX_ZIP_DOWNLOAD_FILES} entries — the same ceiling the resolved selection is held to — and the resolved file count and total bytes are checked again, so an over-broad selection answers \`400\` rather than streaming indefinitely. Downloading records an audit event, so it is not a safe read. ${HEAD_MIRRORS_GET} ${HEAD_OMITS_PAYLOAD_HEADERS}`,
+      errors: RESOURCE_CONFLICT_ERRORS,
+      success: {
+        description: 'The selected files as a zip archive.',
+        headers: ['Content-Type', 'Content-Disposition'],
+        contentTypes: ['application/zip'],
+      },
+    }),
+    {
+      query: documentedSchema(
+        v2BulkDownloadFilesContract.query,
+        'BulkDownloadFilesQuery',
+        'Bulk download files query',
+        'Workspace scope and the file and folder selection to archive.'
+      ),
+    }
+  ),
+  defineOpenApiRoute(
+    v2UnzipFileContract,
+    filesOperation({
+      operationId: 'unzipFile',
+      summary: 'Unzip File',
+      description:
+        "Unzip a `.zip` archive into a new folder beside it and answer counts plus the destination path. This writes new workspace files; it does not read anything out of the archive into the response — `GET /api/v2/files/{fileId}/text` is the endpoint that returns a file's text. The unpacked files are deliberately not returned — a large archive would materialize thousands of objects into one response — so page `GET /api/v2/files?folderPath=...` for the contents. Unzipping is slow: an archive near the size ceiling can run for minutes. Only one unzip of a given archive runs at a time; a concurrent attempt answers `409`. Archives past the size ceiling, and runs that outrun their time budget, answer `413`.",
+      errors: [...RESOURCE_CONFLICT_ERRORS, 'PayloadTooLarge'],
+      success: { description: 'Counts and destination folder for the unpacked archive.' },
+    }),
+    {
+      params: documentedSchema(
+        v2UnzipFileContract.params,
+        'UnzipFileParams',
+        'Unzip file path parameters',
+        'Archive selected for unzipping.'
+      ),
+      query: v2UnzipFileContract.query,
+      body: documentedSchema(
+        v2UnzipFileContract.body,
+        'UnzipFileBody',
+        'Unzip file body',
+        'Workspace scope for the archive.'
+      ),
+      response: documentedSchema(
+        v2UnzipFileContract.response.schema,
+        'FileUnzipResponse',
+        'Unzip file response',
+        'Counts and destination folder for the unpacked archive.'
       ),
     }
   ),
@@ -659,6 +789,103 @@ const declaredRoutes = [
     }
   ),
   defineOpenApiRoute(
+    v2EditFileContentContract,
+    filesOperation({
+      operationId: 'editFileContent',
+      summary: 'Edit File Content',
+      description: `Change part of a text file in place, leaving the rest untouched. \`PUT\` on this path replaces the whole file; this is the partial counterpart. \`search_replace\` matches exact text and requires one match unless \`replaceAll\` is true. \`replace_between\`, \`insert_after\`, and \`delete_between\` match complete lines after trimming surrounding whitespace, so edits remain stable when unrelated changes move the target to another line. Anchored replacement preserves both boundary lines; insertion preserves its anchor; deletion removes the start anchor and preserves the end anchor. Use \`occurrence\` when an anchor line repeats. Only files whose stored bytes are UTF-8 text can be edited: a PDF or DOCX answers \`400\`. A concurrent write answers \`409\`, and retrying means re-reading first.`,
+      errors: [...RESOURCE_CONFLICT_ERRORS, 'PayloadTooLarge', 'Locked'],
+      success: { description: 'The edited file and its new line count.' },
+    }),
+    {
+      query: v2EditFileContentContract.query,
+      params: documentedSchema(
+        v2EditFileContentContract.params,
+        'EditFileContentParams',
+        'Edit file content path parameters',
+        'File whose contents should be edited.'
+      ),
+      body: documentedSchema(
+        v2EditFileContentContract.body,
+        'EditFileContentRequest',
+        'Edit file content request',
+        'Workspace scope and the change to apply.',
+        [
+          {
+            workspaceId: 'a91c4b2e-6d3f-4e8a-b5c7-0d9e2f1a8c64',
+            edit: {
+              mode: 'search_replace',
+              search: '- based in NYC',
+              content: '- based in SF',
+            },
+          },
+          {
+            workspaceId: 'a91c4b2e-6d3f-4e8a-b5c7-0d9e2f1a8c64',
+            edit: {
+              mode: 'insert_after',
+              anchor: '## Preferences',
+              content: '- prefers async updates',
+            },
+          },
+        ]
+      ),
+      response: documentedSchema(
+        v2EditFileContentContract.response.schema,
+        'V2EditedFileResponse',
+        'Edited file response',
+        'A workspace file after an in-place content edit.',
+        [{ data: { file: FILE_EXAMPLE, lineCount: 5 } }]
+      ),
+    }
+  ),
+  defineOpenApiRoute(
+    v2SearchFileContentContract,
+    filesOperation({
+      operationId: 'searchFileContent',
+      summary: 'Search File Content',
+      description: `Search the indexed text of active workspace files and return each matching line with its file id and line number. \`folderPaths\` confines the search to one or more folder trees, which also narrows the reported coverage, so \`complete\` and \`indexStatus\` describe the folders searched rather than the whole workspace. Coverage matters: the index is built asynchronously, so when \`complete\` is \`false\` a term that was not found is **unknown rather than absent**, and acting on the absence risks creating a duplicate of something already stored. \`truncated\` separately reports that more matches exist beyond \`maxResults\`.`,
+      errors: [...WORKSPACE_ERRORS, 'NotFound', 'Locked'],
+      success: { description: 'Matching lines and the index coverage they were drawn from.' },
+    }),
+    {
+      query: documentedSchema(
+        v2SearchFileContentContract.query,
+        'SearchFileContentQuery',
+        'Search file content query',
+        'Workspace scope, the query, and an optional folder scope.'
+      ),
+      response: documentedSchema(
+        v2SearchFileContentContract.response.schema,
+        'V2FileSearchResultsResponse',
+        'File search results response',
+        'Matching lines from indexed workspace file content.',
+        [
+          {
+            data: {
+              results: [
+                {
+                  fileId: 'wf_V1StGXR8z5jdHi6BmyT91',
+                  lineNumber: 4,
+                  text: '- based in NYC',
+                },
+              ],
+              count: 1,
+              truncated: false,
+              complete: true,
+              indexStatus: {
+                readyFiles: 12,
+                pendingFiles: 0,
+                failedFiles: 0,
+                skippedFiles: 0,
+                partialFiles: 0,
+              },
+            },
+          },
+        ]
+      ),
+    }
+  ),
+  defineOpenApiRoute(
     v2UpdateFileContentContract,
     filesOperation({
       operationId: 'updateFileContent',
@@ -701,8 +928,9 @@ const declaredRoutes = [
     filesOperation({
       operationId: 'bulkDeleteFiles',
       summary: 'Delete Files',
-      description: 'Delete up to 1,000 workspace files in one operation.',
-      errors: [...RESOURCE_CONFLICT_ERRORS, 'PayloadTooLarge'],
+      description:
+        'Delete up to 1,000 workspace files in one operation. This is the same soft delete as \`DELETE /api/v2/files/{fileId}\`: files are archived, not erased, and \`POST /api/v2/files/{fileId}/restore\` reverses each one.',
+      errors: [...RESOURCE_ERRORS, 'PayloadTooLarge'],
       success: { description: 'Count of deleted files.' },
     }),
     {
@@ -733,7 +961,7 @@ const declaredRoutes = [
     filesOperation({
       operationId: 'listFilesFolders',
       summary: 'List Folders',
-      description: `List workspace file folders with optional parent-path filtering and sorting. ${FULL_SET_LIST}`,
+      description: `List workspace file folders with optional parent-path filtering and sorting. Pass \`scope=archived\` to list folders a recursive \`DELETE\` soft-deleted, which is how a caller finds a path to hand to \`POST /api/v2/files/folders/restore\`. ${FULL_SET_LIST}`,
       errors: RESOURCE_ERRORS,
       success: { description: 'Workspace file folders.' },
     }),
@@ -749,6 +977,32 @@ const declaredRoutes = [
         'FileFolderListResponse',
         'File folder list response',
         'Workspace file folders in the current page.'
+      ),
+    }
+  ),
+  defineOpenApiRoute(
+    v2RestoreFileFolderContract,
+    filesOperation({
+      operationId: 'restoreFilesFolder',
+      summary: 'Restore Folder',
+      description:
+        'Restore a soft-deleted folder and everything archived with it. `DELETE /api/v2/files/folders` archives recursively, so this is what makes a recursive delete recoverable: without it the archived files stay visible through `GET /api/v2/files?scope=archived` but the folder structure cannot be rebuilt. Address the folder by the path reported by `GET /api/v2/files/folders?scope=archived`; a path that is not archived answers `404`.',
+      errors: [...RESOURCE_CONFLICT_ERRORS],
+      success: { description: 'The restored folder and what it brought back.' },
+    }),
+    {
+      query: v2RestoreFileFolderContract.query,
+      body: documentedSchema(
+        v2RestoreFileFolderContract.body,
+        'RestoreFileFolderRequest',
+        'Restore file folder request',
+        'Workspace scope and archived folder path.'
+      ),
+      response: documentedSchema(
+        v2RestoreFileFolderContract.response.schema,
+        'FileFolderRestoreResponse',
+        'Folder restore response',
+        'The restored folder and the counts of items it brought back.'
       ),
     }
   ),
@@ -873,35 +1127,24 @@ export const filesAuditOpenApiDocument = defineOpenApiDocument({
   ],
   security: V2_API_KEY_SECURITY,
   securitySchemes: V2_API_KEY_SECURITY_SCHEMES,
-  headers: {
-    'Content-Type': {
-      schema: z.string().meta({
-        id: 'ContentTypeHeader',
-        title: 'Content type',
-        description:
-          'MIME type of the file, defaulting to application/octet-stream when the stored type is unavailable.',
-      }),
-    },
-    'Content-Disposition': {
-      schema: z.string().meta({
-        id: 'ContentDispositionHeader',
-        title: 'Content disposition',
-        description: 'Attachment disposition containing sanitized and RFC 5987 encoded filenames.',
-      }),
-    },
-    'Content-Length': {
-      schema: z
-        .string()
-        .regex(/^(0|[1-9]\d*)$/)
-        .meta({
-          id: 'ContentLengthHeader',
-          title: 'Content length',
-          description: 'File size in bytes.',
-        }),
-    },
-    ...V2_COMMON_HEADERS,
-  },
+  headers: { ...V2_BINARY_DOWNLOAD_HEADERS, ...V2_COMMON_HEADERS },
   errorSchema: V2_ERROR_SCHEMA,
-  errorResponses: ERROR_RESPONSES,
+  /*
+   * One example serves every route in this document, and the routes raise 409
+   * for unrelated reasons: a name already taken, a write that lost a race, a
+   * generated document still compiling. Enumerating them is wrong for whichever
+   * cases the list omits, so this states the SHAPE of the conflict instead.
+   * Per-operation examples would need an override on `defineOpenApiRoute`.
+   */
+  errorResponses: withErrorExamples({
+    Conflict: { message: 'The request conflicts with the current resource state' },
+    /*
+     * The shared example names a workflow, which was accurate while workflows
+     * and tables were the only documents carrying a 423. The in-place content
+     * edit and content search both do now, so this names what is actually
+     * locked here without enumerating the reasons it can be.
+     */
+    Locked: { message: 'The file or its search index is temporarily locked; retry the request' },
+  }),
   routes,
 })

@@ -2,6 +2,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getPostgresErrorCode } from '@sim/utils/errors'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { listWorkspacesQuerySchema } from '@/lib/api/contracts'
@@ -10,11 +11,13 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { capabilityRefusalResponse } from '@/lib/permission-groups/capability-response'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { createDefaultWorkspace, createWorkspace } from '@/lib/workspaces/create-workspace'
 import { listWorkspacesForViewer } from '@/lib/workspaces/list'
 import {
   getWorkspaceCreationPolicy,
+  WorkspaceCreationCapabilityWithheldError,
   WorkspaceCreationContextChangedError,
 } from '@/lib/workspaces/policy'
 
@@ -128,6 +131,18 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     })
 
     if (!creationPolicy.canCreate) {
+      /**
+       * The preflight refusal and the revocation-race refusal are the same
+       * decision reached at two moments, so they must be the same body. Without
+       * this branch the common path — the group already denied `workspace.create`
+       * when the policy was read — answered a bare `{ error }`, while only the
+       * race the `catch` below handles carried
+       * `details.code: PERMISSION_GROUP_CAPABILITY_BLOCKED`. A client that keys
+       * off the code then saw the capability refusal in the rarer case only.
+       */
+      if (creationPolicy.blockedReasonCode === 'permission-group-denied') {
+        return capabilityRefusalResponse('workspace.create')
+      }
       return NextResponse.json(
         { error: creationPolicy.reason || 'Workspace creation is not available.' },
         { status: creationPolicy.status }
@@ -144,6 +159,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       billedAccountUserId: creationPolicy.billedAccountUserId,
       isPersonal: creationPolicy.isPersonal,
       observedOrganizationId: creationPolicy.observedOrganizationId,
+      governingPermissionGroupOrganizationId: creationPolicy.governingPermissionGroupOrganizationId,
     })
 
     captureServerEvent(
@@ -182,6 +198,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     return NextResponse.json({ workspace: newWorkspace })
   } catch (error) {
+    if (error instanceof WorkspaceCreationCapabilityWithheldError) {
+      return capabilityRefusalResponse('workspace.create')
+    }
     if (error instanceof WorkspaceCreationContextChangedError) {
       return NextResponse.json(
         {
@@ -189,6 +208,20 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
             'Your organization membership changed while this workspace was being created. Please try again.',
         },
         { status: 409 }
+      )
+    }
+    /**
+     * A lock timeout is contention, not a fault: creation serializes on the
+     * organization's mutation locks and now also on `permission_group:<org>`,
+     * so a concurrent create or a permission-group admin write can exhaust the
+     * `lock_timeout` and abort this transaction. Answer 503 like the
+     * permission-group routes do, rather than letting it reach the generic 500
+     * below — the caller should retry, and a 500 tells them the opposite.
+     */
+    if (getPostgresErrorCode(error) === '55P03') {
+      return NextResponse.json(
+        { error: 'This organization is being updated by another request. Please try again.' },
+        { status: 503 }
       )
     }
     logger.error('Error creating workspace:', error)

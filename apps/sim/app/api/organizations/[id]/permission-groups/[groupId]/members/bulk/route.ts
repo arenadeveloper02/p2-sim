@@ -10,9 +10,9 @@ import { bulkAddPermissionGroupMembersContract } from '@/lib/api/contracts/permi
 import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { PERMISSION_GROUP_MEMBER_CONSTRAINTS } from '@/lib/permission-groups/types'
+import { PERMISSION_GROUP_MEMBER_CONSTRAINTS } from '@/lib/permission-groups/constraints'
+import { acquirePermissionGroupOrgLock } from '@/lib/permission-groups/locks'
 import {
-  acquirePermissionGroupOrgLock,
   authorizeOrgAccessControl,
   findScopeConflicts,
   formatScopeConflictError,

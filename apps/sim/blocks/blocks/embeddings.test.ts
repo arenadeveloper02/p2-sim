@@ -1,16 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const { mockFetchQuery } = vi.hoisted(() => ({
-  mockFetchQuery: vi.fn(),
-}))
-
-vi.mock('@/app/_shell/providers/get-query-client', () => ({
-  getQueryClient: () => ({ fetchQuery: mockFetchQuery }),
-}))
-
+import { describe, expect, it } from 'vitest'
 import { DEFAULT_MODEL_BY_PROVIDER, EMBEDDING_MODELS } from '@/lib/embeddings/catalog'
 import { DEFAULT_OPENROUTER_EMBEDDING_MODEL } from '@/lib/embeddings/openrouter-models'
 import {
@@ -18,12 +9,6 @@ import {
   EmbeddingsBlock,
   TOOL_ID_BY_PROVIDER,
 } from '@/blocks/blocks/embeddings'
-
-const OPENROUTER_MODELS = [
-  'openrouter/openai/text-embedding-3-small',
-  'openrouter/qwen/qwen3-embedding-8b',
-  'openrouter/google/gemini-embedding-001',
-]
 
 /**
  * The block derives its model, task-type, and dimension options from the
@@ -55,11 +40,6 @@ function conditionModel(subBlock: { condition?: unknown }): string | undefined {
 }
 
 describe('Embeddings block', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockFetchQuery.mockResolvedValue({ models: OPENROUTER_MODELS })
-  })
-
   it('offers static catalog models for direct providers', () => {
     const modelSubBlocks = subBlocksById('model')
     const offered = new Map<string, string[]>()
@@ -152,14 +132,12 @@ describe('Embeddings block', () => {
     )
   })
 
-  it('loads every OpenRouter embedding model and maps its dedicated key', async () => {
+  it('uses the server-backed OpenRouter model selector and maps its dedicated key', () => {
     const openRouterModels = subBlocksById('model').find(
       (subBlock) => conditionProvider(subBlock) === 'openrouter'
     )
     expect(openRouterModels?.type).toBe('combobox')
-    expect(openRouterModels?.options).toEqual([])
-    expect(optionIds(await openRouterModels?.fetchOptions?.('block-1'))).toEqual(OPENROUTER_MODELS)
-    expect(mockFetchQuery).toHaveBeenCalledOnce()
+    expect(openRouterModels?.selectorKey).toBe('providers.openrouterEmbeddingModels')
 
     expect(
       EmbeddingsBlock.tools.config?.params?.({
@@ -372,5 +350,64 @@ describe('Embeddings block', () => {
     expect(() =>
       EmbeddingsBlock.tools.config?.params?.({ provider: 'openai', apiKey: 'k' })
     ).toThrow('Input text is required')
+  })
+
+  describe('Ollama', () => {
+    it('reads its models from the server rather than the catalog, with no default', () => {
+      const subBlock = subBlocksById('model').find(
+        (candidate) => conditionProvider(candidate) === 'ollama'
+      )
+      expect(subBlock).toBeDefined()
+      expect(subBlock?.type).toBe('combobox')
+      expect(subBlock?.selectorKey).toBe('providers.ollamaEmbeddingModels')
+      /** Whatever the operator pulled; Sim cannot pre-select one it cannot enumerate. */
+      expect(subBlock?.value).toBeUndefined()
+      expect(subBlock?.required).toBe(true)
+    })
+
+    it('offers neither task types nor dimensions, which the adapter cannot send', () => {
+      for (const id of ['taskType', 'dimensions']) {
+        expect(
+          subBlocksById(id).some((candidate) => conditionProvider(candidate) === 'ollama'),
+          `${id} must not be offered for ollama`
+        ).toBe(false)
+      }
+    })
+
+    it('hides the API key field, since Ollama authenticates with nothing', () => {
+      const condition = subBlocksById('apiKey')[0].condition as {
+        value: string[]
+        not?: boolean
+      }
+      expect(condition.not).toBe(true)
+      expect(condition.value).toContain('ollama')
+      expect(condition.value).toContain('openrouter')
+    })
+
+    it('forwards the bare model name and drops every credential-bearing field', () => {
+      expect(
+        EmbeddingsBlock.tools.config?.params?.({
+          provider: 'ollama',
+          model: 'nomic-embed-text:latest',
+          input: 'hello',
+          apiKey: 'stale-key',
+          taskType: 'query',
+          dimensions: '768',
+        })
+      ).toEqual({
+        input: 'hello',
+        model: 'nomic-embed-text:latest',
+        taskType: undefined,
+        dimensions: undefined,
+      })
+    })
+
+    it('routes to its own tool and requires a model', () => {
+      expect(TOOL_ID_BY_PROVIDER.ollama).toBe('embeddings_ollama')
+      expect(EmbeddingsBlock.tools.access).toContain('embeddings_ollama')
+      expect(() =>
+        EmbeddingsBlock.tools.config?.params?.({ provider: 'ollama', input: 'hello' })
+      ).toThrow('An Ollama embedding model is required')
+    })
   })
 })

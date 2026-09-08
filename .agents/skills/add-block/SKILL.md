@@ -15,19 +15,9 @@ When the user asks you to create a block:
 2. Configure all subBlocks with proper types, conditions, and dependencies
 3. Wire up tools correctly
 
-## Hard Rule: No Guessed Tool Outputs
+## No guessed tool outputs
 
-Blocks depend on tool outputs. If the underlying tool response schema is not documented or live-verified, you MUST tell the user instead of guessing block outputs.
-
-- Do NOT invent block outputs for undocumented tool responses
-- Do NOT describe unknown JSON shapes as if they were confirmed
-- Do NOT wire fields into the block just because they seem likely to exist
-
-If the tool outputs are not known, do one of these instead:
-1. Ask the user for sample tool responses
-2. Ask the user for test credentials so the tool responses can be verified
-3. Limit the block to operations whose outputs are documented
-4. Leave uncertain outputs out and explicitly tell the user what remains unknown
+Block outputs mirror tool outputs. When a tool's response schema is neither documented nor live-verified, don't infer field names or JSON shapes — ask the user for sample responses or test credentials, limit the block to operations whose outputs are documented, or leave the uncertain outputs out and say exactly what remains unknown.
 
 ## Block Configuration Structure
 
@@ -172,8 +162,8 @@ Optional companions: `credentialLabels` (override the picker's section/connect-r
 ### OAuth deployment availability (required for integration blocks)
 
 A visible tools-category block with OAuth is deployment-gated. Its `oauth-input.serviceId` is
-projected into `apps/sim/lib/integrations/integrations.json`, then resolved through
-`resolveOAuthClientCapabilityId()` in `apps/sim/lib/core/config/env-capabilities.ts`.
+projected into `packages/deployment-config/src/integrations.json`, then resolved through
+`resolveOAuthClientCapabilityId()` in `packages/deployment-config/src/env-capabilities.ts`.
 
 When adding or changing an OAuth integration block:
 
@@ -184,13 +174,14 @@ When adding or changing an OAuth integration block:
 3. For a new capability, add its required client fields to `OAUTH_CLIENT_CAPABILITIES` and ensure
    every referenced field exists in the env schema in `apps/sim/lib/core/config/env.ts`. Then add
    the matching `text` or `secret` input modes to `OAUTH_CLIENT_SETUP_FIELDS` in
-   `scripts/setup/capability-config.ts`. The CLI catalog is exhaustively typed and checked against
-   the runtime field list; do not infer secrecy from the field name.
-4. If the canonical OAuth service declares `serviceAccountProviderId`, keep
-   `SERVICE_ACCOUNT_METADATA_BY_OAUTH_SERVICE_ID` in
-   `apps/sim/lib/integrations/service-account-metadata.ts` aligned. Set
-   `deploymentRequirement` only when the service-account path is preview-gated or depends on the
-   OAuth client fields; otherwise omit it.
+   `packages/sim-setup/src/capability-config.ts`. The CLI catalog is exhaustively typed and checked
+   against the runtime field list; do not infer secrecy from the field name.
+4. If the canonical OAuth service declares `serviceAccountProviderId`, run
+   `bun run deployment-config:generate`; this regenerates the provider-ID facts in
+   `packages/deployment-config/src/service-account-providers.generated.ts`. Never hand-edit that
+   generated map. Add `deploymentRequirement` policy in
+   `packages/deployment-config/src/service-account-metadata.ts` only when the service-account path
+   is preview-gated or depends on the OAuth client fields; otherwise omit it.
 
 Missing capability metadata is a runtime configuration error, not a reason to make the integration
 silently available.
@@ -202,6 +193,7 @@ silently available.
   id: 'channel',
   title: 'Channel',
   type: 'channel-selector',
+  selectorKey: '{service}.channels',
   serviceId: '{service}',
   placeholder: 'Select channel',
   dependsOn: ['credential'],
@@ -212,6 +204,7 @@ silently available.
   id: 'project',
   title: 'Project',
   type: 'project-selector',
+  selectorKey: '{service}.projects',
   serviceId: '{service}',
   dependsOn: ['credential'],
 }
@@ -221,6 +214,7 @@ silently available.
   id: 'file',
   title: 'File',
   type: 'file-selector',
+  selectorKey: '{service}.files',
   serviceId: '{service}',
   mimeType: 'application/pdf',
   dependsOn: ['credential'],
@@ -231,6 +225,7 @@ silently available.
   id: 'user',
   title: 'User',
   type: 'user-selector',
+  selectorKey: '{service}.users',
   serviceId: '{service}',
   dependsOn: ['credential'],
 }
@@ -314,12 +309,10 @@ When several fields are mutually exclusive alternatives, mark them all `required
 "exactly one" at execution — a conditionally-required canonical pair rejects the workflow before the
 other paths ever get a chance to supply the value.
 
-**Critical constraints:**
-- `canonicalParamId` must NOT match any subblock's `id` in the same block
-- A canonical group is **block-wide**, not per-operation: `buildCanonicalIndex` keys groups by
-  `canonicalParamId` across every subblock, and a group has exactly one `basicId`. Two operations
-  that each need a file pair need two distinct `canonicalParamId` values.
-- All members of a group must share the same `required` status
+**Constraints (block-wide):**
+- `canonicalParamId` must not equal any subblock `id` in the block.
+- One canonical id links exactly one basic/advanced pair for one logical parameter. Groups are keyed by canonical id across every subblock and hold one `basicId`, so two operations that each need a pair need two canonical ids.
+- All members of a group share the same `required` status.
 
 ### Normalizing File Input in tools.config
 
@@ -539,12 +532,6 @@ Maps multiple UI fields to a single serialized parameter:
 - In advanced mode: `channelId` input value → `params.channel`
 - The serializer consolidates based on current mode
 
-**Critical constraints:**
-- `canonicalParamId` must NOT match any other subblock's `id` in the same block (causes conflicts)
-- A `canonicalParamId` links exactly one basic/advanced pair for a single logical parameter. Do NOT reuse the same `canonicalParamId` for different parameters, even under mutually-exclusive conditions/operations
-- ONLY use `canonicalParamId` to link basic/advanced mode alternatives for the same logical parameter
-- Do NOT use it for any other purpose
-
 ## WandConfig Pattern
 
 Enables AI-assisted field generation.
@@ -572,9 +559,9 @@ Enables AI-assisted field generation.
 - `'sql-query'` - SQL statements
 - `'timestamp'` - Adds current date/time context
 
-## Tools Configuration
+Use `wandConfig` on fields that are hard to fill by hand — timestamps (`generationType: 'timestamp'` injects the current date), comma-separated ID lists, complex query strings. Keep the prompt specific about the return format (e.g. 'Return ONLY the ISO 8601 timestamp string').
 
-**Important:** `tools.config.tool` runs during serialization before variable resolution. Put `Number()` and other type coercions in `tools.config.params` instead, which runs at execution time after variables are resolved.
+## Tools Configuration
 
 **Preferred:** Use tool names directly as dropdown option IDs to avoid switch cases:
 ```typescript
@@ -645,19 +632,12 @@ outputs: {
   // Use type: 'json' for complex objects or arrays (NOT type: 'array' with items)
   items: { type: 'json', description: 'List of items' },
   metadata: { type: 'json', description: 'Response metadata' },
-
-  // Nested outputs (for structured data)
-  user: {
-    id: { type: 'string', description: 'User ID' },
-    name: { type: 'string', description: 'User name' },
-    email: { type: 'string', description: 'User email' },
-  },
 }
 ```
 
 ### Typed JSON Outputs
 
-When using `type: 'json'` and you know the object shape in advance, **describe the inner fields in the description** so downstream blocks know what properties are available. Block outputs have no nested `properties` form — always keep the output flat and put the shape in the `description`:
+When using `type: 'json'` and you know the object shape in advance, **describe the inner fields in the description** so downstream blocks know what properties are available. Keep the output flat and put the shape in the `description`:
 
 ```typescript
 outputs: {
@@ -672,10 +652,6 @@ outputs: {
 }
 ```
 
-Nested object outputs (`plan: { id: { type: 'string' }, ... }`) are a **tool-output** feature only — `OutputFieldDefinition` for blocks does not allow them and they fail TypeScript at build time.
-
-If the output shape is unknown because the underlying tool response is undocumented, you MUST tell the user and stop. Unknown is not the same as variable. Never guess block outputs.
-
 ## V2 Block Pattern
 
 When creating V2 blocks (alongside legacy V1):
@@ -686,6 +662,10 @@ export const ServiceBlock: BlockConfig = {
   type: 'service',
   name: 'Service (Legacy)',
   hideFromToolbar: true,  // Hide from toolbar
+  // Required: drives the amber legacy badge and its click-to-upgrade action.
+  // `check-block-registry` fails a legacy block with no `replacedBy`, one whose
+  // target does not exist, or one whose target is itself sunset or still `preview`.
+  sunset: { status: 'legacy', replacedBy: 'service_v2' },
   // ... rest of config
 }
 
@@ -714,7 +694,7 @@ export const ServiceV2Block: BlockConfig = {
 
 ## Registering Blocks
 
-After creating the block, remind the user to register it in `apps/sim/blocks/registry-maps.ts` (the data maps live here; `registry.ts` holds only the accessor functions). Add the import and an entry to each map alphabetically:
+Register the block in `apps/sim/blocks/registry-maps.ts` — add the import and an entry to each map alphabetically:
 
 ```typescript
 import { ServiceBlock, ServiceBlockMeta } from '@/blocks/blocks/service'
@@ -874,41 +854,6 @@ Optional fields that are rarely used should be set to `mode: 'advanced'` so they
 }
 ```
 
-## WandConfig for Complex Inputs
-
-Use `wandConfig` for fields that are hard to fill out manually, such as timestamps, comma-separated lists, and complex query strings. This gives users an AI-assisted input experience.
-
-```typescript
-// Timestamps - use generationType: 'timestamp' to inject current date context
-{
-  id: 'startTime',
-  title: 'Start Time',
-  type: 'short-input',
-  mode: 'advanced',
-  wandConfig: {
-    enabled: true,
-    prompt: 'Generate an ISO 8601 timestamp based on the user description. Return ONLY the timestamp string.',
-    generationType: 'timestamp',
-  },
-}
-
-// Comma-separated lists - simple prompt without generationType
-{
-  id: 'mediaIds',
-  title: 'Media IDs',
-  type: 'short-input',
-  mode: 'advanced',
-  wandConfig: {
-    enabled: true,
-    prompt: 'Generate a comma-separated list of media IDs. Return ONLY the comma-separated values.',
-  },
-}
-```
-
-## Naming Convention
-
-All tool IDs referenced in `tools.access` and returned by `tools.config.tool` MUST use `snake_case` (e.g., `x_create_tweet`, `slack_send_message`). Never use camelCase or PascalCase.
-
 ## BlockMeta (Required)
 
 Every block file must export a `{Service}BlockMeta` alongside the block — **minimum 7 templates**. Look at existing examples in `apps/sim/blocks/blocks/` (e.g. `browser_use.ts`, `google_sheets.ts`) for the pattern.
@@ -985,23 +930,28 @@ bun run apps/sim/scripts/check-canvas-sentences.ts --block={service}
 Adding a block on its own needs no **tool metadata** regeneration — a block references existing
 tool IDs through `tools.access` and does not change any tool's shape.
 
-But if the same change also adds, edits **or removes** a tool, run `bun run tool-metadata:generate` and commit the result, or CI fails on stale artifacts. That matters here because a block's `outputs` are authored to match its tools' outputs, and the UI now reads those from the generated metadata rather than the executable registry — an unregenerated tool change makes the block's outputs disagree with what the panel renders. See `.agents/skills/tool-registry-boundary/SKILL.md`.
+But if the same change also adds, edits **or removes** a tool, run `bun run tool-metadata:generate` and commit the result, or CI fails on stale artifacts. That matters here because a block's `outputs` are authored to match its tools' outputs, and the UI reads those from the generated metadata, not the executable registry — an unregenerated tool change makes the block's outputs disagree with what the panel renders. See `.agents/skills/tool-registry-boundary/SKILL.md`.
 
 A visible integration block does require the generated integration catalog and docs to be refreshed.
 After adding or changing one, run:
 
 ```bash
 bun run scripts/generate-docs.ts
+bun run deployment-config:generate
 bun run integration-catalog:check
+bun run deployment-config:check
 bun run docs:check
 ```
 
 The catalog check independently derives deployment metadata from the executable block registry and
-compares it with the committed `apps/sim/lib/integrations/integrations.json`. `docs:check` re-renders
-every generated docs artifact in memory and fails on any committed file that differs — it runs in CI
-via `check:audits`, so commit the full generator output. If the generator also trues up pages an
-earlier PR left stale, commit that catch-up too; reverting it as "unrelated drift" makes `docs:check`
-fail.
+compares it with the committed `packages/deployment-config/src/integrations.json`. The deployment
+config check verifies the generated service-account facts against the canonical OAuth registry and
+catalog. `docs:check` re-renders every generated docs artifact in memory and fails on any committed
+file that differs — it runs in CI via `check:audits`, so commit the full generator output. If the
+generator also trues up pages an earlier PR left stale, commit that catch-up too; reverting it as
+"unrelated drift" makes `docs:check` fail. Review the generated diff and keep only intentional
+changes.
+
 ## Checklist Before Finishing
 
 - [ ] `integrationType` is set to the correct `IntegrationType` enum value
@@ -1034,9 +984,9 @@ fail.
 
 ## Final Validation (Required)
 
-After creating the block, you MUST validate it against every tool it references:
+Validate the block against every tool in `tools.access`:
 
-1. **Read every tool definition** that appears in `tools.access` — do not skip any
+1. **Read each tool definition** in `tools.access`
 2. **For each tool, verify the block has correct:**
    - SubBlock inputs that cover all required tool params (with correct `condition` to show for that operation)
    - SubBlock input types that match the tool param types (e.g., dropdown for enums, short-input for strings)
@@ -1045,4 +995,50 @@ After creating the block, you MUST validate it against every tool it references:
 3. **Verify block outputs** cover the key fields returned by all tools
 4. **Verify conditions** — each subBlock should only show for the operations that actually use it
 5. **Verify `{Service}BlockMeta` is exported** with at least 7 templates, each having `icon`, `title`, `prompt`, `modules`, `category`, and `tags`
-6. **If any tool outputs are still unknown**, explicitly tell the user instead of guessing block outputs
+6. **List any tool outputs still unknown** rather than guessing block outputs
+7. **Verify the tool execution boundary** — blocks never create or call API routes. Every referenced
+   tool must already be either a registered `InternalToolConfig.operation` or an absolute external
+   HTTP(S) `ToolConfig.request`. If transport needs to change, use the `add-tools` skill; never add a
+   same-origin `/api/...` hop or a `directExecution` property from the block.
+
+## Option Lists: `selectorKey` or `options`, never a per-block fetcher
+
+A sub-block gets its choices from exactly one of two places. There is no third.
+
+**`selectorKey` — every remote list.** Use the `add-selector` skill to add browser-safe metadata in
+`apps/sim/lib/selectors/manifest.ts`. Attach `provider-server` selectors under
+`apps/sim/lib/selectors/server/providers/` and `internal-server` selectors in
+`apps/sim/lib/selectors/server/internal.ts`. Point the sub-block at that key. All remote selectors
+execute through `selectors.execute`; never add a client provider module or selector-only fetch route.
+
+```ts
+{ id: 'triggerCredentials', type: 'oauth-input', canonicalParamId: 'oauthCredential', mode: 'trigger' },
+{ id: 'labelIds', type: 'dropdown', multiSelect: true,
+  selectorKey: 'gmail.labels', dependsOn: ['triggerCredentials'], mode: 'trigger' },
+{ id: 'manualLabelIds', type: 'short-input', mode: 'trigger-advanced' },
+```
+
+`canonicalParamId: 'oauthCredential'` on the credential sub-block is the line people forget. The
+shared context builder projects only active `dependsOn` values and keys canonical pairs by their
+canonical id. Exact environment references such as `{{GMAIL_CREDENTIAL_ID}}` stay unresolved in the
+browser and are resolved only by the authorized server executor. The builder does not infer a
+nonstandard credential id from `type: 'oauth-input'`; give it
+`canonicalParamId: 'oauthCredential'`, or declare an explicit manifest `sourceFields` alias when a
+legacy source id must be retained.
+
+**`options` — everything else.** A static array, or a pure function of the block's own values for a list that narrows to a sibling's selection. No I/O.
+
+```ts
+options: (params) => {
+  const model = params?.values.model
+  return typeof model === 'string' ? effortsFor(model) : DEFAULT_EFFORTS
+}
+```
+
+**Never fetch inside `options`, and never reach into the stores from a block definition.** A fetcher that resolves its credential with `readSubBlockValue(blockId, ...)` only works on the canvas — every surface that is not the editor gets an empty list.
+
+Two rules the checks enforce:
+
+- **Selector query keys contain no context values.** This includes credential IDs, raw secrets,
+  unresolved references, and hashes of those values; the shared facade uses an opaque local revision.
+- **A sub-block that `dependsOn` a credential / knowledge-base / table selector must be reconfigurable at fork-sync time** — a `selectorKey`, a canonical pair whose basic member is a selector, or a `short-input`/`long-input`. `bun run check:fork-dependent-coverage` fails otherwise, because a fork sync clears those fields on every push and an unofferable one can never be set anywhere that sticks.

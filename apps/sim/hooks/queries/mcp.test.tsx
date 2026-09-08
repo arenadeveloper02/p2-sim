@@ -17,14 +17,19 @@ vi.mock('@/lib/api/client/request', () => ({
 
 import {
   discoverMcpToolsContract,
+  getAllowedMcpDomainsContract,
+  listManagedMcpCatalogContract,
   listMcpServersContract,
+  listStoredMcpToolsContract,
   type McpServer,
 } from '@/lib/api/contracts/mcp'
 import {
   mcpKeys,
+  useAllowedMcpDomains,
   useForceRefreshMcpTools,
   useMcpServers,
   useMcpToolsQuery,
+  useStoredMcpTools,
 } from '@/hooks/queries/mcp'
 
 const WORKSPACE_ID = 'workspace-1'
@@ -99,6 +104,7 @@ function mockServers(servers: McpServer[]) {
     if (contract === discoverMcpToolsContract) {
       return { success: true, data: { tools: [], totalCount: 0, byServer: {} } }
     }
+    if (contract === listManagedMcpCatalogContract) return { servers: [], tools: [] }
     throw new Error('Unexpected MCP request')
   })
 }
@@ -137,11 +143,89 @@ describe('useMcpToolsQuery', () => {
     const { unmount } = renderHookWithClient(() => useMcpToolsQuery(WORKSPACE_ID))
     await flush()
 
-    expect(mockRequestJson).toHaveBeenCalledTimes(1)
+    expect(mockRequestJson).toHaveBeenCalledTimes(2)
     expect(mockRequestJson).toHaveBeenCalledWith(
       listMcpServersContract,
       expect.objectContaining({ query: { workspaceId: WORKSPACE_ID } })
     )
+
+    unmount()
+  })
+
+  it('includes managed Credential Group connection snapshots without upstream discovery', async () => {
+    const managedServer = server('mcp-cg-123456789012345678901', {
+      name: 'Fireflies — alex@example.com',
+      authType: 'oauth',
+      url: undefined,
+    })
+    mockRequestJson.mockImplementation(async (contract) => {
+      if (contract === listMcpServersContract) {
+        return { success: true, data: { servers: [] } }
+      }
+      if (contract === listManagedMcpCatalogContract) {
+        return {
+          servers: [managedServer],
+          tools: [
+            {
+              name: 'search_transcripts',
+              description: 'Search transcripts',
+              inputSchema: { type: 'object', properties: {} },
+              serverId: managedServer.id,
+              serverName: managedServer.name,
+            },
+          ],
+        }
+      }
+      throw new Error('Managed MCP snapshots must not trigger discovery')
+    })
+
+    const hook = renderHookWithClient(() => useMcpToolsQuery(WORKSPACE_ID))
+    await flush()
+
+    expect(hook.getResult().data).toEqual([
+      expect.objectContaining({
+        name: 'search_transcripts',
+        serverId: managedServer.id,
+      }),
+    ])
+    expect(mockRequestJson).toHaveBeenCalledTimes(2)
+
+    hook.unmount()
+  })
+
+  it('surfaces a shared server-list failure when the managed catalog is empty', async () => {
+    const serverListError = new Error('server list failed')
+    mockRequestJson.mockImplementation(async (contract) => {
+      if (contract === listMcpServersContract) throw serverListError
+      if (contract === listManagedMcpCatalogContract) return { servers: [], tools: [] }
+      throw new Error('Unexpected MCP request')
+    })
+
+    const hook = renderHookWithClient(() => useMcpToolsQuery(WORKSPACE_ID))
+    await flush()
+
+    expect(hook.getResult().data).toEqual([])
+    expect(hook.getResult().error).toBe(serverListError)
+    expect(hook.getResult().isLoading).toBe(false)
+
+    hook.unmount()
+  })
+
+  it('defers detail and form metadata queries while their surfaces are closed', async () => {
+    mockRequestJson.mockImplementation(async (contract) => {
+      if (contract === listStoredMcpToolsContract || contract === getAllowedMcpDomainsContract) {
+        throw new Error('Deferred MCP metadata should not be requested')
+      }
+      throw new Error('Unexpected MCP request')
+    })
+
+    const { unmount } = renderHookWithClient(() => ({
+      storedTools: useStoredMcpTools(WORKSPACE_ID, { enabled: false }),
+      allowedDomains: useAllowedMcpDomains({ enabled: false }),
+    }))
+    await flush()
+
+    expect(mockRequestJson).not.toHaveBeenCalled()
 
     unmount()
   })

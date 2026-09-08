@@ -6,11 +6,19 @@ on:
     paths:
       - 'helm/sim/**'
       - '.github/workflows/helm.yml'
+      # The image inventory is generated from the chart and checked here, so a
+      # change to its generator has to run this workflow too.
+      - 'scripts/generate-image-manifest.ts'
+      - 'package.json'
   pull_request:
     branches: [main, staging, dev]
     paths:
       - 'helm/sim/**'
       - '.github/workflows/helm.yml'
+      # The image inventory is generated from the chart and checked here, so a
+      # change to its generator has to run this workflow too.
+      - 'scripts/generate-image-manifest.ts'
+      - 'package.json'
 
 concurrency:
   group: helm-${{ github.ref }}
@@ -35,13 +43,20 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.1
 
       # Docker Compose and Kubernetes must run the same background jobs on the
       # same schedules; this fails the build if the two drift apart. The script
       # imports only node builtins, so this job installs no dependencies.
       - name: Scheduler parity (docker/crontab vs helm cronjobs)
         run: bun run scripts/check-cron-parity.ts
+
+      # helm/sim/images.yaml is what an operator mirrors into a disconnected
+      # registry, so a chart change that adds an image has to update it. Lives
+      # here rather than in `check:audits` because it renders the chart, and the
+      # audits job has no Helm.
+      - name: Image inventory is current
+        run: bun run images:check
 
       - name: Helm lint
         run: helm lint helm/sim --values helm/sim/ci/default-values.yaml

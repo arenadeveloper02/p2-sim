@@ -1,10 +1,11 @@
 import { type ReactNode, Suspense } from 'react'
-import { Chip, ToastProvider } from '@sim/emcn'
+import { Chip } from '@sim/emcn'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { asOrchestrationError } from '@/lib/core/orchestration/types'
 import { authenticateCredentialGroupEnrollment } from '@/lib/credential-groups/application/enrollment-auth'
 import { readPublicCredentialGroupEnrollment } from '@/lib/credential-groups/application/public-enrollment'
+import { getManagedMcpConnectorIcon } from '@/lib/credential-groups/managed-mcp-connector-icons'
 import { getCredentialGroupProviderService } from '@/lib/credential-groups/providers'
 import { enforcePublicCredentialGroupIpRateLimit } from '@/lib/credential-groups/rate-limit'
 import { SupportFooter } from '@/app/(auth)/components'
@@ -35,13 +36,11 @@ interface PageShellProps {
 
 function PageShell({ children }: PageShellProps) {
   return (
-    <ToastProvider>
-      <LogoShell footer={<SupportFooter position='static' />}>
-        <div className='mx-auto flex w-full max-w-[640px] flex-1 flex-col px-5 pt-16 pb-20 max-sm:pt-10'>
-          {children}
-        </div>
-      </LogoShell>
-    </ToastProvider>
+    <LogoShell footer={<SupportFooter position='static' />}>
+      <div className='mx-auto flex w-full max-w-[640px] flex-1 flex-col px-5 pt-16 pb-20 max-sm:pt-10'>
+        {children}
+      </div>
+    </LogoShell>
   )
 }
 
@@ -108,6 +107,10 @@ export default async function CredentialGroupEnrollmentPage({
   const resolvedSearchParams = await searchParams
   const oauthStatus = getSearchParam(resolvedSearchParams, 'oauth')
   const connectedOptionId = getSearchParam(resolvedSearchParams, 'connected')
+  const connectedMcpServerId =
+    getSearchParam(resolvedSearchParams, 'mcp') === 'connected'
+      ? getSearchParam(resolvedSearchParams, 'mcpServerId')
+      : undefined
   const oauthMessage =
     oauthStatus && oauthStatus in OAUTH_MESSAGES
       ? OAUTH_MESSAGES[oauthStatus as keyof typeof OAUTH_MESSAGES]
@@ -116,14 +119,22 @@ export default async function CredentialGroupEnrollmentPage({
   const connectedOption = connectedOptionId
     ? activeOptions.find((option) => option.id === connectedOptionId)
     : undefined
-  const notification = connectedOptionId
+  const connectedMcpServer = connectedMcpServerId
+    ? enrollment.mcpServers.find((server) => server.id === connectedMcpServerId)
+    : undefined
+  const notification = connectedMcpServerId
     ? {
-        message: `${connectedOption ? getCredentialGroupProviderService(connectedOption.provider).name : 'Account'} connected successfully.`,
+        message: `${connectedMcpServer?.name ?? 'MCP server'} connected successfully.`,
         variant: 'success' as const,
       }
-    : oauthMessage
-      ? { message: oauthMessage, variant: 'error' as const }
-      : null
+    : connectedOptionId
+      ? {
+          message: `${connectedOption ? getCredentialGroupProviderService(connectedOption.provider).name : 'Account'} connected successfully.`,
+          variant: 'success' as const,
+        }
+      : oauthMessage
+        ? { message: oauthMessage, variant: 'error' as const }
+        : null
   return (
     <PageShell>
       {notification && (
@@ -136,8 +147,15 @@ export default async function CredentialGroupEnrollmentPage({
           Connect your accounts
         </h1>
         <p className='mt-4 max-w-[560px] text-pretty text-[var(--text-muted)] text-base leading-relaxed'>
-          <span className='font-medium text-[var(--text-body)]'>{enrollment.inviterName}</span>{' '}
-          invited you to connect accounts for{' '}
+          {enrollment.inviterName ? (
+            <>
+              <span className='font-medium text-[var(--text-body)]'>{enrollment.inviterName}</span>{' '}
+              invited you
+            </>
+          ) : (
+            'You have been invited'
+          )}{' '}
+          to connect accounts for{' '}
           <span className='font-medium text-[var(--text-body)]'>{enrollment.workspaceName}</span>.
         </p>
       </header>
@@ -158,6 +176,29 @@ export default async function CredentialGroupEnrollmentPage({
                     <OAuthConnectLink
                       href={`/api/credential-groups/enroll/${token}/oauth/${option.id}`}
                       reconnect={Boolean(connection)}
+                    />
+                  }
+                />
+              )
+            })}
+            {enrollment.mcpServers.map((server) => {
+              const ConnectorIcon = getManagedMcpConnectorIcon(server.managedConnectorId)
+              return (
+                <SettingsResourceRow
+                  key={server.id}
+                  icon={<ConnectorIcon />}
+                  title={server.name}
+                  description={
+                    server.connection?.status === 'connected'
+                      ? 'Connected'
+                      : server.connection
+                        ? 'Reconnect required'
+                        : server.description || 'Not connected'
+                  }
+                  trailing={
+                    <OAuthConnectLink
+                      href={`/api/credential-groups/enroll/${token}/mcp/${server.id}`}
+                      reconnect={Boolean(server.connection)}
                     />
                   }
                 />

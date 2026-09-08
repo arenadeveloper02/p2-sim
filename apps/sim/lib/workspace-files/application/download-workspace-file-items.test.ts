@@ -14,6 +14,7 @@ const {
   mockIsGenerated,
   mockIsRenderable,
   mockIsDocNotReady,
+  mockGetUserPermissionConfig,
 } = vi.hoisted(() => ({
   events: [] as string[],
   mockLoadContext: vi.fn(),
@@ -25,6 +26,15 @@ const {
   mockIsGenerated: vi.fn(),
   mockIsRenderable: vi.fn(),
   mockIsDocNotReady: vi.fn(),
+  mockGetUserPermissionConfig: vi.fn(),
+}))
+
+vi.mock('@/lib/permission-groups/resolve.server', () => ({
+  getUserPermissionConfig: mockGetUserPermissionConfig,
+  /** The use case passes the organization the authorized context already loaded. */
+  resolveVerifiedUserAccessControlContext: async (userId: string, workspaceId: string) => ({
+    config: await mockGetUserPermissionConfig(userId, workspaceId),
+  }),
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace', () => ({
@@ -60,6 +70,7 @@ vi.mock('@sim/audit', () => ({
   recordAudit: mockRecordAudit,
 }))
 
+import { DEFAULT_PERMISSION_GROUP_CONFIG } from '@/lib/permission-groups/fields'
 import { downloadWorkspaceFileItems } from '@/lib/workspace-files/application/download-workspace-file-items'
 
 const principal = { kind: 'session' as const, userId: 'u1', sessionId: 's1' }
@@ -105,6 +116,7 @@ describe('downloadWorkspaceFileItems', () => {
     mockIsGenerated.mockReturnValue(false)
     mockIsRenderable.mockReturnValue(false)
     mockIsDocNotReady.mockReturnValue(false)
+    mockGetUserPermissionConfig.mockResolvedValue(null)
   })
 
   it('authorizes the workspace once and returns the bounded selection', async () => {
@@ -134,6 +146,13 @@ describe('downloadWorkspaceFileItems', () => {
     { label: 'multiple files', fileIds: ['f1', 'f2'], folderIds: [] },
     { label: 'a folder', fileIds: [], folderIds: ['folder-1'] },
     { label: 'a file and folder', fileIds: ['f1'], folderIds: ['folder-1'] },
+    { label: 'a folder path', fileIds: [], folderIds: [], folderPaths: ['/Reports'] },
+    {
+      label: 'a file and folder path',
+      fileIds: ['f1'],
+      folderIds: [],
+      folderPaths: ['/Reports'],
+    },
   ])('denies a file-scoped delegated principal selecting $label before listing', async (input) => {
     await expect(
       downloadWorkspaceFileItems.execute({
@@ -170,6 +189,63 @@ describe('downloadWorkspaceFileItems', () => {
     )
   })
 
+  /**
+   * v2 addresses folders by path. Resolution reuses the folder set the
+   * selection already loads, so it costs no extra query.
+   */
+  it('resolves folder paths to the same expansion as folder ids', async () => {
+    mockListFolders.mockResolvedValue([
+      { id: 'folder-1', name: 'Reports', path: 'Reports', parentId: null },
+      { id: 'folder-2', name: 'Drafts', path: 'Reports/Drafts', parentId: 'folder-1' },
+    ])
+    mockListFiles.mockResolvedValue([file('f1', 'report.txt', 'folder-2')])
+
+    const result = await downloadWorkspaceFileItems.execute({
+      principal,
+      input: { workspaceId: 'ws-1', fileIds: [], folderIds: [], folderPaths: ['/Reports'] },
+    })
+
+    expect(result.filesToZip.map((item) => item.id)).toEqual(['f1'])
+    expect(mockListFolders).toHaveBeenCalledOnce()
+  })
+
+  it('resolves a nested folder path without matching a same-named sibling', async () => {
+    mockListFolders.mockResolvedValue([
+      { id: 'folder-1', name: 'Reports', path: 'Reports', parentId: null },
+      { id: 'folder-2', name: 'Drafts', path: 'Reports/Drafts', parentId: 'folder-1' },
+      { id: 'folder-3', name: 'Drafts', path: 'Drafts', parentId: null },
+    ])
+    mockListFiles.mockResolvedValue([
+      file('f1', 'nested.txt', 'folder-2'),
+      file('f2', 'root.txt', 'folder-3'),
+    ])
+
+    const result = await downloadWorkspaceFileItems.execute({
+      principal,
+      input: { workspaceId: 'ws-1', fileIds: [], folderIds: [], folderPaths: ['/Reports/Drafts'] },
+    })
+
+    expect(result.filesToZip.map((item) => item.id)).toEqual(['f1'])
+  })
+
+  /**
+   * A misspelled folder must not silently yield a zip of whatever else the
+   * request happened to select.
+   */
+  it('rejects a folder path that matches nothing rather than ignoring it', async () => {
+    mockListFolders.mockResolvedValue([
+      { id: 'folder-1', name: 'Reports', path: 'Reports', parentId: null },
+    ])
+    mockListFiles.mockResolvedValue([file('f1', 'clip.mp4')])
+
+    await expect(
+      downloadWorkspaceFileItems.execute({
+        principal,
+        input: { workspaceId: 'ws-1', fileIds: ['f1'], folderIds: [], folderPaths: ['/Nope'] },
+      })
+    ).rejects.toMatchObject({ code: 'validation' })
+  })
+
   it('returns typed validation and conflict failures without recording audit', async () => {
     await expect(
       downloadWorkspaceFileItems.execute({
@@ -199,5 +275,67 @@ describe('downloadWorkspaceFileItems', () => {
     })
 
     expect(result.filesToZip.map((item) => item.id)).toEqual(['f1'])
+  })
+
+  describe('permission-group capability', () => {
+    beforeEach(() => {
+      mockGetUserPermissionConfig.mockResolvedValue({
+        ...DEFAULT_PERMISSION_GROUP_CONFIG,
+        disableBulkFileDownload: true,
+      })
+      mockListFolders.mockResolvedValue([{ id: 'folder-1', parentId: null, name: 'Reports' }])
+      mockListFiles.mockImplementation(async () => {
+        events.push('execute')
+        return [file('f1', 'clip.mp4'), file('f2', 'notes.txt', 'folder-1')]
+      })
+    })
+
+    it('refuses a folder archive when the group withholds files.bulk_download', async () => {
+      await expect(
+        downloadWorkspaceFileItems.execute({
+          principal,
+          input: { workspaceId: 'ws-1', fileIds: [], folderIds: ['folder-1'] },
+        })
+      ).rejects.toMatchObject({ capability: 'files.bulk_download' })
+
+      expect(events).not.toContain('execute')
+    })
+
+    it('refuses a multi-file archive, which is the same bulk extraction', async () => {
+      await expect(
+        downloadWorkspaceFileItems.execute({
+          principal,
+          input: { workspaceId: 'ws-1', fileIds: ['f1', 'f2'], folderIds: [] },
+        })
+      ).rejects.toMatchObject({ capability: 'files.bulk_download' })
+    })
+
+    /**
+     * A run carries the role of whoever triggered it but not their capabilities
+     * — `authorizeWorkspaceOperation` exempts a subject-bearing executor — and
+     * an assertion that read the subject straight off the principal re-applied
+     * here exactly what the funnel exempts.
+     */
+    it('does not apply the capability to a delegated executor carrying a subject', async () => {
+      await expect(
+        downloadWorkspaceFileItems.execute({
+          principal: {
+            ...delegatedPrincipal,
+            serviceId: 'executor' as const,
+            resourceScope: {},
+          },
+          input: { workspaceId: 'ws-1', fileIds: [], folderIds: ['folder-1'] },
+        })
+      ).resolves.toMatchObject({ filesToZip: [expect.objectContaining({ id: 'f2' })] })
+    })
+
+    it('still allows downloading a single named file, which the key does not withhold', async () => {
+      await expect(
+        downloadWorkspaceFileItems.execute({
+          principal,
+          input: { workspaceId: 'ws-1', fileIds: ['f1'], folderIds: [] },
+        })
+      ).resolves.toMatchObject({ filesToZip: [expect.objectContaining({ id: 'f1' })] })
+    })
   })
 })

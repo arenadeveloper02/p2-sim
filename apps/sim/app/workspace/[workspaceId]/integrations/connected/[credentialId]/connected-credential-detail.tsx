@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation'
 import { SaveDiscardChips } from '@/components/settings/save-discard-actions'
 import { writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { resolveCredentialDisplay } from '@/lib/integrations'
+import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
 import {
   AddPeopleModal,
   CredentialDetailHeading,
@@ -45,9 +46,15 @@ import {
   type WorkspaceCredential,
 } from '@/hooks/queries/credentials'
 import {
+  assertMicrosoftDataverseReconnectAvailable,
+  useConnectMicrosoftDataverseOAuthService,
+  useMicrosoftDataverseCredentialBinding,
+} from '@/hooks/queries/oauth/microsoft-dataverse-connections'
+import {
   useConnectOAuthService,
   useOAuthConnections,
 } from '@/hooks/queries/oauth/oauth-connections'
+import { useOAuthCredentialDetail } from '@/hooks/queries/oauth/oauth-credentials'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 
 const logger = createLogger('ConnectedCredentialDetail')
@@ -80,7 +87,19 @@ export function ConnectedCredentialDetail({
     () => credentials.find((c) => c.id === credentialId) ?? null,
     [credentials, credentialId]
   )
-
+  const isDataverseCredential =
+    credential?.type === 'oauth' && credential.providerId === 'microsoft-dataverse'
+  const dataverseCredentialQuery = useOAuthCredentialDetail(
+    isDataverseCredential ? credentialId : undefined,
+    undefined,
+    isDataverseCredential
+  )
+  const dataverseBinding = useMicrosoftDataverseCredentialBinding({
+    isPending: dataverseCredentialQuery.isPending,
+    providerId: credential?.type === 'oauth' ? (credential.providerId ?? undefined) : undefined,
+    scopes: dataverseCredentialQuery.data?.[0]?.scopes,
+  })
+  const connectMicrosoftDataverseOAuthService = useConnectMicrosoftDataverseOAuthService()
   const isAdmin = credential?.role === 'admin'
 
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false)
@@ -111,6 +130,13 @@ export function ConnectedCredentialDetail({
   const handleReconnectOAuth = async () => {
     if (!credential || credential.type !== 'oauth' || !credential.providerId || !workspaceId) return
     try {
+      if (isDataverseCredential) {
+        assertMicrosoftDataverseReconnectAvailable({
+          bindingState: dataverseBinding.state,
+          credentialQueryFailed: dataverseCredentialQuery.isError,
+        })
+      }
+
       const draft = await createDraft.mutateAsync({
         workspaceId,
         providerId: credential.providerId,
@@ -133,11 +159,19 @@ export function ConnectedCredentialDetail({
         requestedAt: Date.now(),
       })
 
-      await connectOAuthService.mutateAsync({
-        providerId: credential.providerId,
-        callbackURL: window.location.href,
-        draftId: draft.draftId,
-      })
+      if (dataverseBinding.state === 'bound' && dataverseBinding.environmentUrl) {
+        await connectMicrosoftDataverseOAuthService.mutateAsync({
+          callbackURL: window.location.href,
+          draftId: draft.draftId,
+          environmentUrl: dataverseBinding.environmentUrl,
+        })
+      } else {
+        await connectOAuthService.mutateAsync({
+          providerId: credential.providerId,
+          callbackURL: window.location.href,
+          draftId: draft.draftId,
+        })
+      }
     } catch (error: unknown) {
       toast.error("Couldn't start reconnect", {
         description: getErrorMessage(error, 'Please try again in a moment.'),
@@ -179,9 +213,15 @@ export function ConnectedCredentialDetail({
             onClick={
               credential.type === 'service_account'
                 ? () => setReconnectOpen(true)
-                : handleReconnectOAuth
+                : credential.providerId === 'quickbooks'
+                  ? () => setReconnectOpen(true)
+                  : handleReconnectOAuth
             }
-            disabled={connectOAuthService.isPending}
+            disabled={
+              connectOAuthService.isPending ||
+              connectMicrosoftDataverseOAuthService.isPending ||
+              dataverseBinding.isPending
+            }
             leftIcon={display?.icon ?? undefined}
           >
             Reconnect
@@ -316,6 +356,24 @@ export function ConnectedCredentialDetail({
           credentialId={credential.id}
           credentialDisplayName={credential.displayName}
           credentialDescription={credential.description ?? undefined}
+        />
+      )}
+
+      {credential.type === 'oauth' && credential.providerId === 'quickbooks' && (
+        <ConnectOAuthModal
+          open={reconnectOpen}
+          onOpenChange={setReconnectOpen}
+          mode='reauthorize'
+          providerId={credential.providerId}
+          serviceName={display?.familyName || serviceConfig?.name || credential.displayName}
+          serviceIcon={display?.icon as ComponentType<{ className?: string }>}
+          toolName='QuickBooks'
+          requiredScopes={serviceConfig?.scopes ?? []}
+          reconnectTarget={{
+            workspaceId,
+            credentialId: credential.id,
+            displayName: credential.displayName,
+          }}
         />
       )}
     </>

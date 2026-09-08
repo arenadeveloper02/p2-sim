@@ -14,9 +14,9 @@ import {
 import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_CREDENTIAL_DRAFT_CALLBACK_PARAM } from '@/lib/credentials/draft-constants'
-import { getDesktopBridge } from '@/lib/desktop'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 import { requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { getPerRequestOAuthLinkScopes } from '@/lib/oauth/utils'
 import { environmentKeys } from '@/hooks/queries/environment'
 import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 
@@ -394,21 +394,14 @@ export function useConnectOAuthService() {
         return { success: true }
       }
 
-      // Desktop app: OAuth cannot run in the embedded window (Google/Microsoft
-      // block embedded user agents, and better-auth binds the flow's state to
-      // the initiating browser's cookies), so the whole flow is handed to the
-      // system browser and returns via the app's loopback. Completion arrives
-      // through onOAuthConnectComplete (see useDesktopOAuthConnectListener),
-      // which refreshes caches and shows the connected toast.
-      const desktopBridge = getDesktopBridge()
-      if (desktopBridge?.beginOAuthConnect) {
-        const opened = await desktopBridge.beginOAuthConnect(
-          providerId,
-          draftId ? { draftId } : undefined
-        )
-        if (!opened) {
-          throw new Error('Could not open your browser to connect this account.')
+      if (providerId === 'quickbooks') {
+        if (!draftId) {
+          throw new Error('QuickBooks authorization requires a credential connection draft.')
         }
+        const authorizeUrl = new URL('/api/auth/oauth2/authorize', window.location.origin)
+        authorizeUrl.searchParams.set('draftId', draftId)
+        authorizeUrl.searchParams.set('callbackURL', callbackURL)
+        window.location.href = authorizeUrl.toString()
         return { success: true }
       }
 
@@ -417,9 +410,11 @@ export function useConnectOAuthService() {
         stateCallbackUrl.searchParams.set(OAUTH_CREDENTIAL_DRAFT_CALLBACK_PARAM, draftId)
       }
 
+      const scopes = getPerRequestOAuthLinkScopes(providerId)
       await client.oauth2.link({
         providerId,
         callbackURL: stateCallbackUrl.toString(),
+        ...(scopes && { scopes }),
       })
 
       return { success: true }

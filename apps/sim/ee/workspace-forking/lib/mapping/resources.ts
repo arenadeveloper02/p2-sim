@@ -1,5 +1,6 @@
 import {
   credential,
+  customBlock,
   customTools,
   document,
   folder as folderTable,
@@ -10,12 +11,17 @@ import {
   workflow,
   workflowDeploymentVersion,
   workflowMcpServer,
+  workspace,
   workspaceEnvironment,
   workspaceFiles,
 } from '@sim/db/schema'
 import { and, count, eq, exists, inArray, isNull, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import type { ForkCopyableKind } from '@/lib/api/contracts/workspace-fork'
 import type { DbOrTx } from '@/lib/db/types'
+import { MAX_FOLDERS_PER_WORKSPACE } from '@/lib/folders/constants'
+import { parseFolderPath, ROOT_FOLDER_PATH } from '@/lib/folders/paths'
+import { loadActiveFolderPathIndex } from '@/lib/folders/queries'
 import type { ForkResourceType } from '@/ee/workspace-forking/lib/mapping/mapping-store'
 import type {
   ForkMcpServerMeta,
@@ -98,6 +104,57 @@ const skillCandidatesQuery = (executor: DbOrTx, workspaceId: string, ids?: strin
   return ids ? query : query.limit(CANDIDATE_LIMIT)
 }
 
+/**
+ * Custom-block mapping candidates, keyed by BLOCK TYPE (`custom_block_<slug>`), not
+ * `custom_block.id` — a placed block references the type, and every kind keys by whatever
+ * the workflow references (`file` by storage key, `env-var` by name).
+ *
+ * The ONLY candidate query scoped by ORGANIZATION rather than workspace: `custom_block` is
+ * keyed `(organization_id, type)` and binds a workflow in the PUBLISHER's workspace, so the
+ * blocks a workspace may place are its org's, not its own. A fork inherits its parent's
+ * organization, so both sides of an edge see the SAME candidate set — which is exactly why
+ * an environment must be told which of them to bind. Two environments' blocks usually share
+ * a name, so the label carries the source workspace to make that choice legible.
+ *
+ * Disabled blocks are excluded: `getCustomBlockAuthority` refuses them at execution, so
+ * mapping onto one would produce a block that fails every run with `unavailable`.
+ */
+const customBlockCandidatesQuery = async (
+  executor: DbOrTx,
+  workspaceId: string,
+  types?: string[]
+): Promise<ForkResourceCandidate[]> => {
+  const [consumerWorkspace] = await executor
+    .select({ organizationId: workspace.organizationId })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1)
+  if (!consumerWorkspace?.organizationId) return []
+
+  const sourceWorkspace = alias(workspace, 'custom_block_source_workspace')
+  const query = executor
+    .select({
+      id: customBlock.type,
+      name: customBlock.name,
+      sourceWorkspaceName: sourceWorkspace.name,
+    })
+    .from(customBlock)
+    .innerJoin(workflow, eq(workflow.id, customBlock.workflowId))
+    .leftJoin(sourceWorkspace, eq(sourceWorkspace.id, workflow.workspaceId))
+    .where(
+      and(
+        eq(customBlock.organizationId, consumerWorkspace.organizationId),
+        eq(customBlock.enabled, true),
+        types ? inArray(customBlock.type, types) : undefined
+      )
+    )
+  const rows = await (types ? query : query.limit(CANDIDATE_LIMIT))
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.sourceWorkspaceName ? `${row.name} (${row.sourceWorkspaceName})` : row.name,
+  }))
+}
+
 const mcpServerCandidatesQuery = (executor: DbOrTx, workspaceId: string, ids?: string[]) => {
   const query = executor
     .select({ id: mcpServers.id, label: mcpServers.name })
@@ -133,6 +190,29 @@ const fileCandidatesQuery = (executor: DbOrTx, workspaceId: string, keys?: strin
       )
     )
   return keys ? query : query.limit(CANDIDATE_LIMIT)
+}
+
+/** Workspace file-folder candidates keyed by their canonical path, matching workflow storage. */
+const fileFolderCandidatesQuery = async (
+  executor: DbOrTx,
+  workspaceId: string,
+  paths?: string[]
+): Promise<ForkResourceCandidate[]> => {
+  const index = await loadActiveFolderPathIndex(workspaceId, 'file', executor, {
+    maxRows: MAX_FOLDERS_PER_WORKSPACE,
+  })
+  const requested = paths ? new Set(paths) : null
+  const candidates = [ROOT_FOLDER_PATH, ...index.idByPath.keys()]
+    .filter((path) => !requested || requested.has(path))
+    .map((path) => ({
+      id: path,
+      label: path === ROOT_FOLDER_PATH ? 'Workspace root' : parseFolderPath(path).join(' / '),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+  if (paths) return candidates
+  const root = candidates.find((candidate) => candidate.id === ROOT_FOLDER_PATH)
+  const folders = candidates.filter((candidate) => candidate.id !== ROOT_FOLDER_PATH)
+  return root ? [root, ...folders.slice(0, CANDIDATE_LIMIT - 1)] : folders.slice(0, CANDIDATE_LIMIT)
 }
 
 // Copyable workspace files WITH their folder grouping (LEFT JOIN gated on a live folder, so a file
@@ -180,42 +260,46 @@ const fileCandidatesWithFolderQuery = (
  * source resources being mapped. `knowledge-document` is intentionally left empty:
  * documents are not a standalone mappable kind - they are dependent fields of their
  * knowledge base, re-picked in the per-KB reconfigure flow (and auto-remapped when
- * their KB is copied). `file` candidates are keyed by storage key.
+ * their KB is copied). `file` candidates are keyed by storage key and `file-folder`
+ * candidates by canonical path.
  */
 export async function listForkResourceCandidates(
   executor: DbOrTx,
   workspaceId: string
 ): Promise<Record<ForkRemapKind, ForkResourceCandidate[]>> {
-  const [creds, wsEnvRows, tables, kbs, servers, tools, skills, files] = await Promise.all([
-    executor
-      .select({
-        id: credential.id,
-        displayName: credential.displayName,
-        providerId: credential.providerId,
-      })
-      .from(credential)
-      // Only real connections are mappable credentials. `env_workspace`/`env_personal`
-      // rows live in the same table but are environment variables (surfaced via the
-      // 'env-var' kind), so they must never appear as credential targets.
-      .where(
-        and(
-          eq(credential.workspaceId, workspaceId),
-          inArray(credential.type, ['oauth', 'service_account'])
+  const [creds, wsEnvRows, tables, kbs, servers, tools, skills, files, fileFolders, customBlocks] =
+    await Promise.all([
+      executor
+        .select({
+          id: credential.id,
+          displayName: credential.displayName,
+          providerId: credential.providerId,
+        })
+        .from(credential)
+        // Only real connections are mappable credentials. `env_workspace`/`env_personal`
+        // rows live in the same table but are environment variables (surfaced via the
+        // 'env-var' kind), so they must never appear as credential targets.
+        .where(
+          and(
+            eq(credential.workspaceId, workspaceId),
+            inArray(credential.type, ['oauth', 'service_account'])
+          )
         )
-      )
-      .limit(CANDIDATE_LIMIT),
-    executor
-      .select({ variables: workspaceEnvironment.variables })
-      .from(workspaceEnvironment)
-      .where(eq(workspaceEnvironment.workspaceId, workspaceId))
-      .limit(1),
-    tableCandidatesQuery(executor, workspaceId),
-    knowledgeBaseCandidatesQuery(executor, workspaceId),
-    mcpServerCandidatesQuery(executor, workspaceId),
-    customToolCandidatesQuery(executor, workspaceId),
-    skillCandidatesQuery(executor, workspaceId),
-    fileCandidatesQuery(executor, workspaceId),
-  ])
+        .limit(CANDIDATE_LIMIT),
+      executor
+        .select({ variables: workspaceEnvironment.variables })
+        .from(workspaceEnvironment)
+        .where(eq(workspaceEnvironment.workspaceId, workspaceId))
+        .limit(1),
+      tableCandidatesQuery(executor, workspaceId),
+      knowledgeBaseCandidatesQuery(executor, workspaceId),
+      mcpServerCandidatesQuery(executor, workspaceId),
+      customToolCandidatesQuery(executor, workspaceId),
+      skillCandidatesQuery(executor, workspaceId),
+      fileCandidatesQuery(executor, workspaceId),
+      fileFolderCandidatesQuery(executor, workspaceId),
+      customBlockCandidatesQuery(executor, workspaceId),
+    ])
 
   const envVariables = wsEnvRows[0]?.variables
   const envKeys =
@@ -234,9 +318,11 @@ export async function listForkResourceCandidates(
     'knowledge-base': kbs,
     'mcp-server': servers,
     'custom-tool': tools,
+    'custom-block': customBlocks,
     skill: skills,
     'knowledge-document': [],
     file: files,
+    'file-folder': fileFolders,
   }
 }
 
@@ -251,7 +337,7 @@ interface ForkResourceRow {
  * (same archived/deleted filters as `listForkResourceCandidates`). Queries the exact ids - NOT
  * the capped candidate list - so a resource sitting past `CANDIDATE_LIMIT` is never mistaken for
  * a missing one. Only the DB-backed kinds are checked: env-var existence is handled by the
- * resolver's `targetEnvKeys`, and `file`/`workflow` are resolved by other paths.
+ * resolver's `targetEnvKeys`, and `workflow` is resolved by another path.
  *
  * Backs both {@link filterExistingForkTargets} (existence) and {@link loadForkResourceLabels}
  * (display names), so the two can never disagree about what "exists" means.
@@ -272,59 +358,68 @@ async function loadForkResourceRows(
   const mcpIds = ids('mcp-server')
   const toolIds = ids('custom-tool')
   const skillIds = ids('skill')
+  const customBlockIds = ids('custom-block')
   // Files are identified by storage key (not `workspace_files.id`); a copied file's mapping
   // target is its child storage key, so existence is checked by key in the target workspace.
   const fileKeys = ids('file')
+  const fileFolderPaths = ids('file-folder')
 
-  const [creds, tables, kbs, docs, servers, tools, skills, files] = await Promise.all([
-    credIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : executor
-          .select({ id: credential.id, label: credential.displayName })
-          .from(credential)
-          .where(
-            and(
-              eq(credential.workspaceId, workspaceId),
-              inArray(credential.type, ['oauth', 'service_account']),
-              inArray(credential.id, credIds)
-            )
-          ),
-    tableIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : tableCandidatesQuery(executor, workspaceId, tableIds),
-    kbIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : knowledgeBaseCandidatesQuery(executor, workspaceId, kbIds),
-    // Documents are validated through a KB join (they are not a standalone candidate kind), so
-    // this existence check stays inline rather than sharing a per-kind candidate query.
-    docIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : executor
-          .select({ id: document.id })
-          .from(document)
-          .innerJoin(knowledgeBase, eq(document.knowledgeBaseId, knowledgeBase.id))
-          .where(
-            and(
-              eq(knowledgeBase.workspaceId, workspaceId),
-              isNull(knowledgeBase.deletedAt),
-              isNull(document.deletedAt),
-              isNull(document.archivedAt),
-              inArray(document.id, docIds)
-            )
-          ),
-    mcpIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : mcpServerCandidatesQuery(executor, workspaceId, mcpIds),
-    toolIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : customToolCandidatesQuery(executor, workspaceId, toolIds),
-    skillIds.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : skillCandidatesQuery(executor, workspaceId, skillIds),
-    fileKeys.length === 0
-      ? Promise.resolve([] as ForkResourceRow[])
-      : fileCandidatesQuery(executor, workspaceId, fileKeys),
-  ])
+  const [creds, tables, kbs, docs, servers, tools, skills, files, fileFolders, customBlocks] =
+    await Promise.all([
+      credIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : executor
+            .select({ id: credential.id, label: credential.displayName })
+            .from(credential)
+            .where(
+              and(
+                eq(credential.workspaceId, workspaceId),
+                inArray(credential.type, ['oauth', 'service_account']),
+                inArray(credential.id, credIds)
+              )
+            ),
+      tableIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : tableCandidatesQuery(executor, workspaceId, tableIds),
+      kbIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : knowledgeBaseCandidatesQuery(executor, workspaceId, kbIds),
+      // Documents are validated through a KB join (they are not a standalone candidate kind), so
+      // this existence check stays inline rather than sharing a per-kind candidate query.
+      docIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : executor
+            .select({ id: document.id })
+            .from(document)
+            .innerJoin(knowledgeBase, eq(document.knowledgeBaseId, knowledgeBase.id))
+            .where(
+              and(
+                eq(knowledgeBase.workspaceId, workspaceId),
+                isNull(knowledgeBase.deletedAt),
+                isNull(document.deletedAt),
+                isNull(document.archivedAt),
+                inArray(document.id, docIds)
+              )
+            ),
+      mcpIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : mcpServerCandidatesQuery(executor, workspaceId, mcpIds),
+      toolIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : customToolCandidatesQuery(executor, workspaceId, toolIds),
+      skillIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : skillCandidatesQuery(executor, workspaceId, skillIds),
+      fileKeys.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : fileCandidatesQuery(executor, workspaceId, fileKeys),
+      fileFolderPaths.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : fileFolderCandidatesQuery(executor, workspaceId, fileFolderPaths),
+      customBlockIds.length === 0
+        ? Promise.resolve([] as ForkResourceRow[])
+        : customBlockCandidatesQuery(executor, workspaceId, customBlockIds),
+    ])
 
   const result: Partial<Record<ForkRemapKind, ForkResourceRow[]>> = {}
   if (credIds.length > 0) result.credential = creds
@@ -336,6 +431,10 @@ async function loadForkResourceRows(
   if (skillIds.length > 0) result.skill = skills
   // `fileCandidatesQuery` exposes the storage key under `id`, so file rows key by `r.id`.
   if (fileKeys.length > 0) result.file = files
+  if (fileFolderPaths.length > 0) result['file-folder'] = fileFolders
+  // Resolved through the workspace's ORGANIZATION, so a block published from a sibling
+  // workspace still counts as existing here - which is the normal case for an environment.
+  if (customBlockIds.length > 0) result['custom-block'] = customBlocks
   return result
 }
 

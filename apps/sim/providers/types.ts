@@ -1,4 +1,5 @@
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
+import type { CustomBlockInputFieldType } from '@/blocks/custom/build-config'
 import type { ProviderTimingSegment, StreamingExecution, UserFile } from '@/executor/types'
 
 export type ProviderId =
@@ -29,10 +30,20 @@ export type ProviderId =
   | 'litellm'
   | 'bedrock'
 
-export interface ModelPricing {
+export interface ModelTokenPricing {
   input: number // Per 1M tokens
   cachedInput?: number // Per 1M tokens (if supported)
   output: number // Per 1M tokens
+}
+
+export interface ModelPricingTier extends ModelTokenPricing {
+  /** Tier applies to the full request when total input tokens exceed this value. */
+  aboveInputTokens: number
+}
+
+export interface ModelPricing extends ModelTokenPricing {
+  /** Additional input-size tiers; the highest matching threshold wins. */
+  tiers?: ModelPricingTier[]
   updatedAt: string // Last updated date
 }
 
@@ -120,8 +131,9 @@ export interface ProviderResponse {
 export type ToolUsageControl = 'auto' | 'force' | 'none'
 
 export interface ProviderToolConfig {
+  /** Canonical registry id when {@link id} is a request-scoped provider wire alias. */
+  canonicalId?: string
   id: string
-  name: string
   description: string
   params: Record<string, any>
   parameters: {
@@ -139,6 +151,25 @@ export interface ProviderToolConfig {
   modelBlockedParams?: string[]
   /** Block-level params transformer — converts SubBlock values to tool-ready params */
   paramsTransform?: (params: Record<string, any>) => Record<string, any>
+  /**
+   * Params {@link ProviderToolConfig.paramsTransform} decodes from a JSON string into
+   * an object or array.
+   *
+   * The resolved-secret projection must give these keys the same treatment it gives a
+   * `json`/`array` block input: a projected copy holds `{{NAME}}` placeholders that are
+   * not valid JSON, so without this the real params parse to an object while the
+   * projected ones stay a string, and the shape divergence silently marks the
+   * provenance registry incomplete.
+   */
+  jsonShapedParamKeys?: readonly string[]
+  /**
+   * A custom (deploy-as-block) block's Start input fields, resolved from its binding
+   * rather than the block config — the server overlay builds those with `inputFields: []`.
+   *
+   * The resolved-secret projection reassembles `inputMapping` and must decode it against
+   * the identical fields, or its shape diverges from the executed copy.
+   */
+  customBlockInputFields?: readonly CustomBlockInputFieldType[]
 }
 
 export interface Message {

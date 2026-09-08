@@ -23,6 +23,7 @@ import {
   setOAuthChatAttemptStatus,
 } from '@/lib/credentials/oauth-chat-attempt'
 import { getDesktopBridge } from '@/lib/desktop'
+import { stripMicrosoftDataverseEnvironmentFromOAuthCallback } from '@/lib/oauth/microsoft-dataverse'
 import {
   handleUnipileHostedRedirect,
   readAndClearUnipileHostedRedirectParams,
@@ -30,9 +31,9 @@ import {
 import { oauthConnectionsKeys } from '@/hooks/queries/oauth/oauth-connections'
 import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 import { requireWorkspaceCredentialListResponse } from '@/hooks/queries/utils/fetch-workspace-credentials'
+import { SETTINGS_RETURN_URL_KEY } from '@/hooks/use-settings-navigation'
 
 const OAUTH_CREDENTIAL_UPDATED_EVENT = 'oauth-credentials-updated'
-const SETTINGS_RETURN_URL_KEY = 'settings-return-url'
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000
 
 export interface OAuthResultMessage {
@@ -42,7 +43,10 @@ export interface OAuthResultMessage {
 
 export async function resolveOAuthMessage(ctx: OAuthReturnContext): Promise<OAuthResultMessage> {
   if (ctx.reconnect) {
-    return { kind: 'success', text: `"${ctx.displayName}" reconnected successfully.` }
+    return {
+      kind: 'success',
+      text: `"${ctx.displayName}" reconnected successfully.`,
+    }
   }
 
   try {
@@ -89,6 +93,27 @@ export async function resolveOAuthMessage(ctx: OAuthReturnContext): Promise<OAut
   }
 }
 
+export function resolveOAuthCallbackError(
+  callbackUrl: string,
+  ctx: Pick<OAuthReturnContext, 'displayName'>
+): OAuthResultMessage | null {
+  if (!new URL(callbackUrl).searchParams.has('error')) return null
+  return {
+    kind: 'error',
+    text: `The "${ctx.displayName}" connection didn’t finish. Try again.`,
+  }
+}
+
+function consumeOAuthCallbackError(ctx: OAuthReturnContext): OAuthResultMessage | null {
+  const result = resolveOAuthCallbackError(window.location.href, ctx)
+  if (!result) return null
+  const url = new URL(window.location.href)
+  url.searchParams.delete('error')
+  url.searchParams.delete('error_description')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  return result
+}
+
 function showOAuthResultMessage(result: OAuthResultMessage): void {
   if (result.kind === 'success') {
     toast.success(result.text)
@@ -109,6 +134,15 @@ function clearOAuthChatAttemptParam(): void {
   const url = new URL(window.location.href)
   url.searchParams.delete(OAUTH_CHAT_ATTEMPT_PARAM)
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+function clearDataverseOAuthEnvironmentParam(): void {
+  const current = window.location.href
+  const cleaned = stripMicrosoftDataverseEnvironmentFromOAuthCallback(current)
+  if (cleaned !== current) {
+    const url = new URL(cleaned)
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }
 }
 
 const VERIFY_ATTEMPT_TRIES = 4
@@ -155,7 +189,11 @@ async function verifyOAuthChatAttempt(queryClient: QueryClient, attemptId: strin
       // A short retry window covers callback hooks committing just after redirect.
     }
     if (attemptNumber < VERIFY_ATTEMPT_TRIES - 1) {
-      await sleep(backoffWithJitter(attemptNumber + 1, null, { baseMs: VERIFY_BACKOFF_BASE_MS }))
+      await sleep(
+        backoffWithJitter(attemptNumber + 1, null, {
+          baseMs: VERIFY_BACKOFF_BASE_MS,
+        })
+      )
     }
   }
 
@@ -182,6 +220,7 @@ export function useOAuthReturnRouter() {
   const chatAttemptHandledRef = useRef(false)
 
   useEffect(() => {
+    clearDataverseOAuthEnvironmentParam()
     let isChatAttemptReturn = false
     if (!chatAttemptHandledRef.current) {
       const attemptId = new URL(window.location.href).searchParams.get(OAUTH_CHAT_ATTEMPT_PARAM)
@@ -245,6 +284,19 @@ export function useOAuthReturnRouter() {
     }
 
     handledRef.current = true
+    const callbackError = consumeOAuthCallbackError(ctx)
+    if (callbackError) {
+      consumeOAuthReturnContext()
+      showOAuthResultMessage(callbackError)
+      if (ctx.origin === 'workflow') {
+        router.replace(`/workspace/${workspaceId}/w/${ctx.workflowId}`)
+      } else if (ctx.origin === 'kb-connectors') {
+        router.replace(
+          buildKnowledgeBaseOAuthReturnUrl(workspaceId, ctx.knowledgeBaseId, ctx.connectorType)
+        )
+      }
+      return
+    }
 
     if (ctx.origin === 'integrations') {
       consumeOAuthReturnContext()
@@ -268,14 +320,23 @@ export function useOAuthReturnRouter() {
       try {
         sessionStorage.removeItem(SETTINGS_RETURN_URL_KEY)
       } catch {}
-      const kbUrl = `/workspace/${workspaceId}/knowledge/${ctx.knowledgeBaseId}`
-      const connectorParam = ctx.connectorType
-        ? `?${ADD_CONNECTOR_SEARCH_PARAM}=${encodeURIComponent(ctx.connectorType)}`
-        : ''
-      router.replace(`${kbUrl}${connectorParam}`)
+      router.replace(
+        buildKnowledgeBaseOAuthReturnUrl(workspaceId, ctx.knowledgeBaseId, ctx.connectorType)
+      )
       return
     }
   }, [queryClient, router, workspaceId])
+}
+
+export function buildKnowledgeBaseOAuthReturnUrl(
+  workspaceId: string,
+  knowledgeBaseId: string,
+  connectorType?: string
+): string {
+  const kbUrl = `/workspace/${workspaceId}/knowledge/${knowledgeBaseId}`
+  return connectorType
+    ? `${kbUrl}?${ADD_CONNECTOR_SEARCH_PARAM}=${encodeURIComponent(connectorType)}`
+    : kbUrl
 }
 
 /**
@@ -286,6 +347,7 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
   const handledRef = useRef(false)
 
   useEffect(() => {
+    clearDataverseOAuthEnvironmentParam()
     if (handledRef.current) return
 
     const redirectParams = readAndClearUnipileHostedRedirectParams()
@@ -329,6 +391,11 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
     if (Date.now() - ctx.requestedAt > CONTEXT_MAX_AGE_MS) return
 
     handledRef.current = true
+    const callbackError = consumeOAuthCallbackError(ctx)
+    if (callbackError) {
+      showOAuthResultMessage(callbackError)
+      return
+    }
 
     void (async () => {
       const message = await resolveOAuthMessage(ctx)
@@ -346,6 +413,7 @@ export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
   const handledRef = useRef(false)
 
   useEffect(() => {
+    clearDataverseOAuthEnvironmentParam()
     if (handledRef.current) return
 
     const redirectParams = readAndClearUnipileHostedRedirectParams()
@@ -387,6 +455,11 @@ export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
     if (Date.now() - ctx.requestedAt > CONTEXT_MAX_AGE_MS) return
 
     handledRef.current = true
+    const callbackError = consumeOAuthCallbackError(ctx)
+    if (callbackError) {
+      showOAuthResultMessage(callbackError)
+      return
+    }
 
     void (async () => {
       const message = await resolveOAuthMessage(ctx)
@@ -413,8 +486,12 @@ export function useDesktopOAuthConnectListener() {
     if (!bridge?.onOAuthConnectComplete) return
 
     return bridge.onOAuthConnectComplete((result) => {
-      void queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
-      void queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.all })
+      void queryClient.invalidateQueries({
+        queryKey: oauthConnectionsKeys.connections(),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: workspaceCredentialKeys.all,
+      })
 
       // The app stays open across interleaved connect flows, so an abandoned
       // modal-connect can leave a stale context that would attach to a later

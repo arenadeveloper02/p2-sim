@@ -125,7 +125,6 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
     return { success: false, error: 'No active subscription found' }
   }
 
-  // Enterprise users must contact support
   if (isEnterprise(subscription.plan)) {
     return { success: false, error: 'Enterprise users must contact support to purchase credits' }
   }
@@ -133,8 +132,6 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
   let entityType: 'user' | 'organization' = 'user'
   let entityId = userId
 
-  // Org-scoped subs route credit purchases to the organization and must be authorized
-  // by an org owner/admin. We've already rejected enterprise above.
   if (isOrgScopedSubscription(subscription, userId)) {
     const isAdmin = await isOrganizationOwnerOrAdmin(userId, subscription.referenceId)
     if (!isAdmin) {
@@ -177,7 +174,6 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
       purchasedBy: userId,
     }
 
-    // Create invoice
     const invoice = await stripe.invoices.create(
       {
         customer: customerId,
@@ -190,7 +186,6 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
       { idempotencyKey: `${idempotencyKey}-invoice` }
     )
 
-    // Add line item
     await stripe.invoiceItems.create(
       {
         customer: customerId,
@@ -203,7 +198,6 @@ export async function purchaseCredits(params: PurchaseCreditsParams): Promise<Pu
       { idempotencyKey: `${idempotencyKey}-item` }
     )
 
-    // Finalize and pay
     if (!invoice.id) {
       return { success: false, error: 'Failed to create invoice' }
     }

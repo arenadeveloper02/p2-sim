@@ -62,13 +62,13 @@ import {
 import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
 import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
 import {
+  type CreatedWorkflowThisTurn,
   createTurnMutations,
+  type LocalCopilotTurnMutations,
   rememberCreatedFile,
   rememberCreatedWorkflow,
   reuseCreatedFile,
   reuseCreatedWorkflow,
-  type CreatedWorkflowThisTurn,
-  type LocalCopilotTurnMutations,
 } from '@/local-copilot/lib/writes/turn-mutations'
 import {
   assertWorkflowWritableInWorkspace,
@@ -997,7 +997,7 @@ async function executeLocalCopilotToolInner(
       })
 
       const { formatWorkflowLintMessage, hasWorkflowLintIssues, lintEditedWorkflowState } =
-        await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
+        await import('@/lib/workflows/editing/lint')
       const workflowLint = lintEditedWorkflowState({
         blocks: state.blocks ?? {},
         edges: state.edges ?? [],

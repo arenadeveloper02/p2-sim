@@ -33,19 +33,17 @@ const {
   mockAreModelSafeWorkspaceFileKeys,
   mockBuildAuthHeaders,
   mockBuildAPIUrl,
+  mockDiscoverMcpServerToolsAsExecutor,
   mockExtractAPIErrorMessage,
   mockGenerateId,
-  mockIsExecutionCancelled,
-  mockIsRedisCancellationEnabled,
   mockReadUserFileContent,
 } = vi.hoisted(() => ({
   mockAreModelSafeWorkspaceFileKeys: vi.fn(),
   mockBuildAuthHeaders: vi.fn(),
   mockBuildAPIUrl: vi.fn(),
+  mockDiscoverMcpServerToolsAsExecutor: vi.fn(),
   mockExtractAPIErrorMessage: vi.fn(),
   mockGenerateId: vi.fn(),
-  mockIsExecutionCancelled: vi.fn(),
-  mockIsRedisCancellationEnabled: vi.fn(),
   mockReadUserFileContent: vi.fn(),
 }))
 
@@ -53,6 +51,10 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () 
   areModelSafeWorkspaceFileKeys: mockAreModelSafeWorkspaceFileKeys,
   MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE:
     'File cannot be sent to a model because its secret provenance is unavailable',
+}))
+
+vi.mock('@/lib/internal/mcp/discover-tools', () => ({
+  discoverMcpServerToolsAsExecutor: mockDiscoverMcpServerToolsAsExecutor,
 }))
 
 vi.mock('@/executor/utils/http', () => ({
@@ -63,11 +65,6 @@ vi.mock('@/executor/utils/http', () => ({
 
 vi.mock('@sim/utils/id', () => ({
   generateId: mockGenerateId,
-}))
-
-vi.mock('@/lib/execution/cancellation', () => ({
-  isExecutionCancelled: mockIsExecutionCancelled,
-  isRedisCancellationEnabled: mockIsRedisCancellationEnabled,
 }))
 
 vi.mock('@/lib/execution/payloads/materialization.server', () => ({
@@ -158,9 +155,6 @@ describe('MothershipBlockHandler', () => {
     mockBuildAPIUrl.mockReturnValue(new URL('/api/mothership/execute', 'http://localhost:3000'))
     mockExtractAPIErrorMessage.mockResolvedValue('boom')
     mockGenerateId.mockReset()
-    mockIsExecutionCancelled.mockReset()
-    mockIsRedisCancellationEnabled.mockReset()
-    mockIsRedisCancellationEnabled.mockReturnValue(false)
     mockReadUserFileContent.mockReset()
     mockAreModelSafeWorkspaceFileKeys.mockReset()
     mockAreModelSafeWorkspaceFileKeys.mockResolvedValue(true)
@@ -992,6 +986,67 @@ describe('MothershipBlockHandler', () => {
       },
     ])
     expect(body.contexts).toEqual([{ kind: 'skill', skillId: 'skill-1', label: 'sales-playbook' }])
+  })
+
+  it('expands an explicitly selected managed MCP connection for the request', async () => {
+    const credentialId = 'mcp-cg-123456789012345678901'
+    mockDiscoverMcpServerToolsAsExecutor.mockResolvedValueOnce([
+      {
+        name: 'search_transcripts',
+        description: 'Search transcripts',
+        inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+        serverId: credentialId,
+        serverName: 'Fireflies',
+      },
+    ])
+    fetchMock.mockResolvedValue(createJsonResponse({ content: 'done', toolCalls: [] }))
+
+    await handler.execute(context, block, {
+      prompt: 'Search Fireflies',
+      tools: [
+        {
+          type: 'mcp-server-advanced',
+          params: { serverId: credentialId },
+          usageControl: 'force',
+        },
+      ],
+    })
+
+    expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledWith(
+      expect.objectContaining({ serverId: credentialId, workspaceId: context.workspaceId })
+    )
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(String(options.body)).mcpTools).toEqual([
+      {
+        type: 'mcp',
+        usageControl: 'force',
+        schema: { type: 'object', properties: { query: { type: 'string' } } },
+        params: {
+          serverId: credentialId,
+          toolName: 'search_transcripts',
+          serverName: 'Fireflies',
+        },
+      },
+    ])
+  })
+
+  it('does not forward tools for a blank advanced MCP server binding', async () => {
+    fetchMock.mockResolvedValue(createJsonResponse({ content: 'done', toolCalls: [] }))
+
+    await handler.execute(context, block, {
+      prompt: 'Continue without MCP tools',
+      tools: [
+        {
+          type: 'mcp-server-advanced',
+          params: { serverId: '' },
+          usageControl: 'auto',
+        },
+      ],
+    })
+
+    expect(mockDiscoverMcpServerToolsAsExecutor).not.toHaveBeenCalled()
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(String(options.body))).not.toHaveProperty('mcpTools')
   })
 
   it('does not scan arbitrary Mothership metadata, attachment names, or payloads', async () => {
@@ -1893,28 +1948,6 @@ describe('MothershipBlockHandler', () => {
     abortController.abort()
 
     await expect(abortedExecution).resolves.toMatchObject({ name: 'AbortError' })
-  })
-
-  it('propagates durable workflow cancellation to the mothership request', async () => {
-    vi.useFakeTimers()
-
-    mockGenerateId.mockReturnValueOnce('chat-uuid')
-    mockGenerateId.mockReturnValueOnce('message-uuid')
-    mockGenerateId.mockReturnValueOnce('request-uuid')
-    mockIsRedisCancellationEnabled.mockReturnValue(true)
-    mockIsExecutionCancelled.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
-
-    fetchMock.mockImplementation((_url: string, options?: RequestInit) =>
-      createAbortableFetchPromise(options?.signal as AbortSignal | undefined)
-    )
-
-    const executionPromise = handler.execute(context, block, { prompt: 'Cancel me durably' })
-    const abortedExecution = executionPromise.catch((error) => error)
-
-    await vi.advanceTimersByTimeAsync(1000)
-
-    await expect(abortedExecution).resolves.toMatchObject({ name: 'AbortError' })
-    expect(mockIsExecutionCancelled).toHaveBeenCalledWith('execution-1')
   })
 
   it('aborts the mothership request when selected-output streaming is cancelled', async () => {

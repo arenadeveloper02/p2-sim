@@ -101,6 +101,9 @@ const SERVER_ROW = {
 }
 
 vi.mock('@/lib/mcp/domain-check', () => ({
+  MCP_EGRESS_PROFILE: 'selfHostedService',
+  OAUTH_EGRESS_PROFILE: 'contentFetch',
+  McpSsrfError: class McpSsrfError extends Error {},
   isMcpDomainAllowed: () => true,
   validateMcpDomain: () => {},
   validateMcpServerSsrf: async () => '203.0.113.10',
@@ -109,7 +112,7 @@ vi.mock('@/lib/mcp/oauth', () => ({
   getOrCreateOauthRow: vi.fn(),
   loadPreregisteredClient: vi.fn(),
   SimMcpOauthProvider: vi.fn(),
-  withMcpOauthRefreshLock: vi.fn(),
+  withMcpOauthRefreshLock: vi.fn((_id: string, fn: () => Promise<unknown>) => fn()),
 }))
 vi.mock('@/lib/mcp/resolve-config', () => ({
   resolveMcpConfigEnvVars: (...args: unknown[]) => mockResolveEnvVars(...args),
@@ -119,6 +122,7 @@ vi.mock('@/lib/mcp/storage', () => ({
   getMcpCacheType: () => 'memory',
 }))
 
+import { withMcpOauthRefreshLock } from '@/lib/mcp/oauth'
 import { mcpService } from '@/lib/mcp/service'
 
 describe('McpService connection reuse wiring', () => {
@@ -136,6 +140,55 @@ describe('McpService connection reuse wiring', () => {
 
   afterAll(() => {
     resetDbChainMock()
+  })
+
+  it('propagates initial managed credential errors before constructing a connection', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ ...SERVER_ROW, authType: 'oauth' }])
+    const error = new Error('Managed credential disabled')
+    await expect(
+      mcpService.executeManagedMcpTool({
+        connectionId: 'disabled-grant',
+        serverId: SERVER_ROW.id,
+        workspaceId: WORKSPACE_ID,
+        toolCall: { name: 'slow', arguments: {} },
+        loadAuthProvider: vi.fn().mockRejectedValue(error),
+      })
+    ).rejects.toBe(error)
+    expect(MockMcpClient).not.toHaveBeenCalled()
+  })
+
+  it('keeps managed tool execution outside the refresh mutex and passes a reloadable grant', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ ...SERVER_ROW, authType: 'oauth' }])
+    const initialProvider = {}
+    const loadAuthProvider = vi.fn().mockResolvedValue(initialProvider)
+    const signal = new AbortController().signal
+    await mcpService.executeManagedMcpTool({
+      connectionId: 'personal-grant',
+      serverId: SERVER_ROW.id,
+      workspaceId: WORKSPACE_ID,
+      toolCall: { name: 'slow', arguments: {} },
+      loadAuthProvider,
+      signal,
+      timeoutMs: 300_000,
+    })
+
+    expect(loadAuthProvider).toHaveBeenCalledTimes(1)
+    expect(withMcpOauthRefreshLock).not.toHaveBeenCalled()
+    expect(MockMcpClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        oauthCredentials: {
+          credentialId: 'personal-grant',
+          loadProvider: loadAuthProvider,
+          initialProvider,
+        },
+      })
+    )
+    expect(mockCallTool).toHaveBeenCalledWith(
+      { name: 'slow', arguments: {} },
+      { signal, timeoutMs: 300_000 }
+    )
+    expect(mockAcquire).not.toHaveBeenCalled()
+    expect(mockDisconnect).toHaveBeenCalledTimes(1)
   })
 
   it('leases from the pool (keyed by server+workspace+user) and never disconnects on a hit', async () => {

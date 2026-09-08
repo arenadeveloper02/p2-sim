@@ -1,0 +1,93 @@
+---
+title: Enterprise
+description: Enterprise features for business organizations
+---
+
+Sim Enterprise adds permission groups, SSO, audit logs, usage tracking, data retention and drains, white-labeling, and workspace forks on top of Team plans.
+
+---
+
+## Permission groups
+
+Define permission groups to control what features, models, blocks, and integrations your members can use. A permission group belongs to an **organization**. The organization's single **default group** governs everyone org-wide; every other group targets a specific set of workspaces and, by default, governs all members of those workspaces — or only named members once you add them. A user is governed by exactly one group in any given workspace.
+
+External workspace members can be governed by permission groups just like internal organization members, but they remain outside the organization roster and do not consume seats.
+
+### What a group controls
+
+- **Model providers** - Restrict which AI providers members can use, and deny individual models within an allowed provider
+- **Blocks** - Control which workflow blocks are available, and deny individual tools within an allowed integration
+- **Platform** - Revoke modules (Chat, Knowledge Base, Tables, Files, Sim Mailer), deployment surfaces, tool types, log detail, collaboration actions, and credential access
+
+### Setup
+
+1. Navigate to **Settings → Organization → Permission groups** from any workspace in your organization
+2. Create a permission group with your desired restrictions
+3. Scope it to workspaces, and optionally add named members
+
+Only organization owners and admins can manage permission groups. Users not governed by any group have full access. Restrictions are enforced at both UI and execution time, based on the organization that owns the workflow's workspace.
+
+See the [Access Control guide](/platform/enterprise/access-control) for full details.
+
+---
+
+## Single Sign-On (SSO)
+
+Enterprise authentication with SAML 2.0 and OIDC support. Works with Okta, Azure AD (Entra ID), Google Workspace, ADFS, and any standard OIDC or SAML 2.0 provider.
+
+See the [SSO setup guide](/platform/enterprise/sso) for step-by-step instructions and provider-specific configuration.
+
+---
+
+## White-labeling
+
+Replace Sim's default branding — logos, wordmark, product name, and theme colors — with your own. Instance-wide branding environment variables additionally cover the favicon and custom CSS. `NEXT_PUBLIC_BRAND_BACKGROUND_COLOR` is not a background — it only tells Sim whether your brand ground is dark, which it uses to pick contrasting text. See the [white-labeling guide](/platform/enterprise/whitelabeling).
+
+---
+
+## Audit Logs
+
+Track configuration and security-relevant actions across your organization for compliance and monitoring. See the [audit logs guide](/platform/enterprise/audit-logs).
+
+---
+
+## Usage Tracking
+
+See where your organization's credits go — by member, workspace, model, and platform feature. See the [usage tracking guide](/platform/enterprise/usage-tracking).
+
+---
+
+## Data Retention
+
+Configure how long execution logs, soft-deleted resources, and Chat data are kept before permanent deletion. See the [data retention guide](/platform/enterprise/data-retention).
+
+---
+
+## Data Drains
+
+Continuously export workflow logs, audit logs, and Chat data to a destination you control — object storage, a data warehouse, Datadog, or an HTTPS webhook — on a schedule. See the [data drains guide](/platform/enterprise/data-drains).
+
+---
+
+## Workspace Forks
+
+Clone a workspace into a linked child, then push or pull **deployed** workflow changes between them. Deploy is like a commit; sync is a force push or force pull. See the [workspace forks guide](/platform/enterprise/forks).
+
+---
+
+## Self-hosted setup
+
+Self-hosted deployments unlock enterprise features through environment configuration instead of billing. One switch turns on the whole set:
+
+```bash
+ENTERPRISE_ENABLED=true
+NEXT_PUBLIC_ENTERPRISE_ENABLED=true
+```
+
+Each feature also keeps its own flag, so you can enable them one at a time or switch a single feature back off.
+
+Most of these features read their settings from the organization that owns a workspace, so a deployment also needs an organization model — either one instance-wide organization that every user joins automatically, or organizations you provision yourself through the Admin API.
+
+See the [self-hosted enterprise guide](/platform/enterprise/self-hosted) for the full variable list, both organization patterns, the Admin API reference, and troubleshooting.
+
+Once enabled, each feature is configured through the same Settings UI as Sim Cloud. When invitations are disabled (`DISABLE_INVITATIONS`, `NEXT_PUBLIC_DISABLE_INVITATIONS`), use the Admin API (`x-admin-key` header) to manage organization membership and workspace access. Internal members join the organization; external workspace members only receive access to a specific workspace.

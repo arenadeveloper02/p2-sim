@@ -9,9 +9,9 @@ interface MessageActionIconProps {
  */
 export function messageActionIconButtonClass(active = false) {
   return cn(
-    'inline-flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-ds-sm,4px)] bg-[var(--color-ds-brand-surface,#F3F8FE)] text-[var(--color-ds-icon-default,#575A66)] transition-colors',
-    'hover:bg-white hover:text-[var(--color-ds-text-link-hover,#155CBA)]',
-    active && 'text-[var(--color-ds-text-link-hover,#155CBA)]'
+    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[var(--surface-5)] text-[var(--text-icon)] transition-colors',
+    'hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)]',
+    active && 'text-[var(--text-primary)]'
   )
 }
 

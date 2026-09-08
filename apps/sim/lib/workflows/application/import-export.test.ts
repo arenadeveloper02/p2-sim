@@ -12,10 +12,13 @@ const mocks = vi.hoisted(() => ({
   folderLock: vi.fn(),
   loadIndex: vi.fn(),
   recordAudit: vi.fn(),
+  notifyWorkspace: vi.fn(),
 }))
 
-vi.mock('@/lib/workflows/application/context', () => ({
+vi.mock('@/lib/workspaces/application/workspace-context', () => ({
   resolveActiveWorkspaceApplicationContext: mocks.resolveWorkspace,
+}))
+vi.mock('@/lib/workflows/application/context', () => ({
   resolveActiveWorkflowApplicationContext: mocks.resolveWorkflow,
 }))
 vi.mock('@sim/platform-authz/workspace', () => ({
@@ -39,6 +42,10 @@ vi.mock('@/lib/folders/queries', () => ({
   resolveFolderPathFromIndex: (index: { idByPath: Map<string, string> }, path: string) =>
     path === '/' ? null : index.idByPath.get(path),
 }))
+vi.mock('@/lib/realtime/notify', () => ({
+  notifyWorkspaceWorkflowsChanged: mocks.notifyWorkspace,
+}))
+
 vi.mock('@/lib/workflows/operations/import-workflow', () => ({
   importWorkflowIntoWorkspaceTransition: mocks.importTransition,
 }))
@@ -151,6 +158,7 @@ describe('workflow import and export application operations', () => {
         }),
       })
     )
+    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('ws-1')
   })
 
   it('preserves classified import details and does not audit a failure', async () => {

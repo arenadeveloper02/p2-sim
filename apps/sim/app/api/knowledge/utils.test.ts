@@ -110,33 +110,46 @@ vi.mock('@/lib/knowledge/documents/document-processor', () => ({
   }),
 }))
 
-function createEmbeddingFetchMock() {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({
-      data: [
-        { embedding: [0.1, 0.2], index: 0 },
-        { embedding: [0.3, 0.4], index: 1 },
-      ],
-      usage: { prompt_tokens: 2, total_tokens: 2 },
+const TEST_EMBEDDING_DIMENSION = 1536
+
+function createTestEmbedding(value: number): number[] {
+  return Array.from({ length: TEST_EMBEDDING_DIMENSION }, () => value)
+}
+
+function createEmbeddingResponse(values: number[]): Response {
+  return new Response(
+    JSON.stringify({
+      data: values.map((value, index) => ({ embedding: createTestEmbedding(value), index })),
+      usage: { prompt_tokens: values.length, total_tokens: values.length },
     }),
-  })
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  )
+}
+
+function createEmbeddingFetchMock() {
+  return vi.fn().mockResolvedValue(createEmbeddingResponse([0.1, 0.3]))
 }
 
 vi.stubGlobal('fetch', createEmbeddingFetchMock())
 
 import { processDocumentAsync } from '@/lib/knowledge/documents/service'
-import { generateEmbeddings } from '@/lib/knowledge/embeddings'
-import {
-  checkChunkAccess,
-  checkDocumentAccess,
-  checkKnowledgeBaseAccess,
-} from '@/app/api/knowledge/utils'
+import { generateEmbeddings, type KbEmbeddingTarget } from '@/lib/knowledge/embeddings'
+
+/** The platform default model and vector width, as a knowledge base records them. */
+const DEFAULT_EMBEDDING_TARGET: KbEmbeddingTarget = {
+  model: 'text-embedding-3-small',
+  dimensions: 1536,
+}
+
+import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
 
 describe('Knowledge Utils', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    // The document claim gates on the row it writes back, so an unstubbed
+    // `returning()` would abort processing before any completion write.
+    dbChainMockFns.returning.mockResolvedValue([{ id: 'doc1' }])
     // `unstubGlobals: true` removes the module-scope fetch stub after the
     // first test in the worker; re-stub it per test.
     vi.stubGlobal('fetch', createEmbeddingFetchMock())
@@ -161,8 +174,13 @@ describe('Knowledge Utils', () => {
           knowledgeBaseUserId: 'user1',
           chunkingConfig: { maxSize: 1024, minSize: 1, overlap: 200 },
           embeddingModel: 'text-embedding-3-small',
+          embeddingDimension: 1536,
           billedAccountUserId: 'billing-user-1',
           uploadedBy: null,
+          filename: 'file.txt',
+          fileUrl: 'https://example.com/file.txt',
+          fileSize: 10,
+          mimeType: 'text/plain',
         },
       ])
       /** Legacy untracked documents have exact-empty provenance. */
@@ -236,52 +254,9 @@ describe('Knowledge Utils', () => {
     })
   })
 
-  describe('checkDocumentAccess', () => {
-    it('should return unauthorized when user mismatch', async () => {
-      queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb1', userId: 'owner' }])
-      const result = await checkDocumentAccess('kb1', 'doc1', 'intruder')
-
-      expect(result.hasAccess).toBe(false)
-      if ('reason' in result) {
-        expect(result.reason).toBe('Unauthorized knowledge base access')
-      }
-    })
-  })
-
-  describe('checkChunkAccess', () => {
-    it('should fail when document is not completed', async () => {
-      queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb1', userId: 'user1' }])
-      queueTableRows(schemaMock.document, [
-        { id: 'doc1', knowledgeBaseId: 'kb1', processingStatus: 'processing' },
-      ])
-
-      const result = await checkChunkAccess('kb1', 'doc1', 'chunk1', 'user1')
-
-      expect(result.hasAccess).toBe(false)
-      if ('reason' in result) {
-        expect(result.reason).toContain('Document is not ready')
-      }
-    })
-
-    it('should return success for valid access', async () => {
-      queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb1', userId: 'user1' }])
-      queueTableRows(schemaMock.document, [
-        { id: 'doc1', knowledgeBaseId: 'kb1', processingStatus: 'completed' },
-      ])
-      queueTableRows(schemaMock.embedding, [{ id: 'chunk1', documentId: 'doc1' }])
-
-      const result = await checkChunkAccess('kb1', 'doc1', 'chunk1', 'user1')
-
-      expect(result.hasAccess).toBe(true)
-      if ('chunk' in result) {
-        expect(result.chunk.id).toBe('chunk1')
-      }
-    })
-  })
-
   describe('generateEmbeddings', () => {
     it('should return same length as input', async () => {
-      const result = await generateEmbeddings(['a', 'b'])
+      const result = await generateEmbeddings(['a', 'b'], DEFAULT_EMBEDDING_TARGET)
 
       expect(result.embeddings.length).toBe(2)
     })
@@ -298,15 +273,9 @@ describe('Knowledge Utils', () => {
       })
 
       const fetchSpy = vi.mocked(fetch)
-      fetchSpy.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [{ embedding: [0.1, 0.2], index: 0 }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        }),
-      } as any)
+      fetchSpy.mockResolvedValueOnce(createEmbeddingResponse([0.1]))
 
-      await generateEmbeddings(['test text'])
+      await generateEmbeddings(['test text'], DEFAULT_EMBEDDING_TARGET)
 
       expect(fetchSpy).toHaveBeenCalledWith(
         'https://test.openai.azure.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2024-12-01-preview',
@@ -328,15 +297,9 @@ describe('Knowledge Utils', () => {
       })
 
       const fetchSpy = vi.mocked(fetch)
-      fetchSpy.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [{ embedding: [0.1, 0.2], index: 0 }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        }),
-      } as any)
+      fetchSpy.mockResolvedValueOnce(createEmbeddingResponse([0.1]))
 
-      await generateEmbeddings(['test text'])
+      await generateEmbeddings(['test text'], DEFAULT_EMBEDDING_TARGET)
 
       expect(fetchSpy).toHaveBeenCalledWith(
         'https://api.openai.com/v1/embeddings',
@@ -363,7 +326,7 @@ describe('Knowledge Utils', () => {
       })
 
       try {
-        await expect(generateEmbeddings(['test text'])).rejects.toThrow(
+        await expect(generateEmbeddings(['test text'], DEFAULT_EMBEDDING_TARGET)).rejects.toThrow(
           'OPENAI_API_KEY is not configured'
         )
       } finally {

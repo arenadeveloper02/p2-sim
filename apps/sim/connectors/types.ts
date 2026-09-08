@@ -1,5 +1,5 @@
 import type { OAuthService } from '@/lib/oauth/types'
-import type { SelectorKey } from '@/hooks/selectors/types'
+import type { SelectorKey } from '@/lib/selectors/manifest'
 
 /**
  * Authentication configuration for a connector.
@@ -29,16 +29,48 @@ export interface ExternalDocument {
   externalId: string
   /** Document title / filename */
   title: string
-  /** Extracted text content */
+  /** Extracted text content. Empty when {@link ExternalDocument.sourceFile} carries the document instead. */
   content: string
   /** MIME type of the content */
   mimeType: string
+  /**
+   * The source file itself, for connectors that hand over the original document
+   * rather than text they extracted from it.
+   *
+   * Preferred for any format the knowledge base can parse. Extracting inside a
+   * connector strands the document on a second, weaker parser: the shared
+   * pipeline routes PDFs to OCR (so scanned pages are readable at all) and owns
+   * every other format's parser, while a connector doing its own extraction
+   * stores plain text that no longer declares what it came from.
+   *
+   * Carried as one object so the bytes can never disagree with the name and type
+   * that describe them.
+   */
+  sourceFile?: {
+    bytes: Buffer
+    /** Name whose extension names the format, e.g. `Report.pdf`. */
+    fileName: string
+    mimeType: string
+  }
   /** Link back to the original document */
   sourceUrl?: string
   /** Hash of content for change detection (format varies by connector) */
   contentHash: string
+  /**
+   * Connector-owned hash to persist for a skipped hydration that must be retried
+   * even when the source's listing metadata is unchanged.
+   */
+  skippedRetryContentHash?: string
   /** When true, content is empty and will be fetched via getDocument for new/changed docs only */
   contentDeferred?: boolean
+  /**
+   * How large the deferred content is expected to be, in bytes, when the
+   * listing cannot know exactly. Bounds how many deferred documents hydrate
+   * at once: without it a deferred document is assumed to be as large as the
+   * whole in-flight budget and hydrates alone, which turns a mailbox crawl
+   * into one thread at a time.
+   */
+  estimatedBytes?: number
   /**
    * When set, the document was intentionally not indexed (e.g. it exceeds the
    * connector's size limit). The sync engine records it as a `failed` document
@@ -46,6 +78,12 @@ export interface ExternalDocument {
    * being silently dropped.
    */
   skippedReason?: string
+  /**
+   * Controls what happens when a previously indexed document is intentionally
+   * skipped. The default retains its last-known-good content; `replace` removes
+   * stale indexed content and persists the skipped state as authoritative.
+   */
+  skippedExistingDisposition?: 'replace'
   /** Additional source-specific metadata */
   metadata?: Record<string, unknown>
 }
@@ -57,7 +95,43 @@ export interface ExternalDocumentList {
   documents: ExternalDocument[]
   nextCursor?: string
   hasMore: boolean
+  /**
+   * Whether absence from this listing is authoritative enough for deletion
+   * reconciliation. Defaults to true. Offset-based or otherwise unstable
+   * provider pagination must set this to false.
+   */
+  reconciliationSafe?: boolean
 }
+
+/**
+ * One entry of a connector's change feed. A removal is authoritative for the
+ * caller: the item was deleted, or their account can no longer reach it.
+ */
+export type ExternalChange =
+  | { kind: 'upsert'; externalId: string; document: ExternalDocument }
+  | { kind: 'removed'; externalId: string }
+
+export interface ExternalChangeList {
+  changes: ExternalChange[]
+  /**
+   * The cursor to continue from: the next page while `hasMore`, otherwise the
+   * point the drained feed should resume from on the next read.
+   */
+  nextCursor: string
+  hasMore: boolean
+}
+
+export const SYNC_SKIP_REASONS = [
+  'connector_unavailable',
+  'knowledge_base_deleted',
+  'connector_not_syncable',
+  'dispatch_superseded',
+  'sync_in_progress',
+  'sync_superseded',
+  'connector_deleted_during_sync',
+] as const
+
+export type SyncSkipReason = (typeof SYNC_SKIP_REASONS)[number]
 
 /**
  * Result of a sync operation.
@@ -67,7 +141,19 @@ export interface SyncResult {
   docsUpdated: number
   docsDeleted: number
   docsUnchanged: number
+  /** Source documents intentionally recorded without indexing, such as oversized files. */
+  docsSkipped: number
+  /** Source documents that failed during listing, hydration, or persistence. */
   docsFailed: number
+  /** Immediate hand-off outcome; eventual child results live on document rows and child runs. */
+  processingDispatch: {
+    requested: number
+    accepted: number
+    failed: number
+  }
+  /** Expected queue, lifecycle, or lock no-op. Never derived from error text. */
+  skipReason?: SyncSkipReason
+  /** Diagnostic for an actual failed sync. */
   error?: string
 }
 
@@ -158,6 +244,16 @@ export interface ConnectorMeta {
    * on the KB for enabled slots, and mapTags output is filtered to only include them.
    */
   tagDefinitions?: ConnectorTagDefinition[]
+
+  /**
+   * Set when a listing under one person's own token returns exactly the documents
+   * that person may read, so a knowledge base can crawl the source once per
+   * enrolled member and take each member's listing as that member's access.
+   * Names the config fields that cap the listing: a cap would hide part of a
+   * member's corpus and suppress removals forever, so those fields are refused
+   * whenever the connector crawls per member.
+   */
+  permissionScopedListing?: { capFieldIds: readonly string[] }
 }
 
 /**
@@ -205,6 +301,46 @@ export interface ConnectorConfig extends ConnectorMeta {
     accessToken: string,
     sourceConfig: Record<string, unknown>
   ) => Promise<{ valid: boolean; error?: string }>
+
+  /**
+   * Whether a listing failure means the caller simply cannot reach the
+   * configured scope — the folder or space is not shared with them. A
+   * members-mode crawl treats that as a complete listing of nothing for that
+   * member rather than an error, so their access is withdrawn instead of
+   * retried forever. Only meaningful alongside {@link ConnectorMeta.permissionScopedListing}.
+   */
+  isListingScopeUnavailableError?: (error: unknown) => boolean
+
+  /**
+   * Opens a change feed over the caller's view of the source: the cursor from
+   * which {@link listChanges} later reports everything they gain, lose, or see
+   * modified. A members-mode crawl takes it before a full listing so nothing
+   * that changes during the listing is missed, and then reads the feed on
+   * every run instead of relisting. Only meaningful alongside
+   * {@link ConnectorMeta.permissionScopedListing}.
+   */
+  getChangeCursor?: (
+    accessToken: string,
+    sourceConfig: Record<string, unknown>,
+    syncContext?: Record<string, unknown>
+  ) => Promise<string>
+
+  /**
+   * Reads the change feed from a cursor. An upsert carries the same stub a
+   * listing would; a removal withdraws the caller's access to the item.
+   */
+  listChanges?: (
+    accessToken: string,
+    sourceConfig: Record<string, unknown>,
+    cursor: string,
+    syncContext?: Record<string, unknown>
+  ) => Promise<ExternalChangeList>
+
+  /**
+   * Whether a change-feed failure means the cursor has expired, so the feed
+   * must be reopened from a fresh full listing rather than retried.
+   */
+  isChangeCursorInvalidError?: (error: unknown) => boolean
 
   /** Map source metadata to semantic tag keys (translated to slots by the sync engine) */
   mapTags?: (metadata: Record<string, unknown>) => Record<string, unknown>

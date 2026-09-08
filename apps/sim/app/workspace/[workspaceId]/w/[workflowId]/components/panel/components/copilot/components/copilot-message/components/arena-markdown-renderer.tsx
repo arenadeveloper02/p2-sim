@@ -106,7 +106,7 @@ function LinkWithPreview({ href, children }: { href: string; children: React.Rea
       <Tooltip.Trigger asChild>
         <a
           href={href}
-          className='inline break-words text-[var(--color-ds-text-link,#1A73E8)] hover:text-[var(--color-ds-text-link-hover,#155CBA)] hover:underline'
+          className='inline break-words text-[var(--text-primary)] underline decoration-dashed underline-offset-4 hover:text-[var(--text-primary)]'
           target='_blank'
           rel='noopener noreferrer'
         >

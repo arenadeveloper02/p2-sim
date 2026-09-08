@@ -93,6 +93,7 @@ export function makeStreamLoopDeps(overrides: Partial<StreamLoopDeps> = {}): Str
       Map<string, { sessionId: string; suppressActivation: boolean }>
     >(new Map()),
     previewActivationOwnerRef: ref<Map<string, string | null>>(new Map()),
+    isEmbedPageRef: ref(false),
     ...overrides,
   }
 }
