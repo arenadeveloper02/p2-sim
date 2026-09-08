@@ -41,8 +41,8 @@ export const LOCAL_COPILOT_CLOUD_SPECIALIST_DOMAINS = [
 export type LocalCopilotCloudSpecialistDomain =
   (typeof LOCAL_COPILOT_CLOUD_SPECIALIST_DOMAINS)[number]
 
-/** Pre-pass / parent parallel fan-out cap. */
-export const MAX_PARALLEL_SUBAGENTS = 4
+/** Pre-pass / parent parallel fan-out cap (slowest specialist gates the wait). */
+export const MAX_PARALLEL_SUBAGENTS = 2
 
 export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'search_docs',
@@ -67,6 +67,12 @@ export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'load_user_skill',
   'explain_error',
   'user_memory',
+  // Sandbox compute — available on every intent so complex analysis / transforms
+  // can call function_execute without waiting for agent|file|research classification.
+  // manage_sandbox is still dropped in resolveLocalCopilotTools when the workspace
+  // has no sandbox entitlement.
+  'function_execute',
+  'manage_sandbox',
 ])
 
 const WORKFLOW_TOOLS = [

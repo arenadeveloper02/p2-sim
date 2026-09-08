@@ -33,6 +33,12 @@ export interface LocalCopilotConfig {
    * Anthropic Haiku when provider is anthropic; otherwise matches {@link model}.
    */
   specialistModel: string
+  /**
+   * Gemini thinking level for Local Copilot LLM calls (`low` / `medium` /
+   * `high`, plus `minimal` on Flash). Lower = faster / cheaper. Unset for
+   * non-Gemini providers.
+   */
+  thinkingLevel?: string
   apiKey?: string
   baseUrl?: string
   /** AWS region for Bedrock (defaults to `AWS_REGION` / `us-east-1`). */

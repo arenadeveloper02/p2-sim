@@ -5,6 +5,7 @@ import {
   type LocalCopilotCatalogId,
   resolveLocalCopilotCatalogEntry,
 } from '@/local-copilot/lib/model-catalog'
+import { listLocalCopilotGeminiApiKeys } from '@/local-copilot/lib/providers/gemini-keys'
 import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
 /** Default Local Copilot main agent model (override with `COPILOT_MODEL`). */
@@ -16,10 +17,10 @@ const DEFAULT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
  */
 const DEFAULT_ANTHROPIC_SPECIALIST_MODEL = 'claude-haiku-4-5'
 /**
- * Default specialist / parallel-subagent model for Gemini parents. Faster than
- * Pro for leaf tool rounds; same API key as the catalog Gemini models.
+ * Default specialist / parallel-subagent model for Gemini parents. Flash-Lite
+ * is the speed-optimized leaf; same API key as the catalog Gemini models.
  */
-const DEFAULT_GEMINI_SPECIALIST_MODEL = 'gemini-3.6-flash'
+const DEFAULT_GEMINI_SPECIALIST_MODEL = 'gemini-3.5-flash-lite'
 /**
  * Default specialist / parallel-subagent model for Bedrock parents. Haiku 4.5
  * is the fast Claude on Bedrock; Converse uses the same AWS credentials as
@@ -28,10 +29,41 @@ const DEFAULT_GEMINI_SPECIALIST_MODEL = 'gemini-3.6-flash'
 const DEFAULT_BEDROCK_SPECIALIST_MODEL = 'anthropic.claude-haiku-4-5-20251001-v1:0'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 const DEFAULT_BEDROCK_REGION = 'us-east-1'
+/** Default Gemini thinking level — `high` is the API default for 3.1 Pro and is much slower. */
+const DEFAULT_GEMINI_THINKING_LEVEL = 'medium'
+
+const GEMINI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'none'])
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value.trim() === '') return fallback
   return value === 'true' || value === '1'
+}
+
+/**
+ * Resolves `COPILOT_THINKING_LEVEL` for Gemini Local Copilot calls.
+ * Defaults to `medium` for Gemini; ignored for other providers.
+ */
+export function resolveLocalCopilotThinkingLevel(
+  provider: LocalCopilotProviderId,
+  override = process.env.COPILOT_THINKING_LEVEL?.trim()
+): string | undefined {
+  if (provider !== 'gemini') return undefined
+  if (!override) return DEFAULT_GEMINI_THINKING_LEVEL
+  const normalized = override.toLowerCase()
+  // Gemini 3.8 Flash rejects `minimal`; treat it as `low` for latency-sensitive configs.
+  if (normalized === 'minimal') return 'low'
+  return GEMINI_THINKING_LEVELS.has(normalized) ? normalized : DEFAULT_GEMINI_THINKING_LEVEL
+}
+
+/**
+ * Live engagement status LLM (tool heartbeats / model-wait copy).
+ * Off by default for lower latency — static status lines remain.
+ * Set `COPILOT_ENGAGEMENT_STATUS=true` to re-enable.
+ */
+export function isLocalCopilotEngagementStatusEnabled(
+  override = process.env.COPILOT_ENGAGEMENT_STATUS
+): boolean {
+  return parseBoolean(override, false)
 }
 
 function resolveProvider(value: string | undefined): LocalCopilotProviderId {
@@ -104,15 +136,8 @@ function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
   }
 
   if (provider === 'gemini') {
-    try {
-      return getRotatingApiKey('gemini')
-    } catch {
-      return (
-        process.env.GOOGLE_API_KEY?.trim() ||
-        process.env.NEXT_PUBLIC_GOOGLE_API_KEY?.trim() ||
-        undefined
-      )
-    }
+    // Presence check only — the Gemini provider round-robins on each LLM call.
+    return listLocalCopilotGeminiApiKeys()[0]
   }
 
   if (provider === 'openai' || provider === 'openai-compatible') {
@@ -156,6 +181,7 @@ export function getLocalCopilotConfig(): LocalCopilotConfig {
     provider,
     model,
     specialistModel,
+    thinkingLevel: resolveLocalCopilotThinkingLevel(provider),
     apiKey: resolveApiKey(provider),
     baseUrl: process.env.COPILOT_BASE_URL?.trim() || undefined,
     region: provider === 'bedrock' ? resolveBedrockRegion() : undefined,
@@ -185,6 +211,7 @@ export function buildLocalCopilotConfigForCatalog(
     provider: entry.provider,
     model,
     specialistModel,
+    thinkingLevel: resolveLocalCopilotThinkingLevel(entry.provider),
     apiKey: resolveApiKey(entry.provider),
     baseUrl: entry.provider === base.provider ? base.baseUrl : undefined,
     region: entry.provider === 'bedrock' ? resolveBedrockRegion() : undefined,
@@ -218,7 +245,7 @@ export function assertLocalCopilotEnabled(
     }
     if (config.provider === 'gemini') {
       throw new Error(
-        'Gemini is not configured on this server. Set GEMINI_API_KEY (or GOOGLE_API_KEY).'
+        'Gemini is not configured on this server. Set GEMINI_API_KEY_1, GEMINI_API_KEY_2, and GEMINI_API_KEY_3 (or a single GEMINI_API_KEY / GOOGLE_API_KEY).'
       )
     }
     throw new Error(

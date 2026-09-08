@@ -196,6 +196,13 @@ const SEQUENTIAL_WORKFLOW_DOMAINS = new Set<LocalCopilotCloudSpecialistDomain>([
   'run',
 ])
 
+/**
+ * Domains that can usefully run ahead of the parent in parallel with a build
+ * domain (lookups / auth prep). Other multi-domain matches stay with the parent
+ * so we do not pay slowest-wins latency for weakly related specialists.
+ */
+const AUTO_FAN_PREP_DOMAINS = new Set<LocalCopilotCloudSpecialistDomain>(['research', 'auth'])
+
 function collapseSequentialWorkflowDomains(
   domains: LocalCopilotCloudSpecialistDomain[],
   primary: LocalCopilotIntent['primary']
@@ -209,6 +216,13 @@ function collapseSequentialWorkflowDomains(
   return domains.filter((domain) => !SEQUENTIAL_WORKFLOW_DOMAINS.has(domain) || domain === keep)
 }
 
+/**
+ * Selects domains for the turn-start parallel specialist pre-pass.
+ *
+ * Conservative by design: only fan when a prep domain (research/auth) coexists
+ * with another domain, and never more than {@link MAX_PARALLEL_SUBAGENTS}.
+ * Parent-invoked specialists can still run in parallel later via tool calls.
+ */
 export function selectParallelSubagentDomains(
   intent: LocalCopilotIntent
 ): LocalCopilotCloudSpecialistDomain[] {
@@ -227,7 +241,13 @@ export function selectParallelSubagentDomains(
   )
   if (selected.length < 2) return []
 
-  return selected.slice(0, MAX_PARALLEL_SUBAGENTS)
+  const prep = selected.find((domain) => AUTO_FAN_PREP_DOMAINS.has(domain))
+  if (!prep) return []
+
+  const build = selected.find((domain) => domain !== prep)
+  if (!build) return []
+
+  return [prep, build].slice(0, MAX_PARALLEL_SUBAGENTS)
 }
 
 /**

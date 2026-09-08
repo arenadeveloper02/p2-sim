@@ -1,7 +1,7 @@
 import type { LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
 /** Default catalog selection for new local chats and new user-access rows. */
-export const DEFAULT_LOCAL_COPILOT_CATALOG_ID = 'gemini-2.5-pro' as const
+export const DEFAULT_LOCAL_COPILOT_CATALOG_ID = 'gemini-3.8-flash' as const
 
 /** Top-level picker groups shown when Local is selected. */
 export type LocalCopilotProviderGroup = 'claude' | 'gemini' | 'bedrock'
@@ -17,6 +17,13 @@ export const LOCAL_COPILOT_CATALOG = [
     label: 'Claude',
     provider: 'anthropic' as LocalCopilotProviderId,
     model: null as string | null,
+  },
+  {
+    id: 'gemini-3.8-flash',
+    providerGroup: 'gemini',
+    label: 'Gemini 3.8 Flash',
+    provider: 'gemini' as LocalCopilotProviderId,
+    model: 'gemini-3.8-flash',
   },
   {
     id: 'gemini-2.5-pro',

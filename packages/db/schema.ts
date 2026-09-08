@@ -3392,6 +3392,7 @@ export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', 
  */
 export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model', [
   'claude',
+  'gemini-3.8-flash',
   'gemini-2.5-pro',
   'gemini-3.1-pro',
   'bedrock-claude-opus-5',
