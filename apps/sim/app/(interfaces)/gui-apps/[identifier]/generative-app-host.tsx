@@ -16,6 +16,7 @@ import {
   clearedSelectedItemHostState,
   isJsonRenderSpec,
   navigationHref,
+  scrollGenerativeAppToResults,
   scrollGenerativeAppToTop,
   selectedItemHostState,
 } from '@/lib/arena-generative-ui/types'
@@ -201,18 +202,18 @@ export function GenerativeAppHost({
           currentPath={pagePath}
           onNavigate={navigate}
           onRunAction={runtime.onRunAction}
-          onSelectItem={(item, index) => {
-            flushSync(() => {
-              mergeState(selectedItemHostState(item, index))
-            })
-            scrollGenerativeAppToTop()
-          }}
-          onClearItem={() => {
-            flushSync(() => {
-              mergeState(clearedSelectedItemHostState())
-            })
-            scrollGenerativeAppToTop()
-          }}
+            onSelectItem={(item, index) => {
+              flushSync(() => {
+                mergeState(selectedItemHostState(item, index))
+              })
+              scrollGenerativeAppToResults({ fallbackToTop: true })
+            }}
+            onClearItem={() => {
+              flushSync(() => {
+                mergeState(clearedSelectedItemHostState())
+              })
+              scrollGenerativeAppToTop()
+            }}
           onClearSelection={() => {
             flushSync(() => {
               mergeState(clearedSelectedIdHostState())

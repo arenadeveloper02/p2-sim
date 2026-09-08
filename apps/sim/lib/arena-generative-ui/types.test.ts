@@ -25,6 +25,7 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  scrollGenerativeAppToResults,
   scrollGenerativeAppToTop,
   selectedItemHostState,
   specHasSamePageSelectItem,
@@ -357,6 +358,9 @@ describe('Repeat item scope', () => {
     expect(selectedItemHostState(row, 3)).toEqual({
       error: undefined,
       schemaWarning: undefined,
+      keyword: 'Dental implants',
+      client: '42 North Dental',
+      nested: { skip: true },
       selected: row,
       selectedId: 'run_1',
       content: '# Full report\n\nBody.',
@@ -373,10 +377,31 @@ describe('Repeat item scope', () => {
     expect(selectedItemHostState({ output: 'Hello', body: 'no' }, 4)).toEqual({
       error: undefined,
       schemaWarning: undefined,
+      body: 'no',
       selected: { output: 'Hello', body: 'no' },
       selectedId: '4',
       content: 'Hello',
     })
+  })
+
+  it('lifts nested output.enhanced_article onto the same host key as generate', () => {
+    const row = {
+      id: 'run_1',
+      keyword: 'Dental implants',
+      output: {
+        enhanced_article: '# Article',
+        coverage_report: { summary: 'Strong' },
+      },
+    }
+    expect(selectedItemHostState(row, 0)).toMatchObject({
+      selected: row,
+      selectedId: 'run_1',
+      keyword: 'Dental implants',
+      enhanced_article: '# Article',
+      coverage_report: { summary: 'Strong' },
+      content: '# Article',
+    })
+    expect(selectedItemHostState(row, 0)).not.toHaveProperty('output')
   })
 
   it('clears selected, selectedId, and copied content without touching collections', () => {
@@ -462,6 +487,29 @@ describe('Repeat item scope', () => {
     const scrollTo = vi.fn()
     vi.stubGlobal('window', { scrollTo })
     scrollGenerativeAppToTop()
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+    vi.unstubAllGlobals()
+  })
+
+  it('scrolls the view-switch Chip row into view when present', () => {
+    const scrollIntoView = vi.fn()
+    const chips = { scrollIntoView }
+    vi.stubGlobal('window', {})
+    vi.stubGlobal('document', {
+      querySelector: vi.fn(() => chips),
+    })
+    scrollGenerativeAppToResults()
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back to the document top after Open when no Chip row exists', () => {
+    const scrollTo = vi.fn()
+    vi.stubGlobal('window', { scrollTo })
+    vi.stubGlobal('document', {
+      querySelector: vi.fn(() => null),
+    })
+    scrollGenerativeAppToResults({ fallbackToTop: true })
     expect(scrollTo).toHaveBeenCalledWith(0, 0)
     vi.unstubAllGlobals()
   })

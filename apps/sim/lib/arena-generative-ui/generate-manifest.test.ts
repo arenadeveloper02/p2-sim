@@ -108,6 +108,7 @@ vi.mock('@/lib/arena-generative-ui/critique-manifest', () => ({
 
 import {
   EDIT_PRESERVATION_INSTRUCTION,
+  EDIT_RESULT_VIEWS_INSTRUCTION,
   formatHostCriticRepairError,
   generateArenaGenerativeManifest,
   HOST_CRITIC_REPAIR_ISSUE_CAP,
@@ -380,7 +381,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('each binding includes layoutPlan')
     expect(system).toContain('never an output.')
     expect(system).toContain('coverage_report.summary, not output.coverage_report.summary')
-    expect(system).toContain('never "data.articles"')
+    expect(system).toContain('data.articles')
     expect(system).toContain('never "field.content"')
     expect(system).toContain('must not onLoad that same action')
     expect(system).toContain('Submitted form fields land in host state under "inputs"')
@@ -700,6 +701,10 @@ describe('generateArenaGenerativeManifest', () => {
       const payload = await editPayload()
 
       expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
+      expect(payload).toContain(EDIT_RESULT_VIEWS_INSTRUCTION)
+      expect(payload).toContain('layoutPlan.hostKeys')
+      expect(payload).toContain('Never output.enhanced_article')
+      expect(payload).toContain('ehnaced_article / enhaced_article → enhanced_article')
       expect(payload).toContain('Requested changes:\nCentre the search row.')
       expect(payload).not.toContain('Mode: generate a new multi-page app.')
       expect(payload).not.toContain('User request:')
@@ -753,6 +758,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).toContain('Infer a small coherent sitemap')
       expect(payload).toContain('destination and collection pages the job needs')
       expect(payload).not.toContain('Original brief')
+      expect(payload).not.toContain(EDIT_RESULT_VIEWS_INSTRUCTION)
     })
 
     it('includes a visual brief as explicit generate requirements', async () => {

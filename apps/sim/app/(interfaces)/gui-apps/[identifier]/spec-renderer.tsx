@@ -96,6 +96,7 @@ import {
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   collectionFromBoundValue,
   displayTextFromActionData,
+  GENERATIVE_APP_VIEW_SWITCH_TEST_ID,
   interpolateElementProps,
   parseTabItems,
   type RepeatItemScope,
@@ -2289,7 +2290,7 @@ export function SpecRenderer({
       }
       return (
         <div
-          data-testid='view-switch-chips'
+          data-testid={GENERATIVE_APP_VIEW_SWITCH_TEST_ID}
           className={cn(
             'flex flex-wrap gap-2',
             placement === 'left' ? 'flex-col items-stretch' : 'flex-row items-center'

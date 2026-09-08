@@ -33,6 +33,25 @@ describe('buildPreviewEditInstructions', () => {
     expect(text).not.toContain('Replace {user_input}')
     expect(text).toContain('"table" is bound to "articles"')
     expect(text).toContain('Add an API Output schema')
+    expect(text).toContain('layoutPlan.hostKeys')
+  })
+
+  it('tells the operator to drop output. / result[]. prefixes on unresolved paths', () => {
+    const text = buildPreviewEditInstructions({
+      pagePath: 'home',
+      diagnostics: [
+        {
+          kind: 'unresolved-state-path',
+          elementId: 'article',
+          statePath: 'output.enhanced_article',
+          message: 'Unresolved statePath "output.enhanced_article" on DataText "article".',
+        },
+      ],
+      outputHostKeys: ['enhanced_article', 'coverage_report.summary'],
+    })
+    expect(text).toContain('output.enhanced_article')
+    expect(text).toContain('Available host keys: enhanced_article')
+    expect(text).toContain('bind enhanced_article, not output.enhanced_article')
   })
 
   it('groups several unresolved widgets and lists available host keys', () => {

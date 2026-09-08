@@ -97,7 +97,10 @@ function unresolvedStatePathLines(
   const hostHint =
     available.length > 0
       ? ` Available host keys: ${available.slice(0, 16).join(', ')}.`
-      : ' Use a top-level field from Add an API Output schema.'
+      : ' Use a top-level field from Add an API Output schema (layoutPlan.hostKeys), not output. or result[]. prefixes.'
+  const envelopeHint = items.some((item) => looksLikeEnvelopeStatePath(item.statePath))
+    ? ' Drop output. / result[]. / item.output. prefixes — bind enhanced_article, not output.enhanced_article.'
+    : ''
   const rows = items.map((item) => {
     const id = item.elementId ?? 'that element'
     const path = item.statePath ?? 'that field'
@@ -109,13 +112,25 @@ function unresolvedStatePathLines(
     const id = item.elementId ?? 'that element'
     const path = item.statePath ?? 'that field'
     return [
-      `${prefix} "${id}" is bound to "${path}", which is not in host state. Load it with onLoad, or rebind.${hostHint}`,
+      `${prefix} "${id}" is bound to "${path}", which is not in host state. Load it with onLoad, or rebind.${hostHint}${envelopeHint}`,
     ]
   }
 
   return [
-    `${prefix} these widgets are bound to fields that are not in host state. Load them with onLoad, or rebind each to a top-level Output schema field.${hostHint}\n  - ${rows.join('\n  - ')}`,
+    `${prefix} these widgets are bound to fields that are not in host state. Load them with onLoad, or rebind each to a top-level Output schema field.${hostHint}${envelopeHint}\n  - ${rows.join('\n  - ')}`,
   ]
+}
+
+function looksLikeEnvelopeStatePath(statePath: string | undefined): boolean {
+  if (!statePath) return false
+  const path = statePath.trim()
+  return (
+    path.startsWith('output.') ||
+    path.startsWith('result[].') ||
+    path.startsWith('item.output.') ||
+    path.startsWith('selected.output.') ||
+    path.includes('.output.')
+  )
 }
 
 function warningLine(

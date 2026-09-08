@@ -312,8 +312,66 @@ function selectedItemId(item: unknown, index: number): string {
 }
 
 /**
+ * Keys that must not be copied from a History row onto host state. Collections
+ * and identity stay on `selected`; generate `content` is set from prose.
+ */
+const SELECTED_ITEM_SKIP_HOST_KEYS = new Set([
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_ERROR_KEY,
+  ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
+  ARENA_GENERATIVE_DELETED_KEY,
+  'hasMore',
+  'nextCursor',
+  'offset',
+  'result',
+  'history',
+  'items',
+  'id',
+  'key',
+  'slug',
+  'date',
+  'createdAt',
+  'input',
+  'output',
+  'index',
+])
+
+function selectedItemFlattenedRecord(item: unknown): Record<string, unknown> | undefined {
+  if (!isPlainRecord(item)) return undefined
+  const next = { ...item }
+  const output = next.output
+  if (isPlainRecord(output)) {
+    for (const [key, value] of Object.entries(output)) {
+      if (next[key] === undefined) next[key] = value
+    }
+  }
+  return next
+}
+
+/**
+ * Named result fields on a History row (`enhanced_article`, `coverage_report`)
+ * lifted to the same host keys generate uses, so DataText/KeyValue can bind
+ * them after View.
+ */
+function selectedItemLiftedFields(item: unknown): Record<string, unknown> {
+  const record = selectedItemFlattenedRecord(item)
+  if (!record) return {}
+  const lifted: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    if (SELECTED_ITEM_SKIP_HOST_KEYS.has(key) || value === undefined) continue
+    lifted[key] = value
+  }
+  return lifted
+}
+
+/**
  * Host state patch when a Repeat Button with `selectItem` is clicked. Copies the
- * row into `selected` and its prose into `content` without calling an API.
+ * row into `selected`, its prose into `content`, and named result fields onto
+ * the same host keys as generate, without calling an API.
  * Does not touch `inputs` or collection keys such as `history` or `items`.
  */
 export function selectedItemHostState(item: unknown, index: number): Record<string, unknown> {
@@ -321,6 +379,7 @@ export function selectedItemHostState(item: unknown, index: number): Record<stri
   const selected = item && typeof item === 'object' && !Array.isArray(item) ? item : { item }
   return {
     ...clearedActionErrorState(),
+    ...selectedItemLiftedFields(item),
     [ARENA_GENERATIVE_SELECTED_KEY]: selected,
     [ARENA_GENERATIVE_SELECTED_ID_KEY]: selectedItemId(item, index),
     ...(content ? { [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: content } : {}),
@@ -401,6 +460,27 @@ export function specHasSamePageSelectItem(spec: Spec, currentPath?: string): boo
 export function scrollGenerativeAppToTop(): void {
   if (typeof window === 'undefined') return
   window.scrollTo(0, 0)
+}
+
+/** Host marker for the same-page result-view Chip row (Enhanced Article, Coverage, …). */
+export const GENERATIVE_APP_VIEW_SWITCH_TEST_ID = 'view-switch-chips'
+
+/**
+ * Scrolls the result-view Chip row into view after History View or a generate
+ * CTA. Falls back to the document top only when `fallbackToTop` is set (Open /
+ * Back with no Chip row yet).
+ */
+export function scrollGenerativeAppToResults(options?: { fallbackToTop?: boolean }): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const chips = document.querySelector(`[data-testid="${GENERATIVE_APP_VIEW_SWITCH_TEST_ID}"]`)
+  if (chips && typeof (chips as { scrollIntoView?: unknown }).scrollIntoView === 'function') {
+    ;(chips as { scrollIntoView: (opts: ScrollIntoViewOptions) => void }).scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+    return
+  }
+  if (options?.fallbackToTop) scrollGenerativeAppToTop()
 }
 
 /**

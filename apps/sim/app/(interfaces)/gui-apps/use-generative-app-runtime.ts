@@ -18,6 +18,7 @@ import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-a
 import {
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
   clearedActionErrorState,
+  scrollGenerativeAppToResults,
   submittedInputsState,
 } from '@/lib/arena-generative-ui/types'
 import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
@@ -176,6 +177,11 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
         const result = await execute(actionId, values, generation, surface)
         if (!clockRef.current.isCurrent(actionId, generation)) return
         applyResult(result, Boolean(navigateTo), surface)
+        if (result.ok && surface !== 'chat') {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => scrollGenerativeAppToResults())
+          })
+        }
         if (
           shouldShowSaveToast({
             ok: result.ok,

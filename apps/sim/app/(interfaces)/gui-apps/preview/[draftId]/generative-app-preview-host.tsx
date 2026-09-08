@@ -30,6 +30,7 @@ import {
   clearedSelectedItemHostState,
   isJsonRenderSpec,
   navigationHref,
+  scrollGenerativeAppToResults,
   scrollGenerativeAppToTop,
   selectedItemHostState,
   streamingActionIdsFrom,
@@ -265,7 +266,7 @@ export function GenerativeAppPreviewHost({
               flushSync(() => {
                 mergeState(selectedItemHostState(item, index))
               })
-              scrollGenerativeAppToTop()
+              scrollGenerativeAppToResults({ fallbackToTop: true })
             }}
             onClearItem={() => {
               flushSync(() => {

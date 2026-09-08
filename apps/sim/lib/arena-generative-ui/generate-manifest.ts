@@ -133,10 +133,14 @@ function repairUserMessage(error: string, scopedPaths: string[]): string {
   const intro = numbered
     ? `That ${subject} failed validation:\n${error}`
     : `That ${subject} failed validation: ${error}`
+  const resultViewsHint = /repeats path|same path/i.test(error)
+    ? ' Those labels are same-page result views. Emit Chip setValue (one shared field, distinct values), not catalog Tabs with Label|path.'
+    : ''
+  const introWithHint = `${intro}${resultViewsHint}`
   if (scopedPaths.length > 0) {
     const fix = numbered ? 'Fix every numbered issue.' : 'Fix only what the error names.'
     return [
-      intro,
+      introWithHint,
       `Return one complete JSON object again, with manifest.pages containing only these page keys and their full specs: ${scopedPaths.join(', ')}. ${fix}`,
     ].join('\n\n')
   }
@@ -144,7 +148,7 @@ function repairUserMessage(error: string, scopedPaths: string[]): string {
     ? 'Fix every numbered issue and keep every other page, element, prop, and copy string identical.'
     : 'Fix only what the error names and keep every other page, element, prop, and copy string identical.'
   return [
-    intro,
+    introWithHint,
     `Return the corrected app as one complete JSON object in the same shape. ${fix}`,
   ].join('\n\n')
 }
@@ -389,6 +393,20 @@ export const EDIT_PRESERVATION_INSTRUCTION = [
   'Do not re-theme, re-layout, reword, reorder, rename, add, or remove anything that was not asked for.',
 ].join(' ')
 
+/**
+ * Edit requests often say "tabs" and misspell API keys. Catalog Tabs would fail
+ * validation (duplicate paths) and invented keys are rejected — both look like
+ * a no-op. Map those phrases onto Chip + layoutPlan.hostKeys instead of refusing.
+ */
+export const EDIT_RESULT_VIEWS_INSTRUCTION = [
+  'Same-page result "tabs" (Enhance Article, Coverage, Gap Analysis, Recommendations) after History View or after a form submit are Chip setValue, not catalog Tabs with Label|path.',
+  'Each Chip shares one setValue field with a distinct value (resultTab=article) and sits above the bound DataText/KeyValue panels; the panel showWhen uses that same field (resultTab=article).',
+  '"Bind X to the Enhance Article tab" means: set that panel\'s DataText (or KeyValue) statePath to host key X from layoutPlan.hostKeys in Declared API bindings — not an apiKey, not a new action.',
+  'If Requested Changes misspells a declared binding key or outputSchema field, use the declared spelling (run_histoy → run_history, ehnaced_article / enhaced_article → enhanced_article).',
+  'Bind statePath to layoutPlan.hostKeys only. Never output.enhanced_article, never result[].enhanced_article, never item.output.enhanced_article, never selected.output.enhanced_article — the host already lifts those envelopes onto enhanced_article (and aliases prose to content).',
+  'When the same result views must work after generate and after History View, edit both the generator page and the history page in one reply.',
+].join(' ')
+
 const EDIT_KEEP_PAGES_INSTRUCTION =
   'No page list was supplied. Keep exactly the pages in the existing manifest — same paths, same keys, same titles — unless the change request asks to add or remove one.'
 
@@ -618,6 +636,7 @@ export async function generateArenaGenerativeManifest(
       ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`
       : '',
     isPreserveEdit && intentBrief ? formatStructuredBriefForEdit(intentBrief) : '',
+    isPreserveEdit ? EDIT_RESULT_VIEWS_INSTRUCTION : '',
   ]
   const userPayload = (
     isScopedEdit && params.existingManifest

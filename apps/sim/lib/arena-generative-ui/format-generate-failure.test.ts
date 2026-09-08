@@ -76,6 +76,15 @@ describe('suggestionForGenerateFailure', () => {
     ).toContain('Chat')
   })
 
+  it('maps duplicate Tabs paths to Chip setValue result views', () => {
+    const suggestion = suggestionForGenerateFailure(
+      'Page "history" Tabs "views" repeats path "history". Each tab must be a distinct page path.'
+    )
+    expect(suggestion).toContain('Chip setValue')
+    expect(suggestion).toContain('enhanced_article')
+    expect(suggestion).toContain('layoutPlan.hostKeys')
+  })
+
   it('falls back to tightening the brief', () => {
     expect(suggestionForGenerateFailure('Manifest must be an object')).toContain(
       'Tighten User Input'

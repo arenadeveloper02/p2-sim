@@ -8,6 +8,8 @@ const SUGGEST_PAGES = 'Pin a JSON sitemap in Pages that lists every path the bri
 const SUGGEST_NAV = 'Name every page in User Input and how you move between them (Submit → results, Back, Tabs).'
 const SUGGEST_PATHS = 'Fix Pages paths (kebab-case like home or results) so they match User Input.'
 const SUGGEST_CONTROLS = 'Say what each control does: submit an API key, navigate to a page, or Open a row.'
+const SUGGEST_RESULT_CHIPS =
+  'Those are same-page result views (Enhanced Article, Coverage, …). In Requested Changes, ask for Chip setValue — not Tabs — and bind DataText to layoutPlan.hostKeys (enhanced_article), not output. or result[]. paths.'
 const SUGGEST_HOST_CRITIC =
   'Simplify that page in User Input: one primary action, Back on secondary pages, Table or cards instead of invented types, and bind KPIs or drop them.'
 const SUGGEST_HOST_KEY =
@@ -64,6 +66,9 @@ export function suggestionForGenerateFailure(error: string): string {
   }
   if (/would do nothing|no actionId, navigateTo/i.test(error)) {
     return SUGGEST_CONTROLS
+  }
+  if (/repeats path|same path/i.test(error)) {
+    return SUGGEST_RESULT_CHIPS
   }
   if (
     /nested inside another Card|more than one primary|Cards outside Repeat|onSuccess\.navigate target|not a catalog type|Bind the metric|Bind the series|Workspace/i.test(
