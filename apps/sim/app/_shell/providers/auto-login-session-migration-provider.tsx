@@ -11,8 +11,8 @@ const logger = createLogger('AutoLoginSessionMigrationProvider')
  * older deploys mixed cross-subdomain and host-only `__Secure-better-auth.*`
  * cookies (same name, two Domain scopes → redirect / logout loops).
  *
- * Children (including AutoLoginProvider) mount only after the clear finishes
- * so auto-login can mint a fresh session without racing the wipe.
+ * Children mount only after the clear finishes so a fresh Better Auth session
+ * can be established without racing the wipe.
  *
  * Bump the localStorage key when a new clear pass is required in production.
  */
