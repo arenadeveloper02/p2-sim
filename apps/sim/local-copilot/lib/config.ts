@@ -6,6 +6,10 @@ import {
   resolveLocalCopilotCatalogEntry,
 } from '@/local-copilot/lib/model-catalog'
 import { listLocalCopilotGeminiApiKeys } from '@/local-copilot/lib/providers/gemini-keys'
+import {
+  getLocalCopilotVertexNotConfiguredMessage,
+  isLocalCopilotVertexConfigured,
+} from '@/local-copilot/lib/providers/vertex-auth'
 import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
 /** Default Local Copilot main agent model (override with `COPILOT_MODEL`). */
@@ -17,10 +21,15 @@ const DEFAULT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
  */
 const DEFAULT_ANTHROPIC_SPECIALIST_MODEL = 'claude-haiku-4-5'
 /**
- * Default specialist / parallel-subagent model for Gemini parents. Flash-Lite
- * is the speed-optimized leaf; same API key as the catalog Gemini models.
+ * Default specialist / parallel-subagent model for Gemini (GenAI) parents.
+ * Flash-Lite is the speed-optimized leaf; same API key as catalog Gemini models.
  */
 const DEFAULT_GEMINI_SPECIALIST_MODEL = 'gemini-3.5-flash-lite'
+/**
+ * Default specialist / parallel-subagent model for Vertex parents. Same Google
+ * AI Studio Flash-Lite id as the GenAI Gemini path (Vertex only changes auth/backend).
+ */
+const DEFAULT_VERTEX_SPECIALIST_MODEL = 'gemini-3.5-flash-lite'
 /**
  * Default specialist / parallel-subagent model for Bedrock parents. Haiku 4.5
  * is the fast Claude on Bedrock; Converse uses the same AWS credentials as
@@ -29,7 +38,7 @@ const DEFAULT_GEMINI_SPECIALIST_MODEL = 'gemini-3.5-flash-lite'
 const DEFAULT_BEDROCK_SPECIALIST_MODEL = 'anthropic.claude-haiku-4-5-20251001-v1:0'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 const DEFAULT_BEDROCK_REGION = 'us-east-1'
-/** Default Gemini thinking level — `high` is the API default for 3.1 Pro and is much slower. */
+/** Default Gemini/Vertex thinking level — `high` is much slower on Pro. */
 const DEFAULT_GEMINI_THINKING_LEVEL = 'medium'
 
 const GEMINI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'none'])
@@ -39,15 +48,19 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   return value === 'true' || value === '1'
 }
 
+function usesGeminiThinking(provider: LocalCopilotProviderId): boolean {
+  return provider === 'gemini' || provider === 'vertex'
+}
+
 /**
- * Resolves `COPILOT_THINKING_LEVEL` for Gemini Local Copilot calls.
- * Defaults to `medium` for Gemini; ignored for other providers.
+ * Resolves `COPILOT_THINKING_LEVEL` for Gemini / Vertex Local Copilot calls.
+ * Defaults to `medium`; ignored for other providers.
  */
 export function resolveLocalCopilotThinkingLevel(
   provider: LocalCopilotProviderId,
   override = process.env.COPILOT_THINKING_LEVEL?.trim()
 ): string | undefined {
-  if (provider !== 'gemini') return undefined
+  if (!usesGeminiThinking(provider)) return undefined
   if (!override) return DEFAULT_GEMINI_THINKING_LEVEL
   const normalized = override.toLowerCase()
   // Gemini 3.8 Flash rejects `minimal`; treat it as `low` for latency-sensitive configs.
@@ -74,6 +87,7 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
     'azure-openai',
     'bedrock',
     'gemini',
+    'vertex',
     'openai-compatible',
   ]
   return allowed.includes(normalized as LocalCopilotProviderId)
@@ -96,7 +110,9 @@ function specialistEnvOverride(provider: LocalCopilotProviderId): string | undef
   const override = process.env.COPILOT_SPECIALIST_MODEL?.trim()
   if (!override) return undefined
   const isGeminiModel = override.startsWith('gemini')
-  if (provider === 'gemini') return isGeminiModel ? override : undefined
+  if (provider === 'gemini' || provider === 'vertex') {
+    return isGeminiModel ? override : undefined
+  }
   if (provider === 'anthropic') return isGeminiModel ? undefined : override
   if (provider === 'bedrock') return isBedrockModelId(override) ? override : undefined
   return override
@@ -104,7 +120,7 @@ function specialistEnvOverride(provider: LocalCopilotProviderId): string | undef
 
 /**
  * Resolves the specialist model: explicit override, else Haiku for Anthropic,
- * Flash for Gemini, Haiku 4.5 for Bedrock, else the main agent model.
+ * Flash-Lite for Gemini / Vertex, Haiku 4.5 for Bedrock, else the main agent model.
  */
 export function resolveSpecialistModel(
   provider: LocalCopilotProviderId,
@@ -115,6 +131,7 @@ export function resolveSpecialistModel(
   if (override) return override
   if (provider === 'anthropic') return DEFAULT_ANTHROPIC_SPECIALIST_MODEL
   if (provider === 'gemini') return DEFAULT_GEMINI_SPECIALIST_MODEL
+  if (provider === 'vertex') return DEFAULT_VERTEX_SPECIALIST_MODEL
   if (provider === 'bedrock') return DEFAULT_BEDROCK_SPECIALIST_MODEL
   return mainModel
 }
@@ -229,6 +246,13 @@ export function assertLocalCopilotEnabled(
     if (!hasBedrockCredentials() && !process.env.AWS_ACCESS_KEY_ID) {
       // Allow default chain; fail at request time if AWS cannot resolve credentials.
       return
+    }
+    return
+  }
+
+  if (config.provider === 'vertex') {
+    if (!isLocalCopilotVertexConfigured()) {
+      throw new Error(getLocalCopilotVertexNotConfiguredMessage())
     }
     return
   }

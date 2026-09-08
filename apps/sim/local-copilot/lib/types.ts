@@ -21,6 +21,7 @@ export type LocalCopilotProviderId =
   | 'azure-openai'
   | 'bedrock'
   | 'gemini'
+  | 'vertex'
   | 'openai-compatible'
 
 export interface LocalCopilotConfig {
@@ -34,9 +35,9 @@ export interface LocalCopilotConfig {
    */
   specialistModel: string
   /**
-   * Gemini thinking level for Local Copilot LLM calls (`low` / `medium` /
-   * `high`, plus `minimal` on Flash). Lower = faster / cheaper. Unset for
-   * non-Gemini providers.
+   * Thinking level for Gemini / Vertex Local Copilot LLM calls (`low` /
+   * `medium` / `high`, plus `minimal` on some Flash SKUs). Lower = faster /
+   * cheaper. Unset for other providers.
    */
   thinkingLevel?: string
   apiKey?: string

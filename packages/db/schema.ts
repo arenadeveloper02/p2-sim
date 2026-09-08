@@ -3395,6 +3395,7 @@ export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model'
   'gemini-3.8-flash',
   'gemini-2.5-pro',
   'gemini-3.1-pro',
+  'vertex-gemini-3.8-flash',
   'bedrock-claude-opus-5',
   'bedrock-claude-sonnet-5',
   'bedrock-claude-opus-4-8',
