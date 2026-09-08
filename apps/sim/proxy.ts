@@ -18,6 +18,21 @@ function hasEmailCookie(request: NextRequest): boolean {
   const emailCookie = request.cookies.get('email')
   return !!emailCookie?.value
 }
+
+/**
+ * Arena `/sso/sim-resume` bounce with absolute returnTo for the current Sim URL.
+ */
+function buildArenaSimResumeUrl(request: NextRequest): URL | null {
+  const arenaHub =
+    getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim() ||
+    getEnv('ARENA_FRONTEND_APP_URL')?.trim() ||
+    getLoginRedirectUrl(request.nextUrl.hostname)
+  if (!arenaHub) return null
+  const resume = new URL('/sso/sim-resume', arenaHub.replace(/\/$/, ''))
+  const returnTo = request.nextUrl.href
+  resume.searchParams.set('returnTo', returnTo)
+  return resume
+}
 export interface CorsPolicy {
   origin: string
   credentials: boolean
@@ -417,22 +432,34 @@ export async function proxy(request: NextRequest) {
     return track(request, NextResponse.next())
   }
 
+  // Arena redirect SSO callback / error — no Better Auth session yet
+  if (
+    url.pathname === '/auth/arena-sso-callback' ||
+    url.pathname === '/auth/arena-sso-error'
+  ) {
+    return track(request, NextResponse.next())
+  }
+
   if (url.pathname.startsWith('/workspace')) {
     if (!hasActiveSession) {
       if (isDev) {
         if (hasEmailCookie(request)) {
           return track(request, NextResponse.next())
         }
+        // Prefer Arena SSO resume when Arena frontend URL is configured
+        const arenaResume = buildArenaSimResumeUrl(request)
+        if (arenaResume) {
+          return track(request, NextResponse.redirect(arenaResume))
+        }
         return track(request, NextResponse.redirect(new URL('/login', request.url)))
       }
-      const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
-      if (arenaHub) {
-        // Same as dev: allow workspace to load so AutoLoginProvider can run sign-in
-        // when the email cookie is present (avoids flashing session-required first).
+      const arenaResume = buildArenaSimResumeUrl(request)
+      if (arenaResume) {
+        // Keep email-cookie auto-login until shared-password path is removed
         if (hasEmailCookie(request)) {
           return track(request, NextResponse.next())
         }
-        return track(request, NextResponse.redirect(new URL('/session-required', request.url)))
+        return track(request, NextResponse.redirect(arenaResume))
       }
       return track(request, NextResponse.next())
     }
@@ -501,6 +528,8 @@ export const config = {
     '/signup',
     '/invite/:path*', // Match invitation routes
     '/session-required',
+    '/auth/arena-sso-callback',
+    '/auth/arena-sso-error',
     '/api/:path*', // Runtime CORS
     // Catch-all for other pages, excluding static assets and public directories
     '/((?!api/|api$|_next/static|_next/image|ingest|favicon.ico|logo/|landing/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
