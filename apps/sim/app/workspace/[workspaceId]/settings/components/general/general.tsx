@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
-  ChipCombobox,
+  // ChipCombobox,
   ChipModal,
   ChipModalBody,
   ChipModalError,
@@ -24,7 +24,7 @@ import { telemetryContract } from '@/lib/api/contracts/telemetry'
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
 import { isHosted } from '@/lib/core/config/env-flags'
-import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezone'
+// import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezone'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import type { SettingsAction } from '@/app/workspace/[workspaceId]/settings/components/settings-header/settings-header'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
@@ -42,11 +42,11 @@ import { clearUserData } from '@/stores'
 const logger = createLogger('General')
 
 /** Human-friendly timezone options for the picker, common zones first. */
-const TIMEZONE_OPTIONS = getTimezoneOptions()
+// const TIMEZONE_OPTIONS = getTimezoneOptions()
 
 /**
- * Shared trigger width for the three appearance dropdowns (Theme, Timezone, Snap
- * to grid) so they line up as one column instead of three differently-sized
+ * Shared trigger width for the appearance dropdowns (Theme, Timezone, Snap
+ * to grid) so they line up as one column instead of differently-sized
  * pills. Wide enough for the longest common timezone label.
  */
 const DROPDOWN_TRIGGER_CLASS = 'w-[240px] flex-shrink-0'
@@ -203,13 +203,13 @@ export function General() {
     )
   }
 
-  const handleThemeChange = async (value: string) => {
-    await updateSetting.mutateAsync({ key: 'theme', value: value as 'light' | 'dark' })
-  }
+  // const handleThemeChange = async (value: string) => {
+  //   await updateSetting.mutateAsync({ key: 'theme', value: value as 'light' | 'dark' })
+  // }
 
-  const handleTimezoneChange = async (value: string) => {
-    await updateSetting.mutateAsync({ key: 'timezone', value })
-  }
+  // const handleTimezoneChange = async (value: string) => {
+  //   await updateSetting.mutateAsync({ key: 'timezone', value })
+  // }
 
   const handleAutoConnectChange = async (checked: boolean) => {
     if (checked !== settings?.autoConnect && !updateSetting.isPending) {
@@ -400,7 +400,7 @@ export function General() {
 
         <SettingsSection label='Preferences'>
           <div className='flex flex-col gap-4'>
-            <div className='flex items-center justify-between'>
+            {/* <div className='flex items-center justify-between'>
               <Label>Theme</Label>
               <div className={DROPDOWN_TRIGGER_CLASS}>
                 <ChipSelect
@@ -434,7 +434,7 @@ export function General() {
                   options={TIMEZONE_OPTIONS}
                 />
               </div>
-            </div>
+            </div> */}
 
             <div className='flex items-center justify-between'>
               <div className='flex items-center gap-1.5'>
