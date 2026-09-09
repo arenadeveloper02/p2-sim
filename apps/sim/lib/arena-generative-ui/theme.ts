@@ -72,7 +72,6 @@ export const DEFAULT_ARENA_GENERATIVE_THEME: ArenaGenerativeTheme = {
   radius: 'md',
   density: 'comfortable',
   font: 'sans',
-  colorScheme: 'light',
 }
 
 function asEnum<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {

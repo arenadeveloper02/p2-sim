@@ -66,6 +66,11 @@
   font-family: var(--font-ds-sans, inherit);
 }
 
+/**
+ * Dark tokens. `html.dark` is set by the Sim theme blocking script before paint,
+ * so the FOUC bridge matches `sim-theme` before React sets `data-gui-theme`.
+ */
+html.dark [data-gui-theme],
 [data-gui-theme="dark"] {
   --gui-canvas: #12141a;
   --gui-surface: #1c1f28;

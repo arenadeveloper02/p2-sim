@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import {
-  ARENA_GENERATIVE_THEME_COLOR_SCHEMES,
   ARENA_GENERATIVE_THEME_DENSITIES,
   ARENA_GENERATIVE_THEME_RADII,
   type ArenaGenerativeTheme,
@@ -18,6 +17,7 @@ interface PreviewThemePickerProps {
 /**
  * Preview-only theme knobs. Live CSS vars; persist by pasting the copied
  * edit instruction into Requested Changes (theme-only edits skip the LLM).
+ * Light/dark follows the visitor Sim theme (`sim-theme`), not this picker.
  */
 export function PreviewThemePicker({ theme, onChange }: PreviewThemePickerProps) {
   const [copied, setCopied] = useState(false)
@@ -71,22 +71,9 @@ export function PreviewThemePicker({ theme, onChange }: PreviewThemePickerProps)
           ))}
         </select>
       </label>
-      <label className='flex flex-col gap-1 text-xs'>
-        Scheme
-        <select
-          value={current.colorScheme ?? 'light'}
-          onChange={(event) =>
-            patch({ colorScheme: event.target.value as ArenaGenerativeTheme['colorScheme'] })
-          }
-          className='h-8 rounded border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-canvas,#f7f8f9)] px-2'
-        >
-          {ARENA_GENERATIVE_THEME_COLOR_SCHEMES.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-      </label>
+      <p className='pb-1 text-[var(--gui-text-muted,#575a66)] text-xs'>
+        Light/dark follows Sim theme settings
+      </p>
       <button
         type='button'
         onClick={async () => {
