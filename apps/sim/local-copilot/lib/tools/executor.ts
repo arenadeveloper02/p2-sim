@@ -280,7 +280,20 @@ async function runCreateWorkflowOnce(
     success: mutation.success,
     result: mutation.output ?? { error: mutation.error },
     error: mutation.error,
-    ...(createdWorkflowId ? { createdWorkflowId } : {}),
+    ...(createdWorkflowId
+      ? {
+          createdWorkflowId,
+          resources: [
+            {
+              type: 'workflow',
+              id: createdWorkflowId,
+              title:
+                (typeof output?.workflowName === 'string' && output.workflowName.trim()) ||
+                'Workflow',
+            },
+          ],
+        }
+      : {}),
   }
   if (created.success) {
     rememberIdempotentResult(
