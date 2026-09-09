@@ -26,6 +26,12 @@ const DEFAULT_TOKEN_COUNT_MODEL = LOCAL_COPILOT_TOKEN_COUNT_MODEL
 export const LOCAL_COPILOT_PROMPT_TOKEN_BUDGET = 120_000
 
 /**
+ * Higher soft ceiling for Gemini 3.8 Flash (1M context). Still well below the
+ * catalog window so cost/latency stay bounded for Local Copilot turns.
+ */
+export const LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET = 300_000
+
+/**
  * Tighter ceiling for Bedrock Converse. Catalog Claude entries list 1M windows
  * (and Llama Scout 10M) but on-demand Converse is typically 200k without the
  * 1M beta, Llama/Mistral/GLM do not cache, and tiktoken undercounts Claude.
@@ -43,6 +49,12 @@ export const LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET = 8_000
 
 /** Matches Bedrock/Anthropic local-copilot default `maxTokens`. */
 export const LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS = 8_192
+
+/**
+ * Higher generation cap for Gemini 3.8 Flash (catalog max 65,536). 32k leaves
+ * headroom for thinking/tool turns without spending the full output quota.
+ */
+export const LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS = 32_768
 
 /**
  * Headroom for tokenizer mismatch, message framing, and cache/tool overhead
@@ -92,14 +104,13 @@ export interface ResolvedLocalCopilotPromptTokenBudget {
  * Smaller Bedrock windows (e.g. Llama 128k) shrink below the 120k soft cap so
  * input + tools + maxTokens fit. Larger Anthropic/OpenAI windows stay
  * soft-capped at 120k. Bedrock uses a 48k soft cap and a 200k window cap.
+ * Gemini 3.8 Flash uses a 300k soft cap.
  */
 export function resolveLocalCopilotPromptTokenBudget(
   options: ResolveLocalCopilotPromptTokenBudgetOptions
 ): ResolvedLocalCopilotPromptTokenBudget {
   const isBedrock = options.provider === 'bedrock'
-  const softCap =
-    options.softCap ??
-    (isBedrock ? LOCAL_COPILOT_BEDROCK_PROMPT_TOKEN_BUDGET : LOCAL_COPILOT_PROMPT_TOKEN_BUDGET)
+  const softCap = options.softCap ?? resolveDefaultPromptTokenSoftCap(options.model, options.provider)
   const maxOutputTokens = Math.max(
     0,
     options.maxOutputTokens ?? LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
@@ -125,6 +136,38 @@ export function resolveLocalCopilotPromptTokenBudget(
   const tokenBudget = Math.min(softCap, usable)
 
   return { tokenBudget, contextWindow, reservedTokens, softCapped }
+}
+
+/**
+ * Soft cap by provider/model. Explicit `options.softCap` still wins at the
+ * call site.
+ */
+export function resolveDefaultPromptTokenSoftCap(
+  model: string,
+  provider?: LocalCopilotProviderId
+): number {
+  if (provider === 'bedrock') return LOCAL_COPILOT_BEDROCK_PROMPT_TOKEN_BUDGET
+  const normalized = normalizeLocalCopilotModelId(model)
+  if (normalized === 'gemini-3.8-flash') {
+    return LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET
+  }
+  return LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+}
+
+/**
+ * Max completion tokens for a Local Copilot parent/specialist request.
+ * Gemini 3.8 Flash gets 32k; everyone else keeps the 8k default.
+ */
+export function resolveLocalCopilotMaxOutputTokens(model: string): number {
+  const normalized = normalizeLocalCopilotModelId(model)
+  if (normalized === 'gemini-3.8-flash') {
+    return LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS
+  }
+  return LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
+}
+
+function normalizeLocalCopilotModelId(model: string): string {
+  return model.toLowerCase().replace(/^vertex\//, '').trim()
 }
 
 /**
