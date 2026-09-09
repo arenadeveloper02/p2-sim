@@ -21,6 +21,7 @@ import {
   prefetchWorkspaceHostContext,
   prefetchWorkspaceSidebar,
 } from '@/app/workspace/[workspaceId]/prefetch'
+import { ArenaThemeSync } from '@/app/workspace/[workspaceId]/providers/arena-theme-sync'
 import { BlockVisibilityLoader } from '@/app/workspace/[workspaceId]/providers/block-visibility-loader'
 import { CustomBlocksLoader } from '@/app/workspace/[workspaceId]/providers/custom-blocks-loader'
 import { DesktopOAuthConnectListener } from '@/app/workspace/[workspaceId]/providers/desktop-oauth-connect-listener'
@@ -127,6 +128,7 @@ async function WorkspaceLayoutInner({
           <ToastProvider>
             <DesktopOAuthConnectListener />
             <SettingsLoader />
+            <ArenaThemeSync />
             <ProviderModelsLoader />
             <CustomBlocksLoader />
             <BlockVisibilityLoader />

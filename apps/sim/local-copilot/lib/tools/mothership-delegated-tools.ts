@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
@@ -204,13 +205,20 @@ async function executeCopilotServerTool(
   )
   const handler = createServerToolHandler(toolName)
   const result = await handler(args, toCopilotServerToolContext(ctx, workflowId))
+  const output = result.output ?? (result.error ? { error: result.error } : {})
+  const resources =
+    result.resources && result.resources.length > 0
+      ? result.resources
+      : result.success
+        ? extractResourcesFromToolResult(toolName, args, output)
+        : []
 
   return {
     toolName,
     success: result.success,
-    result: result.output ?? (result.error ? { error: result.error } : {}),
+    result: output,
     error: result.error,
-    resources: result.resources,
+    ...(resources.length > 0 ? { resources } : {}),
   }
 }
 

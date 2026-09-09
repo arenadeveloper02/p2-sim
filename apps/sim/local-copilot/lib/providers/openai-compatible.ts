@@ -67,6 +67,10 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
         stream_options: { include_usage: true },
         temperature: request.temperature ?? 0.2,
         max_tokens: request.maxTokens ?? 4096,
+        // OpenAI automatic prompt caching: stable key improves prefix reuse across turns.
+        ...(config.provider === 'openai'
+          ? { prompt_cache_key: `local-copilot:${request.model || config.model}` }
+          : {}),
       }
 
       const response = await fetchProviderWithRetry(
@@ -99,6 +103,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
       const toolCalls = new Map<number, { id: string; name: string; arguments: string }>()
       let inputTokens = 0
       let outputTokens = 0
+      let cacheReadTokens = 0
 
       while (true) {
         const { done, value } = await reader.read()
@@ -116,7 +121,11 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
             yield {
               type: 'done',
               finishReason: 'stop',
-              usage: { inputTokens, outputTokens },
+              usage: {
+                inputTokens,
+                outputTokens,
+                ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+              },
             }
             continue
           }
@@ -137,12 +146,23 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
               usage?: {
                 prompt_tokens?: number
                 completion_tokens?: number
+                /** OpenAI automatic prompt cache hits. */
+                prompt_tokens_details?: { cached_tokens?: number | null } | null
+                /** DeepSeek legacy cache hit field. */
+                prompt_cache_hit_tokens?: number | null
               }
             }
 
             if (parsed.usage) {
               inputTokens = parsed.usage.prompt_tokens ?? inputTokens
               outputTokens = parsed.usage.completion_tokens ?? outputTokens
+              const cached =
+                parsed.usage.prompt_tokens_details?.cached_tokens ??
+                parsed.usage.prompt_cache_hit_tokens ??
+                0
+              if (typeof cached === 'number' && cached > 0) {
+                cacheReadTokens = cached
+              }
             }
 
             const choice = parsed.choices?.[0]
@@ -180,7 +200,11 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
               yield {
                 type: 'done',
                 finishReason: 'stop',
-                usage: { inputTokens, outputTokens },
+                usage: {
+                  inputTokens,
+                  outputTokens,
+                  ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+                },
               }
             }
           } catch {}

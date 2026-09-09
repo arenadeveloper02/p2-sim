@@ -23,6 +23,7 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { resolveLocalCopilotMaxOutputTokens } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import {
@@ -30,6 +31,7 @@ import {
   waitForLocalToolConfirmation,
 } from '@/local-copilot/lib/security/request-tool-confirmation'
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   bindLocalFileIntentChannel,
@@ -274,6 +276,7 @@ export async function executeSpecialistLoop(
           model: params.model,
           messages,
           tools,
+          maxTokens: resolveLocalCopilotMaxOutputTokens(params.model),
           signal,
         })) {
           if (chunk.type === 'text' && chunk.content) assistantText += chunk.content
@@ -485,9 +488,6 @@ export async function executeSpecialistLoop(
 
         if (toolResult.createdWorkflowId) {
           params.toolCtx.workflowId = toolResult.createdWorkflowId
-          const refreshed = await refreshToolContext(params.toolCtx)
-          params.toolCtx.structuredContext = refreshed.structuredContext
-          params.toolCtx.workflowRevision = refreshed.workflowRevision
         } else if (call.name === 'edit_workflow' && toolResult.success) {
           const output =
             toolResult.result && typeof toolResult.result === 'object'
@@ -500,6 +500,16 @@ export async function executeSpecialistLoop(
           if (resolvedWorkflowId) {
             params.toolCtx.workflowId = resolvedWorkflowId
           }
+        }
+
+        if (
+          toolRequiresWorkflowContextRefresh({
+            toolName: call.name,
+            success: toolResult.success,
+            createdWorkflowId: toolResult.createdWorkflowId,
+            result: toolResult.result,
+          })
+        ) {
           const refreshed = await refreshToolContext(params.toolCtx)
           params.toolCtx.structuredContext = refreshed.structuredContext
           params.toolCtx.workflowRevision = refreshed.workflowRevision
