@@ -3,7 +3,9 @@
 import { chipVariants, cn } from '@sim/emcn'
 import { ArrowLeft } from '@sim/emcn/icons'
 import Link from 'next/link'
+import { ArenaDashboardWordmark } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-brand-header/arena-dashboard-wordmark'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
+import { defaultBrandConfig } from '@/lib/branding'
 
 interface SidebarBrandHeaderProps {
   workspaceId: string
@@ -15,6 +17,16 @@ interface SidebarBrandHeaderProps {
   brandWordmarkUrl?: string
   brandName?: string
   arenaHubAgentsUrl?: string | null
+}
+
+/**
+ * True when the resolved wordmark is the default Arena dashboard SVG (themeable inline).
+ */
+function isDefaultArenaDashboardWordmark(url?: string): boolean {
+  if (!url) return false
+  return (
+    url === defaultBrandConfig.wordmarkUrl || url === defaultBrandConfig.logoUrlBlacktext
+  )
 }
 
 /**
@@ -30,12 +42,13 @@ export function SidebarBrandHeader({
   arenaHubAgentsUrl,
 }: SidebarBrandHeaderProps) {
   const expandedBrandUrl = brandWordmarkUrl || brandLogoUrl
+  const useThemedArenaWordmark = isDefaultArenaDashboardWordmark(brandWordmarkUrl)
 
   if (!brandLogoUrl && !expandedBrandUrl && !arenaHubAgentsUrl) return null
 
   return (
     <div className='flex-shrink-0'>
-      {brandLogoUrl || expandedBrandUrl ? (
+      {brandLogoUrl || expandedBrandUrl || useThemedArenaWordmark ? (
         <>
           <div
             className={cn(
@@ -62,12 +75,19 @@ export function SidebarBrandHeader({
                       className='size-[34px] object-contain'
                     />
                   )
-                : expandedBrandUrl && (
-                    <img
-                      src={expandedBrandUrl}
-                      alt={brandName || ''}
-                      className='h-[44px] w-auto max-w-[220px] object-contain object-left'
+                : useThemedArenaWordmark ? (
+                    <ArenaDashboardWordmark
+                      title={brandName}
+                      className='h-[44px] w-auto max-w-[220px]'
                     />
+                  ) : (
+                    expandedBrandUrl && (
+                      <img
+                        src={expandedBrandUrl}
+                        alt={brandName || ''}
+                        className='h-[44px] w-auto max-w-[220px] object-contain object-left'
+                      />
+                    )
                   )}
             </Link>
           </div>
