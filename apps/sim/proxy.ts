@@ -19,12 +19,18 @@ const logger = createLogger('Proxy')
  * No Better Auth session: send the browser to Arena hub to mint an SSO code.
  * Local/dev falls back to `/login`. Non-local falls back to `/session-required`
  * when the hub URL cannot be resolved.
+ *
+ * `returnTo` uses `NEXT_PUBLIC_APP_URL` + path — not `request.nextUrl.href`, which
+ * becomes `https://0.0.0.0:3000/...` when the container sets `HOSTNAME=0.0.0.0`.
  */
 function redirectUnauthenticated(request: NextRequest): NextResponse {
   if (isDev) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
-  const resume = buildArenaSimResumeUrl(request.nextUrl.href, request.nextUrl.hostname)
+  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
+  const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
+  const returnTo = appBase ? new URL(pathWithSearch, `${appBase}/`).href : null
+  const resume = returnTo ? buildArenaSimResumeUrl(returnTo, request.nextUrl.hostname) : null
   if (resume) {
     return NextResponse.redirect(resume)
   }
