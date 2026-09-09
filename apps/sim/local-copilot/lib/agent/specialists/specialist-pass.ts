@@ -23,6 +23,7 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { resolveLocalCopilotMaxOutputTokens } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import {
@@ -275,6 +276,7 @@ export async function executeSpecialistLoop(
           model: params.model,
           messages,
           tools,
+          maxTokens: resolveLocalCopilotMaxOutputTokens(params.model),
           signal,
         })) {
           if (chunk.type === 'text' && chunk.content) assistantText += chunk.content

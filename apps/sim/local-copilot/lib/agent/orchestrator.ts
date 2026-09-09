@@ -64,8 +64,8 @@ import {
   estimateChatMessagesTokens,
   estimateToolDefinitionTokens,
   LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
-  LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
+  resolveLocalCopilotMaxOutputTokens,
   resolveLocalCopilotPromptTokenBudget,
   resolveLocalCopilotTokenCountModel,
   resolveWorkflowContextDetail,
@@ -538,11 +538,12 @@ export async function* runLocalCopilotAgent(
   })
 
   const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, tokenCountModel)
+  const maxOutputTokens = resolveLocalCopilotMaxOutputTokens(config.model)
   const promptBudget = resolveLocalCopilotPromptTokenBudget({
     model: config.model,
     provider: config.provider,
     toolDefinitionTokens: estimatedToolDefinitionTokens,
-    maxOutputTokens: LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
+    maxOutputTokens,
   })
 
   const messages: ChatMessage[] = fitPromptWithSlots(
@@ -863,6 +864,7 @@ export async function* runLocalCopilotAgent(
         model: config.model,
         messages,
         tools: roundTools,
+        maxTokens: maxOutputTokens,
         signal: params.signal,
       }),
       abortSignal: params.signal,
@@ -1996,6 +1998,7 @@ export async function* runLocalCopilotAgent(
         model: config.model,
         messages,
         tools,
+        maxTokens: maxOutputTokens,
         signal: params.signal,
       }),
       abortSignal: params.signal,
