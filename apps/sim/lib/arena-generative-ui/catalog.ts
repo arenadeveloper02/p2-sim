@@ -414,7 +414,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         setValue: z.string().nullable(),
       }),
       description:
-        'Compact pill. tone is muted, brand, or info. Optional actionId, navigateTo, or setValue (the string to put in a named field, as "query=Stripe" or "resultTab=article"). Same-page result views: one Chip per view, shared setValue field, distinct values, no actionId — place that Chip row above the bound panels (top of the results Card) or at the left of a horizontal split. Never after DataText and never as Card footer actions. The host paints the selected Chip brand and keeps History selectedId. Do not emit a brand Chip and a muted Chip for the same label. Suggestion chips and entity meta keep authored tone.',
+        'Compact pill. tone is muted, brand, or info. Optional actionId, navigateTo, or setValue (the string to put in a named field, as "query=Stripe" or "resultTab=article"). Same-page result views: one Chip per view, shared setValue field, distinct values, no actionId — place a horizontal Chip row above the bound panels (top of the results Card/Section). A left vertical rail only when the brief explicitly asks for it (one vertical Stack of those Chips beside the panels). Never after DataText and never as Card footer actions. The host paints the selected Chip brand and keeps History selectedId. Do not emit a brand Chip and a muted Chip for the same label. Suggestion chips and entity meta keep authored tone.',
     },
     Icon: {
       props: z.object({

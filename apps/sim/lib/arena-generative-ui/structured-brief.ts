@@ -779,8 +779,8 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   results: [
     'ARCHETYPE RECIPE: results',
     'Purpose: Consume or analyze generated output.',
-    'Structure: Context → Chip setValue row when same-page result views exist (top or left) → primary result → actions.',
-    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name). Same-page result views are Chip setValue above those panels (or left of a horizontal split) — not after DataText and not Card footer. Structured hostKeys use Repeat, Table, Stat, or KeyValue only when the blueprint or layoutPlan named them. A layoutPlan collection is Repeat or Table, never KeyValue JSON. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
+    'Structure: Context → horizontal Chip setValue row when same-page result views exist → primary result → actions.',
+    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name). Same-page result views are Chip setValue in a horizontal row above those panels — not a left vertical rail unless the brief asks, not after DataText, and not Card footer. Structured hostKeys use Repeat, Table, Stat, or KeyValue only when the blueprint or layoutPlan named them. A layoutPlan collection is Repeat or Table, never KeyValue JSON. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
   ].join('\n'),
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',

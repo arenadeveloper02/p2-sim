@@ -14,7 +14,7 @@ export const ARENA_GENERATIVE_UI_LAYOUT_PROMPT = [
   'forms — Multi-field Form: Section "narrow", left-aligned. The host enforces that measure on form-only Sections and stretches Form to fill its Card. SearchField hero may sit on a wide Section. Do not run a form the full 1280px.',
   'columns — At most two primary content columns (Columns main+sidebar, or Grid columns 2 for form fields). Grid columns 3 only for a Repeat card collection. Do not use three peer chrome columns except Workspace (navigator + primary + inspector; navigator and inspector are supporting, not second mains). Do not put a generate form beside an empty results pane — stack wait then results below the form, or navigate.',
   'toolbar — Related filters and secondary actions share one Toolbar above Table/Repeat. Do not scatter Filter, Chip, or Select through the page.',
-  'views — Same-page result views (Chip setValue) sit at the top of the results group, or at the left of a horizontal split. Never after DataText and never as Card footer chips.',
+  'views — Same-page result views (Chip setValue) sit in a horizontal row at the top of the results group. A left vertical rail only when the brief explicitly asks for it. Never after DataText and never as Card footer chips.',
   'primary — One primary action: PageHeader trailing child, or SubmitButton / SearchField at the end of its task group. Do not put a second prominent Button above the task.',
   'rhythm — gap "lg" between groups on Stack / Grid / Columns. Align related content to shared edges. Use whitespace to separate conceptual groups. Prefer spacing tokens over arbitrary px.',
   'chrome — PageHeader then the task. Do not stack extra display titles, Stat rows, or Alerts above the primary task.',

@@ -342,6 +342,24 @@ function isViewSwitchChrome(
   return kids.every((childId) => isViewSwitchChrome(elements, rootId, childId))
 }
 
+/**
+ * True when chrome is one authored vertical Stack/Toolbar of view-switch Chips.
+ * That is the only left-rail pattern — loose Chips always become a top row.
+ */
+function isAuthoredLeftRailViewSwitch(
+  elements: Record<string, SpecElement>,
+  chromeIds: string[]
+): boolean {
+  if (chromeIds.length !== 1) return false
+  const only = elements[chromeIds[0]]
+  if (!only || (only.type !== 'Stack' && only.type !== 'Toolbar')) return false
+  const direction = asString(
+    only.props?.direction,
+    only.type === 'Toolbar' ? 'horizontal' : 'vertical'
+  )
+  return direction === 'vertical'
+}
+
 function partitionViewSwitchChrome(
   childIds: string[],
   elements: Record<string, SpecElement>,
@@ -2349,25 +2367,68 @@ export function SpecRenderer({
         if (!fieldIsVisible(props, visibilityValues)) return null
         const justify = asString(props.justify, 'start')
         const horizontal = asString(props.direction, 'vertical') === 'horizontal'
+        const gapStyle = {
+          gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+          ...styleFromProps(props),
+        }
+        const stackClassName = cn(
+          'flex',
+          horizontal ? 'flex-row' : 'flex-col',
+          alignItemsClass(props.align, 'stretch'),
+          justify === 'center' && 'justify-center',
+          justify === 'between' && 'justify-between',
+          justify === 'end' && 'justify-end',
+          asBoolean(props.wrap) && 'flex-wrap'
+        )
+        /** Pure Chip rails keep authored direction (vertical left rail stays vertical). */
+        const chipRailOnly =
+          childIds.length > 0 &&
+          childIds.every((childId) => isViewSwitchChrome(elements, spec.root, childId))
+        if (chipRailOnly) {
+          return (
+            <div className={stackClassName} style={gapStyle}>
+              {renderChildNodes(childIds)}
+            </div>
+          )
+        }
         const partitioned = partitionViewSwitchChrome(childIds, elements, spec.root)
+        const leftRail =
+          horizontal &&
+          partitioned.chromeIds.length > 0 &&
+          isAuthoredLeftRailViewSwitch(elements, partitioned.chromeIds)
+        /** Loose Chips beside content were a vertical left rail — hoist to a top row. */
+        if (horizontal && partitioned.chromeIds.length > 0 && !leftRail) {
+          return (
+            <div
+              className={cn('flex w-full min-w-0 flex-col', alignItemsClass(props.align, 'stretch'))}
+              style={gapStyle}
+            >
+              {renderChildNodes(partitioned.leadIds)}
+              {renderViewSwitchRow(partitioned.chromeIds, 'top')}
+              {partitioned.bodyIds.length > 0 ? (
+                <div
+                  className={cn(
+                    'flex min-w-0 flex-row',
+                    alignItemsClass(props.align, 'stretch'),
+                    justify === 'center' && 'justify-center',
+                    justify === 'between' && 'justify-between',
+                    justify === 'end' && 'justify-end',
+                    asBoolean(props.wrap) && 'flex-wrap'
+                  )}
+                  style={{
+                    gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+                  }}
+                >
+                  {renderChildNodes(partitioned.bodyIds)}
+                </div>
+              ) : null}
+            </div>
+          )
+        }
         return (
-          <div
-            className={cn(
-              'flex',
-              horizontal ? 'flex-row' : 'flex-col',
-              alignItemsClass(props.align, 'stretch'),
-              justify === 'center' && 'justify-center',
-              justify === 'between' && 'justify-between',
-              justify === 'end' && 'justify-end',
-              asBoolean(props.wrap) && 'flex-wrap'
-            )}
-            style={{
-              gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
-              ...styleFromProps(props),
-            }}
-          >
+          <div className={stackClassName} style={gapStyle}>
             {renderChildNodes(partitioned.leadIds)}
-            {renderViewSwitchRow(partitioned.chromeIds, horizontal ? 'left' : 'top')}
+            {renderViewSwitchRow(partitioned.chromeIds, leftRail ? 'left' : 'top')}
             {renderChildNodes(partitioned.bodyIds)}
           </div>
         )

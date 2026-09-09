@@ -48,7 +48,7 @@ describe('ARENA_GENERATIVE_UI_COMPOSITION_PROMPT', () => {
     )
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(/toolbar[^\n]*Toolbar above Table\/Repeat/)
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(
-      /views[^\n]*Same-page result views \(Chip setValue\) sit at the top/
+      /views[^\n]*Same-page result views \(Chip setValue\) sit in a horizontal row at the top/
     )
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(/primary[^\n]*PageHeader trailing child/)
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(/primary[^\n]*end of its task group/)

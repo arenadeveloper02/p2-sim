@@ -400,7 +400,8 @@ export const EDIT_PRESERVATION_INSTRUCTION = [
  */
 export const EDIT_RESULT_VIEWS_INSTRUCTION = [
   'Same-page result "tabs" (Enhance Article, Coverage, Gap Analysis, Recommendations) after History View or after a form submit are Chip setValue, not catalog Tabs with Label|path.',
-  'Each Chip shares one setValue field with a distinct value (resultTab=article) and sits above the bound DataText/KeyValue panels; the panel showWhen uses that same field (resultTab=article).',
+  'Default layout: one horizontal Chip row ABOVE the bound DataText/KeyValue panels (Section/Card top). Do not put Chips left of a horizontal split and do not wrap them in a vertical Stack unless Requested Changes explicitly asks for a left rail.',
+  'Each Chip shares one setValue field with a distinct value (resultTab=article); the panel showWhen uses that same field (resultTab=article).',
   '"Bind X to the Enhance Article tab" means: set that panel\'s DataText (or KeyValue) statePath to host key X from layoutPlan.hostKeys in Declared API bindings — not an apiKey, not a new action.',
   'If Requested Changes misspells a declared binding key or outputSchema field, use the declared spelling (run_histoy → run_history, ehnaced_article / enhaced_article → enhanced_article).',
   'Bind statePath to layoutPlan.hostKeys only. Never output.enhanced_article, never result[].enhanced_article, never item.output.enhanced_article, never selected.output.enhanced_article — the host already lifts those envelopes onto enhanced_article (and aliases prose to content).',

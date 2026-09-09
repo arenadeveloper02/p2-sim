@@ -3448,6 +3448,98 @@ describe('SpecRenderer', () => {
     )
   })
 
+  it('hoists loose result-view Chips in a horizontal Stack into a top horizontal row', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['row'] },
+        row: {
+          type: 'Stack',
+          props: { direction: 'horizontal', gap: 'md' },
+          children: ['article', 'gaps', 'coverage', 'recs', 'body'],
+        },
+        article: {
+          type: 'Chip',
+          props: { text: 'Enhanced Article', setValue: 'resultTab=article' },
+          children: [],
+        },
+        gaps: {
+          type: 'Chip',
+          props: { text: 'Gap Analysis', setValue: 'resultTab=gaps' },
+          children: [],
+        },
+        coverage: {
+          type: 'Chip',
+          props: { text: 'Coverage Verification', setValue: 'resultTab=coverage' },
+          children: [],
+        },
+        recs: {
+          type: 'Chip',
+          props: { text: 'Recommendations', setValue: 'resultTab=recs' },
+          children: [],
+        },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: '' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { content: '# Body' } })
+    const switchRow = container.querySelector('[data-testid="view-switch-chips"]') as HTMLElement
+    expect(switchRow).toBeTruthy()
+    expect(switchRow.className).toContain('flex-row')
+    expect(switchRow.className).not.toContain('flex-col')
+    expect(switchRow.textContent).toContain('Enhanced Article')
+    expect(switchRow.textContent).toContain('Recommendations')
+    expect(container.textContent?.indexOf('Enhanced Article') ?? -1).toBeLessThan(
+      container.textContent?.indexOf('Body') ?? 0
+    )
+  })
+
+  it('keeps an authored vertical Chip Stack as a left rail beside the panels', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['row'] },
+        row: {
+          type: 'Stack',
+          props: { direction: 'horizontal', gap: 'md' },
+          children: ['tabs', 'body'],
+        },
+        tabs: {
+          type: 'Stack',
+          props: { direction: 'vertical', gap: 'sm' },
+          children: ['article', 'gaps'],
+        },
+        article: {
+          type: 'Chip',
+          props: { text: 'Enhanced Article', setValue: 'resultTab=article' },
+          children: [],
+        },
+        gaps: {
+          type: 'Chip',
+          props: { text: 'Gap Analysis', setValue: 'resultTab=gaps' },
+          children: [],
+        },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: '' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { content: '# Body' } })
+    expect(container.querySelector('[data-testid="view-switch-chips"]')).toBeNull()
+    expect(container.textContent).toContain('Enhanced Article')
+    expect(container.textContent).toContain('Gap Analysis')
+    expect(container.textContent).toContain('Body')
+    const row = container.querySelector('.flex-row') as HTMLElement | null
+    expect(row?.className).toContain('flex-row')
+    expect(row?.textContent).toContain('Enhanced Article')
+    expect(row?.textContent).toContain('Body')
+  })
+
   it('keeps authored tone on a lone suggestion Chip', () => {
     const spec: Spec = {
       root: 'page',

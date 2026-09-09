@@ -703,6 +703,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
       expect(payload).toContain(EDIT_RESULT_VIEWS_INSTRUCTION)
       expect(payload).toContain('layoutPlan.hostKeys')
+      expect(payload).toContain('horizontal Chip row ABOVE')
       expect(payload).toContain('Never output.enhanced_article')
       expect(payload).toContain('ehnaced_article / enhaced_article → enhanced_article')
       expect(payload).toContain('Requested changes:\nCentre the search row.')
