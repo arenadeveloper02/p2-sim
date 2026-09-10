@@ -2,6 +2,7 @@ import {
   getHubSpotSharedAccountOptionIds,
   mergeOAuthIntegrationPresence,
 } from '@/lib/copilot/chat/env-integration-presence'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { isHosted } from '@/lib/core/config/env-flags'
 import {
   getAccessibleEnvCredentials,
@@ -14,6 +15,25 @@ export interface WorkspaceIntegrationsContext {
   connectedIntegrations: LocalCopilotConnectedIntegration[]
   envVariables: string[]
   hostedKeysAvailable: boolean
+}
+
+/**
+ * Maps mothership VFS snapshot integration/env inventory into Local context
+ * without a second OAuth/env decrypt round-trip.
+ */
+export function mapSnapshotToWorkspaceIntegrations(
+  snapshot: VfsSnapshotV1
+): WorkspaceIntegrationsContext {
+  return {
+    connectedIntegrations: (snapshot.integrations ?? []).map((integration) => ({
+      credentialId: integration.id,
+      providerId: integration.providerId,
+      ...(integration.displayName ? { displayName: integration.displayName } : {}),
+      role: integration.role ?? null,
+    })),
+    envVariables: [...(snapshot.envVars ?? [])].sort(),
+    hostedKeysAvailable: isHosted,
+  }
 }
 
 /**

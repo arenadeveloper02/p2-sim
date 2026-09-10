@@ -35,6 +35,42 @@ const logger = createLogger('UsageMonitor')
 
 const WARNING_THRESHOLD = 80
 
+/** Reuse payer-pool reads within a single copilot turn (mothership gate → local agent). */
+const USAGE_MONITOR_CACHE_TTL_MS = 30_000
+
+type UsageMonitorCacheEntry<T> = { expiresAt: number; value: T }
+
+interface ServerSideUsageLimitsResult {
+  isExceeded: boolean
+  currentUsage: number
+  limit: number
+  message?: string
+}
+
+const usageStatusCache = new Map<string, UsageMonitorCacheEntry<UsageData>>()
+const serverSideUsageLimitsCache = new Map<string, UsageMonitorCacheEntry<ServerSideUsageLimitsResult>>()
+
+function readUsageMonitorCache<T>(
+  store: Map<string, UsageMonitorCacheEntry<T>>,
+  key: string
+): T | undefined {
+  const entry = store.get(key)
+  if (!entry) return undefined
+  if (entry.expiresAt <= Date.now()) {
+    store.delete(key)
+    return undefined
+  }
+  return entry.value
+}
+
+function writeUsageMonitorCache<T>(
+  store: Map<string, UsageMonitorCacheEntry<T>>,
+  key: string,
+  value: T
+): void {
+  store.set(key, { expiresAt: Date.now() + USAGE_MONITOR_CACHE_TTL_MS, value })
+}
+
 interface UsageData {
   percentUsed: number
   isWarning: boolean
@@ -79,7 +115,7 @@ async function computePooledOrgUsage(
  * Checks a user's cost usage against their subscription plan limit
  * and returns usage information including whether they're approaching the limit
  */
-export async function checkUsageStatus(
+async function checkUsageStatusUncached(
   userId: string,
   preloadedSubscription?: UsageLimitSubscription | null
 ): Promise<UsageData> {
@@ -178,6 +214,23 @@ export async function checkUsageStatus(
       organizationId: null,
     }
   }
+}
+
+/**
+ * Checks a user's cost usage against their subscription plan limit
+ * and returns usage information including whether they're approaching the limit
+ */
+export async function checkUsageStatus(
+  userId: string,
+  preloadedSubscription?: UsageLimitSubscription | null
+): Promise<UsageData> {
+  const cacheKey = `${userId}:${preloadedSubscription?.referenceId ?? 'auto'}`
+  const cached = readUsageMonitorCache(usageStatusCache, cacheKey)
+  if (cached) return cached
+
+  const result = await checkUsageStatusUncached(userId, preloadedSubscription)
+  writeUsageMonitorCache(usageStatusCache, cacheKey, result)
+  return result
 }
 
 async function applyOrgRefresh(
@@ -406,15 +459,10 @@ export async function checkSelfHostedMothershipUsageLimits(userId: string): Prom
  * @param userId The ID of the user to check
  * @returns An object containing the exceeded status and usage details
  */
-export async function checkServerSideUsageLimits(
+async function checkServerSideUsageLimitsUncached(
   userId: string,
   preloadedSubscription?: UsageLimitSubscription | null
-): Promise<{
-  isExceeded: boolean
-  currentUsage: number
-  limit: number
-  message?: string
-}> {
+): Promise<ServerSideUsageLimitsResult> {
   try {
     if (!isBillingEnabled) {
       return {
@@ -475,6 +523,19 @@ export async function checkServerSideUsageLimits(
           : 'Unable to determine usage limits. Execution blocked for security. Please contact support.',
     }
   }
+}
+
+export async function checkServerSideUsageLimits(
+  userId: string,
+  preloadedSubscription?: UsageLimitSubscription | null
+): Promise<ServerSideUsageLimitsResult> {
+  const cacheKey = `${userId}:${preloadedSubscription?.referenceId ?? 'auto'}`
+  const cached = readUsageMonitorCache(serverSideUsageLimitsCache, cacheKey)
+  if (cached) return cached
+
+  const result = await checkServerSideUsageLimitsUncached(userId, preloadedSubscription)
+  writeUsageMonitorCache(serverSideUsageLimitsCache, cacheKey, result)
+  return result
 }
 
 /**
