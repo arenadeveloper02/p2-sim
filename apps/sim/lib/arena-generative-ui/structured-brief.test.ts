@@ -24,7 +24,10 @@ vi.mock('@/providers/utils', () => ({
   supportsTemperature: () => true,
 }))
 
-import { PLANNER_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/planner-contract'
+import {
+  PLANNER_CONTRACT_PROMPT,
+  buildPlannerSystemPrompt,
+} from '@/lib/arena-generative-ui/planner-contract'
 import { buildGeneratorSystemPrompt, generatorPromptOptionsFromBrief } from '@/lib/arena-generative-ui/prompt-pipeline'
 import {
   ARENA_GENERATIVE_ARCHETYPES,
@@ -41,6 +44,8 @@ import {
   planArenaGenerativeStructuredBrief,
   recipesForBlueprint,
   uncoordinatedWorkspacePages,
+  briefMissingHistoryPage,
+  briefMissingWaitCapabilities,
 } from '@/lib/arena-generative-ui/structured-brief'
 
 const listDetailBrief: ArenaGenerativeStructuredBrief = {
@@ -519,6 +524,82 @@ describe('parseArenaGenerativeStructuredBrief', () => {
         ],
       })
     ).toEqual([])
+  })
+
+  it('flags missing wait capabilities when the request is long-running', () => {
+    const brief = {
+      ...listDetailBrief,
+      capabilities: ['create'] as const,
+      pages: listDetailBrief.pages.map((page) => ({ ...page, capabilities: [] })),
+    }
+    expect(
+      briefMissingWaitCapabilities(brief, {
+        intent: {
+          task: 'Analyze competitors',
+          audience: 'analysts',
+          entities: [{ name: 'report', kind: 'prose' }],
+          dataRequirements: [],
+          actions: [{ id: 'analyze', purpose: 'Run analysis' }],
+          workflowComplexity: 'long-running',
+        },
+        userInput: 'Analyze competitors',
+      })
+    ).toBe(true)
+    expect(
+      briefMissingWaitCapabilities(
+        { ...brief, capabilities: ['long-running'] },
+        {
+          intent: {
+            task: 'Analyze competitors',
+            audience: 'analysts',
+            entities: [{ name: 'report', kind: 'prose' }],
+            dataRequirements: [],
+            actions: [{ id: 'analyze', purpose: 'Run analysis' }],
+            workflowComplexity: 'long-running',
+          },
+        }
+      )
+    ).toBe(false)
+  })
+
+  it('flags a missing History page when run_history is bound', () => {
+    const brief = {
+      ...listDetailBrief,
+      pages: listDetailBrief.pages.filter((page) => page.path !== 'history'),
+    }
+    expect(
+      briefMissingHistoryPage(brief, {
+        userInput: 'Article tool',
+        apiBindings: [
+          { key: 'run_history', label: 'History', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+    ).toBe(true)
+    expect(
+      briefMissingHistoryPage(
+        {
+          ...brief,
+          pages: [
+            ...brief.pages,
+            {
+              path: 'history',
+              title: 'History',
+              purpose: 'Previous runs',
+              archetype: 'collection',
+              dataMode: 'remote',
+              data: 'remote',
+              capabilities: [],
+            },
+          ],
+        },
+        {
+          userInput: 'Article tool',
+          apiBindings: [
+            { key: 'run_history', label: 'History', kind: 'workflow', workflowId: 'wf-1' },
+          ],
+        }
+      )
+    ).toBe(false)
   })
 
   it('parses a labeled pages[].interaction string onto the coordination object', () => {
@@ -1043,18 +1124,24 @@ describe('planArenaGenerativeStructuredBrief', () => {
     })
 
     expect(planned.brief?.archetype).toBe('collection')
+    const expectedSystem = buildPlannerSystemPrompt({
+      userInput: 'Order inbox with a detail page.',
+      apiBindings: [
+        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'get_order', label: 'Get', kind: 'workflow', workflowId: 'wf-2' },
+      ],
+    })
     expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         model: 'claude-sonnet-4-6',
         max_tokens: 4_096,
-        system: PLANNER_CONTRACT_PROMPT,
+        system: expectedSystem,
       })
     )
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('SCOPE BUDGET')
     expect(system).toContain('source dummy or local')
-    expect(system).toContain('WORKSPACE REGIONS')
     expect(system).toContain('COMPOSITION SEMANTICS')
     expect(system).toContain('WHAT can be composed')
     expect(system).toContain('WHERE it can be composed')
@@ -1063,7 +1150,6 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('must they remain visible together')
     expect(system).toContain('named progress checklist is task + wait capabilities')
     expect(system).toContain('Result stacks below the form')
-    expect(system).toContain('second collection page, shell tabs')
     expect(system).toContain('"navigation": "minimal"|"tabs"|"sidebar"|"workspace"')
     expect(system).toContain('wizard is the only intent value that suggests workflow pages')
     expect(system).toContain('Emit pages[].regions as a named object')
@@ -1074,12 +1160,16 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('bare kebab-case keys')
     expect(system).toContain('audience is a real role')
     expect(system).toContain('Do not add dashboards, statistics, history')
-    expect(system).toContain('/add-customer is not automatically required')
     expect(system).toContain('When Analyzed intent is present')
     expect(system).toContain('requested mutations')
     expect(system).toContain('even if intent omitted it')
     expect(system).toContain('onLoads to seed')
     expect(system).toContain('Dummy collections include a seed action')
+    // Detail-page request selects secondary + collection; not the full wait/agent pack.
+    expect(system).toContain('SECONDARY PAGES only when')
+    expect(system).toContain('/add-customer is not automatically required')
+    expect(system).toContain('REPRESENTATION (collection body)')
+    expect(system.length).toBeLessThan(PLANNER_CONTRACT_PROMPT.length)
     expect(system).not.toContain('workspace is not a page archetype')
     expect(system).not.toContain('actions must be []')
     expect(system).not.toContain('Pick exactly one app-level archetype')

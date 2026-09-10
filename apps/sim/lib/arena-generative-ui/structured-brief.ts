@@ -11,7 +11,11 @@ import {
   isCapability,
   plannedCapabilities,
 } from '@/lib/arena-generative-ui/capabilities'
-import { PLANNER_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/planner-contract'
+import {
+  buildPlannerSystemPrompt,
+  requestSignalsHistory,
+  requestSignalsWait,
+} from '@/lib/arena-generative-ui/planner-contract'
 import {
   type ArenaGenerativeDesignIntent,
   parseArenaGenerativeDesignIntent,
@@ -755,8 +759,6 @@ function withParsedPlanClassifiers(
   }
 }
 
-const PLANNER_SYSTEM_PROMPT = PLANNER_CONTRACT_PROMPT
-
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   collection: [
     'ARCHETYPE RECIPE: collection',
@@ -1191,16 +1193,97 @@ function uncoordinatedRegionsRepairMessage(pages: readonly string[]): string {
   return `That brief composed page(s) ${pages.join(', ')} without pages[].interaction. Name selection, inspect, or execution so the regions coordinate. Return one JSON object in the planner blueprint shape. Do not emit a manifest.`
 }
 
+const BRIEF_WAIT_CAPABILITIES = new Set<string>([
+  'generate',
+  'analyze',
+  'long-running',
+  'multi-step',
+  'progress',
+  'streaming',
+  'cancellable',
+])
+
+const HISTORY_PAGE_SIGNAL =
+  /\b(history|previous\s+runs?|past\s+runs?|previous\s+jobs?|past\s+jobs?|run\s+log)\b/i
+
+/**
+ * True when the request needs wait chrome but the brief listed none of the
+ * wait/generate capabilities.
+ */
+export function briefMissingWaitCapabilities(
+  brief: ArenaGenerativeStructuredBrief,
+  options: {
+    intent?: ArenaGenerativeIntent | null
+    userInput?: string
+    apiBindings?: readonly ArenaGenerativeApiBinding[]
+  }
+): boolean {
+  if (
+    !requestSignalsWait({
+      userInput: options.userInput,
+      intent: options.intent,
+      apiBindings: options.apiBindings,
+    })
+  ) {
+    return false
+  }
+  const capabilities = new Set<string>([
+    ...brief.capabilities,
+    ...brief.pages.flatMap((page) => page.capabilities ?? []),
+  ])
+  return ![...BRIEF_WAIT_CAPABILITIES].some((capability) => capabilities.has(capability))
+}
+
+/**
+ * True when History was requested (prose or binding) but no page looks like that
+ * destination.
+ */
+export function briefMissingHistoryPage(
+  brief: ArenaGenerativeStructuredBrief,
+  options: {
+    intent?: ArenaGenerativeIntent | null
+    userInput?: string
+    apiBindings?: readonly ArenaGenerativeApiBinding[]
+    pages?: readonly ArenaGenerativePageHint[]
+  }
+): boolean {
+  if (
+    !requestSignalsHistory({
+      userInput: options.userInput,
+      intent: options.intent,
+      apiBindings: options.apiBindings,
+      pages: options.pages,
+    })
+  ) {
+    return false
+  }
+  return !brief.pages.some((page) =>
+    HISTORY_PAGE_SIGNAL.test(`${page.path} ${page.title} ${page.purpose}`)
+  )
+}
+
+function missingWaitCapabilitiesRepairMessage(): string {
+  return 'That brief omitted wait capabilities for a long-running or generate/analyze/summarize job. Add CAPABILITY long-running (and multi-step/progress when named wait steps exist) on the task; keep archetype task — not workflow. Return one JSON object in the planner blueprint shape. Do not emit a manifest.'
+}
+
+function missingHistoryPageRepairMessage(): string {
+  return 'That brief omitted a History / previous-runs collection page despite a History tab or history binding. Add a collection page with that onLoad and shell tabs when Generator is also present. Return one JSON object in the planner blueprint shape. Do not emit a manifest.'
+}
+
 function plannerIssueRepairMessage(
   dropped: readonly DroppedBriefAction[],
   uncoordinatedPages: readonly string[],
-  bindingKeys: readonly string[]
+  bindingKeys: readonly string[],
+  options?: { missingWaitCapabilities?: boolean; missingHistoryPage?: boolean }
 ): string {
-  if (dropped.length > 0 && uncoordinatedPages.length > 0) {
-    return `${droppedActionsRepairMessage(dropped, bindingKeys)} ${uncoordinatedRegionsRepairMessage(uncoordinatedPages)}`
+  const parts: string[] = []
+  if (dropped.length > 0) parts.push(droppedActionsRepairMessage(dropped, bindingKeys))
+  if (uncoordinatedPages.length > 0) {
+    parts.push(uncoordinatedRegionsRepairMessage(uncoordinatedPages))
   }
-  if (dropped.length > 0) return droppedActionsRepairMessage(dropped, bindingKeys)
-  return uncoordinatedRegionsRepairMessage(uncoordinatedPages)
+  if (options?.missingWaitCapabilities) parts.push(missingWaitCapabilitiesRepairMessage())
+  if (options?.missingHistoryPage) parts.push(missingHistoryPageRepairMessage())
+  return parts.join(' ')
 }
 
 const GENERATE_WAIT_CAPABILITIES = new Set<ArenaGenerativeCapability>([
@@ -1420,11 +1503,17 @@ export async function planArenaGenerativeStructuredBrief(
       timeout: ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS,
     })
     const modelId = DEFAULT_MODEL
+    const plannerSystemPrompt = buildPlannerSystemPrompt({
+      userInput: params.userInput,
+      intent: params.intent,
+      apiBindings: params.apiBindings,
+      pages: params.pages,
+    })
     const messageOptions = {
       model: modelId,
       max_tokens: Math.min(getMaxOutputTokensForModel(modelId), BRIEF_OUTPUT_TOKENS),
       ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
-      system: PLANNER_SYSTEM_PROMPT,
+      system: plannerSystemPrompt,
     }
     const messages: Anthropic.Messages.MessageParam[] = [
       { role: 'user', content: plannerUserPayload(params) },
@@ -1435,8 +1524,11 @@ export async function planArenaGenerativeStructuredBrief(
       apiBindings: params.apiBindings,
     }
     const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
-    let usableWithIssues: (ParsedStructuredBrief & { uncoordinatedPages: string[] }) | null =
-      null
+    let usableWithIssues: (ParsedStructuredBrief & {
+      uncoordinatedPages: string[]
+      missingWaitCapabilities?: boolean
+      missingHistoryPage?: boolean
+    }) | null = null
 
     for (let attempt = 0; attempt < MAX_BRIEF_ATTEMPTS; attempt += 1) {
       const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
@@ -1456,13 +1548,26 @@ export async function planArenaGenerativeStructuredBrief(
           ? { ...parsedBrief.brief, intent: params.intent }
           : parsedBrief.brief
         const uncoordinatedPages = uncoordinatedWorkspacePages(withIntent)
+        const signalOptions = {
+          intent: params.intent,
+          userInput: params.userInput,
+          apiBindings: params.apiBindings,
+          pages: params.pages,
+        }
+        const missingWait = briefMissingWaitCapabilities(withIntent, signalOptions)
+        const missingHistory = briefMissingHistoryPage(withIntent, signalOptions)
         const hasRepairableIssues =
-          parsedBrief.droppedActions.length > 0 || uncoordinatedPages.length > 0
+          parsedBrief.droppedActions.length > 0 ||
+          uncoordinatedPages.length > 0 ||
+          missingWait ||
+          missingHistory
         if (hasRepairableIssues && attempt + 1 < MAX_BRIEF_ATTEMPTS) {
           usableWithIssues = {
             brief: withIntent,
             droppedActions: parsedBrief.droppedActions,
             uncoordinatedPages,
+            ...(missingWait ? { missingWaitCapabilities: true } : {}),
+            ...(missingHistory ? { missingHistoryPage: true } : {}),
           }
           messages.push(
             { role: 'assistant', content: rawText },
@@ -1471,7 +1576,11 @@ export async function planArenaGenerativeStructuredBrief(
               content: plannerIssueRepairMessage(
                 parsedBrief.droppedActions,
                 uncoordinatedPages,
-                bindingKeys
+                bindingKeys,
+                {
+                  missingWaitCapabilities: missingWait,
+                  missingHistoryPage: missingHistory,
+                }
               ),
             }
           )
@@ -1496,7 +1605,11 @@ export async function planArenaGenerativeStructuredBrief(
       logger.warn(
         usableWithIssues.droppedActions.length > 0
           ? 'Arena Generative UI planner kept a brief after dropping invented actions'
-          : 'Arena Generative UI planner kept a brief with uncoordinated Workspace regions'
+          : usableWithIssues.uncoordinatedPages.length > 0
+            ? 'Arena Generative UI planner kept a brief with uncoordinated Workspace regions'
+            : usableWithIssues.missingWaitCapabilities
+              ? 'Arena Generative UI planner kept a brief missing wait capabilities'
+              : 'Arena Generative UI planner kept a brief missing a History page'
       )
       return {
         brief: usableWithIssues.brief,

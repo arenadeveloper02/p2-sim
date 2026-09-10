@@ -7,6 +7,8 @@ import {
   ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS,
   ARENA_GENERATIVE_UI_UX_NEVERS,
   ARENA_GENERATIVE_UI_UX_PRINCIPLES,
+  constitutionPromptFor,
+  resolveConstitutionSections,
 } from '@/lib/arena-generative-ui/constitution'
 
 const SECTION_IDS = [
@@ -91,5 +93,29 @@ describe('Universal UI/UX Constitution', () => {
         'trap the user in a page without recovery/navigation',
       ])
     )
+  })
+
+  it('gates forms, navigation, and responsive sections from the blueprint', () => {
+    const micro = resolveConstitutionSections({})
+    expect(micro).not.toContain('forms')
+    expect(micro).not.toContain('navigation')
+    expect(micro).not.toContain('responsive')
+    expect(micro).toContain('composition')
+    expect(micro).toContain('accessibility')
+
+    const task = resolveConstitutionSections({
+      needsForms: true,
+      pageArchetypes: ['task', 'results'],
+      shellNavigation: 'tabs',
+    })
+    expect(task).toContain('forms')
+    expect(task).toContain('navigation')
+    expect(task).toContain('responsive')
+
+    const microPrompt = constitutionPromptFor(micro)
+    expect(microPrompt).toContain('1. COMPOSITION')
+    expect(microPrompt).not.toContain('4. FORMS')
+    expect(microPrompt).not.toContain('5. NAVIGATION')
+    expect(microPrompt.length).toBeLessThan(ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT.length)
   })
 })

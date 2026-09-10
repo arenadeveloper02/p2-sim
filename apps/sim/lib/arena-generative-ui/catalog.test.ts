@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildArenaGenerativeUiPrompt,
   isArenaGenerativeCatalogType,
+  resolveCatalogComponentNames,
 } from '@/lib/arena-generative-ui/catalog'
 
 describe('buildArenaGenerativeUiPrompt', () => {
@@ -122,5 +123,51 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Stepper')).toBe(true)
     expect(isArenaGenerativeCatalogType('Disclosure')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
+  })
+})
+
+describe('resolveCatalogComponentNames', () => {
+  it('omits wait, workspace, dashboard, and chat families for a micro collection', () => {
+    const names = new Set(
+      resolveCatalogComponentNames({
+        archetype: 'collection',
+        pageArchetypes: ['collection'],
+      })
+    )
+    expect(names.has('Repeat')).toBe(true)
+    expect(names.has('Form')).toBe(true)
+    expect(names.has('WorkingCard')).toBe(false)
+    expect(names.has('Workspace')).toBe(false)
+    expect(names.has('Chart')).toBe(false)
+    expect(names.has('Chat')).toBe(false)
+    expect(names.has('Stepper')).toBe(false)
+  })
+
+  it('includes wait and tabs when the blueprint needs them', () => {
+    const names = new Set(
+      resolveCatalogComponentNames({
+        archetype: 'task',
+        pageArchetypes: ['task', 'results'],
+        needsForms: true,
+        needsWait: true,
+        shellNavigation: 'tabs',
+      })
+    )
+    expect(names.has('WorkingCard')).toBe(true)
+    expect(names.has('SearchField')).toBe(true)
+    expect(names.has('Tabs')).toBe(true)
+    expect(names.has('Workspace')).toBe(false)
+  })
+
+  it('filters AVAILABLE COMPONENTS when includeComponents is set', () => {
+    const trimmed = buildArenaGenerativeUiPrompt({
+      customRules: ['ONLY RULE'],
+      includeComponents: ['Page', 'Section', 'Button'],
+    })
+    expect(trimmed).toContain('AVAILABLE COMPONENTS (3):')
+    expect(trimmed).toContain('- Page: {')
+    expect(trimmed).toContain('- Button: {')
+    expect(trimmed).not.toContain('- WorkingCard: {')
+    expect(trimmed).not.toContain('- Chat: {')
   })
 })

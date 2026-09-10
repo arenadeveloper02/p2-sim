@@ -220,4 +220,43 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (agent-shell)')
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)\n')
   })
+
+  it('omits unused constitution sections and catalog families for a micro collection', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'collection',
+      pageArchetypes: ['collection'],
+      recipes: 'ARCHETYPE RECIPE: collection\n\nDUMMY / LOCAL DATA',
+      hasDummyData: true,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('UNIVERSAL UI/UX CONSTITUTION')
+    expect(prompt).toContain('1. COMPOSITION')
+    expect(prompt).not.toContain('4. FORMS')
+    expect(prompt).not.toContain('5. NAVIGATION')
+    expect(prompt).toContain('- Repeat: {')
+    expect(prompt).toContain('- Form: {')
+    expect(prompt).not.toContain('- WorkingCard: {')
+    expect(prompt).not.toContain('- Workspace: {')
+    expect(prompt).not.toContain('- Chart: {')
+    expect(prompt).not.toContain('- Chat: {')
+  })
+
+  it('keeps forms constitution and wait catalog when the blueprint needs them', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'task',
+      pageArchetypes: ['task', 'results'],
+      needsForms: true,
+      needsWait: true,
+      shell: { navigation: 'tabs' },
+      hasBindings: true,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('4. FORMS')
+    expect(prompt).toContain('5. NAVIGATION')
+    expect(prompt).toContain('- WorkingCard: {')
+    expect(prompt).toContain('- Tabs: {')
+  })
 })

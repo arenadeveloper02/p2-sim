@@ -19,10 +19,14 @@ import {
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   ARENA_GENERATIVE_UI_THEME_RULE,
   buildArenaGenerativeUiPrompt,
+  resolveCatalogComponentNames,
 } from '@/lib/arena-generative-ui/catalog'
 import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-generative-ui/component-decisions'
 import { ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT } from '@/lib/arena-generative-ui/representation'
-import { ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT } from '@/lib/arena-generative-ui/constitution'
+import {
+  constitutionPromptFor,
+  resolveConstitutionSections,
+} from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import {
   ARENA_GENERATIVE_UI_COMPOSITION_PROMPT,
@@ -167,7 +171,8 @@ function compositionFor(options: BuildGeneratorSystemPromptOptions): string {
  * Spec-LLM system prompt in three columns: Design rules/tokens, UX rules/states,
  * then archetype recipe. Serial order is Design → UX → Archetype so tokens still
  * constrain recipes. Persona stays first. Still one generate call. The planner
- * contract is never included.
+ * contract is never included. Constitution sections and catalog families are
+ * gated from the blueprint so unused UX/catalog mass stays out.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
   const baseRecipe =
@@ -178,7 +183,18 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
       ? [baseRecipe, chrome].filter((section) => section.length > 0).join('\n\n')
       : baseRecipe
   const includeRemoteRules = options.hasBindings || options.needsWait
+  const includeComponents = resolveCatalogComponentNames({
+    archetype: options.archetype,
+    pageArchetypes: options.pageArchetypes,
+    needsForms: options.needsForms,
+    needsTables: options.needsTables,
+    needsWait: options.needsWait,
+    needsWorkspace: options.needsWorkspace,
+    shellNavigation: options.shell?.navigation,
+    capabilities: options.capabilities,
+  })
   const catalogAndEnvelope = buildArenaGenerativeUiPrompt({
+    includeComponents,
     customRules: [
       ...ARENA_GENERATIVE_UI_ENVELOPE_RULES,
       ARENA_GENERATIVE_UI_THEME_RULE,
@@ -206,6 +222,15 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     includeRemoteRules || !options.hasDummyData ? ARENA_GENERATIVE_UI_DATA_STATE_PROMPT : ''
   const actionContract = ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT
   const capabilities = capabilityRecipePrompt(options.capabilities ?? [])
+  const constitution = constitutionPromptFor(
+    resolveConstitutionSections({
+      needsForms: options.needsForms,
+      needsTables: options.needsTables,
+      needsWorkspace: options.needsWorkspace,
+      pageArchetypes: options.pageArchetypes,
+      shellNavigation: options.shell?.navigation,
+    })
+  )
 
   return [
     ARENA_GENERATIVE_UI_PERSONA,
@@ -215,7 +240,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
       compositionFor(options),
     ]),
     wrapColumn('UX RULES / STATES', [
-      ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT,
+      constitution,
       dataState,
       actionContract,
       headedRules('INTERACTION / STATE RULES', [

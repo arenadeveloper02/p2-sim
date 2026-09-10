@@ -458,18 +458,75 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
   },
 ]
 
+/** Sections that apply to every generate, regardless of archetype. */
+export const ARENA_GENERATIVE_UI_CONSTITUTION_ALWAYS: readonly ConstitutionSectionId[] = [
+  'composition',
+  'actions',
+  'states',
+  'content',
+  'consistency',
+  'accessibility',
+  'density',
+] as const
+
+export interface ConstitutionPromptOptions {
+  needsForms?: boolean
+  needsTables?: boolean
+  needsWorkspace?: boolean
+  /** Planned page jobs — multi-page apps need navigation clauses. */
+  pageArchetypes?: readonly string[]
+  shellNavigation?: string
+}
+
+/**
+ * Which constitution sections the blueprint needs. Forms / navigation /
+ * responsive are gated so micro apps do not pay for unused UX rules.
+ */
+export function resolveConstitutionSections(
+  options: ConstitutionPromptOptions = {}
+): readonly ConstitutionSectionId[] {
+  const selected = new Set<ConstitutionSectionId>(ARENA_GENERATIVE_UI_CONSTITUTION_ALWAYS)
+  if (options.needsForms) selected.add('forms')
+  const multiPage = (options.pageArchetypes?.length ?? 0) > 1
+  const chrome =
+    options.shellNavigation === 'tabs' ||
+    options.shellNavigation === 'sidebar' ||
+    options.shellNavigation === 'workspace'
+  if (options.needsWorkspace || multiPage || chrome) {
+    selected.add('navigation')
+  }
+  if (options.needsWorkspace || options.needsTables || options.needsForms) {
+    selected.add('responsive')
+  }
+  return ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.map((section) => section.id).filter((id) =>
+    selected.has(id)
+  )
+}
+
 /**
  * Compact generator-facing constitution. Host clauses are phrased as bind /
  * do-not-emit so the model does not paint a second copy of runtime chrome.
+ * Pass section ids to inject only relevant packs; omit for the full prompt.
  */
-export const ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT = [
-  'UNIVERSAL UI/UX CONSTITUTION',
-  'Apply to every generated app. The runtime compiles loading, error, retry, save confirmation, and destructive confirm. You compose pages, copy, forms, which API, navigation, and empty-state copy.',
-  ...ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.flatMap((section) => [
-    section.title,
-    ...section.clauses.map((clause) => `- ${clause.prompt}`),
-  ]),
-].join('\n')
+export function constitutionPromptFor(
+  sectionIds?: readonly ConstitutionSectionId[]
+): string {
+  const allowed = sectionIds ? new Set(sectionIds) : null
+  const sections = allowed
+    ? ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.filter((section) => allowed.has(section.id))
+    : ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS
+  return [
+    'UNIVERSAL UI/UX CONSTITUTION',
+    'Apply to every generated app. The runtime compiles loading, error, retry, save confirmation, and destructive confirm. You compose pages, copy, forms, which API, navigation, and empty-state copy.',
+    ...sections.flatMap((section) => [
+      section.title,
+      ...section.clauses.map((clause) => `- ${clause.prompt}`),
+    ]),
+  ].join('\n')
+}
+
+/** Full constitution (every section). Prefer {@link constitutionPromptFor} with resolved ids. */
+export const ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT = constitutionPromptFor()
 
 /**
  * Compiler-facing principles derived from the constitution, not a second list.

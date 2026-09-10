@@ -703,13 +703,181 @@ export function isArenaGenerativeCatalogType(type: string): boolean {
   return catalogComponentTypes.has(type)
 }
 
+/** Always-available layout, chrome, and action primitives. */
+export const ARENA_GENERATIVE_CATALOG_CORE = [
+  'Page',
+  'Section',
+  'Stack',
+  'Grid',
+  'Columns',
+  'AppHeader',
+  'PageHeader',
+  'Toolbar',
+  'Heading',
+  'Text',
+  'DataText',
+  'Card',
+  'Badge',
+  'KeyValue',
+  'Alert',
+  'Toast',
+  'Modal',
+  'Drawer',
+  'Spinner',
+  'Skeleton',
+  'EmptyState',
+  'Chip',
+  'Icon',
+  'Button',
+  'NavLink',
+  'Link',
+  'Image',
+  'Divider',
+  'List',
+  'ListItem',
+] as const
+
+/** Optional catalog families injected from the blueprint. */
+export const ARENA_GENERATIVE_CATALOG_FAMILIES = {
+  collection: ['Repeat', 'Table', 'Filter', 'Disclosure', 'Avatar', 'EntityHeader'],
+  forms: [
+    'Form',
+    'TextInput',
+    'TextArea',
+    'Select',
+    'RadioGroup',
+    'MultiSelect',
+    'NumberInput',
+    'DateInput',
+    'Checkbox',
+    'Switch',
+    'SubmitButton',
+    'SearchField',
+  ],
+  wait: ['WorkingCard', 'ProgressBar', 'ProgressSteps'],
+  workspace: ['Workspace'],
+  workflow: ['Stepper'],
+  dashboard: ['Stat', 'Sparkline', 'Chart'],
+  shell: ['Tabs'],
+  chat: ['Chat'],
+} as const
+
+export type ArenaGenerativeCatalogFamily = keyof typeof ARENA_GENERATIVE_CATALOG_FAMILIES
+
+export interface ResolveCatalogComponentsOptions {
+  archetype?: string
+  pageArchetypes?: readonly string[]
+  needsForms?: boolean
+  needsTables?: boolean
+  needsWait?: boolean
+  needsWorkspace?: boolean
+  shellNavigation?: string
+  capabilities?: readonly string[]
+  /** When true, return every catalog type (unknown / unplanned generate). */
+  includeAll?: boolean
+}
+
+/**
+ * Catalog component names justified by the blueprint. Unused families (chat,
+ * dashboard charts, wait chrome, …) stay out of the generate prompt.
+ */
+export function resolveCatalogComponentNames(
+  options: ResolveCatalogComponentsOptions = {}
+): string[] {
+  if (options.includeAll || (!options.archetype && !(options.pageArchetypes?.length))) {
+    const all = new Set<string>(ARENA_GENERATIVE_CATALOG_CORE)
+    for (const family of Object.values(ARENA_GENERATIVE_CATALOG_FAMILIES)) {
+      for (const name of family) all.add(name)
+    }
+    return [...all]
+  }
+
+  const names = new Set<string>(ARENA_GENERATIVE_CATALOG_CORE)
+  const shapes = new Set<string>()
+  if (options.archetype) shapes.add(options.archetype)
+  for (const shape of options.pageArchetypes ?? []) shapes.add(shape)
+  const capabilities = new Set(options.capabilities ?? [])
+
+  const addFamily = (family: ArenaGenerativeCatalogFamily) => {
+    for (const name of ARENA_GENERATIVE_CATALOG_FAMILIES[family]) names.add(name)
+  }
+
+  if (
+    options.needsForms ||
+    shapes.has('task') ||
+    shapes.has('workflow') ||
+    shapes.has('collection') ||
+    shapes.has('detail') ||
+    capabilities.has('create') ||
+    capabilities.has('edit')
+  ) {
+    addFamily('forms')
+  }
+  if (
+    options.needsTables ||
+    shapes.has('collection') ||
+    shapes.has('detail') ||
+    shapes.has('results') ||
+    shapes.has('workspace')
+  ) {
+    addFamily('collection')
+  }
+  if (options.needsWait) addFamily('wait')
+  if (options.needsWorkspace || shapes.has('workspace')) addFamily('workspace')
+  if (shapes.has('workflow')) addFamily('workflow')
+  if (shapes.has('dashboard')) {
+    addFamily('dashboard')
+    addFamily('collection')
+  }
+  if (
+    options.shellNavigation === 'tabs' ||
+    options.shellNavigation === 'sidebar' ||
+    options.shellNavigation === 'workspace'
+  ) {
+    addFamily('shell')
+  }
+  if (capabilities.has('chat') || shapes.has('content')) addFamily('chat')
+
+  return [...names]
+}
+
+function filterComponentReference(includeComponents?: readonly string[]): string {
+  const full = arenaGenerativeUiComponentReference()
+  if (!includeComponents || includeComponents.length === 0) return full
+  const allow = new Set(includeComponents)
+  const lines = full.split('\n')
+  const kept: string[] = []
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    if (i === 0 || line.trim() === '') {
+      kept.push(line)
+      continue
+    }
+    const match = /^- ([A-Za-z][A-Za-z0-9]*):/.exec(line)
+    if (!match) {
+      kept.push(line)
+      continue
+    }
+    if (allow.has(match[1] ?? '')) kept.push(line)
+  }
+  const count = kept.filter((line) => /^- [A-Za-z]/.test(line)).length
+  if (kept[0]?.startsWith('AVAILABLE COMPONENTS')) {
+    kept[0] = `AVAILABLE COMPONENTS (${count}):`
+  }
+  return kept.join('\n')
+}
+
 /**
  * Generator system prompt section: the component reference, then the numbered rules
  * for this run. Sim owns every rule, so rule 1 is the output envelope.
  */
-export function buildArenaGenerativeUiPrompt(options: { customRules: string[] }): string {
+export function buildArenaGenerativeUiPrompt(options: {
+  customRules: string[]
+  /** When set, only these catalog types appear in AVAILABLE COMPONENTS. */
+  includeComponents?: readonly string[]
+}): string {
   return [
-    arenaGenerativeUiComponentReference(),
+    filterComponentReference(options.includeComponents),
     ['RULES:', ...options.customRules.map((rule, index) => `${index + 1}. ${rule}`)].join('\n'),
   ].join('\n\n')
 }
