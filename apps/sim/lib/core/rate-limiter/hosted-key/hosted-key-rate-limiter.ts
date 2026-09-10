@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { sleep } from '@sim/utils/helpers'
 import { generateShortId } from '@sim/utils/id'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
@@ -107,6 +108,7 @@ function resolveEnvKeys(prefix: string): string[] {
     // Arena ships `GEMINI_API_KEY*` for Generative Language. Include that
     // namespace even when a GOOGLE_API_KEY_COUNT pool is declared.
     if (prefix === 'GOOGLE_API_KEY') {
+      pushUniqueEnvVar(names, 'NEXT_PUBLIC_GOOGLE_API_KEY')
       pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
     }
     for (let i = 1; i <= count; i++) {
@@ -115,8 +117,8 @@ function resolveEnvKeys(prefix: string): string[] {
     return names
   }
 
-  // Prefer GEMINI_* ahead of GOOGLE_* so Arena's GEMINI_API_KEY wins when both exist.
   if (prefix === 'GOOGLE_API_KEY') {
+    pushUniqueEnvVar(names, 'NEXT_PUBLIC_GOOGLE_API_KEY')
     pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
   }
   pushLegacyEnvKeys(names, prefix)
@@ -125,9 +127,8 @@ function resolveEnvKeys(prefix: string): string[] {
 }
 
 /**
- * When acquiring keys for Google tools, prefer the GEMINI_API_KEY namespace if any
- * of those env vars are set. Agents already rotate via GEMINI_*; image tools must
- * not pick a leftover invalid GOOGLE_API_KEY / NEXT_PUBLIC Maps key ahead of Gemini.
+ * Google image/LLM tools accept several env names. Prefer `NEXT_PUBLIC_GOOGLE_API_KEY`
+ * when set (local Arena), then `GEMINI_API_KEY*`, then leftover `GOOGLE_API_KEY*`.
  */
 function preferGeminiKeysForGoogle(
   envKeyPrefix: string,
@@ -136,6 +137,11 @@ function preferGeminiKeysForGoogle(
   if (envKeyPrefix !== 'GOOGLE_API_KEY' || availableKeys.length === 0) {
     return availableKeys
   }
+
+  const nextPublicKeys = availableKeys.filter(
+    (entry) => entry.envVarName === 'NEXT_PUBLIC_GOOGLE_API_KEY'
+  )
+  if (nextPublicKeys.length > 0) return nextPublicKeys
 
   const geminiKeys = availableKeys.filter((entry) => entry.envVarName.startsWith('GEMINI_API_KEY'))
   return geminiKeys.length > 0 ? geminiKeys : availableKeys

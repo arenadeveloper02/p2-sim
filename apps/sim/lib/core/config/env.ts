@@ -801,6 +801,7 @@ export const env = createEnv({
     // Firecrawl API Key            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
     NEXT_PUBLIC_FIRECRAWL_API_KEY:                   z.string().min(1).optional(),
                // Firecrawl API key for web crawling
+    NEXT_PUBLIC_GOOGLE_API_KEY:                      z.string().min(1).optional(),           // Google Generative Language / Maps API key (Image Generator + client Google APIs)
     // Arena
     NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
@@ -869,6 +870,7 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     NEXT_TELEMETRY_DISABLED: process.env.NEXT_TELEMETRY_DISABLED,
     NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
+    NEXT_PUBLIC_GOOGLE_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS: process.env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS,
     NEXT_PUBLIC_ADMIN_WORKSPACE_IDS: process.env.NEXT_PUBLIC_ADMIN_WORKSPACE_IDS,
     NEXT_PUBLIC_MIX_PANEL_TOKEN: process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN,

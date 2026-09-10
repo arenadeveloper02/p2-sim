@@ -146,6 +146,8 @@ describe('HostedKeyRateLimiter', () => {
       process.env.GOOGLE_API_KEY_1 = undefined
       process.env.GOOGLE_API_KEY_2 = undefined
       process.env.GOOGLE_API_KEY_3 = undefined
+      // biome-ignore lint/performance/noDelete: leftover NEXT_PUBLIC keys would otherwise win over GEMINI
+      delete process.env.NEXT_PUBLIC_GOOGLE_API_KEY
       process.env.GEMINI_API_KEY = 'legacy-gemini-primary'
       process.env.GEMINI_API_KEY_1 = 'legacy-gemini-secondary'
       process.env.GEMINI_API_KEY_2 = undefined
@@ -163,6 +165,36 @@ describe('HostedKeyRateLimiter', () => {
       expect(result.envVarName).toBe('GEMINI_API_KEY')
     })
 
+    it('prefers NEXT_PUBLIC_GOOGLE_API_KEY over GEMINI_API_KEY for Google image tools', async () => {
+      mockAdapter.consumeTokens.mockResolvedValue({
+        allowed: true,
+        tokensRemaining: 9,
+        resetAt: new Date(Date.now() + 60000),
+      } satisfies ConsumeResult)
+
+      process.env.GOOGLE_API_KEY_COUNT = undefined
+      process.env.GOOGLE_API_KEY = undefined
+      process.env.GOOGLE_API_KEY_1 = undefined
+      process.env.GOOGLE_API_KEY_2 = undefined
+      process.env.GOOGLE_API_KEY_3 = undefined
+      process.env.NEXT_PUBLIC_GOOGLE_API_KEY = 'next-public-google-key'
+      process.env.GEMINI_API_KEY = 'valid-gemini-key'
+      process.env.GEMINI_API_KEY_1 = undefined
+      process.env.GEMINI_API_KEY_2 = undefined
+      process.env.GEMINI_API_KEY_3 = undefined
+
+      const result = await rateLimiter.acquireKey(
+        'google',
+        'GOOGLE_API_KEY',
+        perRequestRateLimit,
+        'workspace-google-next-public'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.key).toBe('next-public-google-key')
+      expect(result.envVarName).toBe('NEXT_PUBLIC_GOOGLE_API_KEY')
+    })
+
     it('prefers GEMINI_API_KEY over an invalid leftover GOOGLE_API_KEY', async () => {
       mockAdapter.consumeTokens.mockResolvedValue({
         allowed: true,
@@ -175,6 +207,8 @@ describe('HostedKeyRateLimiter', () => {
       process.env.GOOGLE_API_KEY_1 = undefined
       process.env.GOOGLE_API_KEY_2 = undefined
       process.env.GOOGLE_API_KEY_3 = undefined
+      // biome-ignore lint/performance/noDelete: leftover NEXT_PUBLIC keys would otherwise win over GEMINI
+      delete process.env.NEXT_PUBLIC_GOOGLE_API_KEY
       process.env.GEMINI_API_KEY = 'valid-gemini-key'
       process.env.GEMINI_API_KEY_1 = undefined
       process.env.GEMINI_API_KEY_2 = undefined
