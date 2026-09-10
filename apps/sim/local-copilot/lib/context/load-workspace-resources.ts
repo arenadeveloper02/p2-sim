@@ -3,14 +3,7 @@ import { knowledgeBase, userTableDefinitions } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
-
-/**
- * Row caps for context summaries — these feed the system prompt on every
- * model round, so they must stay bounded regardless of workspace size.
- */
-const MAX_CONTEXT_KNOWLEDGE_BASES = 100
-const MAX_CONTEXT_TABLES = 100
-const MAX_CONTEXT_FILES = 100
+import { COPILOT_INVENTORY_LIMITS } from '@/local-copilot/lib/context/inventory-limits'
 
 export interface WorkspaceKnowledgeBaseSummary {
   id: string
@@ -53,7 +46,7 @@ export async function loadWorkspaceResourceSummaries(
       })
       .from(knowledgeBase)
       .where(and(eq(knowledgeBase.workspaceId, workspaceId), isNull(knowledgeBase.deletedAt)))
-      .limit(MAX_CONTEXT_KNOWLEDGE_BASES),
+      .limit(COPILOT_INVENTORY_LIMITS.knowledgeBases),
 
     db
       .select({
@@ -68,9 +61,9 @@ export async function loadWorkspaceResourceSummaries(
           isNull(userTableDefinitions.archivedAt)
         )
       )
-      .limit(MAX_CONTEXT_TABLES),
+      .limit(COPILOT_INVENTORY_LIMITS.tables),
 
-    listWorkspaceFiles(workspaceId, { limit: MAX_CONTEXT_FILES }),
+    listWorkspaceFiles(workspaceId, { limit: COPILOT_INVENTORY_LIMITS.files }),
   ])
 
   return {

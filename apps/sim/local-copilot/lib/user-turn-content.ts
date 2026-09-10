@@ -110,24 +110,29 @@ export async function buildLocalCopilotUserTurn(
   const inlinedUploadNames = new Set<string>()
 
   if (params.chatId) {
+    const uploadJobs: Array<{ displayName: string; mediaType: string }> = []
+
     for (const entry of params.contexts ?? []) {
       if (entry.type !== 'uploaded_file') continue
       const parsed = parseUploadedFileContext(entry.content)
       if (!parsed) continue
       inlinedUploadNames.add(parsed.displayName)
-      const inlined = await inlineChatUpload(parsed.displayName, parsed.mediaType, params.chatId)
-      if (inlined?.text) supplementalText.push(inlined.text)
-      if (inlined?.image) imageParts.push(inlined.image)
+      uploadJobs.push(parsed)
     }
 
     for (const attachment of params.fileAttachments ?? []) {
       if (inlinedUploadNames.has(attachment.filename)) continue
       inlinedUploadNames.add(attachment.filename)
-      const inlined = await inlineChatUpload(
-        attachment.filename,
-        attachment.media_type,
-        params.chatId
-      )
+      uploadJobs.push({
+        displayName: attachment.filename,
+        mediaType: attachment.media_type,
+      })
+    }
+
+    const inlinedResults = await Promise.all(
+      uploadJobs.map((job) => inlineChatUpload(job.displayName, job.mediaType, params.chatId!))
+    )
+    for (const inlined of inlinedResults) {
       if (inlined?.text) supplementalText.push(inlined.text)
       if (inlined?.image) imageParts.push(inlined.image)
     }

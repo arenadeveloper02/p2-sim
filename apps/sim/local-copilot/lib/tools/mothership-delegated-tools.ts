@@ -3,6 +3,7 @@ import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
+import { COPILOT_INVENTORY_LIMITS } from '@/local-copilot/lib/context/inventory-limits'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
@@ -118,8 +119,8 @@ async function resolveWorkflowIdFromDatabase(
     .select({ id: workflow.id, name: workflow.name })
     .from(workflow)
     .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
-    .orderBy(desc(workflow.updatedAt))
-    .limit(50)
+    .orderBy(desc(workflow.updatedAt), workflow.id)
+    .limit(COPILOT_INVENTORY_LIMITS.workflows)
 
   const workflows = rows.map((row) => ({
     id: row.id,

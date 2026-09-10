@@ -13,6 +13,7 @@ import type { BlockConfig } from '@/blocks/types'
 import { getLocalCopilotConfig, isSelfHostedDeployment } from '@/local-copilot/lib/config'
 import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotE2bCapabilities } from '@/local-copilot/lib/context/e2b-capabilities'
+import { COPILOT_INVENTORY_LIMITS } from '@/local-copilot/lib/context/inventory-limits'
 import {
   loadWorkspaceIntegrations,
   oauthIntegrationsToCredentialMetadata,
@@ -23,7 +24,10 @@ import {
   type StampedWorkspaceSnapshotBundle,
   stampWorkspaceSnapshotBundle,
 } from '@/local-copilot/lib/context/snapshot-freshness'
-import { loadWorkspaceSkillSummaries } from '@/local-copilot/lib/tools/user-skills'
+import {
+  type LocalCopilotSkillSummary,
+  loadWorkspaceSkillSummaries,
+} from '@/local-copilot/lib/tools/user-skills'
 import type {
   LocalCopilotBlockSummary,
   LocalCopilotStructuredContext,
@@ -117,36 +121,115 @@ async function resolveWorkspaceSnapshot(
   }
 }
 
-export async function buildLocalCopilotContext(
-  params: BuildContextParams
-): Promise<LocalCopilotStructuredContext> {
-  const { userId, workspaceId, workflowId, selectedBlockId, executionId } = params
+interface LegacyWorkspaceInventory {
+  resources: SnapshotResourceContext
+  skills: LocalCopilotSkillSummary[]
+  workspaceWorkflows: NonNullable<LocalCopilotStructuredContext['workspaceWorkflows']>
+}
 
+async function loadWorkspaceRow(
+  workspaceId: string
+): Promise<{ id: string; name: string } | undefined> {
   const [workspaceRow] = await db
     .select({ id: workspace.id, name: workspace.name })
     .from(workspace)
     .where(eq(workspace.id, workspaceId))
     .limit(1)
+  return workspaceRow
+}
+
+/**
+ * Fallback inventory when the unified snapshot is unavailable. Workflows,
+ * skills, files, tables, and knowledge bases load in one round-trip.
+ */
+async function loadLegacyWorkspaceInventory(workspaceId: string): Promise<LegacyWorkspaceInventory> {
+  const [resources, skills, workflowRows] = await Promise.all([
+    loadWorkspaceResourceSummaries(workspaceId),
+    loadWorkspaceSkillSummaries(workspaceId),
+    db
+      .select({
+        id: workflow.id,
+        name: workflow.name,
+        isDeployed: workflow.isDeployed,
+        lastRunAt: workflow.lastRunAt,
+      })
+      .from(workflow)
+      .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
+      .orderBy(desc(workflow.updatedAt), workflow.id)
+      .limit(COPILOT_INVENTORY_LIMITS.workflows),
+  ])
+
+  return {
+    resources,
+    skills,
+    workspaceWorkflows: workflowRows.map((row) => ({
+      id: row.id,
+      name: row.name ?? 'Untitled workflow',
+      isDeployed: row.isDeployed,
+      lastRunAt: row.lastRunAt?.toISOString() ?? null,
+    })),
+  }
+}
+
+export async function buildLocalCopilotContext(
+  params: BuildContextParams
+): Promise<LocalCopilotStructuredContext> {
+  const { userId, workspaceId, workflowId, selectedBlockId, executionId } = params
+
+  // Snapshot is often the slowest call. Kick off everything that does not need it
+  // in the same wave so integrations / user / memories / open-workflow overlap it.
+  const snapshotPromise = resolveWorkspaceSnapshot(params)
+  const integrationsPromise = loadWorkspaceIntegrations(workspaceId, userId)
+  const currentUserPromise = db
+    .select({ email: user.email, name: user.name })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1)
+    .then((rows) => rows[0])
+  const userMemoriesPromise = loadUserMemoriesForContext(userId, workspaceId)
+  // Skip the workspace SELECT when the caller already stamped workspace onto the snapshot.
+  const workspaceRowFallbackPromise = params.workspaceSnapshot?.snapshot.workspace
+    ? null
+    : loadWorkspaceRow(workspaceId)
+  const openWorkflowPromise = workflowId
+    ? Promise.all([
+        db
+          .select({ id: workflow.id, name: workflow.name, variables: workflow.variables })
+          .from(workflow)
+          .where(eq(workflow.id, workflowId))
+          .limit(1)
+          .then((rows) => rows[0]),
+        loadWorkflowFromNormalizedTables(workflowId),
+        loadExecutionContext({
+          workflowId,
+          executionId,
+        }),
+      ])
+    : null
+
+  const snapshotBundle = await snapshotPromise
+  const snapshot = snapshotBundle?.snapshot ?? null
+  const inventoryMarkdown = snapshotBundle?.markdown
+    ? rewriteSnapshotSkillsForLocalCopilot(snapshotBundle.markdown)
+    : snapshotBundle?.markdown
+  const snapshotWorkspace = snapshot?.workspace
+
+  const [workspaceRow, integrations, currentUserRow, userMemories, legacyInventory, openWorkflow] =
+    await Promise.all([
+      snapshotWorkspace
+        ? Promise.resolve({ id: snapshotWorkspace.id, name: snapshotWorkspace.name })
+        : (workspaceRowFallbackPromise ?? loadWorkspaceRow(workspaceId)),
+      integrationsPromise,
+      currentUserPromise,
+      userMemoriesPromise,
+      snapshot ? Promise.resolve(null) : loadLegacyWorkspaceInventory(workspaceId),
+      openWorkflowPromise ?? Promise.resolve(null),
+    ])
 
   if (!workspaceRow) {
     throw new Error('Workspace not found')
   }
 
-  const snapshotBundle = await resolveWorkspaceSnapshot(params)
-  const snapshot = snapshotBundle?.snapshot ?? null
-  const inventoryMarkdown = snapshotBundle?.markdown
-    ? rewriteSnapshotSkillsForLocalCopilot(snapshotBundle.markdown)
-    : snapshotBundle?.markdown
-
-  const [integrations, currentUserRow] = await Promise.all([
-    loadWorkspaceIntegrations(workspaceId, userId),
-    db
-      .select({ email: user.email, name: user.name })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1)
-      .then((rows) => rows[0]),
-  ])
   const currentUser = currentUserRow?.email?.trim()
     ? {
         email: currentUserRow.email.trim(),
@@ -154,19 +237,25 @@ export async function buildLocalCopilotContext(
       }
     : undefined
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
-  // Prefer the unified snapshot as the single inventory source; fall back to the
-  // legacy per-resource loaders only when the snapshot is unavailable.
-  const resources = snapshot
-    ? mapSnapshotResources(snapshot)
-    : await loadWorkspaceResourceSummaries(workspaceId)
-  const skills = snapshot
-    ? (snapshot.skills ?? []).map((skill) => ({
-        id: skill.id,
-        name: skill.name,
-        description: skill.description ?? '',
-      }))
-    : await loadWorkspaceSkillSummaries(workspaceId)
-  const userMemories = await loadUserMemoriesForContext(userId, workspaceId)
+  let resources: SnapshotResourceContext
+  let skills: LocalCopilotSkillSummary[]
+  let workspaceWorkflows: NonNullable<LocalCopilotStructuredContext['workspaceWorkflows']>
+  if (snapshot) {
+    resources = mapSnapshotResources(snapshot)
+    skills = (snapshot.skills ?? []).map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description ?? '',
+    }))
+    workspaceWorkflows = mapSnapshotWorkflows(snapshot)
+  } else {
+    if (!legacyInventory) {
+      throw new Error('Workspace inventory unavailable')
+    }
+    resources = legacyInventory.resources
+    skills = legacyInventory.skills
+    workspaceWorkflows = legacyInventory.workspaceWorkflows
+  }
   const availableBlocks = summarizeBlocks(getAllBlocks())
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
 
@@ -207,27 +296,6 @@ export async function buildLocalCopilotContext(
       : {}),
   }
 
-  const workspaceWorkflows = snapshot
-    ? mapSnapshotWorkflows(snapshot)
-    : (
-        await db
-          .select({
-            id: workflow.id,
-            name: workflow.name,
-            isDeployed: workflow.isDeployed,
-            lastRunAt: workflow.lastRunAt,
-          })
-          .from(workflow)
-          .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
-          .orderBy(desc(workflow.updatedAt))
-          .limit(50)
-      ).map((row) => ({
-        id: row.id,
-        name: row.name ?? 'Untitled workflow',
-        isDeployed: row.isDeployed,
-        lastRunAt: row.lastRunAt?.toISOString() ?? null,
-      }))
-
   const workspaceWorkflowsContext = { workspaceWorkflows }
 
   if (!workflowId) {
@@ -267,33 +335,21 @@ export async function buildLocalCopilotContext(
     return context
   }
 
-  const [workflowRow] = await db
-    .select({ id: workflow.id, name: workflow.name })
-    .from(workflow)
-    .where(eq(workflow.id, workflowId))
-    .limit(1)
+  if (!openWorkflow) {
+    throw new Error('Workflow context unavailable')
+  }
+
+  const [workflowRow, normalized, execution] = openWorkflow
 
   if (!workflowRow) {
     throw new Error('Workflow not found')
   }
 
-  const normalized = await loadWorkflowFromNormalizedTables(workflowId)
   if (!normalized) {
     throw new Error('Workflow state not found')
   }
 
-  const [workflowMeta] = await db
-    .select({ variables: workflow.variables })
-    .from(workflow)
-    .where(eq(workflow.id, workflowId))
-    .limit(1)
-
-  const variables = (workflowMeta?.variables ?? {}) as WorkflowState['variables']
-
-  const execution = await loadExecutionContext({
-    workflowId,
-    executionId,
-  })
+  const variables = (workflowRow.variables ?? {}) as WorkflowState['variables']
 
   const context: LocalCopilotStructuredContext = {
     workspace: {

@@ -2,8 +2,8 @@ import { db } from '@sim/db'
 import { skill } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
-// import { LOAD_USER_SKILL_TOOL_NAME } from '@/lib/mothership/skills'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
+import { COPILOT_INVENTORY_LIMITS } from '@/local-copilot/lib/context/inventory-limits'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotUserSkills')
@@ -18,28 +18,11 @@ export interface LocalCopilotSkillSummary {
 }
 
 /**
- * Builds the load_user_skill tool for Arena Copilot when the workspace has
- * user-created skills. Mirrors Cloud/Mothership `buildUserSkillTool`.
+ * Builds the load_user_skill tool from already-loaded skill summaries.
  */
-export async function buildLocalCopilotUserSkillTool(
-  workspaceId: string
-): Promise<LocalCopilotToolDefinition | null> {
-  if (!workspaceId) return null
-
-  let rows: { name: string; description: string }[]
-  try {
-    rows = await db
-      .select({ name: skill.name, description: skill.description })
-      .from(skill)
-      .where(eq(skill.workspaceId, workspaceId))
-  } catch (error) {
-    logger.error('Failed to load workspace skills for load_user_skill tool', {
-      error,
-      workspaceId,
-    })
-    return null
-  }
-
+export function buildLocalCopilotUserSkillToolFromSummaries(
+  rows: Array<{ name: string; description: string }>
+): LocalCopilotToolDefinition | null {
   if (rows.length === 0) return null
 
   const skillNames = rows.map((row) => row.name)
@@ -64,6 +47,19 @@ export async function buildLocalCopilotUserSkillTool(
 }
 
 /**
+ * Builds the load_user_skill tool for Arena Copilot when the workspace has
+ * user-created skills. Mirrors Cloud/Mothership `buildUserSkillTool`.
+ */
+export async function buildLocalCopilotUserSkillTool(
+  workspaceId: string
+): Promise<LocalCopilotToolDefinition | null> {
+  if (!workspaceId) return null
+  return buildLocalCopilotUserSkillToolFromSummaries(
+    await loadWorkspaceSkillSummaries(workspaceId)
+  )
+}
+
+/**
  * Loads lightweight skill metadata for Arena Copilot context injection.
  * User-created workspace skills only (no code-only builtins).
  */
@@ -81,6 +77,8 @@ export async function loadWorkspaceSkillSummaries(
       })
       .from(skill)
       .where(eq(skill.workspaceId, workspaceId))
+      .orderBy(skill.name, skill.id)
+      .limit(COPILOT_INVENTORY_LIMITS.skills)
 
     return rows.map((row) => ({
       id: row.id,
@@ -114,5 +112,3 @@ export async function executeLoadUserSkill(
 
   return { success: true, content }
 }
-
-// export { LOAD_USER_SKILL_TOOL_NAME }

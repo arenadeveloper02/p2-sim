@@ -291,7 +291,7 @@ export async function* runLocalCopilotAgent(
     snapshotWorkflows: params.workspaceSnapshot?.workflows,
   })
 
-  // Overlap tools / user-turn / chat-config I/O with context build + session setup.
+  // Overlap user-turn / chat-config I/O with context build + session setup.
   const promptPrefetch = startPromptContextPrefetch({
     userId: params.userId,
     workspaceId: params.workspaceId,
@@ -300,22 +300,39 @@ export async function* runLocalCopilotAgent(
     ...(params.contexts?.length ? { contexts: params.contexts } : {}),
     ...(params.fileAttachments?.length ? { fileAttachments: params.fileAttachments } : {}),
   })
+  // When mothership already passed a snapshot, skill bodies + tools can start
+  // immediately — no need to wait for buildLocalCopilotContext to rematerialize them.
+  if (params.workspaceSnapshot) {
+    promptPrefetch.startSkills(
+      (params.workspaceSnapshot.skills ?? []).map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description ?? '',
+      })),
+      params.workspaceSnapshot.sandboxes !== undefined
+    )
+  }
   const usageLimitsPromise = checkServerSideUsageLimits(params.userId).catch(() => ({
     isExceeded: false,
     currentUsage: 0,
     limit: Number.POSITIVE_INFINITY,
+    message: undefined as string | undefined,
   }))
 
   let structuredContext
+  let usageLimits
   try {
-    structuredContext = await buildLocalCopilotContext({
-      userId: params.userId,
-      workspaceId: params.workspaceId,
-      ...(resolvedWorkflowId ? { workflowId: resolvedWorkflowId } : {}),
-      selectedBlockId: params.selectedBlockId,
-      executionId: params.executionId,
-      ...(workspaceSnapshotBundle ? { workspaceSnapshot: workspaceSnapshotBundle } : {}),
-    })
+    ;[structuredContext, usageLimits] = await Promise.all([
+      buildLocalCopilotContext({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        ...(resolvedWorkflowId ? { workflowId: resolvedWorkflowId } : {}),
+        selectedBlockId: params.selectedBlockId,
+        executionId: params.executionId,
+        ...(workspaceSnapshotBundle ? { workspaceSnapshot: workspaceSnapshotBundle } : {}),
+      }),
+      usageLimitsPromise,
+    ])
   } catch (error) {
     logger.error('Arena Copilot context build failed', {
       workspaceId: params.workspaceId,
@@ -326,8 +343,13 @@ export async function* runLocalCopilotAgent(
     throw error
   }
 
-  // Skill bodies do not depend on the user message — start while session memory runs.
-  promptPrefetch.startSkills(structuredContext.skills)
+  // Fallback when no caller snapshot (or empty skills) — start while session memory runs.
+  promptPrefetch.startSkills(
+    structuredContext.skills,
+    structuredContext.vfsSnapshot
+      ? structuredContext.vfsSnapshot.sandboxes !== undefined
+      : undefined
+  )
 
   logger.info('Arena Copilot context built', {
     workspaceId: params.workspaceId,
@@ -342,8 +364,6 @@ export async function* runLocalCopilotAgent(
   const persistLocally = params.persistLocally !== false
   const writeChatLedger = params.writeChatLedger !== false
   const turnCost = new LocalTurnCostAccumulator()
-
-  const usageLimits = await usageLimitsPromise
   const spendGate = assertSpendCapAllows({
     isExceeded: usageLimits.isExceeded,
     currentUsage: usageLimits.currentUsage,
@@ -372,6 +392,28 @@ export async function* runLocalCopilotAgent(
   }
 
   let conversationId = params.conversationId
+  const extractedDirectives = extractFollowUpDirectives(params.message)
+  // Preferences only affect future turns — overlap persist / session memory / settle.
+  if (extractedDirectives.preferences.length > 0) {
+    void persistInferredUserMemories({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      preferences: extractedDirectives.preferences,
+    }).catch(() => undefined)
+  }
+
+  // Mothership usually supplies priorMessages — start session memory while we persist.
+  const earlySessionMemoryPromise = params.priorMessages?.length
+    ? ensureSessionMemory({
+        chatId: params.chatId,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        historyMessages: params.priorMessages,
+        turns: params.sessionMemoryTurns ?? [],
+        signal: params.signal,
+      })
+    : null
+
   if (persistLocally) {
     if (!conversationId) {
       conversationId = await createConversation({
@@ -390,7 +432,7 @@ export async function* runLocalCopilotAgent(
     })
   }
 
-  await logCopilotAction({
+  void logCopilotAction({
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
@@ -415,16 +457,20 @@ export async function* runLocalCopilotAgent(
         })
       : []
 
-  let sessionMemory = await ensureSessionMemory({
-    chatId: params.chatId,
-    userId: params.userId,
-    workspaceId: params.workspaceId,
-    historyMessages: rawHistory,
-    turns: params.sessionMemoryTurns ?? [],
-    signal: params.signal,
-  })
+  const [sessionMemoryInitial, settledPrefetch] = await Promise.all([
+    earlySessionMemoryPromise ??
+      ensureSessionMemory({
+        chatId: params.chatId,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        historyMessages: rawHistory,
+        turns: params.sessionMemoryTurns ?? [],
+        signal: params.signal,
+      }),
+    promptPrefetch.settle(),
+  ])
 
-  const extractedDirectives = extractFollowUpDirectives(params.message)
+  let sessionMemory = sessionMemoryInitial
   if (extractedDirectives.constraints.length > 0 || extractedDirectives.activeDirective) {
     sessionMemory = await mergeFollowUpDirectivesIntoSessionMemory({
       chatId: params.chatId,
@@ -432,14 +478,6 @@ export async function* runLocalCopilotAgent(
       previous: sessionMemory,
       constraints: extractedDirectives.constraints,
       activeDirective: extractedDirectives.activeDirective,
-    })
-  }
-
-  if (extractedDirectives.preferences.length > 0) {
-    await persistInferredUserMemories({
-      userId: params.userId,
-      workspaceId: params.workspaceId,
-      preferences: extractedDirectives.preferences,
     })
   }
 
@@ -461,7 +499,6 @@ export async function* runLocalCopilotAgent(
     tokenCountModel
   )
 
-  const settledPrefetch = await promptPrefetch.settle()
   const { relevantSkills, allTools, userTurn, chatConfig } = settledPrefetch
   let taskState = settledPrefetch.taskState
   if (relevantSkills.names.length > 0) {
@@ -478,20 +515,16 @@ export async function* runLocalCopilotAgent(
     ? rewriteSnapshotSkillsForLocalCopilot(inventoryMarkdownRaw)
     : inventoryMarkdownRaw
   if (vfsSnapshot && inventoryMarkdown && structuredContext.snapshotFreshness) {
-    const priorMeta = chatConfig
-      ? parseWorkspaceSnapshotMeta(chatConfig.workspaceSnapshotMeta)
-      : null
-    const priorFingerprints = chatConfig
-      ? parseWorkspaceSnapshotFingerprints(chatConfig.workspaceSnapshotFingerprints)
-      : null
     snapshotPromptPlan = resolveSnapshotPromptPlan({
       snapshot: vfsSnapshot,
       markdown: inventoryMarkdown,
       workspaceId: params.workspaceId,
       generatedAt: structuredContext.snapshotFreshness.generatedAt,
       contentRevision: structuredContext.snapshotFreshness.contentRevision,
-      priorMeta,
-      priorFingerprints,
+      priorMeta: parseWorkspaceSnapshotMeta(chatConfig?.workspaceSnapshotMeta),
+      priorFingerprints: parseWorkspaceSnapshotFingerprints(
+        chatConfig?.workspaceSnapshotFingerprints
+      ),
     })
   }
 

@@ -1,9 +1,21 @@
 import { truncate } from '@sim/utils/string'
-import type { LocalCopilotSkillSummary } from '@/local-copilot/lib/tools/user-skills'
-import { executeLoadUserSkill } from '@/local-copilot/lib/tools/user-skills'
+import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
+import {
+  COPILOT_INLINED_SKILL_BODY_LIMIT,
+  COPILOT_SKILL_BODY_LOAD_CONCURRENCY,
+} from '@/local-copilot/lib/context/inventory-limits'
+import {
+  type LocalCopilotSkillSummary,
+  executeLoadUserSkill,
+} from '@/local-copilot/lib/tools/user-skills'
 
 /** Per-skill body cap so a long skill cannot consume the prompt. */
 export const MAX_RELEVANT_SKILL_BODY_CHARS = 4_000
+
+export {
+  COPILOT_INLINED_SKILL_BODY_LIMIT as MAX_RELEVANT_SKILL_BODIES,
+  COPILOT_SKILL_BODY_LOAD_CONCURRENCY,
+}
 
 export const RELEVANT_SKILLS_SYSTEM_PREFIX =
   'Relevant workspace skills (authoritative for this turn):'
@@ -45,23 +57,34 @@ export function formatRelevantSkillsSystemMessage(
 }
 
 /**
- * Loads every workspace skill body for this turn.
- * Bodies load concurrently — skill count is small and I/O-bound.
+ * Loads a bounded set of workspace skill bodies for this turn, with bounded
+ * concurrency so a large catalog cannot fan out unbounded I/O.
  */
 export async function loadRelevantSkillGuidance(options: {
   skills: LocalCopilotSkillSummary[] | undefined
   workspaceId: string
 }): Promise<{ message: { role: 'system'; content: string } | null; names: string[] }> {
-  const selected = [...(options.skills ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+  const selected = [...(options.skills ?? [])]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, COPILOT_INLINED_SKILL_BODY_LIMIT)
   if (selected.length === 0) return { message: null, names: [] }
 
-  const results = await Promise.all(
-    selected.map(async (skill) => {
-      const result = await executeLoadUserSkill(skill.name, options.workspaceId)
-      if (!result.success || !result.content.trim()) return null
-      return { name: skill.name, content: result.content }
-    })
+  const results = await mapWithConcurrency(
+    selected,
+    COPILOT_SKILL_BODY_LOAD_CONCURRENCY,
+    async (skill) => {
+      try {
+        const result = await executeLoadUserSkill(skill.name, options.workspaceId)
+        if (result.success && result.content.trim()) {
+          return { name: skill.name, content: result.content }
+        }
+      } catch {
+        return null
+      }
+      return null
+    }
   )
+
   const loaded = results.filter((item): item is { name: string; content: string } => item !== null)
 
   return {

@@ -1,7 +1,17 @@
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
 import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
-import { buildLocalCopilotUserSkillTool } from '@/local-copilot/lib/tools/user-skills'
+import {
+  buildLocalCopilotUserSkillTool,
+  buildLocalCopilotUserSkillToolFromSummaries,
+} from '@/local-copilot/lib/tools/user-skills'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
+
+export interface ResolveLocalCopilotToolsOptions {
+  /** Skip a second skills query when context already loaded the catalog. */
+  skills?: Array<{ name: string; description: string }>
+  /** Skip the sandbox entitlement query when the snapshot already decided. */
+  sandboxEntitled?: boolean
+}
 
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
@@ -257,11 +267,17 @@ export const LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
  * Resolves the full tool list for a turn, including workspace user skills when present.
  */
 export async function resolveLocalCopilotTools(
-  workspaceId: string
+  workspaceId: string,
+  options?: ResolveLocalCopilotToolsOptions
 ): Promise<LocalCopilotToolDefinition[]> {
-  const skillTool = await buildLocalCopilotUserSkillTool(workspaceId)
+  const skillTool =
+    options?.skills !== undefined
+      ? buildLocalCopilotUserSkillToolFromSummaries(options.skills)
+      : await buildLocalCopilotUserSkillTool(workspaceId)
   const tools = skillTool ? [...LOCAL_COPILOT_TOOLS, skillTool] : LOCAL_COPILOT_TOOLS
-  if (await hasWorkspaceSandboxAccess(workspaceId)) return tools
+  const sandboxEntitled =
+    options?.sandboxEntitled ?? (await hasWorkspaceSandboxAccess(workspaceId))
+  if (sandboxEntitled) return tools
   return tools.filter((tool) => tool.name !== 'manage_sandbox')
 }
 
