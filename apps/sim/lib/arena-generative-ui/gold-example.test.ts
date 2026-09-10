@@ -210,6 +210,13 @@ describe('per-archetype gold examples', () => {
     expect(serialized).toContain('"navigateTo":"results"')
     expect(serialized).toContain('"statePath":"history"')
     expect(serialized).not.toContain('!selectedId')
+    // Results is not a Tabs peer — keep Generator highlighted via activePath home.
+    expect(JSON.stringify(goldAgentShellManifest.pages.results.spec.elements.tabs)).toContain(
+      '"activePath":"home"'
+    )
+    expect(JSON.stringify(goldAgentShellManifest.pages.results.spec.elements.tabs)).not.toContain(
+      '"activePath":"results"'
+    )
     expect(goldAgentShellManifest.pages.home.onLoad).toBeUndefined()
     expect(goldAgentShellManifest.pages.results.onLoad).toBeUndefined()
     expect(goldAgentShellManifest.pages.history.onLoad).toEqual(['load_history'])

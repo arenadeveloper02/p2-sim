@@ -207,4 +207,17 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).toContain('SHELL RECIPE')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
   })
+
+  it('selects agent-shell gold when shell.tabs and task+results are planned', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'task',
+      pageArchetypes: ['task', 'results'],
+      shell: { navigation: 'tabs' },
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (agent-shell)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)\n')
+  })
 })

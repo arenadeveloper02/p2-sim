@@ -1483,7 +1483,7 @@ const agentResultsSpec: Spec = {
       props: { title: 'Article agent', icon: 'spark' },
       children: [],
     },
-    tabs: agentShellTabs('results'),
+    tabs: agentShellTabs('home'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
@@ -1732,6 +1732,7 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL = goldPrompt(
     'Agent product shell when the blueprint has task + results + a History collection (or shell.tabs with task + results).',
     'Three paths: home (Generator form), results (navigate destination), history (collection).',
     'Tabs items are Generator|home and History|history only — Results is navigate, not a Results tab.',
+    'On the results page, Tabs activePath stays home so Generator remains the selected peer (Results is not in items).',
     'Home has no wait chrome and no onLoad; SubmitButton runs generate_article; onSuccess navigates to results.',
     'Submitted fields are available as inputs.targetKeyword / "{targetKeyword}" on results.',
     'Results has no onLoad of generate; WorkingCard for wait; Chip setValue view=enhanced|coverage above panels — not catalog Tabs for those labels.',

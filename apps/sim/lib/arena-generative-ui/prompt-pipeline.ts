@@ -233,6 +233,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
       goldExamplePromptForArchetype(options.archetype, {
         pageArchetypes: options.pageArchetypes,
         hasRegions: options.hasRegions,
+        shell: options.shell,
       }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
       catalogAndEnvelope,
