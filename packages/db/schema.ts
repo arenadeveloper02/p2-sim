@@ -3392,8 +3392,10 @@ export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', 
  */
 export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model', [
   'claude',
+  'gemini-3.8-flash',
   'gemini-2.5-pro',
   'gemini-3.1-pro',
+  'vertex-gemini-3.8-flash',
   'bedrock-claude-opus-5',
   'bedrock-claude-sonnet-5',
   'bedrock-claude-opus-4-8',
@@ -6005,7 +6007,7 @@ export const deployedApp = pgTable(
     ),
   })
 )
- /* Maps an external client id (from Arena / partner systems) to a Sim organization.
+/* Maps an external client id (from Arena / partner systems) to a Sim organization.
  * One client → one org; used by the admin ensure-member provisioning API.
  */
 export const clientOrganization = pgTable(

@@ -1617,6 +1617,28 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     color: '#4285F4',
     models: [
       {
+        id: 'gemini-3.8-flash',
+        pricing: {
+          // Introductory rates through 2026-12-31; standard becomes 1.5 / 7.5 on 2027-01-01.
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-08',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          thinking: {
+            // `minimal` is rejected by the API on 3.8 Flash.
+            levels: ['low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-09-02',
+        recommended: true,
+      },
+      {
         id: 'gemini-3.6-flash',
         pricing: {
           input: 1.5,
@@ -1634,7 +1656,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2026-07-21',
-        recommended: true,
       },
       {
         id: 'gemini-3.5-flash-lite',

@@ -8,6 +8,7 @@ import {
   buildToolStartStatus,
   truncateStatusMessage,
 } from '@/local-copilot/lib/agent/status-messages'
+import { isLocalCopilotEngagementStatusEnabled } from '@/local-copilot/lib/config'
 import type { ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 
@@ -58,15 +59,17 @@ export async function* runToolWithStatus(params: {
   const enrichController = new AbortController()
   const onParentAbort = () => enrichController.abort()
   abortSignal?.addEventListener('abort', onParentAbort, { once: true })
-  const enrichPromise = generateEngagementStatusMessages(
-    engagementContextFromTool(toolName, args, enrichController.signal)
-  )
-    .then((messages) => {
-      if (messages && messages.length > 0) {
-        engagement.messages = [...messages]
-      }
-    })
-    .catch(() => undefined)
+  const enrichPromise = isLocalCopilotEngagementStatusEnabled()
+    ? generateEngagementStatusMessages(
+        engagementContextFromTool(toolName, args, enrichController.signal)
+      )
+        .then((messages) => {
+          if (messages && messages.length > 0) {
+            engagement.messages = [...messages]
+          }
+        })
+        .catch(() => undefined)
+    : Promise.resolve()
 
   const onProgress = (message: string) => {
     const next = truncateStatusMessage(message)
@@ -121,6 +124,7 @@ export async function* runToolWithStatus(params: {
   } finally {
     enrichController.abort()
     abortSignal?.removeEventListener('abort', onParentAbort)
-    await enrichPromise
+    // Do not await — engagement must never delay returning the tool result.
+    void enrichPromise
   }
 }

@@ -62,13 +62,13 @@ import {
 import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
 import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
 import {
+  type CreatedWorkflowThisTurn,
   createTurnMutations,
+  type LocalCopilotTurnMutations,
   rememberCreatedFile,
   rememberCreatedWorkflow,
   reuseCreatedFile,
   reuseCreatedWorkflow,
-  type CreatedWorkflowThisTurn,
-  type LocalCopilotTurnMutations,
 } from '@/local-copilot/lib/writes/turn-mutations'
 import {
   assertWorkflowWritableInWorkspace,
@@ -280,7 +280,20 @@ async function runCreateWorkflowOnce(
     success: mutation.success,
     result: mutation.output ?? { error: mutation.error },
     error: mutation.error,
-    ...(createdWorkflowId ? { createdWorkflowId } : {}),
+    ...(createdWorkflowId
+      ? {
+          createdWorkflowId,
+          resources: [
+            {
+              type: 'workflow',
+              id: createdWorkflowId,
+              title:
+                (typeof output?.workflowName === 'string' && output.workflowName.trim()) ||
+                'Workflow',
+            },
+          ],
+        }
+      : {}),
   }
   if (created.success) {
     rememberIdempotentResult(

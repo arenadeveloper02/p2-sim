@@ -142,10 +142,12 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
     setIsResourceCollapsed(true)
   }, [clearWidth])
 
-  const handleResourceEvent = useCallback(() => {
+  const setActiveResourceIdRef = useRef<(resourceId: string) => void>(() => {})
+  const handleResourceEvent = useCallback((resourceId: string) => {
     if (isResourceCollapsedRef.current) {
       setIsResourceCollapsed(false)
     }
+    setActiveResourceIdRef.current(resourceId)
   }, [])
 
   const {
@@ -192,6 +194,7 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
     }),
     true
   )
+  setActiveResourceIdRef.current = setActiveResourceId
 
   useEffect(() => {
     const url = new URL(window.location.href)

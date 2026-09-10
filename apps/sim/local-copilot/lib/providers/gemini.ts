@@ -4,10 +4,15 @@ import {
   type FunctionDeclaration,
   GoogleGenAI,
   type Part,
+  type ThinkingConfig,
 } from '@google/genai'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
+import {
+  listLocalCopilotGeminiApiKeys,
+  resolveLocalCopilotGeminiApiKey,
+} from '@/local-copilot/lib/providers/gemini-keys'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type {
   ChatCompletionChunk,
@@ -17,12 +22,18 @@ import type {
   LocalCopilotProvider,
 } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
-import { cleanSchemaForGemini, ensureStructResponse } from '@/providers/google/utils'
+import {
+  cleanSchemaForGemini,
+  ensureStructResponse,
+  mapToThinkingBudget,
+  mapToThinkingLevel,
+} from '@/providers/google/utils'
+import { isGemini3Model } from '@/providers/utils'
 
 const logger = createLogger('LocalCopilotGeminiProvider')
 
 const GEMINI_NOT_CONFIGURED =
-  'Gemini is not configured on this server. Set GEMINI_API_KEY (or GOOGLE_API_KEY).'
+  'Gemini is not configured on this server. Set GEMINI_API_KEY_1 through GEMINI_API_KEY_3 (or GEMINI_API_KEY / GOOGLE_API_KEY).'
 
 export interface GeminiConversionResult {
   systemInstruction?: string
@@ -217,112 +228,172 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
 }
 
 /**
- * Creates a Local Copilot provider backed by the Google GenAI SDK.
+ * Shared Gemini / Vertex streaming path for Local Copilot.
+ * Caller owns client construction (API key vs Vertex project + ADC).
  */
-export function createGeminiProvider(config: LocalCopilotConfig): LocalCopilotProvider {
-  if (!config.apiKey) {
-    throw new Error(GEMINI_NOT_CONFIGURED)
+export async function* streamGoogleGenAiChatCompletion(params: {
+  ai: GoogleGenAI
+  config: LocalCopilotConfig
+  request: ChatCompletionRequest
+  /** Log label, e.g. `Gemini` or `Vertex`. */
+  logLabel: string
+  /** Strip optional `vertex/` prefix from the model id before the API call. */
+  stripVertexPrefix?: boolean
+}): AsyncGenerator<ChatCompletionChunk, void, undefined> {
+  const { ai, config, request, logLabel, stripVertexPrefix = false } = params
+  const rawModel = request.model || config.model
+  const model = stripVertexPrefix ? rawModel.replace(/^vertex\//, '') : rawModel
+  const { systemInstruction, contents } = convertMessagesToGemini(request.messages)
+  const functionDeclarations = toGeminiFunctionDeclarations(request.tools)
+  const hasTools = Boolean(functionDeclarations?.length)
+  const thinkingLevel = config.thinkingLevel?.trim().toLowerCase()
+
+  const thinkingConfig: ThinkingConfig | undefined = (() => {
+    if (!thinkingLevel || thinkingLevel === 'none') return undefined
+    if (isGemini3Model(model)) {
+      return {
+        includeThoughts: false,
+        thinkingLevel: mapToThinkingLevel(thinkingLevel),
+      }
+    }
+    return {
+      includeThoughts: false,
+      thinkingBudget: mapToThinkingBudget(model, thinkingLevel),
+    }
+  })()
+
+  const generateConfig = {
+    ...(systemInstruction ? { systemInstruction } : {}),
+    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+    ...(request.maxTokens !== undefined ? { maxOutputTokens: request.maxTokens } : {}),
+    ...(thinkingConfig ? { thinkingConfig } : {}),
+    ...(hasTools
+      ? {
+          tools: [{ functionDeclarations }],
+          toolConfig: {
+            functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO },
+          },
+        }
+      : {}),
+    abortSignal: request.signal,
   }
 
-  const ai = new GoogleGenAI({ apiKey: config.apiKey })
+  try {
+    if (hasTools) {
+      logger.info(`${logLabel} tool-enabled request`, {
+        model,
+        toolCount: functionDeclarations!.length,
+        toolNames: functionDeclarations!.map((tool) => tool.name),
+      })
+    }
+
+    // Always stream — Local Copilot agent rounds attach tools on nearly
+    // every turn, so a non-streaming tool path would appear as "no
+    // streaming" in chat. generateContentStream supports functionCall
+    // parts alongside text deltas.
+    const stream = await ai.models.generateContentStream({
+      model,
+      contents,
+      config: generateConfig,
+    })
+
+    let inputTokens = 0
+    let outputTokens = 0
+    let cacheReadTokens = 0
+    let yieldedToolCall = false
+    let apiFinishReason: string | undefined
+    let partCount = 0
+
+    for await (const chunk of stream) {
+      if (request.signal?.aborted) {
+        throw new Error('Request aborted')
+      }
+
+      if (chunk.usageMetadata) {
+        inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens
+        outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
+        // Gemini 2.5+ implicit context cache hits (subset of promptTokenCount).
+        cacheReadTokens = chunk.usageMetadata.cachedContentTokenCount ?? cacheReadTokens
+      }
+
+      const candidate = chunk.candidates?.[0]
+      if (candidate?.finishReason) {
+        apiFinishReason = String(candidate.finishReason)
+      }
+
+      const parts = candidate?.content?.parts ?? []
+      partCount += parts.length
+
+      for (const emitted of chunksFromGeminiParts(parts, generateShortId)) {
+        if (emitted.type === 'tool_call') yieldedToolCall = true
+        yield emitted
+      }
+    }
+
+    if (apiFinishReason === 'MALFORMED_FUNCTION_CALL') {
+      logger.warn(`${logLabel} returned MALFORMED_FUNCTION_CALL`, {
+        model,
+        toolCount: functionDeclarations?.length ?? 0,
+      })
+    }
+
+    if (hasTools && !yieldedToolCall) {
+      logger.warn(`${logLabel} returned no function calls on a tool-enabled turn`, {
+        model,
+        finishReason: apiFinishReason,
+        partCount,
+        toolCount: functionDeclarations!.length,
+      })
+    }
+
+    if (cacheReadTokens > 0) {
+      logger.info(`${logLabel} prompt cache usage`, {
+        model,
+        cacheReadTokens,
+        inputTokens,
+      })
+    }
+
+    yield {
+      type: 'done',
+      finishReason: yieldedToolCall ? 'tool_calls' : (apiFinishReason ?? 'stop'),
+      usage: {
+        inputTokens,
+        outputTokens,
+        ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+      },
+    }
+  } catch (error) {
+    logger.error(`${logLabel} request failed`, { error: toError(error).message })
+    throw toError(error)
+  }
+}
+
+/**
+ * Creates a Local Copilot provider backed by the Google GenAI SDK (API key).
+ *
+ * Each stream request resolves a fresh API key from `GEMINI_API_KEY_1..3`
+ * (round-robin) so parent rounds and specialists distribute across keys.
+ */
+export function createGeminiProvider(config: LocalCopilotConfig): LocalCopilotProvider {
+  if (!config.apiKey && listLocalCopilotGeminiApiKeys().length === 0) {
+    throw new Error(GEMINI_NOT_CONFIGURED)
+  }
 
   return {
     id: 'gemini',
     async *chatCompletionStream(request: ChatCompletionRequest) {
-      const model = request.model || config.model
-      const { systemInstruction, contents } = convertMessagesToGemini(request.messages)
-      const functionDeclarations = toGeminiFunctionDeclarations(request.tools)
-      const hasTools = Boolean(functionDeclarations?.length)
-
-      const generateConfig = {
-        ...(systemInstruction ? { systemInstruction } : {}),
-        ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-        ...(request.maxTokens !== undefined ? { maxOutputTokens: request.maxTokens } : {}),
-        ...(hasTools
-          ? {
-              tools: [{ functionDeclarations }],
-              toolConfig: {
-                functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO },
-              },
-            }
-          : {}),
-        abortSignal: request.signal,
+      const apiKey = resolveLocalCopilotGeminiApiKey()
+      if (!apiKey) {
+        throw new Error(GEMINI_NOT_CONFIGURED)
       }
-
-      try {
-        if (hasTools) {
-          logger.info('Gemini tool-enabled request', {
-            model,
-            toolCount: functionDeclarations!.length,
-            toolNames: functionDeclarations!.map((tool) => tool.name),
-          })
-        }
-
-        // Always stream — Local Copilot agent rounds attach tools on nearly
-        // every turn, so a non-streaming tool path would appear as "no
-        // streaming" in chat. generateContentStream supports functionCall
-        // parts alongside text deltas.
-        const stream = await ai.models.generateContentStream({
-          model,
-          contents,
-          config: generateConfig,
-        })
-
-        let inputTokens = 0
-        let outputTokens = 0
-        let yieldedToolCall = false
-        let apiFinishReason: string | undefined
-        let partCount = 0
-
-        for await (const chunk of stream) {
-          if (request.signal?.aborted) {
-            throw new Error('Request aborted')
-          }
-
-          if (chunk.usageMetadata) {
-            inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens
-            outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
-          }
-
-          const candidate = chunk.candidates?.[0]
-          if (candidate?.finishReason) {
-            apiFinishReason = String(candidate.finishReason)
-          }
-
-          const parts = candidate?.content?.parts ?? []
-          partCount += parts.length
-
-          for (const emitted of chunksFromGeminiParts(parts, generateShortId)) {
-            if (emitted.type === 'tool_call') yieldedToolCall = true
-            yield emitted
-          }
-        }
-
-        if (apiFinishReason === 'MALFORMED_FUNCTION_CALL') {
-          logger.warn('Gemini returned MALFORMED_FUNCTION_CALL', {
-            model,
-            toolCount: functionDeclarations?.length ?? 0,
-          })
-        }
-
-        if (hasTools && !yieldedToolCall) {
-          logger.warn('Gemini returned no function calls on a tool-enabled turn', {
-            model,
-            finishReason: apiFinishReason,
-            partCount,
-            toolCount: functionDeclarations!.length,
-          })
-        }
-
-        yield {
-          type: 'done',
-          finishReason: yieldedToolCall ? 'tool_calls' : (apiFinishReason ?? 'stop'),
-          usage: { inputTokens, outputTokens },
-        }
-      } catch (error) {
-        logger.error('Gemini request failed', { error: toError(error).message })
-        throw toError(error)
-      }
+      const ai = new GoogleGenAI({ apiKey })
+      yield* streamGoogleGenAiChatCompletion({
+        ai,
+        config,
+        request,
+        logLabel: 'Gemini',
+      })
     },
   }
 }

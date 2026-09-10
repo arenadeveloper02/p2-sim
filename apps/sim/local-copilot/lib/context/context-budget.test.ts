@@ -2,7 +2,16 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { buildGetWorkflowContextResult } from '@/local-copilot/lib/context/context-budget'
+import {
+  buildGetWorkflowContextResult,
+  LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
+  LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS,
+  LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET,
+  LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+  resolveDefaultPromptTokenSoftCap,
+  resolveLocalCopilotMaxOutputTokens,
+  resolveLocalCopilotPromptTokenBudget,
+} from '@/local-copilot/lib/context/context-budget'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 
 function startOnlyContext(): LocalCopilotStructuredContext {
@@ -57,5 +66,53 @@ describe('buildGetWorkflowContextResult', () => {
     } as LocalCopilotStructuredContext)
     expect(result.workflow).toBeNull()
     expect(String(result.message)).toMatch(/edit_workflow/)
+  })
+})
+
+describe('resolveDefaultPromptTokenSoftCap', () => {
+  it('raises the soft cap for Gemini 3.8 Flash', () => {
+    expect(resolveDefaultPromptTokenSoftCap('gemini-3.8-flash')).toBe(
+      LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET
+    )
+    expect(resolveDefaultPromptTokenSoftCap('vertex/gemini-3.8-flash', 'vertex')).toBe(
+      LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET
+    )
+  })
+
+  it('keeps the default soft cap for other Gemini models', () => {
+    expect(resolveDefaultPromptTokenSoftCap('gemini-2.5-pro')).toBe(
+      LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+    )
+  })
+})
+
+describe('resolveLocalCopilotPromptTokenBudget', () => {
+  it('soft-caps Gemini 3.8 Flash at 300k instead of 120k', () => {
+    const budget = resolveLocalCopilotPromptTokenBudget({
+      model: 'gemini-3.8-flash',
+      provider: 'gemini',
+      maxOutputTokens: LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS,
+      toolDefinitionTokens: 0,
+    })
+    expect(budget.tokenBudget).toBe(LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET)
+    expect(budget.softCapped).toBe(true)
+    expect(budget.reservedTokens).toBe(LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS + 4_000)
+  })
+})
+
+describe('resolveLocalCopilotMaxOutputTokens', () => {
+  it('returns 32k for Gemini 3.8 Flash', () => {
+    expect(resolveLocalCopilotMaxOutputTokens('gemini-3.8-flash')).toBe(
+      LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS
+    )
+    expect(resolveLocalCopilotMaxOutputTokens('vertex/gemini-3.8-flash')).toBe(
+      LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS
+    )
+  })
+
+  it('keeps the 8k default for other models', () => {
+    expect(resolveLocalCopilotMaxOutputTokens('gemini-2.5-pro')).toBe(
+      LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
+    )
   })
 })
