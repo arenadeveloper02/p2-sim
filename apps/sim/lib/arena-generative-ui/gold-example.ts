@@ -214,8 +214,8 @@ export interface GoldExamplePickerOptions {
 
 /**
  * Few-shot for the generator: wiring only. Selected from the planned sitemap.
- * Prefer agent product-shell gold when tabs + task + results (History peers),
- * or when task + results + collection (History page planned without shell.tabs).
+ * Prefer agent product-shell gold only when shell.tabs + task + results
+ * (avoids mis-picking Article Agent gold for unrelated task+results+collection).
  */
 export function goldExamplePromptForArchetype(
   archetype?: ArenaGenerativeArchetype,
@@ -230,10 +230,9 @@ export function goldExamplePromptForArchetype(
   if (hasRegions || shapes.has('workspace')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
   }
-  // Tabs + task + results is the primary agent-shell signal (shell must be passed
-  // from the prompt pipeline). Collection + task + results covers History pages
-  // when the planner listed collection but omitted shell.tabs.
-  if (taskResults && (tabsShell || shapes.has('collection'))) {
+  // Require shell.tabs so lead-form → results + unrelated collection does not
+  // get Article Agent few-shot. Shell must be passed from the prompt pipeline.
+  if (taskResults && tabsShell) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL
   }
   if (taskResults) {

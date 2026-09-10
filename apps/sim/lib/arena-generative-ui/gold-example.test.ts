@@ -172,12 +172,19 @@ describe('per-archetype gold examples', () => {
     expect(
       goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'collection'] })
     ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    // task+results+collection without tabs must not steal Article Agent gold
     expect(
       goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results', 'collection'] })
-    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL)
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(
       goldExamplePromptForArchetype('task', {
         pageArchetypes: ['task', 'results'],
+        shell: { navigation: 'tabs' },
+      })
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL)
+    expect(
+      goldExamplePromptForArchetype('task', {
+        pageArchetypes: ['task', 'results', 'collection'],
         shell: { navigation: 'tabs' },
       })
     ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL)
@@ -207,9 +214,13 @@ describe('per-archetype gold examples', () => {
     expect(serialized).toContain('view=enhanced')
     expect(serialized).toContain('view=coverage')
     expect(serialized).toContain('"selectItem":true')
-    expect(serialized).toContain('"navigateTo":"results"')
+    expect(serialized).toContain('"clearItem":true')
+    expect(serialized).toContain('!selectedId')
+    expect(serialized).toContain('"showWhen":"selectedId"')
+    expect(JSON.stringify(goldAgentShellManifest.pages.history.spec.elements.open_run)).not.toContain(
+      '"navigateTo":"results"'
+    )
     expect(serialized).toContain('"statePath":"history"')
-    expect(serialized).not.toContain('!selectedId')
     // Results is not a Tabs peer — keep Generator highlighted via activePath home.
     expect(JSON.stringify(goldAgentShellManifest.pages.results.spec.elements.tabs)).toContain(
       '"activePath":"home"'
@@ -231,7 +242,7 @@ describe('per-archetype gold examples', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain(GOLD_AGENT_SHELL_GENERATE_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain(GOLD_AGENT_SHELL_HISTORY_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain('Do not invent API keys')
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain('cross-page History')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain('same-page')
   })
 
   it('validates the dashboard gold including Chart', () => {
