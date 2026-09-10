@@ -46,6 +46,7 @@ vi.mock('@/components/settings/navigation', () => ({
     organization: 'members',
     billing: 'billing',
     'access-control': 'access-control',
+    usage: 'usage',
   },
   UNIFIED_TO_WORKSPACE_SECTION: {
     secrets: 'secrets',
@@ -246,6 +247,17 @@ describe('authorizeWorkspaceSettingsSection', () => {
     mocks.resolveWorkspaceNavigation.mockReturnValue([{ id: 'custom-blocks' }])
     await authorize('custom-blocks')
     expect(mocks.isCustomBlocksEligibleForOrganization).toHaveBeenCalledWith('organization-1')
+  })
+
+  it('opens Arena usage without organization admin or enterprise entitlement', async () => {
+    mocks.checkWorkspaceAccess.mockResolvedValue(ORGANIZATION_ACCESS)
+    mocks.canOpenOrganizationSettingsSection.mockResolvedValue(false)
+    mocks.isOrganizationOnEnterprisePlan.mockResolvedValue(false)
+    mocks.isOrganizationSettingsSectionAvailable.mockReturnValue(false)
+
+    await expect(authorize('usage')).resolves.toEqual({ allowed: true })
+    expect(mocks.canOpenOrganizationSettingsSection).not.toHaveBeenCalled()
+    expect(mocks.isOrganizationOnEnterprisePlan).not.toHaveBeenCalled()
   })
 
   it('allows personal billing only to the billed account owner', async () => {

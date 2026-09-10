@@ -19,11 +19,8 @@ import { ArenaSessionShell } from '@/app/_shell/arena-session-shell'
 import { ConsentProvider } from '@/app/_shell/consent/consent-provider'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
-<<<<<<< HEAD
-=======
 import { PasteAdmissionGuard } from '@/app/_shell/paste-admission-guard'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
->>>>>>> update-sept-7-2026
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
 import { themeFoucScriptSource } from '@/app/_shell/providers/light-forced-segments'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'

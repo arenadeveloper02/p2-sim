@@ -180,9 +180,7 @@ describe('getArenaHubAgentsUrl', () => {
 
   it('falls back to hostname mapping when env is unset', () => {
     expect(getArenaHubAgentsUrl('dev-agent.thearena.ai')).toBe('https://dev.thearena.ai/agents')
-    expect(getArenaHubAgentsUrl('test-agent.thearena.ai')).toBe(
-      'https://test.thearena.ai/agents'
-    )
+    expect(getArenaHubAgentsUrl('test-agent.thearena.ai')).toBe('https://test.thearena.ai/agents')
     expect(getArenaHubAgentsUrl('agent.thearena.ai')).toBe('https://app.thearena.ai/agents')
   })
 

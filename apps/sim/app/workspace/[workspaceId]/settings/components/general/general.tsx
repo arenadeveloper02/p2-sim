@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Chip,
-  ChipCombobox,
   ChipModal,
   ChipModalBody,
   ChipModalError,
@@ -25,7 +24,7 @@ import { useQueryState } from 'nuqs'
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
-import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezone'
+import { getBrowserTimezone } from '@/lib/core/utils/timezone'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { DeleteAccountModal } from '@/app/workspace/[workspaceId]/settings/components/general/components/delete-account-modal'
 import { PrivacyView } from '@/app/workspace/[workspaceId]/settings/components/general/components/privacy-view'
