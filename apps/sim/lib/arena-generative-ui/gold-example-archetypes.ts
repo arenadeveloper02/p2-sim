@@ -1653,6 +1653,7 @@ const agentHistorySpec: Spec = {
         subtitle: '{item.client}',
         description: null,
         footerText: '{item.date}',
+        dateFormat: null,
         padding: 'lg',
         variant: 'default',
         backgroundColor: null,

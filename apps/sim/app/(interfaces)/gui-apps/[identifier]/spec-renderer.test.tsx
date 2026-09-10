@@ -1372,6 +1372,27 @@ describe('SpecRenderer', () => {
       expect(container.textContent).not.toContain('2026-08-24T06:28:56.717Z')
     })
 
+    it('honours a dateFormat pipe on History card copy', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['card'] },
+          card: {
+            type: 'Card',
+            props: { title: '{item.keyword}', footerText: '{item.date|DD/MM/YYYY}' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: { history: [{ id: 'h1', keyword: 'Dental implants', date: '2026-08-23' }] },
+      })
+      expect(container.textContent).toContain('23/08/2026')
+      expect(container.textContent).not.toContain('Aug 23, 2026')
+    })
+
     it('pages locally when there is no pagination API', () => {
       const manyArticles = Array.from({ length: 25 }, (_, index) => ({
         id: `a${index + 1}`,

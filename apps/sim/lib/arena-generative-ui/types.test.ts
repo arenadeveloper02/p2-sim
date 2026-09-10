@@ -322,6 +322,18 @@ describe('Repeat item scope', () => {
     ).toEqual({ to: 'report?date=2026-08-23' })
     expect(formatBoundDateDisplay('2026-08-23')).toBe('Aug 23, 2026')
     expect(formatBoundDateDisplay('not a date')).toBe('not a date')
+    expect(
+      interpolateRepeatProps(
+        { footerText: '{item.date|DD/MM/YYYY}' },
+        { item: { date: '2026-08-23' }, index: 0 }
+      )
+    ).toEqual({ footerText: '23/08/2026' })
+    expect(
+      interpolateRepeatProps(
+        { footerText: '{item.date}', dateFormat: 'numeric-eu' },
+        { item: { date: '2026-08-23' }, index: 0 }
+      )
+    ).toEqual({ footerText: '23/08/2026', dateFormat: 'numeric-eu' })
   })
 
   it('leaves object placeholders empty so they cannot leak into hrefs', () => {

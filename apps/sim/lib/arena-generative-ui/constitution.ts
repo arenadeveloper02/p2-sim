@@ -400,7 +400,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'generator',
         text: 'Format dates, numbers, currencies and percentages appropriately.',
         prompt:
-          'Format dates, numbers, currencies, and percentages in labels and literal copy. Bound ISO date and datetime values ({item.date}, createdAt) are formatted by the host — bind the field; do not dump the raw timestamp and do not invent a second formatted copy of API data. Do not invent API values to make a Stat look filled.',
+          'Format dates, numbers, currencies, and percentages in labels and literal copy. Bound ISO date and datetime values ({item.date}, createdAt) are formatted by the host — bind the field; do not dump the raw timestamp and do not invent a second formatted copy of API data. When the brief names a date format, set Card.dateFormat or `{item.date|DD/MM/YYYY}` (presets short, medium, long, iso, numeric, numeric-eu, datetime). Do not invent API values to make a Stat look filled.',
       },
     ],
   },

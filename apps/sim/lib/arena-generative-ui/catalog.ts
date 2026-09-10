@@ -170,6 +170,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         subtitle: z.string().nullable(),
         description: z.string().nullable(),
         footerText: z.string().nullable(),
+        dateFormat: z.string().nullable(),
         padding: z.string().nullable(),
         variant: z.enum(['default', 'muted']).nullable(),
         backgroundColor: z.string().nullable(),
@@ -177,7 +178,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. The first Icon or Avatar child is media (feature well or entity logo). Button, NavLink, Link, Toolbar, and non-view Chip children render in a footer under a divider with optional footerText. Same-page result-view Chips (shared setValue field) are a tab row at the top of the Card, never footer actions. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. Not a FAQ/criteria row — that is Disclosure. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
+        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. Bound ISO dates in title/subtitle/footerText are formatted by the host. Honour a brief that names a date format: set dateFormat to a preset (short, medium, long, iso, numeric, numeric-eu, datetime) or a token pattern (DD/MM/YYYY, D MMM YYYY, MMM D, YYYY), or bind `{item.date|DD/MM/YYYY}`. Default is medium (Aug 23, 2026). Do not invent a formatted copy of the API value. The first Icon or Avatar child is media (feature well or entity logo). Button, NavLink, Link, Toolbar, and non-view Chip children render in a footer under a divider with optional footerText. Same-page result-view Chips (shared setValue field) are a tab row at the top of the Card, never footer actions. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. Not a FAQ/criteria row — that is Disclosure. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
     },
     Disclosure: {
       props: z.object({
@@ -203,8 +204,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         text: z.string(),
         color: z.string().nullable(),
         size: z.string().nullable(),
+        dateFormat: z.string().nullable(),
       }),
-      description: 'Paragraph text. Markdown is rendered (emphasis, lists, links).',
+      description:
+        'Paragraph text. Markdown is rendered (emphasis, lists, links). Bound ISO dates in text are formatted by the host; set dateFormat or `{item.date|DD/MM/YYYY}` when the brief names a format.',
     },
     DataText: {
       props: z.object({
