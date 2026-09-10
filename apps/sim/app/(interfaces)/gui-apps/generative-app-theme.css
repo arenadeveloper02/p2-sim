@@ -7,6 +7,7 @@
 [data-gui-theme] {
   --gui-canvas: var(--color-ds-surface-subtle, #f7f8f9);
   --gui-surface: var(--color-ds-surface-raised, #ffffff);
+  --gui-surface-muted: var(--color-ds-surface-subtle, #f7f8f9);
   --gui-text: var(--color-ds-text-primary, #2c2d33);
   --gui-text-muted: var(--color-ds-text-secondary, #575a66);
   --gui-text-tertiary: var(--color-ds-text-tertiary, #8a8d99);
@@ -67,72 +68,78 @@
 }
 
 /**
- * Dark tokens. `html.dark` is set by the Sim theme blocking script before paint,
- * so the FOUC bridge matches `sim-theme` before React sets `data-gui-theme`.
+ * Dark tokens alias Arena DS dark semantics (`html.dark .deployed-chat`).
+ * `html.dark` is set before paint so the FOUC bridge matches `sim-theme`.
+ * Hex fallbacks match the previous GUI dark palette when DS vars are absent.
  */
 html.dark [data-gui-theme],
-[data-gui-theme="dark"] {
-  --gui-canvas: #12141a;
-  --gui-surface: #1c1f28;
-  --gui-text: #e8eaed;
-  --gui-text-muted: #b8bcc6;
-  --gui-text-tertiary: #9aa0a6;
-  --gui-border: #2e3340;
-  --gui-border-strong: #4a5160;
-  --gui-brand: #6b9bff;
-  --gui-brand-hover: #8ab0ff;
-  --gui-brand-pressed: #4d82f0;
-  --gui-brand-surface: #1a2744;
-  --gui-focus: rgb(107 155 255 / 40%);
-  --gui-danger: #ff6b6b;
-  --gui-danger-hover: #ff8a8a;
-  --gui-success: #3bc884;
-  --gui-success-surface: #163226;
-  --gui-success-text: #b1e9ce;
-  --gui-success-border: #23784f;
-  --gui-warning: #fb8145;
-  --gui-warning-surface: #3a2418;
-  --gui-warning-text: #fdcdb5;
-  --gui-warning-border: #974d29;
-  --gui-error-surface: #3a1515;
-  --gui-error-text: #faa3a3;
-  --gui-error-border: #921010;
-  --gui-info-surface: #15263a;
-  --gui-info-text: #a3c7f6;
-  --gui-info-border: #10458b;
-  --gui-shadow-card: 0px 2px 8px rgba(0, 0, 0, 0.35);
+[data-gui-theme='dark'] {
+  --gui-canvas: var(--color-ds-surface-subtle, #12141a);
+  --gui-surface: var(--color-ds-surface-raised, #1c1f28);
+  --gui-surface-muted: var(--color-ds-surface-page, #12141a);
+  --gui-text: var(--color-ds-text-primary, #e8eaed);
+  --gui-text-muted: var(--color-ds-text-secondary, #b8bcc6);
+  --gui-text-tertiary: var(--color-ds-text-tertiary, #9aa0a6);
+  --gui-border: var(--color-ds-border-default, #2e3340);
+  --gui-border-strong: var(--color-ds-border-strong, #4a5160);
+  --gui-brand: var(--color-ds-brand-default, #6b9bff);
+  --gui-brand-hover: var(--color-ds-brand-hover, #8ab0ff);
+  --gui-brand-pressed: var(--color-ds-brand-pressed, #4d82f0);
+  --gui-brand-surface: var(--color-ds-brand-surface, #1a2744);
+  --gui-focus: var(--color-ds-focus-ring, rgb(107 155 255 / 40%));
+  --gui-danger: var(--color-ds-interactive-destructive, #ff6b6b);
+  --gui-danger-hover: var(--color-ds-error-400, #ff8a8a);
+  --gui-success: var(--color-ds-status-success-default, #3bc884);
+  --gui-success-surface: var(--color-ds-status-success-surface, #163226);
+  --gui-success-text: var(--color-ds-status-success-text, #b1e9ce);
+  --gui-success-border: var(--color-ds-status-success-border, #23784f);
+  --gui-warning: var(--color-ds-status-warning-default, #fb8145);
+  --gui-warning-surface: var(--color-ds-status-warning-surface, #3a2418);
+  --gui-warning-text: var(--color-ds-status-warning-text, #fdcdb5);
+  --gui-warning-border: var(--color-ds-status-warning-border, #974d29);
+  --gui-error-surface: var(--color-ds-status-error-surface, #3a1515);
+  --gui-error-text: var(--color-ds-status-error-text, #faa3a3);
+  --gui-error-border: var(--color-ds-status-error-border, #921010);
+  --gui-info-surface: var(--color-ds-status-info-surface, #15263a);
+  --gui-info-text: var(--color-ds-status-info-text, #a3c7f6);
+  --gui-info-border: var(--color-ds-status-info-border, #10458b);
+  --gui-shadow-card: var(--shadow-ds-md, 0px 2px 8px rgba(0, 0, 0, 0.35));
 }
 
+/**
+ * Legacy `system` markup: follow prefers-color-scheme. Host sets light|dark only.
+ */
 @media (prefers-color-scheme: dark) {
-  [data-gui-theme="system"] {
-    --gui-canvas: #12141a;
-    --gui-surface: #1c1f28;
-    --gui-text: #e8eaed;
-    --gui-text-muted: #b8bcc6;
-    --gui-text-tertiary: #9aa0a6;
-    --gui-border: #2e3340;
-    --gui-border-strong: #4a5160;
-    --gui-brand: #6b9bff;
-    --gui-brand-hover: #8ab0ff;
-    --gui-brand-pressed: #4d82f0;
-    --gui-brand-surface: #1a2744;
-    --gui-focus: rgb(107 155 255 / 40%);
-    --gui-danger: #ff6b6b;
-    --gui-danger-hover: #ff8a8a;
-    --gui-success: #3bc884;
-    --gui-success-surface: #163226;
-    --gui-success-text: #b1e9ce;
-    --gui-success-border: #23784f;
-    --gui-warning: #fb8145;
-    --gui-warning-surface: #3a2418;
-    --gui-warning-text: #fdcdb5;
-    --gui-warning-border: #974d29;
-    --gui-error-surface: #3a1515;
-    --gui-error-text: #faa3a3;
-    --gui-error-border: #921010;
-    --gui-info-surface: #15263a;
-    --gui-info-text: #a3c7f6;
-    --gui-info-border: #10458b;
-    --gui-shadow-card: 0px 2px 8px rgba(0, 0, 0, 0.35);
+  [data-gui-theme='system'] {
+    --gui-canvas: var(--color-ds-surface-subtle, #12141a);
+    --gui-surface: var(--color-ds-surface-raised, #1c1f28);
+    --gui-surface-muted: var(--color-ds-surface-page, #12141a);
+    --gui-text: var(--color-ds-text-primary, #e8eaed);
+    --gui-text-muted: var(--color-ds-text-secondary, #b8bcc6);
+    --gui-text-tertiary: var(--color-ds-text-tertiary, #9aa0a6);
+    --gui-border: var(--color-ds-border-default, #2e3340);
+    --gui-border-strong: var(--color-ds-border-strong, #4a5160);
+    --gui-brand: var(--color-ds-brand-default, #6b9bff);
+    --gui-brand-hover: var(--color-ds-brand-hover, #8ab0ff);
+    --gui-brand-pressed: var(--color-ds-brand-pressed, #4d82f0);
+    --gui-brand-surface: var(--color-ds-brand-surface, #1a2744);
+    --gui-focus: var(--color-ds-focus-ring, rgb(107 155 255 / 40%));
+    --gui-danger: var(--color-ds-interactive-destructive, #ff6b6b);
+    --gui-danger-hover: var(--color-ds-error-400, #ff8a8a);
+    --gui-success: var(--color-ds-status-success-default, #3bc884);
+    --gui-success-surface: var(--color-ds-status-success-surface, #163226);
+    --gui-success-text: var(--color-ds-status-success-text, #b1e9ce);
+    --gui-success-border: var(--color-ds-status-success-border, #23784f);
+    --gui-warning: var(--color-ds-status-warning-default, #fb8145);
+    --gui-warning-surface: var(--color-ds-status-warning-surface, #3a2418);
+    --gui-warning-text: var(--color-ds-status-warning-text, #fdcdb5);
+    --gui-warning-border: var(--color-ds-status-warning-border, #974d29);
+    --gui-error-surface: var(--color-ds-status-error-surface, #3a1515);
+    --gui-error-text: var(--color-ds-status-error-text, #faa3a3);
+    --gui-error-border: var(--color-ds-status-error-border, #921010);
+    --gui-info-surface: var(--color-ds-status-info-surface, #15263a);
+    --gui-info-text: var(--color-ds-status-info-text, #a3c7f6);
+    --gui-info-border: var(--color-ds-status-info-border, #10458b);
+    --gui-shadow-card: var(--shadow-ds-md, 0px 2px 8px rgba(0, 0, 0, 0.35));
   }
 }

@@ -102,18 +102,39 @@ export function parseArenaGenerativeTheme(raw: unknown): ArenaGenerativeTheme | 
   return Object.keys(theme).length > 0 ? theme : undefined
 }
 
+export type ArenaGenerativeResolvedScheme = 'light' | 'dark'
+
+const DEFAULT_BRAND_HEX = ARENA_GENERATIVE_BRAND_COLOR.toLowerCase()
+
+function isDefaultArenaBrandColor(brandColor: string): boolean {
+  return brandColor.trim().toLowerCase() === DEFAULT_BRAND_HEX
+}
+
 /**
  * Inline CSS variables the host sets on the themed root. Catalog components
  * read `--gui-*`; omitted keys keep the stylesheet defaults.
+ *
+ * Default Arena brand (`#1A73E8`) is not inlined so light/dark CSS tokens win.
+ * Custom brands use scheme-aware mixes.
  */
-export function arenaGenerativeThemeStyle(theme?: ArenaGenerativeTheme): CSSProperties {
+export function arenaGenerativeThemeStyle(
+  theme?: ArenaGenerativeTheme,
+  scheme: ArenaGenerativeResolvedScheme = 'light'
+): CSSProperties {
   if (!theme) return {}
   const style: Record<string, string> = {}
-  if (theme.brandColor) {
-    style['--gui-brand'] = theme.brandColor
-    style['--gui-brand-hover'] = `color-mix(in srgb, ${theme.brandColor} 82%, #000)`
-    style['--gui-brand-pressed'] = `color-mix(in srgb, ${theme.brandColor} 68%, #000)`
-    style['--gui-brand-surface'] = `color-mix(in srgb, ${theme.brandColor} 10%, #fff)`
+  if (theme.brandColor && !isDefaultArenaBrandColor(theme.brandColor)) {
+    const brand = theme.brandColor
+    style['--gui-brand'] = brand
+    if (scheme === 'dark') {
+      style['--gui-brand-hover'] = `color-mix(in srgb, ${brand} 82%, #fff)`
+      style['--gui-brand-pressed'] = `color-mix(in srgb, ${brand} 68%, #fff)`
+      style['--gui-brand-surface'] = `color-mix(in srgb, ${brand} 22%, #12141a)`
+    } else {
+      style['--gui-brand-hover'] = `color-mix(in srgb, ${brand} 82%, #000)`
+      style['--gui-brand-pressed'] = `color-mix(in srgb, ${brand} 68%, #000)`
+      style['--gui-brand-surface'] = `color-mix(in srgb, ${brand} 10%, #fff)`
+    }
   }
   if (theme.radius) {
     style['--gui-radius'] = RADIUS_PX[theme.radius]

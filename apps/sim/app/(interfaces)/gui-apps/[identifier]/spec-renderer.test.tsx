@@ -2860,7 +2860,7 @@ describe('SpecRenderer', () => {
         shape: 'pill',
       })
       expect(button.className).toContain('border-[var(--gui-brand,#1a73e8)]')
-      expect(button.className).toContain('rounded-full')
+      expect(button.className).toContain('rounded-[var(--gui-radius-pill)]')
       expect(button.className).not.toContain('bg-[var(--gui-brand,#1a73e8)]')
     })
 

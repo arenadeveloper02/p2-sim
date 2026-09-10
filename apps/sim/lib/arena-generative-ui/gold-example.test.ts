@@ -10,12 +10,16 @@ import {
   goldExamplePromptForArchetype,
 } from '@/lib/arena-generative-ui/gold-example'
 import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
+  GOLD_AGENT_SHELL_GENERATE_KEY,
+  GOLD_AGENT_SHELL_HISTORY_KEY,
+  goldAgentShellManifest,
   goldCollectionManifest,
   goldContentManifest,
   goldDashboardManifest,
@@ -168,7 +172,59 @@ describe('per-archetype gold examples', () => {
     expect(
       goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'collection'] })
     ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(
+      goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results', 'collection'] })
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL)
+    expect(
+      goldExamplePromptForArchetype('task', {
+        pageArchetypes: ['task', 'results'],
+        shell: { navigation: 'tabs' },
+      })
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL)
+    expect(
+      goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results'] })
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+  })
+
+  it('validates the agent product-shell gold', () => {
+    const result = validateArenaGenerativeManifest(goldAgentShellManifest, {
+      apiBindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+    expect(Object.keys(goldAgentShellManifest.pages).sort()).toEqual([
+      'history',
+      'home',
+      'results',
+    ])
+    const serialized = JSON.stringify(goldAgentShellManifest)
+    expect(serialized).toContain('"type":"Tabs"')
+    expect(serialized).toContain('Generator|home')
+    expect(serialized).toContain('History|history')
+    expect(serialized).not.toContain('Results|results')
+    expect(serialized).toContain('"type":"WorkingCard"')
+    expect(serialized).toContain('view=enhanced')
+    expect(serialized).toContain('view=coverage')
+    expect(serialized).toContain('"selectItem":true')
+    expect(serialized).toContain('"navigateTo":"results"')
+    expect(serialized).toContain('"statePath":"history"')
+    expect(serialized).not.toContain('!selectedId')
+    expect(goldAgentShellManifest.pages.home.onLoad).toBeUndefined()
+    expect(goldAgentShellManifest.pages.results.onLoad).toBeUndefined()
+    expect(goldAgentShellManifest.pages.history.onLoad).toEqual(['load_history'])
+    expect(JSON.stringify(goldAgentShellManifest.actions.generate_article)).toContain(
+      '"navigate":"results"'
+    )
+    expect(JSON.stringify(goldAgentShellManifest.actions.generate_article)).not.toContain('apiKey')
+    expect(JSON.stringify(goldAgentShellManifest.actions.load_history)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (agent-shell)'
+    )
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain(GOLD_AGENT_SHELL_GENERATE_KEY)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain(GOLD_AGENT_SHELL_HISTORY_KEY)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain('Do not invent API keys')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL).toContain('cross-page History')
   })
 
   it('validates the dashboard gold including Chart', () => {

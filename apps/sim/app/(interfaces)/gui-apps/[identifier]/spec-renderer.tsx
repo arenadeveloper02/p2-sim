@@ -633,7 +633,7 @@ function buttonClass(
     BUTTON_VARIANT_CLASSES[variant as keyof typeof BUTTON_VARIANT_CLASSES] ??
       BUTTON_VARIANT_CLASSES[fallbackVariant],
     BUTTON_SIZE_CLASSES[size as keyof typeof BUTTON_SIZE_CLASSES] ?? BUTTON_SIZE_CLASSES.md,
-    asString(props.shape) === 'pill' && 'rounded-full'
+    asString(props.shape) === 'pill' && 'rounded-[var(--gui-radius-pill)]'
   )
 }
 
@@ -1395,6 +1395,9 @@ const FIELD_INPUT_CLASS =
   'h-10 w-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-4 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] text-[var(--gui-text,#2c2d33)] outline-none transition-[background-color,border-color,box-shadow] duration-100 placeholder:text-[var(--gui-text-tertiary,#8a8d99)] focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
 const FIELD_TEXTAREA_CLASS =
   'min-h-[96px] w-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-4 py-2.5 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] text-[var(--gui-text,#2c2d33)] outline-none transition-[background-color,border-color,box-shadow] duration-100 placeholder:text-[var(--gui-text-tertiary,#8a8d99)] focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
+/** Native checkbox / radio — Arena brand accent + focus ring. */
+const FIELD_NATIVE_CONTROL_CLASS =
+  'size-4 shrink-0 rounded-[var(--gui-radius-sm,8px)] border border-[var(--gui-border-strong,#a7aab2)] accent-[var(--gui-brand,#1a73e8)] outline-none transition-[box-shadow,border-color] duration-100 focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
 
 function fieldErrorClass(error: string | undefined): string {
   return error
@@ -1904,7 +1907,7 @@ function CatalogOverlayShell({
         aria-labelledby={titleId}
         data-testid={testId}
         className={cn(
-          'pointer-events-auto flex max-h-[min(90vh,720px)] flex-col overflow-hidden border border-[var(--gui-border,#e8e8ed)] bg-[var(--gui-surface,#fff)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
+          'pointer-events-auto flex max-h-[min(90vh,720px)] flex-col overflow-hidden border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
           isDrawer
             ? cn('absolute top-0 bottom-0 w-[min(100%,24rem)]', drawerSide)
             : 'relative z-10 w-full max-w-lg rounded-[var(--gui-radius,12px)]'
@@ -1927,14 +1930,14 @@ function CatalogOverlayShell({
           }
         }}
       >
-        <div className='flex items-center justify-between gap-3 border-[var(--gui-border,#e8e8ed)] border-b px-4 py-3'>
+        <div className='flex items-center justify-between gap-3 border-[var(--gui-border,#e2e3e5)] border-b px-4 py-3'>
           <h2 id={titleId} className='font-semibold text-[var(--gui-text,#2c2d33)] text-base'>
             {title}
           </h2>
           <button
             type='button'
             data-testid={`${testId}-close`}
-            className='rounded-[var(--gui-radius,12px)] px-2 py-1 text-[var(--gui-text-muted,#6b7280)] text-sm hover:bg-[var(--gui-surface-muted,#f7f7f8)]'
+            className='rounded-[var(--gui-radius,12px)] px-2 py-1 text-[var(--gui-text-muted,#575a66)] text-sm hover:bg-[var(--gui-surface-muted,#f7f8f9)]'
             onClick={() => onCloseRef.current()}
           >
             Close
@@ -2975,7 +2978,7 @@ export function SpecRenderer({
         return (
           <span
             className={cn(
-              'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs',
+              'inline-flex items-center rounded-[var(--gui-radius-pill)] px-2 py-0.5 font-medium text-xs',
               toneClass(props.tone)
             )}
             style={styleFromProps(props)}
@@ -2994,7 +2997,7 @@ export function SpecRenderer({
         const tone = viewTone ?? asString(props.tone, 'muted')
         const interactive = Boolean(actionId || navigateTo || setValue)
         const className = cn(
-          'inline-flex items-center rounded-full px-3 py-1.5 font-medium text-sm',
+          'inline-flex items-center rounded-[var(--gui-radius-pill)] px-3 py-1.5 font-medium text-sm',
           CHIP_TONE_CLASSES[tone as keyof typeof CHIP_TONE_CLASSES] ?? CHIP_TONE_CLASSES.muted
         )
         const runChip = () => {
@@ -3057,7 +3060,7 @@ export function SpecRenderer({
                   {asString(props.badge) ? (
                     <span
                       className={cn(
-                        'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs',
+                        'inline-flex items-center rounded-[var(--gui-radius-pill)] px-2 py-0.5 font-medium text-xs',
                         toneClass(props.badgeTone)
                       )}
                     >
@@ -3076,7 +3079,7 @@ export function SpecRenderer({
                       <span
                         key={item}
                         className={cn(
-                          'inline-flex items-center rounded-full px-3 py-1 font-medium text-sm',
+                          'inline-flex items-center rounded-[var(--gui-radius-pill)] px-3 py-1 font-medium text-sm',
                           CHIP_TONE_CLASSES.muted
                         )}
                       >
@@ -3588,7 +3591,7 @@ export function SpecRenderer({
                     key={suggestion}
                     type='button'
                     className={cn(
-                      'inline-flex items-center rounded-full px-3 py-1.5 font-medium text-sm',
+                      'inline-flex items-center rounded-[var(--gui-radius-pill)] px-3 py-1.5 font-medium text-sm',
                       CHIP_TONE_CLASSES.muted
                     )}
                     onClick={() => setNamedValue(name, suggestion)}
@@ -3714,6 +3717,7 @@ export function SpecRenderer({
                         value={option}
                         checked={selected === option}
                         onChange={() => setNamedValue(name, option)}
+                        className={cn(FIELD_NATIVE_CONTROL_CLASS, 'rounded-full')}
                       />
                       <span>{option}</span>
                     </label>
@@ -3745,6 +3749,7 @@ export function SpecRenderer({
                             : [...asFieldStringList(value), option]
                           setNamedValue(name, next)
                         }}
+                        className={FIELD_NATIVE_CONTROL_CLASS}
                       />
                       <span>{option}</span>
                     </label>
@@ -3779,13 +3784,13 @@ export function SpecRenderer({
                   >
                     <span
                       className={cn(
-                        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-100',
+                        'relative inline-flex h-5 w-9 items-center rounded-[var(--gui-radius-pill)] transition-colors duration-100',
                         checked ? 'bg-[var(--gui-brand,#1a73e8)]' : 'bg-[var(--gui-border,#e2e3e5)]'
                       )}
                     >
                       <span
                         className={cn(
-                          'inline-block size-4 rounded-full bg-[var(--gui-surface,#ffffff)] transition-transform',
+                          'inline-block size-4 rounded-[var(--gui-radius-pill)] bg-[var(--gui-surface,#ffffff)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))] transition-transform',
                           checked ? 'translate-x-4' : 'translate-x-0.5'
                         )}
                       />
@@ -3811,6 +3816,7 @@ export function SpecRenderer({
                   required={required}
                   checked={checked}
                   onChange={(event) => setNamedValue(name, event.target.checked)}
+                  className={FIELD_NATIVE_CONTROL_CLASS}
                 />
                 <span>
                   {label}

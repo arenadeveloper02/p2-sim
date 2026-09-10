@@ -443,6 +443,89 @@
   --tracking-ds-caption: 0.4px;
 }
 
+/**
+ * Dark semantic remap for `.deployed-chat` when Sim theme is dark (`html.dark`).
+ * Deployed chat force-lights `html`, so this only affects `/gui-apps` and any
+ * future dark-capable Arena surfaces that share the same token sheet.
+ */
+html.dark .deployed-chat {
+  --color-ds-surface-page: #12141a;
+  --color-ds-surface-subtle: #12141a;
+  --color-ds-surface-raised: #1c1f28;
+  --color-ds-surface-inverse: #e8eaed;
+  --color-ds-surface-overlay: rgb(18 20 26 / 72%);
+
+  --color-ds-text-primary: #e8eaed;
+  --color-ds-text-secondary: #b8bcc6;
+  --color-ds-text-tertiary: #9aa0a6;
+  --color-ds-text-disabled: #4a5160;
+  --color-ds-text-placeholder: #4a5160;
+  --color-ds-text-inverse: #12141a;
+  --color-ds-text-on-brand: #12141a;
+  --color-ds-text-link: #6b9bff;
+  --color-ds-text-link-hover: #8ab0ff;
+
+  --color-ds-icon-default: #b8bcc6;
+  --color-ds-icon-subtle: #9aa0a6;
+  --color-ds-icon-brand: #6b9bff;
+  --color-ds-icon-inverse: #12141a;
+  --color-ds-icon-disabled: #4a5160;
+
+  --color-ds-border-default: #2e3340;
+  --color-ds-border-strong: #4a5160;
+  --color-ds-border-subtle: #1c1f28;
+  --color-ds-border-focus: #6b9bff;
+  --color-ds-border-error: #ff6b6b;
+  --color-ds-border-disabled: #2e3340;
+
+  --color-ds-brand-default: #6b9bff;
+  --color-ds-brand-hover: #8ab0ff;
+  --color-ds-brand-pressed: #4d82f0;
+  --color-ds-brand-surface: #1a2744;
+
+  --color-ds-interactive-default: #6b9bff;
+  --color-ds-interactive-hover: #8ab0ff;
+  --color-ds-interactive-pressed: #4d82f0;
+  --color-ds-interactive-disabled: #4a5160;
+  --color-ds-interactive-selected: #1a2744;
+  --color-ds-interactive-on-interactive: #12141a;
+  --color-ds-interactive-destructive: #ff6b6b;
+
+  --color-ds-focus-ring: rgb(107 155 255 / 40%);
+
+  --color-ds-status-success-default: #3bc884;
+  --color-ds-status-success-surface: #163226;
+  --color-ds-status-success-text: #b1e9ce;
+  --color-ds-status-success-border: #23784f;
+
+  --color-ds-status-warning-default: #fb8145;
+  --color-ds-status-warning-surface: #3a2418;
+  --color-ds-status-warning-text: #fdcdb5;
+  --color-ds-status-warning-border: #974d29;
+
+  --color-ds-status-error-default: #ff6b6b;
+  --color-ds-status-error-surface: #3a1515;
+  --color-ds-status-error-text: #faa3a3;
+  --color-ds-status-error-border: #921010;
+
+  --color-ds-status-info-default: #6b9bff;
+  --color-ds-status-info-surface: #15263a;
+  --color-ds-status-info-text: #a3c7f6;
+  --color-ds-status-info-border: #10458b;
+
+  --color-ds-chart-axis: #4a5160;
+  --color-ds-chart-grid-line: #2e3340;
+  --color-ds-chart-label: #b8bcc6;
+  --color-ds-chart-background: #1c1f28;
+  --color-ds-chart-tooltip-bg: #e8eaed;
+  --color-ds-chart-tooltip-text: #12141a;
+
+  --shadow-ds-sm: 0px 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-ds-md: 0px 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-ds-lg: 0px 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-ds-xlg: 0px 8px 32px rgba(0, 0, 0, 0.45);
+}
+
 /* =============================================================================
      2b. CHART â€” Colorblind Safe series palette
      Add data-chart-palette="colorblind-safe" on chart container to swap series 6â€“7.

@@ -99,4 +99,11 @@ describe('GenerativeAppThemeRoot', () => {
     renderRoot({ brandColor: '#112233' })
     expect(guiRoot().style.getPropertyValue('--gui-brand')).toBe('#112233')
   })
+
+  it('does not inline default Arena brand so dark CSS tokens can win', () => {
+    localStorage.setItem('sim-theme', 'dark')
+    renderRoot({ brandColor: '#1A73E8' })
+    expect(guiRoot().getAttribute('data-gui-theme')).toBe('dark')
+    expect(guiRoot().style.getPropertyValue('--gui-brand')).toBe('')
+  })
 })

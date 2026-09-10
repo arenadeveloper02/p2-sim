@@ -820,6 +820,7 @@ export const SHELL_RECIPE = [
   'sidebar: emit catalog Workspace or a persistent nav column for top-level destinations. Sync via selectedId when regions exist. No Tabs for workspace regions. Host collapses inspector, then navigator.',
   'workspace: persistent multi-region chrome. Honour pages[].regions and pages[].interaction. Same catalog Workspace as the workspace page recipe.',
   'tabs: emit Tabs as Label|path for two or more peer top-level destinations (Generator|home and History|history). Not sequential steps (those are Stepper). Not task→results (that is navigate). Not same-page result panels (Chip setValue).',
+  'AGENT PRODUCT SHELL: when the blueprint has a Generator task page, a results page, and a History collection (or shell.tabs with task + results), wire three paths — home form (no wait chrome), results via navigate-first generate (WorkingCard + Chip setValue views), history as an always-visible list with Open = selectItem + navigateTo results. Tabs only for Generator|History. Do not invent History unless pages[] listed it.',
   'minimal / none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
   'header: emit AppHeader (icon + product name) as a direct child of Page. breadcrumbs: NavLinks only when that flag is true. PageHeader remains the in-page title inside Section.',
 ].join('\n')

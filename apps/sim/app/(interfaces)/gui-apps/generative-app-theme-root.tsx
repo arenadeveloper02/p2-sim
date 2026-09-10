@@ -49,7 +49,7 @@ export function GenerativeAppThemeRoot({ theme, children }: GenerativeAppThemeRo
     <div
       data-gui-theme={scheme}
       className='min-h-screen'
-      style={arenaGenerativeThemeStyle(theme)}
+      style={arenaGenerativeThemeStyle(theme, scheme)}
       suppressHydrationWarning
     >
       {children}

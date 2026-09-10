@@ -48,7 +48,7 @@ describe('parseArenaGenerativeTheme', () => {
 })
 
 describe('arenaGenerativeThemeStyle', () => {
-  it('sets scoped CSS variables for brand, radius, and density', () => {
+  it('sets scoped CSS variables for custom brand, radius, and density', () => {
     expect(
       arenaGenerativeThemeStyle({
         brandColor: '#112233',
@@ -59,12 +59,32 @@ describe('arenaGenerativeThemeStyle', () => {
       '--gui-brand': '#112233',
       '--gui-brand-hover': 'color-mix(in srgb, #112233 82%, #000)',
       '--gui-brand-pressed': 'color-mix(in srgb, #112233 68%, #000)',
+      '--gui-brand-surface': 'color-mix(in srgb, #112233 10%, #fff)',
       '--gui-radius': '8px',
       '--gui-space-md': '24px',
       '--gui-space-lg': '32px',
       '--gui-gap': '24px',
       '--gui-pad': '24px',
       '--gui-section-gap': '32px',
+    })
+  })
+
+  it('skips default Arena brand so light/dark CSS tokens win', () => {
+    const style = arenaGenerativeThemeStyle(
+      { brandColor: '#1A73E8', radius: 'md' },
+      'dark'
+    ) as Record<string, string>
+    expect(style['--gui-brand']).toBeUndefined()
+    expect(style['--gui-brand-hover']).toBeUndefined()
+    expect(style['--gui-radius']).toBe('12px')
+  })
+
+  it('uses lighten mixes for custom brand in dark scheme', () => {
+    expect(arenaGenerativeThemeStyle({ brandColor: '#112233' }, 'dark')).toMatchObject({
+      '--gui-brand': '#112233',
+      '--gui-brand-hover': 'color-mix(in srgb, #112233 82%, #fff)',
+      '--gui-brand-pressed': 'color-mix(in srgb, #112233 68%, #fff)',
+      '--gui-brand-surface': 'color-mix(in srgb, #112233 22%, #12141a)',
     })
   })
 

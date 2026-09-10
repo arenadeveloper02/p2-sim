@@ -1,5 +1,6 @@
 import type { Spec } from '@json-render/core'
 import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
@@ -200,17 +201,20 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
 ].join('\n\n')
 
 export interface GoldExamplePickerOptions {
-  /** Planned page archetypes. Shell is ignored — chrome is the shell recipe. */
+  /** Planned page archetypes. */
   pageArchetypes?: readonly ArenaGenerativeArchetype[]
   /** True when any page declared named regions. */
   hasRegions?: boolean
-  /** Ignored. Sidebar chrome is SHELL RECIPE, not gold. */
+  /**
+   * Used only for tabs + task + results → agent product-shell gold.
+   * Sidebar chrome remains the shell recipe, not gold.
+   */
   shell?: ArenaGenerativeShell
 }
 
 /**
- * Few-shot for the generator: wiring only. Selected from the planned sitemap,
- * never from sidebar chrome.
+ * Few-shot for the generator: wiring only. Selected from the planned sitemap.
+ * Tabs + task + results (or task + results + collection) prefer the agent shell.
  */
 export function goldExamplePromptForArchetype(
   archetype?: ArenaGenerativeArchetype,
@@ -219,11 +223,16 @@ export function goldExamplePromptForArchetype(
   const shapes = new Set<ArenaGenerativeArchetype>(options?.pageArchetypes ?? [])
   if (archetype) shapes.add(archetype)
   const hasRegions = Boolean(options?.hasRegions)
+  const tabsShell = options?.shell?.navigation === 'tabs'
+  const taskResults = shapes.has('task') && shapes.has('results')
 
   if (hasRegions || shapes.has('workspace')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
   }
-  if (shapes.has('task') && shapes.has('results')) {
+  if (taskResults && (shapes.has('collection') || tabsShell)) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL
+  }
+  if (taskResults) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
   }
   if (shapes.has('collection') && shapes.has('detail')) {

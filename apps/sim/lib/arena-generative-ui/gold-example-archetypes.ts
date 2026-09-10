@@ -1385,3 +1385,362 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
     manifest: goldWorkspaceManifest,
   }
 )
+
+const AGENT_SHELL_TABS = 'Generator|home\nHistory|history'
+
+function agentShellTabs(activePath: string): Spec['elements'][string] {
+  return {
+    type: 'Tabs',
+    props: { items: AGENT_SHELL_TABS, activePath },
+    children: [],
+  }
+}
+
+/**
+ * Agent product shell — Generator form, navigate-first results, History collection.
+ * Tabs are peer destinations only (not Results). Chip setValue switches result panels.
+ */
+const agentHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Article agent', backgroundColor: null },
+      children: ['app_header', 'tabs', 'section'],
+    },
+    app_header: {
+      type: 'AppHeader',
+      props: { title: 'Article agent', icon: 'spark' },
+      children: [],
+    },
+    tabs: agentShellTabs('home'),
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'form'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Article Recommendation Agent',
+        subtitle: 'Turn a target keyword and client into writer-ready recommendations.',
+        kicker: 'Generator',
+        align: 'start',
+      },
+      children: [],
+    },
+    form: {
+      type: 'Form',
+      props: { actionId: 'generate_article', align: 'start' },
+      children: ['target_keyword', 'client_brand', 'submit'],
+    },
+    target_keyword: {
+      type: 'TextInput',
+      props: {
+        name: 'targetKeyword',
+        label: 'Target Keyword',
+        required: true,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        placeholder: 'Dental implants',
+      },
+      children: [],
+    },
+    client_brand: {
+      type: 'TextInput',
+      props: {
+        name: 'clientBrand',
+        label: 'Client / Brand',
+        required: true,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        placeholder: '42 North Dental',
+      },
+      children: [],
+    },
+    submit: {
+      type: 'SubmitButton',
+      props: { label: 'Generate Recommendations', actionId: 'generate_article', size: null },
+      children: [],
+    },
+  },
+}
+
+const agentResultsSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Recommendations', backgroundColor: null },
+      children: ['app_header', 'tabs', 'section'],
+    },
+    app_header: {
+      type: 'AppHeader',
+      props: { title: 'Article agent', icon: 'spark' },
+      children: [],
+    },
+    tabs: agentShellTabs('results'),
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['back', 'context', 'working', 'views', 'enhanced_panel', 'coverage_panel'],
+    },
+    back: {
+      type: 'NavLink',
+      props: { label: 'Back', to: 'home' },
+      children: [],
+    },
+    context: {
+      type: 'Text',
+      props: {
+        text: '{targetKeyword} · {clientBrand}',
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+    working: {
+      type: 'WorkingCard',
+      props: {
+        title: 'Working on recommendations…',
+        steps: 'Analyzing the keyword\nDrafting recommendations\nFormatting the article',
+        estimate: 'Usually takes 60–90s',
+        intervalMs: '2500',
+        durationMs: null,
+        tip: 'Tip: Keep the keyword specific to the client brand.',
+        cancelTo: 'home',
+        cancelLabel: 'Cancel',
+        skeleton: true,
+      },
+      children: [],
+    },
+    views: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['view_enhanced', 'view_coverage'],
+    },
+    view_enhanced: {
+      type: 'Chip',
+      props: {
+        text: 'Enhanced Article',
+        tone: 'muted',
+        setValue: 'view=enhanced',
+        actionId: null,
+        navigateTo: null,
+      },
+      children: [],
+    },
+    view_coverage: {
+      type: 'Chip',
+      props: {
+        text: 'Coverage',
+        tone: 'muted',
+        setValue: 'view=coverage',
+        actionId: null,
+        navigateTo: null,
+      },
+      children: [],
+    },
+    enhanced_panel: {
+      type: 'Card',
+      props: {
+        title: 'Enhanced Article',
+        subtitle: null,
+        description: null,
+        footerText: null,
+        padding: 'lg',
+        variant: 'default',
+        backgroundColor: null,
+        showWhen: 'view=enhanced',
+      },
+      children: ['enhanced_body'],
+    },
+    enhanced_body: {
+      type: 'DataText',
+      props: {
+        statePath: 'content',
+        fallback: 'Generate recommendations to fill this view.',
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+    coverage_panel: {
+      type: 'Card',
+      props: {
+        title: 'Coverage',
+        subtitle: null,
+        description: null,
+        footerText: null,
+        padding: 'lg',
+        variant: 'default',
+        backgroundColor: null,
+        showWhen: 'view=coverage',
+      },
+      children: ['coverage_body'],
+    },
+    coverage_body: {
+      type: 'DataText',
+      props: {
+        statePath: 'coverage_report',
+        fallback: 'Coverage appears after generate or History Open.',
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+  },
+}
+
+const agentHistorySpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'History', backgroundColor: null },
+      children: ['app_header', 'tabs', 'section'],
+    },
+    app_header: {
+      type: 'AppHeader',
+      props: { title: 'Article agent', icon: 'spark' },
+      children: [],
+    },
+    tabs: agentShellTabs('history'),
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'history_list'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'History',
+        subtitle: 'Reopen a past run on Results without refetching generate.',
+        kicker: 'Runs',
+        align: 'start',
+      },
+      children: [],
+    },
+    history_list: {
+      type: 'Repeat',
+      props: { statePath: 'history', emptyText: 'No past runs yet.' },
+      children: ['history_card'],
+    },
+    history_card: {
+      type: 'Card',
+      props: {
+        title: '{item.keyword}',
+        subtitle: '{item.client}',
+        description: null,
+        footerText: '{item.date}',
+        padding: 'lg',
+        variant: 'default',
+        backgroundColor: null,
+      },
+      children: ['open_run'],
+    },
+    open_run: {
+      type: 'Button',
+      props: {
+        label: 'Open',
+        actionId: null,
+        selectItem: true,
+        clearItem: null,
+        navigateTo: 'results',
+        href: null,
+        variant: 'secondary',
+        size: 'sm',
+        shape: 'pill',
+        showWhen: null,
+      },
+      children: [],
+    },
+  },
+}
+
+export const GOLD_AGENT_SHELL_GENERATE_KEY = 'generate_article'
+export const GOLD_AGENT_SHELL_HISTORY_KEY = 'load_history'
+
+export const goldAgentShellManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: { path: 'home', title: 'Generator', spec: agentHomeSpec },
+    results: { path: 'results', title: 'Recommendations', spec: agentResultsSpec },
+    history: {
+      path: 'history',
+      title: 'History',
+      spec: agentHistorySpec,
+      onLoad: ['load_history'],
+    },
+  },
+  actions: {
+    generate_article: {
+      onSuccess: {
+        setState: {
+          content:
+            '## Dental implants\n\nWriter-ready outline for 42 North Dental.',
+          enhanced_article:
+            '## Dental implants\n\nWriter-ready outline for 42 North Dental.',
+          coverage_report: 'Coverage: intent match high; competing SERP density medium.',
+        },
+        navigate: 'results',
+      },
+    },
+    load_history: {
+      onSuccess: {
+        setState: {
+          history: [
+            {
+              id: 'run_1',
+              keyword: 'Dental implants',
+              client: '42 North Dental',
+              date: '2026-08-23',
+              output: '## Dental implants\n\nPrior run markdown.',
+              enhanced_article: '## Dental implants\n\nPrior run markdown.',
+              coverage_report: 'Coverage from history row.',
+            },
+            {
+              id: 'run_2',
+              keyword: 'Clear aligners',
+              client: '42 North Dental',
+              date: '2026-08-20',
+              output: '## Clear aligners\n\nPrior run markdown.',
+              enhanced_article: '## Clear aligners\n\nPrior run markdown.',
+              coverage_report: 'Coverage from history row.',
+            },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL = goldPrompt(
+  'agent-shell',
+  [
+    'Agent product shell when the blueprint has task + results + a History collection (or shell.tabs with task + results).',
+    'Three paths: home (Generator form), results (navigate destination), history (collection).',
+    'Tabs items are Generator|home and History|history only — Results is navigate, not a Results tab.',
+    'Home has no wait chrome and no onLoad; SubmitButton runs generate_article; onSuccess navigates to results.',
+    'Submitted fields are available as inputs.targetKeyword / "{targetKeyword}" on results.',
+    'Results has no onLoad of generate; WorkingCard for wait; Chip setValue view=enhanced|coverage above panels — not catalog Tabs for those labels.',
+    'History onLoad seeds short scalar cards; Open is selectItem true plus navigateTo results (cross-page History — never showWhen !selectedId on the list); host copies output/enhanced_article onto content and named keys.',
+    `Generate actionId is "${GOLD_AGENT_SHELL_GENERATE_KEY}"; history onLoad is "${GOLD_AGENT_SHELL_HISTORY_KEY}". When bindings were declared, use those apiKeys and omit dummy setState content. Do not invent API keys. Do not invent History unless the blueprint listed it.`,
+  ].join(' '),
+  {
+    title: 'Article agent',
+    content: 'Generator form, results with Chip views, and History Open onto results.',
+    manifest: goldAgentShellManifest,
+  }
+)
