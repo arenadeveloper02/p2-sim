@@ -10,6 +10,14 @@ export const CREDIT_MULTIPLIER = CREDITS_PER_DOLLAR
 
 const RUNTIME_CREDITS_PER_DOLLAR_KEY = '__SIM_CREDITS_PER_DOLLAR__'
 
+/**
+ * Attribute on the `<html>` element carrying the server-resolved conversion.
+ * A `<script>` in the React tree is hoistable in React 19 and both warns and
+ * shifts sibling markup during hydration; this attribute is on the first tag
+ * in the document, so client helpers can read it before any script runs.
+ */
+export const CREDITS_PER_DOLLAR_ATTRIBUTE = 'data-credits-per-dollar'
+
 type RuntimeGlobal = typeof globalThis & {
   [RUNTIME_CREDITS_PER_DOLLAR_KEY]?: unknown
 }
@@ -21,13 +29,35 @@ function parseCreditsPerDollar(value: unknown): number | null {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
+function readDocumentCreditsPerDollar(): number | null {
+  if (typeof document === 'undefined') return null
+  const raw = document.documentElement?.getAttribute(CREDITS_PER_DOLLAR_ATTRIBUTE)
+  if (!raw) return null
+  return parseCreditsPerDollar(Number(raw))
+}
+
+/**
+ * Props to spread onto the `<html>` element so browser conversion helpers can
+ * read the server-resolved rate without a component-rendered `<script>`.
+ */
+export function creditsPerDollarHtmlAttributes(creditsPerDollar: number): Record<string, string> {
+  const parsed = parseCreditsPerDollar(creditsPerDollar)
+  if (parsed === null) return {}
+  return { [CREDITS_PER_DOLLAR_ATTRIBUTE]: String(parsed) }
+}
+
 /**
  * Returns the resolved credits-per-dollar value for the current runtime.
  */
 export function getCreditsPerDollar(): number {
   const runtimeGlobal = globalThis as RuntimeGlobal
   const runtimeValue = parseCreditsPerDollar(runtimeGlobal[RUNTIME_CREDITS_PER_DOLLAR_KEY])
-  return runtimeValue ?? serverCreditsPerDollar
+  if (runtimeValue !== null) return runtimeValue
+
+  const documentValue = readDocumentCreditsPerDollar()
+  if (documentValue !== null) return documentValue
+
+  return serverCreditsPerDollar
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   TraceFlags,
   trace,
 } from '@opentelemetry/api'
+import { setRequestTraceId } from '@sim/logger'
 import { describeError, toError } from '@sim/utils/errors'
 import { RequestTraceV1Outcome } from '@/lib/copilot/generated/request-trace-v1'
 import {
@@ -359,7 +360,6 @@ interface CopilotOtelScope {
   runId?: string
   streamId?: string
   transport: 'headless' | 'stream'
-  userMessagePreview?: string
 }
 
 // Dashboard-column width; long enough for triage disambiguation.
@@ -367,11 +367,6 @@ const USER_MESSAGE_PREVIEW_MAX_CHARS = 500
 function buildAgentSpanAttributes(
   scope: CopilotOtelScope & { requestId: string }
 ): Record<string, string | number | boolean> {
-  // Gated behind the same env var as full GenAI message capture — a
-  // 500-char preview is still user prompt content.
-  const preview = isGenAIMessageCaptureEnabled()
-    ? truncateUserMessagePreview(scope.userMessagePreview)
-    : undefined
   return {
     [TraceAttr.GenAiAgentName]: 'mothership',
     [TraceAttr.GenAiAgentId]:
@@ -387,7 +382,6 @@ function buildAgentSpanAttributes(
     ...(scope.executionId ? { [TraceAttr.CopilotExecutionId]: scope.executionId } : {}),
     ...(scope.runId ? { [TraceAttr.RunId]: scope.runId } : {}),
     ...(scope.streamId ? { [TraceAttr.StreamId]: scope.streamId } : {}),
-    ...(preview ? { [TraceAttr.CopilotUserMessagePreview]: preview } : {}),
   }
 }
 
@@ -431,6 +425,15 @@ interface CopilotOtelRoot {
     error?: unknown,
     cancelReason?: CopilotRequestCancelReasonValue
   ) => void
+  /**
+   * Stamp the triage preview of the user's prompt.
+   *
+   * Gated behind the same env var as full GenAI message capture — a 500-char
+   * preview is still user prompt content — and separate from span creation so
+   * that a turn refused before it starts (a capability the caller's permission
+   * group withholds, a rejected branch) exports no part of the prompt.
+   */
+  setUserMessagePreview: (raw: string | undefined) => void
   setInputMessages: (input: CopilotAgentInputMessages) => void
   setOutputMessages: (output: CopilotAgentOutputMessages) => void
   setRequestShape: (shape: CopilotOtelRequestShape) => void
@@ -459,6 +462,11 @@ export function startCopilotOtelRoot(
     (spanContext.traceId && spanContext.traceId.length === 32 ? spanContext.traceId : '')
   span.setAttribute(TraceAttr.RequestId, requestId)
   span.setAttribute(TraceAttr.SimRequestId, requestId)
+  // Stamp the trace id onto the route's log context so every sim log line in
+  // this request greps by the same id the Go copilot logs as trace_id.
+  if (spanContext.traceId && spanContext.traceId.length === 32) {
+    setRequestTraceId(spanContext.traceId)
+  }
   const rootContext = trace.setSpan(parentContext, carrierSpan)
 
   let finished = false
@@ -497,6 +505,11 @@ export function startCopilotOtelRoot(
     context: rootContext,
     requestId,
     finish,
+    setUserMessagePreview: (raw) => {
+      if (!isGenAIMessageCaptureEnabled()) return
+      const preview = truncateUserMessagePreview(raw)
+      if (preview) span.setAttribute(TraceAttr.CopilotUserMessagePreview, preview)
+    },
     setInputMessages: (input) => setAgentInputMessages(span, input),
     setOutputMessages: (output) => setAgentOutputMessages(span, output),
     setRequestShape: (shape) => applyRequestShape(span, shape),
@@ -572,6 +585,9 @@ export async function withCopilotOtelContext<T>(
   if (resolvedRequestId) {
     span.setAttribute(TraceAttr.RequestId, resolvedRequestId)
     span.setAttribute(TraceAttr.SimRequestId, resolvedRequestId)
+  }
+  if (spanContext.traceId && spanContext.traceId.length === 32) {
+    setRequestTraceId(spanContext.traceId)
   }
   const otelContext = trace.setSpan(parentContext, carrierSpan)
   let terminalStatusSet = false

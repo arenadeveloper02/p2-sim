@@ -19,9 +19,9 @@ import {
   ExpandableContent,
   handleKeyboardActivation,
   Info,
+  OverflowText,
 } from '@sim/emcn'
 import { ChevronDown, Search } from '@sim/emcn/icons'
-import clsx from 'clsx'
 import { useParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { captureEvent } from '@/lib/posthog/client'
@@ -35,13 +35,9 @@ import { useToolbarItemInteractions } from '@/app/workspace/[workspaceId]/w/[wor
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
 import { ParallelTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/parallel/parallel-config'
 import { BlockTile } from '@/blocks/block-tile'
-import {
-  buildCustomBlockConfig,
-  CUSTOM_BLOCK_TILE_COLOR,
-  isCustomBlockType,
-} from '@/blocks/custom/build-config'
+import { buildCustomBlockConfig, isCustomBlockType } from '@/blocks/custom/build-config'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
-import { getCustomBlockIcon } from '@/blocks/custom/custom-block-icon'
+import { getCustomBlockTile } from '@/blocks/custom/custom-block-icon'
 import { getCanonicalBlocksByCategory } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
@@ -164,7 +160,7 @@ const ToolbarItem = memo(function ToolbarItem({
       onContextMenu={handleContextMenu}
       className={cn(
         chipVariants({ fullWidth: true }),
-        'focus-visible:bg-[var(--surface-active)] focus-visible:outline-none active:cursor-grabbing'
+        'focus-visible:bg-[var(--surface-active)] focus-visible:outline-hidden active:cursor-grabbing'
       )}
       onKeyDown={handleKeyDown}
     >
@@ -174,7 +170,7 @@ const ToolbarItem = memo(function ToolbarItem({
         bgColor={item.bgColor}
         data-toolbar-item-icon=''
       />
-      <span className='min-w-0 flex-1 truncate text-[var(--text-body)]'>{item.name}</span>
+      <OverflowText label={item.name} className='flex-1 text-[var(--text-body)]' />
     </div>
   )
 })
@@ -348,7 +344,7 @@ const ToolbarSection = memo(function ToolbarSection({
 
   return (
     <section>
-      <div className='sticky top-0 z-10 flex w-full flex-shrink-0 items-center gap-2 bg-[var(--bg)] px-4 pt-3 pb-2'>
+      <div className='sticky top-0 z-10 flex w-full shrink-0 items-center gap-2 bg-[var(--bg)] px-4 pt-3 pb-2'>
         <button
           type='button'
           onClick={toggle}
@@ -358,7 +354,7 @@ const ToolbarSection = memo(function ToolbarSection({
         >
           <span className='text-[var(--text-muted)] text-small'>{label}</span>
           <ChevronDown
-            className={clsx(
+            className={cn(
               'size-[14px] text-[var(--text-icon)] transition-transform duration-150',
               !expanded && '-rotate-90'
             )}
@@ -367,7 +363,7 @@ const ToolbarSection = memo(function ToolbarSection({
         <Info>{tooltip}</Info>
       </div>
       <Expandable expanded={expanded}>
-        <ExpandableContent className={animate ? undefined : '!animate-none'}>
+        <ExpandableContent className={animate ? undefined : 'animate-none!'}>
           <div className='flex flex-col gap-0.5 px-2'>
             {items.map((item, index) => (
               <ToolbarItem
@@ -520,10 +516,7 @@ export const Toolbar = memo(
       return customBlocksData
         .filter((cb) => cb.enabled && cb.workflowId !== currentWorkflowId)
         .map((cb) => {
-          const icon = getCustomBlockIcon(cb.iconUrl, fallbackIconUrl)
-          // An image (uploaded or whitelabel) renders on a transparent tile; the
-          // default glyph keeps the neutral tile so it stays visible.
-          const tileColor = cb.iconUrl || fallbackIconUrl ? 'transparent' : CUSTOM_BLOCK_TILE_COLOR
+          const { icon, bgColor } = getCustomBlockTile(cb.iconUrl, fallbackIconUrl)
           return {
             name: cb.name,
             type: cb.type,
@@ -536,10 +529,10 @@ export const Toolbar = memo(
                 exposedOutputs: cb.exposedOutputs,
               },
               cb.inputFields,
-              { icon, bgColor: tileColor }
+              { icon, bgColor }
             ),
             icon,
-            bgColor: tileColor,
+            bgColor,
           } satisfies BlockItem
         })
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -826,7 +819,7 @@ export const Toolbar = memo(
         <div
           role='button'
           tabIndex={0}
-          className='mx-[-1px] flex flex-shrink-0 cursor-pointer items-center justify-between border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'
+          className='mx-[-1px] flex shrink-0 cursor-pointer items-center justify-between border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'
           onClick={focusSearch}
           onKeyDown={(event) => handleKeyboardActivation(event, focusSearch)}
         >
@@ -848,7 +841,7 @@ export const Toolbar = memo(
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onBlur={handleSearchBlur}
-                className='w-full border-none bg-transparent pr-0.5 text-right text-[var(--text-primary)] text-small placeholder:text-[var(--text-muted)] focus:outline-none'
+                className='w-full border-none bg-transparent pr-0.5 text-right text-[var(--text-primary)] text-small placeholder:text-[var(--text-muted)] focus:outline-hidden'
               />
             )}
           </div>

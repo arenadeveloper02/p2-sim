@@ -1,7 +1,9 @@
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { HostedKeyRateLimitConfig } from '@/lib/core/rate-limiter'
+import type { HttpRedirectPolicy } from '@/lib/core/security/http-redirect-policy'
 import type { PrivateSecretProvenanceSelection } from '@/lib/execution/model-input-provenance'
 import type { OAuthService } from '@/lib/oauth'
+import type { ExecutorDelegationOrigin } from '@/executor/types'
 import type { ResolvedSecretInputPath } from '@/executor/utils/resolved-secret-trace-registry'
 
 export type BYOKProviderId =
@@ -22,6 +24,7 @@ export type BYOKProviderId =
   | 'semrush'
   | 'browser_use'
   | 'context_dev'
+  | 'tinyfish'
   | 'serper'
   | 'jina'
   | 'perplexity'
@@ -55,6 +58,7 @@ export type WorkflowToolExecutionContext = {
   workflowId?: string
   executionId?: string
   userId?: string
+  executorDelegationOrigin?: ExecutorDelegationOrigin
 }
 
 export type OutputType =
@@ -97,6 +101,8 @@ export interface ToolResponse {
   success: boolean // Whether the tool execution was successful
   output: Record<string, any> // The structured output from the tool
   error?: string // Error message if success is false
+  /** False when replaying the operation could duplicate external side effects. */
+  retryable?: boolean
   /**
    * HTTP status owned by SIM itself (e.g. hosted-key rate limiting or
    * exhaustion), carried so it survives the throw → `ToolResponse` flattening
@@ -119,6 +125,19 @@ export interface OAuthConfig {
   provider: OAuthService // The service that needs to be authorized
   requiredScopes?: string[] // Specific scopes this tool needs (for granular scope validation)
   useUserToken?: boolean // Indicates if the tool requires a user token (xoxp-) instead of a bot token (xoxb-)
+  /** Restricts execution to one stored credential kind after authorized token resolution. */
+  credentialKind?: 'oauth' | 'service-account'
+  /** Token-response fields that must replace any caller-supplied tool parameter of the same name. */
+  authoritativeParams?: readonly (
+    | 'apiDomain'
+    | 'authStyle'
+    | 'cloudId'
+    | 'credentialType'
+    | 'domain'
+    | 'instanceUrl'
+    | 'realmId'
+    | 'quickBooksEnvironment'
+  )[]
 }
 
 export interface ToolRetryConfig {
@@ -136,12 +155,16 @@ export interface ToolParameterItemSchema {
   readonly const?: string | number | boolean
   readonly minimum?: number
   readonly maximum?: number
+  readonly minItems?: number
+  readonly maxItems?: number
   readonly minLength?: number
   readonly maxLength?: number
+  readonly format?: string
   readonly pattern?: string
   readonly additionalProperties?: boolean
   readonly required?: readonly string[]
   readonly properties?: Readonly<Record<string, ToolParameterItemSchema>>
+  readonly items?: ToolParameterItemSchema
   readonly anyOf?: readonly ToolParameterItemSchema[]
 }
 
@@ -162,6 +185,8 @@ export interface ToolConfig<P = any, R = any> {
       default?: any
       description?: string
       items?: ToolParameterItemSchema
+      minItems?: number
+      maxItems?: number
     }
   >
   // Output schema - what this tool produces
@@ -183,8 +208,11 @@ export interface ToolConfig<P = any, R = any> {
     body?: (params: P) => Record<string, any> | string | FormData | undefined
     /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
     timeout?: number
-    /** Selects the signed, workflow-scoped identity required by protected internal routes. */
-    internalAuth?: 'executor_delegation'
+    /**
+     * Allows the resolved request URL to target this Sim instance. Reserved for generic,
+     * user-directed HTTP capabilities; integration tools must use an in-process operation.
+     */
+    allowSameOrigin?: true
     /** Defines the exact request fields that may become model-visible. */
     modelInput?:
       | {
@@ -207,27 +235,27 @@ export interface ToolConfig<P = any, R = any> {
           /**
            * Selects inline model-bound values that must not be rewritten, such as file bytes or
            * data URLs. Storage keys, paths, signed URLs, and remote URLs are locators rather than
-           * byte provenance. Metadata is delivered only to an authenticated internal route that
-           * owns the final allow/reject decision.
+           * byte provenance. Metadata is delivered only to an in-process operation that owns the
+           * final allow/reject decision.
            */
           privateInputPaths?: (params: P) => readonly ResolvedSecretInputPath[]
         }
       | {
           /**
-           * Sends encrypted provenance out-of-band to an authenticated internal route that owns
-           * the corresponding projection boundary.
+           * Sends encrypted provenance out-of-band to an in-process operation that owns the
+           * corresponding projection boundary.
            */
           mode: 'private-provenance'
           inputPaths: (params: P) => readonly ResolvedSecretInputPath[]
         }
     /**
-     * Transports encrypted secret provenance across an authenticated internal
-     * tool boundary without rewriting the selected value.
+     * Transports encrypted secret provenance across an in-process tool boundary without
+     * rewriting the selected value.
      */
     secretProvenance?: {
-      /** Selects the exact value whose provenance is persisted by the route. */
+      /** Selects the exact value whose provenance is persisted by the operation. */
       request?: (params: P) => PrivateSecretProvenanceSelection[]
-      /** Imports provenance returned for the route's functional response. */
+      /** Imports provenance returned for the operation's functional response. */
       response?: {
         /** Whether a valid incomplete report fails this call or taints later model egress. */
         incomplete: 'reject' | 'propagate'
@@ -236,6 +264,8 @@ export interface ToolConfig<P = any, R = any> {
     retry?: ToolRetryConfig
     /** Allow http:// URLs for self-hosted endpoints (default false, https only). */
     allowHttp?: boolean
+    /** Selects redirect compatibility and cross-origin credential behavior for this request. */
+    redirectPolicy?: (params: P) => HttpRedirectPolicy
     /**
      * Drop the `Authorization` header when following a redirect. Set this on any
      * tool whose endpoint redirects to a different origin carrying its own
@@ -244,6 +274,9 @@ export interface ToolConfig<P = any, R = any> {
      */
     stripAuthOnRedirect?: boolean
   }
+
+  /** Internal operations use {@link InternalToolConfig} instead of an HTTP request. */
+  operation?: never
 
   // Post-processing (optional) - allows additional processing after the initial request
   postProcess?: (
@@ -254,14 +287,6 @@ export interface ToolConfig<P = any, R = any> {
 
   // Response handling
   transformResponse?: (response: Response, params?: P) => Promise<R>
-
-  /**
-   * Direct execution function for tools that don't need HTTP requests.
-   * If provided, this will be called instead of making an HTTP request.
-   * Receives the workflow execution's abort signal (when one is active) so
-   * long-running direct executions can propagate cancellation.
-   */
-  directExecution?: (params: P, signal?: AbortSignal) => Promise<ToolResponse>
 
   /**
    * Optional dynamic schema enrichment for specific params.
@@ -288,16 +313,6 @@ export interface TableRow {
     Key: string
     Value: any
   }
-}
-
-export interface OAuthTokenPayload {
-  credentialId?: string
-  credentialAccountUserId?: string
-  providerId?: string
-  toolId?: string
-  workflowId?: string
-  impersonateEmail?: string
-  scopes?: string[]
 }
 
 /**
@@ -447,4 +462,31 @@ export interface ToolHostingConfig<P = Record<string, unknown>> {
   pricing: ToolHostingPricing<P>
   /** Hosted key rate limit configuration (required for hosted key distribution) */
   rateLimit: HostedKeyRateLimitConfig
+}
+
+export interface InternalToolOperationConfig<P> {
+  /** Materializes the typed input consumed by the server-side operation handler. */
+  input: (params: P) => unknown
+  /** Defines model-visible fields and private model-input provenance for this operation. */
+  modelInput?: ToolConfig<P>['request']['modelInput']
+  /** Preserves resolved-secret provenance across the in-process operation boundary. */
+  secretProvenance?: ToolConfig<P>['request']['secretProvenance']
+}
+
+/** Tool metadata shared by network-backed and in-process tools. */
+export type ToolDefinition<P = any, R = any> = Omit<ToolConfig<P, R>, 'request' | 'operation'>
+
+/**
+ * In-process tool definition. Internal operations deliberately have no URL, HTTP method, or
+ * request headers; trusted authority and cancellation are supplied by the executor at runtime.
+ */
+export type InternalToolConfig<P = any, R = any> = ToolDefinition<P, R> & {
+  operation: InternalToolOperationConfig<P>
+  request?: never
+}
+
+export type ExecutableToolConfig<P = any, R = any> = ToolConfig<P, R> | InternalToolConfig<P, R>
+
+export function isInternalToolConfig(tool: ExecutableToolConfig): tool is InternalToolConfig {
+  return tool.operation !== undefined
 }

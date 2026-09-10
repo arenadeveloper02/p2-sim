@@ -2,7 +2,14 @@
  * @vitest-environment node
  */
 import type { SessionPrincipal } from '@sim/auth/principal'
+import {
+  permissionGroupScopeMock,
+  permissionGroupScopeMockFns,
+  resetPermissionGroupScopeMock,
+} from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/permission-groups/config-scope.server', () => permissionGroupScopeMock)
 
 const mocks = vi.hoisted(() => ({
   loadWorkspace: vi.fn(),
@@ -26,6 +33,11 @@ const mocks = vi.hoisted(() => ({
   recordAudit: vi.fn(),
   canUserManageWorkspaceBilling: vi.fn(),
   canUserManageBillingEntity: vi.fn(),
+  isCapabilityWithheldForUser: vi.fn(),
+}))
+
+vi.mock('@/lib/permission-groups/user-scope.server', () => ({
+  isCapabilityWithheldForUser: mocks.isCapabilityWithheldForUser,
 }))
 
 vi.mock('@/lib/billing/core/workspace-billing-authority', () => ({
@@ -78,6 +90,8 @@ vi.mock('@sim/audit', () => ({ recordAudit: mocks.recordAudit }))
 
 import { getBillingStatus } from '@/lib/billing/application/get-billing-status'
 import { listBillingLogs } from '@/lib/billing/application/list-billing-logs'
+import { PersonalApiKeysDisabledError } from '@/lib/core/application'
+import { DEFAULT_PERMISSION_GROUP_CONFIG } from '@/lib/permission-groups/fields'
 
 const workspaceContext = {
   workspaceId: 'workspace-1',
@@ -99,10 +113,12 @@ const workspacePrincipal = {
 describe('billing application use cases', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetPermissionGroupScopeMock()
     mocks.loadWorkspace.mockResolvedValue(workspaceContext)
     mocks.resolvePermission.mockResolvedValue('read')
     mocks.canUserManageWorkspaceBilling.mockResolvedValue(false)
     mocks.canUserManageBillingEntity.mockResolvedValue(false)
+    mocks.isCapabilityWithheldForUser.mockResolvedValue(false)
     mocks.checkUsageStatus.mockResolvedValue({ currentUsage: 1, limit: 10, isExceeded: false })
     mocks.checkAttributedBlocks.mockResolvedValue({ blocked: false })
     mocks.toUsageLimitSubscription.mockReturnValue(null)
@@ -192,6 +208,50 @@ describe('billing application use cases', () => {
     expect(result.credits).toBeNull()
     expect(result.storage).toBeNull()
     expect(mocks.canUserManageWorkspaceBilling).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The billing reads resolve their own workspace scope instead of running
+   * through `authorizeWorkspaceOperation`, so the funnel's personal-key refusal
+   * has to be repeated here — otherwise the same key v2 refuses everywhere else
+   * still reads a workspace's plan and ledger.
+   */
+  it('refuses a personal key whose group withholds personal keys', async () => {
+    permissionGroupScopeMockFns.mockResolvePermissionGroupConfig.mockResolvedValue({
+      ...DEFAULT_PERMISSION_GROUP_CONFIG,
+      disablePersonalApiKeys: true,
+    })
+
+    await expect(
+      getBillingStatus.execute({
+        principal: personalPrincipal,
+        input: { workspaceId: 'workspace-1' },
+      })
+    ).rejects.toBeInstanceOf(PersonalApiKeysDisabledError)
+  })
+
+  /**
+   * The account-scoped read names no workspace, so the workspace branch's
+   * `personal_api_key.use` check never runs on it. Without a gate of its own,
+   * the same key an organization withholds from the workspace-scoped read still
+   * reads the account's plan, balance and usage by dropping the parameter.
+   */
+  it('refuses an account-scoped personal key through the organization default group', async () => {
+    mocks.isCapabilityWithheldForUser.mockResolvedValue(true)
+
+    await expect(
+      getBillingStatus.execute({ principal: personalPrincipal, input: {} })
+    ).rejects.toBeInstanceOf(PersonalApiKeysDisabledError)
+
+    expect(mocks.isCapabilityWithheldForUser).toHaveBeenCalledWith('user-1', 'personal_api_key.use')
+  })
+
+  it('never applies the account-scoped personal-key gate to a workspace key', async () => {
+    mocks.isCapabilityWithheldForUser.mockResolvedValue(true)
+
+    await expect(
+      getBillingStatus.execute({ principal: workspacePrincipal, input: {} })
+    ).resolves.toBeDefined()
   })
 
   it('never reads the payer storage pool it may not disclose', async () => {
@@ -385,7 +445,7 @@ describe('billing application use cases', () => {
   })
 
   it('lists the complete workspace ledger for a workspace key', async () => {
-    await listBillingLogs.execute({
+    const result = await listBillingLogs.execute({
       principal: workspacePrincipal,
       input: {
         startDate: new Date('2026-01-01T00:00:00Z'),
@@ -401,10 +461,19 @@ describe('billing application use cases', () => {
     expect(mocks.getUsageLogs).not.toHaveBeenCalled()
     expect(mocks.resolvePermission).not.toHaveBeenCalled()
     expect(mocks.recordAudit).not.toHaveBeenCalled()
+    expect(result.scope).toBe('workspace')
   })
 
+  /**
+   * A personal key reports the person holding it, so naming a workspace narrows
+   * that person's own events rather than opening the whole workspace ledger. The
+   * ledger carries Wand, Chat, voice, enrichment, and knowledge-base spend that
+   * no other surface publishes at the workspace `read` role, so widening this to
+   * the resolved scope would be a privilege expansion, not a fix. The reported
+   * `scope` is what tells the caller which of the two sets it received.
+   */
   it('keeps personal-key billing logs actor-scoped and workspace-filtered', async () => {
-    await listBillingLogs.execute({
+    const result = await listBillingLogs.execute({
       principal: personalPrincipal,
       input: {
         workspaceId: 'workspace-1',
@@ -419,6 +488,26 @@ describe('billing application use cases', () => {
       expect.objectContaining({ workspaceId: 'workspace-1', includeSummary: false, limit: 50 })
     )
     expect(mocks.getWorkspaceUsageLogs).not.toHaveBeenCalled()
+    expect(result.scope).toBe('user')
+  })
+
+  it('keeps an unscoped personal-key ledger to the calling account', async () => {
+    const result = await listBillingLogs.execute({
+      principal: personalPrincipal,
+      input: {
+        startDate: new Date('2026-01-01T00:00:00Z'),
+        endDate: new Date('2026-02-01T00:00:00Z'),
+        limit: 50,
+      },
+    })
+
+    expect(mocks.getUsageLogs).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ includeSummary: false, limit: 50 })
+    )
+    expect(mocks.getWorkspaceUsageLogs).not.toHaveBeenCalled()
+    expect(mocks.loadWorkspace).not.toHaveBeenCalled()
+    expect(result.scope).toBe('user')
   })
 
   it('apportions credits only across the bounded page', async () => {

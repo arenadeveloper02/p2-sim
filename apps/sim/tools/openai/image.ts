@@ -1,9 +1,7 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import {
-  IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS,
-  IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
-} from '@/lib/image-generation/constants'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import {
   buildImageBillingMetadata,
   calculateHostedImageToolCost,
@@ -235,38 +233,16 @@ export const imageTool: ToolConfig = {
 
       if (imageUrl && !base64Image) {
         try {
-          logger.info('Downloading image from DALL-E URL for storage...', {
-            imageUrl: imageUrl.substring(0, 100),
-          })
-          // Fetch the image directly
-          const imageResponse = await fetch(imageUrl, {
-            cache: 'no-store',
-            headers: {
-              Accept: 'image/*',
-            },
-            signal: AbortSignal.timeout(IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS),
-          })
-
-          if (!imageResponse.ok) {
-            logger.error('Failed to fetch image:', imageResponse.status, imageResponse.statusText)
-            throw new Error(`Failed to fetch image: ${imageResponse.statusText}`)
-          }
-
-          const arrayBuffer = await imageResponse.arrayBuffer()
-          const buffer = Buffer.from(arrayBuffer)
-
-          if (buffer.length === 0) {
-            logger.error('Empty image buffer received')
-            throw new Error('Empty image received')
-          }
-
-          base64Image = buffer.toString('base64')
+          logger.info('Fetching generated image for storage...')
+          const { fetchRemoteImage } = await import('@/lib/internal/image/fetch')
+          const image = await fetchRemoteImage(imageUrl)
+          base64Image = image.buffer.toString('base64')
           logger.info('Download from temporary storage completed', {
             base64Length: base64Image.length,
           })
         } catch (error) {
           logger.error('Error downloading image from URL:', {
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
             imageUrl: imageUrl ? imageUrl.substring(0, 100) : 'null',
             originalImageUrl: originalImageUrl ? originalImageUrl.substring(0, 100) : 'null',
           })
@@ -274,7 +250,7 @@ export const imageTool: ToolConfig = {
             !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
           if (agentS3Configured) {
             throw new Error(
-              `Failed to download image from OpenAI temporary URL for S3 storage: ${error instanceof Error ? error.message : String(error)}`
+              `Failed to download image from OpenAI temporary URL for S3 storage: ${getErrorMessage(error)}`
             )
           }
           imageUrl = originalImageUrl
@@ -303,15 +279,14 @@ export const imageTool: ToolConfig = {
           }
           logger.info(`Successfully saved generated image to storage: ${finalImageUrl}`)
         } catch (error) {
+          const err = toError(error)
           logger.error('Error saving generated image to storage:', {
-            error: error instanceof Error ? error.message : String(error),
+            error: err.message,
             workflowId,
             userId,
-            stack: error instanceof Error ? error.stack : undefined,
+            stack: err.stack,
           })
-          throw new Error(
-            `Failed to save generated image: ${error instanceof Error ? error.message : String(error)}`
-          )
+          throw new Error(`Failed to save generated image: ${err.message}`)
         }
       } else if (imageUrl && !base64Image) {
         const agentS3Configured =

@@ -12,8 +12,14 @@ export const forkRemapKindSchema = z.enum([
   'knowledge-document',
   'table',
   'file',
+  'file-folder',
   'mcp-server',
   'custom-tool',
+  /**
+   * A published custom block, referenced by the placed block's `type` rather than by any
+   * sub-block value — the only remap kind that rewrites the block itself.
+   */
+  'custom-block',
   'skill',
 ])
 
@@ -26,6 +32,7 @@ export const forkResourceTypeSchema = z.enum([
   'knowledge_base',
   'knowledge_document',
   'file',
+  'file_folder',
   'mcp_server',
   /**
    * Workflow-publishing MCP server identity (parent shell <-> fork copy), seeded at fork so a
@@ -33,6 +40,12 @@ export const forkResourceTypeSchema = z.enum([
    * never user-mapped (nothing in a workflow references these servers).
    */
   'workflow_mcp_server',
+  /**
+   * Published custom block (deploy-as-block). Mapped, never copied: a custom block is
+   * org-scoped and binds a workflow in the PUBLISHER's workspace, so an environment fork
+   * repoints its placed blocks at the environment's own block rather than duplicating one.
+   */
+  'custom_block',
   'custom_tool',
   'skill',
 ])
@@ -328,17 +341,32 @@ export const forkWorkflowChangeSchema = z.object({
  * so blocks aren't padded with every operation variant.
  */
 export const forkDependentReconfigSchema = z.object({
-  /** The remappable parent resource kind whose target swap clears this field. */
-  parentKind: z.enum(['credential', 'knowledge-base', 'table']),
+  /**
+   * The remappable parent whose target swap makes this field reconfigurable. For
+   * `custom-block` the "parent" IS the block itself: repointing it at another environment's
+   * block makes EVERY one of its inputs reconfigurable, not the `dependsOn` subset a
+   * credential/KB/table swap invalidates.
+   */
+  parentKind: z.enum(['credential', 'knowledge-base', 'table', 'custom-block']),
   /** Source id of that parent (matches a mapping entry's `sourceId`). */
   parentSourceId: z.string(),
-  /** SelectorContext key the new parent value is supplied under (`oauthCredential` | `knowledgeBaseId` | `tableId`). */
-  parentContextKey: z.string(),
+  /**
+   * SelectorContext key the new parent value is supplied under (`oauthCredential` |
+   * `knowledgeBaseId` | `tableId`). Absent for `custom-block`: its inputs are plain typed
+   * fields, not selectors, so there is no parent value to feed them.
+   */
+  parentContextKey: z.string().optional(),
   targetWorkflowId: z.string(),
   targetBlockId: z.string(),
   blockName: z.string(),
   subBlockKey: z.string(),
-  selectorKey: z.string(),
+  /** Absent for `custom-block` fields, which are typed inputs rather than selectors. */
+  selectorKey: z.string().optional(),
+  /**
+   * A `custom-block` input's declared field type (`string` | `number` | `boolean` | `object` |
+   * `array` | ...), so the modal renders the matching control instead of a selector.
+   */
+  fieldType: z.string().optional(),
   /** Plain field title (e.g. `Label`), never a `Tool: Field` composite. */
   title: z.string(),
   /**
@@ -471,11 +499,17 @@ export type ForkClearedRef = z.output<typeof forkClearedRefSchema>
  *    dead id to an existing live target resource, or by fixing/archiving the source workflow.
  *  - `workflow-missing`: a cross-workflow reference to a workflow not carried into the target -
  *    resolve by deploying the referenced workflow in the source, or removing the reference.
+ *  - `unmapped-custom-block`: a placed custom block with no target mapping. Unlike every other
+ *    unmapped reference this one does NOT clear - a block's type cannot be emptied without
+ *    deleting the node - so the target would silently keep invoking the SOURCE environment's
+ *    block. Blocking is what makes that visible; resolve by mapping it to the target
+ *    environment's own published block.
  */
 export const forkSyncBlockerReasonSchema = z.enum([
   'unmapped-copyable',
   'source-deleted',
   'workflow-missing',
+  'unmapped-custom-block',
 ])
 export type ForkSyncBlockerReason = z.output<typeof forkSyncBlockerReasonSchema>
 
@@ -743,13 +777,17 @@ export const backgroundWorkMetadataSchema = z
   .object({
     /** Display name of the user who performed the action (denormalized at write time). */
     actorName: z.string().optional(),
-    // Fork content copy
+    // Fork content copy. The per-kind counts and copied/failed also describe the background
+    // fill of the resources a sync copied, which reports on the sync's own row.
     childWorkspaceId: z.string().optional(),
     childWorkspaceName: z.string().optional(),
     workflowsCopied: z.number().int().optional(),
     tables: z.number().int().optional(),
     knowledgeBases: z.number().int().optional(),
     files: z.number().int().optional(),
+    skills: z.number().int().optional(),
+    /** Documents copied into an already-mapped target knowledge base (sync only). */
+    documents: z.number().int().optional(),
     copied: z.number().int().optional(),
     failed: z.number().int().optional(),
     /** Count of failed resources whose dangling references were cleared post-fork (U8). */
@@ -779,6 +817,8 @@ export const backgroundWorkMetadataSchema = z
     archived: z.number().int().optional(),
     redeployed: z.number().int().optional(),
     deployFailed: z.number().int().optional(),
+    /** Deploys that succeeded with a cutover or side effect still pending, as `<workflow> — <warning>`. */
+    deployWarnings: z.array(z.string()).optional(),
     restored: z.number().int().optional(),
     unarchived: z.number().int().optional(),
     removed: z.number().int().optional(),

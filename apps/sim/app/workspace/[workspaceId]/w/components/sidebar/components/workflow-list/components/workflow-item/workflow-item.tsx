@@ -1,9 +1,8 @@
 'use client'
 
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
-import { chipVariants, cn } from '@sim/emcn'
+import { chipVariants, cn, OverflowText } from '@sim/emcn'
 import { Lock, MoreHorizontal } from '@sim/emcn/icons'
-import clsx from 'clsx'
 import Link from 'next/link'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { selectWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -12,7 +11,6 @@ import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { Avatars } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/workflow-item/avatars/avatars'
 import {
-  useContextMenu,
   useItemDrag,
   useItemRename,
   useSidebarListContext,
@@ -38,6 +36,7 @@ import {
 } from '@/hooks/queries/utils/folder-tree'
 import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import { useUpdateWorkflow } from '@/hooks/queries/workflows'
+import { useContextMenu } from '@/hooks/use-context-menu'
 import { useFolderStore } from '@/stores/folders/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
@@ -201,6 +200,10 @@ export const WorkflowItem = memo(function WorkflowItem({
   const isMixedSelection = useMemo(() => {
     return capturedSelectionRef.current?.isMixed ?? false
   }, [isContextMenuOpen])
+  const contextMenuSelectedCount = capturedSelectionRef.current
+    ? capturedSelectionRef.current.workflowIds.length +
+      capturedSelectionRef.current.folderIds.length
+    : 1
 
   const captureSelectionState = useCallback(() => {
     const store = useFolderStore.getState()
@@ -431,7 +434,7 @@ export const WorkflowItem = memo(function WorkflowItem({
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onBlur={handleInputBlur}
-                className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-hidden focus:outline-hidden focus:ring-0 focus-visible:outline-hidden focus-visible:ring-0 focus-visible:ring-offset-0'
                 maxLength={100}
                 disabled={isRenaming}
                 onClick={(e) => {
@@ -444,23 +447,20 @@ export const WorkflowItem = memo(function WorkflowItem({
                 spellCheck='false'
               />
             ) : (
-              <div
-                className='min-w-0 truncate text-[var(--text-body)]'
-                onDoubleClick={handleDoubleClick}
-              >
-                {workflow.name}
+              <div className='min-w-0' onDoubleClick={handleDoubleClick}>
+                <OverflowText label={workflow.name} className='block text-[var(--text-body)]' />
               </div>
             )}
             {!isEditing && <Avatars workflowId={workflow.id} />}
           </div>
         </div>
         {!isEditing && (
-          <div className='relative size-[18px] flex-shrink-0'>
+          <div className='relative size-[18px] shrink-0'>
             {workflow.locked && (
               <span
                 role='img'
                 aria-label='Workflow is locked'
-                className={clsx(
+                className={cn(
                   'pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity',
                   !isAnyDragActive && 'group-hover:opacity-0',
                   isContextMenuOpen && 'opacity-0'
@@ -474,10 +474,19 @@ export const WorkflowItem = memo(function WorkflowItem({
               aria-label='Workflow options'
               onPointerDown={handleMorePointerDown}
               onClick={handleMoreClick}
-              className={clsx(
+              className={cn(
                 'pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-opacity',
                 !isAnyDragActive && 'group-hover:pointer-events-auto group-hover:opacity-100',
-                isContextMenuOpen && 'pointer-events-auto opacity-100'
+                /**
+                 * `opacity-100` only. `pointer-events-auto` belongs here too,
+                 * but it has never applied: under `clsx` both it and the base
+                 * `pointer-events-none` shipped, and Tailwind emits
+                 * `pointer-events-none` last, so it won. Adding it back under
+                 * `cn` (where the last argument wins) would make the button
+                 * clickable for the first time — a real fix, but a behaviour
+                 * change that does not belong in a rendering-neutral upgrade.
+                 */
+                isContextMenuOpen && 'opacity-100'
               )}
             >
               <MoreHorizontal className='size-[16px] text-[var(--text-icon)]' />
@@ -510,6 +519,7 @@ export const WorkflowItem = memo(function WorkflowItem({
         showLock={!isMixedSelection && selectedWorkflows.size <= 1}
         disableLock={!userPermissions.canAdmin || inheritedFolderLocked}
         isLocked={effectiveLocked}
+        selectedCount={contextMenuSelectedCount}
       />
 
       <DeleteModal

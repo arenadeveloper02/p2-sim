@@ -4,6 +4,7 @@ import {
   credential,
   credentialGroup,
   credentialGroupEnrollment,
+  mcpServers,
   user,
   workspace,
 } from '@sim/db/schema'
@@ -11,12 +12,14 @@ import { sha256Hex } from '@sim/security/hash'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { normalizeEmail, truncate } from '@sim/utils/string'
-import { and, count, desc, eq, inArray, lt, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { renderCredentialGroupInvitationEmail } from '@/components/emails/credential-groups/render'
 import { getCredentialGroupInvitationSubject } from '@/components/emails/subjects'
 import { getWorkspaceOwnerSubscriptionAccess } from '@/lib/billing/core/workspace-access'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isCredentialGroupsAvailable } from '@/lib/credential-groups/availability'
+import type { ManagedMcpConnectorId } from '@/lib/credential-groups/managed-mcp-connectors'
+import { getManagedMcpConnector } from '@/lib/credential-groups/managed-mcp-connectors'
 import { getCredentialGroupProviderAdapter } from '@/lib/credential-groups/provider-registry'
 import type { CredentialGroupProvider } from '@/lib/credential-groups/providers'
 import {
@@ -27,6 +30,7 @@ import {
 import type {
   CredentialGroupEnrollmentConnection,
   CredentialGroupEnrollmentDetail,
+  CredentialGroupEnrollmentMcpConnection,
   CredentialGroupEnrollmentRecord,
   InviteCredentialGroupEnrollmentsInput,
 } from '@/lib/credential-groups/types'
@@ -48,6 +52,11 @@ export interface ListCredentialGroupEnrollmentFilters {
   statuses?: CredentialGroupEnrollmentStatus[]
 }
 
+export interface CredentialGroupInvitationLink {
+  enrollment: CredentialGroupEnrollmentRecord
+  invitationLink: string
+}
+
 interface InvitationContext {
   workspaceId: string
   workspaceName: string
@@ -55,13 +64,23 @@ interface InvitationContext {
   groupName: string
 }
 
+/** What issuing an invitation does to an enrollment an admin revoked. */
+export type RevokedEnrollmentPolicy = 'reactivate' | 'reject'
+
 interface SendInvitationOptions {
   expectedEnrollmentId?: string
-  revokedEnrollment: 'reactivate' | 'reject'
+  revokedEnrollment: RevokedEnrollmentPolicy
+}
+
+interface IssuedInvitation {
+  enrollment: EnrollmentRow
+  invitationLink: string
+  tokenHash: string
 }
 
 export interface PublicCredentialGroupEnrollment {
-  inviterName: string
+  /** Null when the invitation was issued by a workflow or a since-deleted user. */
+  inviterName: string | null
   workspaceName: string
   credentialGroupName: string
   options: Array<
@@ -76,12 +95,24 @@ export interface PublicCredentialGroupEnrollment {
       }>
     }
   >
+  mcpServers: Array<{
+    id: string
+    name: string
+    description: string | null
+    managedConnectorId: ManagedMcpConnectorId
+    connection: {
+      id: string
+      status: 'connected' | 'needs_reauth' | 'revoked'
+      grantedAt: string
+    } | null
+  }>
   status: CredentialGroupEnrollmentRecord['status']
 }
 
 export interface CredentialGroupOAuthContext {
   enrollmentId: string
   credentialGroupId: string
+  credentialGroupName: string
   workspaceId: string
   workspaceName: string
   workspaceOwnerId: string
@@ -91,12 +122,30 @@ export interface CredentialGroupOAuthContext {
   options: CredentialGroupOptionConfig[]
 }
 
+export interface CredentialGroupMcpOAuthContext {
+  enrollmentId: string
+  credentialGroupId: string
+  workspaceId: string
+  email: string
+  enrollmentStatus: EnrollmentRow['status']
+  server: {
+    id: string
+    name: string
+    url: string
+  }
+}
+
 export interface PublicCredentialGroupEnrollmentIdentity {
   enrollmentId: string
   credentialGroupId: string
   workspaceId: string
   email: string
   invitationTokenHash: string
+}
+
+export interface CredentialGroupEnrollmentCompletion {
+  completed: true
+  transitioned: boolean
 }
 
 /** Serializes OAuth grant persistence and administrative revocation for one enrollment. */
@@ -216,7 +265,8 @@ async function resolvePublicEnrollmentRowByIdentity(
   if (row.enrollment.invitationExpiresAt.getTime() <= Date.now()) return null
 
   const ownerBilling = await getWorkspaceOwnerSubscriptionAccess(row.workspaceId)
-  if (!(await isCredentialGroupsAvailable(ownerBilling))) return null
+  if (!(await isCredentialGroupsAvailable({ workspaceId: row.workspaceId, ownerBilling })))
+    return null
   return row
 }
 
@@ -311,24 +361,48 @@ async function getInvitationContext(
     throw new CredentialGroupEnrollmentError('Credential group is disabled', 409)
   }
   if (!row.options.some((option) => option.status === 'active')) {
-    throw new CredentialGroupEnrollmentError('Add an account type before inviting people', 409)
+    const [linkedMcpServer] = await db
+      .select({ id: mcpServers.id })
+      .from(mcpServers)
+      .where(
+        and(
+          eq(mcpServers.workspaceId, workspaceId),
+          eq(mcpServers.credentialGroupId, groupId),
+          eq(mcpServers.authType, 'oauth'),
+          eq(mcpServers.enabled, true),
+          isNull(mcpServers.deletedAt)
+        )
+      )
+      .limit(1)
+    if (!linkedMcpServer) {
+      throw new CredentialGroupEnrollmentError(
+        'Add an account type or OAuth MCP server before inviting people',
+        409
+      )
+    }
   }
   return row
 }
 
-async function sendInvitation(
+async function issueInvitation(
   context: InvitationContext,
-  userId: string,
-  inviterName: string,
+  /**
+   * Who to record as the issuer, when there is someone. Attribution only — the
+   * authority to invite comes from the delegation, so an actorless run (a schedule,
+   * or a webhook with no external subject) issues an unattributed invitation rather
+   * than none. `created_by` is nullable and `on delete set null`, so a row with no
+   * issuer is a shape the schema already carries.
+   */
+  userId: string | undefined,
   email: string,
   options: SendInvitationOptions
-): Promise<CredentialGroupEnrollmentRecord> {
+): Promise<IssuedInvitation> {
   const now = new Date()
   const token = generateId()
   const tokenHash = hashInvitationToken(token)
   const expiresAt = new Date(now.getTime() + INVITATION_TTL_MS)
 
-  const issued = await db.transaction(async (tx) => {
+  const enrollment = await db.transaction(async (tx) => {
     await lockCredentialGroupInvitationTarget(tx, context.groupId, email)
     const [existing] = await tx
       .select()
@@ -376,7 +450,7 @@ async function sendInvitation(
       completedAt: preservesProgress ? current.completedAt : null,
       revokedAt: null,
       lastDeliveryError: null,
-      createdBy: userId,
+      createdBy: userId ?? null,
       updatedAt: now,
     }
     const [next] = current
@@ -399,7 +473,27 @@ async function sendInvitation(
     return next
   })
 
-  const invitationLink = `${getBaseUrl()}/credential-groups/enroll/${token}`
+  return {
+    enrollment,
+    invitationLink: `${getBaseUrl()}/credential-groups/enroll/${token}`,
+    tokenHash,
+  }
+}
+
+async function sendInvitation(
+  context: InvitationContext,
+  /** See {@link issueInvitation}: the issuer is attribution, never the authority. */
+  userId: string | undefined,
+  /** Absent when a workflow issued the invitation — the copy drops the inviter. */
+  inviterName: string | undefined,
+  email: string,
+  options: SendInvitationOptions
+): Promise<CredentialGroupEnrollmentRecord> {
+  const {
+    enrollment: issued,
+    invitationLink,
+    tokenHash,
+  } = await issueInvitation(context, userId, email, options)
   const html = await renderCredentialGroupInvitationEmail({
     recipientEmail: email,
     inviterName,
@@ -481,6 +575,19 @@ export async function listCredentialGroupEnrollments(
   const activeOptionIds = group.options
     .filter((option) => option.status === 'active')
     .map((option) => option.id)
+  const activeMcpServers = await db
+    .select({ id: mcpServers.id, name: mcpServers.name })
+    .from(mcpServers)
+    .where(
+      and(
+        eq(mcpServers.workspaceId, workspaceId),
+        eq(mcpServers.credentialGroupId, groupId),
+        eq(mcpServers.authType, 'oauth'),
+        eq(mcpServers.enabled, true),
+        isNull(mcpServers.deletedAt)
+      )
+    )
+  const activeMcpServerById = new Map(activeMcpServers.map((server) => [server.id, server]))
 
   const cursorPosition = cursor ? decodeCredentialGroupEnrollmentCursor(cursor) : undefined
 
@@ -540,6 +647,31 @@ export async function listCredentialGroupEnrollments(
   if (connectionRows.length > connectionSummaryLimit) {
     throw new Error('Managed credential connection summaries exceed the supported provider states')
   }
+  const mcpConnectionSummaryLimit = enrollmentIds.length * activeMcpServers.length
+  const mcpConnectionRows =
+    enrollmentIds.length === 0 || activeMcpServers.length === 0
+      ? []
+      : await db
+          .select({
+            enrollmentId: credential.credentialGroupEnrollmentId,
+            mcpServerId: credential.mcpServerId,
+            status: credential.managedOauthStatus,
+          })
+          .from(credential)
+          .where(
+            and(
+              eq(credential.type, 'managed_mcp'),
+              inArray(credential.credentialGroupEnrollmentId, enrollmentIds),
+              inArray(
+                credential.mcpServerId,
+                activeMcpServers.map((server) => server.id)
+              )
+            )
+          )
+          .limit(mcpConnectionSummaryLimit + 1)
+  if (mcpConnectionRows.length > mcpConnectionSummaryLimit) {
+    throw new Error('Managed MCP connection summaries exceed the linked server limit')
+  }
   const connectionsByEnrollment = new Map<string, CredentialGroupEnrollmentConnection[]>()
   for (const connection of connectionRows) {
     if (!connection.enrollmentId) {
@@ -554,6 +686,22 @@ export async function listCredentialGroupEnrollments(
     if (current) current.push(summary)
     else connectionsByEnrollment.set(connection.enrollmentId, [summary])
   }
+  const mcpConnectionsByEnrollment = new Map<string, CredentialGroupEnrollmentMcpConnection[]>()
+  for (const connection of mcpConnectionRows) {
+    if (!connection.enrollmentId || !connection.mcpServerId) {
+      throw new Error('Managed MCP credential source is missing')
+    }
+    const server = activeMcpServerById.get(connection.mcpServerId)
+    if (!server) throw new Error('Managed MCP credential references an unlinked server')
+    const summary: CredentialGroupEnrollmentMcpConnection = {
+      mcpServerId: server.id,
+      name: server.name,
+      status: toCredentialGroupConnectionStatus(connection.status),
+    }
+    const current = mcpConnectionsByEnrollment.get(connection.enrollmentId)
+    if (current) current.push(summary)
+    else mcpConnectionsByEnrollment.set(connection.enrollmentId, [summary])
+  }
   const nextCursorEnrollment = hasNextPage ? pageRows.at(-1)?.enrollment : undefined
   if (hasNextPage && !nextCursorEnrollment) {
     throw new Error('Credential group enrollment page is missing its cursor boundary')
@@ -562,6 +710,7 @@ export async function listCredentialGroupEnrollments(
     enrollments: pageRows.map(({ enrollment }) => ({
       ...toCredentialGroupEnrollment(enrollment),
       connections: connectionsByEnrollment.get(enrollment.id) ?? [],
+      mcpConnections: mcpConnectionsByEnrollment.get(enrollment.id) ?? [],
     })),
     nextCursor: nextCursorEnrollment
       ? encodeCredentialGroupEnrollmentCursor(nextCursorEnrollment)
@@ -622,14 +771,42 @@ export async function loadCredentialGroupInviterIdentity(
 export async function inviteCredentialGroupEnrollment(
   workspaceId: string,
   groupId: string,
-  userId: string,
-  inviterName: string,
-  email: string
+  /** See {@link issueInvitation}: the issuer is attribution, never the authority. */
+  userId: string | undefined,
+  /** See {@link sendInvitation}: absent for a workflow-issued invitation. */
+  inviterName: string | undefined,
+  email: string,
+  /**
+   * What a revoked enrollment does to the invitation, decided inside the
+   * issuing transaction. An admin's invite reactivates it; an automatic
+   * invitation rejects it, so a revocation that lands after the caller read
+   * the enrollment is never undone by a stale read.
+   */
+  revokedEnrollment: RevokedEnrollmentPolicy = 'reactivate'
 ): Promise<CredentialGroupEnrollmentRecord> {
   const context = await getInvitationContext(workspaceId, groupId)
   return sendInvitation(context, userId, inviterName, normalizeEmail(email), {
-    revokedEnrollment: 'reactivate',
+    revokedEnrollment,
   })
+}
+
+export async function createCredentialGroupInvitationLink(
+  workspaceId: string,
+  groupId: string,
+  /** See {@link issueInvitation}: the issuer is attribution, never the authority. */
+  userId: string | undefined,
+  email: string,
+  /** See {@link inviteCredentialGroupEnrollment}. */
+  revokedEnrollment: RevokedEnrollmentPolicy = 'reactivate'
+): Promise<CredentialGroupInvitationLink> {
+  const context = await getInvitationContext(workspaceId, groupId)
+  const issued = await issueInvitation(context, userId, normalizeEmail(email), {
+    revokedEnrollment,
+  })
+  return {
+    enrollment: toCredentialGroupEnrollment(issued.enrollment),
+    invitationLink: issued.invitationLink,
+  }
 }
 
 export async function resendCredentialGroupEnrollment(
@@ -663,7 +840,10 @@ export async function deleteCredentialGroupEnrollment(
   workspaceId: string,
   groupId: string,
   enrollmentId: string
-): Promise<CredentialGroupEnrollmentRecord> {
+): Promise<{
+  credentialGroupEnrollment: CredentialGroupEnrollmentRecord
+  retiredMcpConnectionIds: string[]
+}> {
   const [existing] = await db
     .select({ email: credentialGroupEnrollment.email })
     .from(credentialGroupEnrollment)
@@ -681,6 +861,15 @@ export async function deleteCredentialGroupEnrollment(
   return db.transaction(async (tx) => {
     await lockCredentialGroupInvitationTarget(tx, groupId, existing.email)
     await lockCredentialGroupEnrollmentLifecycle(tx, enrollmentId)
+    const managedMcpConnections = await tx
+      .select({ id: credential.id })
+      .from(credential)
+      .where(
+        and(
+          eq(credential.type, 'managed_mcp'),
+          eq(credential.credentialGroupEnrollmentId, enrollmentId)
+        )
+      )
     const [deleted] = await tx
       .delete(credentialGroupEnrollment)
       .where(
@@ -691,7 +880,10 @@ export async function deleteCredentialGroupEnrollment(
       )
       .returning()
     if (!deleted) throw new CredentialGroupEnrollmentError('Enrollment not found', 404)
-    return toCredentialGroupEnrollment(deleted)
+    return {
+      credentialGroupEnrollment: toCredentialGroupEnrollment(deleted),
+      retiredMcpConnectionIds: managedMcpConnections.map((row) => row.id),
+    }
   })
 }
 
@@ -716,27 +908,67 @@ export async function getAuthorizedPublicCredentialGroupEnrollment(
 async function buildPublicCredentialGroupEnrollment(
   row: NonNullable<Awaited<ReturnType<typeof resolvePublicEnrollmentRowByIdentity>>>
 ): Promise<PublicCredentialGroupEnrollment> {
-  const connectionRows = await db
-    .select({
-      optionId: credential.credentialGroupOptionId,
-      status: credential.managedOauthStatus,
-      scopeVersion: credential.managedOauthScopeVersion,
-      authorizationAppId: credential.authorizationAppId,
-      grantedScopes: credential.grantedScopes,
-      displayName: credential.displayName,
-      metadata: credential.providerMetadata,
-      grantedAt: credential.grantedAt,
-    })
-    .from(credential)
-    .where(
-      and(
-        eq(credential.type, 'managed_oauth'),
-        eq(credential.credentialGroupEnrollmentId, row.enrollment.id)
+  const [connectionRows, linkedMcpServers, mcpConnectionRows] = await Promise.all([
+    db
+      .select({
+        optionId: credential.credentialGroupOptionId,
+        status: credential.managedOauthStatus,
+        scopeVersion: credential.managedOauthScopeVersion,
+        authorizationAppId: credential.authorizationAppId,
+        grantedScopes: credential.grantedScopes,
+        displayName: credential.displayName,
+        metadata: credential.providerMetadata,
+        grantedAt: credential.grantedAt,
+      })
+      .from(credential)
+      .where(
+        and(
+          eq(credential.type, 'managed_oauth'),
+          eq(credential.credentialGroupEnrollmentId, row.enrollment.id)
+        )
+      ),
+    db
+      .select({
+        id: mcpServers.id,
+        name: mcpServers.name,
+        description: mcpServers.description,
+        managedConnectorId: mcpServers.managedConnectorId,
+      })
+      .from(mcpServers)
+      .where(
+        and(
+          eq(mcpServers.workspaceId, row.workspaceId),
+          eq(mcpServers.credentialGroupId, row.groupId),
+          eq(mcpServers.authType, 'oauth'),
+          eq(mcpServers.enabled, true),
+          isNull(mcpServers.deletedAt)
+        )
       )
-    )
+      .orderBy(asc(mcpServers.name), asc(mcpServers.id)),
+    db
+      .select({
+        id: credential.id,
+        mcpServerId: credential.mcpServerId,
+        status: credential.managedOauthStatus,
+        grantedAt: credential.grantedAt,
+      })
+      .from(credential)
+      .where(
+        and(
+          eq(credential.type, 'managed_mcp'),
+          eq(credential.credentialGroupEnrollmentId, row.enrollment.id)
+        )
+      ),
+  ])
+  const mcpConnectionByServerId = new Map(
+    mcpConnectionRows.map((connection) => {
+      if (!connection.mcpServerId) throw new Error('Managed MCP credential has no server')
+      return [connection.mcpServerId, connection] as const
+    })
+  )
 
   return {
-    inviterName: row.inviterName ?? 'A workspace admin',
+    inviterName: row.inviterName,
     workspaceName: row.workspaceName,
     credentialGroupName: row.groupName,
     options: await Promise.all(
@@ -786,6 +1018,28 @@ async function buildPublicCredentialGroupEnrollment(
         }
       })
     ),
+    mcpServers: linkedMcpServers.map((server) => {
+      if (!server.managedConnectorId) {
+        throw new Error(`Credential Group MCP server ${server.id} has no managed connector ID`)
+      }
+      const managedConnectorId = getManagedMcpConnector(server.managedConnectorId).id
+      const connection = mcpConnectionByServerId.get(server.id)
+      if (!connection?.grantedAt) return { ...server, managedConnectorId, connection: null }
+      return {
+        ...server,
+        managedConnectorId,
+        connection: {
+          id: connection.id,
+          status:
+            connection.status === 'active'
+              ? ('connected' as const)
+              : connection.status === 'revoked'
+                ? ('revoked' as const)
+                : ('needs_reauth' as const),
+          grantedAt: connection.grantedAt.toISOString(),
+        },
+      }
+    }),
     status: row.enrollment.status,
   }
 }
@@ -796,12 +1050,16 @@ export async function completeCredentialGroupEnrollment(token: string): Promise<
     invitationTokenHash: hashInvitationToken(token),
   })
   if (!row) return null
-  return completeResolvedCredentialGroupEnrollment(row, identityForPublicEnrollmentRow(row))
+  const result = await completeResolvedCredentialGroupEnrollment(
+    row,
+    identityForPublicEnrollmentRow(row)
+  )
+  return result?.completed ?? null
 }
 
 export async function completeAuthorizedCredentialGroupEnrollment(
   identity: PublicCredentialGroupEnrollmentIdentity
-): Promise<true | null> {
+): Promise<CredentialGroupEnrollmentCompletion | null> {
   const row = await resolveAuthorizedPublicEnrollmentRow(identity)
   if (!row) return null
   return completeResolvedCredentialGroupEnrollment(row, identity)
@@ -810,7 +1068,7 @@ export async function completeAuthorizedCredentialGroupEnrollment(
 async function completeResolvedCredentialGroupEnrollment(
   row: NonNullable<Awaited<ReturnType<typeof resolvePublicEnrollmentRowByIdentity>>>,
   identity: PublicCredentialGroupEnrollmentIdentity
-): Promise<true | null> {
+): Promise<CredentialGroupEnrollmentCompletion | null> {
   return db.transaction(async (tx) => {
     await lockCredentialGroupEnrollmentLifecycle(tx, row.enrollment.id)
     const now = new Date()
@@ -848,9 +1106,15 @@ async function completeResolvedCredentialGroupEnrollment(
       .for('update')
     if (!group || group.status !== 'active') return null
 
+    const transitioned = current.status !== 'completed'
+
     const [completed] = await tx
       .update(credentialGroupEnrollment)
-      .set({ status: 'completed', completedAt: now, updatedAt: now })
+      .set({
+        status: 'completed',
+        ...(transitioned ? { completedAt: now } : {}),
+        updatedAt: now,
+      })
       .where(
         and(
           eq(credentialGroupEnrollment.id, row.enrollment.id),
@@ -859,7 +1123,7 @@ async function completeResolvedCredentialGroupEnrollment(
       )
       .returning({ id: credentialGroupEnrollment.id })
     if (!completed) throw new Error('Credential group enrollment completion returned no row')
-    return true
+    return { completed: true, transitioned }
   })
 }
 
@@ -888,6 +1152,46 @@ export async function getAuthorizedCredentialGroupOAuthContext(
   return credentialGroupOAuthContextFromRow(row, option)
 }
 
+export async function getAuthorizedCredentialGroupMcpOAuthContext(
+  identity: PublicCredentialGroupEnrollmentIdentity,
+  mcpServerId: string
+): Promise<CredentialGroupMcpOAuthContext | null> {
+  const row = await resolveAuthorizedPublicEnrollmentRow(identity)
+  if (!row) return null
+  const [server] = await db
+    .select({
+      id: mcpServers.id,
+      name: mcpServers.name,
+      url: mcpServers.url,
+      managedConnectorId: mcpServers.managedConnectorId,
+    })
+    .from(mcpServers)
+    .where(
+      and(
+        eq(mcpServers.id, mcpServerId),
+        eq(mcpServers.workspaceId, row.workspaceId),
+        eq(mcpServers.credentialGroupId, row.groupId),
+        eq(mcpServers.authType, 'oauth'),
+        eq(mcpServers.enabled, true),
+        isNull(mcpServers.deletedAt)
+      )
+    )
+    .limit(1)
+  if (!server?.url) return null
+  if (!server.managedConnectorId) {
+    throw new Error(`Credential Group MCP server ${server.id} has no managed connector ID`)
+  }
+  getManagedMcpConnector(server.managedConnectorId)
+  return {
+    enrollmentId: row.enrollment.id,
+    credentialGroupId: row.groupId,
+    workspaceId: row.workspaceId,
+    email: row.enrollment.email,
+    enrollmentStatus: row.enrollment.status,
+    server: { id: server.id, name: server.name, url: server.url },
+  }
+}
+
 function credentialGroupOAuthContextFromRow(
   row: NonNullable<Awaited<ReturnType<typeof resolvePublicEnrollmentRowByIdentity>>>,
   option: CredentialGroupOptionConfig
@@ -895,6 +1199,7 @@ function credentialGroupOAuthContextFromRow(
   return {
     enrollmentId: row.enrollment.id,
     credentialGroupId: row.groupId,
+    credentialGroupName: row.groupName,
     workspaceId: row.workspaceId,
     workspaceName: row.workspaceName,
     workspaceOwnerId: row.workspaceOwnerId,

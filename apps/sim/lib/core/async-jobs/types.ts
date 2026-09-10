@@ -40,10 +40,12 @@ export type JobType =
   | 'workflow-execution'
   | 'schedule-execution'
   | 'webhook-execution'
+  | 'quickbooks-webhook-ingress'
   | 'resume-execution'
   | 'workflow-group-cell'
   | 'cleanup-logs'
   | 'cleanup-soft-deletes'
+  | 'cleanup-table-row-ttl'
   | 'cleanup-tasks'
   | 'run-data-drain'
 

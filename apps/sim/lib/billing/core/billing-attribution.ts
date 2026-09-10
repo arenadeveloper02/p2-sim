@@ -13,6 +13,11 @@ import { parseBillingConcurrencyLimit } from '@/lib/billing/concurrency-defaults
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getHighestPriorityPersonalSubscription } from '@/lib/billing/core/plan'
+import {
+  ENTERPRISE_REPORTING_PERIOD_ANCHOR_METADATA_KEY,
+  resolveSubscriptionUsagePeriod,
+  type UsagePeriodSource,
+} from '@/lib/billing/core/reporting-period'
 import type { BillingContext, BillingEntity } from '@/lib/billing/core/usage-log'
 import { parseWorkflowExecutionTimeoutSeconds } from '@/lib/billing/execution-timeout-defaults'
 import { isEnterprise } from '@/lib/billing/plan-helpers'
@@ -46,6 +51,8 @@ export interface PayerSubscriptionSnapshot {
   readonly seats: number | null
   readonly periodStart: string | null
   readonly periodEnd: string | null
+  readonly billingInterval?: 'month' | 'year'
+  readonly enterpriseReportingPeriodAnchorDate?: string
   readonly enterpriseConcurrencyLimit?: number
   readonly enterpriseWorkflowExecutionTimeoutSeconds?: number
 }
@@ -53,6 +60,7 @@ export interface PayerSubscriptionSnapshot {
 export interface BillingPeriodSnapshot {
   readonly start: string
   readonly end: string
+  readonly source?: UsagePeriodSource
 }
 
 /**
@@ -85,6 +93,7 @@ export interface AccountBillingDecision {
   readonly billingPeriod: {
     readonly start: string
     readonly end: string
+    readonly source?: UsagePeriodSource
   }
 }
 
@@ -134,6 +143,14 @@ function serializeSubscription(
     isEnterprise(subscription.plan) && isRecordLike(subscription.metadata)
       ? parseWorkflowExecutionTimeoutSeconds(subscription.metadata.workflowExecutionTimeoutSeconds)
       : null
+  const billingInterval =
+    subscription.billingInterval === 'month' || subscription.billingInterval === 'year'
+      ? subscription.billingInterval
+      : null
+  const enterpriseReportingPeriodAnchorDate =
+    isEnterprise(subscription.plan) && isRecordLike(subscription.metadata)
+      ? subscription.metadata[ENTERPRISE_REPORTING_PERIOD_ANCHOR_METADATA_KEY]
+      : null
   return Object.freeze({
     id: subscription.id,
     referenceId: subscription.referenceId,
@@ -142,6 +159,10 @@ function serializeSubscription(
     seats: subscription.seats ?? null,
     periodStart: subscription.periodStart?.toISOString() ?? null,
     periodEnd: subscription.periodEnd?.toISOString() ?? null,
+    ...(billingInterval ? { billingInterval } : {}),
+    ...(typeof enterpriseReportingPeriodAnchorDate === 'string'
+      ? { enterpriseReportingPeriodAnchorDate }
+      : {}),
     ...(enterpriseConcurrencyLimit !== null ? { enterpriseConcurrencyLimit } : {}),
     ...(enterpriseWorkflowExecutionTimeoutSeconds !== null
       ? { enterpriseWorkflowExecutionTimeoutSeconds }
@@ -224,6 +245,15 @@ export function assertBillingAttributionSnapshot(value: unknown): BillingAttribu
   if (periodEnd <= periodStart) {
     throw new Error('Billing attribution billing period must end after it starts')
   }
+  const periodSource = rawPeriod.source
+  if (
+    periodSource !== undefined &&
+    periodSource !== 'reporting' &&
+    periodSource !== 'stripe' &&
+    periodSource !== 'default'
+  ) {
+    throw new Error('Billing attribution billing period source is invalid')
+  }
 
   let payerSubscription: PayerSubscriptionSnapshot | null = null
   if (raw.payerSubscription !== null) {
@@ -279,6 +309,23 @@ export function assertBillingAttributionSnapshot(value: unknown): BillingAttribu
     ) {
       throw new Error('Billing attribution Enterprise workflow execution timeout is invalid')
     }
+    const billingInterval = subscription.billingInterval
+    if (
+      billingInterval !== undefined &&
+      billingInterval !== 'month' &&
+      billingInterval !== 'year'
+    ) {
+      throw new Error('Billing attribution subscription interval is invalid')
+    }
+    const enterpriseReportingPeriodAnchorDate = subscription.enterpriseReportingPeriodAnchorDate
+    if (
+      enterpriseReportingPeriodAnchorDate !== undefined &&
+      (!isEnterprise(subscription.plan) ||
+        typeof enterpriseReportingPeriodAnchorDate !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(enterpriseReportingPeriodAnchorDate))
+    ) {
+      throw new Error('Billing attribution Enterprise reporting-period anchor is invalid')
+    }
 
     payerSubscription = {
       id: subscription.id,
@@ -288,6 +335,10 @@ export function assertBillingAttributionSnapshot(value: unknown): BillingAttribu
       seats: subscription.seats as number | null,
       periodStart: subscriptionStart?.toISOString() ?? null,
       periodEnd: subscriptionEnd?.toISOString() ?? null,
+      ...(billingInterval !== undefined ? { billingInterval } : {}),
+      ...(enterpriseReportingPeriodAnchorDate !== undefined
+        ? { enterpriseReportingPeriodAnchorDate }
+        : {}),
       ...(enterpriseConcurrencyLimit !== undefined ? { enterpriseConcurrencyLimit } : {}),
       ...(enterpriseWorkflowExecutionTimeoutSeconds !== undefined
         ? { enterpriseWorkflowExecutionTimeoutSeconds }
@@ -304,6 +355,7 @@ export function assertBillingAttributionSnapshot(value: unknown): BillingAttribu
     billingPeriod: {
       start: periodStart.toISOString(),
       end: periodEnd.toISOString(),
+      ...(periodSource !== undefined ? { source: periodSource } : {}),
     },
     payerSubscription,
   })
@@ -354,7 +406,8 @@ export function requireBillingRequestIdHeader(headers: Pick<Headers, 'get'>): st
 
 function parseBillingAttributionHeader(
   headers: Pick<Headers, 'get'>,
-  expected: ResolveBillingAttributionParams
+  expected: Pick<ResolveBillingAttributionParams, 'workspaceId'> &
+    Partial<Pick<ResolveBillingAttributionParams, 'actorUserId'>>
 ): BillingAttributionSnapshot | undefined {
   const encoded = headers.get(BILLING_ATTRIBUTION_HEADER)
   if (!encoded) return undefined
@@ -371,7 +424,7 @@ function parseBillingAttributionHeader(
 
   const attribution = assertBillingAttributionSnapshot(parsed)
   if (
-    attribution.actorUserId !== expected.actorUserId ||
+    (expected.actorUserId !== undefined && attribution.actorUserId !== expected.actorUserId) ||
     attribution.workspaceId !== expected.workspaceId
   ) {
     throw new Error('Billing attribution header does not match the authenticated request scope')
@@ -387,6 +440,22 @@ function parseBillingAttributionHeader(
 export function requireBillingAttributionHeader(
   headers: Pick<Headers, 'get'>,
   expected: ResolveBillingAttributionParams
+): BillingAttributionSnapshot {
+  const attribution = parseBillingAttributionHeader(headers, expected)
+  if (!attribution) {
+    throw new Error('Billing attribution header is required for this internal request')
+  }
+  return attribution
+}
+
+/**
+ * Restores the executor's captured billing decision without treating its actor as authorization.
+ * The authenticated executor is authoritative for the snapshot; the canonical use case supplies
+ * the workspace scope that must still match.
+ */
+export function requireWorkspaceBillingAttributionHeader(
+  headers: Pick<Headers, 'get'>,
+  expected: Pick<ResolveBillingAttributionParams, 'workspaceId'>
 ): BillingAttributionSnapshot {
   const attribution = parseBillingAttributionHeader(headers, expected)
   if (!attribution) {
@@ -431,6 +500,15 @@ function assertAccountBillingDecision(value: unknown): AccountBillingDecision {
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
     throw new Error('Account billing decision must contain a valid billing period')
   }
+  const source = value.billingPeriod.source
+  if (
+    source !== undefined &&
+    source !== 'reporting' &&
+    source !== 'stripe' &&
+    source !== 'default'
+  ) {
+    throw new Error('Account billing decision must contain a valid billing period source')
+  }
 
   return Object.freeze({
     userId: value.userId,
@@ -441,6 +519,7 @@ function assertAccountBillingDecision(value: unknown): AccountBillingDecision {
     billingPeriod: Object.freeze({
       start: start.toISOString(),
       end: end.toISOString(),
+      ...(source !== undefined ? { source } : {}),
     }),
   })
 }
@@ -494,7 +573,47 @@ export function toUsageLimitSubscription(attribution: BillingAttributionSnapshot
     seats: snapshot.seats,
     periodStart: snapshot.periodStart ? new Date(snapshot.periodStart) : null,
     periodEnd: snapshot.periodEnd ? new Date(snapshot.periodEnd) : null,
+    billingInterval: snapshot.billingInterval ?? null,
+    metadata: snapshot.enterpriseReportingPeriodAnchorDate
+      ? {
+          [ENTERPRISE_REPORTING_PERIOD_ANCHOR_METADATA_KEY]:
+            snapshot.enterpriseReportingPeriodAnchorDate,
+        }
+      : null,
+    usagePeriod: {
+      start: new Date(attribution.billingPeriod.start),
+      end: new Date(attribution.billingPeriod.end),
+      source:
+        attribution.billingPeriod.source ??
+        (snapshot.enterpriseReportingPeriodAnchorDate ? 'reporting' : 'stripe'),
+      anchorDate: snapshot.enterpriseReportingPeriodAnchorDate ?? null,
+      interval: snapshot.billingInterval ?? null,
+    },
   }
+}
+
+/**
+ * Reads only the identity an unauthenticated run acts as: the workspace's
+ * billing account.
+ *
+ * The same identity {@link resolveSystemBillingAttribution} elects as
+ * `actorUserId`, exposed on its own for gates that must name that identity
+ * before execution and have no use for the payer's subscription. Surfaces with
+ * no identifiable caller — a public API URL, a schedule, a webhook — must
+ * authorize against this rather than against the workflow owner, which is a
+ * stored pointer whose access can lapse without the workspace changing.
+ *
+ * Returns `null` when the workspace has no billing account or does not exist,
+ * so a gate can fail closed without distinguishing the two.
+ */
+export async function getWorkspaceBilledAccountUserId(workspaceId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ billedAccountUserId: workspace.billedAccountUserId })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1)
+
+  return row?.billedAccountUserId ?? null
 }
 
 /**
@@ -547,10 +666,10 @@ function buildBillingAttributionSnapshot(params: {
 }): BillingAttributionSnapshot {
   const { actorUserId, workspaceId, billedAccountUserId, organizationId, payerSubscription } =
     params
-  const period =
-    payerSubscription?.periodStart && payerSubscription.periodEnd
-      ? { start: payerSubscription.periodStart, end: payerSubscription.periodEnd }
-      : defaultBillingPeriod()
+  const period = resolveSubscriptionUsagePeriod(payerSubscription) ?? {
+    ...defaultBillingPeriod(),
+    source: 'default' as const,
+  }
   const billingEntity: BillingEntity = organizationId
     ? { type: 'organization', id: organizationId }
     : { type: 'user', id: billedAccountUserId }
@@ -564,6 +683,7 @@ function buildBillingAttributionSnapshot(params: {
     billingPeriod: {
       start: period.start.toISOString(),
       end: period.end.toISOString(),
+      source: period.source,
     },
     payerSubscription: serializeSubscription(payerSubscription),
   })
@@ -590,14 +710,15 @@ export async function resolveBillingAttribution({
 }
 
 /**
- * Resolves markerless old-Go (`legacy-v0`) traffic from the workspace visible
- * at this request boundary, falling back to account billing when the workspace
- * is absent from this Sim deployment.
+ * Resolves legacy-v0 traffic from the workspace visible at this request
+ * boundary, falling back to account billing for markerless local self-hosted
+ * requests when the workspace is absent from this Sim deployment.
  *
  * Unlike modern attributed-v1/direct-v1 envelopes, this decision is mutable:
- * old Go allocates its callback billing ID after admission and returns no payer
- * material, so admission and callback must independently resolve current state.
- * Keep this compatibility semantic confined to markerless legacy-v0 paths.
+ * historical markerless Go allocated its callback billing ID after admission
+ * and returned no payer material, so admission and callback independently
+ * resolve current state. Hosted traffic may use this only for explicit
+ * legacy-v0 replay; markerless use is confined to local self-hosting.
  */
 export async function resolveLegacyV0BillingAttribution({
   actorUserId,
@@ -649,6 +770,9 @@ export function toBillingContext(attribution: BillingAttributionSnapshot): Billi
     billingPeriod: {
       start: new Date(validatedAttribution.billingPeriod.start),
       end: new Date(validatedAttribution.billingPeriod.end),
+      ...(validatedAttribution.billingPeriod.source
+        ? { source: validatedAttribution.billingPeriod.source }
+        : {}),
     },
   }
 }
@@ -744,6 +868,9 @@ export async function checkAttributedUsageLimits(
       {
         start: new Date(validatedAttribution.billingPeriod.start),
         end: new Date(validatedAttribution.billingPeriod.end),
+        ...(validatedAttribution.billingPeriod.source
+          ? { source: validatedAttribution.billingPeriod.source }
+          : {}),
       }
     )
     if (memberUsage.isExceeded) {

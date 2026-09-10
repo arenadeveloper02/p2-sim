@@ -79,6 +79,7 @@ export async function authorizeCredentialUse(
   params: {
     credentialId: string
     workflowId?: string
+    workspaceId?: string
     requireWorkflowIdForInternal?: boolean
     callerUserId?: string
   }
@@ -99,10 +100,11 @@ export async function authorizeCredentialUseForAuth(
   params: {
     credentialId: string
     workflowId?: string
+    workspaceId?: string
     callerUserId?: string
   }
 ): Promise<CredentialAccessResult> {
-  const { credentialId, workflowId, callerUserId } = params
+  const { credentialId, workflowId, workspaceId, callerUserId } = params
 
   if (!auth.success || !auth.userId) {
     return { ok: false, error: auth.error || 'Authentication required' }
@@ -136,7 +138,11 @@ export async function authorizeCredentialUseForAuth(
     return { ok: false, error: 'Workflow not found' }
   }
 
-  const scopeWorkspaceId = workflowContext?.workspaceId ?? null
+  if (workflowContext?.workspaceId && workspaceId && workflowContext.workspaceId !== workspaceId) {
+    return { ok: false, error: 'Credential is not accessible from this workspace' }
+  }
+
+  const scopeWorkspaceId = workflowContext?.workspaceId ?? workspaceId ?? null
   const platformCredential = platformAccess.credential
 
   if (platformCredential) {

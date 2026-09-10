@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from '@sim/emcn'
+import { assessTextPaste, PASTE_LIMITS, PASTE_RENDER_THRESHOLDS } from '@sim/utils/paste'
 import {
   attachSelectionContextToClipboard,
   readSelectionContextFromClipboard,
@@ -31,7 +33,7 @@ import {
   restoreSkillTriggerText,
   SKILL_CHIP_TRIGGER,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/utils'
-import { type McpServer, useMcpServers } from '@/hooks/queries/mcp'
+import { type McpServer, useMcpToolServers } from '@/hooks/queries/mcp'
 import { type SkillDefinition, useSkills } from '@/hooks/queries/skills'
 import type { ChatContext } from '@/stores/panel'
 
@@ -163,7 +165,7 @@ export function usePromptEditor({
   onPasteFiles,
 }: UsePromptEditorProps) {
   const { data: skills = [] } = useSkills(workspaceId)
-  const { data: allMcpServers = [] } = useMcpServers(workspaceId)
+  const { data: allMcpServers = [] } = useMcpToolServers(workspaceId)
   const mcpServers = useMemo(
     () => allMcpServers.filter((server) => server.enabled && server.workspaceId === workspaceId),
     [allMcpServers, workspaceId]
@@ -172,6 +174,8 @@ export function usePromptEditor({
   const [value, setValueState] = useState(initialValue)
   const valueRef = useRef(value)
   valueRef.current = value
+  const workspaceIdRef = useRef(workspaceId)
+  workspaceIdRef.current = workspaceId
 
   /**
    * Commits a new text value, keeping {@link valueRef} in lockstep with state so
@@ -218,7 +222,6 @@ export function usePromptEditor({
   const mentionMenu = useMentionMenu({
     message: value,
     selectedContexts: contextManagement.selectedContexts,
-    onContextSelect: addContextNotified,
     onMessageChange: commitValue,
   })
 
@@ -524,7 +527,12 @@ export function usePromptEditor({
         setValueState(newValue)
       }
 
-      addContextNotified({ kind: 'mcp', serverId: server.id, label: server.name })
+      addContextNotified({
+        kind: 'mcp',
+        serverId: server.id,
+        label: server.name,
+        ...(server.managedConnectorId ? { managedConnectorId: server.managedConnectorId } : {}),
+      })
     },
     [textareaRef, addContextNotified]
   )
@@ -734,7 +742,10 @@ export function usePromptEditor({
           previousValue,
           nextValue: finalValue,
         })
-      } else if (nextValue.length > previousValue.length + 1) {
+      } else if (
+        nextValue.length > previousValue.length + 1 &&
+        nextValue.length <= PASTE_RENDER_THRESHOLDS.ENHANCED_TEXT_CHARACTERS
+      ) {
         // Multi-char insertion (paste, drag-drop, IME commit) — bulk convert all
         // matches and rewrite the textarea via `setRangeText` to keep the edit
         // in a single native undo step.
@@ -986,7 +997,7 @@ export function usePromptEditor({
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
-
+    const pastedPlainText = e.clipboardData?.getData('text/plain') ?? ''
     // A selection copied from a file/table (Cmd+C) carries its context on a
     // custom clipboard type — paste it as a reference chip instead of plain text.
     // Registers via `addContext` (not the notified path) so paste never opens a
@@ -996,7 +1007,10 @@ export function usePromptEditor({
     // is already attached there is nothing to add, and claiming the event anyway
     // would swallow the keystroke entirely — no chip and no text. Falling through
     // pastes the selection's plain text, which is what the user asked for.
-    const selectionContext = readSelectionContextFromClipboard(e.clipboardData)
+    const selectionContext = readSelectionContextFromClipboard(
+      e.clipboardData,
+      workspaceIdRef.current
+    )
     const preparedSelection = selectionContext
       ? prepareContextForInsert(selectionContext, contextManagementRef.current.selectedContexts)
       : null
@@ -1015,11 +1029,31 @@ export function usePromptEditor({
       return
     }
 
+    if (pastedPlainText) {
+      const admission = assessTextPaste({
+        pastedText: pastedPlainText,
+        maxPastedBytes: PASTE_LIMITS.CHAT_BYTES,
+        maxPastedCharacters: PASTE_LIMITS.CHAT_CHARACTERS,
+        currentText: textarea.value,
+        selectionStart: textarea.selectionStart,
+        selectionEnd: textarea.selectionEnd,
+        maxResultBytes: PASTE_LIMITS.CHAT_BYTES,
+        maxResultCharacters: PASTE_LIMITS.CHAT_CHARACTERS,
+      })
+      if (!admission.accepted) {
+        e.preventDefault()
+        toast.warning('Paste is too large for a message', {
+          description: `Messages support up to ${PASTE_LIMITS.CHAT_CHARACTERS.toLocaleString()} characters. Attach the content as a file to send more without slowing the editor.`,
+        })
+        return
+      }
+    }
+
     // Portable chip links (`[label](sim:kind/id)`) re-create their chip on
     // paste-back. Rewrite each link span to its `@label ` token (the trailing
     // space is REQUIRED so useContextManagement's sync effect doesn't purge the
     // freshly-added context) and register the contexts directly.
-    const pastedText = e.clipboardData?.getData('text/plain') ?? ''
+    const pastedText = pastedPlainText
     const links = parseChipLinks(pastedText)
     if (links.length > 0) {
       e.preventDefault()
@@ -1127,7 +1161,11 @@ export function usePromptEditor({
       if (soleSelectionChip) {
         e.preventDefault()
         e.clipboardData.setData('text/plain', selected)
-        attachSelectionContextToClipboard(e.clipboardData, selectionChips[0])
+        attachSelectionContextToClipboard(
+          e.clipboardData,
+          selectionChips[0],
+          workspaceIdRef.current
+        )
         return true
       }
       const serialized = serializeSelectionForClipboard(selected, contexts)

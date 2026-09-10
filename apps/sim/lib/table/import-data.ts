@@ -58,7 +58,7 @@ export interface BulkImportBatch {
  * Inserts one batch of rows for an async import in a single committed statement.
  *
  * Differs from {@link batchInsertRowsWithTx} for the bulk-load case: caller-supplied
- * contiguous positions (no `acquireTablePositionLock` / `nextAutoPosition` scan — an
+ * contiguous order keys (no `acquireRowOrderLock` scan — an
  * import owns its hidden table as the sole writer), no `RETURNING`, and **no
  * `fireTableTrigger` / `runWorkflowColumn`** (a 1M-row import must not dispatch a
  * workflow run per row). `row_count` is maintained set-based by the statement-level
@@ -265,7 +265,14 @@ export async function importAppendRows(
   table: TableDefinition,
   additions: { id?: string; name: string; type: string; required?: boolean; unique?: boolean }[],
   rows: RowData[],
-  ctx: { workspaceId: string; userId?: string; requestId: string }
+  ctx: {
+    workspaceId: string
+    userId?: string
+    requestId: string
+    /** Gate subject for cells the appended rows auto-fire — the subject the
+     *  importing surface resolved from its principal, or `null` for none. */
+    capabilityGovernedUserId: string | null
+  }
 ): Promise<{ inserted: TableRow[]; table: TableDefinition }> {
   // Gate capacity before opening the tx — the lookup is a separate pool read.
   const rowLimit = await assertRowCapacity({
@@ -294,6 +301,7 @@ export async function importAppendRows(
           rows: batch,
           workspaceId: ctx.workspaceId,
           userId: ctx.userId,
+          capabilityGovernedUserId: ctx.capabilityGovernedUserId,
           secretProvenance: batch.map(createExactEmptyTableRowSecretProvenance),
         },
         working,

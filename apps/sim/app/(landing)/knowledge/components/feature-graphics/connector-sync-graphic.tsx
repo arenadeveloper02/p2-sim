@@ -51,7 +51,7 @@ const ROW_STEP_CLASSES = [styles.row0, styles.row1, styles.row2] as const
  * ChipTag (fill stepped up to `--surface-6` so the pill stays legible on
  * the grey ground) above three source rows, each a white card in the
  * audit tile's exact chrome (`--white` fill, 1px `--border-1` hairline,
- * `rounded-xl`, `shadow-sm`) pairing the connector's real brand mark in
+ * `rounded-xl`, `shadow-xs`) pairing the connector's real brand mark in
  * the lifecycle header's outlined `size-6` icon box with the source name,
  * its document count, and a right-aligned sync status. The top row is
  * mid-sync - a pulsing dot beside "Syncing" and the family's quiet 6s
@@ -79,7 +79,7 @@ export function ConnectorSyncGraphic() {
       >
         <div className='w-full max-w-[312px] sm:max-lg:[@container(min-width:500px)]:max-w-[400px]'>
           <div className='mb-4 flex items-center justify-between'>
-            <span className='font-medium text-[var(--text-primary)] text-base'>Connectors</span>
+            <span className='text-[var(--text-primary)] text-base'>Connectors</span>
             <ChipTag variant='mono' className='bg-[var(--surface-6)]'>
               Auto-sync
             </ChipTag>
@@ -90,7 +90,7 @@ export function ConnectorSyncGraphic() {
               <div
                 key={row.name}
                 className={cn(
-                  'flex items-center gap-2.5 rounded-xl border border-[var(--border-1)] bg-[var(--white)] px-3 py-2.5 shadow-sm',
+                  'flex items-center gap-2.5 rounded-xl border border-[var(--border-1)] bg-[var(--white)] px-3 py-2.5 shadow-xs',
                   ROW_STEP_CLASSES[index]
                 )}
               >
@@ -103,7 +103,7 @@ export function ConnectorSyncGraphic() {
                   <row.icon className='size-[14px]' />
                 </span>
                 <span className='min-w-0 flex-1'>
-                  <span className='block truncate font-medium text-[var(--text-primary)] text-small'>
+                  <span className='block truncate text-[var(--text-primary)] text-small'>
                     {row.name}
                   </span>
                   <span className='block truncate text-[var(--text-muted)] text-caption'>

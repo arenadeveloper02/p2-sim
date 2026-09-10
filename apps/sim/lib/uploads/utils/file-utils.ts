@@ -248,6 +248,16 @@ export function isGeneratedDocumentSourceType(contentType: string | undefined | 
  * orders of magnitude smaller than the document it produces, so the declared size is no
  * bound at all and the rendered bytes need a cap of their own.
  */
+/**
+ * Ceiling on the source bytes fed to a text-extraction parser.
+ *
+ * The parsers have a documented denial-of-service history, so a text read is
+ * bounded on its *input* before extraction rather than on its output after.
+ * The individual parsers keep their own guards; those must not be relaxed to
+ * make a larger ceiling usable.
+ */
+export const MAX_TEXT_EXTRACTION_BYTES = 25 * 1024 * 1024
+
 export const MAX_RENDERED_DOCUMENT_BYTES = 50 * 1024 * 1024
 
 /** True when `fileName` may be backed by a generation source rather than final bytes. */
@@ -288,7 +298,7 @@ export function isArchiveFileName(filename: string): boolean {
  * `files/`, so this points at the explicit one-time extract step.
  */
 export function buildArchiveExtractGuidance(name: string): string {
-  return `"${name}" is a .zip archive — its contents can't be read directly. Extract it once with materialize_file(fileNames: ["${name}"], operation: "extract"), then read the unpacked files under files/ (e.g. glob("files/<archive>/**") then read("files/<archive>/<path>/content")).`
+  return `"${name}" is a .zip archive — its contents can't be read directly. Extract it once with save_upload(fileNames: ["${name}"], operation: "extract"), then read the unpacked files under files/ (e.g. glob("files/<archive>/**") then read("files/<archive>/<path>/content")).`
 }
 
 const EXTENSION_TO_MIME: Record<string, string> = {
@@ -740,11 +750,41 @@ export function isInternalFileUrl(fileUrl: string): boolean {
  * prefixes: `kb/` (server-side uploads) or `knowledge-base/` (direct/presigned
  * uploads, whose default key is `${context}/...`). Both map to the same
  * `knowledge-base` context.
+ *
+ * What this answers is *where the bytes live* — which bucket and which tenant —
+ * and for that the prefix is authoritative. It does NOT answer which product
+ * module owns the object: `workspace/` covers both a Files-module workspace file
+ * and a mothership chat attachment, which share a bucket and a workspace scope
+ * and differ only by `workspace_files.context`. Module ownership is also mutable
+ * (`materialize_file` promotes an attachment to a workspace file), so it cannot
+ * live in an immutable key. A caller that needs the owning module must read the
+ * row — see `resolveStoredFileContext` — never this prefix.
  */
 export function inferContextFromKey(key: string): StorageContext {
-  if (!key) {
-    throw new Error('Cannot infer context from empty key')
+  const context = tryInferContextFromKey(key)
+  if (!context) {
+    throw new Error(
+      key
+        ? `File key must start with a context prefix (kb/, knowledge-base/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, or logs/). Got: ${key}`
+        : 'Cannot infer context from empty key'
+    )
   }
+  return context
+}
+
+/**
+ * {@link inferContextFromKey} for a key that came from a caller rather than from
+ * our own storage, answering `null` instead of throwing.
+ *
+ * The throwing form is right where an unclassifiable key means the platform
+ * built one wrong — that is a bug and should be loud. It is wrong where the key
+ * is request input being normalized, because there an unrecognized prefix just
+ * means "this is not a file we can use", and a throw turns a malformed request
+ * into a 500. Both share this one list so a new context cannot be added to only
+ * half of them.
+ */
+export function tryInferContextFromKey(key: string): StorageContext | null {
+  if (!key) return null
 
   if (key.startsWith('kb/') || key.startsWith('knowledge-base/')) return 'knowledge-base'
   if (key.startsWith('chat/')) return 'chat'
@@ -758,9 +798,7 @@ export function inferContextFromKey(key: string): StorageContext {
   if (key.startsWith(`${ORG_LOGOS_S3_PREFIX}/`)) return 'org-logos'
   if (key.startsWith('logs/')) return 'logs'
 
-  throw new Error(
-    `File key must start with a context prefix (kb/, knowledge-base/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, ${ORG_LOGOS_S3_PREFIX}/, or logs/). Got: ${key}`
-  )
+  return null
 }
 
 /**
@@ -775,6 +813,11 @@ const PUBLIC_STORAGE_CONTEXTS = new Set<StorageContext>([
   'workspace-logos',
 ])
 
+/** Whether a trusted storage context is world-readable. */
+export function isPublicStorageContext(context: StorageContext): boolean {
+  return PUBLIC_STORAGE_CONTEXTS.has(context)
+}
+
 /**
  * Resolve the storage context for a stored file from its trusted key prefix.
  *
@@ -785,6 +828,11 @@ const PUBLIC_STORAGE_CONTEXTS = new Set<StorageContext>([
  * private `workspace/…` key from being relabeled with a world-readable context
  * to bypass authorization and read the shared bucket.
  *
+ * "Authoritative" is scoped to bucket and tenancy, which is all this defends.
+ * It is not a claim about which module owns the object; that is the row's job
+ * (`resolveStoredFileContext`), and reading it costs nothing here because the
+ * row is server-authored too — the value being refused above is the *caller's*.
+ *
  * Legacy keys predating context-prefixed keys cannot be inferred; for those the
  * persisted `context` is honored so existing files stay resolvable — except a
  * world-readable context, which would reopen the bypass on an un-inferrable key.
@@ -793,7 +841,7 @@ export function resolveTrustedFileContext(key: string, context?: string): Storag
   try {
     return inferContextFromKey(key)
   } catch (error) {
-    if (context && !PUBLIC_STORAGE_CONTEXTS.has(context as StorageContext)) {
+    if (context && !isPublicStorageContext(context as StorageContext)) {
       return context as StorageContext
     }
     throw error
@@ -1116,6 +1164,31 @@ export function extractWorkspaceIdFromExecutionKey(key: string): string | null {
   }
 
   return null
+}
+
+/**
+ * The workspace a storage key demonstrably belongs to, or `null` when the key's
+ * layout does not name one.
+ *
+ * Only two key layouts encode their tenant: `workspace/{workspaceId}/…` and
+ * `execution/{workspaceId}/{workflowId}/{executionId}/…`. Every other prefix
+ * (`kb/`, `chat/`, `copilot/`, the world-readable ones) carries no workspace
+ * segment, so no ownership can be proven from the key alone and this returns
+ * `null` rather than guessing.
+ *
+ * This is the only safe way to compare a key against an expected workspace when
+ * the key came from a caller: it reads the tenant out of the key's own layout
+ * instead of trusting an adjacent `context`, `workspaceId`, or URL field.
+ */
+export function extractWorkspaceIdFromStorageKey(key: string): string | null {
+  const segments = key.split('/')
+
+  if (segments[0] === 'workspace' && segments.length >= 3) {
+    const workspaceId = segments[1]
+    return workspaceId && isUuid(workspaceId) ? workspaceId : null
+  }
+
+  return extractWorkspaceIdFromExecutionKey(key)
 }
 
 /**

@@ -23,13 +23,19 @@ import {
 } from '@/lib/chat/history-persistence'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { env } from '@/lib/core/config/env'
-import { validateAuthToken } from '@/lib/core/security/deployment'
+import {
+  enforceIpRateLimitWithIndependentBackstop,
+  enforceResourceRateLimit,
+  type TokenBucketConfig,
+} from '@/lib/core/rate-limiter'
+import { RATE_LIMITS } from '@/lib/core/rate-limiter/types'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
+import { formatOutputSelector } from '@/lib/workflows/streaming/output-selector'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
 import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
@@ -202,6 +208,56 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const CHAT_MAX_REQUEST_BYTES = Number.parseInt(env.CHAT_MAX_REQUEST_BYTES, 10) || 220 * 1024 * 1024
+
+/** A sustained per-minute rate, with the 2x burst allowance the plan buckets use. */
+function executionsPerMinute(perMinute: number): TokenBucketConfig {
+  return { maxTokens: perMinute * 2, refillRate: perMinute, refillIntervalMs: 60_000 }
+}
+
+/**
+ * What one deployed chat may spend of its owner's workspace allowance.
+ *
+ * A chat execution debits the workspace `sync` counter, which is the same
+ * counter the owner's API, webhook and scheduled runs draw from. So this
+ * ceiling only does its job while it sits *below* that counter: above it, a
+ * flood empties the shared budget before this bucket ever refuses, and the
+ * billing attack becomes an availability attack on unrelated production
+ * workloads.
+ *
+ * Derived from the plan table rather than picked, because no fixed number holds
+ * that invariant — the rates differ per plan and every one is operator
+ * overridable through `RATE_LIMIT_*_SYNC`. A fraction of the smallest
+ * configured rate keeps a public chat under the shared budget on every plan and
+ * cannot drift if one of those defaults changes.
+ *
+ * The floor is deliberately shared by all plans for now. Sizing the slice to
+ * the *payer's* own plan needs the subscription, which `preprocessExecution`
+ * resolves a few lines after this runs, not here.
+ *
+ * A configured rate of `1` is the one value where this lands equal to the plan
+ * rather than under it, because no positive integer is below 1. It is inert:
+ * a workspace allowed one execution per minute has no capacity left to starve,
+ * and the two buckets then exhaust together rather than one masking the other.
+ */
+const CHAT_EXECUTION_RATE_PER_MINUTE = Math.max(
+  1,
+  Math.floor(Math.min(...Object.values(RATE_LIMITS).map((plan) => plan.sync.refillRate)) * 0.8)
+)
+
+const CHAT_EXECUTION_LIMIT = executionsPerMinute(CHAT_EXECUTION_RATE_PER_MINUTE)
+
+/**
+ * Executions one client IP may drive against a single deployed chat.
+ *
+ * Half the per-deployment rate, so a single source can never consume the whole
+ * allowance and leave the rest of the audience with none. It is above one
+ * person's chat cadence but not above a busy office behind one NAT — which
+ * costs little in practice, since traffic that heavy from one address would
+ * meet the per-deployment ceiling moments later anyway.
+ */
+const CHAT_EXECUTION_IP_LIMIT = executionsPerMinute(
+  Math.max(1, Math.floor(CHAT_EXECUTION_RATE_PER_MINUTE / 2))
+)
 
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ identifier: string }> }) => {
@@ -456,8 +512,8 @@ export const POST = withRouteHandler(
       if ((password || email) && !input) {
         const response = createSuccessResponse(toChatConfigResponse(deployment))
 
-        if (deployment.authType !== 'sso') {
-          setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
+        if (deployment.authType === 'password') {
+          await setChatAuthCookie(response, deployment)
         }
 
         return response
@@ -478,6 +534,23 @@ export const POST = withRouteHandler(
         return createErrorResponse('No input provided', 400)
       }
 
+      // Both buckets apply regardless of the chat's auth type: an email or SSO
+      // visitor is still not the payer.
+      const ipLimited = await enforceIpRateLimitWithIndependentBackstop(
+        'chat-execute',
+        request,
+        CHAT_EXECUTION_IP_LIMIT,
+        deployment.id
+      )
+      if (ipLimited) return ipLimited
+
+      const deploymentLimited = await enforceResourceRateLimit(
+        'chat-execute',
+        deployment.id,
+        CHAT_EXECUTION_LIMIT
+      )
+      if (deploymentLimited) return deploymentLimited
+
       const executionId = generateId()
 
       const loggingSession = new LoggingSession(
@@ -490,6 +563,8 @@ export const POST = withRouteHandler(
       const preprocessResult = await preprocessExecution({
         workflowId: deployment.workflowId,
         userId: deployment.userId,
+        // Whoever deployed this chat, not whoever is talking to it.
+        userIdIsStoredReference: true,
         triggerType: 'chat',
         executionId,
         requestId,
@@ -559,9 +634,11 @@ export const POST = withRouteHandler(
         const selectedOutputs: string[] = []
         if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
           for (const config of deployment.outputConfigs) {
-            const outputId = config.path
-              ? `${config.blockId}_${config.path}`
-              : `${config.blockId}_content`
+            const outputId = formatOutputSelector(
+              config.blockId,
+              config.path || 'content',
+              config.workflowId
+            )
             selectedOutputs.push(outputId)
           }
         }
@@ -640,7 +717,16 @@ export const POST = withRouteHandler(
 
         const workflowForExecution = {
           id: deployment.workflowId,
-          userId: deployment.userId,
+          /**
+           * The workflow owner, not the chat's creator: `executeWorkflow` reads this
+           * one field to set `workflowUserId`, the personal-environment fallback for
+           * runs with no identifiable caller. `chat.userId` records who deployed the
+           * chat and is never maintained as an execution identity — member removal
+           * reassigns `workflow.userId` to keep it an active workspace identity and
+           * has no equivalent for the chat row — so reading it here made deployed
+           * chat resolve a pointer that every other trigger had already repaired.
+           */
+          userId: workflowRecord.userId,
           workspaceId,
           isDeployed: workflowRecord?.isDeployed ?? false,
           variables: (workflowRecord?.variables as Record<string, unknown>) ?? undefined,
@@ -677,6 +763,20 @@ export const POST = withRouteHandler(
               resolvedActorUserId,
               {
                 enabled: true,
+                principal: {
+                  kind: 'system',
+                  serviceId: 'chat',
+                  workspaceId,
+                  workflowId: deployment.workflowId,
+                  ...(authResult.authenticatedEmail
+                    ? {
+                        subject: {
+                          kind: 'authenticated_email' as const,
+                          email: authResult.authenticatedEmail,
+                        },
+                      }
+                    : {}),
+                },
                 selectedOutputs,
                 isSecureMode: true,
                 workflowTriggerType: 'chat',

@@ -1,4 +1,5 @@
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
+import type { KbEmbeddingDimensions } from '@/lib/knowledge/embedding-models'
 
 /**
  * Units:
@@ -30,6 +31,8 @@ export interface KnowledgeBaseWithCounts {
   folderId: string | null
   docCount: number
   connectorTypes: string[]
+  /** True when a live connector syncs per member, so what a run retrieves depends on who triggers it. */
+  hasMemberScopedConnector: boolean
 }
 
 // Simplified type for user knowledge base access API
@@ -44,7 +47,7 @@ export interface CreateKnowledgeBaseData {
   workspaceId: string
   folderId?: string | null
   embeddingModel: string
-  embeddingDimension: 1536
+  embeddingDimension: KbEmbeddingDimensions
   chunkingConfig: ChunkingConfig
   userId: string
 }
@@ -127,6 +130,7 @@ export interface KnowledgeBaseData {
   folderId: string | null
   docCount?: number
   connectorTypes?: string[]
+  hasMemberScopedConnector?: boolean
 }
 
 export interface DocumentData {
@@ -209,4 +213,12 @@ interface DocumentsPagination {
   limit: number
   offset: number
   hasMore: boolean
+}
+
+/** The member engine's states, as stored on `knowledge_connector.member_sync_status`. */
+export const MEMBER_SYNC_STATUSES = ['idle', 'pending', 'running', 'error', 'disabled'] as const
+export type MemberSyncStatus = (typeof MEMBER_SYNC_STATUSES)[number]
+
+export function isMemberSyncStatus(value: string): value is MemberSyncStatus {
+  return (MEMBER_SYNC_STATUSES as readonly string[]).includes(value)
 }

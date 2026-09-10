@@ -512,6 +512,16 @@ export interface PostHogEventMap {
     provider_id: string
   }
 
+  organization_byok_key_added: {
+    organization_id: string
+    provider_id: string
+  }
+
+  organization_byok_key_removed: {
+    organization_id: string
+    provider_id: string
+  }
+
   notification_channel_created: {
     workspace_id: string
     notification_type: 'webhook' | 'email' | 'slack'
@@ -608,10 +618,19 @@ export interface PostHogEventMap {
     action_id?: string
   }
 
-  /** A home-page suggested action was clicked. `action_id` is the candidate id (e.g. `gmail-0`). */
+  /** The chat composer's mode switcher picked a different mode. */
+  chat_mode_changed: {
+    workspace_id: string
+    mode: 'build' | 'search' | 'assistant'
+  }
+
+  /**
+   * A home-page suggested action was clicked. `action_id` is the candidate id
+   * (e.g. `gmail-0`); `connector` rows are the Search-mode "Connect X" rows.
+   */
   suggested_action_clicked: {
     workspace_id: string
-    kind: 'prompt' | 'integration'
+    kind: 'prompt' | 'integration' | 'connector'
     action_id: string
     label: string
     position: number
@@ -755,6 +774,34 @@ export interface PostHogEventMap {
     workspace_id: string
   }
 
+  /**
+   * The workflow editor's error boundary caught a render or effect error and
+   * replaced the canvas with its fallback. `error_name` is what distinguishes
+   * the failure classes (`ChunkLoadError`, `TypeError`, a thrown config error),
+   * so it is the property to break down on.
+   */
+  workflow_canvas_crashed: {
+    error_name: string
+    error_message: string
+    component_stack?: string
+  }
+
+  /**
+   * The realtime socket has failed to connect enough times in a row to count as
+   * an outage rather than a hiccup. Emitted at most once per socket instance.
+   *
+   * A socket that cannot connect throws nothing, so exception capture never sees
+   * it. `socket_origin` separates the two causes that look identical to the
+   * user: the realtime service being unreachable, and this client resolving the
+   * wrong host — the latter shows up as an origin equal to the app's own.
+   */
+  realtime_connection_failing: {
+    socket_origin: string
+    expected_socket_origin_configured: boolean
+    attempts: number
+    reason: string
+  }
+
   /** A stored credential's plaintext secret was deliberately retrieved via the token API. */
   credential_used: {
     credential_type:
@@ -817,7 +864,8 @@ export interface PostHogEventMap {
   enterprise_subscription_created: {
     reference_id: string
     seats: number
-    monthly_price: number
+    invoice_amount: number
+    billing_interval: 'month' | 'year'
     currency: string
   }
 

@@ -46,10 +46,26 @@ export const DEFAULT_OVERAGE_THRESHOLD = 100
 export const BILLING_LOCK_TIMEOUT_MS = 5_000
 
 /**
- * Available credit tiers. Each tier maps a credit amount to the underlying dollar cost.
+ * Available credit tiers. Each tier maps a credit amount to the underlying dollar
+ * cost and carries that tier's fixed weekly refresh allowance.
+ * Display conversion is `getCreditsPerDollar()` (fallback `CREDITS_PER_DOLLAR`, 65).
+ *
+ * `weeklyRefreshCredits` is a fixed per-tier amount, NOT a rate. Which plans map
+ * to which allowance (legacy plans, seat scaling, free/enterprise exclusion) is
+ * owned by `getPlanWeeklyRefreshDollars` in `@/lib/billing/plan-helpers`.
  */
-const PRO_CREDIT_TIER = { credits: 6000, dollars: 25, name: 'Pro' } as const
-const MAX_CREDIT_TIER = { credits: 25000, dollars: 100, name: 'Max' } as const
+export const PRO_CREDIT_TIER = {
+  credits: 6000,
+  dollars: 25,
+  weeklyRefreshCredits: 2000,
+  name: 'Pro',
+} as const
+export const MAX_CREDIT_TIER = {
+  credits: 25000,
+  dollars: 100,
+  weeklyRefreshCredits: 4000,
+  name: 'Max',
+} as const
 
 export const CREDIT_TIERS = [PRO_CREDIT_TIER, MAX_CREDIT_TIER] as const
 
@@ -67,17 +83,11 @@ export type CreditTier = (typeof CREDIT_TIERS)[number]
 export const MAX_TIER_CREDITS = MAX_CREDIT_TIER.credits
 
 /**
- * Fallback credits granted per dollar of plan spend when master_config is
- * unavailable. This is also the browser-safe default before runtime config is
- * loaded.
+ * Credits granted per dollar of plan spend. Fallback when `master_config`
+ * `CREDITS_PER_DOLLOR` is unset. Prefer `getCreditsPerDollar()` at UI/API
+ * boundaries — do not hardcode 200 (upstream Sim Cloud).
  */
 export const CREDITS_PER_DOLLAR = 65
-
-/**
- * Daily refresh rate: 1% of plan cost per day.
- * E.g. $25 plan => $0.25/day => 50 credits/day included usage.
- */
-export const DAILY_REFRESH_RATE = 0.01
 
 /**
  * Annual subscribers pay 15% less than the equivalent monthly plan

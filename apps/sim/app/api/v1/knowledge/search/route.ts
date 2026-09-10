@@ -8,10 +8,15 @@ import {
 } from '@/lib/billing/core/billing-attribution'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
-import { recordSearchEmbeddingUsage } from '@/lib/knowledge/embeddings'
+import { toKbEmbeddingDimensions } from '@/lib/knowledge/embedding-models'
+import {
+  generateSearchEmbedding,
+  type KbEmbeddingTarget,
+  recordSearchEmbeddingUsage,
+} from '@/lib/knowledge/embeddings'
+import { resolveKnowledgeSearchDefaults } from '@/lib/knowledge/search/defaults'
 import {
   executeKnowledgeSearch,
-  generateSearchEmbedding,
   getDocumentMetadataByIds,
   type SearchResult,
 } from '@/lib/knowledge/search/queries'
@@ -19,9 +24,10 @@ import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
 import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
 import type { StructuredFilter } from '@/lib/knowledge/types'
 import { checkKnowledgeBaseAccess, type KnowledgeBaseAccessResult } from '@/app/api/knowledge/utils'
-import { handleError } from '@/app/api/v1/knowledge/utils'
+import { handleError, resolveV1KnowledgeAccessScope } from '@/app/api/v1/knowledge/utils'
 import {
   authenticateRequest,
+  capabilityGovernedUserId,
   v1ValidationErrorResponse,
   validateWorkspaceAccess,
 } from '@/app/api/v1/middleware'
@@ -46,9 +52,20 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
     if (!parsed.success) return parsed.response
 
-    const { workspaceId, topK, query, tagFilters, searchMode } = parsed.data.body
+    const {
+      workspaceId,
+      topK,
+      query,
+      tagFilters,
+      searchMode: requestedSearchMode,
+    } = parsed.data.body
 
-    const accessError = await validateWorkspaceAccess(rateLimit, userId, workspaceId)
+    const accessError = await validateWorkspaceAccess(
+      rateLimit,
+      userId,
+      workspaceId,
+      'knowledge.use'
+    )
     if (accessError) return accessError
 
     const hasBillableQuery = Boolean(query?.trim())
@@ -169,42 +186,83 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const hasQuery = searchQuery.length > 0
     const hasFilters = structuredFilters.length > 0
 
-    const embeddingModels = Array.from(new Set(accessibleKbs.map((kb) => kb.embeddingModel)))
-    if (hasQuery && embeddingModels.length > 1) {
+    /**
+     * One query embedding serves every base in the request, so all of them must
+     * be indexed the same way — including the vector width, which selects the
+     * pgvector column each comparison reads.
+     *
+     * Built only for a query search. A tag-only request never embeds anything,
+     * so resolving a width it will not use would let one base recorded at an
+     * unstorable width fail a request that does not depend on it.
+     */
+    const embeddingTargets = new Map(
+      accessibleKbs.map((kb) => [
+        `${kb.embeddingModel}:${kb.embeddingDimension}`,
+        { model: kb.embeddingModel, dimensions: kb.embeddingDimension },
+      ])
+    )
+    if (hasQuery && embeddingTargets.size > 1) {
       return NextResponse.json(
         {
           error:
-            'Selected knowledge bases use different embedding models and cannot be searched together. Search them separately.',
+            'Selected knowledge bases use different embedding models or vector widths and cannot be searched together. Search them separately.',
         },
         { status: 400 }
       )
     }
-    const queryEmbeddingModel = embeddingModels[0] ?? 'text-embedding-3-small'
+    const selectedTarget = [...embeddingTargets.values()][0]
+    const queryEmbeddingModel = selectedTarget.model
+    /**
+     * The width is narrowed to a storable one only for a query search, which is
+     * the only kind that reads a vector column. A tag-only search must not fail
+     * on a width it never uses.
+     */
+    const queryEmbeddingTarget: KbEmbeddingTarget | undefined = hasQuery
+      ? {
+          model: selectedTarget.model,
+          dimensions: toKbEmbeddingDimensions(selectedTarget.dimensions),
+        }
+      : undefined
 
     let results: SearchResult[]
     let queryEmbeddingIsBYOK: boolean | null = null
+    const [access, { searchMode, boostRecency }] = await Promise.all([
+      resolveV1KnowledgeAccessScope(userId, rateLimit, workspaceId),
+      resolveKnowledgeSearchDefaults({
+        workspaceId,
+        /** A personal key acts as its user; a workspace key has no person behind it. */
+        userId: capabilityGovernedUserId(rateLimit) ?? undefined,
+        requestedMode: requestedSearchMode,
+      }),
+    ])
 
     if (!hasQuery && hasFilters) {
       results = await executeKnowledgeSearch({
         knowledgeBaseIds: accessibleKbIds,
         topK,
+        access,
         searchMode,
+        boostRecency,
         structuredFilters,
       })
     } else if (hasQuery) {
       const queryEmbeddingResult = await generateSearchEmbedding(
         query!,
-        queryEmbeddingModel,
+        queryEmbeddingTarget!,
         workspaceId
       )
       queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
-      const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
       results = await executeKnowledgeSearch({
         knowledgeBaseIds: accessibleKbIds,
         topK,
+        access,
         searchMode,
+        boostRecency,
         query,
-        queryVector,
+        queryVector: {
+          vector: JSON.stringify(queryEmbeddingResult.embedding),
+          dimensions: queryEmbeddingTarget!.dimensions,
+        },
         structuredFilters: hasFilters ? structuredFilters : undefined,
       })
     } else {
@@ -246,7 +304,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     })
 
     const documentIds = results.map((r) => r.documentId)
-    const documentMetadataMap = await getDocumentMetadataByIds(documentIds)
+    const documentMetadataMap = await getDocumentMetadataByIds(documentIds, access)
 
     return NextResponse.json({
       success: true,

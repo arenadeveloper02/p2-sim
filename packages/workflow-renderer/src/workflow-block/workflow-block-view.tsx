@@ -20,11 +20,10 @@ import {
 } from '@sim/workflow-types/workflow'
 import {
   Handle,
-  internalsSymbol,
   Position,
   useStoreApi as useReactFlowStoreApi,
   useUpdateNodeInternals,
-} from 'reactflow'
+} from '@xyflow/react'
 import { BLOCK_DIMENSIONS, HANDLE_POSITIONS } from '../dimensions'
 import { humanizeBlockName } from '../lib/humanize-block-name'
 import { OverflowSpan } from '../lib/overflow-span'
@@ -205,7 +204,7 @@ export function WorkflowTypeIcon({
     <ChipTag
       variant={typeAccent.variant}
       tone={typeAccent.tone}
-      className={cn('size-[16px] flex-shrink-0 justify-center p-0', className)}
+      className={cn('size-[16px] shrink-0 justify-center p-0', className)}
       data-workflow-type-icon={type}
       {...props}
     >
@@ -239,7 +238,7 @@ export function WorkflowTypeTag({
 }: WorkflowTypeTagProps) {
   const typeAccent = getWorkflowTypeAccent(type)
   const sharedClassName = cn(
-    'flex-shrink-0 justify-center transition-opacity duration-150 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]',
+    'shrink-0 justify-center transition-opacity duration-150 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]',
     !isEnabled && 'opacity-50'
   )
   /*
@@ -261,7 +260,7 @@ export function WorkflowTypeTag({
         data-workflow-type-accent={type}
         data-workflow-brand-tag=''
       >
-        <Icon className='size-[14px] flex-shrink-0' />
+        <Icon className='size-[14px] shrink-0' />
         {label}
       </ChipTag>
     )
@@ -274,7 +273,7 @@ export function WorkflowTypeTag({
       className={sharedClassName}
       data-workflow-type-accent={type}
     >
-      <Icon className='size-[14px] flex-shrink-0' />
+      <Icon className='size-[14px] shrink-0' />
       {label}
     </ChipTag>
   )
@@ -292,10 +291,10 @@ function BlockStateIndicator({ label, Icon }: BlockStateIndicatorProps) {
         <ChipTag
           variant='workflow'
           tone='neutral'
-          className='size-5 flex-shrink-0 justify-center p-0'
+          className='size-5 shrink-0 justify-center p-0'
           aria-label={label}
         >
-          <Icon className='size-[12px] flex-shrink-0' />
+          <Icon className='size-[12px] shrink-0' />
         </ChipTag>
       </Tooltip.Trigger>
       <Tooltip.Content side='top'>
@@ -317,13 +316,13 @@ const clampTabLength = (length: number) =>
  */
 const getInvisibleHandleClasses = (side: 'left' | 'right' | 'top' | 'bottom') => {
   const offsetClasses = {
-    right: '!right-[-7px]',
-    left: '!left-[-7px]',
-    top: '!top-[-7px]',
-    bottom: '!bottom-[-7px]',
+    right: 'right-[-7px]!',
+    left: 'left-[-7px]!',
+    top: 'top-[-7px]!',
+    bottom: 'bottom-[-7px]!',
   } as const
   return cn(
-    '!z-20 !cursor-crosshair !rounded-none !border-none !bg-transparent !opacity-0',
+    'z-20! cursor-crosshair! rounded-none! border-none! bg-transparent! opacity-0!',
     offsetClasses[side]
   )
 }
@@ -393,8 +392,6 @@ export interface WorkflowBlockViewProps {
   runPathStatus?: BlockRunStatus
   /** Whether execution controls are active for this block. */
   isRunning?: boolean
-  /** Whether the parent workflow is executing. Holds every block's action swell open. */
-  isWorkflowRunning?: boolean
   /** Whether this block participates in the current execution handoff. */
   isExecutionHighlighted?: boolean
   /** Block icon component and its background color. */
@@ -521,7 +518,6 @@ export function WorkflowBlockView({
   ringStyles,
   runPathStatus,
   isRunning = false,
-  isWorkflowRunning = false,
   isExecutionHighlighted = false,
   Icon,
   iconBgColor,
@@ -570,7 +566,7 @@ export function WorkflowBlockView({
   const updateNodeInternals = useUpdateNodeInternals()
   const reactFlowStore = useReactFlowStoreApi()
   const getConnectionNodeId = useCallback(
-    () => reactFlowStore.getState().connectionNodeId,
+    () => reactFlowStore.getState().connection.fromNode?.id ?? null,
     [reactFlowStore]
   )
   const supportsCursorHandle = type !== 'response'
@@ -630,7 +626,7 @@ export function WorkflowBlockView({
     if (!handleElement || !nodeElement) return
 
     const state = reactFlowStore.getState()
-    const sourceBounds = state.nodeInternals.get(id)?.[internalsSymbol]?.handleBounds?.source
+    const sourceBounds = state.nodeLookup.get(id)?.internals.handleBounds?.source
     const handleId = handleElement.dataset.handleid
     const handlePosition = handleElement.dataset.handlepos as Position | undefined
     const zoom = state.transform[2]
@@ -641,6 +637,8 @@ export function WorkflowBlockView({
     const [originX, originY] = state.nodeOrigin
     const nextBounds = {
       id: handleId,
+      nodeId: id,
+      type: 'source' as const,
       position: handlePosition,
       x: (handleBounds.left - nodeBounds.left - nodeBounds.width * originX) / zoom,
       y: (handleBounds.top - nodeBounds.top - nodeBounds.height * originY) / zoom,
@@ -885,7 +883,7 @@ export function WorkflowBlockView({
             type='source'
             position={getCursorSourceHandlePosition(cursorSourceHandle.edgeSide)}
             id={cursorSourceHandle.handleId}
-            className='!z-50 !cursor-crosshair !rounded-none !border-none !bg-transparent !opacity-0'
+            className='z-50! cursor-crosshair! rounded-none! border-none! bg-transparent! opacity-0!'
             style={{
               right: 'auto',
               bottom: 'auto',
@@ -906,7 +904,7 @@ export function WorkflowBlockView({
           />
         )}
         {isPending && (
-          <div className='-top-6 -translate-x-1/2 absolute left-1/2 z-10 transform rounded-t-md bg-amber-500 px-2 py-0.5 text-white text-xs'>
+          <div className='-top-6 -translate-x-1/2 absolute left-1/2 z-10 rounded-t-md bg-amber-500 px-2 py-0.5 text-white text-xs'>
             Next Step
           </div>
         )}
@@ -953,12 +951,12 @@ export function WorkflowBlockView({
             <OverflowSpan
               value={humanizeBlockName(name)}
               className={cn(
-                'truncate text-[17px]',
+                'text-[17px]',
                 !isEnabled && runPathStatus !== 'success' && 'text-[var(--text-muted)]'
               )}
             />
           </div>
-          <div className='relative z-10 flex flex-shrink-0 items-center gap-1'>
+          <div className='relative z-10 flex shrink-0 items-center gap-1'>
             {!isEnabled && <BlockStateIndicator label='Disabled' Icon={Ban} />}
             {isLocked && <BlockStateIndicator label='Locked' Icon={Lock} />}
             <WorkflowTypeTag
@@ -1256,7 +1254,7 @@ export function WorkflowBlockView({
             type='source'
             position={ERROR_SOURCE_HANDLE_POSITION}
             id='error'
-            className='!z-20 !cursor-crosshair !rounded-none !border-none !bg-transparent !opacity-0'
+            className='z-20! cursor-crosshair! rounded-none! border-none! bg-transparent! opacity-0!'
             style={getErrorSourceHandleStyle()}
             data-nodeid={id}
             data-handleid='error'

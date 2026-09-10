@@ -47,13 +47,6 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
-  // {
-  //   id: 'chatgpt-image-latest',
-  //   label: 'ChatGPT Image Latest',
-  //   provider: 'openai',
-  //   supportsReferenceImages: true,
-  //   maxReferenceImages: 1,
-  // },
 ]
 
 const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
@@ -95,7 +88,6 @@ export const OPENAI_IMAGE_MODEL_IDS = [
   'gpt-image-1.5',
   'gpt-image-1',
   'gpt-image-1-mini',
-  'chatgpt-image-latest',
 ] as const
 
 export const GEMINI_IMAGE_MODEL_IDS = [
@@ -129,6 +121,7 @@ const IMAGE_MODEL_ALIASES: Record<string, string> = {
   'gpt-images-2': 'gpt-image-2',
   'gpt-image2': 'gpt-image-2',
   'chatgpt-image-2': 'gpt-image-2',
+  'chatgpt-image-latest': 'gpt-image-2',
   'gpt-image-1-5': 'gpt-image-1.5',
   'gpt-image15': 'gpt-image-1.5',
   'gpt-images-1.5': 'gpt-image-1.5',

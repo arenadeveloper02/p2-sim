@@ -43,6 +43,7 @@ import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/c
 import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
 import type {
   ChatAttachment,
+  ChatOutputSegment,
   ChatToolCall,
   KnowledgeRef,
   KnowledgeResultChunk,
@@ -69,10 +70,25 @@ import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workf
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 const DEPLOYED_MARKDOWN_PROPS = {
-  fontClassName: 'font-poppins font-normal',
-  bodyTextClassName: 'text-[14px] leading-[1.6] text-[#2C2D33]',
-  headingTextClassName: 'font-poppins font-normal text-[14px] leading-[1.6] text-[#2C2D33]',
+  fontClassName: '',
+  bodyTextClassName: 'text-[var(--text-primary)] text-sm leading-[1.6]',
+  headingTextClassName: 'text-[var(--text-primary)] text-sm leading-[1.6]',
 } as const
+
+function liveOutputSegments(message: ChatMessage): ChatOutputSegment[] | null {
+  if (!message.isStreaming || !message.outputSegments?.length) return null
+  return message.outputSegments
+}
+
+function shouldShowOutputSegmentWaitingLoader(
+  segments: ChatOutputSegment[],
+  index: number
+): boolean {
+  const segment = segments[index]
+  if (!segment || segment.status !== 'waiting') return false
+  if (segments.some((item) => item.status === 'streaming')) return false
+  return segments.findIndex((item) => item.status === 'waiting') === index
+}
 
 export interface ChatMessage {
   id: string
@@ -91,6 +107,11 @@ export interface ChatMessage {
   toolCalls?: ChatToolCall[]
   /** True while any tool chip is still `running`. */
   isToolStreaming?: boolean
+  /**
+   * Per selected-output live state. Present only while `isStreaming` is true
+   * when the deployment selected one or more block outputs.
+   */
+  outputSegments?: ChatOutputSegment[]
   executionId?: string
   liked?: boolean | null
   attachments?: ChatAttachment[]
@@ -962,11 +983,8 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[min(80%,560px)]'>
-                  <div className='rounded-[var(--radius-ds-md,8px)] bg-white px-4 py-3'>
-                    <div
-                      className='whitespace-pre-wrap break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                      style={{ color: '#2C2D33' }}
-                    >
+                  <div className='rounded-lg bg-[var(--surface-3)] px-4 py-3'>
+                    <div className='whitespace-pre-wrap break-words text-[var(--text-primary)] text-sm leading-[1.6]'>
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
                       ) : (
@@ -985,36 +1003,86 @@ export const ArenaClientChatMessage = memo(
     // For assistant messages (on the left)
     const hasThinking = typeof message.thinking === 'string' && message.thinking.length > 0
     const hasToolCalls = Array.isArray(message.toolCalls) && message.toolCalls.length > 0
+    const outputSegments = liveOutputSegments(message)
     const showStreamPlaceholder =
-      message.isStreaming && !hasThinking && !hasToolCalls && !hasRenderableText
+      !outputSegments && message.isStreaming && !hasThinking && !hasToolCalls && !hasRenderableText
 
     return (
       <div className='py-[5px]' data-message-id={message.id}>
         <div className='w-full'>
           <div className='flex flex-col space-y-3'>
-            {hasThinking && (
-              <AgentStreamThinkingChrome
-                thinking={message.thinking!}
-                isStreaming={message.isThinkingStreaming}
-              />
+            {outputSegments ? (
+              outputSegments.map((segment, index) => {
+                const hasSegmentThinking =
+                  typeof segment.thinking === 'string' && segment.thinking.length > 0
+                const hasSegmentTools =
+                  Array.isArray(segment.toolCalls) && segment.toolCalls.length > 0
+                const hasSegmentText = segment.content.trim().length > 0
+                const showWaitingLoader = shouldShowOutputSegmentWaitingLoader(
+                  outputSegments,
+                  index
+                )
+                const showSegmentPlaceholder =
+                  segment.status === 'streaming' &&
+                  !hasSegmentThinking &&
+                  !hasSegmentTools &&
+                  !hasSegmentText
+
+                if (segment.status === 'waiting' && !showWaitingLoader) {
+                  return null
+                }
+
+                return (
+                  <div key={segment.blockId} className='flex flex-col space-y-3'>
+                    {hasSegmentThinking && (
+                      <AgentStreamThinkingChrome
+                        thinking={segment.thinking!}
+                        isStreaming={segment.isThinkingStreaming}
+                      />
+                    )}
+                    {hasSegmentTools && (
+                      <AgentStreamToolCallsChrome
+                        toolCalls={segment.toolCalls!}
+                        isStreaming={segment.isToolStreaming}
+                      />
+                    )}
+                    {hasSegmentText && (
+                      <div className='py-1'>
+                        <div className='break-words text-[var(--text-primary)] text-sm leading-[1.6]'>
+                          {renderContent(segment.content)}
+                        </div>
+                      </div>
+                    )}
+                    {(showWaitingLoader || showSegmentPlaceholder) && (
+                      <DeployedInlineLoader label='Working…' />
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <>
+                {hasThinking && (
+                  <AgentStreamThinkingChrome
+                    thinking={message.thinking!}
+                    isStreaming={message.isThinkingStreaming}
+                  />
+                )}
+                {hasToolCalls && (
+                  <AgentStreamToolCallsChrome
+                    toolCalls={message.toolCalls!}
+                    isStreaming={message.isToolStreaming}
+                  />
+                )}
+                {(hasRenderableText || isJsonObject || containsBase64Images || hasImageUrl) && (
+                  <div className='py-1'>
+                    <div className='break-words text-[var(--text-primary)] text-sm leading-[1.6]'>
+                      {renderContent(cleanTextContent)}
+                    </div>
+                  </div>
+                )}
+                {showStreamPlaceholder && <DeployedInlineLoader label='Working…' />}
+              </>
             )}
-            {hasToolCalls && (
-              <AgentStreamToolCallsChrome
-                toolCalls={message.toolCalls!}
-                isStreaming={message.isToolStreaming}
-              />
-            )}
-            {(hasRenderableText || isJsonObject || containsBase64Images || hasImageUrl) && (
-              <div className='py-1'>
-                <div
-                  className='break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                  style={{ color: '#2C2D33' }}
-                >
-                  {renderContent(cleanTextContent)}
-                </div>
-              </div>
-            )}
-            {showStreamPlaceholder && <DeployedInlineLoader label='Working…' />}
             {showReferencesSection && (
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
                 <span className='text-gray-500 dark:text-gray-400'>References:</span>
@@ -1271,6 +1339,7 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.isThinkingStreaming === nextProps.message.isThinkingStreaming &&
       prevProps.message.isToolStreaming === nextProps.message.isToolStreaming &&
       prevProps.message.toolCalls === nextProps.message.toolCalls &&
+      prevProps.message.outputSegments === nextProps.message.outputSegments &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.executionId === nextProps.message.executionId &&
       prevProps.message.liked === nextProps.message.liked &&

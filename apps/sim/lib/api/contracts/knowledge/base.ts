@@ -78,29 +78,66 @@ export const chunkingStrategyOptionsSchema = storedChunkingStrategyOptionsSchema
   })
   .strict() satisfies z.ZodType<StrategyOptions>
 
-export const chunkingConfigSchema = z
-  .object({
-    maxSize: z.number().min(100).max(4000),
-    minSize: z.number().min(1).max(2000),
-    overlap: z.number().min(0).max(500),
-    strategy: z.enum(['auto', 'text', 'regex', 'recursive', 'sentence', 'token']).optional(),
-    strategyOptions: chunkingStrategyOptionsSchema.optional(),
-  })
-  .refine((data) => data.minSize < data.maxSize * 4, {
-    message: 'Min chunk size (characters) must be less than max chunk size (tokens × 4)',
-  })
-  .refine((data) => data.overlap < data.maxSize, {
-    message: 'Overlap must be less than max chunk size',
-  })
-  .refine(
-    (data) => data.strategy !== 'regex' || typeof data.strategyOptions?.pattern === 'string',
-    {
-      message: 'Regex pattern is required when using the regex chunking strategy',
-    }
-  )
-  .refine((data) => data.strategy === 'regex' || data.strategyOptions?.strictBoundaries !== true, {
-    message: 'strictBoundaries is only valid for the regex chunking strategy',
-  })
+export const chunkingStrategySchema = z.enum([
+  'auto',
+  'text',
+  'regex',
+  'recursive',
+  'sentence',
+  'token',
+])
+
+/**
+ * The five chunking-config fields, before the cross-field rules below. Exported
+ * so a surface can re-describe or re-bound the fields it publishes and still
+ * pick the rules up from {@link withChunkingConfigRules}.
+ */
+export const chunkingConfigFieldsSchema = z.object({
+  maxSize: z.number().min(100).max(4000),
+  minSize: z.number().min(1).max(2000),
+  overlap: z.number().min(0).max(500),
+  strategy: chunkingStrategySchema.optional(),
+  strategyOptions: chunkingStrategyOptionsSchema.optional(),
+})
+
+export type ChunkingConfigFields = z.output<typeof chunkingConfigFieldsSchema>
+
+/**
+ * The four cross-field rules every chunking-config write must satisfy.
+ *
+ * Applied through a function rather than baked into one schema because the
+ * refinements make the result unextendable: a surface that needs its own
+ * descriptions, bounds, or strictness has to build the object first and take
+ * the rules afterwards. Restating them per surface is how a write path loses
+ * one — and the `strategyOptions.separators` bound that
+ * {@link chunkingStrategyOptionsSchema} carries is the difference between a
+ * persisted config and seconds of uninterruptible CPU on every later upload.
+ */
+export function withChunkingConfigRules<T extends ChunkingConfigFields>(
+  schema: z.ZodType<T>
+): z.ZodType<T> {
+  return schema
+    .refine((data) => data.minSize < data.maxSize * 4, {
+      message: 'Min chunk size (characters) must be less than max chunk size (tokens × 4)',
+    })
+    .refine((data) => data.overlap < data.maxSize, {
+      message: 'Overlap must be less than max chunk size',
+    })
+    .refine(
+      (data) => data.strategy !== 'regex' || typeof data.strategyOptions?.pattern === 'string',
+      {
+        message: 'Regex pattern is required when using the regex chunking strategy',
+      }
+    )
+    .refine(
+      (data) => data.strategy === 'regex' || data.strategyOptions?.strictBoundaries !== true,
+      {
+        message: 'strictBoundaries is only valid for the regex chunking strategy',
+      }
+    )
+}
+
+export const chunkingConfigSchema = withChunkingConfigRules(chunkingConfigFieldsSchema)
 
 export const createKnowledgeBaseBodySchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -117,8 +154,6 @@ export const createKnowledgeBaseBodySchema = z.object({
    * `null` (or omitted) creates it at the workspace root.
    */
   folderId: z.string().min(1, 'Folder ID cannot be empty').nullable().optional(),
-  embeddingModel: z.literal('text-embedding-3-small').default('text-embedding-3-small'),
-  embeddingDimension: z.literal(1536).default(1536),
   chunkingConfig: chunkingConfigSchema.default(DEFAULT_CHUNKING_CONFIG),
 })
 
@@ -136,8 +171,6 @@ export const updateKnowledgeBaseBodySchema = createKnowledgeBaseBodySchema
      */
     folderId: z.string().min(1, 'Folder ID cannot be empty').nullable().optional(),
     workspaceId: z.string().nullable().optional(),
-    embeddingModel: z.literal('text-embedding-3-small').optional(),
-    embeddingDimension: z.literal(1536).optional(),
   })
 
 const knowledgeChunkingConfigSchema = z
@@ -145,7 +178,7 @@ const knowledgeChunkingConfigSchema = z
     maxSize: z.number(),
     minSize: z.number(),
     overlap: z.number(),
-    strategy: z.enum(['auto', 'text', 'regex', 'recursive', 'sentence', 'token']).optional(),
+    strategy: chunkingStrategySchema.optional(),
     strategyOptions: storedChunkingStrategyOptionsSchema.optional(),
   })
   .passthrough()
@@ -167,6 +200,7 @@ export const knowledgeBaseDataSchema = z
     folderId: z.string().nullable(),
     docCount: z.number().optional(),
     connectorTypes: z.array(z.string()).optional(),
+    hasMemberScopedConnector: z.boolean().optional(),
   })
   .passthrough()
 export type KnowledgeBaseData = z.output<typeof knowledgeBaseDataSchema>

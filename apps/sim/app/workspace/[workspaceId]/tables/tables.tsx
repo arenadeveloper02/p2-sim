@@ -27,6 +27,7 @@ import {
   ownerCell,
   Resource,
   reportBulkOutcome,
+  resourceListState,
   selectionLabel,
   timeCell,
   useResourceRowSelection,
@@ -39,20 +40,29 @@ import {
   buildDescendantIndex,
   buildMoveOptions,
   buildMoveOptionsExcludingSubtrees,
+  EMPTY_LOCATION_CELL,
+  FOLDER_LOCATION_COLUMN,
   FOLDERED_RESOURCE_HEADERS,
   FolderContextMenu,
   folderBreadcrumbItems,
+  folderLocationLabel,
   folderRow,
   folderRowId,
+  isSearchingResources,
   nextUntitledFolderName,
   parseFolderedRowId,
   parseMoveOptionValue,
+  scopeFolderedItems,
   sortResources,
   splitFolderedRowIds,
   useFolderNavigation,
   useFolderRowDragDrop,
 } from '@/app/workspace/[workspaceId]/components/folders'
 import { ResourceActionBar } from '@/app/workspace/[workspaceId]/components/resource/components/action-bar'
+import {
+  ResourceNoResults,
+  TablesEmptyState,
+} from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
@@ -62,12 +72,13 @@ import {
 } from '@/app/workspace/[workspaceId]/tables/components'
 import { TableContextMenu } from '@/app/workspace/[workspaceId]/tables/components/table-context-menu'
 import { useWorkspaceTablesRoom } from '@/app/workspace/[workspaceId]/tables/hooks/use-workspace-tables-room'
+import TablesLoading from '@/app/workspace/[workspaceId]/tables/loading'
 import {
+  tablesListPreferenceConfig,
   tablesParsers,
   tablesSortParams,
   tablesUrlKeys,
 } from '@/app/workspace/[workspaceId]/tables/search-params'
-import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import { useCreateFolder, useDeleteFolderMutation, useUpdateFolder } from '@/hooks/queries/folders'
 import { usePinItem, usePinnedIds, useUnpinItem } from '@/hooks/queries/pinned-items'
 import {
@@ -83,12 +94,15 @@ import {
 } from '@/hooks/queries/tables'
 import { getCanonicalFolderPath } from '@/hooks/queries/utils/folder-tree'
 import { useWorkspaceMembersQuery, type WorkspaceMember } from '@/hooks/queries/workspace'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useContextMenu } from '@/hooks/use-context-menu'
 import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 import { useInlineRename } from '@/hooks/use-inline-rename'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { useResourceListPreferences } from '@/hooks/use-resource-list-preferences'
+import { useSearchFilterValue } from '@/hooks/use-search-filter-value'
 import { useUrlSort } from '@/hooks/use-url-sort'
 import type { WorkflowFolder } from '@/stores/folders/types'
+import type { ResourceListPreference } from '@/stores/resource-list-preferences'
 import { useImportTrayStore } from '@/stores/table/import-tray/store'
 
 const logger = createLogger('Tables')
@@ -101,6 +115,8 @@ const COLUMNS: ResourceColumn[] = [
   { id: 'owner', header: 'Owner' },
   { id: 'updated', header: 'Last Updated' },
 ]
+
+const SEARCH_COLUMNS: ResourceColumn[] = [...COLUMNS, FOLDER_LOCATION_COLUMN]
 
 /** This list's private drag MIME, so a drag started on another list is never mistaken for one
  *  of these rows. */
@@ -135,7 +151,12 @@ export function Tables() {
   // mutation service) invalidates the list so this view refetches without waiting for staleness.
   useWorkspaceTablesRoom(workspaceId)
 
-  const { data: tables = EMPTY_TABLES, error } = useTablesList(workspaceId)
+  const {
+    data: tables = EMPTY_TABLES,
+    isLoading,
+    isPlaceholderData,
+    error,
+  } = useTablesList(workspaceId)
   const { data: members } = useWorkspaceMembersQuery(workspaceId)
   const pinnedTableIds = usePinnedIds(workspaceId, 'table')
   // Folder pins live in their own `resourceType` namespace, so a page listing
@@ -147,6 +168,7 @@ export function Tables() {
   const {
     currentFolderId,
     setCurrentFolderId,
+    openFolder,
     ancestors: folderChain,
     folders,
     folderById,
@@ -154,6 +176,8 @@ export function Tables() {
   } = useFolderNavigation({
     resourceType: 'table',
     workspaceId,
+    /** Declared below; only ever called from a click, long after this render initializes it. */
+    onBeforeOpenFolder: () => setSearchTerm(''),
   })
 
   /**
@@ -231,9 +255,40 @@ export function Tables() {
     sort: sortColumn,
     dir: sortDirection,
     activeSort,
-    onSort,
-    onClear,
+    onSort: applyUrlSort,
   } = useUrlSort(tablesSortParams, tablesUrlKeys)
+
+  const currentListPreference = useMemo<ResourceListPreference>(
+    () => ({
+      sort: { column: sortColumn, direction: sortDirection },
+      filters: { rows: rowCountFilter, owner: ownerFilter },
+    }),
+    [sortColumn, sortDirection, rowCountFilter, ownerFilter]
+  )
+
+  const applyListPreference = useCallback(
+    (preference: ResourceListPreference) => {
+      void setTableFilters({
+        rows: [...preference.filters.rows],
+        owner: [...preference.filters.owner],
+      })
+      applyUrlSort(preference.sort.column, preference.sort.direction)
+    },
+    [applyUrlSort, setTableFilters]
+  )
+
+  const {
+    isReady: isListPreferenceReady,
+    setFilter: setListFilter,
+    clearFilters: clearTableFilters,
+    setSort: setListSort,
+    clearSort: clearListSort,
+  } = useResourceListPreferences({
+    workspaceId,
+    config: tablesListPreferenceConfig,
+    preference: currentListPreference,
+    applyPreference: applyListPreference,
+  })
 
   /**
    * The input is controlled directly by the instant nuqs value; only the URL
@@ -243,15 +298,15 @@ export function Tables() {
   const setSearchTerm = useDebouncedSearchSetter((value, options) =>
     setTableFilters({ search: value }, options)
   )
-  const debouncedSearchTerm = useDebounce(urlSearchTerm, SEARCH_DEBOUNCE_MS)
+  const debouncedSearchTerm = useSearchFilterValue(urlSearchTerm, SEARCH_DEBOUNCE_MS)
 
   const setRowCountFilter = useCallback(
-    (next: string[]) => setTableFilters({ rows: next }),
-    [setTableFilters]
+    (next: string[]) => setListFilter('rows', next),
+    [setListFilter]
   )
   const setOwnerFilter = useCallback(
-    (next: string[]) => setTableFilters({ owner: next }),
-    [setTableFilters]
+    (next: string[]) => setListFilter('owner', next),
+    [setListFilter]
   )
 
   const [uploadProgress, setUploadProgress] = useState({ completed: 0, total: 0 })
@@ -299,32 +354,39 @@ export function Tables() {
    */
   const descendantFolderIds = useMemo(() => buildDescendantIndex(folders), [folders])
 
-  const visibleFolders = useMemo(() => {
-    const siblings = folders.filter((folder) => (folder.parentId ?? null) === currentFolderId)
-    const needle = debouncedSearchTerm.trim().toLowerCase()
-    return needle
-      ? siblings.filter((folder) => folder.name.toLowerCase().includes(needle))
-      : siblings
-  }, [folders, currentFolderId, debouncedSearchTerm])
+  /** A query stops scoping the list to the open folder — see {@link scopeFolderedItems}. */
+  const isSearching = isSearchingResources(debouncedSearchTerm)
+
+  const visibleFolders = useMemo(
+    () =>
+      scopeFolderedItems(folders, {
+        currentFolderId,
+        search: debouncedSearchTerm,
+        getParentId: (folder) => folder.parentId ?? null,
+        getSearchText: (folder) => [folder.name],
+      }),
+    [folders, currentFolderId, debouncedSearchTerm]
+  )
 
   const processedTables = useMemo(() => {
-    const query = debouncedSearchTerm.trim().toLowerCase()
-    /**
-     * A `folderId` that no longer names an active folder — restored on its own out
-     * of Recently Deleted while its folder stayed archived — would otherwise match
-     * no level at all and leave the table unreachable from every view. Fall it back
-     * to the root instead — but only once `foldersResolved` says the index is the complete
-     * set for THIS workspace. Gating on a loading flag instead would treat an errored fetch,
-     * a disabled query, or the previous workspace's cached folders as "no such folder" and
-     * drag every foldered table to the root.
-     */
-    let result = tables.filter((t) => {
-      const folderId = t.folderId ?? null
-      const effectiveFolderId =
-        !foldersResolved || !folderId || folderById.has(folderId) ? folderId : null
-      return effectiveFolderId === currentFolderId
+    let result = scopeFolderedItems(tables, {
+      currentFolderId,
+      search: debouncedSearchTerm,
+      /**
+       * A `folderId` that no longer names an active folder — restored on its own out
+       * of Recently Deleted while its folder stayed archived — would otherwise match
+       * no level at all and leave the table unreachable from every view. Fall it back
+       * to the root instead — but only once `foldersResolved` says the index is the complete
+       * set for THIS workspace. Gating on a loading flag instead would treat an errored fetch,
+       * a disabled query, or the previous workspace's cached folders as "no such folder" and
+       * drag every foldered table to the root.
+       */
+      getParentId: (t) => {
+        const folderId = t.folderId ?? null
+        return !foldersResolved || !folderId || folderById.has(folderId) ? folderId : null
+      },
+      getSearchText: (t) => [t.name],
     })
-    if (query) result = result.filter((t) => t.name.toLowerCase().includes(query))
 
     if (rowCountFilter.length > 0) {
       result = result.filter((t) => {
@@ -421,6 +483,10 @@ export function Tables() {
               created: timeCell(item.folder.createdAt),
               owner: ownerCell(item.folder.userId, membersById),
               updated: timeCell(item.folder.updatedAt),
+              /** A folder's location is its parent's path, not its own. */
+              location: isSearching
+                ? { label: folderLocationLabel(item.folder.parentId, folderById, ROOT_LABEL) }
+                : EMPTY_LOCATION_CELL,
             },
           })
         }
@@ -445,10 +511,13 @@ export function Tables() {
             created: timeCell(table.createdAt),
             owner: ownerCell(table.createdBy, membersById),
             updated: timeCell(table.updatedAt),
+            location: isSearching
+              ? { label: folderLocationLabel(table.folderId, folderById, ROOT_LABEL) }
+              : EMPTY_LOCATION_CELL,
           },
         }
       }),
-    [sortedEntries, membersById]
+    [sortedEntries, membersById, folderById, isSearching]
   )
 
   /**
@@ -579,11 +648,11 @@ export function Tables() {
         breadcrumbs: folderChain,
         rootLabel: ROOT_LABEL,
         rootIcon: FOLDERED_RESOURCE_HEADERS.table.rootIcon,
-        onNavigate: setCurrentFolderId,
+        onNavigate: openFolder,
         currentFolderActions,
         currentFolderEditing,
       }),
-    [folderChain, setCurrentFolderId, currentFolderActions, currentFolderEditing]
+    [folderChain, openFolder, currentFolderActions, currentFolderEditing]
   )
 
   const searchConfig: SearchConfig = useMemo(
@@ -607,10 +676,10 @@ export function Tables() {
         { id: 'updated', label: 'Last Updated' },
       ],
       active: activeSort,
-      onSort,
-      onClear,
+      onSort: setListSort,
+      onClear: clearListSort,
     }),
-    [activeSort, onSort, onClear]
+    [activeSort, setListSort, clearListSort]
   )
 
   const rowCountDisplayLabel = useMemo(() => {
@@ -658,9 +727,8 @@ export function Tables() {
             multiSelect
             multiSelectValues={rowCountFilter}
             onMultiSelectChange={setRowCountFilter}
-            overlayContent={
-              <span className='truncate text-[var(--text-primary)]'>{rowCountDisplayLabel}</span>
-            }
+            overlayLabel={rowCountDisplayLabel}
+            overlayContent={rowCountDisplayLabel}
             showAllOption
             allOptionLabel='All'
             className='w-full'
@@ -674,9 +742,8 @@ export function Tables() {
               multiSelect
               multiSelectValues={ownerFilter}
               onMultiSelectChange={setOwnerFilter}
-              overlayContent={
-                <span className='truncate text-[var(--text-primary)]'>{ownerDisplayLabel}</span>
-              }
+              overlayLabel={ownerDisplayLabel}
+              overlayContent={ownerDisplayLabel}
               searchable
               searchPlaceholder='Search members...'
               showAllOption
@@ -688,10 +755,7 @@ export function Tables() {
         {hasActiveFilters && (
           <button
             type='button'
-            onClick={() => {
-              setRowCountFilter([])
-              setOwnerFilter([])
-            }}
+            onClick={clearTableFilters}
             className='flex h-[32px] w-full items-center justify-center rounded-md text-[var(--text-secondary)] text-caption transition-colors hover-hover:bg-[var(--surface-active)]'
           >
             Clear all filters
@@ -708,6 +772,7 @@ export function Tables() {
       hasActiveFilters,
       setRowCountFilter,
       setOwnerFilter,
+      clearTableFilters,
     ]
   )
 
@@ -731,6 +796,22 @@ export function Tables() {
     return tags
   }, [rowCountFilter, ownerFilter, membersById, setRowCountFilter, setOwnerFilter])
 
+  const listState = resourceListState({
+    rowCount: rows.length,
+    isLoading,
+    isPlaceholderData,
+    error,
+    search: debouncedSearchTerm,
+    filterCount: filterTags.length,
+    folderId: currentFolderId,
+    foldersResolved,
+  })
+
+  const clearSearchAndFilters = () => {
+    setSearchTerm('')
+    clearTableFilters()
+  }
+
   const handleContentContextMenu = useCallback(
     (e: React.MouseEvent) => {
       const target = e.target as HTMLElement
@@ -750,12 +831,12 @@ export function Tables() {
       if (isRowContextMenuOpen || listRename.editingId === rowId) return
       const parsed = parseFolderedRowId(rowId)
       if (parsed.kind === 'folder') {
-        setCurrentFolderId(parsed.id)
+        openFolder(parsed.id)
         return
       }
       router.push(`/workspace/${workspaceId}/tables/${parsed.id}`)
     },
-    [isRowContextMenuOpen, listRename.editingId, router, workspaceId, setCurrentFolderId]
+    [isRowContextMenuOpen, listRename.editingId, router, workspaceId, openFolder]
   )
 
   const resolveRowItem = useCallback(
@@ -1005,6 +1086,7 @@ export function Tables() {
     selection: { selectedRowIds, visibleRowIds, replaceSelection },
     onSpringOpenFolder: setCurrentFolderId,
     currentFolderId,
+    bodyDropFolderId: isSearching ? undefined : currentFolderId,
   })
 
   const handleDelete = async () => {
@@ -1051,9 +1133,11 @@ export function Tables() {
         id: activeFolder.id,
       })
       // The open folder just disappeared — fall back to its parent rather than
-      // leaving a `?folderId=` pointing at an archived folder.
+      // leaving a `?folderId=` pointing at an archived folder. Not `openFolder`:
+      // this is a forced correction, so it must neither clear an active search nor
+      // push a back-stack entry aimed at the folder that was just deleted.
       if (currentFolderId === activeFolder.id) {
-        setCurrentFolderId(activeFolder.parentId)
+        setCurrentFolderId(activeFolder.parentId, { history: 'replace' })
       }
       setIsDeleteFolderDialogOpen(false)
       setActiveFolder(null)
@@ -1249,6 +1333,8 @@ export function Tables() {
   )
   const filterConfig = useMemo(() => ({ content: filterContent }), [filterContent])
 
+  if (!isListPreferenceReady) return <TablesLoading />
+
   return (
     <>
       <Resource onContextMenu={handleContentContextMenu}>
@@ -1267,8 +1353,22 @@ export function Tables() {
           filter={filterConfig}
         />
         <Resource.Table
-          columns={COLUMNS}
+          columns={isSearching ? SEARCH_COLUMNS : COLUMNS}
           rows={rows}
+          emptyState={
+            listState === 'empty' ? (
+              <TablesEmptyState
+                onCreate={handleCreateTable}
+                createDisabled={uploading || !canEdit || createTable.isPending}
+              />
+            ) : listState === 'no-results' ? (
+              <ResourceNoResults
+                search={debouncedSearchTerm}
+                filterCount={filterTags.length}
+                onClear={clearSearchAndFilters}
+              />
+            ) : undefined
+          }
           selectable={canEdit ? selectableConfig : undefined}
           rowDragDrop={rowDragDropConfig}
           onRowClick={handleRowClick}
@@ -1328,6 +1428,7 @@ export function Tables() {
         disableDelete={!canEdit}
         disableRename={!canEdit}
         disableImport={!canEdit}
+        selectedCount={selectedRowIds.size}
       />
 
       <FolderContextMenu
@@ -1335,7 +1436,7 @@ export function Tables() {
         position={rowContextMenuPosition}
         onClose={closeRowContextMenu}
         onOpen={() => {
-          if (activeFolder) setCurrentFolderId(activeFolder.id)
+          if (activeFolder) openFolder(activeFolder.id)
           closeRowContextMenu()
         }}
         onRename={() => {
@@ -1350,6 +1451,7 @@ export function Tables() {
         onMove={canEdit ? handleMoveFolderFromMenu : undefined}
         moveOptions={canEdit ? activeFolderMoveOptions : undefined}
         canEdit={canEdit}
+        selectedCount={selectedRowIds.size}
       />
 
       {activeTable && (
@@ -1372,6 +1474,7 @@ export function Tables() {
         }}
         srTitle='Delete Table'
         title='Delete Table'
+        defaultAction='dismiss'
         text={[
           'Are you sure you want to delete ',
           { text: activeTable?.name ?? 'this table', bold: true },

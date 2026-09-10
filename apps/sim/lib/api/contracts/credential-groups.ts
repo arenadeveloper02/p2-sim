@@ -1,6 +1,17 @@
 import { z } from 'zod'
-import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import {
+  MAX_OAUTH_CODE_LENGTH,
+  workflowIdSchema,
+  workspaceIdSchema,
+} from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import {
+  CREDENTIAL_GROUP_MCP_SERVER_LIMIT,
+  CREDENTIAL_GROUP_WORKFLOW_ACCESS_LIMIT,
+  CREDENTIAL_GROUP_WORKFLOW_CATALOG_LIMIT,
+  CREDENTIAL_GROUP_WORKFLOW_NAME_MAX_LENGTH,
+} from '@/lib/credential-groups/limits'
+import { MANAGED_MCP_CONNECTOR_IDS } from '@/lib/credential-groups/managed-mcp-connectors'
 import {
   CREDENTIAL_GROUP_PROVIDER_IDS,
   CREDENTIAL_GROUP_STANDARD_OAUTH_PROVIDER_IDS,
@@ -20,6 +31,7 @@ export const credentialGroupOptionConfigurationStatusSchema = z.enum([
   'ready',
   'needs_update',
 ])
+export const managedMcpConnectorIdSchema = z.enum(MANAGED_MCP_CONNECTOR_IDS)
 
 const credentialGroupOptionFields = {
   label: z.string().trim().min(1, 'Option label is required').max(100),
@@ -66,12 +78,22 @@ export const credentialGroupOptionUpdateInputSchema = z.discriminatedUnion('prov
   slackCredentialGroupOptionInputSchema.extend({ id: z.string().min(1).max(128).optional() }),
 ])
 
+export const credentialGroupMcpServerSchema = z.object({
+  id: z.string().min(1).max(128),
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  authType: z.string().min(1),
+  enabled: z.boolean(),
+  managedConnectorId: managedMcpConnectorIdSchema,
+})
+
 export const credentialGroupSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
   name: z.string(),
   description: z.string().nullable(),
   options: z.array(credentialGroupOptionSchema).max(CREDENTIAL_GROUP_PROVIDER_IDS.length),
+  mcpServers: z.array(credentialGroupMcpServerSchema).max(CREDENTIAL_GROUP_MCP_SERVER_LIMIT),
   status: credentialGroupStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -80,6 +102,7 @@ export const credentialGroupSchema = z.object({
 export type CredentialGroup = z.output<typeof credentialGroupSchema>
 export type CredentialGroupOption = z.output<typeof credentialGroupOptionSchema>
 export type CredentialGroupOptionInput = z.input<typeof credentialGroupOptionInputSchema>
+export type CredentialGroupMcpServer = z.output<typeof credentialGroupMcpServerSchema>
 
 export const credentialGroupEnrollmentSchema = z.object({
   id: z.string(),
@@ -104,16 +127,83 @@ export const credentialGroupEnrollmentConnectionSchema = z.object({
   count: z.number().int().positive(),
 })
 
+export const credentialGroupEnrollmentMcpConnectionSchema = z.object({
+  mcpServerId: z.string().min(1).max(128),
+  name: z.string().min(1).max(255),
+  status: z.enum(['active', 'needs_reauth', 'revoked']),
+})
+
 export const credentialGroupEnrollmentDetailSchema = credentialGroupEnrollmentSchema.extend({
   connections: z
     .array(credentialGroupEnrollmentConnectionSchema)
     .max(CREDENTIAL_GROUP_PROVIDER_IDS.length * 3),
+  mcpConnections: z
+    .array(credentialGroupEnrollmentMcpConnectionSchema)
+    .max(CREDENTIAL_GROUP_MCP_SERVER_LIMIT),
 })
 
 export type CredentialGroupEnrollmentConnection = z.output<
   typeof credentialGroupEnrollmentConnectionSchema
 >
+export type CredentialGroupEnrollmentMcpConnection = z.output<
+  typeof credentialGroupEnrollmentMcpConnectionSchema
+>
 export type CredentialGroupEnrollmentDetail = z.output<typeof credentialGroupEnrollmentDetailSchema>
+
+export const credentialGroupAccessPolicySchema = z
+  .object({
+    revision: z.number().int().positive(),
+    allowedWorkflowIds: z
+      .array(
+        workflowIdSchema
+          .max(128, 'Workflow ID is too long')
+          .refine((workflowId) => workflowId === workflowId.trim(), {
+            message: 'Workflow ID must not have surrounding whitespace',
+          })
+      )
+      .max(
+        CREDENTIAL_GROUP_WORKFLOW_ACCESS_LIMIT,
+        `Select at most ${CREDENTIAL_GROUP_WORKFLOW_ACCESS_LIMIT} workflows`
+      )
+      .superRefine((workflowIds, ctx) => {
+        const seen = new Set<string>()
+        for (const [index, workflowId] of workflowIds.entries()) {
+          if (seen.has(workflowId)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [index],
+              message: 'Workflow selections must be unique',
+            })
+          }
+          seen.add(workflowId)
+        }
+      }),
+  })
+  .strict()
+
+export type CredentialGroupAccessPolicy = z.output<typeof credentialGroupAccessPolicySchema>
+
+export const resourcePolicyWorkflowSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().max(CREDENTIAL_GROUP_WORKFLOW_NAME_MAX_LENGTH),
+  })
+  .strict()
+
+export const credentialGroupAccessResponseSchema = credentialGroupAccessPolicySchema.extend({
+  workflows: z.array(resourcePolicyWorkflowSchema).max(CREDENTIAL_GROUP_WORKFLOW_CATALOG_LIMIT),
+})
+
+export type CredentialGroupAccessResponse = z.output<typeof credentialGroupAccessResponseSchema>
+
+export const updateCredentialGroupAccessBodySchema = z
+  .object({
+    expectedRevision: z.number().int().positive(),
+    allowedWorkflowIds: credentialGroupAccessPolicySchema.shape.allowedWorkflowIds,
+  })
+  .strict()
+
+export type UpdateCredentialGroupAccessBody = z.input<typeof updateCredentialGroupAccessBodySchema>
 
 export const credentialGroupWorkspaceParamsSchema = z.object({
   id: workspaceIdSchema,
@@ -121,6 +211,10 @@ export const credentialGroupWorkspaceParamsSchema = z.object({
 
 export const credentialGroupDetailParamsSchema = credentialGroupWorkspaceParamsSchema.extend({
   groupId: z.string().min(1, 'Credential group ID is required').max(128),
+})
+
+export const credentialGroupMcpConnectorParamsSchema = credentialGroupDetailParamsSchema.extend({
+  connectorId: managedMcpConnectorIdSchema,
 })
 
 export const credentialGroupEnrollmentParamsSchema = credentialGroupDetailParamsSchema.extend({
@@ -136,10 +230,15 @@ export const startCredentialGroupOAuthParamsSchema =
     optionId: z.string().min(1, 'Credential option ID is required').max(128),
   })
 
+export const startCredentialGroupMcpOAuthParamsSchema =
+  publicCredentialGroupEnrollmentParamsSchema.extend({
+    mcpServerId: z.string().min(1, 'MCP server ID is required').max(128),
+  })
+
 export const credentialGroupOAuthCallbackQuerySchema = z
   .object({
     state: z.string().min(1, 'OAuth state is required').max(512),
-    code: z.string().min(1).max(2048).optional(),
+    code: z.string().min(1).max(MAX_OAUTH_CODE_LENGTH, 'Authorization code is too long').optional(),
     error: z.string().min(1).max(256).optional(),
     error_description: z.string().max(1000).optional(),
   })
@@ -154,8 +253,16 @@ export const credentialGroupOAuthCallbackQuerySchema = z
   })
 
 export const credentialGroupOAuthCallbackParamsSchema = z.object({
-  provider: credentialGroupProviderSchema,
+  provider: z.literal('slack'),
 })
+
+export const sharedCredentialGroupOAuthCallbackParamsSchema = z.object({
+  providerId: z.string().min(1, 'OAuth provider ID is required').max(128),
+})
+
+export type CredentialGroupOAuthCallbackQuery = z.output<
+  typeof credentialGroupOAuthCallbackQuerySchema
+>
 
 export const startSlackCredentialGroupConfigurationBodySchema = z
   .object({
@@ -289,14 +396,56 @@ export const updateCredentialGroupBodySchema = z
 
 export type UpdateCredentialGroupBody = z.input<typeof updateCredentialGroupBodySchema>
 
+export const createCredentialGroupMcpConnectorBodySchema = z.discriminatedUnion('connectorId', [
+  z.object({ connectorId: z.literal('fireflies') }).strict(),
+  z.object({ connectorId: z.literal('granola') }).strict(),
+  z
+    .object({
+      connectorId: z.literal('databricks'),
+      name: z.string().trim().min(1, 'Name is required').max(100),
+      url: z.string().trim().url('Enter a valid Databricks MCP URL').max(2048),
+      oauthClientId: z.string().trim().min(1, 'OAuth Client ID is required').max(512),
+      oauthClientSecret: z.string().trim().min(1).max(2048).optional(),
+    })
+    .strict(),
+])
+
+export type CreateCredentialGroupMcpConnectorBody = z.input<
+  typeof createCredentialGroupMcpConnectorBodySchema
+>
+
+export const updateCredentialGroupMcpConnectorBodySchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(100).optional(),
+    url: z.string().trim().url('Enter a valid Databricks MCP URL').max(2048).optional(),
+    oauthClientId: z.string().trim().min(1, 'OAuth Client ID is required').max(512).optional(),
+    oauthClientSecret: z.string().trim().min(1).max(2048).nullable().optional(),
+  })
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, {
+    message: 'At least one field must be updated',
+  })
+
+export type UpdateCredentialGroupMcpConnectorBody = z.input<
+  typeof updateCredentialGroupMcpConnectorBodySchema
+>
+
+const listCredentialGroupsResponseSchema = z.object({
+  credentialGroups: z.array(credentialGroupSchema),
+  /**
+   * The providers this deployment has an OAuth client for. The settings picker offers only these,
+   * so an admin is never shown an account type nobody could finish connecting.
+   */
+  availableProviders: z.array(credentialGroupProviderSchema),
+})
+
+export type CredentialGroupSettingsList = z.output<typeof listCredentialGroupsResponseSchema>
+
 export const listCredentialGroupsContract = defineRouteContract({
   method: 'GET',
   path: '/api/workspaces/[id]/credential-groups',
   params: credentialGroupWorkspaceParamsSchema,
-  response: {
-    mode: 'json',
-    schema: z.object({ credentialGroups: z.array(credentialGroupSchema) }),
-  },
+  response: { mode: 'json', schema: listCredentialGroupsResponseSchema },
 })
 
 export const createCredentialGroupContract = defineRouteContract({
@@ -382,6 +531,51 @@ export const updateCredentialGroupContract = defineRouteContract({
   },
 })
 
+export const createCredentialGroupMcpConnectorContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/workspaces/[id]/credential-groups/[groupId]/mcp-connectors',
+  params: credentialGroupDetailParamsSchema,
+  body: createCredentialGroupMcpConnectorBodySchema,
+  response: {
+    mode: 'json',
+    status: 201,
+    schema: z.object({ mcpServer: credentialGroupMcpServerSchema }),
+  },
+})
+
+export const updateCredentialGroupMcpConnectorContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/workspaces/[id]/credential-groups/[groupId]/mcp-connectors/[connectorId]',
+  params: credentialGroupMcpConnectorParamsSchema,
+  body: updateCredentialGroupMcpConnectorBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({ mcpServer: credentialGroupMcpServerSchema }),
+  },
+})
+
+export const deleteCredentialGroupMcpConnectorContract = defineRouteContract({
+  method: 'DELETE',
+  path: '/api/workspaces/[id]/credential-groups/[groupId]/mcp-connectors/[connectorId]',
+  params: credentialGroupMcpConnectorParamsSchema,
+  response: { mode: 'json', schema: z.object({ success: z.literal(true) }) },
+})
+
+export const getCredentialGroupAccessContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[id]/credential-groups/[groupId]/access',
+  params: credentialGroupDetailParamsSchema,
+  response: { mode: 'json', schema: credentialGroupAccessResponseSchema },
+})
+
+export const updateCredentialGroupAccessContract = defineRouteContract({
+  method: 'PUT',
+  path: '/api/workspaces/[id]/credential-groups/[groupId]/access',
+  params: credentialGroupDetailParamsSchema,
+  body: updateCredentialGroupAccessBodySchema,
+  response: { mode: 'json', schema: credentialGroupAccessPolicySchema },
+})
+
 export const startSlackCredentialGroupConfigurationContract = defineRouteContract({
   method: 'POST',
   path: '/api/workspaces/[id]/credential-groups/[groupId]/slack-managed-users',
@@ -410,6 +604,13 @@ export const startCredentialGroupOAuthContract = defineRouteContract({
   response: { mode: 'empty' },
 })
 
+export const startCredentialGroupMcpOAuthContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/credential-groups/enroll/[token]/mcp/[mcpServerId]',
+  params: startCredentialGroupMcpOAuthParamsSchema,
+  response: { mode: 'empty' },
+})
+
 export const completeCredentialGroupEnrollmentContract = defineRouteContract({
   method: 'POST',
   path: '/api/credential-groups/enroll/[token]/complete',
@@ -423,4 +624,12 @@ export const credentialGroupOAuthCallbackContract = defineRouteContract({
   params: credentialGroupOAuthCallbackParamsSchema,
   query: credentialGroupOAuthCallbackQuerySchema,
   response: { mode: 'empty' },
+})
+
+export const sharedCredentialGroupOAuthCallbackContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/auth/oauth2/callback/[providerId]',
+  params: sharedCredentialGroupOAuthCallbackParamsSchema,
+  query: credentialGroupOAuthCallbackQuerySchema,
+  response: { mode: 'redirect' },
 })

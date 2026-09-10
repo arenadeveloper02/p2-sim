@@ -17,6 +17,8 @@ import {
   getConversationImageRefKey,
   listConversationFileOptions,
 } from '@/lib/chat/conversation-image-catalog'
+import { ROOT_FOLDER_PATH } from '@/lib/folders/paths'
+import { readFolderPaths } from '@/lib/folders/selection'
 import {
   getImageBlockModelDefinition,
   normalizeImageModelId,
@@ -28,13 +30,19 @@ import {
   type ParsedReferenceFileValue,
   parseReferenceFileValue,
 } from '@/lib/image-generation/reference-files'
-import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
+import { formatFileSize, getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
+import { containsReference } from '@/lib/workflows/sanitization/references'
+import { parseWorkspaceFileFolderDisplayPath } from '@/lib/workspace-files/folder-display-path'
+import { isFileInFolderScope } from '@/lib/workspace-files/folder-path-selection'
+import { findSelectedWorkspaceFile } from '@/lib/workspace-files/selection'
 import {
   ConversationImagePicker,
   ConversationImagePickerActions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/conversation-image-picker'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
+import { useActiveCanonicalSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-canonical-sub-block-value'
+import { useResourceFolders } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-resource-folders'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { START_FILES_REF } from '@/executor/constants'
@@ -82,6 +90,11 @@ interface FileUploadProps {
   previewValue?: any | null
   disabled?: boolean
   /**
+   * A sibling folder field that narrows what this picker offers, and the switch
+   * saying whether that scope descends. See `SubBlockConfig.folderScope`.
+   */
+  folderScope?: { fieldId: string; recursiveFieldId?: string }
+  /**
    * Controlled value. When `onValueChange` is provided the component reads from
    * this prop and writes through `onValueChange` instead of the subblock store,
    * letting it be embedded where the value lives outside a subblock (e.g. a
@@ -91,12 +104,60 @@ interface FileUploadProps {
   onValueChange?: (value: UploadedFile | UploadedFile[] | null) => void
 }
 
+/**
+ * Label for a workspace file, prefixed with its folder so two files sharing a
+ * name are distinguishable.
+ *
+ * The stored folder path escapes a slash inside a folder name, so it is decoded
+ * into segments rather than split — otherwise a folder named `Q3/Q4` reads as
+ * two levels.
+ */
+function workspaceFileOptionLabel(file: { name: string; folderPath?: string | null }): string {
+  if (!file.folderPath) return file.name
+  try {
+    return `${parseWorkspaceFileFolderDisplayPath(file.folderPath).join(' / ')} / ${file.name}`
+  } catch {
+    return file.name
+  }
+}
+
+function byFolderThenName(
+  a: { name: string; folderPath?: string | null },
+  b: { name: string; folderPath?: string | null }
+): number {
+  const folderOrder = (a.folderPath ?? '').localeCompare(b.folderPath ?? '')
+  return folderOrder !== 0 ? folderOrder : a.name.localeCompare(b.name)
+}
+
+/** Uses the shared formatter while preserving exact values below one kilobyte. */
+function workspaceFileSizeLabel(bytes: number): string {
+  return formatFileSize(bytes, { includeBytes: true })
+}
+
 export interface UploadedFile {
   name: string
   path: string
   key?: string
   size: number
   type: string
+  /**
+   * Canonical workspace file id, present when the file was chosen from the
+   * workspace rather than uploaded in place.
+   *
+   * Carrying it is what makes a chosen file resolvable to exactly one row. A
+   * name alone is ambiguous the moment the same one exists in two folders, and
+   * the reference resolver then falls back to the oldest match anywhere in the
+   * workspace — so dropping the id here turned a precise choice into a guess.
+   *
+   * Optional, because an upload has no workspace id until it lands.
+   */
+  id?: string
+  /**
+   * Folder of a chosen workspace file, as the stored backslash-escaped display
+   * path (`a\/b` is one folder named `a/b`). Decode it with
+   * `parseWorkspaceFileFolderDisplayPath` — never by splitting on `/`.
+   */
+  folderPath?: string
 }
 
 interface SingleFileSelectorProps {
@@ -135,7 +196,7 @@ function SingleFileSelector({
   isDeleting,
   workflowSearchHighlight,
 }: SingleFileSelectorProps) {
-  const displayLabel = `${truncateMiddle(file.name, 20, 12)} (${formatFileSize(file.size)})`
+  const displayLabel = `${truncateMiddle(file.name, 20, 12)} (${workspaceFileSizeLabel(file.size)})`
   const [searchQuery, setSearchQuery] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   // When not editing, always show the file's display label. When editing, show the user's query.
@@ -220,6 +281,7 @@ export function FileUpload({
   isPreview = false,
   previewValue,
   disabled = false,
+  folderScope,
   value: controlledValue,
   onValueChange,
 }: FileUploadProps) {
@@ -306,6 +368,7 @@ export function FileUpload({
   const {
     data: workspaceFiles = [],
     isLoading: loadingWorkspaceFiles,
+    isPlaceholderData: workspaceFilesArePlaceholderData,
     refetch: refetchWorkspaceFiles,
   } = useWorkspaceFiles(isPreview ? '' : workspaceId)
 
@@ -322,11 +385,22 @@ export function FileUpload({
   const queryClient = useQueryClient()
 
   const value = isControlled ? controlledValue : isPreview ? previewValue : storeValue
-
   const parsedReferenceValue = useMemo(
     () => (useCombinedChatReferenceMode ? parseReferenceFileValue(value) : null),
     [useCombinedChatReferenceMode, value]
   )
+  const isUsingStartFiles = useCombinedChatReferenceMode
+    ? Boolean(parsedReferenceValue?.includeStartFiles)
+    : value === START_FILES_REF
+  const filesArray = useCombinedChatReferenceMode
+    ? ((parsedReferenceValue?.workspaceFiles as UploadedFile[]) ?? [])
+    : isUsingStartFiles
+      ? []
+      : Array.isArray(value)
+        ? value
+        : value
+          ? [value]
+          : []
 
   const conversationImageOptions = useMemo(() => {
     if (!useCombinedChatReferenceMode) {
@@ -395,25 +469,134 @@ export function FileUpload({
     })
   }
 
-  const availableWorkspaceFiles = workspaceFiles.filter((workspaceFile) => {
-    const existingFiles =
-      useCombinedChatReferenceMode && parsedReferenceValue
-        ? parsedReferenceValue.workspaceFiles
-        : Array.isArray(value)
-          ? value
-          : value
-            ? [value]
-            : []
+  /*
+   * A sibling folder field narrows what this picker offers. Choosing a folder
+   * means the run only touches that folder, so listing files from anywhere else
+   * would let a selection be built that the operation then ignores — the picker
+   * has to describe the same set the run will read.
+   *
+   * Falling back to this control's own id keeps the hook call unconditional for
+   * a picker with no folder scope; its own value is never a folder path, so the
+   * scope reads as absent.
+   */
+  const folderScopeValue = useActiveCanonicalSubBlockValue<unknown>(
+    blockId,
+    folderScope?.fieldId ?? subBlockId
+  )
+  /*
+   * Through `readFolderPaths` rather than a string check so a picked array, a
+   * legacy serialized array, and a typed comma-separated list all resolve to
+   * the same canonical scopes.
+   */
+  const folderScopePaths = useMemo(
+    () => (folderScope ? readFolderPaths(folderScopeValue) : []),
+    [folderScope, folderScopeValue]
+  )
 
-    const isAlreadySelected = existingFiles.some(
-      (existing) =>
-        existing.name === workspaceFile.name ||
-        existing.path?.includes(workspaceFile.key) ||
-        existing.key === workspaceFile.key
-    )
+  const [folderScopeRecursive] = useSubBlockValue<unknown>(
+    blockId,
+    folderScope?.recursiveFieldId ?? subBlockId
+  )
+  /*
+   * Absent means "descend", matching the switch's own default, so an unset or
+   * not-yet-rendered value never narrows the options behind the user's back.
+   */
+  const folderScopeIncludesSubfolders =
+    !folderScope?.recursiveFieldId ||
+    folderScopeRecursive === undefined ||
+    folderScopeRecursive === null ||
+    folderScopeRecursive === '' ||
+    folderScopeRecursive === true ||
+    folderScopeRecursive === 'true'
 
-    return !isAlreadySelected
-  })
+  const hasConcreteFolderScope =
+    folderScopePaths.length > 0 && folderScopePaths.every((path) => !containsReference(path))
+  const {
+    byPath: folderByPath,
+    isLoading: loadingFolderScope,
+    isPlaceholderData: folderScopeIsPlaceholderData,
+    error: folderScopeError,
+  } = useResourceFolders(folderScope && !isPreview ? workspaceId : undefined, 'file')
+  const uploadTargetFolderId = useMemo<string | null | undefined>(() => {
+    if (!folderScope || folderScopePaths.length === 0) return null
+    if (!hasConcreteFolderScope || folderScopePaths.length !== 1) return undefined
+    if (folderScopePaths[0] === ROOT_FOLDER_PATH) return null
+    if (loadingFolderScope || folderScopeIsPlaceholderData || folderScopeError) return undefined
+    return folderByPath.get(folderScopePaths[0])?.id
+  }, [
+    folderByPath,
+    folderScope,
+    folderScopeError,
+    folderScopeIsPlaceholderData,
+    folderScopePaths,
+    hasConcreteFolderScope,
+    loadingFolderScope,
+  ])
+  const folderScopeUploadBlocked = uploadTargetFolderId === undefined
+  const scopedWorkspaceFiles = useMemo(
+    () =>
+      hasConcreteFolderScope
+        ? workspaceFiles.filter((workspaceFile) =>
+            folderScopePaths.some((folderScopePath) =>
+              isFileInFolderScope(workspaceFile.folderPath, folderScopePath, {
+                includeSubfolders: folderScopeIncludesSubfolders,
+              })
+            )
+          )
+        : workspaceFiles,
+    [folderScopeIncludesSubfolders, folderScopePaths, hasConcreteFolderScope, workspaceFiles]
+  )
+
+  const selectedWorkspaceFileIds = useMemo(
+    () =>
+      new Set(
+        filesArray.flatMap((file) => {
+          const match = findSelectedWorkspaceFile(file, workspaceFiles)
+          return match ? [match.id] : []
+        })
+      ),
+    [filesArray, workspaceFiles]
+  )
+
+  useEffect(() => {
+    if (
+      !folderScope ||
+      !hasConcreteFolderScope ||
+      loadingWorkspaceFiles ||
+      workspaceFilesArePlaceholderData ||
+      isPreview
+    ) {
+      return
+    }
+
+    const scopedIds = new Set(scopedWorkspaceFiles.map((file) => file.id))
+    const nextFiles = filesArray.filter((file) => {
+      const workspaceFile = findSelectedWorkspaceFile(file, workspaceFiles)
+      return !workspaceFile || scopedIds.has(workspaceFile.id)
+    })
+    if (nextFiles.length === filesArray.length) return
+
+    commitValue(multiple ? (nextFiles.length > 0 ? nextFiles : null) : (nextFiles[0] ?? null))
+  }, [
+    commitValue,
+    filesArray,
+    folderScope,
+    hasConcreteFolderScope,
+    isPreview,
+    loadingWorkspaceFiles,
+    multiple,
+    scopedWorkspaceFiles,
+    workspaceFiles,
+    workspaceFilesArePlaceholderData,
+  ])
+
+  const availableWorkspaceFiles = useMemo(
+    () =>
+      scopedWorkspaceFiles.filter(
+        (workspaceFile) => !selectedWorkspaceFileIds.has(workspaceFile.id)
+      ),
+    [scopedWorkspaceFiles, selectedWorkspaceFileIds]
+  )
 
   /**
    * Opens file dialog
@@ -422,21 +605,12 @@ export function FileUpload({
     e.preventDefault()
     e.stopPropagation()
 
-    if (disabled || cloudUploadBlocked) return
+    if (disabled || cloudUploadBlocked || folderScopeUploadBlocked) return
 
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
       fileInputRef.current.click()
     }
-  }
-
-  /**
-   * Formats file size for display in a human-readable format
-   */
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
   /**
@@ -452,7 +626,7 @@ export function FileUpload({
    * Handles file upload when new file(s) are selected
    */
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isPreview || disabled || cloudUploadBlocked) return
+    if (isPreview || disabled || cloudUploadBlocked || folderScopeUploadBlocked) return
 
     e.stopPropagation()
 
@@ -512,6 +686,7 @@ export function FileUpload({
           const data = await uploadFileMutation.mutateAsync({
             workspaceId,
             file,
+            folderId: uploadTargetFolderId,
             skipToast: true,
             skipInvalidation: true,
           })
@@ -520,6 +695,7 @@ export function FileUpload({
             name: data.file.name,
             path: data.file.url,
             key: data.file.key,
+            id: data.file.id,
             size: data.file.size,
             type: data.file.type,
           })
@@ -660,6 +836,8 @@ export function FileUpload({
       key: selectedFile.key,
       size: selectedFile.size,
       type: selectedFile.type,
+      id: selectedFile.id,
+      folderPath: selectedFile.folderPath ?? undefined,
     }
 
     if (effectiveMultiple) {
@@ -794,7 +972,9 @@ export function FileUpload({
           <span className='text-[var(--text-primary)]'>
             {formatDisplayText(displayName, { workflowSearchHighlight })}
           </span>
-          <span className='ml-2 text-[var(--text-muted)]'>({formatFileSize(file.size)})</span>
+          <span className='ml-2 text-[var(--text-muted)]'>
+            ({workspaceFileSizeLabel(file.size)})
+          </span>
         </div>
         <Button
           type='button'
@@ -821,7 +1001,9 @@ export function FileUpload({
       >
         <div className='flex-1 truncate pr-2 text-sm'>
           <span className='text-[var(--text-primary)]'>{file.name}</span>
-          <span className='ml-2 text-[var(--text-muted)]'>({formatFileSize(file.size)})</span>
+          <span className='ml-2 text-[var(--text-muted)]'>
+            ({workspaceFileSizeLabel(file.size)})
+          </span>
         </div>
         <div className='flex size-5 shrink-0 items-center justify-center'>
           <div className='size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent' />
@@ -830,18 +1012,6 @@ export function FileUpload({
     )
   }
 
-  const isUsingStartFiles = useCombinedChatReferenceMode
-    ? Boolean(parsedReferenceValue?.includeStartFiles)
-    : value === START_FILES_REF
-  const filesArray = useCombinedChatReferenceMode
-    ? ((parsedReferenceValue?.workspaceFiles as UploadedFile[]) ?? [])
-    : isUsingStartFiles
-      ? []
-      : Array.isArray(value)
-        ? value
-        : value
-          ? [value]
-          : []
   const conversationImages = parsedReferenceValue?.conversationImages ?? []
   const selectedWorkspaceFile = filesArray[0]
   const hasFiles = useCombinedChatReferenceMode
@@ -928,36 +1098,44 @@ export function FileUpload({
 
   const comboboxOptions = useMemo(
     () => [
-      { label: 'Upload New File', value: '__upload_new__', disabled: cloudUploadBlocked },
-      ...availableWorkspaceFiles.map((file) => {
+      {
+        label: 'Upload New File',
+        value: '__upload_new__',
+        disabled: cloudUploadBlocked || folderScopeUploadBlocked,
+      },
+      ...[...availableWorkspaceFiles].sort(byFolderThenName).map((file) => {
         const isAccepted =
           !acceptedTypes || acceptedTypes === '*' || isFileTypeAccepted(file.type, acceptedTypes)
         return {
-          label: file.name,
+          label: workspaceFileOptionLabel(file),
           value: file.id,
           // When cloud is required, local workspace files are also unpublishable.
           disabled: !isAccepted || cloudUploadBlocked,
         }
       }),
     ],
-    [availableWorkspaceFiles, acceptedTypes, cloudUploadBlocked]
+    [availableWorkspaceFiles, acceptedTypes, cloudUploadBlocked, folderScopeUploadBlocked]
   )
 
   // Options for single file mode (includes all files, selected one will be highlighted)
   const singleFileOptions = useMemo(
     () => [
-      { label: 'Upload New File', value: '__upload_new__', disabled: cloudUploadBlocked },
-      ...workspaceFiles.map((file) => {
+      {
+        label: 'Upload New File',
+        value: '__upload_new__',
+        disabled: cloudUploadBlocked || folderScopeUploadBlocked,
+      },
+      ...[...scopedWorkspaceFiles].sort(byFolderThenName).map((file) => {
         const isAccepted =
           !acceptedTypes || acceptedTypes === '*' || isFileTypeAccepted(file.type, acceptedTypes)
         return {
-          label: file.name,
+          label: workspaceFileOptionLabel(file),
           value: file.id,
           disabled: !isAccepted || cloudUploadBlocked,
         }
       }),
     ],
-    [workspaceFiles, acceptedTypes, cloudUploadBlocked]
+    [scopedWorkspaceFiles, acceptedTypes, cloudUploadBlocked, folderScopeUploadBlocked]
   )
 
   // Find the selected file's workspace ID for highlighting in single file mode
@@ -965,13 +1143,7 @@ export function FileUpload({
     if (!selectedWorkspaceFile || effectiveMultiple) return ''
     const currentFile = selectedWorkspaceFile
     if (!currentFile) return ''
-    // Match by key or path
-    const matchedWorkspaceFile = workspaceFiles.find(
-      (wf) =>
-        wf.key === currentFile.key ||
-        wf.name === currentFile.name ||
-        currentFile.path?.includes(wf.key)
-    )
+    const matchedWorkspaceFile = findSelectedWorkspaceFile(currentFile, workspaceFiles)
     return matchedWorkspaceFile?.id || ''
   }, [selectedWorkspaceFile, workspaceFiles, effectiveMultiple])
 
@@ -995,7 +1167,7 @@ export function FileUpload({
     setInputValue('')
 
     if (value === '__upload_new__') {
-      if (cloudUploadBlocked) return
+      if (cloudUploadBlocked || folderScopeUploadBlocked) return
       handleOpenFileDialog({
         preventDefault: () => {},
         stopPropagation: () => {},
@@ -1086,6 +1258,12 @@ export function FileUpload({
         <div className='mb-2 text-muted-foreground text-xs'>
           Cloud storage (S3 or Blob) is required for file uploads. Configure S3_BUCKET_NAME and
           AWS_REGION, or Azure Blob env vars.
+        </div>
+      )}
+
+      {folderScopeUploadBlocked && !loadingFolderScope && (
+        <div className='mb-2 text-muted-foreground text-xs'>
+          Choose one available folder to upload a new file. Existing files can still be selected.
         </div>
       )}
 

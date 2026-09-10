@@ -2,7 +2,7 @@ import { copilotChats, db, mothershipInboxTask, user, workspace } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getActivelyBannedUserIds, isEmailBlocked } from '@/lib/auth/ban'
 import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
 import { resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
@@ -27,7 +27,11 @@ import type { AgentMailAttachment } from '@/lib/mothership/inbox/types'
 import { buildStorageKeySegment } from '@/lib/uploads/core/storage-key'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
 import { createFileContent, type MessageContent } from '@/lib/uploads/utils/file-utils'
-import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import {
+  checkWorkspaceAccess,
+  getUserEntityPermissions,
+  type PermissionType,
+} from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 
@@ -163,7 +167,17 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       })
         .then(async (title) => {
           if (title && chatId) {
-            await db.update(copilotChats).set({ title }).where(eq(copilotChats.id, chatId))
+            // Only stamp the generated title while the chat has none. This
+            // resolves asynchronously, so a user could rename the chat in the
+            // meantime; the `isNull` guard makes the write lose that race
+            // instead of clobbering the explicit rename.
+            const stamped = await db
+              .update(copilotChats)
+              .set({ title })
+              .where(and(eq(copilotChats.id, chatId), isNull(copilotChats.title)))
+              .returning({ id: copilotChats.id })
+            // The rename won — do not announce a title the row no longer holds.
+            if (stamped.length === 0) return
             chatPubSub?.publishStatusChanged({
               workspaceId: ws.id,
               chatId,
@@ -217,7 +231,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
     }
 
     const workspaceAccess = await checkWorkspaceAccess(ws.id, userId)
-    const userPermission = workspaceAccess.permission
+    const userPermission = inboxToolPermission(actor, workspaceAccess.permission)
     const secretMountPolicy = normalizeSecretMountPolicy({
       secretScope: ws.inboxSecretScope,
       mountedSecrets: ws.inboxMountedSecrets,
@@ -344,10 +358,47 @@ export async function executeInboxTask(taskId: string): Promise<void> {
  * Resolve the execution and raw-secret actors independently. Workspace members
  * execute and mount secrets as themselves. External senders retain the existing
  * owner execution fallback but receive no raw-secret actor.
+ *
+ * The owner fallback exists because billing attribution and workspace reads need
+ * a real user, not because an unknown sender should act as the owner. A null
+ * `secretActorUserId` is therefore the run's "no caller" signal, and callers must
+ * treat it as one everywhere authority is derived — see
+ * {@link inboxToolPermission}.
  */
 interface InboxExecutionActor {
   executionUserId: string
+  /** Null when no workspace member owns this message. */
   secretActorUserId: string | null
+}
+
+/**
+ * How far an inbox run's tools may reach.
+ *
+ * An attributed message uses the sender's own workspace permission, which makes an
+ * emailed request equivalent to that member performing it in the app — a read-only
+ * member still cannot run or edit anything.
+ *
+ * An unattributed message resolves to the workspace owner so the run has a real
+ * user for billing and workspace reads, and the owner is typically an admin. Left
+ * alone, that hands an allowlisted external correspondent the owner's write
+ * authority: `create_workflow` and `edit_workflow` gate on
+ * `requiredPermission: 'write'`, and `run_workflow` is gated by the headless
+ * client-fallback bar in `executeTool` — it carries no catalog permission of its
+ * own. A workflow built or run through any of them executes with
+ * `enforceCredentialAccess`, resolving the owner's workspace *and personal*
+ * secrets. That is the same reach `secretActorUserId: null` already refuses for a
+ * direct mount, so refusing it here keeps one answer rather than two.
+ *
+ * Read is the ceiling rather than no permission at all because answering an
+ * external correspondent from workspace context is the point of the inbox; only
+ * mutation and execution are withheld.
+ */
+function inboxToolPermission(
+  actor: InboxExecutionActor,
+  workspacePermission: PermissionType | null
+): PermissionType | null {
+  if (actor.secretActorUserId !== null) return workspacePermission
+  return workspacePermission === null ? null : 'read'
 }
 
 async function resolveInboxExecutionActor(

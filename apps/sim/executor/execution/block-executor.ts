@@ -19,8 +19,11 @@ import {
   BlockType,
   buildResumeApiUrl,
   buildResumeUiUrl,
+  CHILD_EXECUTION_ID_OUTPUT_KEY,
+  CHILD_TRACE_DISABLED_OUTPUT_KEY,
   DEFAULTS,
   EDGE,
+  isHumanInTheLoopBlock,
   isSentinelBlockType,
   isWorkflowBlockType,
 } from '@/executor/constants'
@@ -46,7 +49,13 @@ import {
   type StreamingExecution,
 } from '@/executor/types'
 import { streamingResponseFormatProcessor } from '@/executor/utils'
-import { buildBlockExecutionError, normalizeError } from '@/executor/utils/errors'
+import {
+  attachTrustedExecutionCost,
+  buildBlockExecutionError,
+  normalizeError,
+  readTrustedExecutionCost,
+  type TrustedExecutionCost,
+} from '@/executor/utils/errors'
 import {
   buildUnifiedParentIterations,
   getIterationContext,
@@ -73,6 +82,20 @@ import type { SerializedBlock } from '@/serializer/types'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
 const logger = createLogger('BlockExecutor')
+
+function addTrustedExecutionCosts(
+  accumulated: TrustedExecutionCost | undefined,
+  current: TrustedExecutionCost | undefined
+): TrustedExecutionCost | undefined {
+  if (!accumulated) return current
+  if (!current) return accumulated
+
+  return {
+    input: accumulated.input + current.input,
+    output: accumulated.output + current.output,
+    total: accumulated.total + current.total,
+  }
+}
 
 export class BlockExecutor {
   private execLogger: Logger
@@ -158,7 +181,7 @@ export class BlockExecutor {
     }
     let cleanupSelfReference: (() => void) | undefined
 
-    if (block.metadata?.id === BlockType.HUMAN_IN_THE_LOOP) {
+    if (isHumanInTheLoopBlock(block.metadata?.id)) {
       cleanupSelfReference = this.preparePauseResumeSelfReference(
         blockCtx,
         node,
@@ -227,6 +250,17 @@ export class BlockExecutor {
     cleanupSelfReference?.()
 
     let streamingPartialOutput: Record<string, any> | undefined
+    /**
+     * Cost of a handler that already finished, kept for the catch below.
+     *
+     * A Function block's sandbox is paid for the moment it completes, but the
+     * steps after the handler returns — base64 hydration, and large-value
+     * redaction that deliberately throws rather than emit unredacted data — can
+     * still fail the block. The error those raise carries no cost of its own, so
+     * without holding it here the completed sandbox would go unbilled. Hoisted
+     * for the same reason `streamingPartialOutput` above is.
+     */
+    let completedHandlerCost: TrustedExecutionCost | undefined
     try {
       /**
        * Only the handler call is retried. A streaming handler returns before any
@@ -236,8 +270,10 @@ export class BlockExecutor {
       const output = await this.runHandlerWithRetry(blockCtx, block, blockLog, () =>
         handler.executeWithNode
           ? handler.executeWithNode(blockCtx, block, resolvedInputs, nodeMetadata)
-          : handler.execute(blockCtx, block, resolvedInputs)
+          : handler.execute(blockCtx, block, resolvedInputs, nodeMetadata)
       )
+
+      completedHandlerCost = readTrustedExecutionCost(output)
 
       const isStreamingExecution =
         output && typeof output === 'object' && 'stream' in output && 'execution' in output
@@ -257,7 +293,8 @@ export class BlockExecutor {
             block,
             streamingExec,
             resolvedInputs,
-            normalizeStringArray(blockCtx.selectedOutputs)
+            normalizeStringArray(blockCtx.selectedOutputs),
+            blockLog?.executionOrder
           )
         } catch (streamError) {
           const resultRegistry = blockCtx.resolvedSecretTraceRegistry
@@ -294,6 +331,7 @@ export class BlockExecutor {
           fileKeys: blockCtx.fileKeys,
           allowLargeValueWorkflowScope: blockCtx.allowLargeValueWorkflowScope,
           userId: blockCtx.userId,
+          principal: blockCtx.principal,
           maxBytes: blockCtx.base64MaxBytes,
           preserveLargeValueMetadata: true,
         })) as NormalizedBlockOutput
@@ -346,9 +384,21 @@ export class BlockExecutor {
         if (normalizedOutput.childTraceSpans && Array.isArray(normalizedOutput.childTraceSpans)) {
           blockLog.childTraceSpans = normalizedOutput.childTraceSpans
         }
+        const childExecutionId = normalizedOutput[CHILD_EXECUTION_ID_OUTPUT_KEY]
+        if (typeof childExecutionId === 'string' && childExecutionId) {
+          blockLog.childExecution = { executionId: childExecutionId }
+        }
+        if (normalizedOutput[CHILD_TRACE_DISABLED_OUTPUT_KEY] === true) {
+          blockLog.childTraceDisabled = true
+        }
       }
 
-      const { childTraceSpans: _traces, ...outputForState } = normalizedOutput
+      const {
+        childTraceSpans: _traces,
+        [CHILD_EXECUTION_ID_OUTPUT_KEY]: _childExecutionId,
+        [CHILD_TRACE_DISABLED_OUTPUT_KEY]: _childTraceDisabled,
+        ...outputForState
+      } = normalizedOutput
       const stateOutput = outputForState as NormalizedBlockOutput
       const settledBlockRegistry = blockCtx.resolvedSecretTraceRegistry
       const stateProvenance = settledBlockRegistry?.exportCommittedProvenanceForValue(stateOutput)
@@ -402,7 +452,8 @@ export class BlockExecutor {
           inputDisplayRegistry,
           isSentinel,
           'execution',
-          streamingPartialOutput
+          streamingPartialOutput,
+          completedHandlerCost
         )
       } finally {
         commitBlockRegistry()
@@ -492,15 +543,40 @@ export class BlockExecutor {
     const policy = resolveBlockRetryPolicy(block)
     if (!policy) return invoke()
 
+    const shouldAccumulateFunctionCost = block.metadata?.id === BlockType.FUNCTION
+    let accumulatedFunctionCost: TrustedExecutionCost | undefined
     let tries = 0
     try {
       for (;;) {
         tries++
         try {
-          return await invoke()
+          const output = await invoke()
+          if (!shouldAccumulateFunctionCost || !accumulatedFunctionCost || !isRecordLike(output)) {
+            return output
+          }
+
+          const totalCost = addTrustedExecutionCosts(
+            accumulatedFunctionCost,
+            readTrustedExecutionCost(output)
+          )
+          if (!totalCost) return output
+
+          const outputWithCost = { ...output, cost: totalCost }
+          attachTrustedExecutionCost(outputWithCost, totalCost)
+          return outputWithCost as T
         } catch (error) {
+          if (shouldAccumulateFunctionCost) {
+            accumulatedFunctionCost = addTrustedExecutionCosts(
+              accumulatedFunctionCost,
+              readTrustedExecutionCost(error)
+            )
+          }
+
           const isFinalTry = tries >= policy.maxTries
-          if (isFinalTry || ctx.abortSignal?.aborted || !isRetryableBlockError(error)) throw error
+          if (isFinalTry || ctx.abortSignal?.aborted || !isRetryableBlockError(error)) {
+            attachTrustedExecutionCost(error, accumulatedFunctionCost)
+            throw error
+          }
 
           this.execLogger.warn('Block failed; retrying', {
             blockId: block.id,
@@ -514,7 +590,10 @@ export class BlockExecutor {
           if (policy.waitBetweenTriesMs > 0) await sleep(policy.waitBetweenTriesMs)
 
           /** `sleep` is not abort-aware, so a run stopped mid-wait must not start another try. */
-          if (ctx.abortSignal?.aborted) throw error
+          if (ctx.abortSignal?.aborted) {
+            attachTrustedExecutionCost(error, accumulatedFunctionCost)
+            throw error
+          }
         }
       }
     } finally {
@@ -534,7 +613,8 @@ export class BlockExecutor {
     inputDisplayRegistry: ResolvedSecretTraceRegistry | undefined,
     isSentinel: boolean,
     phase: 'input_resolution' | 'execution',
-    streamingPartialOutput?: Record<string, any>
+    streamingPartialOutput?: Record<string, any>,
+    completedHandlerCost?: TrustedExecutionCost
   ): Promise<NormalizedBlockOutput> {
     const endedAt = new Date().toISOString()
     const duration = performance.now() - startTime
@@ -606,8 +686,10 @@ export class BlockExecutor {
       return softOutput
     }
 
+    const trustedExecutionCost = readTrustedExecutionCost(error) ?? completedHandlerCost
     const errorOutput: NormalizedBlockOutput = {
       error: errorMessage,
+      ...(trustedExecutionCost ? { cost: trustedExecutionCost } : {}),
     }
 
     // Keep any answer text already drained before timeout/failure so logs match
@@ -653,6 +735,14 @@ export class BlockExecutor {
 
       if (ChildWorkflowError.isChildWorkflowError(error) && error.childTraceSpans.length > 0) {
         blockLog.childTraceSpans = error.childTraceSpans
+      }
+      // A failed custom block still has its own child run to join at read time —
+      // unless the instance opted out, which leaves only the marker.
+      if (ChildWorkflowError.isChildWorkflowError(error) && error.childExecutionId) {
+        blockLog.childExecution = { executionId: error.childExecutionId }
+      }
+      if (ChildWorkflowError.isChildWorkflowError(error) && error.childTraceDisabled) {
+        blockLog.childTraceDisabled = true
       }
     }
 
@@ -1063,9 +1153,10 @@ export class BlockExecutor {
     block: SerializedBlock,
     streamingExec: StreamingExecution,
     resolvedInputs: Record<string, any>,
-    selectedOutputs: string[]
+    selectedOutputs: string[],
+    executionOrder?: number
   ): Promise<void> {
-    const blockId = node.id
+    const blockId = node.metadata?.originalBlockId ?? node.id
     const piiEnabled = Boolean(ctx.piiBlockOutputRedaction?.enabled)
     // Live-forward only when a client stream exists and PII redaction is off.
     const forwardToClient = Boolean(ctx.onStream) && !piiEnabled
@@ -1115,6 +1206,8 @@ export class BlockExecutor {
       onStreamPromise = ctx
         .onStream({
           ...streamingExecutionForConsumer,
+          blockId,
+          ...(executionOrder !== undefined ? { executionOrder } : {}),
           stream: processedClientStream,
           streamFormat: 'text',
           subscribe: pump.subscribe,

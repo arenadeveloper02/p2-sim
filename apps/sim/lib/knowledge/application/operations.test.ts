@@ -11,15 +11,17 @@ describe('knowledge operation registry', () => {
     const ids = Object.values(knowledgeOperations).map((operation) => operation.id)
     expect(ids).toEqual([
       'knowledge.list',
-      'knowledge.list_archived',
       'knowledge.read',
       'knowledge.create',
       'knowledge.update',
       'knowledge.delete',
+      'knowledge.restore',
       'knowledge.bulk_move_items',
       'knowledge.bulk_delete_items',
       'knowledge.bulk_delete',
       'knowledge.vfs.rename',
+      'knowledge.vfs.move',
+      'knowledge.vfs.folders.manage',
       'knowledge.vfs.delete',
       'knowledge.search',
       'knowledge.folders.list',
@@ -47,12 +49,16 @@ describe('knowledge operation registry', () => {
       'knowledge.tags.read_usage',
       'knowledge.tags.read_detailed_usage',
       'knowledge.tags.read_next_slot',
-      'knowledge.tags.save_document_definitions',
-      'knowledge.tags.delete_document_definitions',
+      'knowledge.tags.bulk_save',
+      'knowledge.tags.cleanup',
       'knowledge.connectors.list',
       'knowledge.connectors.read',
       'knowledge.connectors.create',
       'knowledge.connectors.update',
+      'knowledge.connectors.access.update',
+      'knowledge.connectors.members.list',
+      'knowledge.connectors.members.enroll',
+      'knowledge.simSearch.connect',
       'knowledge.connectors.delete',
       'knowledge.connectors.sync',
       'knowledge.connectors.documents.list',
@@ -102,16 +108,43 @@ describe('knowledge operation registry', () => {
       knowledgeOperations.updateTag,
       knowledgeOperations.deleteTag,
       knowledgeOperations.readTagUsage,
+      knowledgeOperations.listConnectors,
+      knowledgeOperations.readConnector,
       knowledgeOperations.createConnector,
       knowledgeOperations.updateConnector,
       knowledgeOperations.deleteConnector,
       knowledgeOperations.syncConnector,
+      knowledgeOperations.listConnectorDocuments,
+      knowledgeOperations.updateConnectorDocuments,
     ]
     for (const operation of operations) {
       expect(operation.workspaceApiKey).toBe('deny')
       expect(operation.principalKinds).not.toContain('workspace_api_key')
       expect(operation.principalKinds).toContain('delegated')
     }
+  })
+
+  /**
+   * Archive, restore, and the list that discovers archived rows are one
+   * recoverable loop. A principal that may run the first two but not the third
+   * can restore only the ids it recorded before archiving, so the discovery read
+   * — `knowledge.list`, which serves `scope=archived` too — carries the policy of
+   * the writes it exists to serve.
+   */
+  it('keeps the archived list reachable by every principal that may archive and restore', () => {
+    expect(knowledgeOperations.list.workspaceApiKey).toBe(
+      knowledgeOperations.restore.workspaceApiKey
+    )
+    expect(knowledgeOperations.list.principalKinds).toEqual(
+      knowledgeOperations.restore.principalKinds
+    )
+    expect(knowledgeOperations.list.principalKinds).toContain('workspace_api_key')
+    expect(
+      permissionSatisfies(
+        knowledgeOperations.restore.minimumRole,
+        knowledgeOperations.list.minimumRole
+      )
+    ).toBe(true)
   })
 
   it('allows delegated callers only on semantic knowledge and document operations', () => {
@@ -126,5 +159,44 @@ describe('knowledge operation registry', () => {
     expect(knowledgeOperations.list.delegatedServices).toEqual(['copilot'])
     expect(knowledgeOperations.search.delegatedServices).toEqual(['copilot', 'executor'])
     expect(knowledgeOperations.uploadComplete.delegatedServices).toBeUndefined()
+  })
+
+  it('withholds knowledge base creation separately from using existing ones', () => {
+    expect(knowledgeOperations.create.capability).toBe('knowledge.create')
+    for (const operation of [
+      knowledgeOperations.list,
+      knowledgeOperations.read,
+      knowledgeOperations.search,
+      knowledgeOperations.update,
+      knowledgeOperations.delete,
+      knowledgeOperations.createFolder,
+      knowledgeOperations.createTag,
+      knowledgeOperations.createConnector,
+    ]) {
+      expect(operation.capability).toBe('knowledge.use')
+    }
+  })
+
+  it('withholds every path that carries caller-supplied document bytes', () => {
+    for (const operation of [
+      knowledgeOperations.uploadDocument,
+      knowledgeOperations.uploadCreate,
+      knowledgeOperations.uploadParts,
+      knowledgeOperations.uploadComplete,
+      knowledgeOperations.uploadCancel,
+    ]) {
+      expect(operation.capability).toBe('knowledge.upload')
+    }
+  })
+
+  it('leaves the connector sync path on the shared knowledge capability', () => {
+    /** A connector's documents are the sanctioned source, so an upload ban must not reach them. */
+    for (const operation of [
+      knowledgeOperations.syncConnector,
+      knowledgeOperations.updateConnectorDocuments,
+      knowledgeOperations.addWorkspaceFiles,
+    ]) {
+      expect(operation.capability).toBe('knowledge.use')
+    }
   })
 })

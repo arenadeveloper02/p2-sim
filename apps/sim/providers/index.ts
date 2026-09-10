@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { getApiKeyWithBYOK } from '@/lib/api-key/byok'
+import { env, envNumber } from '@/lib/core/config/env'
 import { filterModelSafeWorkspaceFileAttachments } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import type { StreamingExecution } from '@/executor/types'
 import {
@@ -22,6 +23,11 @@ import {
   type ProviderRuntimeContext,
   runWithProviderRuntimeContext,
 } from '@/providers/runtime-context'
+import {
+  assignProviderToolIdentities,
+  projectProviderResponseToolIdentities,
+  projectStreamingExecutionToolIdentities,
+} from '@/providers/tool-identity'
 import type { ProviderId, ProviderRequest, ProviderResponse } from '@/providers/types'
 import {
   generateStructuredOutputInstructions,
@@ -45,6 +51,7 @@ async function omitUnsafeProviderFileAttachments(
   try {
     safeAttachments = await filterModelSafeWorkspaceFileAttachments(attachments, {
       workspaceId: request.workspaceId,
+      ...(request.userId ? { actorUserId: request.userId } : {}),
     })
   } catch (error) {
     logger.error('Workspace file secret provenance could not be verified', {
@@ -70,11 +77,21 @@ async function omitUnsafeProviderFileAttachments(
   }
 }
 
+/** Round trips an Agent block's tool loop takes before it is forced to answer. */
+const DEFAULT_MAX_TOOL_ITERATIONS = 20
+
 /**
  * Maximum number of iterations for tool call loops to prevent infinite loops.
  * Used across all providers that support tool/function calling.
+ *
+ * Self-hosted deployments that need longer agent runs raise it with the
+ * `MAX_TOOL_ITERATIONS` env var; a value that is not a positive integer falls
+ * back to {@link DEFAULT_MAX_TOOL_ITERATIONS}.
  */
-export const MAX_TOOL_ITERATIONS = 20
+export const MAX_TOOL_ITERATIONS = envNumber(env.MAX_TOOL_ITERATIONS, DEFAULT_MAX_TOOL_ITERATIONS, {
+  min: 1,
+  integer: true,
+})
 
 /**
  * Normalizes a model-tuning level that may have arrived from a variable or block reference
@@ -146,14 +163,18 @@ function isReadableStream(response: any): response is ReadableStream {
  * stream drain — long after this function returns — so the policy is installed
  * on the live output object rather than applied to a value.
  */
-function applyStreamingCostPolicy(response: StreamingExecution, policy: ModelCostPolicy): void {
+function applyStreamingCostPolicy(
+  response: StreamingExecution,
+  policy: ModelCostPolicy,
+  additionalToolCost?: () => number
+): void {
   const output = response.execution?.output
   if (!output || typeof output !== 'object') {
     logger.warn('Streaming output unavailable at intercept time; cost policy not applied')
     return
   }
 
-  installStreamingCostPolicy(output, policy)
+  installStreamingCostPolicy(output, policy, additionalToolCost)
 
   const segments = output.providerTiming?.timeSegments
   if (Array.isArray(segments)) {
@@ -217,6 +238,20 @@ export async function executeProviderRequest(
 
   const provenanceSafeRequest = await omitUnsafeProviderFileAttachments(sanitizedRequest)
   const modelSafeRequest = provenanceSafeRequest
+  const toolIdentities = assignProviderToolIdentities(modelSafeRequest.tools)
+  const failedFunctionToolCost = { total: 0 }
+  const requestRuntimeContext: ProviderRuntimeContext = {
+    ...runtimeContext,
+    failedFunctionToolCost,
+    ...(toolIdentities.toolIdByWireId.size > 0
+      ? {
+          toolIdByWireId: new Map([
+            ...(runtimeContext?.toolIdByWireId ?? []),
+            ...toolIdentities.toolIdByWireId,
+          ]),
+        }
+      : {}),
+  }
 
   if (modelSafeRequest.responseFormat) {
     const structuredOutputInstructions = generateStructuredOutputInstructions(
@@ -229,7 +264,7 @@ export async function executeProviderRequest(
     }
   }
 
-  const response = await runWithProviderRuntimeContext(runtimeContext, async () => {
+  const response = await runWithProviderRuntimeContext(requestRuntimeContext, async () => {
     await attachLargeFileRemoteUrls(modelSafeRequest, providerId)
     await uploadLargeFilesToProvider(modelSafeRequest, providerId)
     return provider.executeRequest(modelSafeRequest)
@@ -237,7 +272,12 @@ export async function executeProviderRequest(
 
   if (isStreamingExecution(response)) {
     logger.info('Provider returned StreamingExecution', { isBYOK })
-    applyStreamingCostPolicy(response, resolveModelCostPolicy(sanitizedRequest.model, isBYOK))
+    applyStreamingCostPolicy(
+      response,
+      resolveModelCostPolicy(sanitizedRequest.model, isBYOK),
+      () => failedFunctionToolCost.total
+    )
+    projectStreamingExecutionToolIdentities(response, toolIdentities)
     return response
   }
 
@@ -247,6 +287,7 @@ export async function executeProviderRequest(
   }
 
   const costPolicy = resolveModelCostPolicy(response.model, isBYOK)
+  projectProviderResponseToolIdentities(response, toolIdentities)
 
   if (response.tokens) {
     const { input: promptTokens = 0, output: completionTokens = 0 } = response.tokens
@@ -281,7 +322,7 @@ export async function executeProviderRequest(
     applySegmentCostPolicy(response.timing.timeSegments, costPolicy)
   }
 
-  const toolCost = sumToolCosts(response.toolResults)
+  const toolCost = sumToolCosts(response.toolResults) + failedFunctionToolCost.total
   if (toolCost > 0 && response.cost) {
     // Replaced rather than mutated: a provider-supplied cost can be the same
     // object it also handed to a time segment, and tool cost belongs only to

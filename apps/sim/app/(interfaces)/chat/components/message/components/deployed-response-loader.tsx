@@ -3,7 +3,6 @@
 import { cn } from '@sim/emcn'
 import Image from 'next/image'
 import circlePatternLoader from '@/app/(interfaces)/chat/components/message/components/circle-pattern-loader.gif'
-import { DEPLOYED_CHAT_TEXT_MUTED } from '@/app/(interfaces)/chat/constants'
 
 interface DeployedResponseLoaderProps {
   /**
@@ -43,9 +42,7 @@ export function DeployedResponseLoader({
           className='mix-blend-multiply'
         />
         {showLabel ? (
-          <span className='font-medium text-sm' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
-            {label}...
-          </span>
+          <span className='font-medium text-[var(--text-muted)] text-sm'>{label}...</span>
         ) : null}
       </div>
     </div>
@@ -57,10 +54,7 @@ export function DeployedResponseLoader({
  */
 export function DeployedInlineLoader({ label }: { label: string }) {
   return (
-    <div
-      className='mt-2 flex items-center gap-2.5 text-sm'
-      style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
-    >
+    <div className='mt-2 flex items-center gap-2.5 text-[var(--text-muted)] text-sm'>
       <Image
         src={circlePatternLoader}
         alt=''

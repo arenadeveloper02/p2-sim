@@ -2,8 +2,8 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { firecrawlParseBodySchema } from '@/lib/api/contracts/tools/firecrawl'
 import { RESOLVED_SECRET_PROVENANCE_FIELD } from '@/lib/execution/private-tool-metadata'
+import { firecrawlParseInputSchema } from '@/lib/internal/firecrawl/schema'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import {
   applyFirecrawlFormatModelInput,
@@ -18,9 +18,9 @@ import type { FirecrawlFormat, ScrapeOptions } from '@/tools/firecrawl/types'
 import { projectToolModelInputParams } from '@/tools/request-transport'
 
 describe('Firecrawl nested model input', () => {
-  it('retains the private provenance envelope at the internal route boundary', () => {
+  it('retains the private provenance envelope at the internal operation boundary', () => {
     const provenance = { version: 1 as const, complete: true, entries: [] }
-    const parsed = firecrawlParseBodySchema.parse({
+    const parsed = firecrawlParseInputSchema.parse({
       apiKey: 'key',
       file: { key: 'file-key', name: 'report.pdf', size: 1 },
       [RESOLVED_SECRET_PROVENANCE_FIELD]: provenance,

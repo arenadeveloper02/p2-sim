@@ -177,3 +177,14 @@ export function getPlaceholderForFieldType(fieldType: string): string {
       return 'Enter value'
   }
 }
+
+/**
+ * Minimum time the client waits before asking the server to classify an active
+ * document-processing run as dead.
+ *
+ * Lives here so the client does not import server configuration. The server
+ * derives its authoritative threshold from the configured task
+ * duration and retry budget and may require longer. Keeping the client at the
+ * same 45-minute floor prevents the default UI from racing a legitimate run.
+ */
+export const KNOWLEDGE_DOCUMENT_PROCESSING_STALE_THRESHOLD_MS = 45 * 60 * 1000

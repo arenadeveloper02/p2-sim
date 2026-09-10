@@ -10,6 +10,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { filterUndefined } from '@sim/utils/object'
 import type { SQL } from 'drizzle-orm'
 import { and, count, eq, exists, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { V2KnowledgeBaseSortBy } from '@/lib/api/contracts/v2/knowledge'
@@ -35,6 +36,7 @@ import {
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { generateRestoreName } from '@/lib/core/utils/restore-name'
 import { findActiveFolder, resolveRestoredFolderId } from '@/lib/folders/queries'
+import { isKnowledgeMemberAccessAvailable } from '@/lib/knowledge/access/availability'
 import type {
   ChunkingConfig,
   CreateKnowledgeBaseData,
@@ -53,7 +55,10 @@ const logger = createLogger('KnowledgeBaseService')
  */
 export class KnowledgeBaseConflictError extends OrchestrationError {
   constructor(name: string) {
-    super('conflict', `A knowledge base named "${name}" already exists in this workspace`)
+    super(
+      'conflict',
+      `A knowledge base named "${name}" already exists in this workspace. Names are unique across the whole workspace — folders do not namespace them — so pick a different name, or rename/delete the existing knowledge base first.`
+    )
     this.name = 'KnowledgeBaseConflictError'
   }
 }
@@ -234,7 +239,7 @@ async function readKnowledgeBaseRows(
   where: SQL | undefined,
   orderBy: SQL[],
   limit?: number
-): Promise<Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes'>>> {
+): Promise<Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes' | 'hasMemberScopedConnector'>>> {
   const query = db
     .select({
       id: knowledgeBase.id,
@@ -250,7 +255,7 @@ async function readKnowledgeBaseRows(
       deletedAt: knowledgeBase.deletedAt,
       workspaceId: knowledgeBase.workspaceId,
       folderId: knowledgeBase.folderId,
-      docCount: count(document.id),
+      docCount: count(document.knowledgeBaseId),
     })
     .from(knowledgeBase)
     .leftJoin(
@@ -276,7 +281,9 @@ async function readKnowledgeBaseRows(
 }
 
 async function attachConnectorTypes(
-  knowledgeBases: Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes'>>
+  knowledgeBases: Array<
+    Omit<KnowledgeBaseWithCounts, 'connectorTypes' | 'hasMemberScopedConnector'>
+  >
 ): Promise<KnowledgeBaseWithCounts[]> {
   const kbIds = knowledgeBases.map((kb) => kb.id)
   const connectorRows =
@@ -285,6 +292,7 @@ async function attachConnectorTypes(
           .select({
             knowledgeBaseId: knowledgeConnector.knowledgeBaseId,
             connectorType: knowledgeConnector.connectorType,
+            accessMode: knowledgeConnector.accessMode,
           })
           .from(knowledgeConnector)
           .where(
@@ -297,15 +305,33 @@ async function attachConnectorTypes(
       : []
 
   const connectorTypesByKb = new Map<string, string[]>()
+  const memberScopedKbIds = new Set<string>()
   for (const row of connectorRows) {
     const types = connectorTypesByKb.get(row.knowledgeBaseId) ?? []
     if (!types.includes(row.connectorType)) types.push(row.connectorType)
     connectorTypesByKb.set(row.knowledgeBaseId, types)
+    if (row.accessMode === 'members') memberScopedKbIds.add(row.knowledgeBaseId)
+  }
+  /**
+   * A members-mode connector only scopes documents where the feature is on;
+   * off, its documents read as workspace-visible and the base must say so.
+   */
+  const memberScopedWorkspaceIds = new Set(
+    knowledgeBases
+      .filter((kb) => memberScopedKbIds.has(kb.id) && kb.workspaceId)
+      .map((kb) => kb.workspaceId as string)
+  )
+  for (const workspaceId of memberScopedWorkspaceIds) {
+    if (await isKnowledgeMemberAccessAvailable({ workspaceId })) continue
+    for (const kb of knowledgeBases) {
+      if (kb.workspaceId === workspaceId) memberScopedKbIds.delete(kb.id)
+    }
   }
 
   return knowledgeBases.map((kb) => ({
     ...kb,
     connectorTypes: connectorTypesByKb.get(kb.id) ?? [],
+    hasMemberScopedConnector: memberScopedKbIds.has(kb.id),
   }))
 }
 
@@ -319,7 +345,7 @@ async function readWorkspaceKnowledgeBaseRows(
   scope: KnowledgeBaseScope,
   options?: GetKnowledgeBasesOptions
 ): Promise<{
-  data: Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes'>>
+  data: Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes' | 'hasMemberScopedConnector'>>
   nextCursorKeys: CursorKey[] | null
 }> {
   const {
@@ -383,7 +409,7 @@ export async function getWorkspaceKnowledgeBases(
 async function readLegacyPersonalKnowledgeBaseRows(
   userId: string,
   scope: KnowledgeBaseScope
-): Promise<Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes'>>> {
+): Promise<Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes' | 'hasMemberScopedConnector'>>> {
   const rows = await readKnowledgeBaseRows(
     and(
       knowledgeBaseScopeCondition(scope),
@@ -439,7 +465,7 @@ export async function listWorkspaceAndLegacyKnowledgeBases(
 export async function findActiveKnowledgeBasesByExactName(
   workspaceId: string,
   name: string
-): Promise<Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes'>>> {
+): Promise<Array<Omit<KnowledgeBaseWithCounts, 'connectorTypes' | 'hasMemberScopedConnector'>>> {
   return readKnowledgeBaseRows(
     and(
       eq(knowledgeBase.workspaceId, workspaceId),
@@ -542,6 +568,7 @@ export async function createAuthorizedKnowledgeBase(
     folderId,
     docCount: 0,
     connectorTypes: [],
+    hasMemberScopedConnector: false,
   }
 }
 
@@ -555,11 +582,7 @@ export async function updateKnowledgeBase(
     description?: string
     workspaceId?: string | null
     folderId?: string | null
-    chunkingConfig?: {
-      maxSize: number
-      minSize: number
-      overlap: number
-    }
+    chunkingConfig?: ChunkingConfig
   },
   requestId: string,
   options?: { actorUserId?: string; assertedWorkspaceId?: string }
@@ -574,7 +597,21 @@ export async function updateKnowledgeBase(
   if (updates.workspaceId !== undefined) updateData.workspaceId = updates.workspaceId
   if (updates.folderId !== undefined) updateData.folderId = updates.folderId
   if (updates.chunkingConfig !== undefined) {
-    updateData.chunkingConfig = updates.chunkingConfig
+    /**
+     * Projected field by field rather than assigned whole, so every member of
+     * {@link ChunkingConfig} is named here: `strategy` and `strategyOptions`
+     * used to survive only because structural typing let them ride on an
+     * object typed as the three size fields, and the first destructure of
+     * those three would have dropped them silently.
+     */
+    const { maxSize, minSize, overlap, strategy, strategyOptions } = updates.chunkingConfig
+    updateData.chunkingConfig = filterUndefined({
+      maxSize,
+      minSize,
+      overlap,
+      strategy,
+      strategyOptions,
+    })
   }
 
   if (updates.workspaceId !== undefined && !options?.actorUserId) {
@@ -940,7 +977,7 @@ export async function updateKnowledgeBase(
       deletedAt: knowledgeBase.deletedAt,
       workspaceId: knowledgeBase.workspaceId,
       folderId: knowledgeBase.folderId,
-      docCount: count(document.id),
+      docCount: count(document.knowledgeBaseId),
     })
     .from(knowledgeBase)
     .leftJoin(
@@ -970,12 +1007,41 @@ export async function updateKnowledgeBase(
 
   logger.info(`[${requestId}] Updated knowledge base: ${knowledgeBaseId}`)
 
-  return {
-    ...updatedKb[0],
-    chunkingConfig: updatedKb[0].chunkingConfig as ChunkingConfig,
-    docCount: Number(updatedKb[0].docCount),
-    connectorTypes: [],
-  }
+  const [withConnectors] = await attachConnectorTypes([
+    {
+      ...updatedKb[0],
+      chunkingConfig: updatedKb[0].chunkingConfig as ChunkingConfig,
+      docCount: Number(updatedKb[0].docCount),
+    },
+  ])
+  return withConnectors
+}
+
+/**
+ * Display names for knowledge bases that live in `workspaceId`, keyed by id.
+ *
+ * Scoped by workspace in the query rather than checked afterwards, so an id belonging to another
+ * tenant resolves to nothing at all. Deliberately narrower than {@link getKnowledgeBaseById}, which
+ * joins `document` and aggregates counts — far more than a name lookup needs.
+ */
+export async function getKnowledgeBaseNames(
+  knowledgeBaseIds: readonly string[],
+  workspaceId: string
+): Promise<Map<string, string>> {
+  if (knowledgeBaseIds.length === 0) return new Map()
+
+  const rows = await db
+    .select({ id: knowledgeBase.id, name: knowledgeBase.name })
+    .from(knowledgeBase)
+    .where(
+      and(
+        inArray(knowledgeBase.id, [...new Set(knowledgeBaseIds)]),
+        eq(knowledgeBase.workspaceId, workspaceId),
+        isNull(knowledgeBase.deletedAt)
+      )
+    )
+
+  return new Map(rows.map((row) => [row.id, row.name]))
 }
 
 /**
@@ -999,7 +1065,7 @@ export async function getKnowledgeBaseById(
       deletedAt: knowledgeBase.deletedAt,
       workspaceId: knowledgeBase.workspaceId,
       folderId: knowledgeBase.folderId,
-      docCount: count(document.id),
+      docCount: count(document.knowledgeBaseId),
     })
     .from(knowledgeBase)
     .leftJoin(
@@ -1024,7 +1090,20 @@ export async function getKnowledgeBaseById(
     chunkingConfig: result[0].chunkingConfig as ChunkingConfig,
     docCount: Number(result[0].docCount),
     connectorTypes: [],
+    hasMemberScopedConnector: false,
   }
+}
+
+/**
+ * The knowledge base with its connector summary, for the surfaces that show
+ * it. Kept off {@link getKnowledgeBaseById} so every operation that only
+ * resolves its context does not pay for the connector read.
+ */
+export async function attachKnowledgeBaseConnectors(
+  knowledgeBase: KnowledgeBaseWithCounts
+): Promise<KnowledgeBaseWithCounts> {
+  const [withConnectors] = await attachConnectorTypes([knowledgeBase])
+  return withConnectors
 }
 
 /**

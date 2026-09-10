@@ -1,4 +1,5 @@
 import { ChipTag, cn } from '@sim/emcn'
+import colorMixFallbacks from '@/app/(landing)/components/shared/color-mix-fallbacks/color-mix-fallbacks.module.css'
 import { FeatureGraphicShell } from '@/app/(landing)/enterprise/components/feature-graphics'
 import styles from '@/app/(landing)/workflows/components/feature-graphics/workflow-canvas-graphic.module.css'
 
@@ -33,7 +34,7 @@ const OUTPUT_BLOCKS = [
  * edges with vertical tangents landing on small port dots (the access
  * tile's junction vocabulary). Every block is a white card in the audit
  * tile's exact chrome (`--white` fill, 1px `--border-1` hairline,
- * `rounded-lg`, `shadow-sm`) so the canvas reads as the workspace's own
+ * `rounded-lg`, `shadow-xs`) so the canvas reads as the workspace's own
  * block language; the agent is the tile's strongest element, pairing its
  * name with a solid `Agent` ChipTag.
  *
@@ -74,28 +75,31 @@ export function WorkflowCanvasGraphic() {
                 key={path}
                 d={path}
                 pathLength={1}
-                className={cn(styles.edgeDraw, EDGE_DRAW_CLASSES[index])}
-                stroke='color-mix(in srgb, var(--text-muted) 35%, transparent)'
+                className={cn(
+                  styles.edgeDraw,
+                  EDGE_DRAW_CLASSES[index],
+                  colorMixFallbacks.mutedStroke35
+                )}
                 strokeWidth='1'
               />
             ))}
           </svg>
 
-          <div className='-translate-x-1/2 absolute top-[14px] left-[160px] flex items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-1.5 shadow-sm'>
+          <div className='-translate-x-1/2 absolute top-[14px] left-[160px] flex items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-1.5 shadow-xs'>
             <span className='size-2 shrink-0 rounded-full border border-[var(--text-muted)] bg-[var(--surface-3)]' />
-            <span className='whitespace-nowrap font-medium text-[var(--text-secondary)] text-caption'>
+            <span className='whitespace-nowrap text-[var(--text-secondary)] text-caption'>
               New ticket
             </span>
           </div>
 
-          <div className='-translate-x-1/2 absolute top-[102px] left-[160px] flex items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--white)] px-3 py-2.5 shadow-sm'>
+          <div className='-translate-x-1/2 absolute top-[102px] left-[160px] flex items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--white)] px-3 py-2.5 shadow-xs'>
             <span
               className={cn(
                 'size-2.5 shrink-0 rounded-full bg-[var(--text-primary)]',
                 styles.agentPulse
               )}
             />
-            <span className='whitespace-nowrap font-medium text-[var(--text-primary)] text-small'>
+            <span className='whitespace-nowrap text-[var(--text-primary)] text-small'>
               Support agent
             </span>
             <ChipTag variant='solid'>Agent</ChipTag>
@@ -105,12 +109,12 @@ export function WorkflowCanvasGraphic() {
             <div
               key={block.label}
               className={cn(
-                '-translate-x-1/2 absolute top-[196px] flex items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-1.5 shadow-sm',
+                '-translate-x-1/2 absolute top-[196px] flex items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-1.5 shadow-xs',
                 block.leftClass
               )}
             >
               <span className='size-2 shrink-0 rounded-full border border-[var(--text-muted)] bg-[var(--surface-3)]' />
-              <span className='whitespace-nowrap font-medium text-[var(--text-secondary)] text-caption'>
+              <span className='whitespace-nowrap text-[var(--text-secondary)] text-caption'>
                 {block.label}
               </span>
             </div>

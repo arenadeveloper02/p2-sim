@@ -339,6 +339,62 @@ describe('usage-reservation', () => {
   })
 
   describe('refreshExecutionSlotExpiry', () => {
+    it.each([
+      new Error('Command timed out'),
+      Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+    ])('classifies a Redis transport failure while preserving its cause: %s', async (original) => {
+      getMock.mockRejectedValueOnce(original)
+
+      await expect(refreshExecutionSlotExpiry('exec-1', Date.now() + 60_000)).rejects.toMatchObject(
+        {
+          name: 'UsageReservationUnavailableError',
+          code: 'SERVICE_OVERLOADED',
+          cause: original,
+        }
+      )
+      expect(evalMock).not.toHaveBeenCalled()
+    })
+
+    it.each(['local', 'pointer'])('classifies a timeout extending the %s lease', async (stage) => {
+      evalMock.mockResolvedValueOnce(1).mockResolvedValueOnce(1)
+      await reserveExecutionSlot(memberParams)
+      const descriptor = String(evalMock.mock.calls[1][3])
+      vi.clearAllMocks()
+      getMock.mockResolvedValueOnce(descriptor)
+      if (stage === 'pointer') evalMock.mockResolvedValueOnce(1)
+      const original = new Error('Command timed out')
+      evalMock.mockRejectedValueOnce(original)
+
+      await expect(refreshExecutionSlotExpiry('exec-1', Date.now() + 60_000)).rejects.toMatchObject(
+        {
+          name: 'UsageReservationUnavailableError',
+          code: 'SERVICE_OVERLOADED',
+          cause: original,
+        }
+      )
+      expect(evalMock).toHaveBeenCalledTimes(stage === 'pointer' ? 2 : 1)
+    })
+
+    it.each([
+      new TypeError('invalid Redis command argument'),
+      Object.assign(new Error('NOAUTH Authentication required.'), { name: 'ReplyError' }),
+      Object.assign(
+        new Error('WRONGTYPE Operation against a key holding the wrong kind of value'),
+        {
+          name: 'ReplyError',
+        }
+      ),
+    ])(
+      'does not classify programming or server configuration failures as transient: %s',
+      async (original) => {
+        getMock.mockRejectedValueOnce(original)
+
+        await expect(refreshExecutionSlotExpiry('exec-1', Date.now() + 60_000)).rejects.toBe(
+          original
+        )
+      }
+    )
+
     it('refreshes only the locally owned slot and matching pointer', async () => {
       evalMock.mockResolvedValueOnce(1).mockResolvedValueOnce(1)
       await reserveExecutionSlot(memberParams)

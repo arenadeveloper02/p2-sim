@@ -102,6 +102,17 @@ interface AccessibleResource {
   url: string
 }
 
+function isAccessibleResource(value: unknown): value is AccessibleResource {
+  if (typeof value !== 'object' || value === null) return false
+  const resource = value as Record<string, unknown>
+  return (
+    typeof resource.id === 'string' &&
+    resource.id.trim().length > 0 &&
+    typeof resource.url === 'string' &&
+    resource.url.trim().length > 0
+  )
+}
+
 interface ResolveAtlassianCloudIdOptions {
   domain: string
   accessToken: string
@@ -193,6 +204,26 @@ export function atlassianDiscoveryKey(resource: string, accessToken: string): st
 }
 
 /**
+ * The credential reaches no Atlassian site at all. Typed so a caller acting
+ * for one person can tell "this person is not on the site" from a transport
+ * failure or a misconfigured domain.
+ */
+export class AtlassianSiteNotAccessibleError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AtlassianSiteNotAccessibleError'
+  }
+}
+
+/** The credential reaches sites, but none matches the configured domain. */
+export class AtlassianSiteNotMatchedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AtlassianSiteNotMatchedError'
+  }
+}
+
+/**
  * Picks the `cloudId` for `domain` out of an `accessible-resources` payload.
  *
  * Separate from the fetch so a caller that already holds the payload can match
@@ -203,21 +234,26 @@ export function selectAtlassianCloudId(
   domain: string,
   product: string
 ): string {
-  if (!Array.isArray(resources) || resources.length === 0) {
-    throw new Error(`No ${product} resources found`)
+  if (!Array.isArray(resources) || !resources.every(isAccessibleResource)) {
+    throw new Error(`Invalid ${product} accessible-resources response`)
+  }
+
+  if (resources.length === 0) {
+    throw new AtlassianSiteNotAccessibleError(
+      `No ${product} sites are accessible to this credential. ` +
+        'Reconnect the credential and grant access to the configured Atlassian site.'
+    )
   }
 
   const siteUrl = normalizeAtlassianSiteUrl(domain)
-  const match = (resources as AccessibleResource[]).find(
-    (r) => normalizeAtlassianSiteUrl(r.url) === siteUrl
-  )
+  const match = resources.find((r) => normalizeAtlassianSiteUrl(r.url) === siteUrl)
   if (match) return match.id
 
-  if (resources.length === 1) return (resources as AccessibleResource[])[0].id
+  if (resources.length === 1) return resources[0].id
 
-  throw new Error(
+  throw new AtlassianSiteNotMatchedError(
     `Could not match ${product} domain "${domain}" to any accessible resource. ` +
-      `Available sites: ${(resources as AccessibleResource[]).map((r) => r.url).join(', ')}`
+      `Available sites: ${resources.map((r) => r.url).join(', ')}`
   )
 }
 

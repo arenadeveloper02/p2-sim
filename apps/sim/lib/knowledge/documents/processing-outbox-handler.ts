@@ -1,5 +1,6 @@
 import { assertBillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { OutboxHandler, OutboxHandlerRegistry } from '@/lib/core/outbox/service'
+import { SYSTEM_ACCESS_SCOPE } from '@/lib/knowledge/access/types'
 import { reclaimStaleDocumentProcessingClaim } from '@/lib/knowledge/documents/processing-claim'
 import {
   KNOWLEDGE_DOCUMENT_PROCESSING_OUTBOX_EVENT,
@@ -58,7 +59,12 @@ function parsePayload(payload: unknown): KnowledgeDocumentProcessingOutboxPayloa
 const processKnowledgeDocument: OutboxHandler<unknown> = async (rawPayload, context) => {
   const payload = parsePayload(rawPayload)
   context.signal.throwIfAborted()
-  const document = await getKnowledgeDocument(payload.knowledgeBaseId, payload.documentId)
+  /** A background job processing the row it was dispatched for; no principal is involved. */
+  const document = await getKnowledgeDocument(
+    payload.knowledgeBaseId,
+    payload.documentId,
+    SYSTEM_ACCESS_SCOPE
+  )
   if (!document || document.processingStatus === 'completed') return
   if (document.processingStatus === 'processing') {
     const reclaimed = await reclaimStaleDocumentProcessingClaim({
@@ -72,7 +78,7 @@ const processKnowledgeDocument: OutboxHandler<unknown> = async (rawPayload, cont
   }
 
   context.signal.throwIfAborted()
-  await processDocumentsWithQueue(
+  const dispatch = await processDocumentsWithQueue(
     [
       {
         documentId: document.id,
@@ -87,6 +93,9 @@ const processKnowledgeDocument: OutboxHandler<unknown> = async (rawPayload, cont
     context.eventId,
     payload.billingAttribution
   )
+  if (dispatch.failed > 0 || dispatch.accepted !== 1) {
+    throw new Error(`Knowledge document ${document.id} processing dispatch was not accepted`)
+  }
 }
 
 export const knowledgeDocumentProcessingOutboxHandlers = {

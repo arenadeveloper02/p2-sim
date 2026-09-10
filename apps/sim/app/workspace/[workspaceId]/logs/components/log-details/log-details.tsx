@@ -1,6 +1,16 @@
 'use client'
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Badge,
   Button,
@@ -46,23 +56,29 @@ import {
   formatApportionedCreditCost,
   formatCreditCost,
 } from '@/lib/billing/credits/conversion'
-import { isChatEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { MothershipHandoffStorage } from '@/lib/core/utils/browser-storage'
 import { filterHiddenOutputKeys } from '@/lib/logs/execution/trace-spans/trace-spans'
 import type { TraceSpan } from '@/lib/logs/types'
 import { sendMothershipMessage } from '@/lib/mothership/events'
+import { DELETED_WORKFLOW_LABEL } from '@/lib/workflows/workflow-labels'
+/**
+ * Deep imports on purpose: importing these back through the parent `logs/components`
+ * barrel forms a parent->child cycle that would keep the barrel edge to the snapshot
+ * alive and silently defeat the ExecutionSnapshot lazy split below.
+ */
 import {
-  ExecutionSnapshot,
-  FileCards,
-  TraceView,
-} from '@/app/workspace/[workspaceId]/logs/components'
+  SnapshotBoundary,
+  SnapshotModalFallback,
+} from '@/app/workspace/[workspaceId]/logs/components/log-details/components/execution-snapshot/snapshot-boundary'
+import { FileCards } from '@/app/workspace/[workspaceId]/logs/components/log-details/components/file-download'
+import { TraceView } from '@/app/workspace/[workspaceId]/logs/components/log-details/components/trace-view'
 import { useLogDetailsResize } from '@/app/workspace/[workspaceId]/logs/hooks'
 import {
   logDetailsTabParam,
   logDetailsTabUrlKeys,
 } from '@/app/workspace/[workspaceId]/logs/search-params'
 import {
-  DELETED_WORKFLOW_LABEL,
   formatDate,
   getDisplayStatus,
   resolveLogWorkflowId,
@@ -84,6 +100,16 @@ const ADDITIVE_COST_SECTIONS = [
   { group: 'tool' as const, label: 'Tool costs' },
   { group: 'other' as const, label: 'Other costs' },
 ]
+/**
+ * Lazy per the code-splitting rule in `sim-imports.md`: the snapshot renders the workflow
+ * preview canvas, whose graph is ~7.6 MB of source. Rendering is gated on the detail's
+ * open state, so the chunk is fetched on first use, never during SSR or hydration.
+ */
+const ExecutionSnapshot = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/logs/components/log-details/components/execution-snapshot/execution-snapshot'
+  ).then((m) => ({ default: m.ExecutionSnapshot }))
+)
 
 export const WorkflowOutputSection = memo(
   function WorkflowOutputSection({ output }: { output: Record<string, unknown> }) {
@@ -132,7 +158,7 @@ export const WorkflowOutputSection = memo(
           <Code.Viewer
             code={jsonString}
             language='json'
-            className='!bg-[var(--surface-4)] dark:!bg-[var(--surface-3)] max-h-[300px] min-h-0 max-w-full rounded-md border-0 [word-break:break-all]'
+            className='max-h-[300px] min-h-0 max-w-full rounded-md border-0 bg-[var(--surface-4)]! [word-break:break-all] dark:bg-[var(--surface-3)]!'
             wrapText
             searchQuery={isSearchActive ? searchQuery : undefined}
             currentMatchIndex={currentMatchIndex}
@@ -150,7 +176,7 @@ export const WorkflowOutputSection = memo(
                       e.stopPropagation()
                       handleCopy()
                     }}
-                    className='size-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover-hover:bg-[var(--surface-3)]'
+                    className='size-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-xs hover-hover:bg-[var(--surface-3)]'
                   >
                     {copied ? (
                       <Check className='size-[10px] text-[var(--text-success)]' />
@@ -170,7 +196,7 @@ export const WorkflowOutputSection = memo(
                       e.stopPropagation()
                       activateSearch()
                     }}
-                    className='size-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover-hover:bg-[var(--surface-3)]'
+                    className='size-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-xs hover-hover:bg-[var(--surface-3)]'
                   >
                     <Search className='size-[10px]' />
                   </Button>
@@ -185,7 +211,7 @@ export const WorkflowOutputSection = memo(
         {isSearchActive && (
           <div
             role='presentation'
-            className='absolute top-0 right-0 z-30 flex h-[34px] items-center gap-1.5 rounded-sm border border-[var(--border)] bg-[var(--surface-1)] px-1.5 shadow-sm'
+            className='absolute top-0 right-0 z-30 flex h-[34px] items-center gap-1.5 rounded-sm border border-[var(--border)] bg-[var(--surface-1)] px-1.5 shadow-xs'
             onClick={(e) => e.stopPropagation()}
           >
             <ChipInput
@@ -206,7 +232,7 @@ export const WorkflowOutputSection = memo(
             </span>
             <Button
               variant='ghost'
-              className='!p-1'
+              className='p-1!'
               onClick={goToPreviousMatch}
               disabled={matchCount === 0}
               aria-label='Previous match'
@@ -215,7 +241,7 @@ export const WorkflowOutputSection = memo(
             </Button>
             <Button
               variant='ghost'
-              className='!p-1'
+              className='p-1!'
               onClick={goToNextMatch}
               disabled={matchCount === 0}
               aria-label='Next match'
@@ -224,7 +250,7 @@ export const WorkflowOutputSection = memo(
             </Button>
             <Button
               variant='ghost'
-              className='!p-1'
+              className='p-1!'
               onClick={closeSearch}
               aria-label='Close search'
             >
@@ -297,6 +323,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
   })
   const { copied: copiedRunId, copy: copyRunId } = useCopyToClipboard({ resetMs: 1500 })
   const verifyCosts = useVerifyExecutionCosts()
+  const { chatEnabled } = useDeploymentShape()
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -434,7 +461,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
    * mothership-triggered logs are excluded — `isLikelyExecution` already encodes
    * "has an executionId and isn't a mothership run".
    */
-  const canTroubleshoot = isChatEnabled && log.status === 'failed' && isLikelyExecution
+  const canTroubleshoot = chatEnabled && log.status === 'failed' && isLikelyExecution
 
   /**
    * Hands the failed run to Chat. When a chat is already mounted (e.g. the run
@@ -496,11 +523,11 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                       target='_blank'
                       rel='noopener noreferrer'
                       prefetch={false}
-                      className='-mx-1.5 -my-0.5 group flex w-fit min-w-0 max-w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-[5px] px-1.5 py-0.5 transition-colors hover-hover:bg-[var(--surface-active)] focus-visible:bg-[var(--surface-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--text-muted)_30%,transparent)]'
+                      className='-mx-1.5 -my-0.5 group flex w-fit min-w-0 max-w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-[5px] px-1.5 py-0.5 transition-colors hover-hover:bg-[var(--surface-active)] focus-visible:bg-[var(--surface-active)] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--text-muted)_30%,transparent)]'
                     >
                       <span className='inline-grid size-[14px] shrink-0 place-items-center'>
-                        <Workflow className='col-start-1 row-start-1 size-[14px] text-[var(--text-icon)] opacity-100 blur-0 transition-[opacity,filter,transform] duration-200 ease-in-out group-hover:scale-[0.25] group-hover:opacity-0 group-hover:blur-[2px] group-focus-visible:scale-[0.25] group-focus-visible:opacity-0 group-focus-visible:blur-[2px] motion-reduce:transition-none' />
-                        <SquareArrowUpRight className='col-start-1 row-start-1 size-[14px] scale-[0.25] text-[var(--text-icon)] opacity-0 blur-[2px] transition-[opacity,filter,transform] duration-200 ease-in-out group-hover:scale-100 group-hover:opacity-100 group-hover:blur-0 group-focus-visible:scale-100 group-focus-visible:opacity-100 group-focus-visible:blur-0 motion-reduce:transition-none' />
+                        <Workflow className='col-start-1 row-start-1 size-[14px] text-[var(--text-icon)] opacity-100 blur-none transition-[opacity,filter,transform] duration-200 ease-in-out group-hover:scale-[0.25] group-hover:opacity-0 group-hover:blur-[2px] group-focus-visible:scale-[0.25] group-focus-visible:opacity-0 group-focus-visible:blur-[2px] motion-reduce:transition-none' />
+                        <SquareArrowUpRight className='col-start-1 row-start-1 size-[14px] scale-[0.25] text-[var(--text-icon)] opacity-0 blur-[2px] transition-[opacity,filter,transform] duration-200 ease-in-out group-hover:scale-100 group-hover:opacity-100 group-hover:blur-none group-focus-visible:scale-100 group-focus-visible:opacity-100 group-focus-visible:blur-none motion-reduce:transition-none' />
                       </span>
                       <span className='min-w-0 truncate text-[var(--text-secondary)] text-sm transition-colors group-hover:text-[var(--text-primary)] group-focus-visible:text-[var(--text-primary)]'>
                         {workflowLabel}
@@ -509,7 +536,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                     </Link>
                   ) : (
                     <div className='flex min-w-0 items-center gap-1.5'>
-                      <Workflow className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
+                      <Workflow className='size-[14px] shrink-0 text-[var(--text-icon)]' />
                       <span className='min-w-0 truncate text-[var(--text-secondary)] text-sm'>
                         {workflowLabel}
                       </span>
@@ -532,7 +559,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                       handleKeyboardActivation(event, () => copyRunId(log.executionId!))
                     }
                   >
-                    <span className='flex-shrink-0 text-[var(--text-tertiary)] text-caption'>
+                    <span className='shrink-0 text-[var(--text-tertiary)] text-caption'>
                       Run ID
                     </span>
                     <span className='min-w-0 truncate text-[var(--text-secondary)] text-caption tabular-nums'>
@@ -568,7 +595,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                 {/* Version */}
                 {log.deploymentVersion && (
                   <div className='flex h-10 items-center gap-2 px-3'>
-                    <span className='flex-shrink-0 text-[var(--text-tertiary)] text-caption'>
+                    <span className='shrink-0 text-[var(--text-tertiary)] text-caption'>
                       Version
                     </span>
                     <div className='flex w-0 flex-1 justify-end'>
@@ -647,7 +674,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                             {row.label}
                           </span>
                           <span className='flex-shrink-0 font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
-                            {formatApportionedCreditCost(row.credits, row.dollars)}
+                            {formatApportionedCreditCost(row.credits, row.dollars > 0)}
                           </span>
                         </div>
                       ))}
@@ -828,7 +855,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
 
         {/* Trace Tab */}
         {showTraceTab && resolvedTab === 'trace' && (
-          <div className='mt-3 min-h-0 flex-1 overflow-hidden focus-visible:outline-none'>
+          <div className='mt-3 min-h-0 flex-1 overflow-hidden focus-visible:outline-hidden'>
             {traceSpans?.length ? (
               <TraceView traceSpans={traceSpans} runCostDollars={log.cost?.total} />
             ) : log.executionData ? (
@@ -848,13 +875,28 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
 
       {/* Frozen Canvas Modal */}
       {log.executionId && (
-        <ExecutionSnapshot
-          executionId={log.executionId}
-          traceSpans={traceSpans}
-          isModal
+        <SnapshotBoundary
+          key={`${log.executionId}:${isExecutionSnapshotOpen ? 'open' : 'closed'}`}
           isOpen={isExecutionSnapshotOpen}
-          onClose={() => setIsExecutionSnapshotOpen(false)}
-        />
+          onLoadError={() => setIsExecutionSnapshotOpen(false)}
+        >
+          <Suspense
+            fallback={
+              <SnapshotModalFallback
+                isOpen={isExecutionSnapshotOpen}
+                onClose={() => setIsExecutionSnapshotOpen(false)}
+              />
+            }
+          >
+            <ExecutionSnapshot
+              executionId={log.executionId}
+              traceSpans={traceSpans}
+              isModal
+              isOpen={isExecutionSnapshotOpen}
+              onClose={() => setIsExecutionSnapshotOpen(false)}
+            />
+          </Suspense>
+        </SnapshotBoundary>
       )}
     </>
   )
@@ -962,7 +1004,7 @@ export const LogDetails = memo(function LogDetails({
                       <Tooltip.Trigger asChild>
                         <Button
                           variant='ghost'
-                          className='!p-1'
+                          className='p-1!'
                           onClick={() => onRetryExecution?.()}
                           disabled={isRetryPending}
                           aria-label='Retry execution'
@@ -975,7 +1017,7 @@ export const LogDetails = memo(function LogDetails({
                   )}
                 <Button
                   variant='ghost'
-                  className='!p-1'
+                  className='p-1!'
                   onClick={() => hasPrev && onNavigatePrev?.()}
                   disabled={!hasPrev}
                   aria-label='Previous log'
@@ -984,14 +1026,14 @@ export const LogDetails = memo(function LogDetails({
                 </Button>
                 <Button
                   variant='ghost'
-                  className='!p-1'
+                  className='p-1!'
                   onClick={() => hasNext && onNavigateNext?.()}
                   disabled={!hasNext}
                   aria-label='Next log'
                 >
                   <ChevronUp className='size-[14px] rotate-180' />
                 </Button>
-                <Button variant='ghost' className='!p-1' onClick={onClose} aria-label='Close'>
+                <Button variant='ghost' className='p-1!' onClick={onClose} aria-label='Close'>
                   <X className='size-[14px]' />
                 </Button>
               </div>

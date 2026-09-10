@@ -1,6 +1,5 @@
 import type { Principal } from '@sim/auth/principal'
 import { getBlockVisibility } from '@/lib/core/config/block-visibility'
-import { getAllowedIntegrationsFromEnv } from '@/lib/core/config/env-flags'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import {
   CLIENT_CREDENTIAL_ACCOUNT_DESCRIPTORS,
@@ -11,6 +10,7 @@ import {
   type TokenServiceAccountField,
 } from '@/lib/credentials/token-service-accounts/descriptors'
 import { createIntegrationCredentialVisibility } from '@/lib/integrations/credential-visibility.server'
+import { allowedIntegrationTypes, principalUserId } from '@/lib/integrations/principal-scope.server'
 import {
   ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID,
   GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID,
@@ -18,8 +18,6 @@ import {
   SLACK_CUSTOM_BOT_PROVIDER_ID,
 } from '@/lib/oauth/types'
 import { getAllOAuthServices, getServiceConfigByServiceId } from '@/lib/oauth/utils'
-import { intersectIntegrationAllowlists } from '@/lib/permission-groups/integration-allowlist'
-import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 
 export interface CredentialProviderAuthorizationOption {
   providerId: string
@@ -56,6 +54,7 @@ export interface OAuthCredentialProviderCatalogEntry extends CredentialProviderC
   type: 'oauth'
   supportsReconnect: boolean
   authorizationOptions: CredentialProviderAuthorizationOption[]
+  fields: CredentialProviderField[]
 }
 
 export interface ServiceAccountCredentialProviderCatalogEntry
@@ -215,27 +214,6 @@ function getServiceAccountDescriptor(providerId: string): ServiceAccountDescript
   throw new Error(`Service-account provider ${providerId} is missing its canonical descriptor`)
 }
 
-function principalUserId(principal: Principal): string | undefined {
-  if (principal.kind === 'session' || principal.kind === 'personal_api_key') {
-    return principal.userId
-  }
-  if (principal.kind === 'delegated') return principal.subjectUserId
-  return undefined
-}
-
-async function allowedIntegrationTypes(
-  principal: Principal,
-  workspaceId: string
-): Promise<ReadonlySet<string> | null> {
-  const userId = principalUserId(principal)
-  const permissionConfig = userId ? await getUserPermissionConfig(userId, workspaceId) : null
-  const integrations = intersectIntegrationAllowlists(
-    permissionConfig?.allowedIntegrations ?? null,
-    getAllowedIntegrationsFromEnv()
-  )
-  return integrations ? new Set(integrations.map((type) => type.toLowerCase())) : null
-}
-
 export async function listCredentialProviderCatalog(
   principal: Principal,
   context: CredentialProviderCatalogContext
@@ -282,6 +260,16 @@ export async function listCredentialProviderCatalog(
       available: visibility.isOAuthServiceVisible(service),
       supportsReconnect: true,
       authorizationOptions,
+      fields: (service.clientConfiguration?.fields ?? []).map((field) => ({
+        id: field.id,
+        label: field.label,
+        placeholder: field.placeholder,
+        required: true,
+        secret: field.secret,
+        multiline: false,
+        ...(field.options ? { options: [...field.options] } : {}),
+        ...(field.hint ? { hint: field.hint } : {}),
+      })),
     }
   })
 

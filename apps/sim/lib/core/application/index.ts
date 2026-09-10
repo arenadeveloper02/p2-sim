@@ -1,4 +1,6 @@
+export { principalAuditSource } from '@/lib/core/application/audit-source'
 export {
+  type AuthorizedWorkspaceResourceUseCaseContext,
   type AuthorizedWorkspaceUseCaseContext,
   type AuthorizedWorkspaceUseCaseDefinition,
   type AuthorizedWorkspaceUseCaseResultContext,
@@ -13,9 +15,17 @@ export {
   ForbiddenOperationError,
   forbiddenErrorDetails,
 } from '@/lib/core/application/forbidden'
-export type {
-  ApplicationOperation,
-  OperationUseCase,
+export {
+  type ApplicationOperation,
+  assertOperationCapability,
+  assertOperationPrincipal,
+  defineOperation,
+  type OperationDeclarableCapability,
+  type OperationUseCase,
+  type PrincipalKind,
+  type PrincipalScopedOperation,
+  type PrincipalWideCapability,
+  type UndelegatedPrincipalKind,
 } from '@/lib/core/application/operation'
 export type {
   WorkspaceAuthorizationContext,
@@ -24,6 +34,7 @@ export type {
 } from '@/lib/core/application/workspace-authorization'
 export {
   authorizeWorkspaceOperation,
+  capabilityGovernedPrincipalUserId,
   DelegatedServiceAuthorizationError,
   DelegatedWorkspaceAuthorizationError,
   InsufficientWorkspacePermissionsError,
@@ -31,12 +42,14 @@ export {
   PersonalApiKeysDisabledError,
   PrincipalKindAuthorizationError,
   requireAllowedWorkspacePrincipal,
+  requireCurrentHumanRole,
+  requirePersonalApiKeysAllowed,
   WorkspaceApiKeyAuthorizationError,
   WorkspaceApiKeyScopeAuthorizationError,
 } from '@/lib/core/application/workspace-authorization'
 export {
   defineWorkspaceOperation,
   type PrincipalForOperation,
-  type PrincipalKind,
   type WorkspaceOperation,
 } from '@/lib/core/application/workspace-operation'
+export { PermissionGroupCapabilityError } from '@/lib/permission-groups/capability-error'

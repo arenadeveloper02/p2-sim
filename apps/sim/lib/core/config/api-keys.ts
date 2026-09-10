@@ -1,6 +1,14 @@
 import { env } from '@/lib/core/config/env'
 import { LLM_KEY_POOLS } from '@/lib/core/config/env-capabilities'
 
+function googleGenerativeLanguageEnvKey(): string | undefined {
+  const nextPublic = process.env.NEXT_PUBLIC_GOOGLE_API_KEY?.trim()
+  if (nextPublic) return nextPublic
+  const google = process.env.GOOGLE_API_KEY?.trim()
+  if (google) return google
+  return undefined
+}
+
 /**
  * Rotates through available API keys for a provider
  * @param provider - The provider to get a key for (e.g., 'openai')
@@ -8,11 +16,17 @@ import { LLM_KEY_POOLS } from '@/lib/core/config/env-capabilities'
  * @throws Error if no API keys are configured for rotation
  */
 export function getRotatingApiKey(provider: string): string {
-  // Arena custom: Generative Language uses GEMINI_API_KEY*, never NEXT_PUBLIC_GOOGLE_API_KEY
-  const poolProvider = provider === 'google' || provider === 'vertex' ? 'gemini' : provider
+  const isGoogleGenerativeLanguage =
+    provider === 'google' || provider === 'gemini' || provider === 'vertex'
+  const poolProvider = isGoogleGenerativeLanguage ? 'gemini' : provider
 
   if (!(poolProvider in LLM_KEY_POOLS)) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
+  }
+
+  if (isGoogleGenerativeLanguage) {
+    const preferred = googleGenerativeLanguageEnvKey()
+    if (preferred) return preferred
   }
 
   const definition = LLM_KEY_POOLS[poolProvider as keyof typeof LLM_KEY_POOLS]
@@ -23,9 +37,9 @@ export function getRotatingApiKey(provider: string): string {
   }
 
   if (keys.length === 0) {
-    if (provider === 'google' || provider === 'gemini' || provider === 'vertex') {
+    if (isGoogleGenerativeLanguage) {
       throw new Error(
-        'No API keys configured for rotation. Please configure GEMINI_API_KEY (or GEMINI_API_KEY_1..3).'
+        'No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY, GOOGLE_API_KEY, or GEMINI_API_KEY (or GEMINI_API_KEY_1..3).'
       )
     }
 

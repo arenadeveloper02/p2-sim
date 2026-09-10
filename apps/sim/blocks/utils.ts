@@ -1,14 +1,9 @@
 import { toError } from '@sim/utils/errors'
 import { SimAutoIcon } from '@/components/icons'
-import {
-  isAzureConfigured,
-  isCohereConfigured,
-  isHosted,
-  isOllamaConfigured,
-} from '@/lib/core/config/env-flags'
+import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isOllamaConfigured } from '@/lib/core/config/env-flags'
 import { getScopesForService } from '@/lib/oauth/utils'
 import { containsReference } from '@/lib/workflows/sanitization/references'
-import { buildCanonicalIndex } from '@/lib/workflows/subblocks/visibility'
 import type { SubBlockConfig } from '@/blocks/types'
 import {
   getBaseModelProviders,
@@ -90,7 +85,7 @@ export function getModelOptions() {
   // Hosted-only automatic model. Deliberately LAST in the list (limited
   // visibility for the initial release): available to anyone who scrolls or
   // searches for it, but never the first thing the dropdown offers.
-  if (isHosted) {
+  if (getDeploymentShape().hosted) {
     options.push({ label: 'Auto', id: SIM_AUTO_MODEL_ID, icon: SimAutoIcon })
   }
 
@@ -139,39 +134,6 @@ export function getPiModelOptions() {
   })
 }
 
-/**
- * Gets all dependency fields as a flat array.
- * Handles both simple array format and object format with all/any fields.
- */
-export function getDependsOnFields(dependsOn: SubBlockConfig['dependsOn']): string[] {
-  if (!dependsOn) return []
-  if (Array.isArray(dependsOn)) return dependsOn
-  return [...(dependsOn.all || []), ...(dependsOn.any || [])]
-}
-
-/**
- * Finds subblocks that depend on a changed field, accounting for canonical pairs.
- */
-export function getSubBlocksDependingOnChange(
-  allSubBlocks: SubBlockConfig[],
-  changedSubBlockId: string
-): SubBlockConfig[] {
-  const canonicalIndex = buildCanonicalIndex(allSubBlocks)
-  const canonicalId = canonicalIndex.canonicalIdBySubBlockId[changedSubBlockId]
-  const group = canonicalId ? canonicalIndex.groupsById[canonicalId] : undefined
-  const changedFields = new Set<string>([changedSubBlockId])
-
-  if (canonicalId) changedFields.add(canonicalId)
-  if (group?.basicId) changedFields.add(group.basicId)
-  for (const advancedId of group?.advancedIds || []) {
-    changedFields.add(advancedId)
-  }
-
-  return allSubBlocks.filter((subBlock) =>
-    getDependsOnFields(subBlock.dependsOn).some((field) => changedFields.has(field))
-  )
-}
-
 function getProviderFromStore(model: string): string | null {
   const { providers } = useProvidersStore.getState()
   const normalized = model.toLowerCase()
@@ -206,12 +168,13 @@ function shouldRequireApiKeyForModel(model: string): boolean {
   const normalizedModel = model.trim().toLowerCase()
   if (!normalizedModel) return false
 
+  const { hosted, azureConfigured } = getDeploymentShape()
   // On hosted Sim the auto pseudo-model resolves server-side to a hosted pool
   // model. On self-hosted it exists only via imported workflows and always
   // falls back to the default Anthropic model, so the key field must show.
-  if (isAutoModel(normalizedModel)) return !isHosted
+  if (isAutoModel(normalizedModel)) return !hosted
 
-  if (isHosted) {
+  if (hosted) {
     const hostedModels = getHostedModels()
     if (hostedModels.some((m) => m.toLowerCase() === normalizedModel)) return false
   }
@@ -220,7 +183,7 @@ function shouldRequireApiKeyForModel(model: string): boolean {
     return false
   }
   if (
-    isAzureConfigured &&
+    azureConfigured &&
     (normalizedModel.startsWith('azure/') ||
       normalizedModel.startsWith('azure-openai/') ||
       normalizedModel.startsWith('azure-anthropic/') ||
@@ -324,7 +287,8 @@ export function getApiKeyCondition() {
  */
 export function getCohereRerankerApiKeyCondition() {
   return () => {
-    if (isHosted || isCohereConfigured) {
+    const { hosted, cohereConfigured } = getDeploymentShape()
+    if (hosted || cohereConfigured) {
       return { field: 'operation', value: '__never_show__' }
     }
     return {
@@ -740,7 +704,7 @@ export const BUILT_IN_TOOL_TYPES = new Set([
   'tts',
   'stt',
   'memory',
-  'table',
+  'table_v2',
   'webhook_request',
   'workflow',
   'chart_generator',

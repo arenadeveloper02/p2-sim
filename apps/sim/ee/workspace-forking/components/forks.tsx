@@ -9,7 +9,7 @@ import { useQueryState } from 'nuqs'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import type { SettingsAction } from '@/components/settings/settings-header'
 import type { ForkLineageChildApi, ForkLineageNodeApi } from '@/lib/api/contracts/workspace-fork'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { FloatingOverflowText } from '@/app/workspace/[workspaceId]/components'
 import { UnsavedChangesModal } from '@/app/workspace/[workspaceId]/components/credential-detail'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -75,7 +75,7 @@ function ForkListRow({ name, actions }: ForkListRowProps) {
         label={name}
         className='block min-w-0 truncate text-[var(--text-body)] text-sm'
       />
-      <div className='flex flex-shrink-0 items-center gap-1'>
+      <div className='flex shrink-0 items-center gap-1'>
         <RowActionsMenu label='Fork actions' actions={actions} />
       </div>
     </div>
@@ -85,6 +85,8 @@ function ForkListRow({ name, actions }: ForkListRowProps) {
 interface ForkSyncDetailViewProps {
   title: string
   workspaceId: string
+  /** This workspace's name — a pull overwrites it, and the copy has to say which side that is. */
+  workspaceName?: string
   /** The other side of the edge being synced (this workspace's parent). */
   otherWorkspaceId: string
   otherWorkspaceName: string
@@ -105,6 +107,7 @@ interface ForkSyncDetailViewProps {
 function ForkSyncDetailView({
   title,
   workspaceId,
+  workspaceName,
   otherWorkspaceId,
   otherWorkspaceName,
   onBack,
@@ -118,6 +121,7 @@ function ForkSyncDetailView({
 
   const controller = useForkSync({
     workspaceId,
+    workspaceName,
     otherWorkspaceId,
     otherWorkspaceName,
     direction,
@@ -186,11 +190,11 @@ function ForkSyncDetailView({
         open={confirmSyncOpen}
         onOpenChange={setConfirmSyncOpen}
         srTitle='Sync workspace'
-        title='Overwrite target workspace'
+        title={`Overwrite ${targetWorkspaceName}`}
         text={[
-          'The target may have been modified since the last sync. Syncing will ',
+          'Syncing will ',
           { text: 'overwrite any changes', bold: true },
-          ' there. Continue?',
+          ` made in ${targetWorkspaceName} since the last sync. Continue?`,
         ]}
         confirm={{
           label: 'Sync',
@@ -307,6 +311,7 @@ export function Forks() {
   const workspaceId = params.workspaceId as string
 
   const { canAdmin, isLoading: permissionsLoading } = useUserPermissionsContext()
+  const { billingEnabled } = useDeploymentShape()
   const { available: forkingAvailable, isLoading: availabilityLoading } =
     useForkingAvailability(workspaceId)
   const canUseForking = forkingAvailable && canAdmin
@@ -431,6 +436,7 @@ export function Forks() {
           key={parent.id}
           title={parent.name}
           workspaceId={workspaceId}
+          workspaceName={workspaceName}
           otherWorkspaceId={parent.id}
           otherWorkspaceName={parent.name}
           onBack={() => void setSelectedForkId(null, { history: 'replace' })}
@@ -555,7 +561,7 @@ export function Forks() {
         sourceWorkspaceName={workspaceName || 'Workspace'}
         canFork={canFork}
         onUpgrade={() => {
-          if (isBillingEnabled) navigateToSettings({ section: 'billing' })
+          if (billingEnabled) navigateToSettings({ section: 'billing' })
         }}
       />
 

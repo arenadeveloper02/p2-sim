@@ -6,6 +6,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { useRouter } from 'next/navigation'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
@@ -17,7 +18,6 @@ import type { InputFormatField } from '@/lib/workflows/types'
 import {
   ChatErrorState,
   ChatInput,
-  ChatLoadingState,
   type ChatMessage,
   ChatMessageContainer,
   EmailAuth,
@@ -27,15 +27,7 @@ import {
   UnauthorizedEmailError,
 } from '@/app/(interfaces)/chat/components'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
-import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
-import {
-  CHAT_ERROR_MESSAGES,
-  CHAT_REQUEST_TIMEOUT_MS,
-  DEPLOYED_CHAT_CANVAS_BG,
-  DEPLOYED_CHAT_CANVAS_GRADIENT,
-  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
-  DEPLOYED_CHAT_INPUT_PLACEHOLDER,
-} from '@/app/(interfaces)/chat/constants'
+import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/(interfaces)/chat/constants'
 import { useChatKeyboardShortcuts, useChatStreaming } from '@/app/(interfaces)/chat/hooks'
 import { downloadTextFile, exportChatAsMarkdown } from '@/app/(interfaces)/chat/utils/export-chat'
 // import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -219,7 +211,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [messages]
   )
 
-  const { isStreamingResponse, stopStreaming, handleStreamedResponse } = useChatStreaming()
+  const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
+    useChatStreaming()
+
+  const handleStopStreaming = useCallback(() => {
+    stopStreaming(setMessages)
+    setIsLoading(false)
+  }, [stopStreaming])
 
   const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
 
@@ -746,8 +744,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setUserHasScrolled(false)
 
     let userMessageId: string | null = null
-    // Create abort controller for request cancellation
+    // One AbortController for fetch + SSE body reads so Stop cancels server work too.
     const abortController = new AbortController()
+    abortControllerRef.current = abortController
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, CHAT_REQUEST_TIMEOUT_MS)
@@ -1450,6 +1449,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setFeedbackError(null)
   }, [])
 
+  if (isAutoLoginInProgress) {
+    return (
+      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-[var(--bg)]'>
+        <LoadingAgentP2 size='lg' />
+      </div>
+    )
+  }
+
   // If error, show error message using the extracted component
   if (error) {
     // Show specialized component for unauthorized email errors
@@ -1475,17 +1482,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // }
   }
 
-  // Loading state while fetching config using the extracted component
-  if (!chatConfig) {
-    return <ChatLoadingState />
-  }
-
   return (
     <ToastProvider>
-      <div
-        className='fixed inset-0 z-[100] flex'
-        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-      >
+      <div className='light desktop-title-bar-page fixed inset-0 z-[var(--z-dropdown)] flex bg-[var(--bg)] text-[var(--text-primary)]'>
         <div className='hidden h-full shrink-0 md:flex'>
           <LeftNavThread
             threads={threads as ThreadRecord[]}
@@ -1545,17 +1544,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           />
         )}
 
-        <div
-          className='relative flex min-h-0 min-w-0 flex-1 flex-col'
-          style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-        >
+        <div className='relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--bg)]'>
           <div className='relative flex min-h-0 flex-1'>
             {isHistoryLoading && (
-              <div
-                className='absolute inset-0 z-[105] flex items-center justify-center'
-                style={{ backgroundColor: `${DEPLOYED_CHAT_CANVAS_BG}99` }}
-              >
-                <DeployedResponseLoader size={160} className='py-0' />
+              <div className='absolute inset-0 z-[105] flex items-center justify-center bg-[var(--bg)]/60'>
+                <LoadingAgentP2 size='lg' />
               </div>
             )}
 
@@ -1578,14 +1571,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                   chatConfig={chatConfig}
                   department={chatDepartment}
                   userName={userName}
-                  isStreaming={isStreamingResponse}
+                  isStreaming={isStreamingResponse || isLoading}
                   isLoading={isLoading}
                   insertText={askInChatText}
                   onInsertConsumed={() => setAskInChatText('')}
                   onSubmit={(value, _isVoiceInput, files) => {
                     void handleSendMessage(value, false, files)
                   }}
-                  onStopStreaming={() => stopStreaming(setMessages)}
+                  onStopStreaming={handleStopStreaming}
                   selectedGeneratedImages={effectiveGeneratedImages}
                   onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                   inputWrapperRef={chatInputWrapperRef}
@@ -1619,12 +1612,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     ref={chatInputWrapperRef}
                     className='relative w-full shrink-0 p-3 pb-4 md:p-4 md:pb-6'
                   >
-                    <div
-                      className={`relative mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}
-                    >
+                    <div className='relative mx-auto w-full max-w-3xl md:max-w-[768px]'>
                       <ChatInput
                         embedded
-                        placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}
                         insertText={askInChatText}
                         onInsertConsumed={() => setAskInChatText('')}
                         onSubmit={(
@@ -1642,7 +1632,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                           void handleSendMessage(value, false, files)
                         }}
                         isStreaming={isLoading || isStreamingResponse}
-                        onStopStreaming={() => stopStreaming(setMessages)}
+                        onStopStreaming={handleStopStreaming}
                         selectedGeneratedImages={effectiveGeneratedImages}
                         onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                       />
@@ -1659,7 +1649,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           <StartBlockInputModal
             open={isInputModalOpen}
             onOpenChange={setIsInputModalOpen}
-            inputFormat={chatConfig.inputFormat}
+            inputFormat={chatConfig?.inputFormat}
             onSubmit={handleStartBlockInputsSubmit}
             initialValues={startBlockInputs}
           />

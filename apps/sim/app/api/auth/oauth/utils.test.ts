@@ -37,6 +37,7 @@ import {
   refreshTokenIfNeeded,
   resolveServiceAccountToken,
 } from '@/lib/oauth/credential-service'
+import { getOAuthRefreshCoordinationIdentity } from '@/lib/oauth/refresh-coordination'
 import {
   ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID,
   GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID,
@@ -170,16 +171,18 @@ describe('OAuth Utils', () => {
         refreshToken: 'new-refresh-token',
       })
 
-      mockUpdateChain()
+      const { mockSet } = mockUpdateChain()
 
       const result = await refreshTokenIfNeeded('request-id', mockCredential, 'credential-id')
 
-      expect(mockRefreshOAuthToken).toHaveBeenCalledWith(
-        'google',
-        'refresh-token',
-        ...CUSTOM_APP_REFRESH_ARGS
+      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('google', 'refresh-token')
+      expect(mockSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'new-token',
+          refreshToken: 'new-refresh-token',
+          accessTokenExpiresAt: expect.any(Date),
+        })
       )
-      expect(mockDb.update).toHaveBeenCalled()
       expect(result).toEqual({ accessToken: 'new-token', refreshed: true })
     })
 
@@ -216,6 +219,21 @@ describe('OAuth Utils', () => {
 
       expect(mockRefreshOAuthToken).not.toHaveBeenCalled()
       expect(result).toEqual({ accessToken: 'token', refreshed: false })
+    })
+
+    it('keeps a legacy non-expiring Monday credential usable without refreshing it', async () => {
+      const legacyCredential = {
+        id: 'legacy-monday-credential-id',
+        accessToken: 'legacy-monday-access-token',
+        refreshToken: null,
+        accessTokenExpiresAt: null,
+        providerId: 'monday',
+      }
+
+      const result = await refreshTokenIfNeeded('request-id', legacyCredential, legacyCredential.id)
+
+      expect(mockRefreshOAuthToken).not.toHaveBeenCalled()
+      expect(result).toEqual({ accessToken: 'legacy-monday-access-token', refreshed: false })
     })
   })
 
@@ -363,9 +381,11 @@ describe('OAuth Utils', () => {
       const result = await refreshTokenIfNeeded('request-id', slackCredential(), 'row-1')
 
       expect(result).toEqual({ accessToken: 'new-at', refreshed: true })
+      const installationIdentity = getOAuthRefreshCoordinationIdentity('slack:T08CM6ZNYBE')
       expect(redisConfigMockFns.mockAcquireLock.mock.calls[0][0]).toBe(
-        'oauth:refresh:slack:T08CM6ZNYBE'
+        `oauth:refresh:${installationIdentity}`
       )
+      expect(installationIdentity).not.toContain('T08CM6ZNYBE')
       expect(redisConfigMockFns.mockAcquireLock.mock.calls[0][2]).toBe(30)
       expect(mockRefreshOAuthToken).toHaveBeenCalledWith(
         'slack',
@@ -408,12 +428,12 @@ describe('OAuth Utils', () => {
       )
 
       expect(result).toEqual({ accessToken: 'new-at', refreshed: true })
-      expect(redisConfigMockFns.mockAcquireLock.mock.calls[0][0]).toBe('oauth:refresh:row-1')
-      expect(mockRefreshOAuthToken).toHaveBeenCalledWith(
-        'slack',
-        'stale-rt',
-        ...CUSTOM_APP_REFRESH_ARGS
+      const rowIdentity = getOAuthRefreshCoordinationIdentity('row-1')
+      expect(redisConfigMockFns.mockAcquireLock.mock.calls[0][0]).toBe(
+        `oauth:refresh:${rowIdentity}`
       )
+      expect(rowIdentity).not.toContain('row-1')
+      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('slack', 'stale-rt')
     })
 
     it('dead-flags the installation, not the row, on terminal refresh errors', async () => {
@@ -436,8 +456,9 @@ describe('OAuth Utils', () => {
         'Failed to refresh token'
       )
 
+      const installationIdentity = getOAuthRefreshCoordinationIdentity('slack:T08CM6ZNYBE')
       expect(fakeRedis.set).toHaveBeenCalledWith(
-        'oauth:dead:slack:T08CM6ZNYBE',
+        `oauth:dead:${installationIdentity}`,
         'token_revoked',
         'EX',
         3600
@@ -488,6 +509,23 @@ describe('OAuth Utils', () => {
       })
       const result = await resolveServiceAccountToken('cred-1', SLACK_CUSTOM_BOT_PROVIDER_ID)
       expect(result.accessToken).toBe('xoxb-tok')
+    })
+
+    it('returns the bot token for an action-only Slack bot without a signing secret', async () => {
+      mockSelectChain([
+        {
+          type: 'service_account',
+          providerId: SLACK_CUSTOM_BOT_PROVIDER_ID,
+          encryptedServiceAccountKey: 'enc',
+        },
+      ])
+      mockDecryptSecret.mockResolvedValueOnce({
+        decrypted: JSON.stringify({ botToken: 'xoxb-action' }),
+      })
+
+      const result = await resolveServiceAccountToken('cred-1', SLACK_CUSTOM_BOT_PROVIDER_ID)
+
+      expect(result.accessToken).toBe('xoxb-action')
     })
 
     it('throws when the Slack bot credential is missing', async () => {

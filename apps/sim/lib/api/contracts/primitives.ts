@@ -82,7 +82,13 @@ export const privateSecretProvenanceBundleSchema = z
           })
           .strict()
       )
-      .max(10_000)
+      /**
+       * Deliberately uncounted. One selection per cell a write vouches for, so a count cap here
+       * is a cap on how wide a write may be — a 25-column table crossed 10,000 at 401 rows. The
+       * sender that used to enforce the same number silently gave up and marked every row of the
+       * write `unknown`; rejecting the request instead would turn that into a failed write. The
+       * aggregate byte bound below and the route's body limit are the real bounds.
+       */
       .describe('Selections and their encrypted provenance.'),
   })
   .strict()
@@ -232,6 +238,17 @@ export function withMissingFieldMessage<TSchema extends z.ZodString>(
 export const MAX_ID_LENGTH = 128
 
 /**
+ * Bound for an OAuth `code` callback parameter.
+ *
+ * Authorization codes have no length ceiling in RFC 6749, and providers differ by
+ * orders of magnitude: Slack's are tens of characters while Atlassian returns a
+ * signed JWT that routinely exceeds 2KB. The bound exists to keep an unbounded
+ * string out of a token exchange, so it is sized above the largest real code
+ * rather than around any one provider.
+ */
+export const MAX_OAUTH_CODE_LENGTH = 8192
+
+/**
  * Builds a required, non-empty string schema whose message covers **both**
  * failure modes.
  *
@@ -270,6 +287,12 @@ export const workspaceFileNameSchema = z
 
 /** Non-empty `organizationId` field with a stable, human-readable message. */
 export const organizationIdSchema = requiredFieldSchema('Organization ID is required')
+
+/** Canonical organization membership role shared across API resource families. */
+export const organizationRoleSchema = z.enum(['owner', 'admin', 'member'], {
+  error: 'Invalid role',
+})
+export type OrganizationRole = z.output<typeof organizationRoleSchema>
 
 /** Non-empty `workflowId` field with a stable, human-readable message. */
 export const workflowIdSchema = requiredFieldSchema('Workflow ID is required')
@@ -543,3 +566,27 @@ export const booleanQueryFlagSchema = z.preprocess(
   },
   z.boolean({ error: 'must be a boolean (true/false)' })
 )
+
+/**
+ * An optional numeric query parameter that treats a present-but-empty value as
+ * omitted.
+ *
+ * `z.coerce.number().optional()` does not: a query string carrying `?minCost=`
+ * reaches the schema as `''`, `Number('')` is `0`, and the parameter arrives as
+ * a real zero. That is wrong twice — `maxCost=` silently narrows the page to
+ * free runs, and `minCost=` reads as a cost *selector*, which is what
+ * `assertLogCostQueryAllowed` refuses for a member whose group withholds spend.
+ * An empty value is a caller sending an unfilled form field, not a question
+ * about cost.
+ *
+ * `null` is dropped for the same reason and by the same arithmetic: a client
+ * that spells an unset bound as `null` rather than by omitting the key —
+ * `requestJson` parses the query object client-side, so a `null` field reaches
+ * this schema as itself — would otherwise be handed `Number(null) === 0`.
+ *
+ * An explicit `0` is preserved: `?minCost=0` is a real bound the caller typed.
+ */
+export const optionalNumberQuerySchema = z.preprocess((value) => {
+  if (value === null) return undefined
+  return typeof value === 'string' && value.trim() === '' ? undefined : value
+}, z.coerce.number().optional())

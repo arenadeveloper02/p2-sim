@@ -86,6 +86,14 @@ export interface PreprocessExecutionOptions {
   skipConcurrencyReservation?: boolean
   /** Skip execution-log error rows when the caller presents the failure itself. */
   logPreprocessingErrors?: boolean
+  /**
+   * Skip execution-log error rows ONLY for retryable infrastructure failures
+   * (`statusCode >= 500 && retryable`). Set by callers that requeue such
+   * failures under the same execution id, so an attempt that will be retried
+   * does not leave a terminal failed row behind; the caller passes `false`
+   * again on its final attempt so an exhausted retry still records the row.
+   */
+  suppressRetryableFailureLogs?: boolean
 
   workspaceId?: string
   loggingSession?: LoggingSession
@@ -98,6 +106,18 @@ export interface PreprocessExecutionOptions {
   useDraftState?: boolean
   /** Use the authenticated user as actor for client executions and personal API keys. */
   useAuthenticatedUserAsActor?: boolean
+  /**
+   * Declares that `userId` names a stored reference — a workflow owner, a chat's
+   * creator — rather than someone who just acted, so the suspension gate skips
+   * it. Suspending one member must not take down the schedules, webhooks, and
+   * deployed chats their teammates depend on merely because that person's name
+   * sits on the row.
+   *
+   * Defaults to false so an unset call site keeps blocking. Withholding the
+   * suspended account's personal variables is handled separately, in
+   * {@link getExecutionEnvironment}.
+   */
+  userIdIsStoredReference?: boolean
   /** Pre-fetched workflow row for caller context; preprocessing still re-checks active state. */
   workflowRecord?: WorkflowRecord
   /**
@@ -194,6 +214,7 @@ export async function preprocessExecution(
     skipUsageLimits = false,
     skipConcurrencyReservation = false,
     logPreprocessingErrors = true,
+    suppressRetryableFailureLogs = false,
     workspaceId: providedWorkspaceId,
     loggingSession: providedLoggingSession,
     triggerData,
@@ -201,6 +222,7 @@ export async function preprocessExecution(
     apiKeyId,
     apiKeyType,
     webhookId: providedWebhookId,
+    userIdIsStoredReference = false,
     workflowRecord: prefetchedWorkflowRecord,
     billingAttribution: providedBillingAttribution,
     executionType = 'sync',
@@ -211,6 +233,10 @@ export async function preprocessExecution(
   /** Suppresses log rows when the caller surfaces preprocessing failures itself. */
   const recordPreprocessingError: typeof logPreprocessingError = (args) =>
     logPreprocessingErrors ? logPreprocessingError(args) : Promise.resolve()
+
+  /** True when this failure's log row is deferred to a caller that will requeue it. */
+  const isFailureLogSuppressed = (failure: PreprocessExecutionError): boolean =>
+    suppressRetryableFailureLogs && failure.statusCode >= 500 && failure.retryable === true
 
   logger.info(`[${requestId}] Starting execution preprocessing`, {
     workflowId,
@@ -260,27 +286,27 @@ export async function preprocessExecution(
     } catch (error) {
       logger.error(`[${requestId}] Error fetching workflow`, { error, workflowId })
 
-      await recordPreprocessingError({
-        workflowId,
-        executionId,
-        triggerType,
-        requestId,
-        userId: userId || 'unknown',
-        workspaceId: providedWorkspaceId || '',
-        errorMessage: 'Internal error while fetching workflow',
-        loggingSession: providedLoggingSession,
-        triggerData,
-      })
-
-      return {
-        success: false,
-        error: {
-          message: 'Internal error while fetching workflow',
-          statusCode: 500,
-          retryable: isRetryableInfrastructureError(error),
-          cause: describeRetryableInfrastructureError(error),
-        },
+      const failure: PreprocessExecutionError = {
+        message: 'Internal error while fetching workflow',
+        statusCode: 500,
+        retryable: isRetryableInfrastructureError(error),
+        cause: describeRetryableInfrastructureError(error),
       }
+      if (!isFailureLogSuppressed(failure)) {
+        await recordPreprocessingError({
+          workflowId,
+          executionId,
+          triggerType,
+          requestId,
+          userId: userId || 'unknown',
+          workspaceId: providedWorkspaceId || '',
+          errorMessage: 'Internal error while fetching workflow',
+          loggingSession: providedLoggingSession,
+          triggerData,
+        })
+      }
+
+      return { success: false, error: failure }
     }
   } else if (workflowRecord.archivedAt) {
     logger.warn(`[${requestId}] Prefetched workflow is archived: ${workflowId}`)
@@ -432,27 +458,27 @@ export async function preprocessExecution(
   } catch (error) {
     logger.error(`[${requestId}] Error resolving billing attribution`, { error, workflowId })
     const errorLogUserId = userId || 'unknown'
-    await recordPreprocessingError({
-      workflowId,
-      executionId,
-      triggerType,
-      requestId,
-      userId: errorLogUserId,
-      workspaceId,
-      errorMessage: BILLING_ERROR_MESSAGES.BILLING_ERROR_GENERIC,
-      loggingSession: providedLoggingSession,
-      triggerData,
-    })
-
-    return {
-      success: false,
-      error: {
-        message: 'Error resolving billing account',
-        statusCode: 500,
-        retryable: isRetryableInfrastructureError(error),
-        cause: describeRetryableInfrastructureError(error),
-      },
+    const failure: PreprocessExecutionError = {
+      message: 'Error resolving billing account',
+      statusCode: 500,
+      retryable: isRetryableInfrastructureError(error),
+      cause: describeRetryableInfrastructureError(error),
     }
+    if (!isFailureLogSuppressed(failure)) {
+      await recordPreprocessingError({
+        workflowId,
+        executionId,
+        triggerType,
+        requestId,
+        userId: errorLogUserId,
+        workspaceId,
+        errorMessage: BILLING_ERROR_MESSAGES.BILLING_ERROR_GENERIC,
+        loggingSession: providedLoggingSession,
+        triggerData,
+      })
+    }
+
+    return { success: false, error: failure }
   }
 
   const plan = billingAttribution.payerSubscription?.plan as SubscriptionPlan | undefined
@@ -487,16 +513,29 @@ export async function preprocessExecution(
 
   const banCheck = (async (): Promise<GateFailure | null> => {
     /**
-     * Blocks when the resolved actor, workflow owner, or caller-provided user
-     * has an active ban or blocked email domain. Including the workflow owner
-     * covers system-triggered executions.
+     * Blocks when an identity this run actually acts as has an active ban or
+     * blocked email domain.
+     *
+     * `userId` is a candidate unless the caller declares it a stored reference.
+     * The default is deliberately the blocking one: callers overload the
+     * parameter, and only the caller knows which kind it passed, so a call site
+     * that forgets to say must fail closed rather than silently admit a
+     * suspended account.
+     *
+     * `useAuthenticatedUserAsActor` cannot stand in for that declaration, which
+     * an earlier revision of this gate assumed. Resume passes the live
+     * authenticated resumer as `userId` and leaves that flag false on purpose —
+     * attribution is captured before the pause and must not move — so keying on
+     * it excluded exactly the person who just acted.
+     *
+     * A stored reference being banned must not take down work their teammates
+     * still depend on — but it must not lend that person's credentials either,
+     * which is why {@link getExecutionEnvironment} drops a suspended identity's
+     * personal namespace rather than this gate blocking the whole run.
      */
     const banCandidateIds = [actorUserId]
-    if (userId && userId !== 'unknown' && userId !== actorUserId) {
+    if (!userIdIsStoredReference && userId && userId !== 'unknown' && userId !== actorUserId) {
       banCandidateIds.push(userId)
-    }
-    if (workflowRecord.userId && !banCandidateIds.includes(workflowRecord.userId)) {
-      banCandidateIds.push(workflowRecord.userId)
     }
     try {
       const bannedUserIds = await getActivelyBannedUserIds(banCandidateIds)
@@ -754,7 +793,7 @@ export async function preprocessExecution(
 
   const readGateFailure = banFailure ?? usageResult.failure
   if (readGateFailure) {
-    if (readGateFailure.recordError) {
+    if (readGateFailure.recordError && !isFailureLogSuppressed(readGateFailure.response.error)) {
       await recordPreprocessingError(readGateFailure.recordError)
     }
     return readGateFailure.response
@@ -762,7 +801,7 @@ export async function preprocessExecution(
 
   const rateLimitFailure = await runRateLimitGate()
   if (rateLimitFailure) {
-    if (rateLimitFailure.recordError) {
+    if (rateLimitFailure.recordError && !isFailureLogSuppressed(rateLimitFailure.response.error)) {
       await recordPreprocessingError(rateLimitFailure.recordError)
     }
     return rateLimitFailure.response

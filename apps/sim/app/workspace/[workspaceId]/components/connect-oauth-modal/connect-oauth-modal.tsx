@@ -17,7 +17,11 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
 import type { OAuthReturnContext } from '@/lib/credentials/client-state'
-import { ADD_CONNECTOR_SEARCH_PARAM, writeOAuthReturnContext } from '@/lib/credentials/client-state'
+import {
+  ADD_CONNECTOR_SEARCH_PARAM,
+  clearOAuthReturnContext,
+  writeOAuthReturnContext,
+} from '@/lib/credentials/client-state'
 import { defaultCredentialDisplayName } from '@/lib/credentials/display-name'
 import {
   getProviderIdFromServiceId,
@@ -28,7 +32,16 @@ import {
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { getScopeDescription, getServiceConfigByProviderId } from '@/lib/oauth/utils'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
+import {
+  MicrosoftDataverseEnvironmentField,
+  useMicrosoftDataverseEnvironmentForm,
+} from '@/app/workspace/[workspaceId]/components/connect-oauth-modal/microsoft-dataverse-environment'
+import { withBrandIcon } from '@/blocks/brand-icon'
 import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import {
+  assertMicrosoftDataverseWebOAuthAvailable,
+  useConnectMicrosoftDataverseOAuthService,
+} from '@/hooks/queries/oauth/microsoft-dataverse-connections'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOrganization } from '@/hooks/queries/organization'
 import { useOrganizationOAuthApps } from '@/hooks/queries/organization-oauth-apps'
@@ -39,6 +52,17 @@ const logger = createLogger('ConnectOAuthModal')
 const EMPTY_SCOPES: readonly string[] = []
 
 type ServiceIcon = ComponentType<{ className?: string }>
+
+function initialOAuthClientFields(
+  fields: readonly { id: string; options?: readonly { value: string }[] }[] | undefined
+): Record<string, string> {
+  const values: Record<string, string> = {}
+  for (const field of fields ?? []) {
+    const defaultOption = field.options?.[0]
+    if (defaultOption) values[field.id] = defaultOption.value
+  }
+  return values
+}
 
 /** Scopes hidden from the permissions list — always present on Google flows. */
 function isHiddenScope(scope: string): boolean {
@@ -54,11 +78,11 @@ function isHiddenScope(scope: string): boolean {
 function resolveService(
   provider: OAuthProvider,
   serviceId: string
-): { providerName: string; ProviderIcon: ServiceIcon } {
+): { providerName: string; ProviderIcon: ServiceIcon | null } {
   const { baseProvider } = parseProvider(provider)
   const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
   let providerName = baseProviderConfig?.name || provider
-  let ProviderIcon: ServiceIcon = baseProviderConfig?.icon || (() => null)
+  let ProviderIcon: ServiceIcon | null = baseProviderConfig?.icon ?? null
   if (baseProviderConfig) {
     for (const [key, service] of Object.entries(baseProviderConfig.services)) {
       if (key === serviceId || service.providerId === provider) {
@@ -89,6 +113,10 @@ interface ConnectOAuthModalBaseProps {
   /** Used to resolve display metadata and the provider id when not supplied directly. */
   provider?: OAuthProvider
   serviceId?: string
+  /** Enables the environment-bound Dynamics 365 OAuth flow. Legacy Dataverse callers omit it. */
+  requireDataverseEnvironment?: boolean
+  /** Locks an environment-bound connection to the workflow or credential's selected environment. */
+  dataverseEnvironmentUrl?: string
 }
 
 /**
@@ -102,7 +130,11 @@ type ConnectOAuthModalConnectProps = ConnectOAuthModalBaseProps & {
   requiredScopes: readonly string[]
 } & (
     | { origin: 'workflow'; workflowId: string }
-    | { origin: 'kb-connectors'; knowledgeBaseId: string; connectorType?: string }
+    | {
+        origin: 'kb-connectors'
+        knowledgeBaseId: string
+        connectorType?: string
+      }
     | { origin: 'integrations' }
   )
 
@@ -116,6 +148,11 @@ interface ConnectOAuthModalReauthorizeProps extends ConnectOAuthModalBaseProps {
   toolName: string
   requiredScopes?: readonly string[]
   newScopes?: readonly string[]
+  reconnectTarget?: {
+    workspaceId: string
+    credentialId: string
+    displayName: string
+  }
   onConnect?: () => Promise<void> | void
 }
 
@@ -161,9 +198,12 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const providerId = selectedProviderId ?? declaredProviderId
+  const requiredScopes = props.requiredScopes ?? EMPTY_SCOPES
 
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
+  const [oauthClientFields, setOAuthClientFields] = useState<Record<string, string>>({})
+  const [oauthClientFieldsOpen, setOAuthClientFieldsOpen] = useState<boolean | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -172,13 +212,16 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
 
   const { providerName, ProviderIcon } = useMemo(() => {
     if (props.serviceName && props.serviceIcon) {
-      return { providerName: props.serviceName, ProviderIcon: props.serviceIcon }
+      return {
+        providerName: props.serviceName,
+        ProviderIcon: props.serviceIcon,
+      }
     }
     const provider = (props.provider ?? providerId) as OAuthProvider
     return resolveService(provider, props.serviceId ?? providerId)
   }, [props.serviceName, props.serviceIcon, props.provider, props.serviceId, providerId])
 
-  const workspaceId = isConnect ? props.workspaceId : ''
+  const workspaceId = isConnect ? props.workspaceId : (props.reconnectTarget?.workspaceId ?? '')
   const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
   const organizationId = workspaceSettings?.settings?.workspace?.organizationId ?? undefined
 
@@ -199,12 +242,30 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
       )
     : true
 
+  const clientConfiguration = getServiceConfigByProviderId(providerId)?.clientConfiguration
+  const oauthClientRedirectUri =
+    clientConfiguration?.redirectPath && typeof window !== 'undefined'
+      ? new URL(clientConfiguration.redirectPath, window.location.origin).toString()
+      : null
   const { data: credentials = [], isPending: credentialsLoading } = useWorkspaceCredentials({
     workspaceId,
-    enabled: isConnect && Boolean(workspaceId) && open,
+    enabled: Boolean(workspaceId) && open,
   })
   const createDraft = useCreateCredentialDraft()
   const connectOAuthService = useConnectOAuthService()
+  const connectMicrosoftDataverseOAuthService = useConnectMicrosoftDataverseOAuthService()
+  const dataverseEnvironmentForm = useMicrosoftDataverseEnvironmentForm({
+    fallbackScopes: requiredScopes,
+    lockedEnvironmentUrl: props.dataverseEnvironmentUrl,
+    open,
+    providerId,
+    required: props.requireDataverseEnvironment === true,
+  })
+
+  if (oauthClientFieldsOpen !== open) {
+    setOAuthClientFieldsOpen(open)
+    setOAuthClientFields(open ? initialOAuthClientFields(clientConfiguration?.fields) : {})
+  }
 
   /**
    * Lowercased set of OAuth credential names already in the workspace. Drives
@@ -220,25 +281,22 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
     [credentials]
   )
 
-  const requiredScopes = props.requiredScopes ?? EMPTY_SCOPES
   const newScopes = !isConnect ? (props.newScopes ?? EMPTY_SCOPES) : EMPTY_SCOPES
 
-  const newScopesSet = useMemo(
-    () => new Set([...newScopes].filter((scope) => !isHiddenScope(scope))),
-    [newScopes]
+  const newScopesSet = new Set(newScopes.filter((scope) => !isHiddenScope(scope)))
+  const displayScopes = [...dataverseEnvironmentForm.effectiveScopes].filter(
+    (scope) => !isHiddenScope(scope)
   )
 
-  const displayScopes = useMemo(() => {
-    const filtered = [...requiredScopes].filter((scope) => !isHiddenScope(scope))
-    if (isConnect) return filtered
-    return filtered.sort((a, b) => {
+  if (!isConnect) {
+    displayScopes.sort((a, b) => {
       const aIsNew = newScopesSet.has(a)
       const bIsNew = newScopesSet.has(b)
       if (aIsNew && !bIsNew) return -1
       if (!aIsNew && bIsNew) return 1
       return 0
     })
-  }, [isConnect, requiredScopes, newScopesSet])
+  }
 
   /**
    * Initialize the connect form once per open session, after credentials have
@@ -279,9 +337,31 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   const handleConnect = async () => {
     setValidationError(null)
     setSubmitError(null)
+    let returnContextWritten = false
     try {
+      const environmentUrl = dataverseEnvironmentForm.validate()
+      if (dataverseEnvironmentForm.enabled && !environmentUrl) return
+      if (environmentUrl) assertMicrosoftDataverseWebOAuthAvailable()
+
       let connectorType: string | undefined
       let draftId: string | undefined
+      const quickBooksOAuthClientConfig =
+        providerId === 'quickbooks'
+          ? {
+              clientId: oauthClientFields.clientId?.trim() ?? '',
+              clientSecret: oauthClientFields.clientSecret?.trim() ?? '',
+              environment:
+                oauthClientFields.environment === 'production'
+                  ? ('production' as const)
+                  : ('sandbox' as const),
+              webhookVerifierToken: oauthClientFields.webhookVerifierToken?.trim() ?? '',
+            }
+          : undefined
+
+      if (clientConfiguration?.fields.some((field) => !oauthClientFields[field.id]?.trim())) {
+        setSubmitError('Complete every OAuth app configuration field.')
+        return
+      }
 
       if (isConnect) {
         const trimmed = displayName.trim()
@@ -295,6 +375,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
           providerId,
           displayName: trimmed,
           description: description.trim() || undefined,
+          oauthClientConfig: quickBooksOAuthClientConfig,
         })
         draftId = draft.draftId
 
@@ -329,17 +410,52 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
             connectorType: props.connectorType,
           }
         } else if (props.origin === 'workflow') {
-          returnContext = { ...baseContext, origin: 'workflow', workflowId: props.workflowId }
+          returnContext = {
+            ...baseContext,
+            origin: 'workflow',
+            workflowId: props.workflowId,
+          }
         } else {
           returnContext = { ...baseContext, origin: 'integrations' }
         }
 
         writeOAuthReturnContext(returnContext)
+        returnContextWritten = true
       } else if (props.onConnect) {
         await props.onConnect()
         handleClose()
         return
       } else {
+        if (props.reconnectTarget) {
+          const draft = await createDraft.mutateAsync({
+            workspaceId: props.reconnectTarget.workspaceId,
+            providerId,
+            credentialId: props.reconnectTarget.credentialId,
+            displayName: props.reconnectTarget.displayName,
+            oauthClientConfig: quickBooksOAuthClientConfig,
+          })
+          draftId = draft.draftId
+
+          const providerCredentials = credentials.filter(
+            (credential) => credential.type === 'oauth' && credential.providerId === providerId
+          )
+          writeOAuthReturnContext({
+            origin: 'integrations',
+            displayName: props.reconnectTarget.displayName,
+            providerId,
+            preCount: providerCredentials.length,
+            baselineCredentials: providerCredentials.map((credential) => ({
+              id: credential.id,
+              accountId: credential.accountId,
+              updatedAt: credential.updatedAt,
+            })),
+            workspaceId: props.reconnectTarget.workspaceId,
+            reconnect: true,
+            requestedAt: Date.now(),
+          })
+          returnContextWritten = true
+        }
+
         logger.info('Reauthorizing OAuth2', {
           providerId,
           requiredScopes,
@@ -348,29 +464,52 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
       }
 
       const callbackURL = new URL(window.location.href)
+      callbackURL.searchParams.delete('error')
+      callbackURL.searchParams.delete('error_description')
+      callbackURL.searchParams.delete('quickbooks_connected')
       if (connectorType) {
         callbackURL.searchParams.set(ADD_CONNECTOR_SEARCH_PARAM, connectorType)
       }
 
-      await connectOAuthService.mutateAsync({
-        providerId,
-        callbackURL: callbackURL.toString(),
-        draftId,
-      })
+      if (environmentUrl) {
+        await connectMicrosoftDataverseOAuthService.mutateAsync({
+          callbackURL: callbackURL.toString(),
+          draftId,
+          environmentUrl,
+        })
+      } else {
+        await connectOAuthService.mutateAsync({
+          providerId,
+          callbackURL: callbackURL.toString(),
+          draftId,
+        })
+      }
       handleClose()
     } catch (err: unknown) {
+      if (returnContextWritten) clearOAuthReturnContext()
       const message = getErrorMessage(err, 'Failed to start OAuth connection')
       setSubmitError(message)
       logger.error('Failed to connect OAuth service', err)
     }
   }
 
-  const isPending = (isConnect && createDraft.isPending) || connectOAuthService.isPending
+  const createsDraft = isConnect || (!isConnect && Boolean(props.reconnectTarget))
+  const isPending =
+    (createsDraft && createDraft.isPending) ||
+    connectOAuthService.isPending ||
+    connectMicrosoftDataverseOAuthService.isPending
   const customAppBlocked =
     needsCustomApp && (!organizationId || (isOrgAdmin && !customAppConfigured))
   const isDisabled = isConnect
-    ? !displayName.trim() || isPending || Boolean(existingCredential) || customAppBlocked
-    : isPending
+    ? !displayName.trim() ||
+      !dataverseEnvironmentForm.isComplete ||
+      Boolean(clientConfiguration?.fields.some((field) => !oauthClientFields[field.id]?.trim())) ||
+      isPending ||
+      Boolean(existingCredential) ||
+      customAppBlocked
+    : !dataverseEnvironmentForm.isComplete ||
+      Boolean(clientConfiguration?.fields.some((field) => !oauthClientFields[field.id]?.trim())) ||
+      isPending
 
   const displayNameError =
     validationError ??
@@ -382,7 +521,10 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
 
   return (
     <ChipModal open={open} onOpenChange={onOpenChange} srTitle={title}>
-      <ChipModalHeader icon={ProviderIcon} onClose={handleClose}>
+      <ChipModalHeader
+        icon={ProviderIcon ? withBrandIcon(ProviderIcon) : null}
+        onClose={handleClose}
+      >
         {title}
       </ChipModalHeader>
       <ChipModalBody>
@@ -420,6 +562,57 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
           />
         )}
 
+        <MicrosoftDataverseEnvironmentField form={dataverseEnvironmentForm} />
+
+        {oauthClientRedirectUri && (
+          <ChipModalField
+            type='copy'
+            title='Redirect URI'
+            value={oauthClientRedirectUri}
+            copyLabel='Copy redirect URI'
+            required
+          />
+        )}
+
+        {clientConfiguration?.fields.map((field) =>
+          field.options ? (
+            <ChipModalField
+              key={field.id}
+              type='dropdown'
+              title={field.label}
+              value={oauthClientFields[field.id] ?? ''}
+              onChange={(value) =>
+                setOAuthClientFields((current) => ({
+                  ...current,
+                  [field.id]: value,
+                }))
+              }
+              options={[...field.options]}
+              placeholder={field.placeholder}
+              hint={field.hint}
+              required
+              align='start'
+            />
+          ) : (
+            <ChipModalField
+              key={field.id}
+              type='input'
+              title={field.label}
+              value={oauthClientFields[field.id] ?? ''}
+              onChange={(value) =>
+                setOAuthClientFields((current) => ({
+                  ...current,
+                  [field.id]: value,
+                }))
+              }
+              placeholder={field.placeholder}
+              inputType={field.secret ? 'password' : 'text'}
+              autoComplete={field.secret ? 'new-password' : 'off'}
+              required
+            />
+          )
+        )}
+
         {isConnect && (
           <ChipModalField
             type='textarea'
@@ -439,7 +632,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
                 {displayScopes.map((scope) => (
                   <InfoCardItem key={scope}>
                     <span className='flex items-center gap-2'>
-                      {getScopeDescription(scope)}
+                      {getScopeDescription(scope, providerId)}
                       {!isConnect && newScopesSet.has(scope) && (
                         <Badge variant='amber' size='sm'>
                           New

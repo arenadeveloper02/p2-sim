@@ -1,6 +1,7 @@
 import {
   type Principal,
-  requirePrincipalSubjectUserId,
+  resolvePrincipalSubject,
+  resolvePrincipalSubjectUserId,
   type SessionPrincipal,
 } from '@sim/auth/principal'
 import type { NextRequest } from 'next/server'
@@ -9,13 +10,18 @@ import { type ChunkData, chunkDataSchema } from '@/lib/api/contracts/knowledge/c
 import {
   type ConnectorData,
   type ConnectorDetailData,
+  type ConnectorMemberSummary,
   connectorDataSchema,
   connectorDetailDataSchema,
 } from '@/lib/api/contracts/knowledge/connectors'
 import { type DocumentData, documentDataSchema } from '@/lib/api/contracts/knowledge/documents'
 import { type TagDefinitionData, tagDefinitionDataSchema } from '@/lib/api/contracts/knowledge/tags'
 import { AuthType, type AuthTypeValue } from '@/lib/auth/hybrid'
-import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
+import {
+  requireWorkspaceBillingAttributionHeader,
+  resolveBillingAttribution,
+} from '@/lib/billing/core/billing-attribution'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import type {
   CreateKnowledgeBaseInput,
@@ -28,7 +34,24 @@ import { captureServerEvent } from '@/lib/posthog/server'
 import type { UploadSessionRecord } from '@/lib/uploads/upload-session/service'
 
 export function internalKnowledgeActorUserId(principal: Principal): string {
-  return requirePrincipalSubjectUserId(principal)
+  const userId = resolvePrincipalSubjectUserId(principal)
+  if (!userId) {
+    throw new OrchestrationError('forbidden', 'Knowledge operation requires a user subject')
+  }
+  return userId
+}
+
+export function internalKnowledgeProvenanceUserId(
+  headers: Headers,
+  principal: Principal,
+  workspaceId: string | undefined
+): string {
+  if (principal.kind !== 'delegated') return internalKnowledgeActorUserId(principal)
+  const subject = resolvePrincipalSubject(principal)
+  if (subject?.kind === 'sim_user') return subject.userId
+  return requireWorkspaceBillingAttributionHeader(headers, {
+    workspaceId: workspaceId ?? principal.workspaceId,
+  }).actorUserId
 }
 
 export function internalKnowledgeAuthType(principal: Principal): AuthTypeValue {
@@ -49,6 +72,11 @@ export async function resolveInternalKnowledgeBillingAttribution(
   return resolveBillingAttribution({ actorUserId, workspaceId })
 }
 
+function internalKnowledgeAnalyticsUserId(principal: Principal): string | null {
+  const subject = resolvePrincipalSubject(principal)
+  return subject?.kind === 'sim_user' ? subject.userId : null
+}
+
 function serializeDate(date: Date | string): string {
   return date instanceof Date ? date.toISOString() : date
 }
@@ -60,6 +88,7 @@ function serializeNullableDate(date: Date | string | null): string | null {
 export function toInternalKnowledgeDocument<
   T extends {
     uploadedAt: Date | string
+    processingQueuedAt?: Date | string | null
     processingStartedAt?: Date | string | null
     processingCompletedAt?: Date | string | null
     date1?: Date | string | null
@@ -69,6 +98,7 @@ export function toInternalKnowledgeDocument<
   return documentDataSchema.parse({
     ...document,
     uploadedAt: serializeDate(document.uploadedAt),
+    processingQueuedAt: serializeNullableDate(document.processingQueuedAt ?? null),
     processingStartedAt: serializeNullableDate(document.processingStartedAt ?? null),
     processingCompletedAt: serializeNullableDate(document.processingCompletedAt ?? null),
     date1: serializeNullableDate(document.date1 ?? null),
@@ -103,14 +133,21 @@ export function toInternalKnowledgeConnector<
     updatedAt: Date | string
     lastSyncAt: Date | string | null
     nextSyncAt: Date | string | null
+    lastMemberSyncAt: Date | string | null
+    nextMemberSyncAt: Date | string | null
+    viewerMembership?: ConnectorData['viewerMembership']
   },
 >(connector: T): ConnectorData {
   return connectorDataSchema.parse({
+    /** A mutation answers with the row alone; only a viewer's read carries their membership. */
+    viewerMembership: null,
     ...connector,
     createdAt: serializeDate(connector.createdAt),
     updatedAt: serializeDate(connector.updatedAt),
     lastSyncAt: serializeNullableDate(connector.lastSyncAt),
     nextSyncAt: serializeNullableDate(connector.nextSyncAt),
+    lastMemberSyncAt: serializeNullableDate(connector.lastMemberSyncAt),
+    nextMemberSyncAt: serializeNullableDate(connector.nextMemberSyncAt),
   })
 }
 
@@ -121,6 +158,12 @@ export function toInternalKnowledgeConnectorDetail<
       completedAt: Date | string | null
       [key: string]: unknown
     }>
+    memberSyncLogs: Array<{
+      startedAt: Date | string
+      completedAt: Date | string | null
+      [key: string]: unknown
+    }>
+    members: ConnectorMemberSummary
   },
 >(connector: T): ConnectorDetailData {
   return connectorDetailDataSchema.parse({
@@ -130,6 +173,12 @@ export function toInternalKnowledgeConnectorDetail<
       startedAt: serializeDate(log.startedAt),
       completedAt: serializeNullableDate(log.completedAt),
     })),
+    memberSyncLogs: connector.memberSyncLogs.map((log) => ({
+      ...log,
+      startedAt: serializeDate(log.startedAt),
+      completedAt: serializeNullableDate(log.completedAt),
+    })),
+    members: connector.members,
   })
 }
 
@@ -241,7 +290,6 @@ export const internalKnowledgeAnalytics = {
         }
       | { kind: 'bulk'; workspaceId?: string; data: { total: number }; knowledgeBaseId?: string }
   }): void {
-    const userId = internalKnowledgeActorUserId(principal)
     const documentCount = result.kind === 'bulk' ? result.data.total : 1
     const knowledgeBaseId =
       result.kind === 'single' ? result.data.knowledgeBaseId : result.knowledgeBaseId
@@ -256,6 +304,8 @@ export const internalKnowledgeAnalytics = {
         ? { mimeType: result.data.mimeType, fileSize: result.data.fileSize }
         : { recipe: input.processingOptions?.recipe }),
     })
+    const userId = internalKnowledgeAnalyticsUserId(principal)
+    if (!userId) return
     captureServerEvent(
       userId,
       'knowledge_base_document_uploaded',
@@ -295,8 +345,10 @@ export const internalKnowledgeAnalytics = {
   }): void {
     const workspaceId = result.workspaceId
     if (!workspaceId) throw new Error('Deleted document result is missing its workspace scope')
+    const userId = internalKnowledgeAnalyticsUserId(principal)
+    if (!userId) return
     captureServerEvent(
-      internalKnowledgeActorUserId(principal),
+      userId,
       'knowledge_base_document_deleted',
       { knowledge_base_id: result.knowledgeBaseId, workspace_id: workspaceId },
       { groups: { workspace: workspaceId } }
@@ -317,8 +369,10 @@ export const internalKnowledgeAnalytics = {
       }
     }
   }): void {
+    const userId = internalKnowledgeAnalyticsUserId(principal)
+    if (!userId) return
     captureServerEvent(
-      internalKnowledgeActorUserId(principal),
+      userId,
       'knowledge_base_connector_added',
       {
         knowledge_base_id: connector.knowledgeBaseId,
@@ -348,8 +402,10 @@ export const internalKnowledgeAnalytics = {
     if (!result.workspaceId) {
       throw new Error('Deleted connector result is missing its workspace analytics scope')
     }
+    const userId = internalKnowledgeAnalyticsUserId(principal)
+    if (!userId) return
     captureServerEvent(
-      internalKnowledgeActorUserId(principal),
+      userId,
       'knowledge_base_connector_removed',
       {
         knowledge_base_id: result.knowledgeBaseId,
@@ -375,8 +431,10 @@ export const internalKnowledgeAnalytics = {
     if (!result.workspaceId) {
       throw new Error('Synced connector result is missing its workspace analytics scope')
     }
+    const userId = internalKnowledgeAnalyticsUserId(principal)
+    if (!userId) return
     captureServerEvent(
-      internalKnowledgeActorUserId(principal),
+      userId,
       'knowledge_base_connector_synced',
       {
         knowledge_base_id: result.knowledgeBaseId,

@@ -7,7 +7,9 @@ import {
   customPatternSchema,
   isCanonicalBase64,
   MAX_ID_LENGTH,
+  optionalNumberQuerySchema,
   organizationIdSchema,
+  organizationRoleSchema,
   piiStagePolicySchema,
   piiStagesSchema,
   privateSecretProvenanceBundleSchema,
@@ -18,6 +20,16 @@ import {
   workspaceFileNameSchema,
   workspaceIdSchema,
 } from '@/lib/api/contracts/primitives'
+
+describe('organizationRoleSchema', () => {
+  it.each(['owner', 'admin', 'member'] as const)('accepts canonical role %s', (role) => {
+    expect(organizationRoleSchema.parse(role)).toBe(role)
+  })
+
+  it.each(['billing-owner', 'viewer', '', null, undefined])('rejects invalid role %j', (role) => {
+    expect(organizationRoleSchema.safeParse(role).success).toBe(false)
+  })
+})
 
 describe('workspaceFileNameSchema', () => {
   it('trims and accepts one bounded file name', () => {
@@ -332,5 +344,31 @@ describe('withMissingFieldMessage', () => {
       'Description is too long'
     )
     expect(retrofitted.safeParse('ok').success).toBe(true)
+  })
+})
+
+describe('optionalNumberQuerySchema', () => {
+  it('keeps a real numeric bound, including an explicit zero', () => {
+    expect(optionalNumberQuerySchema.parse('0')).toBe(0)
+    expect(optionalNumberQuerySchema.parse('2.5')).toBe(2.5)
+    expect(optionalNumberQuerySchema.parse(7)).toBe(7)
+  })
+
+  it('drops an omitted or present-but-empty value', () => {
+    expect(optionalNumberQuerySchema.parse(undefined)).toBeUndefined()
+    expect(optionalNumberQuerySchema.parse('')).toBeUndefined()
+    expect(optionalNumberQuerySchema.parse('   ')).toBeUndefined()
+  })
+
+  /**
+   * `z.coerce.number()` reads `null` as `0`, which would turn a client that
+   * spells an unset bound as `null` into a caller asking a cost question.
+   */
+  it('drops null rather than coercing it to a zero bound', () => {
+    expect(optionalNumberQuerySchema.parse(null)).toBeUndefined()
+  })
+
+  it('still rejects a non-numeric value', () => {
+    expect(optionalNumberQuerySchema.safeParse('abc').success).toBe(false)
   })
 })

@@ -11,6 +11,7 @@ import { McpIcon } from '@/components/icons'
 import { canMutateWorkspaceSettingsSection } from '@/components/settings/navigation'
 import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
+import { getManagedMcpConnectorIcon } from '@/lib/credential-groups/managed-mcp-connector-icons'
 import {
   getIssueBadgeLabel,
   getIssueBadgeVariant,
@@ -35,6 +36,7 @@ import {
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { useSettingsSearch } from '@/app/workspace/[workspaceId]/settings/components/use-settings-search'
 import { useMcpOauthPopup } from '@/hooks/mcp/use-mcp-oauth-popup'
+import { useCredentialGroups } from '@/hooks/queries/credential-groups'
 import {
   type McpServer,
   type McpTool,
@@ -75,6 +77,7 @@ interface ServerListItemProps {
   isLoadingTools?: boolean
   isRefreshing?: boolean
   discoveryError?: string | null
+  ownerName?: string
   onViewDetails: () => void
   onAuthorize: () => void
 }
@@ -87,10 +90,14 @@ function ServerListItem({
   isLoadingTools = false,
   isRefreshing = false,
   discoveryError = null,
+  ownerName,
   onViewDetails,
   onAuthorize,
 }: ServerListItemProps) {
   const transportLabel = formatTransportLabel(server.transport || 'http')
+  const ServerIcon = server.managedConnectorId
+    ? getManagedMcpConnectorIcon(server.managedConnectorId)
+    : McpIcon
   const toolsLabel = getServerToolsLabel(
     tools,
     server.connectionStatus,
@@ -113,20 +120,22 @@ function ServerListItem({
   const serverName = server.name || 'Unnamed server'
   // Transport rides on the description rather than beside the name — inside the
   // row's truncating title a long name would clip it away entirely.
-  const statusText = isConnecting
-    ? 'Waiting for authorization...'
-    : isRefreshing
-      ? 'Refreshing...'
-      : isLoadingTools && tools.length === 0
-        ? 'Loading...'
-        : showDiscoveryError
-          ? discoveryError
-          : toolsLabel
+  const statusText = server.managedConnectorId
+    ? `Managed by ${ownerName ?? 'a Credential Group'}`
+    : isConnecting
+      ? 'Waiting for authorization...'
+      : isRefreshing
+        ? 'Refreshing...'
+        : isLoadingTools && tools.length === 0
+          ? 'Loading...'
+          : showDiscoveryError
+            ? discoveryError
+            : toolsLabel
 
   return (
     <SettingsResourceRow
-      icon={<McpIcon className='text-[var(--text-icon)]' />}
-      iconFilled
+      icon={<ServerIcon className='text-[var(--text-icon)]' />}
+      iconFilled={!server.managedConnectorId}
       title={serverName}
       description={
         <>
@@ -145,7 +154,10 @@ function ServerListItem({
       clickLabel={`Open ${serverName}`}
       navigable
       trailing={
-        canManage && server.authType === 'oauth' && server.connectionStatus !== 'connected' ? (
+        canManage &&
+        !server.managedConnectorId &&
+        server.authType === 'oauth' &&
+        server.connectionStatus !== 'connected' ? (
           <Chip onClick={onAuthorize}>{isConnecting ? 'Reopen authorization' : 'Authorize'}</Chip>
         ) : undefined
       }
@@ -177,39 +189,52 @@ export function MCP() {
   const workspaceId = params.workspaceId as string
   const workspacePermissions = useUserPermissionsContext()
   const canEdit = canMutateWorkspaceSettingsSection('mcp', workspacePermissions)
+  const [selectedServerId, setSelectedServerId] = useQueryState(mcpServerIdParam.key, {
+    ...mcpServerIdParam.parser,
+    ...mcpServerIdUrlKeys,
+  })
+  const [searchTerm, setSearchTerm] = useSettingsSearch()
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [editingServerId, setEditingServerId] = useState<string | null>(null)
+  const [deletingServers, setDeletingServers] = useState<Set<string>>(() => new Set())
+  const [serverToDeleteId, setServerToDeleteId] = useState<string | null>(null)
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(() => new Set())
+  const isServerFormOpen = showAddModal || editingServerId !== null
 
   const {
     data: servers = [],
     isLoading: serversLoading,
     error: serversError,
   } = useMcpServers(workspaceId)
+  const credentialGroups = useCredentialGroups(
+    workspacePermissions.canAdmin ? workspaceId : undefined
+  )
   const { data: mcpToolsData = [], toolsStateByServer } = useMcpToolsQuery(workspaceId)
-  const { data: storedTools = [], refetch: refetchStoredTools } = useStoredMcpTools(workspaceId)
+  const { data: storedTools = [], refetch: refetchStoredTools } = useStoredMcpTools(workspaceId, {
+    enabled: selectedServerId !== null,
+  })
   const forceRefreshToolsMutation = useForceRefreshMcpTools()
   const forceRefreshTools = forceRefreshToolsMutation.mutate
   const createServerMutation = useCreateMcpServer()
   const deleteServerMutation = useDeleteMcpServer()
   const refreshServerMutation = useRefreshMcpServer()
   const updateServerMutation = useUpdateMcpServer()
-  const availableEnvVars = useAvailableEnvVarKeys(workspaceId)
-  const { data: allowedMcpDomains = null } = useAllowedMcpDomains()
-
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [editingServerId, setEditingServerId] = useState<string | null>(null)
-
-  const [searchTerm, setSearchTerm] = useSettingsSearch()
-  const [deletingServers, setDeletingServers] = useState<Set<string>>(() => new Set())
+  const availableEnvVars = useAvailableEnvVarKeys(workspaceId, { enabled: isServerFormOpen })
+  const {
+    data: allowedMcpDomains = null,
+    isPending: allowedMcpDomainsPending,
+    isError: allowedMcpDomainsFailed,
+  } = useAllowedMcpDomains({ enabled: isServerFormOpen })
+  const domainPolicyUnavailable =
+    isServerFormOpen && (allowedMcpDomainsPending || allowedMcpDomainsFailed)
+  const domainPolicyError = allowedMcpDomainsFailed
+    ? 'Unable to load the MCP domain policy. Try again before saving this server.'
+    : undefined
   const { connectingServers: connectingOauthServers, startOauthForServer } = useMcpOauthPopup({
     workspaceId,
   })
 
-  const [serverToDeleteId, setServerToDeleteId] = useState<string | null>(null)
   const showDeleteDialog = serverToDeleteId !== null
-
-  const [selectedServerId, setSelectedServerId] = useQueryState(mcpServerIdParam.key, {
-    ...mcpServerIdParam.parser,
-    ...mcpServerIdUrlKeys,
-  })
 
   const initialServerIdRef = useRef(selectedServerId)
   const didDeepLinkRefreshRef = useRef(false)
@@ -220,8 +245,6 @@ export function MCP() {
     if (canEdit) forceRefreshTools(workspaceId)
     refetchStoredTools()
   }, [canEdit, workspaceId, forceRefreshTools, refetchStoredTools])
-
-  const [expandedTools, setExpandedTools] = useState<Set<string>>(() => new Set())
 
   const handleRemoveServer = (serverId: string) => {
     setServerToDeleteId(serverId)
@@ -267,6 +290,9 @@ export function MCP() {
 
   const filteredServers = (servers || []).filter((server) =>
     server.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+  const credentialGroupNameById = new Map(
+    credentialGroups.data?.credentialGroups.map((group) => [group.id, group.name] as const) ?? []
   )
 
   const handleViewDetails = (serverId: string) => {
@@ -432,7 +458,7 @@ export function MCP() {
         back={{ text: 'MCP tools', icon: ArrowLeft, onSelect: handleBackToList }}
         title={server.name || 'Unnamed server'}
         actions={
-          canEdit
+          canEdit && !server.managedConnectorId
             ? [
                 {
                   text: refreshAction.text,
@@ -466,6 +492,14 @@ export function MCP() {
               </SettingsField>
             )}
 
+            {server.managedConnectorId && (
+              <SettingsField label='Managed by'>
+                {server.credentialGroupId
+                  ? (credentialGroupNameById.get(server.credentialGroupId) ?? 'Credential Group')
+                  : 'Credential Group'}
+              </SettingsField>
+            )}
+
             {server.connectionStatus !== 'connected' && (
               <SettingsField label='Status'>
                 <p className='text-[var(--text-error)] text-sm'>
@@ -479,20 +513,23 @@ export function MCP() {
               </SettingsField>
             )}
 
-            {canEdit && server.authType === 'oauth' && server.connectionStatus !== 'connected' && (
-              <SettingsField label='Authentication'>
-                <div>
-                  <Chip
-                    variant='primary'
-                    onClick={async () => {
-                      await startOauthForServer(server.id)
-                    }}
-                  >
-                    {connectingOauthServers.has(server.id) ? 'Reopen authorization' : 'Authorize'}
-                  </Chip>
-                </div>
-              </SettingsField>
-            )}
+            {canEdit &&
+              !server.managedConnectorId &&
+              server.authType === 'oauth' &&
+              server.connectionStatus !== 'connected' && (
+                <SettingsField label='Authentication'>
+                  <div>
+                    <Chip
+                      variant='primary'
+                      onClick={async () => {
+                        await startOauthForServer(server.id)
+                      }}
+                    >
+                      {connectingOauthServers.has(server.id) ? 'Reopen authorization' : 'Authorize'}
+                    </Chip>
+                  </div>
+                </SettingsField>
+              )}
           </div>
         </SettingsSection>
 
@@ -554,7 +591,7 @@ export function MCP() {
                       {hasParams && (
                         <ChevronDown
                           className={cn(
-                            'mt-0.5 size-[14px] flex-shrink-0 text-[var(--text-muted)] transition-transform duration-200',
+                            'mt-0.5 size-[14px] shrink-0 text-[var(--text-muted)] transition-transform duration-200',
                             isExpanded && 'rotate-180'
                           )}
                         />
@@ -638,6 +675,8 @@ export function MCP() {
             workspaceId={workspaceId}
             availableEnvVars={availableEnvVars}
             allowedMcpDomains={allowedMcpDomains}
+            domainPolicyUnavailable={domainPolicyUnavailable}
+            domainPolicyError={domainPolicyError}
           />
         )}
         {deleteConfirmModal}
@@ -692,6 +731,11 @@ export function MCP() {
                   key={server.id}
                   canManage={canEdit}
                   server={server}
+                  ownerName={
+                    server.credentialGroupId
+                      ? credentialGroupNameById.get(server.credentialGroupId)
+                      : undefined
+                  }
                   tools={tools}
                   isConnecting={connectingOauthServers.has(server.id)}
                   isLoadingTools={isLoadingTools}
@@ -733,6 +777,8 @@ export function MCP() {
           workspaceId={workspaceId}
           availableEnvVars={availableEnvVars}
           allowedMcpDomains={allowedMcpDomains}
+          domainPolicyUnavailable={domainPolicyUnavailable}
+          domainPolicyError={domainPolicyError}
         />
       )}
 

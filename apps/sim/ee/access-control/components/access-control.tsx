@@ -19,7 +19,7 @@ import { useParams } from 'next/navigation'
 import { useQueryState } from 'nuqs'
 import { STARTER_PLAN } from '@/lib/billing/arena/constants'
 import { isEnterprise, isMaxTier } from '@/lib/billing/plan-helpers'
-import { isAccessControlEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import {
   groupIdParam,
   groupIdUrlKeys,
@@ -57,6 +57,7 @@ interface AccessControlProps {
 
 export function AccessControl({ isOrganizationAdmin, organizationId }: AccessControlProps) {
   const params = useParams()
+  const { features } = useDeploymentShape()
   const workspaceId = typeof params?.workspaceId === 'string' ? params.workspaceId : undefined
 
   /**
@@ -65,10 +66,18 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
    * id and the caller's admin status server-side from the workspace so gating is
    * never keyed off the session's active org.
    */
-  const { data: userPermissionConfig, isPending: entitlementLoading } =
-    useUserPermissionConfig(workspaceId)
-  const { data: organizationBillingData, isPending: organizationBillingLoading } =
-    useOrganizationBilling(organizationId)
+  const {
+    data: userPermissionConfig,
+    isPending: entitlementLoading,
+    error: entitlementError,
+  } = useUserPermissionConfig(workspaceId)
+  const {
+    data: organizationBillingData,
+    isPending: organizationBillingLoading,
+    error: organizationBillingError,
+  } = useOrganizationBilling(organizationId, {
+    enabled: !features.accessControl && !userPermissionConfig?.entitled,
+  })
   const currentUserIsOrgAdmin = isOrganizationAdmin
 
   const { data: permissionGroups = [], isPending: groupsLoading } = usePermissionGroups(
@@ -92,11 +101,14 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
    * reading the bare var here let a deployment with only `ENTERPRISE_ENABLED`
    * set show the section and then refuse to manage it.
    */
-  const isEntitled = isAccessControlEnabled || !!userPermissionConfig?.entitled || hasEnterprisePlan
+  const isEntitled = features.accessControl || !!userPermissionConfig?.entitled || hasEnterprisePlan
   const canManage = isEntitled && currentUserIsOrgAdmin && !!organizationId
+  const organizationEntitlementLoading =
+    !features.accessControl && !userPermissionConfig?.entitled && organizationBillingLoading
 
   const isLoading =
-    (workspaceId ? entitlementLoading : organizationBillingLoading) ||
+    (workspaceId ? entitlementLoading : false) ||
+    organizationEntitlementLoading ||
     (!!organizationId && currentUserIsOrgAdmin && groupsLoading)
 
   const createPermissionGroup = useCreatePermissionGroup()
@@ -206,8 +218,37 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
     setCreateError(null)
   }, [])
 
+  const listSearch = {
+    value: searchTerm,
+    onChange: setSearchTerm,
+    placeholder: 'Search permission groups...',
+    disabled: isLoading,
+  }
+  const listActions = [
+    {
+      id: 'create-group',
+      text: 'Create group',
+      icon: Plus,
+      variant: 'primary' as const,
+      onSelect: () => setShowCreateModal(true),
+      disabled: isLoading,
+    },
+  ]
+
   if (isLoading) {
-    return null
+    return <SettingsPanel search={listSearch} actions={listActions} />
+  }
+
+  const entitlementLoadError = isEntitled
+    ? null
+    : ((userPermissionConfig === undefined ? entitlementError : null) ??
+      (organizationBillingData === undefined ? organizationBillingError : null))
+  if (entitlementLoadError) {
+    return (
+      <SettingsEmptyState tone='error'>
+        {getErrorMessage(entitlementLoadError, 'Failed to load Access Control access')}
+      </SettingsEmptyState>
+    )
   }
 
   if (!canManage) {
@@ -237,21 +278,7 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
 
   return (
     <>
-      <SettingsPanel
-        search={{
-          value: searchTerm,
-          onChange: setSearchTerm,
-          placeholder: 'Search permission groups...',
-        }}
-        actions={[
-          {
-            text: 'Create group',
-            icon: Plus,
-            variant: 'primary',
-            onSelect: () => setShowCreateModal(true),
-          },
-        ]}
-      >
+      <SettingsPanel search={listSearch} actions={listActions}>
         <SettingsSection label={`Permission groups (${permissionGroups.length})`}>
           {permissionGroups.length === 0 ? (
             <SettingsEmptyState variant='inline'>

@@ -23,7 +23,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { normalizeEmail } from '@sim/utils/string'
-import { and, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { invalidateMembershipCache } from '@/lib/auth/security-policy'
 import { applySessionPolicyToNewMember } from '@/lib/auth/session-policy'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
@@ -206,20 +206,14 @@ export interface RestoreProResult {
 
 /**
  * Restore a user's personal Pro subscription if it was paused
- * (`cancelAtPeriodEnd = true`) and merge any snapshotted Pro usage back
- * into their current-period usage.
+ * (`cancelAtPeriodEnd = true`). No usage moves — ledger entity stamps kept
+ * their personal usage attributed to them throughout the org membership.
  *
- * All DB mutations run inside a single transaction so partial progress
- * cannot be committed: either both the subscription un-pause and the
- * usage snapshot merge succeed, or neither does. Errors propagate to
- * the caller so webhook handlers can rely on Stripe retry semantics.
+ * Errors propagate to the caller so webhook handlers can rely on Stripe
+ * retry semantics.
  *
- * Idempotent:
- *   - Early returns when the user has no paused Pro subscription, so
- *     re-runs after a successful restore are no-ops.
- *   - The snapshot merge only runs when `proPeriodCostSnapshot > 0`,
- *     so a second call after a prior success (which zeroes the
- *     snapshot) does nothing.
+ * Idempotent: early returns when the user has no paused Pro subscription,
+ * so re-runs after a successful restore are no-ops.
  *
  * Called when:
  *   - A member leaves a team (via `removeUserFromOrganization`).
@@ -287,46 +281,6 @@ export async function restoreUserProSubscription(userId: string): Promise<Restor
     })
 
     result.restored = true
-
-    const [stats] = await tx
-      .select({
-        currentPeriodCost: userStats.currentPeriodCost,
-        proPeriodCostSnapshot: userStats.proPeriodCostSnapshot,
-      })
-      .from(userStats)
-      .where(eq(userStats.userId, userId))
-      .limit(1)
-
-    if (!stats) {
-      return
-    }
-
-    const currentNum = toNumber(toDecimal(stats.currentPeriodCost))
-    const snapshotNum = toNumber(toDecimal(stats.proPeriodCostSnapshot))
-
-    if (snapshotNum <= 0) {
-      return
-    }
-
-    const restoredUsage = (currentNum + snapshotNum).toString()
-
-    await tx
-      .update(userStats)
-      .set({
-        currentPeriodCost: restoredUsage,
-        proPeriodCostSnapshot: '0',
-        proPeriodCostSnapshotAt: null,
-      })
-      .where(eq(userStats.userId, userId))
-
-    result.usageRestored = true
-
-    logger.info('Restored Pro usage snapshot', {
-      userId,
-      previousUsage: currentNum,
-      snapshotUsage: snapshotNum,
-      restoredUsage,
-    })
   })
 
   if (result.restored) {
@@ -475,6 +429,8 @@ export interface AddMemberParams {
   skipBillingLogic?: boolean
   /** Skip seat validation (default: false) */
   skipSeatValidation?: boolean
+  /** Restrict billing decisions to an already-resolved entitled organization subscription. */
+  organizationSubscriptionId?: string
   /** When provided, the acceptor's own pending invitation is excluded from the seat count during validation. */
   acceptingInvitationId?: string
 }
@@ -639,6 +595,7 @@ export async function ensureUserInOrganizationTx(
     role,
     skipBillingLogic = false,
     skipSeatValidation = false,
+    organizationSubscriptionId,
   } = params
   const emptyBillingActions = {
     proUsageSnapshotted: false,
@@ -711,9 +668,13 @@ export async function ensureUserInOrganizationTx(
       .where(
         and(
           eq(subscriptionTable.referenceId, organizationId),
-          inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES)
+          inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES),
+          organizationSubscriptionId
+            ? eq(subscriptionTable.id, organizationSubscriptionId)
+            : undefined
         )
       )
+      .orderBy(desc(subscriptionTable.periodStart), desc(subscriptionTable.id))
       .limit(1)
     if (!organizationSubscription || !hasOrganizationSeatEntitlement(organizationSubscription)) {
       return {
@@ -770,9 +731,13 @@ export async function ensureUserInOrganizationTx(
           .where(
             and(
               eq(subscriptionTable.referenceId, organizationId),
-              inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES)
+              inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES),
+              organizationSubscriptionId
+                ? eq(subscriptionTable.id, organizationSubscriptionId)
+                : undefined
             )
           )
+          .orderBy(desc(subscriptionTable.periodStart), desc(subscriptionTable.id))
           .limit(1)
         return organizationSubscription && isPaid(organizationSubscription.plan)
           ? applyPaidOrgJoinBillingTx(tx, userId, organizationId)
@@ -794,10 +759,10 @@ interface PaidOrgJoinBillingActions {
 
 /**
  * Applies the billing side-effects of a user joining a paid (Team/Enterprise)
- * organization inside an existing transaction:
- *   - snapshots current Pro usage so new usage attributes to the org;
- *   - marks personal Pro subscription `cancelAtPeriodEnd=true` and enqueues
- *     the Stripe sync via the outbox;
+ * organization inside an existing transaction: marks the personal Pro
+ * subscription `cancelAtPeriodEnd=true` and enqueues the Stripe sync via the
+ * outbox. No usage is moved — ledger entity stamps already attribute
+ * post-join usage to the organization and pre-join usage to the user.
  *
  * Storage follows each workspace's routed payer independently. The workspace
  * payer-change transaction transfers that workspace's durable byte ledger; a
@@ -808,7 +773,8 @@ interface PaidOrgJoinBillingActions {
 async function applyPaidOrgJoinBillingTx(
   tx: DbOrTx,
   userId: string,
-  organizationId: string
+  organizationId: string,
+  options: { sourceOperationId?: string } = {}
 ): Promise<PaidOrgJoinBillingActions> {
   const actions: PaidOrgJoinBillingActions = {
     proUsageSnapshotted: false,
@@ -829,34 +795,6 @@ async function applyPaidOrgJoinBillingTx(
     .limit(1)
 
   if (personalPro && !personalPro.cancelAtPeriodEnd) {
-    const [userStatsRow] = await tx
-      .select({ currentPeriodCost: userStats.currentPeriodCost })
-      .from(userStats)
-      .where(eq(userStats.userId, userId))
-      .limit(1)
-
-    if (userStatsRow) {
-      const currentProUsage = userStatsRow.currentPeriodCost || '0'
-
-      await tx
-        .update(userStats)
-        .set({
-          proPeriodCostSnapshot: currentProUsage,
-          proPeriodCostSnapshotAt: new Date(),
-          currentPeriodCost: '0',
-          currentPeriodCopilotCost: '0',
-        })
-        .where(eq(userStats.userId, userId))
-
-      actions.proUsageSnapshotted = true
-
-      logger.info('Snapshotted Pro usage when joining paid org', {
-        userId,
-        proUsageSnapshot: currentProUsage,
-        organizationId,
-      })
-    }
-
     await tx
       .update(subscriptionTable)
       .set({ cancelAtPeriodEnd: true })
@@ -867,6 +805,7 @@ async function applyPaidOrgJoinBillingTx(
         stripeSubscriptionId: personalPro.stripeSubscriptionId,
         subscriptionId: personalPro.id,
         reason: 'joined-paid-org',
+        ...(options.sourceOperationId ? { sourceOperationId: options.sourceOperationId } : {}),
       })
     }
 
@@ -895,7 +834,8 @@ async function applyPaidOrgJoinBillingTx(
 export async function reapplyPaidOrgJoinBillingForExistingMemberTx(
   tx: DbOrTx,
   userId: string,
-  organizationId: string
+  organizationId: string,
+  options: { sourceOperationId?: string } = {}
 ): Promise<PaidOrgJoinBillingActions> {
   await acquireUserBillingIdentityLock(tx, userId)
   const [orgSub] = await tx
@@ -913,7 +853,7 @@ export async function reapplyPaidOrgJoinBillingForExistingMemberTx(
     return { proUsageSnapshotted: false, proCancelledAtPeriodEnd: false }
   }
 
-  return applyPaidOrgJoinBillingTx(tx, userId, organizationId)
+  return applyPaidOrgJoinBillingTx(tx, userId, organizationId, options)
 }
 
 type InvitationRemovalScope = 'all' | 'external'
@@ -1231,26 +1171,6 @@ export async function transferUserBetweenOrganizations(
           await removeWorkspaceSkillMembershipsTx(tx, workspaceIds, params.userId)
         }
 
-        const [stats] = await tx
-          .select({ currentPeriodCost: userStats.currentPeriodCost })
-          .from(userStats)
-          .where(eq(userStats.userId, params.userId))
-          .for('update')
-          .limit(1)
-        const usageCaptured = toNumber(toDecimal(stats?.currentPeriodCost))
-        if (usageCaptured > 0) {
-          await tx
-            .update(organization)
-            .set({
-              departedMemberUsage: sql`${organization.departedMemberUsage} + ${usageCaptured}`,
-            })
-            .where(eq(organization.id, params.sourceOrganizationId))
-          await tx
-            .update(userStats)
-            .set({ currentPeriodCost: '0' })
-            .where(eq(userStats.userId, params.userId))
-        }
-
         const added = await ensureUserInOrganizationTx(tx, {
           userId: params.userId,
           organizationId: params.destinationOrganizationId,
@@ -1276,7 +1196,9 @@ export async function transferUserBetweenOrganizations(
           workspaceAccessRevoked,
           credentialMembershipsRevoked,
           pendingInvitationsCancelled: cancelledInvitations.length,
-          usageCaptured,
+          // Nothing to capture: the member's ledger rows stay stamped to the
+          // source org's period and are billed at its cycle close.
+          usageCaptured: 0,
         }
       }
     )
@@ -1296,10 +1218,11 @@ export async function transferUserBetweenOrganizations(
  *
  * Handles:
  * - Owner removal prevention
- * - Departed member usage capture
  * - Member record deletion
  * - Pro subscription restoration when leaving a paid team
- * - Pro usage restoration from snapshot
+ *
+ * No usage moves on departure: the member's ledger rows stay stamped to the
+ * org's billing period and are billed at its cycle close.
  *
  * Note: Users can only belong to one organization at a time.
  */
@@ -1394,34 +1317,6 @@ export async function removeUserFromOrganization(
               .returning({ id: invitation.id })
           : []
 
-        const captureDepartedUsage = async () => {
-          if (skipBillingLogic) return 0
-
-          const [departingUserStats] = await tx
-            .select({ currentPeriodCost: userStats.currentPeriodCost })
-            .from(userStats)
-            .where(eq(userStats.userId, userId))
-            .for('update')
-            .limit(1)
-
-          const usage = toNumber(toDecimal(departingUserStats?.currentPeriodCost))
-          if (usage <= 0) return 0
-
-          await tx
-            .update(organization)
-            .set({
-              departedMemberUsage: sql`${organization.departedMemberUsage} + ${usage}`,
-            })
-            .where(eq(organization.id, organizationId))
-
-          await tx
-            .update(userStats)
-            .set({ currentPeriodCost: '0' })
-            .where(eq(userStats.userId, userId))
-
-          return usage
-        }
-
         // Permission groups are organization-scoped, so a departing member's group
         // membership must be cleared whenever they leave the org — including the
         // zero-workspace early return below (a group can exist with members but no
@@ -1436,12 +1331,12 @@ export async function removeUserFromOrganization(
           )
 
         if (workspaceIds.length === 0) {
-          const capturedUsage = await captureDepartedUsage()
-
           return {
             skipped: false as const,
             workspaceIdsToRevoke: [] as string[],
-            usageCaptured: capturedUsage,
+            // Nothing to capture: the member's ledger rows stay stamped to
+            // this org's period and are billed at its cycle close.
+            usageCaptured: 0,
             credentialMembershipsRevoked: 0,
             pendingInvitationsCancelled: cancelledInvitations.length,
           }
@@ -1481,12 +1376,11 @@ export async function removeUserFromOrganization(
           userId
         )
         await removeWorkspaceSkillMembershipsTx(tx, workspaceIds, userId)
-        const capturedUsage = await captureDepartedUsage()
 
         return {
           skipped: false as const,
           workspaceIdsToRevoke: deletedPerms.map((row) => row.entityId),
-          usageCaptured: capturedUsage,
+          usageCaptured: 0,
           credentialMembershipsRevoked,
           pendingInvitationsCancelled: cancelledInvitations.length,
         }
@@ -1509,14 +1403,6 @@ export async function removeUserFromOrganization(
     // The departed member's cookie-version/hook-clamp fallbacks must stop
     // resolving to this org immediately, not after the membership-cache TTL.
     invalidateMembershipCache(userId)
-
-    if (result.usageCaptured > 0) {
-      logger.info('Captured departed member usage', {
-        organizationId,
-        userId,
-        usage: result.usageCaptured,
-      })
-    }
 
     logger.info('Removed member from organization', {
       organizationId,
@@ -2133,6 +2019,7 @@ export async function addUserToOrganization(params: AddMemberParams): Promise<Ad
     role,
     skipBillingLogic = false,
     skipSeatValidation = false,
+    organizationSubscriptionId,
     acceptingInvitationId,
   } = params
 
@@ -2191,6 +2078,7 @@ export async function addUserToOrganization(params: AddMemberParams): Promise<Ad
         role,
         skipBillingLogic,
         skipSeatValidation,
+        organizationSubscriptionId,
         acceptingInvitationId,
       })
     )
