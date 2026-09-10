@@ -5,6 +5,7 @@ import { env, isTruthy } from './lib/core/config/env'
 /** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
 const monorepoRoot = path.resolve(__dirname, '../..')
 
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from './lib/branding/defaults'
 import { isDev } from './lib/core/config/env-flags'
 import {
   getChatEmbedCSPPolicy,
@@ -559,6 +560,28 @@ const nextConfig: NextConfig = {
       destination: 'https://docs.sim.ai/academy',
       permanent: true,
     })
+
+    /**
+     * In-app Terms, Privacy, and Cookie Policy pages are disabled until Arena
+     * legal copy is finalized. Send visitors to the Arena legal URLs instead.
+     */
+    redirects.push(
+      {
+        source: '/terms',
+        destination: env.NEXT_PUBLIC_TERMS_URL || DEFAULT_TERMS_URL,
+        permanent: false,
+      },
+      {
+        source: '/privacy',
+        destination: env.NEXT_PUBLIC_PRIVACY_URL || DEFAULT_PRIVACY_URL,
+        permanent: false,
+      },
+      {
+        source: '/cookie-policy',
+        destination: env.NEXT_PUBLIC_PRIVACY_URL || DEFAULT_PRIVACY_URL,
+        permanent: false,
+      }
+    )
 
     // Move root feeds to blog namespace
     redirects.push(

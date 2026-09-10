@@ -14,9 +14,6 @@ vi.mock('@/app/_shell/consent/consent-store-provider', () => ({
 vi.mock('@/lib/consent/tracking-consent', () => ({
   TrackingConsentProvider: ({ children }: { children: ReactNode }) => children,
 }))
-vi.mock('@/app/_shell/consent/consent-banner', () => ({
-  ConsentBanner: () => <span data-testid='banner' />,
-}))
 vi.mock('@/app/_shell/consent/google-analytics-page-view-tracker', () => ({
   GoogleAnalyticsPageViewTracker: () => <span data-testid='analytics' />,
 }))
@@ -47,12 +44,12 @@ afterEach(() => {
 })
 
 describe('ConsentProvider', () => {
-  it('wraps the application and presents the policy-controlled consent surface', () => {
+  it('wraps the application without presenting the cookie banner', () => {
     const container = render()
 
     expect(container.querySelector('[data-testid="store"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="application"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="analytics"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="banner"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="banner"]')).toBeNull()
   })
 })

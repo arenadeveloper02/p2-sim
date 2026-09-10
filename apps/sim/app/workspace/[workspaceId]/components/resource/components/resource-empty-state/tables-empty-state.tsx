@@ -1,7 +1,6 @@
 import { Chip, cn } from '@sim/emcn'
 import { Plus } from '@sim/emcn/icons'
 import { EmptyState } from '@/components/empty-state/empty-state'
-import { EmptyStateDocsLink } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/docs-link'
 import { MASK_NO_REPEAT } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/mask'
 
 /**
@@ -103,8 +102,6 @@ function TablesGraphic() {
   )
 }
 
-const TABLES_DOCS_URL = 'https://docs.sim.ai/tables'
-
 interface TablesEmptyStateProps {
   /** Creates a table — the same action the header's primary chip runs. */
   onCreate: () => void
@@ -120,12 +117,9 @@ export function TablesEmptyState({ onCreate, createDisabled = false }: TablesEmp
       title='Tables'
       description='Create a table to store structured data your agents can read and write.'
       action={
-        <>
-          <Chip variant='primary' onClick={onCreate} disabled={createDisabled} leftIcon={Plus}>
-            New table
-          </Chip>
-          <EmptyStateDocsLink href={TABLES_DOCS_URL} />
-        </>
+        <Chip variant='primary' onClick={onCreate} disabled={createDisabled} leftIcon={Plus}>
+          New table
+        </Chip>
       }
     />
   )

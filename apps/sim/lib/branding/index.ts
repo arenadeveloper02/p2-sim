@@ -1,4 +1,4 @@
-export { defaultBrandConfig } from '@/lib/branding/defaults'
+export { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL, defaultBrandConfig } from '@/lib/branding/defaults'
 export type { BrandConfig, ThemeColors } from '@/lib/branding/types'
 export { HEX_COLOR_REGEX } from '@/lib/branding/types'
 export {

@@ -132,18 +132,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${baseUrl}/models`,
       lastModified: latestModelDate,
     },
-    {
-      url: `${baseUrl}/terms`,
-      lastModified: new Date('2024-10-14'),
-    },
-    {
-      url: `${baseUrl}/privacy`,
-      lastModified: new Date('2026-08-18'),
-    },
-    {
-      url: `${baseUrl}/cookie-policy`,
-      lastModified: new Date('2026-08-18'),
-    },
   ]
 
   const blogPages: MetadataRoute.Sitemap = posts.map((p) => ({

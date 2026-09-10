@@ -1,18 +1,10 @@
-import { buildLandingMetadata } from '@/lib/landing/seo'
-import CookiePolicy from '@/app/(landing)/cookie-policy/cookie-policy'
+import { redirect } from 'next/navigation'
+import { DEFAULT_PRIVACY_URL } from '@/lib/branding/defaults'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
-export const revalidate = 3600
-
-const TITLE = 'Cookie Policy | Sim, the AI Workspace'
-const DESCRIPTION =
-  'What cookies Sim sets, why, how long they last, and how to change your choice at any time.'
-
-export const metadata = buildLandingMetadata({
-  title: TITLE,
-  description: DESCRIPTION,
-  path: '/cookie-policy',
-})
-
+/**
+ * In-app Cookie Policy is disabled until Arena legal copy is finalized.
+ */
 export default function Page() {
-  return <CookiePolicy />
+  redirect(getBrandConfig().privacyUrl || DEFAULT_PRIVACY_URL)
 }

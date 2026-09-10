@@ -1,9 +1,6 @@
 import { cn } from '@sim/emcn'
 import { EmptyState } from '@/components/empty-state/empty-state'
-import { EmptyStateDocsLink } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/docs-link'
 import { MASK_NO_REPEAT } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/mask'
-
-const LOGS_DOCS_URL = 'https://docs.sim.ai/logs-debugging'
 
 /** Skeleton ink — see the `INK` note in `tables-empty-state.tsx` for why not the surface ramp. */
 const INK = {
@@ -71,7 +68,6 @@ export function LogsEmptyState() {
       graphic={<LogsGraphic />}
       title='Logs'
       description='Every workflow execution lands here, traced block by block.'
-      action={<EmptyStateDocsLink href={LOGS_DOCS_URL} />}
     />
   )
 }

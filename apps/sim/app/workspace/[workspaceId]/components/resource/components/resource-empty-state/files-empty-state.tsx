@@ -1,11 +1,8 @@
 import { Chip, cn } from '@sim/emcn'
 import { Upload } from '@sim/emcn/icons'
 import { EmptyState } from '@/components/empty-state/empty-state'
-import { EmptyStateDocsLink } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/docs-link'
 import { HAIRLINE } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/hairline'
 import { MASK_NO_REPEAT } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state/mask'
-
-const FILES_DOCS_URL = 'https://docs.sim.ai/files'
 
 const FOLDER_BACK = [
   'M 22 34',
@@ -79,12 +76,9 @@ export function FilesEmptyState({ onUpload, uploadDisabled = false }: FilesEmpty
       title='Files'
       description='Upload files to share them across your team and every agent.'
       action={
-        <>
-          <Chip variant='primary' onClick={onUpload} disabled={uploadDisabled} leftIcon={Upload}>
-            Upload
-          </Chip>
-          <EmptyStateDocsLink href={FILES_DOCS_URL} />
-        </>
+        <Chip variant='primary' onClick={onUpload} disabled={uploadDisabled} leftIcon={Upload}>
+          Upload
+        </Chip>
       }
     />
   )

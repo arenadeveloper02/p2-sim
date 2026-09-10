@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { ConsentPreferencesTrigger } from '@/app/_shell/consent/consent-preferences-trigger'
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from '@/lib/branding/defaults'
 import { ALL_COMPETITORS } from '@/app/(landing)/comparisons/utils'
 import { ArenaWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
 import { MODEL_PROVIDERS_WITH_CATALOGS } from '@/app/(landing)/models/utils'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
 /**
  * Landing footer - the site link directory. Re-authored from the prior landing
@@ -28,16 +29,7 @@ interface FooterLinkItem {
   external?: boolean
 }
 
-interface FooterConsentItem {
-  label: string
-  consentPreferences: true
-}
-
-type FooterItem = FooterLinkItem | FooterConsentItem
-
-interface FooterProps {
-  showConsentPreferences?: boolean
-}
+type FooterItem = FooterLinkItem
 
 /**
  * Platform modules link to their local landing pages (internal link equity
@@ -117,28 +109,13 @@ const SOCIAL_LINKS: FooterItem[] = [
   },
 ]
 
-const LEGAL_LINKS: FooterItem[] = [
-  { label: 'Terms of Service', href: '/terms' },
-  { label: 'Privacy Policy', href: '/privacy' },
-  { label: 'Cookie Policy', href: '/cookie-policy' },
-]
-
-const CONSENT_PREFERENCES_LINK: FooterConsentItem = {
-  label: 'Cookie preferences',
-  consentPreferences: true,
-}
-
 function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) {
   return (
     <div>
       <h3 className='mb-4 text-[var(--text-primary)] text-sm'>{title}</h3>
       <div className='flex flex-col gap-2.5'>
         {items.map((item) =>
-          'consentPreferences' in item ? (
-            <ConsentPreferencesTrigger key={item.label} className={LINK_CLASS}>
-              {item.label}
-            </ConsentPreferencesTrigger>
-          ) : item.external ? (
+          item.external ? (
             <a
               key={item.label}
               href={item.href}
@@ -159,7 +136,13 @@ function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) 
   )
 }
 
-export function Footer({ showConsentPreferences = false }: FooterProps) {
+export function Footer() {
+  const brand = getBrandConfig()
+  const legalLinks: FooterItem[] = [
+    { label: 'Terms of Service', href: brand.termsUrl ?? DEFAULT_TERMS_URL, external: true },
+    { label: 'Privacy Policy', href: brand.privacyUrl ?? DEFAULT_PRIVACY_URL, external: true },
+  ]
+
   return (
     <footer className='mt-[120px] w-full border-[var(--border)] border-t max-sm:mt-16 max-lg:mt-[88px]'>
       <div className='mx-auto w-full max-w-[1460px] px-20 pt-16 pb-16 max-sm:px-5 max-lg:px-8 max-lg:pt-12 max-lg:pb-12'>
@@ -183,12 +166,7 @@ export function Footer({ showConsentPreferences = false }: FooterProps) {
           <FooterColumn title='Integrations' items={INTEGRATION_LINKS} />
           <FooterColumn title='Models' items={MODEL_LINKS} />
           <FooterColumn title='Socials' items={SOCIAL_LINKS} />
-          <FooterColumn
-            title='Legal'
-            items={
-              showConsentPreferences ? [...LEGAL_LINKS, CONSENT_PREFERENCES_LINK] : LEGAL_LINKS
-            }
-          />
+          <FooterColumn title='Legal' items={legalLinks} />
         </nav>
 
         <p className='mt-16 text-[var(--text-muted)] text-sm'>© 2026 Arena. All rights reserved.</p>

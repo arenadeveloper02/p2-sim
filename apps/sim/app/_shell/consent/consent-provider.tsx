@@ -2,7 +2,6 @@
 
 import type { ReactNode } from 'react'
 import { TrackingConsentProvider } from '@/lib/consent/tracking-consent'
-import { ConsentBanner } from '@/app/_shell/consent/consent-banner'
 import { ConsentStoreProvider } from '@/app/_shell/consent/consent-store-provider'
 import { GoogleAnalyticsPageViewTracker } from '@/app/_shell/consent/google-analytics-page-view-tracker'
 
@@ -11,10 +10,10 @@ interface ConsentProviderProps {
 }
 
 /**
- * Owns hosted Sim's consent lifecycle across every route. The banner stays off
- * until the resolved jurisdiction policy requires it and then appears on every
- * entry route, including a direct workspace visit. Privacy settings remain the
- * durable control after the initial decision.
+ * Owns hosted Sim's consent lifecycle across every route.
+ *
+ * The cookie banner is commented off until Arena legal/cookie policy is
+ * finalized. Restore `ConsentBanner` after that review.
  */
 export function ConsentProvider({ children }: ConsentProviderProps) {
   return (
@@ -22,7 +21,7 @@ export function ConsentProvider({ children }: ConsentProviderProps) {
       <TrackingConsentProvider>
         {children}
         <GoogleAnalyticsPageViewTracker />
-        <ConsentBanner />
+        {/* <ConsentBanner /> */}
       </TrackingConsentProvider>
     </ConsentStoreProvider>
   )

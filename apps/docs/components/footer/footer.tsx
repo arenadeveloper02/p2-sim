@@ -100,8 +100,8 @@ const SOCIAL_LINKS: FooterItem[] = [
 ]
 
 const LEGAL_LINKS: FooterItem[] = [
-  { label: 'Terms of Service', href: `${SIM_SITE_URL}/terms`, external: true },
-  { label: 'Privacy Policy', href: `${SIM_SITE_URL}/privacy`, external: true },
+  { label: 'Terms of Service', href: 'https://thearena.ai/terms', external: true },
+  { label: 'Privacy Policy', href: 'https://thearena.ai/privacy', external: true },
 ]
 
 function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) {

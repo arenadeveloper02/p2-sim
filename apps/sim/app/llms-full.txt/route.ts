@@ -1,3 +1,4 @@
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from '@/lib/branding/defaults'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export function GET() {
@@ -167,9 +168,8 @@ Built-in table creation and management:
 
 ## Legal
 
-- [Terms of Service](${baseUrl}/terms): Legal terms
-- [Privacy Policy](${baseUrl}/privacy): Data handling practices
-- [Cookie Policy](${baseUrl}/cookie-policy): Cookies Sim sets, why, and how to change your choice
+- [Terms of Service](${DEFAULT_TERMS_URL}): Legal terms
+- [Privacy Policy](${DEFAULT_PRIVACY_URL}): Data handling practices
 - [Security](${baseUrl}/.well-known/security.txt): Vulnerability disclosure policy
 `
 
