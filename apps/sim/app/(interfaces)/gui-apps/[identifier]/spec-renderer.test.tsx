@@ -908,6 +908,26 @@ describe('SpecRenderer', () => {
     expect(grid.style.gridTemplateColumns).toBe('')
   })
 
+  it('collapses a one-child two-column Grid wrapping Form, not Repeat', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['grid'] },
+        grid: { type: 'Grid', props: { columns: '2' }, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'generate' }, children: ['url'] },
+        url: {
+          type: 'TextInput',
+          props: { name: 'url', label: 'Article URL' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const grid = container.querySelector('.grid') as HTMLElement
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.style.gridTemplateColumns).toBe('')
+  })
+
   it('makes a Card a direct child of a horizontal Stack instead of wrapping it in a span', () => {
     const spec: Spec = {
       root: 'page',
@@ -1310,6 +1330,8 @@ describe('SpecRenderer', () => {
     it('renders one Card per array item as a Grid item', () => {
       const { container } = render({ spec: repeatSpec, state: { articles } })
       const grid = container.querySelector('.grid') as HTMLElement
+      expect(grid.className).not.toContain('grid-cols-1')
+      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fit, minmax(min(100%, 240px), 1fr))')
       const wrapper = grid.firstElementChild as HTMLElement
       expect(wrapper.className).toContain('contents')
       const cards = Array.from(wrapper.children)
@@ -1318,6 +1340,36 @@ describe('SpecRenderer', () => {
       expect(cards[1]?.querySelector('h2')?.textContent).toBe('Second')
       expect(container.textContent).toContain('9')
       expect(container.textContent).toContain('4')
+    })
+
+    it('formats ISO dates on card copy and keeps two-column Repeat grids', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['grid'] },
+          grid: { type: 'Grid', props: { columns: '2' }, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['card'] },
+          card: {
+            type: 'Card',
+            props: { title: '{item.keyword}', footerText: '{item.date}' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: {
+          history: [
+            { id: 'h1', keyword: 'Dental implants', date: '2026-08-24T06:28:56.717Z' },
+            { id: 'h2', keyword: 'Clear aligners', date: '2026-08-23' },
+          ],
+        },
+      })
+      const grid = container.querySelector('.grid') as HTMLElement
+      expect(grid.className).not.toContain('grid-cols-1')
+      expect(container.textContent).toContain('Aug 23, 2026')
+      expect(container.textContent).not.toContain('2026-08-23')
+      expect(container.textContent).not.toContain('2026-08-24T06:28:56.717Z')
     })
 
     it('pages locally when there is no pagination API', () => {

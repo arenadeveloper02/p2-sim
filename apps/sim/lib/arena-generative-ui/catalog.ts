@@ -63,7 +63,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Responsive grid that collapses to one column on narrow screens. Use for collections of Cards or Stats and for form fields that belong side by side. columns sets the target track count. For a live array, put Repeat inside the Grid so each item becomes one cell — do not wrap the Grid in Repeat. showWhen uses the same clause syntax as form fields.',
+        "Responsive grid that collapses to one column on narrow screens. Use for collections of Cards or Stats and for form fields that belong side by side. columns sets the target track count. For a live array, put Repeat inside the Grid so each item becomes one cell — do not wrap the Grid in Repeat. A Repeat as the Grid's only child still fills the tracks (two cards per row when columns is 2). Honour a brief that asks for two History cards in a row with columns 2. showWhen uses the same clause syntax as form fields.",
     },
     Repeat: {
       props: z.object({
@@ -784,7 +784,7 @@ export interface ResolveCatalogComponentsOptions {
 export function resolveCatalogComponentNames(
   options: ResolveCatalogComponentsOptions = {}
 ): string[] {
-  if (options.includeAll || (!options.archetype && !(options.pageArchetypes?.length))) {
+  if (options.includeAll || (!options.archetype && !options.pageArchetypes?.length)) {
     const all = new Set<string>(ARENA_GENERATIVE_CATALOG_CORE)
     for (const family of Object.values(ARENA_GENERATIVE_CATALOG_FAMILIES)) {
       for (const name of family) all.add(name)

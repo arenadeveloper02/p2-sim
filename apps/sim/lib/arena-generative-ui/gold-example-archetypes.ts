@@ -1097,7 +1097,8 @@ const workspaceHomeSpec: Spec = {
       type: 'PageHeader',
       props: {
         title: 'Tasks',
-        subtitle: 'Rows include projectId matching the selected project. Create, edit, and complete stay here.',
+        subtitle:
+          'Rows include projectId matching the selected project. Create, edit, and complete stay here.',
         kicker: null,
         align: 'start',
       },
@@ -1378,7 +1379,7 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
   'sidebar-shell',
-  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (parent Repeat), primary (child Repeat), inspector (EntityHeader + KeyValue of selected). Honour pages[].regions and pages[].interaction; this sample\'s projects/tasks are subject matter. Parent and child Open are both selectItem. onLoad setState seeds both arrays — child rows include projectId matching a parent id; the host filters that collection locally. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_task, no apiKey) on this page — the host appends and stamps the selected parent id. Complete is a row Button (done: true); the host writes onto that row. Edit is a row Button setValue editing=true (the host selects that row); save uses editing: false, not creating: false. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Do not hide navigator or primary with !selectedId. No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
+  "Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (parent Repeat), primary (child Repeat), inspector (EntityHeader + KeyValue of selected). Honour pages[].regions and pages[].interaction; this sample's projects/tasks are subject matter. Parent and child Open are both selectItem. onLoad setState seeds both arrays — child rows include projectId matching a parent id; the host filters that collection locally. Create is a PageHeader trailing Button setValue that opens a Modal Form (create_task, no apiKey) on this page — the host appends and stamps the selected parent id. Complete is a row Button (done: true); the host writes onto that row. Edit is a row Button setValue editing=true (the host selects that row); save uses editing: false, not creating: false. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. Do not hide navigator or primary with !selectedId. No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.",
   {
     title: 'Projects',
     content: 'Keep the parent list, child list, and selected record visible together.',
@@ -1619,7 +1620,7 @@ const agentHistorySpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'history_list', 'history_detail'],
+      children: ['header', 'history_grid', 'history_detail'],
     },
     header: {
       type: 'PageHeader',
@@ -1631,12 +1632,17 @@ const agentHistorySpec: Spec = {
       },
       children: [],
     },
+    history_grid: {
+      type: 'Grid',
+      props: { columns: '2', gap: 'md', minItemWidth: null, showWhen: '!selectedId' },
+      children: ['history_list'],
+    },
     history_list: {
       type: 'Repeat',
       props: {
         statePath: 'history',
         emptyText: 'No past runs yet.',
-        showWhen: '!selectedId',
+        showWhen: null,
       },
       children: ['history_card'],
     },
@@ -1802,10 +1808,8 @@ export const goldAgentShellManifest: ArenaGenerativeAppManifest = {
     generate_article: {
       onSuccess: {
         setState: {
-          content:
-            '## Dental implants\n\nWriter-ready outline for 42 North Dental.',
-          enhanced_article:
-            '## Dental implants\n\nWriter-ready outline for 42 North Dental.',
+          content: '## Dental implants\n\nWriter-ready outline for 42 North Dental.',
+          enhanced_article: '## Dental implants\n\nWriter-ready outline for 42 North Dental.',
           coverage_report: 'Coverage: intent match high; competing SERP density medium.',
         },
         navigate: 'results',
@@ -1850,7 +1854,7 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL = goldPrompt(
     'Home has no wait chrome and no onLoad; SubmitButton runs generate_article; onSuccess navigates to results.',
     'Submitted fields are available as inputs.targetKeyword / "{targetKeyword}" on results.',
     'Results has no onLoad of generate; WorkingCard for wait; Chip setValue view=enhanced|coverage above panels — not catalog Tabs for those labels.',
-    'History onLoad seeds short scalar cards; Open is same-page selectItem true with no navigateTo — hide the list with showWhen "!selectedId", show Chip setValue views plus markdown with showWhen "selectedId", Back is clearItem true; host copies output/enhanced_article onto content and named keys.',
+    'History onLoad seeds short scalar cards in a 2-column Grid; Open is same-page selectItem true with no navigateTo — hide the list with showWhen "!selectedId", show Chip setValue views plus markdown with showWhen "selectedId", Back is clearItem true; host copies output/enhanced_article onto content and named keys. Bound {item.date} is formatted by the host.',
     `Generate actionId is "${GOLD_AGENT_SHELL_GENERATE_KEY}"; history onLoad is "${GOLD_AGENT_SHELL_HISTORY_KEY}". When bindings were declared, use those apiKeys and omit dummy setState content. Do not invent API keys. Do not invent History unless the blueprint listed it.`,
   ].join(' '),
   {

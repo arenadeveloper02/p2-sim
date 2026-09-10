@@ -169,9 +169,9 @@ describe('per-archetype gold examples', () => {
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
-    expect(
-      goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'collection'] })
-    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'collection'] })).toBe(
+      ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+    )
     // task+results+collection without tabs must not steal Article Agent gold
     expect(
       goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results', 'collection'] })
@@ -188,9 +188,9 @@ describe('per-archetype gold examples', () => {
         shell: { navigation: 'tabs' },
       })
     ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL)
-    expect(
-      goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results'] })
-    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results'] })).toBe(
+      ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+    )
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
 
@@ -200,11 +200,7 @@ describe('per-archetype gold examples', () => {
     })
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
-    expect(Object.keys(goldAgentShellManifest.pages).sort()).toEqual([
-      'history',
-      'home',
-      'results',
-    ])
+    expect(Object.keys(goldAgentShellManifest.pages).sort()).toEqual(['history', 'home', 'results'])
     const serialized = JSON.stringify(goldAgentShellManifest)
     expect(serialized).toContain('"type":"Tabs"')
     expect(serialized).toContain('Generator|home')
@@ -217,10 +213,13 @@ describe('per-archetype gold examples', () => {
     expect(serialized).toContain('"clearItem":true')
     expect(serialized).toContain('!selectedId')
     expect(serialized).toContain('"showWhen":"selectedId"')
-    expect(JSON.stringify(goldAgentShellManifest.pages.history.spec.elements.open_run)).not.toContain(
-      '"navigateTo":"results"'
-    )
+    expect(
+      JSON.stringify(goldAgentShellManifest.pages.history.spec.elements.open_run)
+    ).not.toContain('"navigateTo":"results"')
     expect(serialized).toContain('"statePath":"history"')
+    expect(
+      JSON.stringify(goldAgentShellManifest.pages.history.spec.elements.history_grid)
+    ).toContain('"columns":"2"')
     // Results is not a Tabs peer — keep Generator highlighted via activePath home.
     expect(JSON.stringify(goldAgentShellManifest.pages.results.spec.elements.tabs)).toContain(
       '"activePath":"home"'

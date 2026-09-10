@@ -947,7 +947,60 @@ export function readScopedStatePath(
   return readHostStatePath(state, path)
 }
 
-function templatePlaceholderValue(token: string, scope: RepeatItemScope): string {
+const ISO_DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/
+const ISO_DATETIME =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/
+const BOUND_DATE_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const
+
+/**
+ * Turns a bound ISO date or datetime into readable card/table copy.
+ * Date-only values stay calendar-stable (no timezone shift). Other strings pass through.
+ * Do not use this on navigation targets or query params.
+ */
+export function formatBoundDateDisplay(value: string): string {
+  const trimmed = value.trim()
+  const dateOnly = ISO_DATE_ONLY.exec(trimmed)
+  if (dateOnly) {
+    const month = Number(dateOnly[2])
+    const day = Number(dateOnly[3])
+    if (month < 1 || month > 12 || day < 1 || day > 31) return value
+    return `${BOUND_DATE_MONTHS[month - 1]} ${day}, ${dateOnly[1]}`
+  }
+  if (!ISO_DATETIME.test(trimmed)) return value
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatBoundScalar(value: string | number | boolean, formatDates: boolean): string {
+  const text = String(value)
+  return formatDates ? formatBoundDateDisplay(text) : text
+}
+
+function templatePlaceholderValue(
+  token: string,
+  scope: RepeatItemScope,
+  formatDates = false
+): string {
   if (token === 'index') {
     return String(scope.index)
   }
@@ -955,7 +1008,7 @@ function templatePlaceholderValue(token: string, scope: RepeatItemScope): string
     token === 'item' ? scope.item : readHostStatePath(scope.item, token.slice('item.'.length))
   if (value === undefined || value === null) return ''
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
+    return formatBoundScalar(value, formatDates)
   }
   return ''
 }
@@ -1023,7 +1076,27 @@ export interface InterpolateElementOptions {
   state?: Record<string, unknown>
   scope?: RepeatItemScope
   pending?: boolean
+  /** Pretty-print ISO dates. Off for hrefs, navigateTo, and other machine props. */
+  formatDates?: boolean
 }
+
+/** Visible copy props. Navigation, statePath, and showWhen stay raw. */
+const DISPLAY_INTERPOLATION_PROP_KEYS = new Set([
+  'title',
+  'subtitle',
+  'description',
+  'footerText',
+  'text',
+  'label',
+  'kicker',
+  'hint',
+  'emptyText',
+  'fallback',
+  'badge',
+  'value',
+  'delta',
+  'meta',
+])
 
 /**
  * Substitutes Repeat `{item.*}` / `{index}` first, then host `{field}` tokens
@@ -1035,17 +1108,17 @@ export function interpolateBindingTemplate(
   options: InterpolateElementOptions = {}
 ): string {
   if (!template.includes('{')) return template
-  const { state, scope, pending = false } = options
+  const { state, scope, pending = false, formatDates = false } = options
   return template.replace(BINDING_TEMPLATE_PLACEHOLDER, (match, rawToken: string) => {
     const token = rawToken.trim()
     if (isItemTemplateToken(token)) {
       if (!scope) return match
-      return templatePlaceholderValue(token, scope)
+      return templatePlaceholderValue(token, scope, formatDates)
     }
     if (!state) return pending ? '' : match
     const resolved = lookupHostBindingValue(state, token)
-    if (resolved !== undefined) return resolved
-    return ''
+    if (resolved === undefined) return ''
+    return formatDates ? formatBoundDateDisplay(resolved) : resolved
   })
 }
 
@@ -1060,7 +1133,13 @@ export function interpolateElementProps(
   if (!options.scope && !options.state) return props
   const next: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(props)) {
-    next[key] = typeof value === 'string' ? interpolateBindingTemplate(value, options) : value
+    next[key] =
+      typeof value === 'string'
+        ? interpolateBindingTemplate(value, {
+            ...options,
+            formatDates: DISPLAY_INTERPOLATION_PROP_KEYS.has(key),
+          })
+        : value
   }
   return next
 }

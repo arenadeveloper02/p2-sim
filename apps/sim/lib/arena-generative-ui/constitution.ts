@@ -99,7 +99,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'generator',
         text: 'Avoid more than two primary content columns unless the task requires it.',
         prompt:
-          'At most two primary content columns (Columns main+sidebar, or Grid columns 2). Grid columns 3 only for a Repeat card collection.',
+          'At most two primary content columns (Columns main+sidebar, or Grid columns 2). Repeat card collections use Grid columns 2 when the brief asks for two cards per row (History run cards). Grid columns 3 for a denser catalog. Do not stack Repeat Cards in one column when the brief asked for two in a row.',
       },
       {
         ownership: 'generator',
@@ -400,7 +400,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'generator',
         text: 'Format dates, numbers, currencies and percentages appropriately.',
         prompt:
-          'Format dates, numbers, currencies, and percentages in labels and literal copy. Do not invent API values to make a Stat look filled.',
+          'Format dates, numbers, currencies, and percentages in labels and literal copy. Bound ISO date and datetime values ({item.date}, createdAt) are formatted by the host — bind the field; do not dump the raw timestamp and do not invent a second formatted copy of API data. Do not invent API values to make a Stat look filled.',
       },
     ],
   },
@@ -508,9 +508,7 @@ export function resolveConstitutionSections(
  * do-not-emit so the model does not paint a second copy of runtime chrome.
  * Pass section ids to inject only relevant packs; omit for the full prompt.
  */
-export function constitutionPromptFor(
-  sectionIds?: readonly ConstitutionSectionId[]
-): string {
+export function constitutionPromptFor(sectionIds?: readonly ConstitutionSectionId[]): string {
   const allowed = sectionIds ? new Set(sectionIds) : null
   const sections = allowed
     ? ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.filter((section) => allowed.has(section.id))

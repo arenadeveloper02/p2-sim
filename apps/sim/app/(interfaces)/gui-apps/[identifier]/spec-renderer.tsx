@@ -96,6 +96,7 @@ import {
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   collectionFromBoundValue,
   displayTextFromActionData,
+  formatBoundDateDisplay,
   GENERATIVE_APP_VIEW_SWITCH_TEST_ID,
   interpolateElementProps,
   parseTabItems,
@@ -527,7 +528,7 @@ const SECTION_WIDTHS = {
 
 /** Minimum track width per `Grid.columns` before the grid collapses. */
 const GRID_MIN_ITEM_WIDTHS: Record<string, string> = {
-  '2': '420px',
+  '2': '240px',
   '3': '300px',
   '4': '240px',
 }
@@ -759,6 +760,43 @@ function hasSingleVisibleLayoutChild(
     if (count > 1) return false
   }
   return true
+}
+
+function singleVisibleLayoutChildId(
+  elements: Record<string, SpecElement>,
+  childIds: string[],
+  visibilityValues: Record<string, unknown>
+): string | undefined {
+  let found: string | undefined
+  for (const id of childIds) {
+    const child = elements[id]
+    if (!child) continue
+    if (child.type === 'Modal' || child.type === 'Drawer') continue
+    if (!fieldIsVisible(child.props ?? {}, visibilityValues)) continue
+    if (found) return undefined
+    found = id
+  }
+  return found
+}
+
+/**
+ * Repeat uses `display: contents`, so a Grid whose only child is Repeat is
+ * still a multi-cell collection. Collapsing that to one column would ignore
+ * `columns: 2` on History / card lists.
+ */
+function isRepeatCollectionRoot(
+  elements: Record<string, SpecElement>,
+  id: string | undefined,
+  visibilityValues: Record<string, unknown>
+): boolean {
+  if (!id) return false
+  const element = elements[id]
+  if (!element) return false
+  if (!fieldIsVisible(element.props ?? {}, visibilityValues)) return false
+  if (element.type === 'Repeat') return true
+  if (element.type !== 'Stack' && element.type !== 'Section') return false
+  const nestedId = singleVisibleLayoutChildId(elements, element.children ?? [], visibilityValues)
+  return isRepeatCollectionRoot(elements, nestedId, visibilityValues)
 }
 
 /**
@@ -1205,8 +1243,8 @@ function readStatePath(
 function displayFromStateValue(value: unknown, fallback: string): string {
   if (isEmptyStateValue(value)) return fallback
   const fromAction = displayTextFromActionData(value)
-  if (fromAction) return fromAction
-  return String(value)
+  const text = fromAction || String(value)
+  return formatBoundDateDisplay(text)
 }
 
 function StateTable({
@@ -2438,8 +2476,12 @@ export function SpecRenderer({
       }
       case 'Grid': {
         if (!fieldIsVisible(props, visibilityValues)) return null
-        const singleChild = hasSingleVisibleLayoutChild(elements, childIds, visibilityValues)
-        if (singleChild && gridColumnCount(props) === '2') {
+        const onlyChildId = singleVisibleLayoutChildId(elements, childIds, visibilityValues)
+        if (
+          onlyChildId &&
+          gridColumnCount(props) === '2' &&
+          !isRepeatCollectionRoot(elements, onlyChildId, visibilityValues)
+        ) {
           return (
             <div
               className='grid w-full grid-cols-1'

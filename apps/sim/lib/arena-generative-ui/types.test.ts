@@ -9,6 +9,7 @@ import {
   clearedSelectedIdHostState,
   clearedSelectedItemHostState,
   displayTextFromActionData,
+  formatBoundDateDisplay,
   interpolateBindingTemplate,
   interpolateItemTemplate,
   interpolateRepeatProps,
@@ -295,8 +296,32 @@ describe('Repeat item scope', () => {
     expect(interpolateItemTemplate('{item.meta.score}', scope)).toBe('4')
     expect(interpolateItemTemplate('static', scope)).toBe('static')
     expect(
-      interpolateRepeatProps({ title: '{item.title}', statePath: 'item.title' }, scope)
-    ).toEqual({ title: 'Alpha', statePath: 'item.title' })
+      interpolateRepeatProps(
+        { title: '{item.title}', footerText: '{item.date}', statePath: 'item.title' },
+        {
+          item: {
+            ...article,
+            date: '2026-08-24T06:28:56.717Z',
+          },
+          index: 2,
+        }
+      )
+    ).toEqual({
+      title: 'Alpha',
+      footerText: formatBoundDateDisplay('2026-08-24T06:28:56.717Z'),
+      statePath: 'item.title',
+    })
+    expect(
+      interpolateRepeatProps(
+        { to: 'report?date={item.date}' },
+        {
+          item: { date: '2026-08-23' },
+          index: 0,
+        }
+      )
+    ).toEqual({ to: 'report?date=2026-08-23' })
+    expect(formatBoundDateDisplay('2026-08-23')).toBe('Aug 23, 2026')
+    expect(formatBoundDateDisplay('not a date')).toBe('not a date')
   })
 
   it('leaves object placeholders empty so they cannot leak into hrefs', () => {
@@ -368,9 +393,9 @@ describe('Repeat item scope', () => {
   })
 
   it('reads Table.rows identity headers like Id for selectedId', () => {
-    expect(selectedItemHostState({ Id: 't1', Name: 'Ship', 'Project Id': 'p1' }, 0).selectedId).toBe(
-      't1'
-    )
+    expect(
+      selectedItemHostState({ Id: 't1', Name: 'Ship', 'Project Id': 'p1' }, 0).selectedId
+    ).toBe('t1')
   })
 
   it('falls back to the row index when the item has no id', () => {
