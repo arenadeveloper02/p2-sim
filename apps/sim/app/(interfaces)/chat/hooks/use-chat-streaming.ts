@@ -22,6 +22,7 @@ import {
 import { readSSEEvents } from '@/lib/core/utils/sse'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import {
+  isChatBlockCompleteFrame,
   isChatChunkFrame,
   isChatChunkResetFrame,
   isChatErrorFrame,
@@ -33,6 +34,7 @@ import {
 import type {
   ChatFile,
   ChatMessage,
+  ChatOutputSegment,
   ChatToolCall,
 } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
@@ -143,6 +145,7 @@ export function useChatStreaming() {
               isStreaming: false,
               isThinkingStreaming: false,
               isToolStreaming: false,
+              outputSegments: undefined,
             },
           ]
         }
@@ -187,6 +190,44 @@ export function useChatStreaming() {
      */
     const blockTextOrder: string[] = []
     const blockTextSegments = new Map<string, string>()
+    const segmentOrder: string[] = []
+    const segmentRuntime = new Map<string, OutputSegmentRuntime>()
+    for (const blockId of uniqueOutputBlockIds(streamingOptions?.outputConfigs)) {
+      segmentOrder.push(blockId)
+      segmentRuntime.set(blockId, {
+        status: 'waiting',
+        thinking: '',
+        isThinkingStreaming: false,
+      })
+    }
+    const activateSegment = (blockId: string) => {
+      const existing = segmentRuntime.get(blockId)
+      if (!existing) {
+        segmentOrder.push(blockId)
+        segmentRuntime.set(blockId, {
+          status: 'streaming',
+          thinking: '',
+          isThinkingStreaming: false,
+        })
+        return
+      }
+      if (existing.status === 'waiting') {
+        existing.status = 'streaming'
+      }
+    }
+    const completeSegment = (blockId: string) => {
+      const existing = segmentRuntime.get(blockId)
+      if (!existing) return
+      existing.status = 'done'
+      existing.isThinkingStreaming = false
+    }
+    const snapshotSegments = (): ChatOutputSegment[] | undefined => {
+      if (segmentOrder.length === 0) return undefined
+      return snapshotOutputSegments(segmentOrder, segmentRuntime, blockTextSegments, {
+        toolCallOrder,
+        toolCallsMap,
+      })
+    }
     let accumulatedText = ''
     const recomputeAccumulatedText = () => {
       accumulatedText = blockTextOrder.map((id) => blockTextSegments.get(id) ?? '').join('')
@@ -227,6 +268,7 @@ export function useChatStreaming() {
       const thinkingStreamingSnapshot = isThinkingStreaming
       const toolCallsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
       const toolStreamingSnapshot = anyToolCallRunning(toolCallsMap)
+      const outputSegmentsSnapshot = snapshotSegments()
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== messageId) return msg
@@ -238,6 +280,7 @@ export function useChatStreaming() {
             isThinkingStreaming: thinkingStreamingSnapshot,
             toolCalls: toolCallsSnapshot,
             isToolStreaming: toolStreamingSnapshot,
+            outputSegments: outputSegmentsSnapshot,
           }
         })
       )
@@ -268,6 +311,7 @@ export function useChatStreaming() {
         timestamp: new Date(),
         isStreaming: true,
         liked: null,
+        outputSegments: snapshotSegments(),
       },
     ])
 
@@ -309,6 +353,7 @@ export function useChatStreaming() {
                         isToolStreaming: false,
                         thinking: accumulatedThinking || msg.thinking,
                         toolCalls: toolsSnapshot ?? msg.toolCalls,
+                        outputSegments: undefined,
                       }
                     : msg
                 )
@@ -333,6 +378,7 @@ export function useChatStreaming() {
                       isStreaming: false,
                       isThinkingStreaming: false,
                       isToolStreaming: false,
+                      outputSegments: undefined,
                       type: 'assistant' as const,
                     }
                   : msg
@@ -355,6 +401,13 @@ export function useChatStreaming() {
           }
 
           if (isChatThinkingFrame(json)) {
+            const { blockId } = json
+            activateSegment(blockId)
+            const segment = segmentRuntime.get(blockId)
+            if (segment) {
+              segment.thinking += json.data
+              segment.isThinkingStreaming = true
+            }
             accumulatedThinking += json.data
             accumulatedThinkingRef.current = accumulatedThinking
             isThinkingStreaming = true
@@ -365,10 +418,15 @@ export function useChatStreaming() {
 
           if (isChatToolFrame(json)) {
             const { blockId } = json
-            // Tools starting means the turn's thinking phase is over — settle
+            activateSegment(blockId)
+            const segment = segmentRuntime.get(blockId)
+            // Tools starting means this block's thinking phase is over — settle
             // the thinking chrome (it re-opens if more thinking streams later).
-            if (json.phase === 'start' && isThinkingStreaming) {
-              isThinkingStreaming = false
+            if (json.phase === 'start') {
+              if (segment) segment.isThinkingStreaming = false
+              if (isThinkingStreaming) {
+                isThinkingStreaming = false
+              }
             }
             applyToolCallPhase(
               toolCallsMap,
@@ -387,6 +445,13 @@ export function useChatStreaming() {
               })
             )
             syncToolCallsRef()
+            uiDirty = true
+            scheduleUIFlush()
+            return false
+          }
+
+          if (isChatBlockCompleteFrame(json)) {
+            completeSegment(json.blockId)
             uiDirty = true
             scheduleUIFlush()
             return false
@@ -424,6 +489,7 @@ export function useChatStreaming() {
                       files: forkFinal.files,
                       generatedImages: forkFinal.generatedImages,
                       knowledgeResults: forkFinal.knowledgeResults,
+                      outputSegments: undefined,
                     }
                   : msg
               )
@@ -445,6 +511,7 @@ export function useChatStreaming() {
             // re-registers at the end, keeping render order = arrival order
             // (the server re-computes the cross-block separator on re-stream).
             const { blockId } = json
+            activateSegment(blockId)
             if (blockTextSegments.has(blockId)) {
               blockTextSegments.delete(blockId)
               const orderIndex = blockTextOrder.indexOf(blockId)
@@ -461,6 +528,9 @@ export function useChatStreaming() {
           // Answer text only — never append thinking/tool/unknown chunk frames blindly.
           if (isChatChunkFrame(json)) {
             const { blockId, chunk: contentChunk } = json
+            activateSegment(blockId)
+            const segment = segmentRuntime.get(blockId)
+            if (segment) segment.isThinkingStreaming = false
 
             // First answer chunk settles thinking chrome (still visible, no longer “live”).
             if (isThinkingStreaming) {
@@ -508,6 +578,7 @@ export function useChatStreaming() {
                 isToolStreaming: false,
                 thinking: accumulatedThinking || msg.thinking,
                 toolCalls: toolsSnapshot ?? msg.toolCalls,
+                outputSegments: undefined,
               }
             }
             return {
@@ -518,6 +589,7 @@ export function useChatStreaming() {
               content: accumulatedText || msg.content,
               thinking: accumulatedThinking || msg.thinking,
               toolCalls: toolsSnapshot ?? msg.toolCalls,
+              outputSegments: undefined,
             }
           })
         )
@@ -545,6 +617,7 @@ export function useChatStreaming() {
                 isToolStreaming: false,
                 thinking: accumulatedThinking || msg.thinking,
                 toolCalls: toolsSnapshot ?? msg.toolCalls,
+                outputSegments: undefined,
               }
             : msg
         )
@@ -568,6 +641,53 @@ export function useChatStreaming() {
     stopStreaming,
     handleStreamedResponse,
   }
+}
+
+interface OutputSegmentRuntime {
+  status: ChatOutputSegment['status']
+  thinking: string
+  isThinkingStreaming: boolean
+}
+
+/**
+ * Unique selected-output block ids in deployment order. Knowledge `results`
+ * are rendered as references, not text segments, so they are omitted.
+ */
+function uniqueOutputBlockIds(outputConfigs: StreamingOptions['outputConfigs']): string[] {
+  if (!outputConfigs?.length) return []
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const config of outputConfigs) {
+    if (!config.blockId || seen.has(config.blockId) || config.path === 'results') continue
+    seen.add(config.blockId)
+    ids.push(config.blockId)
+  }
+  return ids
+}
+
+function snapshotOutputSegments(
+  segmentOrder: string[],
+  segmentRuntime: Map<string, OutputSegmentRuntime>,
+  blockTextSegments: Map<string, string>,
+  tools: {
+    toolCallOrder: string[]
+    toolCallsMap: Map<string, ChatToolCall>
+  }
+): ChatOutputSegment[] {
+  const allTools = snapshotToolCalls(tools.toolCallOrder, tools.toolCallsMap) ?? []
+  return segmentOrder.map((blockId) => {
+    const runtime = segmentRuntime.get(blockId)
+    const toolCalls = allTools.filter((tool) => tool.blockId === blockId)
+    return {
+      blockId,
+      content: blockTextSegments.get(blockId) ?? '',
+      status: runtime?.status ?? 'waiting',
+      thinking: runtime?.thinking || undefined,
+      isThinkingStreaming: runtime?.isThinkingStreaming ?? false,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      isToolStreaming: toolCalls.some((tool) => tool.status === 'running'),
+    }
+  })
 }
 
 interface ForkFinalStreamInput {

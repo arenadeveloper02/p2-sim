@@ -62,6 +62,23 @@ export interface ChatToolCall extends AgentStreamToolCall {
   displayName: string
 }
 
+/** Live-stream status of one selected chat output. */
+export type ChatOutputSegmentStatus = 'waiting' | 'streaming' | 'done'
+
+/**
+ * One selected block output while a deployed-chat turn is still streaming.
+ * Dropped on `final` so the settled bubble renders the combined `content`.
+ */
+export interface ChatOutputSegment {
+  blockId: string
+  content: string
+  status: ChatOutputSegmentStatus
+  thinking?: string
+  isThinkingStreaming?: boolean
+  toolCalls?: ChatToolCall[]
+  isToolStreaming?: boolean
+}
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -77,6 +94,11 @@ export interface ChatMessage {
   toolCalls?: ChatToolCall[]
   /** True while any tool chip is still `running`. */
   isToolStreaming?: boolean
+  /**
+   * Per selected-output live state. Present only while `isStreaming` is true
+   * when the deployment selected one or more block outputs.
+   */
+  outputSegments?: ChatOutputSegment[]
   attachments?: ChatAttachment[]
   executionId?: string
   files?: ChatFile[]

@@ -76,14 +76,14 @@ function DeployedChatDescriptionPreview({
 }
 
 interface DeployedChatLandingProps {
-  chatConfig: {
+  chatConfig?: {
     title: string
     description?: string
     customizations?: {
       headerText?: string
       welcomeMessage?: string
     }
-  }
+  } | null
   department?: string | null
   userName?: string | null
   isStreaming?: boolean
@@ -129,11 +129,11 @@ export function DeployedChatLanding({
 }: DeployedChatLandingProps) {
   const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false)
 
-  const title = chatConfig.customizations?.headerText || chatConfig.title || 'Chat'
+  const title = chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'
   const firstName = getDeployedChatFirstName(userName)
   const descriptionSource = resolveDeployedChatLandingDescription({
     title,
-    welcomeMessage: chatConfig.customizations?.welcomeMessage,
+    welcomeMessage: chatConfig?.customizations?.welcomeMessage,
   })
 
   const promptLine = `What should we get done${firstName ? `, ${firstName}` : ''}?`

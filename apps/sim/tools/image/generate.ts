@@ -77,6 +77,10 @@ function resolvePrimaryImageFile(
     return data.imageFile
   }
 
+  if (isUserFile(data.image)) {
+    return data.image
+  }
+
   if (data.imageUrl) {
     return toImageFile(
       {

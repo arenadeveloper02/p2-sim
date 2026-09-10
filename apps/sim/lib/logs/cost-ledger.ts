@@ -1,7 +1,8 @@
 import { db } from '@sim/db'
 import { usageLog } from '@sim/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, notInArray } from 'drizzle-orm'
 import type { AdditiveCostLeaf, CostLedger } from '@/lib/api/contracts/logs'
+import { UNBILLED_USAGE_CATEGORIES } from '@/lib/billing/core/unbilled-usage-categories'
 import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
 import {
   formatEmbeddedToolLabel,

@@ -40,10 +40,22 @@ export async function executeImageGeneration(
       )
     }
 
-    const storedImage = await runImageToolGeneration(body as ImageToolBody, {
-      userId: context.userId,
-      requestId,
-    })
+    const storedImage = await runImageToolGeneration(
+      {
+        ...(body as ImageToolBody),
+        userId: context.userId,
+        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
+        ...(context.workflowId ? { workflowId: context.workflowId } : {}),
+        ...(context.executionId ? { executionId: context.executionId } : {}),
+      },
+      {
+        userId: context.userId,
+        requestId,
+        workspaceId: context.workspaceId,
+        workflowId: context.workflowId,
+        executionId: context.executionId,
+      }
+    )
     context.signal?.throwIfAborted()
 
     logger.info(`[${requestId}] Image generation completed successfully`, {

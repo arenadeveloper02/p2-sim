@@ -257,6 +257,48 @@ describe('createStreamingResponse', () => {
       blockId: 'child-workflow.agent-1',
       chunk: 'Nested answer',
     })
+    expect(events).toContainEqual({
+      blockId: 'child-workflow.agent-1',
+      event: 'block_complete',
+    })
+  })
+
+  it('emits block_complete after a non-streaming selected output dump', async () => {
+    const stream = await createStreamingResponse({
+      requestId: 'request-block-complete-dump',
+      executionId: 'execution-1',
+      streamConfig: {
+        selectedOutputs: ['function-1_result'],
+        includeFileBase64: false,
+      },
+      executeFn: async ({ onBlockComplete }) => {
+        await onBlockComplete('function-1', { result: 'done' })
+        return {
+          success: true,
+          output: {},
+          logs: [
+            {
+              blockId: 'function-1',
+              output: { result: 'done' },
+              startedAt: new Date().toISOString(),
+              endedAt: new Date().toISOString(),
+              durationMs: 1,
+              success: true,
+            },
+          ],
+        } as any
+      },
+    })
+
+    const events = await collectSSEEvents(stream)
+    const completeIndex = events.findIndex(
+      (event) => event.event === 'block_complete' && event.blockId === 'function-1'
+    )
+    const chunkIndex = events.findIndex(
+      (event) => event.blockId === 'function-1' && typeof event.chunk === 'string'
+    )
+    expect(chunkIndex).toBeGreaterThanOrEqual(0)
+    expect(completeIndex).toBeGreaterThan(chunkIndex)
   })
 
   it('extracts block-level selected outputs from JSON content payloads', async () => {

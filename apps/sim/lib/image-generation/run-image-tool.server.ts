@@ -124,6 +124,9 @@ function logGptImage2Route(
 export interface StoredImageResponse {
   content: string
   imageUrl: string
+  /** Canonical generated-image file object (`id`, `name`, `url`, `size`, `type`). */
+  image?: unknown
+  images?: unknown[]
   imageFile?: unknown
   fileName: string
   contentType: string
@@ -163,6 +166,9 @@ function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | un
 export interface RunImageToolOptions {
   userId: string
   requestId?: string
+  workspaceId?: string
+  workflowId?: string
+  executionId?: string
 }
 
 /**
@@ -247,6 +253,10 @@ export async function runImageToolGeneration(
     ...body,
     provider,
     ...(reconciled.model ? { model: reconciled.model } : {}),
+    userId: options.userId || body.userId,
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+    ...(options.executionId ? { executionId: options.executionId } : {}),
   }
 
   if (prompt.length < 3 || prompt.length > 4000) {
@@ -1365,6 +1375,8 @@ function buildStoredImageResponse(
   return {
     content: imageUrl,
     imageUrl,
+    image: imageFile,
+    images: imageFile ? [imageFile] : [],
     imageFile,
     fileName: safeFileName,
     contentType: imageResult.contentType,
@@ -1462,21 +1474,34 @@ async function storeGeneratedImage(
   }
 
   const { StorageService } = await import('@/lib/uploads')
+  const storageKey = `copilot/${timestamp}-${safeFileName}`
   if (isGptImage2) {
     logGptImage2Route(requestId, 'fallback upload starting', {
       outputBytes: imageResult.buffer.length,
       contentType: imageResult.contentType,
       fileName: safeFileName,
+      key: storageKey,
       context: 'copilot',
     })
   }
   const fileInfo = await StorageService.uploadFile({
     file: imageResult.buffer,
-    fileName: safeFileName,
+    fileName: storageKey,
     contentType: imageResult.contentType,
     context: 'copilot',
+    preserveKey: true,
+    customKey: storageKey,
   })
   const imageUrl = `${getBaseUrl()}${fileInfo.path}`
+  const imageFile = {
+    id: generateFileId(),
+    name: safeFileName,
+    url: imageUrl,
+    key: fileInfo.key,
+    size: imageResult.buffer.length,
+    type: imageResult.contentType,
+    context: 'copilot' as const,
+  }
   if (isGptImage2) {
     logGptImage2Route(requestId, 'fallback upload completed', {
       fileName: safeFileName,
@@ -1487,8 +1512,9 @@ async function storeGeneratedImage(
   }
   logger.info(`[${requestId}] Stored generated image fallback`, {
     fileName: safeFileName,
+    key: fileInfo.key,
     size: imageResult.buffer.length,
   })
 
-  return buildStoredImageResponse(imageResult, safeFileName, imageUrl, undefined, body)
+  return buildStoredImageResponse(imageResult, safeFileName, imageUrl, imageFile, body)
 }

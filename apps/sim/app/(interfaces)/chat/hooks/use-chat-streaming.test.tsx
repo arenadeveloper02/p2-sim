@@ -647,4 +647,51 @@ describe('useChatStreaming tool lifecycle', () => {
 
     expect(messages.find((m) => m.id === 'msg-assistant-1')?.toolCalls?.[0]?.status).toBe('error')
   })
+
+  it('seeds selected outputs and advances the next loader after block_complete', async () => {
+    let afterFirstComplete: ChatMessage | undefined
+    let afterSecondChunk: ChatMessage | undefined
+
+    mockReadSSEEvents.mockImplementation(async (_source, options) => {
+      expect(
+        messages.find((m) => m.id === 'msg-assistant-1')?.outputSegments?.map((s) => s.status)
+      ).toEqual(['waiting', 'waiting'])
+      await options.onEvent({ blockId: 'agent-a', chunk: 'First output' })
+      await options.onEvent({ blockId: 'agent-a', event: 'block_complete' })
+      await flushUiBatch()
+      afterFirstComplete = messages.find((m) => m.id === 'msg-assistant-1')
+      await options.onEvent({ blockId: 'agent-b', chunk: 'Second output' })
+      await flushUiBatch()
+      afterSecondChunk = messages.find((m) => m.id === 'msg-assistant-1')
+      await options.onEvent({
+        event: 'final',
+        data: { success: true, output: {} },
+      })
+    })
+
+    await act(async () => {
+      await handle
+        .latest()
+        .handleStreamedResponse(makeSseResponse(), setMessages, vi.fn(), vi.fn(), {
+          outputConfigs: [{ blockId: 'agent-a' }, { blockId: 'agent-b' }],
+        })
+    })
+    await flushUiBatch()
+
+    expect(afterFirstComplete?.outputSegments?.map((segment) => segment.status)).toEqual([
+      'done',
+      'waiting',
+    ])
+    expect(afterFirstComplete?.outputSegments?.[0]?.content).toBe('First output')
+    expect(afterSecondChunk?.outputSegments?.map((segment) => segment.status)).toEqual([
+      'done',
+      'streaming',
+    ])
+    expect(afterSecondChunk?.outputSegments?.[1]?.content).toBe('Second output')
+
+    const assistant = messages.find((m) => m.id === 'msg-assistant-1')
+    expect(assistant?.isStreaming).toBe(false)
+    expect(assistant?.outputSegments).toBeUndefined()
+    expect(assistant?.content).toBe('First outputSecond output')
+  })
 })

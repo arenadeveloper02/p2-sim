@@ -33,6 +33,7 @@ import {
 import {
   AGENT_STREAM_PROTOCOL_HEADER,
   AGENT_STREAM_PROTOCOL_V1,
+  type ChatStreamBlockCompleteFrame,
   type ChatStreamChunkFrame,
   type ChatStreamChunkResetFrame,
   type ChatStreamErrorFrame,
@@ -63,6 +64,9 @@ const SELECTED_OUTPUT_TOO_LARGE_MESSAGE =
  *   `{ blockId, event: 'chunk_reset' }` when a turn resolves to tool calls.
  * - Thinking (opt-in): `{ blockId, event: 'thinking', data }` — never uses `chunk`.
  * - Tool lifecycle (opt-in): `{ blockId, event: 'tool', ... }` — name/status only.
+ * - Selected-output settled: `{ blockId, event: 'block_complete' }` after that
+ *   block's live stream or non-streaming dump finishes. Lets clients show the
+ *   next output's loader instead of one turn-wide wait.
  * - Success terminal: `{ event: 'final', data }` then `[DONE]`.
  * - Failure terminal: exactly one `{ event: 'error', ... }` then `[DONE]`. No `final` after failure.
  * - Mid-block read issues may emit non-terminal `{ event: 'stream_error', blockId, error }`.
@@ -854,6 +858,14 @@ export async function createStreamingResponse(
         controller.enqueue(encodeSSE(frame))
       }
 
+      const completedBlockIdsEmitted = new Set<string>()
+      const sendBlockComplete = (blockId: string) => {
+        if (!blockId || completedBlockIdsEmitted.has(blockId)) return
+        completedBlockIdsEmitted.add(blockId)
+        const frame: ChatStreamBlockCompleteFrame = { blockId, event: 'block_complete' }
+        controller.enqueue(encodeSSE(frame))
+      }
+
       /**
        * Callback for handling streaming execution events.
        * Subscribe synchronously before the first await so the executor pump
@@ -959,6 +971,7 @@ export async function createStreamingResponse(
           controller.enqueue(encodeSSE(frame))
         } finally {
           unsubscribe?.()
+          sendBlockComplete(blockId)
         }
       }
 
@@ -1080,6 +1093,10 @@ export async function createStreamingResponse(
             break
           }
         }
+
+        if (matchingOutputs.length > 0 && !state.selectedOutputError) {
+          sendBlockComplete(selectedOutputBlockId)
+        }
       }
 
       try {
@@ -1116,6 +1133,7 @@ export async function createStreamingResponse(
             // Mark as streamed BEFORE buildMinimalResult is called
             // This ensures buildMinimalResult will skip including it in the final result
             state.streamedContent.set(blockId, skipContent)
+            sendBlockComplete(blockId)
           }
         }
 

@@ -11,6 +11,7 @@ import {
   resolveSubscriptionUsagePeriod,
   type UsagePeriodSource,
 } from '@/lib/billing/core/reporting-period'
+import { UNBILLED_USAGE_CATEGORIES } from '@/lib/billing/core/unbilled-usage-categories'
 import {
   buildModelPricingSnapshot,
   normalizeUsageEntry,
@@ -200,18 +201,7 @@ export const COPILOT_USAGE_SOURCES: UsageLogSource[] = [
   'mothership_block',
 ]
 
-/**
- * Categories that record usage Sim does not charge for. Their `cost` is always `0`
- * and their value is the token counts in `metadata`, so usage reporting can show
- * volume that the billing ledger has no reason to know about.
- *
- * These are the only categories exempt from {@link recordUsage}'s `cost > 0` filter.
- * Every billing aggregate over usage_log is `SUM(cost)`, so zero-cost rows leave
- * every existing total unchanged.
- */
-export const UNBILLED_USAGE_CATEGORIES = [
-  'model_unbilled',
-] as const satisfies readonly UsageLogCategory[]
+export { UNBILLED_USAGE_CATEGORIES }
 
 const UNBILLED_USAGE_CATEGORY_SET: ReadonlySet<string> = new Set(UNBILLED_USAGE_CATEGORIES)
 

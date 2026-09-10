@@ -48,7 +48,10 @@ describe('image operations', () => {
     expect(response.status).toBe(200)
     expect((await response.json()).imageUrl).toBe('https://sim.test/generated.png')
     expect(mocks.runImageToolGeneration).toHaveBeenCalledWith(
-      falInput,
+      expect.objectContaining({
+        ...falInput,
+        userId: 'user-1',
+      }),
       expect.objectContaining({ userId: 'user-1', requestId: 'request-1' })
     )
   })
@@ -66,5 +69,54 @@ describe('image operations', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
 
     expect(mocks.runImageToolGeneration).not.toHaveBeenCalled()
+  })
+
+  it('forwards trusted workflow scope so generated images store as file objects', async () => {
+    mocks.runImageToolGeneration.mockResolvedValue({
+      content: 'generated',
+      imageUrl: 'https://sim.test/generated.png',
+      image: {
+        id: 'file-1',
+        name: 'generated.png',
+        url: 'https://sim.test/generated.png',
+        size: 12,
+        type: 'image/png',
+        key: 'agent-generated-images/workflow-1/user-1/generated.png',
+      },
+      fileName: 'generated.png',
+      contentType: 'image/png',
+      provider: 'falai',
+      model: 'nano-banana-2',
+      metadata: {
+        provider: 'falai',
+        model: 'nano-banana-2',
+        contentType: 'image/png',
+      },
+    })
+
+    await executeImageGeneration(falInput, {
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      executionId: 'execution-1',
+      requestId: 'request-3',
+    })
+
+    expect(mocks.runImageToolGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...falInput,
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        executionId: 'execution-1',
+      }),
+      expect.objectContaining({
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        executionId: 'execution-1',
+        requestId: 'request-3',
+      })
+    )
   })
 })

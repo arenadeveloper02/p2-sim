@@ -19,7 +19,6 @@ import type { InputFormatField } from '@/lib/workflows/types'
 import {
   ChatErrorState,
   ChatInput,
-  ChatLoadingState,
   type ChatMessage,
   ChatMessageContainer,
   EmailAuth,
@@ -1518,11 +1517,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // }
   }
 
-  // Loading state while fetching config using the extracted component
-  if (!chatConfig) {
-    return <ChatLoadingState />
-  }
-
   return (
     <ToastProvider>
       <div className='light desktop-title-bar-page fixed inset-0 z-[var(--z-dropdown)] flex bg-[var(--bg)] text-[var(--text-primary)]'>
@@ -1690,7 +1684,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           <StartBlockInputModal
             open={isInputModalOpen}
             onOpenChange={setIsInputModalOpen}
-            inputFormat={chatConfig.inputFormat}
+            inputFormat={chatConfig?.inputFormat}
             onSubmit={handleStartBlockInputsSubmit}
             initialValues={startBlockInputs}
           />

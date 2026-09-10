@@ -79,6 +79,17 @@ export interface ChatStreamToolFrame {
   status?: ToolCallEndStatus
 }
 
+/**
+ * The selected output for `blockId` has finished streaming (live agent stream
+ * or a non-streaming `onBlockComplete` dump). Clients use this to settle that
+ * output and show the next selected-output loader. Unknown to legacy clients
+ * that only append `chunk`.
+ */
+export interface ChatStreamBlockCompleteFrame {
+  blockId: string
+  event: 'block_complete'
+}
+
 /** Terminal success envelope, followed by `[DONE]`. */
 export interface ChatStreamFinalFrame {
   event: 'final'
@@ -109,6 +120,7 @@ export type ChatStreamFrame =
   | ChatStreamChunkResetFrame
   | ChatStreamThinkingFrame
   | ChatStreamToolFrame
+  | ChatStreamBlockCompleteFrame
   | ChatStreamFinalFrame
   | ChatStreamErrorFrame
   | ChatStreamStreamErrorFrame
@@ -157,6 +169,11 @@ export function isChatToolFrame(value: unknown): value is ChatStreamToolFrame {
     // the run's real outcome) instead of rendering it green on a guess.
     (value.status === undefined || isToolCallEndStatus(value.status))
   )
+}
+
+export function isChatBlockCompleteFrame(value: unknown): value is ChatStreamBlockCompleteFrame {
+  if (!isRecordLike(value)) return false
+  return value.event === 'block_complete' && typeof value.blockId === 'string'
 }
 
 export function isChatFinalFrame(value: unknown): value is ChatStreamFinalFrame {

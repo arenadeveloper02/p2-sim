@@ -7,6 +7,7 @@ import {
   AGENT_STREAM_PROTOCOL_V1,
   clientAcceptsAgentStreamProtocol,
   hasAgentStreamPolicy,
+  isChatBlockCompleteFrame,
   isChatChunkFrame,
   isChatChunkResetFrame,
   isChatToolFrame,
@@ -57,6 +58,16 @@ describe('tool frame guard', () => {
   it('rejects an unrecognized status instead of letting it settle as success', () => {
     expect(isChatToolFrame({ ...base, status: 'timeout' })).toBe(false)
     expect(isChatToolFrame({ ...base, status: 42 })).toBe(false)
+  })
+})
+
+describe('block_complete frame guard', () => {
+  it('identifies complete frames and keeps them out of the chunk guard', () => {
+    const complete = { blockId: 'agent-1', event: 'block_complete' }
+    expect(isChatBlockCompleteFrame(complete)).toBe(true)
+    expect(isChatChunkFrame(complete)).toBe(false)
+    expect(isChatBlockCompleteFrame({ event: 'block_complete' })).toBe(false)
+    expect(isChatBlockCompleteFrame({ blockId: 'agent-1', chunk: 'text' })).toBe(false)
   })
 })
 
