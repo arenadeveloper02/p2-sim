@@ -21,6 +21,7 @@ import {
   chatProtocolReservedKeys,
 } from '@/lib/arena-generative-ui/chat-protocol'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
+import { streamingSelectedOutputsFromBlocks } from '@/lib/arena-generative-ui/extract-workflow-output'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
 import {
   applyBindingInputSources,
@@ -60,6 +61,7 @@ import {
 import { processExecutionFiles } from '@/lib/execution/files'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
+import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { StreamingExecution } from '@/executor/types'
 
 const logger = createLogger('ArenaGenerativeUiAction')
@@ -381,6 +383,34 @@ async function withProcessedChatFiles(options: {
   return { ...options.mappedInput, files: uploaded }
 }
 
+/**
+ * Agent / Mothership / Pi only stream when listed in `selectedOutputs`. Load
+ * the deployed graph and select those content paths so Stream bindings emit
+ * live tokens instead of waiting for the full JSON body.
+ */
+async function selectedOutputsForStreamingWorkflow(
+  workflowId: string,
+  workspaceId: string
+): Promise<string[] | undefined> {
+  try {
+    const deployed = await loadDeployedWorkflowState(workflowId, workspaceId)
+    const selectedOutputs = streamingSelectedOutputsFromBlocks(deployed.blocks)
+    if (selectedOutputs.length === 0) {
+      logger.warn('Generative app stream binding has no Agent, Mothership, or Pi block', {
+        workflowId,
+      })
+      return undefined
+    }
+    return selectedOutputs
+  } catch (error) {
+    logger.warn('Could not resolve stream outputs for generative app workflow', {
+      workflowId,
+      error: getErrorMessage(error),
+    })
+    return undefined
+  }
+}
+
 async function runWorkflowBinding(options: {
   binding: ArenaGenerativeApiBinding
   mappedInput: Record<string, unknown>
@@ -459,6 +489,10 @@ async function runWorkflowBinding(options: {
       userId: resolvedActorUserId,
     })
 
+    const selectedOutputs = options.onChunk
+      ? await selectedOutputsForStreamingWorkflow(workflowId, workflowRecord.workspaceId)
+      : undefined
+
     const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
     const result = await executeWorkflow(
       {
@@ -477,6 +511,7 @@ async function runWorkflowBinding(options: {
         workflowTriggerType: 'api',
         executionMode: options.onChunk ? 'stream' : 'sync',
         billingAttribution,
+        ...(selectedOutputs && selectedOutputs.length > 0 ? { selectedOutputs } : {}),
         onStream: options.onChunk
           ? async (streamingExec) => {
               await consumeWorkflowExecutionStream(streamingExec, options.onChunk)

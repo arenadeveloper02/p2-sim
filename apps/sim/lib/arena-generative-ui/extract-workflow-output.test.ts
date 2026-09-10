@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   extractOutputSchemaFromBlocks,
   extractResponseOutputSchemaFromBlocks,
+  streamingSelectedOutputsFromBlocks,
 } from '@/lib/arena-generative-ui/extract-workflow-output'
 
 describe('extractOutputSchemaFromBlocks', () => {
@@ -338,5 +339,38 @@ describe('extractOutputSchemaFromBlocks', () => {
     }).map((field) => field.name)
 
     expect(names).toEqual(['run_data', 'run_data.history', 'run_data.history[]'])
+  })
+})
+
+describe('streamingSelectedOutputsFromBlocks', () => {
+  it('returns nothing when there are no streamable blocks', () => {
+    expect(streamingSelectedOutputsFromBlocks(null)).toEqual([])
+    expect(streamingSelectedOutputsFromBlocks({})).toEqual([])
+    expect(
+      streamingSelectedOutputsFromBlocks({
+        start: { type: 'start_trigger' },
+        respond: { type: 'response' },
+      })
+    ).toEqual([])
+  })
+
+  it('selects Agent, Mothership, and Pi content paths', () => {
+    expect(
+      streamingSelectedOutputsFromBlocks({
+        start: { type: 'start_trigger' },
+        writer: { id: 'agent-1', type: 'agent' },
+        chat: { id: 'ms-1', type: 'mothership' },
+        coder: { id: 'pi-1', type: 'pi' },
+        respond: { type: 'response' },
+      })
+    ).toEqual(['agent-1_content', 'ms-1_content', 'pi-1_content'])
+  })
+
+  it('falls back to the record key when a block has no id', () => {
+    expect(
+      streamingSelectedOutputsFromBlocks({
+        'agent-orphan': { type: 'agent' },
+      })
+    ).toEqual(['agent-orphan_content'])
   })
 })

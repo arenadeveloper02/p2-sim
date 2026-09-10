@@ -10,6 +10,7 @@ const mockGetEffectiveEnvironmentSnapshot =
   environmentUtilsMockFns.mockGetEffectiveEnvironmentSnapshot
 const mockReleaseExecutionSlot = vi.fn()
 const mockSleep = vi.hoisted(() => vi.fn(async () => undefined))
+const mockLoadDeployedWorkflowState = vi.hoisted(() => vi.fn())
 
 vi.mock('@sim/utils/helpers', () => ({
   sleep: (...args: unknown[]) => mockSleep(...args),
@@ -17,6 +18,10 @@ vi.mock('@sim/utils/helpers', () => ({
 
 vi.mock('@/lib/workflows/executor/execute-workflow', () => ({
   executeWorkflow: (...args: unknown[]) => mockExecuteWorkflow(...args),
+}))
+
+vi.mock('@/lib/workflows/persistence/utils', () => ({
+  loadDeployedWorkflowState: (...args: unknown[]) => mockLoadDeployedWorkflowState(...args),
 }))
 
 vi.mock('@/lib/execution/preprocessing', () => ({
@@ -176,6 +181,7 @@ describe('runDeployedAppAction', () => {
       }),
       expect.any(String)
     )
+    expect(mockLoadDeployedWorkflowState).not.toHaveBeenCalled()
   })
 
   it('unwraps a Response-block envelope so outputSchema fields match host state', async () => {
@@ -2081,6 +2087,12 @@ describe('streaming generative app actions', () => {
       },
       executionActor: { type: 'user' },
     })
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      blocks: {
+        writer: { id: 'agent-1', type: 'agent' },
+        respond: { type: 'response' },
+      },
+    })
   })
 
   it('streams workflow tokens then returns setState and navigate on completion', async () => {
@@ -2105,14 +2117,47 @@ describe('streaming generative app actions', () => {
     expect(result.ok).toBe(true)
     expect(result.navigate).toBe('results')
     expect(result.setState).toEqual({ content: 'Hello' })
+    expect(mockLoadDeployedWorkflowState).toHaveBeenCalledWith('wf-bound', 'ws-1')
     expect(mockExecuteWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'wf-bound' }),
       'req-stream',
       { name: 'Ada' },
       'user-1',
+      expect.objectContaining({
+        executionMode: 'stream',
+        selectedOutputs: ['agent-1_content'],
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('still runs the workflow when deployed stream outputs cannot be resolved', async () => {
+    mockLoadDeployedWorkflowState.mockRejectedValue(new Error('no deployment'))
+    await mockStreamingWorkflow(['Hel', 'lo'], { content: 'Hello' })
+    const result = await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: [{ ...twoPageApiBindings[0], stream: true }],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-stream-fallback',
+      actorUserId: 'previewer-1',
+      onChunk: () => undefined,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mockExecuteWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'wf-bound' }),
+      'req-stream-fallback',
+      { name: 'Ada' },
+      'user-1',
       expect.objectContaining({ executionMode: 'stream' }),
       expect.any(String)
     )
+    const streamConfig = mockExecuteWorkflow.mock.calls[0]?.[4] as { selectedOutputs?: string[] }
+    expect(streamConfig.selectedOutputs).toBeUndefined()
   })
 
   it('extracts stream:chunk frames instead of forwarding raw SSE bytes', async () => {

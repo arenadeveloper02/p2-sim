@@ -16,10 +16,34 @@ const MAX_DEPTH = 3
 
 const BUILDER_ITEM_TYPES = new Set(['string', 'number', 'boolean', 'object', 'array'])
 
+/** Block types whose handlers stream only when listed in `selectedOutputs`. */
+const STREAMABLE_BLOCK_TYPES = new Set(['agent', 'mothership', 'pi'])
+
 interface WorkflowBlockRecord {
+  id?: unknown
   type?: unknown
   name?: unknown
   subBlocks?: Record<string, { value?: unknown }>
+}
+
+/**
+ * `selectedOutputs` ids that make Agent / Mothership / Pi emit live tokens.
+ * Chat and `/execute?stream=true` pass these; a GUI-app Stream binding must too.
+ */
+export function streamingSelectedOutputsFromBlocks(
+  blocks: Record<string, unknown> | null | undefined
+): string[] {
+  if (!blocks) return []
+  const outputs: string[] = []
+  for (const [blockId, raw] of Object.entries(blocks)) {
+    const block = raw as WorkflowBlockRecord
+    if (typeof block.type !== 'string' || !STREAMABLE_BLOCK_TYPES.has(block.type)) {
+      continue
+    }
+    const id = typeof block.id === 'string' && block.id.trim() ? block.id.trim() : blockId
+    outputs.push(`${id}_content`)
+  }
+  return outputs
 }
 
 /**
