@@ -6,6 +6,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
   GOLD_RENDER_CONTRACT,
@@ -213,6 +214,8 @@ export interface GoldExamplePickerOptions {
   shell?: ArenaGenerativeShell
   /** Dummy collection plotted on Calendar (representation calendar). */
   needsCalendar?: boolean
+  /** Dummy collection plotted on Timeline (representation timeline). */
+  needsTimeline?: boolean
 }
 
 /**
@@ -249,6 +252,9 @@ export function goldExamplePromptForArchetype(
   }
   if (shapes.has('collection') && options?.needsCalendar) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR
+  }
+  if (shapes.has('collection') && options?.needsTimeline) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE
   }
   if (shapes.has('collection')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION

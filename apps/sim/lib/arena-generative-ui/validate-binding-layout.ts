@@ -26,6 +26,10 @@ const BOUND_RESULT_TYPES = new Set([
   'Table',
   'Repeat',
   'Calendar',
+  'Timeline',
+  'Map',
+  'Tree',
+  'Carousel',
   'Stat',
   'KeyValue',
   'DataText',
@@ -36,7 +40,16 @@ const BOUND_RESULT_TYPES = new Set([
 
 const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat'])
 
-const COLLECTION_TYPES = new Set(['Table', 'Repeat', 'Chart', 'Calendar'])
+const COLLECTION_TYPES = new Set([
+  'Table',
+  'Repeat',
+  'Chart',
+  'Calendar',
+  'Timeline',
+  'Map',
+  'Tree',
+  'Carousel',
+])
 
 const ENVELOPE_ROOTS = new Set(['data', 'response'])
 
@@ -440,7 +453,7 @@ function boundPathError(
           return undefined
         }
         if (type === 'DataText' || type === 'KeyValue') {
-          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat, Table, or Calendar.`
+          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat, Table, Calendar, Timeline, Map, Tree, or Carousel.`
         }
       }
       if (collection.wrapperKeys.includes(statePath) && COLLECTION_TYPES.has(type)) {

@@ -143,6 +143,12 @@ import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
 import { GuiHostCalendar, GuiHostDateInput } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
+import {
+  GuiHostCarousel,
+  GuiHostMap,
+  GuiHostTimeline,
+  GuiHostTree,
+} from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-widgets'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 
@@ -2343,7 +2349,13 @@ export function SpecRenderer({
   const collectionLengthSignature = Object.entries(elements)
     .filter(
       ([, element]) =>
-        element.type === 'Table' || element.type === 'Repeat' || element.type === 'Calendar'
+        element.type === 'Table' ||
+        element.type === 'Repeat' ||
+        element.type === 'Calendar' ||
+        element.type === 'Timeline' ||
+        element.type === 'Map' ||
+        element.type === 'Tree' ||
+        element.type === 'Carousel'
     )
     .map(([id, element]) => {
       const statePath =
@@ -3215,6 +3227,154 @@ export function SpecRenderer({
             allowViewToggle={!view}
             onSelectItem={onSelectItem}
           />
+        )
+      }
+      case 'Timeline': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostTimeline
+            items={items}
+            dateField={asString(props.dateField) || undefined}
+            titleField={asString(props.titleField) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            onSelectItem={onSelectItem}
+          />
+        )
+      }
+      case 'Map': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostMap
+            items={items}
+            latField={asString(props.latField) || undefined}
+            lngField={asString(props.lngField) || undefined}
+            titleField={asString(props.titleField) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            onSelectItem={onSelectItem}
+          />
+        )
+      }
+      case 'Tree': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostTree
+            items={items}
+            childrenField={asString(props.childrenField) || undefined}
+            titleField={asString(props.titleField) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            onSelectItem={onSelectItem}
+          />
+        )
+      }
+      case 'Carousel': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        const boundItems = rawItems && rawItems.length > 0 ? items : []
+        if (boundItems.length === 0 && !hasChildren) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostCarousel
+            items={boundItems}
+            srcField={asString(props.srcField) || undefined}
+            titleField={asString(props.titleField) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            onSelectItem={onSelectItem}
+          >
+            {boundItems.length === 0 ? children : null}
+          </GuiHostCarousel>
         )
       }
       case 'Stat': {

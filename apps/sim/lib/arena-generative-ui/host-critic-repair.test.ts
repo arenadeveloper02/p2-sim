@@ -96,4 +96,18 @@ describe('repairHostCriticExtras', () => {
     expect(result.adoptedChanges[0]?.adopted).toContain('Kept "submit" as primary')
     expect(result.adoptedChanges[0]?.adopted).toContain('"extra" to a secondary Button')
   })
+
+  it('strips a form Spinner and records host-wait-chrome', () => {
+    const spec = pageSpec(
+      {
+        form: { type: 'Form', props: { actionId: 'save' }, children: ['submit'] },
+        submit: { type: 'SubmitButton', props: { label: 'Save' }, children: [] },
+        spin: { type: 'Spinner', props: { label: 'Please wait' }, children: [] },
+      },
+      ['form', 'spin']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(result.manifest.pages.home.spec.elements?.spin).toBeUndefined()
+    expect(result.adoptedChanges.some((change) => change.code === 'host-wait-chrome')).toBe(true)
+  })
 })

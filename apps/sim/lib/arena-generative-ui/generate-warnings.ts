@@ -20,7 +20,14 @@ export const arenaGenerativeGenerateWarningSchema = z.object({
 
 export type ArenaGenerativeGenerateWarning = z.output<typeof arenaGenerativeGenerateWarningSchema>
 
-export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = ['extra-primary'] as const
+export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = [
+  'extra-primary',
+  'host-wait-chrome',
+  'host-notify-chrome',
+  'host-refresh',
+  'unrequested-pages',
+  'repeat-prose',
+] as const
 
 export const arenaGenerativeAdoptedChangeSchema = z.object({
   code: z.enum(ARENA_GENERATIVE_ADOPTED_CHANGE_CODES),

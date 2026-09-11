@@ -176,7 +176,7 @@ describe('compileGenerativeUx', () => {
     expect(section.children?.[0]).toBe(UX_COMPILER_STATUS_KEY)
   })
 
-  it('relocates ProgressSteps from a navigate-first form onto results', () => {
+  it('strips ProgressSteps from a navigate-first form instead of moving them', () => {
     const homeWithSteps: Spec = {
       root: 'page',
       elements: {
@@ -233,9 +233,7 @@ describe('compileGenerativeUx', () => {
       (element) => (element as { type?: string }).type
     )
     expect(homeTypes).not.toContain('ProgressSteps')
-    expect(resultsTypes).toContain('ProgressSteps')
-    const resultsSection = compiled.pages.results.spec.elements?.section as { children?: string[] }
-    expect(resultsSection.children?.[0]).toBe('steps')
+    expect(resultsTypes).not.toContain('ProgressSteps')
   })
 
   it('relocates WorkingCard from a navigate-first form onto results', () => {
@@ -305,7 +303,7 @@ describe('compileGenerativeUx', () => {
     ).toBe('submit_lead')
   })
 
-  it('keeps ProgressSteps on a same-page submit', () => {
+  it('strips ProgressSteps on a same-page submit', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -341,8 +339,8 @@ describe('compileGenerativeUx', () => {
     const types = Object.values(compiled.pages.home.spec.elements ?? {}).map(
       (element) => (element as { type?: string }).type
     )
-    expect(types).toContain('ProgressSteps')
-    expect(types).not.toContain('Spinner')
+    expect(types).not.toContain('ProgressSteps')
+    expect(types).toContain('Spinner')
   })
 
   it('does not inject ticking ProgressSteps', () => {
@@ -363,6 +361,44 @@ describe('compileGenerativeUx', () => {
     )
     expect(types).not.toContain('ProgressSteps')
     expect(types).toContain('Spinner')
+  })
+
+  it('strips a Refresh Button and Repeat item.output at compile time', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'History' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['refresh', 'repeat'],
+        },
+        refresh: { type: 'Button', props: { label: 'Refresh' }, children: [] },
+        repeat: { type: 'Repeat', props: { statePath: 'items' }, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: '{item.keyword}', description: '{item.output}' },
+          children: ['prose'],
+        },
+        prose: {
+          type: 'DataText',
+          props: { statePath: 'item.output', fallback: '' },
+          children: [],
+        },
+      },
+    }
+    const compiled = compileGenerativeUx({
+      entryPath: 'history',
+      pages: { history: { title: 'History', path: 'history', spec } },
+      actions: {},
+    })
+    expect(compiled.pages.history.spec.elements?.refresh).toBeUndefined()
+    expect(compiled.pages.history.spec.elements?.prose).toBeUndefined()
+    const card = compiled.pages.history.spec.elements?.card as {
+      props?: { title?: string; description?: unknown }
+    }
+    expect(card.props?.title).toBe('{item.keyword}')
+    expect(card.props?.description).toBeNull()
   })
 })
 
@@ -671,7 +707,7 @@ describe('compiledPageFromManifest', () => {
     expect(compiledPageFromManifest(twoPageManifest, twoPageApiBindings, 'missing')).toBeUndefined()
   })
 
-  it('relocates navigate-first ProgressSteps onto the destination page', () => {
+  it('strips navigate-first ProgressSteps instead of relocating them', () => {
     const homeWithSteps: Spec = {
       root: 'page',
       elements: {
@@ -726,7 +762,7 @@ describe('compiledPageFromManifest', () => {
       (element) => (element as { type?: string }).type
     )
     expect(homeTypes).not.toContain('ProgressSteps')
-    expect(resultsTypes).toContain('ProgressSteps')
+    expect(resultsTypes).not.toContain('ProgressSteps')
   })
 
   it('leaves the list-detail gold pages unchanged', () => {

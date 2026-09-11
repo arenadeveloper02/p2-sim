@@ -2051,3 +2051,76 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR = goldPrompt(
     manifest: goldCalendarManifest,
   }
 )
+
+const timelineHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'History', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'timeline'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'History',
+        subtitle: 'Dated items on a chronological spine.',
+        kicker: 'Timeline',
+        align: 'start',
+      },
+      children: [],
+    },
+    timeline: {
+      type: 'Timeline',
+      props: {
+        statePath: 'events',
+        dateField: 'date',
+        titleField: 'title',
+        emptyText: 'No events.',
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldTimelineManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'History',
+      spec: timelineHomeSpec,
+      onLoad: ['load_events'],
+    },
+  },
+  actions: {
+    load_events: {
+      onSuccess: {
+        setState: {
+          events: [
+            { id: 'e1', title: 'Kickoff', date: '2026-09-11' },
+            { id: 'e2', title: 'Review', date: '2026-09-14' },
+            { id: 'e3', title: 'Ship', date: '2026-09-18' },
+            { id: 'e4', title: 'Backlog' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE = goldPrompt(
+  'timeline',
+  'One collection page whose representation is timeline. onLoad setState seeds 4 dummy events including one without a date (Undated). Emit Timeline with dateField and titleField — not a dated Repeat and not Calendar. Clicking a row copies it like Repeat selectItem. Match REPRESENTATION, not this body, when the brief picked table or cards. Do not invent API keys.',
+  {
+    title: 'History',
+    content: 'Show dated items on a chronological spine.',
+    manifest: goldTimelineManifest,
+  }
+)

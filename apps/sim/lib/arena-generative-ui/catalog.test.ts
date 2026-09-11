@@ -19,6 +19,10 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Repeat',
       'Table',
       'Calendar',
+      'Timeline',
+      'Map',
+      'Tree',
+      'Carousel',
       'SubmitButton',
       'Tabs',
       'PageHeader',
@@ -131,6 +135,10 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Stepper')).toBe(true)
     expect(isArenaGenerativeCatalogType('Disclosure')).toBe(true)
     expect(isArenaGenerativeCatalogType('Calendar')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Timeline')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Map')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Tree')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Carousel')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
   })
 })
@@ -145,6 +153,10 @@ describe('resolveCatalogComponentNames', () => {
     )
     expect(names.has('Repeat')).toBe(true)
     expect(names.has('Calendar')).toBe(true)
+    expect(names.has('Timeline')).toBe(true)
+    expect(names.has('Map')).toBe(true)
+    expect(names.has('Tree')).toBe(true)
+    expect(names.has('Carousel')).toBe(true)
     expect(names.has('Form')).toBe(true)
     expect(names.has('WorkingCard')).toBe(false)
     expect(names.has('Workspace')).toBe(false)

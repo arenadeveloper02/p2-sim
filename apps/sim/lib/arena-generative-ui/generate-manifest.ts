@@ -38,6 +38,7 @@ import {
   generatorPromptOptionsFromBrief,
 } from '@/lib/arena-generative-ui/prompt-pipeline'
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
+import { sanitizeHostOwnedCandidate } from '@/lib/arena-generative-ui/strip-host-owned-chrome'
 import {
   type ArenaGenerativeStructuredBrief,
   formatStructuredBriefForEdit,
@@ -244,11 +245,24 @@ interface EvaluateGeneratedCandidateOptions {
   existingManifest?: ArenaGenerativeAppManifest
   editScope: ArenaGenerativeEditScope | null
   scopedPaths: string[]
+  isPreserveEdit?: boolean
+  userInput?: string
   validationOptions: {
     pageHints?: ArenaGenerativePageHint[]
     apiBindings: ArenaGenerativeApiBinding[]
     entryPath?: string
     authoredPagePaths?: string[]
+  }
+}
+
+function sanitizeOptionsFromEvaluate(options: EvaluateGeneratedCandidateOptions) {
+  return {
+    authoredPagePaths: options.validationOptions.authoredPagePaths,
+    allowedPagePaths: options.validationOptions.pageHints?.map((hint) => hint.path),
+    entryPath: options.validationOptions.entryPath,
+    userInput: options.userInput,
+    apiBindings: options.validationOptions.apiBindings,
+    isPreserveEdit: options.isPreserveEdit,
   }
 }
 
@@ -270,16 +284,18 @@ function evaluateGeneratedCandidate(
   if (merged && !merged.ok) {
     return { success: false, error: merged.error }
   }
-  const validation = validateArenaGenerativeManifest(
+  const sanitized = sanitizeHostOwnedCandidate(
     merged ? merged.candidate : candidate,
+    sanitizeOptionsFromEvaluate(options)
+  )
+  const validation = validateArenaGenerativeManifest(
+    sanitized.candidate,
     options.validationOptions
   )
   if (!validation.success || !validation.manifest) {
     return validation
   }
-  const repaired = repairHostCriticExtras(validation.manifest, {
-    authoredPagePaths: options.validationOptions.authoredPagePaths,
-  })
+  const repaired = repairHostCriticExtras(validation.manifest, sanitizeOptionsFromEvaluate(options))
   const hostIssues = hostCriticManifestIssues(repaired.manifest, {
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
@@ -289,7 +305,7 @@ function evaluateGeneratedCandidate(
   return {
     success: true,
     manifest: repaired.manifest,
-    adoptedChanges: repaired.adoptedChanges,
+    adoptedChanges: [...sanitized.adoptedChanges, ...repaired.adoptedChanges],
   }
 }
 
@@ -313,16 +329,18 @@ function remainingIssuesForUser(
   if (merged && !merged.ok) {
     return [merged.error]
   }
-  const validation = validateArenaGenerativeManifest(
+  const sanitized = sanitizeHostOwnedCandidate(
     merged ? merged.candidate : candidate,
+    sanitizeOptionsFromEvaluate(options)
+  )
+  const validation = validateArenaGenerativeManifest(
+    sanitized.candidate,
     options.validationOptions
   )
   if (!validation.success || !validation.manifest) {
     return [validation.error ?? fallback]
   }
-  const repaired = repairHostCriticExtras(validation.manifest, {
-    authoredPagePaths: options.validationOptions.authoredPagePaths,
-  })
+  const repaired = repairHostCriticExtras(validation.manifest, sanitizeOptionsFromEvaluate(options))
   const hostIssues = hostCriticManifestIssues(repaired.manifest, {
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
@@ -719,6 +737,8 @@ export async function generateArenaGenerativeManifest(
       existingManifest: params.existingManifest,
       editScope,
       scopedPaths,
+      isPreserveEdit,
+      userInput,
       validationOptions,
     }
 

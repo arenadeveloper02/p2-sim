@@ -10,6 +10,7 @@ import {
   specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
+import { stripHostOwnedChrome } from '@/lib/arena-generative-ui/strip-host-owned-chrome'
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 
 export type ArenaGenerativeAsyncKind = 'query' | 'mutation' | 'longRunning'
@@ -45,12 +46,7 @@ const EXPLICIT_LOADING_TYPES = new Set([
   'ProgressSteps',
   'WorkingCard',
 ])
-const RELOCATABLE_LOADING_TYPES = new Set([
-  'ProgressBar',
-  'ProgressSteps',
-  'Spinner',
-  'WorkingCard',
-])
+const RELOCATABLE_LOADING_TYPES = new Set(['WorkingCard'])
 const BOUND_LOADING_TYPES = new Set([
   'Table',
   'Repeat',
@@ -354,8 +350,9 @@ function attachElements(spec: Spec, incoming: Array<{ key: string; element: Spec
 }
 
 /**
- * Moves ProgressBar / ProgressSteps / Spinner / WorkingCard off a form whose CTAs all
- * navigate away, onto each destination that has no pending surface yet.
+ * Moves WorkingCard off a form whose CTAs all navigate away, onto each
+ * destination that has no pending surface yet. Spinner / ProgressBar /
+ * ProgressSteps are stripped as host-owned wait chrome instead of relocated.
  */
 export function relocateNavigateFirstLoaders(
   pages: Record<string, ArenaGenerativePageManifest>,
@@ -749,7 +746,23 @@ export function compileGenerativeUx(
   bindings: ArenaGenerativeApiBinding[] = []
 ): CompileGenerativeUxResult {
   const needed = pagesNeedingPendingChrome(manifest)
-  const relocated = relocateNavigateFirstLoaders(manifest.pages, manifest.actions)
+  const onLoadIdsForStrip = onLoadActionIds(manifest)
+  const actionApiKeys: Record<string, string> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (action.apiKey) actionApiKeys[actionId] = action.apiKey
+  }
+  const strippedPages: Record<string, ArenaGenerativePageManifest> = {}
+  for (const [path, page] of Object.entries(manifest.pages)) {
+    strippedPages[path] = {
+      ...page,
+      spec: stripHostOwnedChrome(page.spec, {
+        pagePath: path,
+        onLoadActionIds: onLoadIdsForStrip,
+        actionApiKeys,
+      }).spec,
+    }
+  }
+  const relocated = relocateNavigateFirstLoaders(strippedPages, manifest.actions)
   const onLoadIds = onLoadActionIds(manifest)
   const fallbackLoading: Record<string, ArenaGenerativeFallbackLoading> = {}
   const pages: Record<string, ArenaGenerativePageManifest> = {}

@@ -4620,6 +4620,160 @@ describe('SpecRenderer', () => {
       expect(onSelectItem).toHaveBeenCalled()
     })
 
+    it('plots Timeline items oldest first and keeps undated rows', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['timeline'] },
+          timeline: {
+            type: 'Timeline',
+            props: {
+              statePath: 'events',
+              dateField: 'date',
+              titleField: 'title',
+              emptyText: 'None',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          events: [
+            { id: 'e1', title: 'Ship', date: '2026-09-18' },
+            { id: 'e2', title: 'Kickoff', date: '2026-09-11' },
+            { id: 'e3', title: 'Backlog' },
+          ],
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-timeline"]')).toBeTruthy()
+      const labels = Array.from(
+        container.querySelectorAll('[data-testid="gui-timeline"] button')
+      ).map((button) => button.textContent)
+      expect(labels[0]).toContain('Kickoff')
+      expect(labels[1]).toContain('Ship')
+      expect(container.querySelector('[data-testid="unscheduled"]')?.textContent).toContain(
+        'Backlog'
+      )
+      const backlog = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.includes('Backlog')
+      )
+      act(() => {
+        backlog?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('plots Map markers and keeps rows without coordinates', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['map'] },
+          map: {
+            type: 'Map',
+            props: {
+              statePath: 'places',
+              latField: 'lat',
+              lngField: 'lng',
+              titleField: 'name',
+              emptyText: 'None',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          places: [
+            { id: 'p1', name: 'HQ', lat: 37.77, lng: -122.42 },
+            { id: 'p2', name: 'Remote' },
+          ],
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-map"]')).toBeTruthy()
+      expect(container.querySelector('iframe')?.getAttribute('src')).toContain('openstreetmap.org')
+      expect(container.textContent).toContain('Remote')
+      const remote = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.includes('Remote')
+      )
+      act(() => {
+        remote?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('expands Tree children and selects a nested row', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['tree'] },
+          tree: {
+            type: 'Tree',
+            props: {
+              statePath: 'org',
+              childrenField: 'children',
+              titleField: 'name',
+              emptyText: 'None',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          org: [{ name: 'Acme', children: [{ name: 'Design' }] }],
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-tree"]')).toBeTruthy()
+      expect(container.textContent).toContain('Acme')
+      expect(container.textContent).toContain('Design')
+      const design = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Design'
+      )
+      act(() => {
+        design?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('pages Carousel slides with next', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['carousel'] },
+          carousel: {
+            type: 'Carousel',
+            props: {
+              statePath: 'slides',
+              srcField: 'src',
+              titleField: 'title',
+              emptyText: 'None',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: {
+          slides: [
+            { src: 'https://cdn.example/a.png', title: 'One' },
+            { src: 'https://cdn.example/b.png', title: 'Two' },
+          ],
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-carousel"]')).toBeTruthy()
+      expect(container.textContent).toContain('One')
+      const next = container.querySelector('button[aria-label="Next slide"]') as HTMLButtonElement
+      act(() => {
+        next.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.textContent).toContain('Two')
+    })
+
     it('splices reorderable table rows with Alt+Arrow', () => {
       const spec: Spec = {
         root: 'page',

@@ -37,7 +37,7 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
 /** Sibling Cards that are not Repeat items before the host flags density. */
 export const MAX_NON_REPEAT_CARDS_PER_PAGE = 8
 
-const INVENTED_REPRESENTATION_TYPES = new Set(['Kanban', 'Timeline', 'List'])
+const INVENTED_REPRESENTATION_TYPES = new Set(['Kanban', 'List'])
 
 export interface HostCriticOptions {
   authoredPagePaths?: string[]
@@ -296,7 +296,7 @@ function inventedRepresentationTypeErrors(pagePath: string, spec: Spec): string[
     const type = element.type
     if (!type || !INVENTED_REPRESENTATION_TYPES.has(type)) continue
     issues.push(
-      `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent kanban or timeline with grouped or dated Repeat or Table.`
+      `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent kanban with grouped Repeat or Table.`
     )
   }
   return issues

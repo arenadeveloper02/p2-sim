@@ -74,7 +74,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use Calendar when the brief asks for a month or week plot of dated rows. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use Calendar when the brief asks for a month or week plot of dated rows. Use Timeline when chronological order is the body. Use Map for lat/lng pins, Tree for nested folders, Carousel for a cycling gallery. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
     },
     Columns: {
       props: z.object({
@@ -245,6 +245,48 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       description:
         'Month or week plot of a host-state array at statePath. dateField is the ISO date key (default: first ISO-ish key); titleField is the chip label (default: name/title). view is month (6-week grid) or week (7 day columns). Omit view only when the brief asked for both — the host then offers a toggle. Clicking a chip copies the row like Repeat selectItem. Rows with no parseable date sit in Unscheduled — do not drop them. Use this when representation is calendar; do not degrade to a dated Repeat. Dummy/local: seed 4–8 dated rows. Not drag across days, not Gantt.',
     },
+    Timeline: {
+      props: z.object({
+        statePath: z.string(),
+        dateField: z.string().nullable(),
+        titleField: z.string().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Chronological spine of a host-state array at statePath. dateField is the ISO date key (default: first ISO-ish key); titleField is the row label (default name/title). The host sorts oldest first. Rows with no parseable date sit at the end — do not drop them. Use when representation is timeline; do not degrade to a dated Repeat. Dummy/local: seed 4–8 dated rows. Clicking a row copies it like Repeat selectItem. Not Calendar (month/week grid) and not Gantt.',
+    },
+    Map: {
+      props: z.object({
+        statePath: z.string(),
+        latField: z.string().nullable(),
+        lngField: z.string().nullable(),
+        titleField: z.string().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Pins a host-state array at statePath on a map. latField/lngField default to lat/latitude and lng/lon/longitude. titleField is the list label (default name/title). Clicking a pin or row copies the row like Repeat selectItem. Rows without coordinates stay listed with no pin. Dummy/local: seed 4–8 rows with lat/lng. Not routing, not drawing, not a custom tile layer — the host uses OpenStreetMap.',
+    },
+    Tree: {
+      props: z.object({
+        statePath: z.string(),
+        childrenField: z.string().nullable(),
+        titleField: z.string().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Nested collection at statePath. childrenField is the nested array key (default children). titleField is the row label (default name/title). The host paints expand/collapse. Clicking a row copies it like Repeat selectItem. Do not unroll nested arrays into Repeat of Repeat. Dummy/local: seed a short nested tree. Not a file explorer and not drag-to-reparent.',
+    },
+    Carousel: {
+      props: z.object({
+        statePath: z.string().nullable(),
+        srcField: z.string().nullable(),
+        titleField: z.string().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Cycles slides of a host-state array at statePath. srcField is the image URL key (default src/url/image); titleField is the caption. Optional children are static slides when there is no array — do not wrap Repeat. The host owns prev/next. Dummy/local: seed 3–6 {src, title} rows. Not autoplay, not a card grid (that is Repeat in Grid).',
+    },
     Stat: {
       props: z.object({
         label: z.string(),
@@ -379,7 +421,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         lines: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Optional placeholder for a region built from static children. Table, Repeat, Stat, Chart, Sparkline, KeyValue and DataText bound to a statePath already skeleton automatically. Prefer binding statePath over emitting Skeleton.',
+        'Optional placeholder for a region built from static children. Table, Repeat, Calendar, Timeline, Map, Tree, Carousel, Stat, Chart, Sparkline, KeyValue and DataText bound to a statePath already skeleton automatically. Prefer binding statePath over emitting Skeleton.',
     },
     ProgressSteps: {
       props: z.object({
@@ -764,7 +806,19 @@ export const ARENA_GENERATIVE_CATALOG_CORE = [
 
 /** Optional catalog families injected from the blueprint. */
 export const ARENA_GENERATIVE_CATALOG_FAMILIES = {
-  collection: ['Repeat', 'Table', 'Calendar', 'Filter', 'Disclosure', 'Avatar', 'EntityHeader'],
+  collection: [
+    'Repeat',
+    'Table',
+    'Calendar',
+    'Timeline',
+    'Map',
+    'Tree',
+    'Carousel',
+    'Filter',
+    'Disclosure',
+    'Avatar',
+    'EntityHeader',
+  ],
   forms: [
     'Form',
     'TextInput',

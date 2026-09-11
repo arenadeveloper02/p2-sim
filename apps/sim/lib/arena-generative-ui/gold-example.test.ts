@@ -16,6 +16,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
   GOLD_AGENT_SHELL_GENERATE_KEY,
@@ -26,6 +27,7 @@ import {
   goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
+  goldTimelineManifest,
   goldWizardManifest,
   goldWorkspaceManifest,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
@@ -163,6 +165,9 @@ describe('per-archetype gold examples', () => {
     )
     expect(goldExamplePromptForArchetype('collection', { needsCalendar: true })).toBe(
       ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR
+    )
+    expect(goldExamplePromptForArchetype('collection', { needsTimeline: true })).toBe(
+      ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE
     )
     expect(goldExamplePromptForArchetype('collection')).not.toContain(
       'GOLD STANDARD REFERENCE LAYOUT (list-detail)'
@@ -304,6 +309,17 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldCalendarManifest)).toContain('"view":"month"')
     expect(JSON.stringify(goldCalendarManifest.actions.load_events)).not.toContain('apiKey')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR).toContain('Do not invent API keys')
+  })
+
+  it('validates the timeline collection gold', () => {
+    const result = validateArenaGenerativeManifest(goldTimelineManifest, {
+      apiBindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+    expect(JSON.stringify(goldTimelineManifest)).toContain('"Timeline"')
+    expect(JSON.stringify(goldTimelineManifest.actions.load_events)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE).toContain('Do not invent API keys')
   })
 
   it('validates the list-detail gold', () => {

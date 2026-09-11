@@ -70,6 +70,9 @@ const TYPE_ALIASES: Record<string, string> = {
   Loader: 'Skeleton',
   Loading: 'Skeleton',
   Logo: 'Avatar',
+  MapView: 'Map',
+  GeoMap: 'Map',
+  LocationMap: 'Map',
   Metric: 'Stat',
   MultiSelectField: 'MultiSelect',
   Number: 'NumberInput',
@@ -91,6 +94,14 @@ const TYPE_ALIASES: Record<string, string> = {
   TextareaField: 'TextArea',
   Toggle: 'Switch',
   ToggleSwitch: 'Switch',
+  TreeView: 'Tree',
+  NestedList: 'Tree',
+  FileTree: 'Tree',
+  Slideshow: 'Carousel',
+  ImageCarousel: 'Carousel',
+  ActivityFeed: 'Timeline',
+  Chronology: 'Timeline',
+  EventTimeline: 'Timeline',
 }
 
 const SPACING_PROPS = ['gap', 'padding'] as const
@@ -461,6 +472,11 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
       setProp(props, 'items', joinKeyValueItems(props.items))
       break
     case 'Repeat':
+    case 'Calendar':
+    case 'Timeline':
+    case 'Map':
+    case 'Tree':
+    case 'Carousel':
       if (!asString(props.statePath)) {
         const fromAlias =
           asString(props.items) ||

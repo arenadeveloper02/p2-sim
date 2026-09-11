@@ -163,6 +163,10 @@ describe('normalizeGeneratedSpec', () => {
     ['Details', 'Disclosure'],
     ['Expander', 'Disclosure'],
     ['ExpansionPanel', 'Disclosure'],
+    ['MapView', 'Map'],
+    ['TreeView', 'Tree'],
+    ['Slideshow', 'Carousel'],
+    ['ActivityFeed', 'Timeline'],
   ])('aliases %s to %s', (alias, canonical) => {
     const spec = normalizeGeneratedSpec({
       root: 'page',

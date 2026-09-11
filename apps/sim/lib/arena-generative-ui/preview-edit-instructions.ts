@@ -157,9 +157,11 @@ function warningLine(
 }
 
 function adoptedLine(change: ArenaGenerativeAdoptedChange, pagePath: string): string | undefined {
-  if (change.code !== 'extra-primary') return undefined
-  const page = pageFromAdoptedAsked(change.asked, pagePath)
-  return `${pagePrefix(page)} keep ${USER_INPUT_PLACEHOLDER} as the only primary CTA and make every other action secondary.`
+  if (change.code === 'extra-primary') {
+    const page = pageFromAdoptedAsked(change.asked, pagePath)
+    return `${pagePrefix(page)} keep ${USER_INPUT_PLACEHOLDER} as the only primary CTA and make every other action secondary.`
+  }
+  return undefined
 }
 
 function screenshotLine(gap: PreviewScreenshotGap, pagePath: string): string {

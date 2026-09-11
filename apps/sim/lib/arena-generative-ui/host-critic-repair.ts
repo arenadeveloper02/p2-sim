@@ -1,5 +1,9 @@
 import type { Spec } from '@json-render/core'
 import type { ArenaGenerativeAdoptedChange } from '@/lib/arena-generative-ui/generate-warnings'
+import {
+  sanitizeHostOwnedManifest,
+  type SanitizeHostOwnedManifestOptions,
+} from '@/lib/arena-generative-ui/strip-host-owned-chrome'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import { extraPrimarySections } from '@/lib/arena-generative-ui/ui-critic'
 
@@ -52,17 +56,22 @@ function demotePrimary(element: FlatElement): void {
 }
 
 /**
- * Nearest host fix for proveable critic issues. Extra primary CTAs keep one
- * (SubmitButton, then SearchField, then the first primary Button) and demote
- * the rest so generate can succeed.
+ * Nearest host fix for proveable critic issues and host-owned chrome the
+ * model emitted anyway. Extra primary CTAs keep one (SubmitButton, then
+ * SearchField, then the first primary Button) and demote the rest so generate
+ * can succeed. Wait / notify / Refresh chrome and unrequested extra pages are
+ * stripped rather than rejected.
  */
 export function repairHostCriticExtras(
   manifest: ArenaGenerativeAppManifest,
-  options: { authoredPagePaths?: string[] } = {}
+  options: SanitizeHostOwnedManifestOptions = {}
 ): { manifest: ArenaGenerativeAppManifest; adoptedChanges: ArenaGenerativeAdoptedChange[] } {
+  const sanitized = sanitizeHostOwnedManifest(manifest, options)
   const authored = options.authoredPagePaths ? new Set(options.authoredPagePaths) : null
-  const adoptedChanges: ArenaGenerativeAdoptedChange[] = []
-  let next: ArenaGenerativeAppManifest | undefined
+  const adoptedChanges: ArenaGenerativeAdoptedChange[] = [...sanitized.adoptedChanges]
+  let next: ArenaGenerativeAppManifest | undefined =
+    sanitized.adoptedChanges.length > 0 ? sanitized.manifest : undefined
+  manifest = sanitized.manifest
 
   for (const [pagePath, page] of Object.entries(manifest.pages)) {
     if (authored && !authored.has(pagePath)) continue

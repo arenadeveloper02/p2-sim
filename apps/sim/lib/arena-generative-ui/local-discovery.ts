@@ -651,7 +651,15 @@ const SIMPLE_HOST_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
 export const IMPLICIT_DUMMY_TABLE_STATE_PATH = 'rows'
 
 function simpleCollectionStatePath(element: SpecElement): string {
-  if (element.type !== 'Repeat' && element.type !== 'Table' && element.type !== 'Calendar') {
+  if (
+    element.type !== 'Repeat' &&
+    element.type !== 'Table' &&
+    element.type !== 'Calendar' &&
+    element.type !== 'Timeline' &&
+    element.type !== 'Map' &&
+    element.type !== 'Tree' &&
+    element.type !== 'Carousel'
+  ) {
     return ''
   }
   const key = asString(element.props?.statePath).trim()

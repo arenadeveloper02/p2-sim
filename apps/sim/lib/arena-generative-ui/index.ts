@@ -45,6 +45,10 @@ export {
 } from '@/lib/arena-generative-ui/generate-warnings'
 export { repairHostCriticExtras } from '@/lib/arena-generative-ui/host-critic-repair'
 export {
+  sanitizeHostOwnedManifest,
+  stripHostOwnedChrome,
+} from '@/lib/arena-generative-ui/strip-host-owned-chrome'
+export {
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
