@@ -74,7 +74,8 @@ interface BoundDateParts {
 }
 
 /**
- * Splits `{item.date|DD/MM/YYYY}` into the binding name and optional format.
+ * Splits `{item.date|DD/MM/YYYY}` or `{item.price|currency}` into the binding
+ * name and optional format.
  */
 export function splitBindingDateFormat(rawToken: string): { name: string; format?: string } {
   const trimmed = rawToken.trim()
@@ -97,6 +98,11 @@ export function formatBoundDateDisplay(value: string, format?: string): string {
   const parts = parseBoundDateParts(value)
   if (!parts) return value
   return applyDatePattern(parts, resolveDatePattern(format))
+}
+
+/** True when `value` is an ISO date or datetime the host can pretty-print. */
+export function isBoundIsoDate(value: string): boolean {
+  return parseBoundDateParts(value) !== undefined
 }
 
 function parseBoundDateParts(value: string): BoundDateParts | undefined {

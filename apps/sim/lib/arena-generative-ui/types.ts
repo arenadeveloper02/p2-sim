@@ -1,8 +1,10 @@
 import type { Spec } from '@json-render/core'
+import { splitBindingDateFormat } from '@/lib/arena-generative-ui/bound-date-format'
 import {
-  formatBoundDateDisplay,
-  splitBindingDateFormat,
-} from '@/lib/arena-generative-ui/bound-date-format'
+  formatBoundDisplay,
+  formatBoundScalarDisplay,
+} from '@/lib/arena-generative-ui/bound-display'
+import { isBoundNumberFormat } from '@/lib/arena-generative-ui/bound-number-format'
 import type {
   ArenaGenerativeAdoptedChange,
   ArenaGenerativeGenerateWarning,
@@ -11,6 +13,14 @@ import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 
 export type { ArenaGenerativeTheme }
 export { formatBoundDateDisplay } from '@/lib/arena-generative-ui/bound-date-format'
+export {
+  formatBoundDisplay,
+  formatBoundScalarDisplay,
+} from '@/lib/arena-generative-ui/bound-display'
+export {
+  formatBoundNumberDisplay,
+  isBoundNumberFormat,
+} from '@/lib/arena-generative-ui/bound-number-format'
 
 export const ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -955,17 +965,23 @@ export function readScopedStatePath(
 function formatBoundScalar(
   value: string | number | boolean,
   formatDates: boolean,
-  dateFormat?: string
+  dateFormat?: string,
+  numberFormat?: string
 ): string {
   const text = String(value)
-  return formatDates ? formatBoundDateDisplay(text, dateFormat) : text
+  if (!formatDates) return text
+  if (dateFormat && isBoundNumberFormat(dateFormat)) {
+    return formatBoundDisplay(text, dateFormat)
+  }
+  return formatBoundScalarDisplay(text, { dateFormat, numberFormat })
 }
 
 function templatePlaceholderValue(
   token: string,
   scope: RepeatItemScope,
   formatDates = false,
-  dateFormat?: string
+  dateFormat?: string,
+  numberFormat?: string
 ): string {
   if (token === 'index') {
     return String(scope.index)
@@ -974,7 +990,7 @@ function templatePlaceholderValue(
     token === 'item' ? scope.item : readHostStatePath(scope.item, token.slice('item.'.length))
   if (value === undefined || value === null) return ''
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return formatBoundScalar(value, formatDates, dateFormat)
+    return formatBoundScalar(value, formatDates, dateFormat, numberFormat)
   }
   return ''
 }
@@ -1042,10 +1058,12 @@ export interface InterpolateElementOptions {
   state?: Record<string, unknown>
   scope?: RepeatItemScope
   pending?: boolean
-  /** Pretty-print ISO dates. Off for hrefs, navigateTo, and other machine props. */
+  /** Pretty-print ISO dates and number pipes. Off for hrefs, navigateTo, and other machine props. */
   formatDates?: boolean
   /** Preset or token pattern from Card.dateFormat / `{item.date|DD/MM/YYYY}`. */
   dateFormat?: string
+  /** Preset from Card/Stat.numberFormat / `{item.price|currency}`. */
+  numberFormat?: string
 }
 
 /** Visible copy props. Navigation, statePath, and showWhen stay raw. */
@@ -1076,18 +1094,19 @@ export function interpolateBindingTemplate(
   options: InterpolateElementOptions = {}
 ): string {
   if (!template.includes('{')) return template
-  const { state, scope, pending = false, formatDates = false, dateFormat } = options
+  const { state, scope, pending = false, formatDates = false, dateFormat, numberFormat } = options
   return template.replace(BINDING_TEMPLATE_PLACEHOLDER, (match, rawToken: string) => {
     const { name, format } = splitBindingDateFormat(rawToken)
-    const resolvedFormat = format ?? dateFormat
     if (isItemTemplateToken(name)) {
       if (!scope) return match
-      return templatePlaceholderValue(name, scope, formatDates, resolvedFormat)
+      return templatePlaceholderValue(name, scope, formatDates, format ?? dateFormat, numberFormat)
     }
     if (!state) return pending ? '' : match
     const resolved = lookupHostBindingValue(state, name)
     if (resolved === undefined) return ''
-    return formatDates ? formatBoundDateDisplay(resolved, resolvedFormat) : resolved
+    if (!formatDates) return resolved
+    if (format) return formatBoundDisplay(resolved, format)
+    return formatBoundScalarDisplay(resolved, { dateFormat, numberFormat })
   })
 }
 
@@ -1101,6 +1120,8 @@ export function interpolateElementProps(
 ): Record<string, unknown> {
   if (!options.scope && !options.state) return props
   const dateFormat = typeof props.dateFormat === 'string' ? props.dateFormat : options.dateFormat
+  const numberFormat =
+    typeof props.numberFormat === 'string' ? props.numberFormat : options.numberFormat
   const next: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(props)) {
     next[key] =
@@ -1108,6 +1129,7 @@ export function interpolateElementProps(
         ? interpolateBindingTemplate(value, {
             ...options,
             dateFormat,
+            numberFormat,
             formatDates: DISPLAY_INTERPOLATION_PROP_KEYS.has(key),
           })
         : value

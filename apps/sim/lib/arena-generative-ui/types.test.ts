@@ -334,6 +334,18 @@ describe('Repeat item scope', () => {
         { item: { date: '2026-08-23' }, index: 0 }
       )
     ).toEqual({ footerText: '23/08/2026', dateFormat: 'numeric-eu' })
+    expect(
+      interpolateRepeatProps(
+        { footerText: '{item.price|currency}' },
+        { item: { price: 1234 }, index: 0 }
+      )
+    ).toEqual({ footerText: '$1,234.00' })
+    expect(
+      interpolateRepeatProps(
+        { footerText: '{item.rate}', numberFormat: 'percent' },
+        { item: { rate: 14.2 }, index: 0 }
+      )
+    ).toEqual({ footerText: '14.2%', numberFormat: 'percent' })
   })
 
   it('leaves object placeholders empty so they cannot leak into hrefs', () => {

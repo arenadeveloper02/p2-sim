@@ -211,6 +211,9 @@ describe('per-archetype gold examples', () => {
     expect(serialized).toContain('view=coverage')
     expect(serialized).toContain('"selectItem":true')
     expect(serialized).toContain('"clearItem":true')
+    expect(serialized).toContain('Copy Markdown')
+    expect(serialized).toContain('"copyContent":true')
+    expect(serialized).toContain('"downloadPdf":true')
     expect(serialized).toContain('!selectedId')
     expect(serialized).toContain('"showWhen":"selectedId"')
     expect(

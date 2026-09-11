@@ -400,7 +400,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'generator',
         text: 'Format dates, numbers, currencies and percentages appropriately.',
         prompt:
-          'Format dates, numbers, currencies, and percentages in labels and literal copy. Bound ISO date and datetime values ({item.date}, createdAt) are formatted by the host — bind the field; do not dump the raw timestamp and do not invent a second formatted copy of API data. When the brief names a date format, set Card.dateFormat or `{item.date|DD/MM/YYYY}` (presets short, medium, long, iso, numeric, numeric-eu, datetime). Do not invent API values to make a Stat look filled.',
+          'Format dates, numbers, currencies, and percentages in labels and literal copy. Bound ISO date and datetime values ({item.date}, createdAt) are formatted by the host — bind the field; do not dump the raw timestamp and do not invent a second formatted copy of API data. When the brief names a date format, set Card.dateFormat or `{item.date|DD/MM/YYYY}` (presets short, medium, long, iso, numeric, numeric-eu, datetime). Bound numbers stay raw unless the brief names a format: Stat/Card.numberFormat or `{item.price|currency}` / `{item.rate|percent}` (presets number, integer, currency, usd, eur, gbp, percent, compact). Numeric Stat state values are grouped by the host. Do not invent API values to make a Stat look filled.',
       },
     ],
   },
@@ -479,14 +479,25 @@ export interface ConstitutionPromptOptions {
 }
 
 /**
- * Which constitution sections the blueprint needs. Forms / navigation /
- * responsive are gated so micro apps do not pay for unused UX rules.
+ * Which constitution sections the blueprint needs. Navigation stays gated;
+ * responsive is always on. Forms cover task/workflow and collection/detail
+ * create-edit surfaces.
  */
 export function resolveConstitutionSections(
   options: ConstitutionPromptOptions = {}
 ): readonly ConstitutionSectionId[] {
   const selected = new Set<ConstitutionSectionId>(ARENA_GENERATIVE_UI_CONSTITUTION_ALWAYS)
-  if (options.needsForms) selected.add('forms')
+  selected.add('responsive')
+  const shapes = new Set(options.pageArchetypes ?? [])
+  if (
+    options.needsForms ||
+    shapes.has('collection') ||
+    shapes.has('detail') ||
+    shapes.has('task') ||
+    shapes.has('workflow')
+  ) {
+    selected.add('forms')
+  }
   const multiPage = (options.pageArchetypes?.length ?? 0) > 1
   const chrome =
     options.shellNavigation === 'tabs' ||
@@ -494,9 +505,6 @@ export function resolveConstitutionSections(
     options.shellNavigation === 'workspace'
   if (options.needsWorkspace || multiPage || chrome) {
     selected.add('navigation')
-  }
-  if (options.needsWorkspace || options.needsTables || options.needsForms) {
-    selected.add('responsive')
   }
   return ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.map((section) => section.id).filter((id) =>
     selected.has(id)

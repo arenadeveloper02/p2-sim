@@ -151,7 +151,7 @@ describe('buildGeneratorSystemPrompt', () => {
       isScopedEdit: false,
     })
     expect(prompt).toContain('UNIVERSAL UI/UX CONSTITUTION')
-    expect(prompt).toContain('DESIGN GUIDELINES')
+    expect(prompt).toContain('VISUAL HIERARCHY')
     expect(prompt).toContain('ARCHETYPE RECIPE')
     expect(prompt).not.toContain('ARCHETYPE RECIPE:')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
@@ -221,7 +221,7 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)\n')
   })
 
-  it('omits unused constitution sections and catalog families for a micro collection', () => {
+  it('keeps full design guidelines and forms constitution for a collection app', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'collection',
       pageArchetypes: ['collection'],
@@ -233,8 +233,12 @@ describe('buildGeneratorSystemPrompt', () => {
     })
     expect(prompt).toContain('UNIVERSAL UI/UX CONSTITUTION')
     expect(prompt).toContain('1. COMPOSITION')
-    expect(prompt).not.toContain('4. FORMS')
+    expect(prompt).toContain('4. FORMS')
+    expect(prompt).toContain('6. RESPONSIVE')
     expect(prompt).not.toContain('5. NAVIGATION')
+    expect(prompt).toContain('DESIGN GUIDELINES')
+    expect(prompt).toContain('CARDS')
+    expect(prompt).toContain('LAYOUT')
     expect(prompt).toContain('- Repeat: {')
     expect(prompt).toContain('- Form: {')
     expect(prompt).not.toContain('- WorkingCard: {')

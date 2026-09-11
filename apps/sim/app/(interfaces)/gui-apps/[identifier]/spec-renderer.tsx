@@ -88,6 +88,15 @@ import {
   paginateCollection,
   withDummyCollectionSeed,
 } from '@/lib/arena-generative-ui/local-discovery'
+import { isBoundIsoDate, splitBindingDateFormat } from '@/lib/arena-generative-ui/bound-date-format'
+import { formatBoundDisplay } from '@/lib/arena-generative-ui/bound-display'
+import { parseBoundNumber } from '@/lib/arena-generative-ui/bound-number-format'
+import {
+  copyTextToClipboard,
+  downloadMarkdownPdf,
+  resolveHostContentAction,
+  visibleMarkdownForElement,
+} from '@/lib/arena-generative-ui/host-content-actions'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
@@ -96,7 +105,6 @@ import {
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   collectionFromBoundValue,
   displayTextFromActionData,
-  formatBoundDateDisplay,
   GENERATIVE_APP_VIEW_SWITCH_TEST_ID,
   interpolateElementProps,
   parseTabItems,
@@ -217,6 +225,8 @@ const CHIP_TONE_CLASSES = {
 
 const CARD_MEDIA_TYPES = new Set(['Icon', 'Avatar'])
 const CARD_FOOTER_TYPES = new Set(['Button', 'Chip', 'NavLink', 'Link', 'Toolbar'])
+/** Badges sit with the title row, not as free-floating body under an h2. */
+const CARD_META_TYPES = new Set(['Badge'])
 /** Keep Back / form / wait chrome ahead of a hoisted result-view Chip row. */
 const VIEW_SWITCH_LEAD_TYPES = new Set([
   'PageHeader',
@@ -526,14 +536,16 @@ const SECTION_WIDTHS = {
   full: 'max-w-none',
 } as const
 
-/** Minimum track width per `Grid.columns` before the grid collapses. */
+/** Minimum track width per `Grid.columns` before the grid collapses. Sized so
+ * `columns: 2` stays ~2-up on a 1280px History section instead of auto-fitting to 4. */
 const GRID_MIN_ITEM_WIDTHS: Record<string, string> = {
-  '2': '240px',
+  '2': '520px',
   '3': '300px',
   '4': '240px',
 }
 
 const DEFAULT_GRID_MIN_ITEM_WIDTH = '280px'
+const DEFAULT_REPEAT_SKELETON_COUNT = 2
 
 const TONE_CLASSES = {
   info: 'border border-[var(--gui-info-border,#a3c7f6)] bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)]',
@@ -704,6 +716,23 @@ function gridColumnCount(props: Record<string, unknown>): string {
   const raw = props.columns
   if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
   return asString(raw)
+}
+
+/**
+ * Skeleton count for a pending Repeat inside a Grid. Matches `columns` so
+ * loading density matches the loaded card grid (not a hardcoded 3).
+ */
+function repeatSkeletonCount(
+  elements: Record<string, SpecElement>,
+  repeatId: string
+): number {
+  for (const element of Object.values(elements)) {
+    if (element.type !== 'Grid') continue
+    if (!(element.children ?? []).includes(repeatId)) continue
+    const raw = Number.parseInt(gridColumnCount(element.props ?? {}), 10)
+    if (Number.isFinite(raw) && raw >= 1) return Math.min(raw, 4)
+  }
+  return DEFAULT_REPEAT_SKELETON_COUNT
 }
 
 /**
@@ -894,9 +923,11 @@ function looksLikeHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value.trim())
 }
 
-function ScalarValue({ value }: { value: unknown }) {
+function ScalarValue({ value, format }: { value: unknown; format?: string }) {
   if (typeof value === 'boolean') return <>{value ? 'Yes' : 'No'}</>
-  if (typeof value === 'number' && Number.isFinite(value)) return <>{String(value)}</>
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return <>{formatBoundDisplay(String(value), format)}</>
+  }
   if (typeof value === 'string' && looksLikeHttpUrl(value)) {
     const href = value.trim()
     return (
@@ -909,7 +940,7 @@ function ScalarValue({ value }: { value: unknown }) {
       </a>
     )
   }
-  const text = displayFromStateValue(value, '')
+  const text = displayFromStateValue(value, '', format)
   return <>{text}</>
 }
 
@@ -1240,11 +1271,30 @@ function readStatePath(
   return readScopedStatePath(state, path, scope)
 }
 
-function displayFromStateValue(value: unknown, fallback: string): string {
+function displayFromStateValue(value: unknown, fallback: string, format?: string): string {
   if (isEmptyStateValue(value)) return fallback
   const fromAction = displayTextFromActionData(value)
   const text = fromAction || String(value)
-  return formatBoundDateDisplay(text)
+  return formatBoundDisplay(text, format)
+}
+
+/** Group Stat numbers when the brief did not name a format. Dates still auto-pretty-print. */
+function statDefaultNumberFormat(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return 'number'
+  if (typeof value !== 'string') return undefined
+  if (isBoundIsoDate(value)) return undefined
+  return parseBoundNumber(value) === undefined ? undefined : 'number'
+}
+
+function parseTableColumns(columns?: string): Array<{ key: string; format?: string }> {
+  return (columns ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const { name, format } = splitBindingDateFormat(part)
+      return { key: name, format }
+    })
 }
 
 function StateTable({
@@ -1258,11 +1308,12 @@ function StateTable({
   style?: CSSProperties
   busy?: boolean
 }) {
-  const declaredHeaders = (columns ?? '')
-    .split(',')
-    .map((header) => header.trim())
-    .filter(Boolean)
-  const headers = declaredHeaders.length > 0 ? declaredHeaders : tableHeadersFromState(value)
+  const declaredColumns = parseTableColumns(columns)
+  const headers =
+    declaredColumns.length > 0 ? declaredColumns.map((column) => column.key) : tableHeadersFromState(value)
+  const formats = Object.fromEntries(
+    declaredColumns.filter((column) => column.format).map((column) => [column.key, column.format])
+  )
   const rows = tableRowsFromState(value, headers)
   if (headers.length === 0 && rows.length === 0) return null
   return (
@@ -1297,7 +1348,7 @@ function StateTable({
                   key={`cell-${cellIndex}`}
                   className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
                 >
-                  <ScalarValue value={cell} />
+                  <ScalarValue value={cell} format={formats[headers[cellIndex] ?? '']} />
                 </td>
               ))}
             </tr>
@@ -2541,9 +2592,10 @@ export function SpecRenderer({
           isEmptyStateValue(stateValue) &&
           (!rawItems || rawItems.length === 0)
         ) {
+          const skeletonCount = repeatSkeletonCount(elements, id)
           return (
             <>
-              {Array.from({ length: 3 }, (_, index) => (
+              {Array.from({ length: skeletonCount }, (_, index) => (
                 <SkeletonBlock
                   key={`repeat-skeleton-${index}`}
                   variant='card'
@@ -2899,7 +2951,13 @@ export function SpecRenderer({
         const value =
           stateValue === undefined
             ? asString(props.value)
-            : displayFromStateValue(stateValue, asString(props.value))
+            : displayFromStateValue(
+                stateValue,
+                asString(props.value),
+                asString(props.numberFormat) ||
+                  asString(props.dateFormat) ||
+                  statDefaultNumberFormat(stateValue)
+              )
         const delta = asString(props.delta)
         const isDisplay = asString(props.size) === 'display'
         const refetching =
@@ -3033,16 +3091,29 @@ export function SpecRenderer({
         const actionId = asString(props.actionId)
         const navigateTo = asString(props.navigateTo)
         const setValue = asString(props.setValue)
+        const hostExport = resolveHostContentAction(props)
         const viewTone = setValue
           ? viewSwitchChipTone(id, setValue, visibilityValues, spec)
           : null
         const tone = viewTone ?? asString(props.tone, 'muted')
-        const interactive = Boolean(actionId || navigateTo || setValue)
+        const interactive = Boolean(actionId || navigateTo || setValue || hostExport)
         const className = cn(
           'inline-flex items-center rounded-[var(--gui-radius-pill)] px-3 py-1.5 font-medium text-sm',
           CHIP_TONE_CLASSES[tone as keyof typeof CHIP_TONE_CLASSES] ?? CHIP_TONE_CLASSES.muted
         )
         const runChip = () => {
+          if (hostExport) {
+            const markdown = visibleMarkdownForElement(
+              elements,
+              id,
+              state,
+              visibilityValues,
+              scope
+            )
+            if (hostExport === 'copy') void copyTextToClipboard(markdown)
+            else downloadMarkdownPdf(markdown)
+            return
+          }
           if (actionId && confirmAction(actionId)) {
             void dispatchAction(actionId, actionValues, confirmMeta(actionId))
             return
@@ -3070,6 +3141,13 @@ export function SpecRenderer({
             aria-pressed={viewTone ? viewTone === 'brand' : undefined}
             className={cn(className, chipBusy && 'gap-2')}
             style={styleFromProps(props)}
+            data-testid={
+              hostExport === 'copy'
+                ? 'host-copy-markdown'
+                : hostExport === 'downloadPdf'
+                  ? 'host-download-pdf'
+                  : undefined
+            }
             onClick={runChip}
           >
             <ActionBusyMark show={chipBusy} />
@@ -3204,6 +3282,7 @@ export function SpecRenderer({
         const mediaIds: string[] = []
         const footerIds: string[] = []
         const chromeIds: string[] = []
+        const metaIds: string[] = []
         const bodyIds: string[] = []
         for (const childId of childIds) {
           const childType = elements[childId]?.type ?? ''
@@ -3213,6 +3292,8 @@ export function SpecRenderer({
             chromeIds.push(childId)
           } else if (CARD_FOOTER_TYPES.has(childType)) {
             footerIds.push(childId)
+          } else if (CARD_META_TYPES.has(childType)) {
+            metaIds.push(childId)
           } else {
             bodyIds.push(childId)
           }
@@ -3224,15 +3305,15 @@ export function SpecRenderer({
         const mediaType = mediaIds[0] ? elements[mediaIds[0]]?.type : undefined
         const mediaBesideTitle = mediaType === 'Avatar'
         const heading =
-          title || subtitle || description ? (
+          title || subtitle || description || metaIds.length > 0 ? (
             <div className='flex min-w-0 flex-col gap-1'>
               {title ? (
-                <h2 className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+                <h2 className='min-w-0 break-all font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)] line-clamp-2'>
                   {title}
                 </h2>
               ) : null}
               {subtitle ? (
-                <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
+                <p className='min-w-0 truncate text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
                   {subtitle}
                 </p>
               ) : null}
@@ -3240,6 +3321,15 @@ export function SpecRenderer({
                 <p className='line-clamp-3 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
                   {description}
                 </p>
+              ) : null}
+              {metaIds.length > 0 ? (
+                <div className='flex flex-wrap items-center gap-2 pt-1'>
+                  {metaIds.map((childId) => (
+                    <Fragment key={childId}>
+                      {renderNode(childId, scope, childWithinForm)}
+                    </Fragment>
+                  ))}
+                </div>
               ) : null}
             </div>
           ) : null
@@ -3251,7 +3341,7 @@ export function SpecRenderer({
             style={styleFromProps(props)}
           >
             {mediaBesideTitle ? (
-              <div className='flex items-start gap-3'>
+              <div className='flex min-w-0 items-start gap-3'>
                 {mediaIds.map((childId) => (
                   <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
                 ))}
@@ -3929,6 +4019,7 @@ export function SpecRenderer({
         const navigateTo = asString(props.navigateTo)
         const actionId = asString(props.actionId)
         const setValue = asString(props.setValue)
+        const hostExport = resolveHostContentAction(props)
         const className = buttonClass(props, 'secondary')
         if (!fieldIsVisible(props, visibilityValues)) return null
         if (href) {
@@ -3948,7 +4039,26 @@ export function SpecRenderer({
             style={styleFromProps(props)}
             disabled={actionBusy}
             aria-busy={actionBusy || undefined}
+            data-testid={
+              hostExport === 'copy'
+                ? 'host-copy-markdown'
+                : hostExport === 'downloadPdf'
+                  ? 'host-download-pdf'
+                  : undefined
+            }
             onClick={() => {
+              if (hostExport) {
+                const markdown = visibleMarkdownForElement(
+                  elements,
+                  id,
+                  state,
+                  visibilityValues,
+                  scope
+                )
+                if (hostExport === 'copy') void copyTextToClipboard(markdown)
+                else downloadMarkdownPdf(markdown)
+                return
+              }
               if (confirm) {
                 void dispatchAction(actionId, actionValues, { destructive: true })
                 return

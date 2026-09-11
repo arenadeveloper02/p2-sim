@@ -1331,7 +1331,7 @@ describe('SpecRenderer', () => {
       const { container } = render({ spec: repeatSpec, state: { articles } })
       const grid = container.querySelector('.grid') as HTMLElement
       expect(grid.className).not.toContain('grid-cols-1')
-      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fit, minmax(min(100%, 240px), 1fr))')
+      expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fit, minmax(min(100%, 520px), 1fr))')
       const wrapper = grid.firstElementChild as HTMLElement
       expect(wrapper.className).toContain('contents')
       const cards = Array.from(wrapper.children)
@@ -1391,6 +1391,101 @@ describe('SpecRenderer', () => {
       })
       expect(container.textContent).toContain('23/08/2026')
       expect(container.textContent).not.toContain('Aug 23, 2026')
+    })
+
+    it('honours a currency pipe and Stat numberFormat', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['stat', 'repeat'] },
+          stat: {
+            type: 'Stat',
+            props: { label: 'Revenue', statePath: 'revenue', numberFormat: 'currency' },
+            children: [],
+          },
+          repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['card'] },
+          card: {
+            type: 'Card',
+            props: { title: '{item.keyword}', footerText: '{item.price|currency}' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: {
+          revenue: 12800,
+          history: [{ id: 'h1', keyword: 'Dental implants', price: 1234 }],
+        },
+      })
+      expect(container.textContent).toContain('$12,800.00')
+      expect(container.textContent).toContain('$1,234.00')
+    })
+
+    it('copies visible markdown from a Copy Markdown host button', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.assign(navigator, { clipboard: { writeText } })
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['copy', 'body'] },
+          copy: {
+            type: 'Button',
+            props: { label: 'Copy Markdown', copyContent: true },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: { content: '# Dental implants\n\nWriter-ready copy.' },
+      })
+      const button = container.querySelector('[data-testid="host-copy-markdown"]') as HTMLButtonElement
+      await act(async () => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(writeText).toHaveBeenCalledWith('# Dental implants\n\nWriter-ready copy.')
+    })
+
+    it('downloads a PDF from a Download PDF host button', async () => {
+      const createObjectURL = vi.fn().mockReturnValue('blob:pdf')
+      const revokeObjectURL = vi.fn()
+      Object.assign(URL, { createObjectURL, revokeObjectURL })
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['download', 'body'] },
+          download: {
+            type: 'Button',
+            props: { label: 'Download PDF', downloadPdf: true },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: { content: '# Dental implants\n\nWriter-ready copy.' },
+      })
+      const button = container.querySelector(
+        '[data-testid="host-download-pdf"]'
+      ) as HTMLButtonElement
+      await act(async () => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(createObjectURL).toHaveBeenCalled()
+      expect(click).toHaveBeenCalled()
+      click.mockRestore()
     })
 
     it('pages locally when there is no pagination API', () => {
@@ -2199,6 +2294,23 @@ describe('SpecRenderer', () => {
       const { container } = render({ spec: repeatSpec, pending: true, state: { articles: [] } })
       expect(container.querySelector('[data-testid="empty-state"]')).toBeNull()
       expect(container.querySelectorAll('[data-testid="skeleton"]').length).toBeGreaterThan(0)
+    })
+
+    it('skeletons two cards when the parent Grid asks for columns 2', () => {
+      const { container } = render({ spec: repeatSpec, pending: true, state: { articles: [] } })
+      expect(container.querySelectorAll('[data-testid="skeleton"]')).toHaveLength(2)
+    })
+
+    it('skeletons four cards when the parent Grid asks for columns 4', () => {
+      const wideSpec: Spec = {
+        ...repeatSpec,
+        elements: {
+          ...repeatSpec.elements,
+          grid: { type: 'Grid', props: { columns: '4' }, children: ['repeat'] },
+        },
+      }
+      const { container } = render({ spec: wideSpec, pending: true, state: { articles: [] } })
+      expect(container.querySelectorAll('[data-testid="skeleton"]')).toHaveLength(4)
     })
   })
 
@@ -3518,6 +3630,44 @@ describe('SpecRenderer', () => {
     expect(footer?.textContent).not.toContain('Enhanced Article')
     expect(card.textContent?.indexOf('Enhanced Article') ?? -1).toBeLessThan(
       card.textContent?.indexOf('Report body') ?? 0
+    )
+  })
+
+  it('clamps long Card titles and keeps Badge meta with the title row', () => {
+    const longUrl =
+      'https://www.artificialintelligence-news.com/news/nvidia-circular-financing-ai-labs/'
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: longUrl, footerText: 'Sep 9, 2026' },
+          children: ['category', 'score', 'open'],
+        },
+        category: { type: 'Badge', props: { text: 'News', tone: 'info' }, children: [] },
+        score: { type: 'Badge', props: { text: 'Score: 87', tone: 'info' }, children: [] },
+        open: {
+          type: 'Button',
+          props: { label: 'View Results', variant: 'secondary' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const card = container.querySelector('[data-testid="card"]') as HTMLElement
+    const title = card.querySelector('h2') as HTMLElement
+    const footer = card.querySelector('[data-testid="card-footer"]') as HTMLElement
+    expect(title.className).toContain('line-clamp-2')
+    expect(title.className).toContain('break-all')
+    expect(title.className).toContain('min-w-0')
+    expect(title.textContent).toBe(longUrl)
+    expect(footer?.textContent).toContain('Sep 9, 2026')
+    expect(footer?.textContent).toContain('View Results')
+    expect(footer?.textContent).not.toContain('News')
+    expect(footer?.textContent).not.toContain('Score: 87')
+    expect(card.textContent?.indexOf('News') ?? -1).toBeLessThan(
+      card.textContent?.indexOf('Sep 9, 2026') ?? 0
     )
   })
 

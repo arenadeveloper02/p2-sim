@@ -114,6 +114,13 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).toContain('The host paints the chevron')
     expect(prompt).toContain('do not use Button.selectItem to expand')
   })
+
+  it('teaches host number formats and Copy Markdown / Download PDF', () => {
+    expect(prompt).toContain('{item.price|currency}')
+    expect(prompt).toContain('copyContent')
+    expect(prompt).toContain('downloadPdf')
+    expect(prompt).toContain('Copy Markdown')
+  })
 })
 
 describe('isArenaGenerativeCatalogType', () => {

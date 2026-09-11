@@ -1068,7 +1068,7 @@ describe('validateArenaGenerativeManifest', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain(
-        'no actionId, navigateTo, href, selectItem, clearItem, or setValue'
+        'no actionId, navigateTo, href, selectItem, clearItem, setValue, copyContent, or downloadPdf'
       )
       expect(result.error).toContain('action')
     })
@@ -1093,14 +1093,20 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.success).toBe(true)
     })
 
-    it('accepts one with setValue to open a Modal', () => {
-      const result = validateArenaGenerativeManifest(
-        manifestWith(buttonPage({ label: 'New item', setValue: 'creating=true' })),
+    it('accepts Copy Markdown / Download PDF as host verbs', () => {
+      const copy = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'Copy Markdown' })),
         { apiBindings: bindings, entryPath: 'home' }
       )
+      expect(copy.error).toBeUndefined()
+      expect(copy.success).toBe(true)
 
-      expect(result.error).toBeUndefined()
-      expect(result.success).toBe(true)
+      const download = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'Save PDF', downloadPdf: true })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+      expect(download.error).toBeUndefined()
+      expect(download.success).toBe(true)
     })
 
     it('ignores the defect on a page a scoped edit did not author', () => {
@@ -1779,6 +1785,63 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.success).toBe(false)
       expect(result.error).toContain('Download PDF')
       expect(result.error).toContain('recommend_articles')
+    })
+
+    it('accepts Copy Markdown as a host action with no generate API', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'copy', 'body'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+            },
+            children: [],
+          },
+          copy: {
+            type: 'Button',
+            props: {
+              label: 'Copy Markdown',
+              copyContent: true,
+              actionId: null,
+              navigateTo: null,
+              href: null,
+            },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: {
+              statePath: 'content',
+              fallback: '',
+              color: null,
+              size: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {},
+        },
+        { apiBindings: [], entryPath: 'home' }
+      )
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
     })
 
     it('rejects DataText showWhen on a different prose key than statePath', () => {

@@ -95,13 +95,20 @@ describe('Universal UI/UX Constitution', () => {
     )
   })
 
-  it('gates forms, navigation, and responsive sections from the blueprint', () => {
-    const micro = resolveConstitutionSections({})
-    expect(micro).not.toContain('forms')
-    expect(micro).not.toContain('navigation')
-    expect(micro).not.toContain('responsive')
-    expect(micro).toContain('composition')
-    expect(micro).toContain('accessibility')
+  it('always includes responsive; forms for collection/detail and navigation when multi-page', () => {
+    const empty = resolveConstitutionSections({})
+    expect(empty).not.toContain('forms')
+    expect(empty).not.toContain('navigation')
+    expect(empty).toContain('responsive')
+    expect(empty).toContain('composition')
+    expect(empty).toContain('accessibility')
+
+    const collection = resolveConstitutionSections({
+      pageArchetypes: ['collection'],
+    })
+    expect(collection).toContain('forms')
+    expect(collection).toContain('responsive')
+    expect(collection).not.toContain('navigation')
 
     const task = resolveConstitutionSections({
       needsForms: true,
@@ -112,10 +119,11 @@ describe('Universal UI/UX Constitution', () => {
     expect(task).toContain('navigation')
     expect(task).toContain('responsive')
 
-    const microPrompt = constitutionPromptFor(micro)
-    expect(microPrompt).toContain('1. COMPOSITION')
-    expect(microPrompt).not.toContain('4. FORMS')
-    expect(microPrompt).not.toContain('5. NAVIGATION')
-    expect(microPrompt.length).toBeLessThan(ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT.length)
+    const emptyPrompt = constitutionPromptFor(empty)
+    expect(emptyPrompt).toContain('1. COMPOSITION')
+    expect(emptyPrompt).toContain('6. RESPONSIVE')
+    expect(emptyPrompt).not.toContain('4. FORMS')
+    expect(emptyPrompt).not.toContain('5. NAVIGATION')
+    expect(emptyPrompt.length).toBeLessThan(ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT.length)
   })
 })

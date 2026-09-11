@@ -6,6 +6,7 @@ import {
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
 import { dummyCollectionSeedFromSpec } from '@/lib/arena-generative-ui/local-discovery'
+import { resolveHostContentAction } from '@/lib/arena-generative-ui/host-content-actions'
 import { normalizeGeneratedSpec } from '@/lib/arena-generative-ui/normalize-spec'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
@@ -265,7 +266,8 @@ function deadSubmitButtonIds(spec: Spec): string[] {
 
 /**
  * Ids of every `Button` with no verb — no `actionId`, `navigateTo`, `href`,
- * `selectItem`, `clearItem`, or `setValue`. Chip without `actionId` is display chrome.
+ * `selectItem`, `clearItem`, `setValue`, or host Copy Markdown / Download PDF.
+ * Chip without `actionId` is display chrome unless those host labels apply.
  */
 function deadButtonIds(spec: Spec): string[] {
   const elements = (spec.elements ?? {}) as Record<string, FlatElement>
@@ -279,7 +281,8 @@ function deadButtonIds(spec: Spec): string[] {
         asString(props.href) ||
         asString(props.setValue) ||
         asTruthyFlag(props.selectItem) ||
-        asTruthyFlag(props.clearItem)
+        asTruthyFlag(props.clearItem) ||
+        resolveHostContentAction(props)
       )
     })
     .map(([id]) => id)
@@ -452,7 +455,7 @@ export function validateArenaGenerativeManifest(
     if (deadButtons.length > 0) {
       return {
         success: false,
-        error: `Page "${key}" has a Button (${deadButtons.join(', ')}) with no actionId, navigateTo, href, selectItem, clearItem, or setValue, so it would do nothing. Give it a verb.`,
+        error: `Page "${key}" has a Button (${deadButtons.join(', ')}) with no actionId, navigateTo, href, selectItem, clearItem, setValue, copyContent, or downloadPdf, so it would do nothing. Give it a verb.`,
       }
     }
     const selectItemIssue =

@@ -7,6 +7,7 @@ import {
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
 import { isFormFieldType, parseShowWhen } from '@/lib/arena-generative-ui/form-fields'
+import { isCopyOrDownloadLabel } from '@/lib/arena-generative-ui/host-content-actions'
 import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
@@ -190,15 +191,6 @@ function collectionAncestors(elements: Record<string, SpecElement>, childId: str
   return ids
 }
 
-const COPY_DOWNLOAD_LABEL =
-  /^(copy|download)(\s+(markdown|pdf))?$|copy markdown|download pdf|^pdf$/i
-
-function isCopyOrDownloadLabel(label: string): boolean {
-  const trimmed = label.trim()
-  if (!trimmed) return false
-  return COPY_DOWNLOAD_LABEL.test(trimmed)
-}
-
 function chromeLabel(element: SpecElement): string {
   return asString(element.props?.label) || asString(element.props?.text)
 }
@@ -219,7 +211,7 @@ function copyDownloadReboundError(
     if (!actionId) continue
     const apiKey = manifest.actions[actionId]?.apiKey
     if (!apiKey || !generateKeys.has(apiKey)) continue
-    return `Page "${pagePath}" ${type} "${id}" labeled "${label}" rebinds generate API "${apiKey}". Copy Markdown and Download PDF must not call the generate workflow.`
+    return `Page "${pagePath}" ${type} "${id}" labeled "${label}" rebinds generate API "${apiKey}". Copy Markdown and Download PDF are host actions (copyContent / downloadPdf, no actionId) and must not call the generate workflow.`
   }
   return undefined
 }
@@ -247,7 +239,9 @@ function showWhenDataTextMismatchError(
       .filter((name) => proseKeys.has(name))
     if (showKeys.length === 0) continue
     const ids =
-      element.type === 'DataText' ? [id, ...descendantsOf(elements, id)] : descendantsOf(elements, id)
+      element.type === 'DataText'
+        ? [id, ...descendantsOf(elements, id)]
+        : descendantsOf(elements, id)
     for (const childId of ids) {
       const child = elements[childId]
       if (child?.type !== 'DataText') continue

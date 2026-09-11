@@ -31,7 +31,6 @@ import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui
 import {
   ARENA_GENERATIVE_UI_COMPOSITION_PROMPT,
   ARENA_GENERATIVE_UI_HIERARCHY_PROMPT,
-  ARENA_GENERATIVE_UI_LAYOUT_PROMPT,
 } from '@/lib/arena-generative-ui/design-guidelines'
 import { ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT } from '@/lib/arena-generative-ui/design-intent'
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
@@ -152,17 +151,14 @@ function wrapColumn(heading: string, sections: readonly string[]): string {
   return [heading, ...body].join('\n\n')
 }
 
+/**
+ * Design composition is always relevant for a planned app — LAYOUT / CARDS /
+ * typography are not "unrelated" packs. Unused catalog families and recipes
+ * stay selectively injected elsewhere.
+ */
 function compositionFor(options: BuildGeneratorSystemPromptOptions): string {
-  if (
-    !options.archetype ||
-    options.archetype === 'dashboard' ||
-    (options.needsForms && options.needsTables) ||
-    options.needsWorkspace
-  ) {
+  if (options.archetype || options.recipes || (options.pageArchetypes?.length ?? 0) > 0) {
     return ARENA_GENERATIVE_UI_COMPOSITION_PROMPT
-  }
-  if (options.needsForms || options.needsTables) {
-    return [ARENA_GENERATIVE_UI_LAYOUT_PROMPT, ARENA_GENERATIVE_UI_HIERARCHY_PROMPT].join('\n\n')
   }
   return ARENA_GENERATIVE_UI_HIERARCHY_PROMPT
 }
