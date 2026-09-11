@@ -6,10 +6,7 @@ import { generateShortId } from '@sim/utils/id'
 import { normalizeEmail } from '@sim/utils/string'
 import { eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  getArenaUserSettingsContract,
-  updateArenaUserSettingsContract,
-} from '@/lib/api/contracts'
+import { getArenaUserSettingsContract, updateArenaUserSettingsContract } from '@/lib/api/contracts'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { generateRequestId } from '@/lib/core/utils/request'

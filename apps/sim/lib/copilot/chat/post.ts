@@ -71,10 +71,10 @@ import {
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
 import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 import {
   remapLegacyLocalCopilotCatalogId,
   resolveLocalCopilotRequestCatalogId,

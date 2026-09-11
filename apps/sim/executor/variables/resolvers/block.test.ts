@@ -402,6 +402,60 @@ describe('BlockResolver', () => {
       expect(resolver.resolve('<siblingloop.results>', ctx)).toEqual(['outer-branch-2'])
     })
 
+    it('aggregates loop-body outputs when the consumer is outside the loop', () => {
+      const workflow = createTestWorkflow(
+        [{ id: 'worker' }, { id: 'after-loop', name: 'After Loop' }],
+        {
+          loops: { 'loop-1': { id: 'loop-1', nodes: ['worker'] } },
+        }
+      )
+      const resolver = new BlockResolver(workflow)
+      const ctx = createTestContext('after-loop', {
+        worker: { result: 'iter-3' },
+        worker_loop0: { result: 'iter-0' },
+        worker_loop1: { result: 'iter-1' },
+        worker_loop2: { result: 'iter-2' },
+        worker_loop3: { result: 'iter-3' },
+      })
+
+      expect(resolver.resolve('<worker.result>', ctx)).toEqual([
+        'iter-0',
+        'iter-1',
+        'iter-2',
+        'iter-3',
+      ])
+    })
+
+    it('keeps the current iteration when the consumer is still inside the loop', () => {
+      const workflow = createTestWorkflow([{ id: 'worker' }, { id: 'consumer' }], {
+        loops: { 'loop-1': { id: 'loop-1', nodes: ['worker', 'consumer'] } },
+      })
+      const resolver = new BlockResolver(workflow)
+      const ctx = createTestContext('consumer', {
+        worker: { result: 'iter-2' },
+        worker_loop0: { result: 'iter-0' },
+        worker_loop1: { result: 'iter-1' },
+        worker_loop2: { result: 'iter-2' },
+      })
+
+      expect(resolver.resolve('<worker.result>', ctx)).toBe('iter-2')
+    })
+
+    it('falls back to last-write when no per-iteration copies exist', () => {
+      const workflow = createTestWorkflow(
+        [{ id: 'worker' }, { id: 'after-loop', name: 'After Loop' }],
+        {
+          loops: { 'loop-1': { id: 'loop-1', nodes: ['worker'] } },
+        }
+      )
+      const resolver = new BlockResolver(workflow)
+      const ctx = createTestContext('after-loop', {
+        worker: { result: 'iter-3' },
+      })
+
+      expect(resolver.resolve('<worker.result>', ctx)).toBe('iter-3')
+    })
+
     it('should resolve nested scalar paths inside compacted block references', async () => {
       const workflow = createTestWorkflow([{ id: 'source' }])
       const resolver = new BlockResolver(workflow)

@@ -37,10 +37,7 @@ export interface PromptContextPrefetch {
    * tool list so `load_user_skill` matches the catalog (replacing the early
    * provisional tools resolve).
    */
-  startSkills: (
-    skills: LocalCopilotSkillSummary[] | undefined,
-    sandboxEntitled?: boolean
-  ) => void
+  startSkills: (skills: LocalCopilotSkillSummary[] | undefined, sandboxEntitled?: boolean) => void
   /** Awaits tools / user turn / chat config / skills (once started). */
   settle: () => Promise<SettledPromptContextPrefetch>
 }

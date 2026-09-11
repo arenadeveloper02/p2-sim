@@ -110,7 +110,8 @@ export function resolveLocalCopilotPromptTokenBudget(
   options: ResolveLocalCopilotPromptTokenBudgetOptions
 ): ResolvedLocalCopilotPromptTokenBudget {
   const isBedrock = options.provider === 'bedrock'
-  const softCap = options.softCap ?? resolveDefaultPromptTokenSoftCap(options.model, options.provider)
+  const softCap =
+    options.softCap ?? resolveDefaultPromptTokenSoftCap(options.model, options.provider)
   const maxOutputTokens = Math.max(
     0,
     options.maxOutputTokens ?? LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
@@ -167,7 +168,10 @@ export function resolveLocalCopilotMaxOutputTokens(model: string): number {
 }
 
 function normalizeLocalCopilotModelId(model: string): string {
-  return model.toLowerCase().replace(/^vertex\//, '').trim()
+  return model
+    .toLowerCase()
+    .replace(/^vertex\//, '')
+    .trim()
 }
 
 /**
