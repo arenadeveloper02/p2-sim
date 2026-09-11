@@ -132,8 +132,9 @@ async function resolveDefaultGroup(
  * `organizationId`). One effective group per workspace, by precedence:
  *   1. a non-default group targeting this workspace that `userId` is an explicit
  *      member of, else
- *   2. a non-default group targeting this workspace that has no explicit members
- *      — governs all members of the workspace, including external members, else
+ *   2. a non-default group in `inherit` mode targeting this workspace that has no
+ *      explicit members — governs all members of the workspace, including
+ *      external members, else
  *   3. the organization's default group (also governs external members), else
  *   4. `null` (unrestricted).
  *
@@ -141,6 +142,12 @@ async function resolveDefaultGroup(
  * group per workspace, and a user is an explicit member of at most one group per
  * workspace. If an overlap nonetheless exists, the oldest group wins — rows are
  * ordered by `created_at` (then `id`).
+ *
+ * A group in `explicit` membership mode is excluded from step 2: it governs
+ * exactly its member rows and therefore governs nobody when empty. Directory-
+ * provisioned groups use that mode, so an identity provider removing the last
+ * member narrows the group to nobody rather than silently widening it to
+ * everyone in its workspaces.
  *
  * Callers gate on enterprise entitlement before invoking this and merge the env
  * allowlist afterwards.
@@ -164,6 +171,7 @@ export async function resolveWorkspaceGroup(
         select 1 from ${permissionGroupMember}
         where ${permissionGroupMember.permissionGroupId} = ${permissionGroup.id}
       )`,
+      membershipMode: permissionGroup.membershipMode,
     })
     .from(permissionGroup)
     .innerJoin(
@@ -179,7 +187,8 @@ export async function resolveWorkspaceGroup(
     .orderBy(asc(permissionGroup.createdAt), asc(permissionGroup.id))
 
   const explicitMemberGroup = rows.find((row) => row.isMember)
-  const winner = explicitMemberGroup ?? rows.find((row) => !row.hasMembers)
+  const winner =
+    explicitMemberGroup ?? rows.find((row) => !row.hasMembers && row.membershipMode === 'inherit')
 
   if (winner) {
     return {
@@ -301,24 +310,22 @@ export async function getUserPermissionConfigForOrganization(
  * enables Access Control, and the organization holds the Enterprise entitlement
  * that turns the regime on.
  *
- * Split out of {@link getUserPermissionConfigForOrganization} so a caller that
- * must re-read the *group* under `acquirePermissionGroupOrgLock` can settle this
- * half BEFORE opening its transaction. The entitlement read cannot move into a
- * transaction: {@link isOrganizationOnEnterprisePlan} is `cache()`d on its
- * argument list, so it admits no executor, and giving it one would both miss the
- * memo on every call and — because an unentitled organization resolves to
- * `config: null`, meaning every capability ALLOWED — turn a read failure into a
- * fail-open. The lock never serialized this half either way: it guards
- * permission-group writes, not subscription changes.
+ * Callers that serialize entitlement changes with an organization mutation
+ * lock must pass their transaction after acquiring that lock. The executor is
+ * part of the entitlement cache key, so this read cannot reuse a preflight
+ * result. A permission-group lock alone only serializes group writes.
  *
  * `'throw'` for the same reason as in
  * {@link resolveUserAccessControlContextForOrganization}.
  */
 export async function isOrganizationPermissionRegimeActive(
-  organizationId: string
+  organizationId: string,
+  executor?: DbOrTx
 ): Promise<boolean> {
   if (!isHosted && !isAccessControlEnabled) return false
-  return isOrganizationOnEnterprisePlan(organizationId, 'throw')
+  return executor
+    ? isOrganizationOnEnterprisePlan(organizationId, 'throw', executor)
+    : isOrganizationOnEnterprisePlan(organizationId, 'throw')
 }
 
 /**

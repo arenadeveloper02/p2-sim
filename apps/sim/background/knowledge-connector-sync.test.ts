@@ -140,6 +140,34 @@ describe('knowledge connector sync worker', () => {
     await expect(run).rejects.toThrow('Connector sync partially failed')
   })
 
+  it('completes a durably scheduled capacity wait while preserving existing source failures', async () => {
+    mockAssertConnectorSyncPayload.mockReturnValue({
+      connectorId: 'connector-1',
+      requestId: 'request-1',
+      billingAttribution: BILLING_ATTRIBUTION,
+    })
+    const base = await mockExecuteSync()
+    const waiting = {
+      ...base,
+      listingIncomplete: true,
+      deferred: {
+        reason: 'admission_timeout',
+        providerId: 'github-rest',
+        nextSyncAt: '2026-09-01T00:00:00Z',
+      },
+    }
+    mockExecuteSync.mockResolvedValue(waiting)
+    expect(await executeConnectorSyncJob({})).toMatchObject({
+      outcome: 'deferred',
+      success: false,
+      deferred: waiting.deferred,
+    })
+    mockExecuteSync.mockResolvedValue({ ...waiting, docsFailed: 1 })
+    await expect(executeConnectorSyncJob({})).rejects.toThrow('partially failed')
+    mockExecuteSync.mockResolvedValue({ ...waiting, error: 'Retry persistence failed' })
+    await expect(executeConnectorSyncJob({})).rejects.toThrow('Retry persistence failed')
+  })
+
   it('does not turn intentionally skipped source files into a task failure', () => {
     expect(
       classifyConnectorSyncResult({
@@ -200,6 +228,30 @@ describe('knowledge connector sync worker', () => {
         error: 'sync_in_progress',
       })
     ).toBe('failed')
+  })
+
+  it('reports a durable continuation without aborting or retrying its completed pages', async () => {
+    const result = {
+      docsAdded: 1,
+      docsUpdated: 0,
+      docsDeleted: 0,
+      docsUnchanged: 0,
+      docsSkipped: 0,
+      docsFailed: 0,
+      processingDispatch: { requested: 1, accepted: 1, failed: 0 },
+      listingIncomplete: true,
+    }
+    mockAssertConnectorSyncPayload.mockReturnValue({
+      connectorId: 'connector-1',
+      requestId: 'request-1',
+      billingAttribution: BILLING_ATTRIBUTION,
+    })
+    mockExecuteSync.mockResolvedValue(result)
+    expect(classifyConnectorSyncResult(result)).toBe('partial')
+    await expect(executeConnectorSyncJob({})).resolves.toMatchObject({
+      outcome: 'partial',
+      listingIncomplete: true,
+    })
   })
 
   it('classifies a persisted connector error as a failed task', () => {

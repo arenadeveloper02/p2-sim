@@ -62,7 +62,6 @@ const SELF_HOSTED_WORKSPACE_SECTIONS = WORKSPACE_SETTINGS_ITEMS.map(({ id }) => 
 )
 
 const ALL_ENTITLEMENTS = {
-  credentialGroups: true,
   customBlocks: true,
   forks: true,
   inbox: true,
@@ -106,7 +105,7 @@ describe('settings navigation boundaries', () => {
       'organization',
       'usage',
       'secrets',
-      'credential-groups',
+      'connected-accounts',
       'custom-tools',
       'mcp',
       'apikeys',
@@ -138,7 +137,6 @@ describe('settings navigation boundaries', () => {
       'secrets',
       'byok',
       'sandboxes',
-      'credential-groups',
       'custom-tools',
       'mcp',
       'workflow-mcp-servers',
@@ -235,6 +233,7 @@ describe('settings navigation boundaries', () => {
       hasEnterprisePlan: true,
       hosted: false,
       selfHosted: {
+        'connected-accounts': true,
         'access-control': false,
         'audit-logs': false,
         sso: true,
@@ -298,6 +297,7 @@ describe('settings navigation boundaries', () => {
       'access-control',
       'audit-logs',
       'billing',
+      'connected-accounts',
       'data-drains',
       'data-retention',
       'organization',
@@ -315,6 +315,7 @@ describe('settings navigation boundaries', () => {
     expect(UNIFIED_TO_ORGANIZATION_SECTION).toEqual({
       organization: 'members',
       billing: 'billing',
+      'connected-accounts': 'connected-accounts',
       'access-control': 'access-control',
       'audit-logs': 'audit-logs',
       sso: 'sso',
@@ -335,7 +336,6 @@ describe('settings navigation boundaries', () => {
       secrets: 'secrets',
       byok: 'byok',
       sandboxes: 'sandboxes',
-      'credential-groups': 'credential-groups',
       'custom-tools': 'custom-tools',
       mcp: 'mcp',
       'workflow-mcp-servers': 'workflow-mcp-servers',
@@ -560,7 +560,6 @@ describe('settings navigation boundaries', () => {
 
     expect(items.map(({ id }) => id)).toEqual([
       'teammates',
-      'credential-groups',
       'workflow-mcp-servers',
       'recently-deleted',
       'forks',

@@ -4,16 +4,23 @@
 import { act, type ChangeEventHandler, type ReactNode } from 'react'
 import { resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { getErrorMessage } from '@sim/utils/errors'
+import { NuqsTestingAdapter } from 'nuqs/adapters/testing'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockUseConfigureSSO, mockUseOrganizationBilling, mockUseSession, mockUseSSOProviders } =
-  vi.hoisted(() => ({
-    mockUseConfigureSSO: vi.fn(),
-    mockUseOrganizationBilling: vi.fn(),
-    mockUseSession: vi.fn(),
-    mockUseSSOProviders: vi.fn(),
-  }))
+const {
+  mockUseConfigureSSO,
+  mockUseDeleteSSOProvider,
+  mockUseOrganizationBilling,
+  mockUseSession,
+  mockUseSSOProviders,
+} = vi.hoisted(() => ({
+  mockUseConfigureSSO: vi.fn(),
+  mockUseDeleteSSOProvider: vi.fn(),
+  mockUseOrganizationBilling: vi.fn(),
+  mockUseSession: vi.fn(),
+  mockUseSSOProviders: vi.fn(),
+}))
 
 vi.mock('@sim/emcn', () => ({
   Button: ({ children, ...props }: { children?: ReactNode }) => (
@@ -27,7 +34,26 @@ vi.mock('@sim/emcn', () => ({
     </button>
   ),
   ChipCombobox: () => <div />,
-  ChipCopyInput: ({ value }: { value?: string }) => <input readOnly value={value ?? ''} />,
+  ChipConfirmModal: ({
+    open,
+    title,
+    confirm,
+  }: {
+    open: boolean
+    title: string
+    confirm: { label: string; onClick: () => void }
+  }) =>
+    open ? (
+      <div role='dialog'>
+        <span>{title}</span>
+        <button type='button' onClick={confirm.onClick}>
+          {confirm.label}
+        </button>
+      </div>
+    ) : null,
+  ChipCopyInput: ({ value, id }: { value?: string; id?: string }) => (
+    <input id={id} readOnly value={value ?? ''} />
+  ),
   ChipInput: ({
     value,
     onChange,
@@ -40,6 +66,29 @@ vi.mock('@sim/emcn', () => ({
     placeholder?: string
   }) => <input id={id} placeholder={placeholder} value={value ?? ''} onChange={onChange} />,
   ChipSelect: () => <div />,
+  ChipModalTabs: ({
+    tabs,
+    value,
+    onChange,
+  }: {
+    tabs: Array<{ label: string; value: string }>
+    value: string
+    onChange: (value: string) => void
+  }) => (
+    <div role='radiogroup'>
+      {tabs.map((tab) => (
+        <button
+          key={tab.value}
+          type='button'
+          role='radio'
+          aria-checked={tab.value === value}
+          onClick={() => onChange(tab.value)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  ),
   ChipSwitch: ({
     options,
     value,
@@ -71,6 +120,7 @@ vi.mock('@sim/emcn', () => ({
   }) => <textarea value={value ?? ''} onChange={onChange} />,
   Expandable: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   ExpandableContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Info: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Label: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Switch: () => <button type='button'>Switch</button>,
   cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
@@ -84,13 +134,21 @@ vi.mock('@/lib/auth/auth-client', () => ({
   useSession: mockUseSession,
 }))
 
-// Domain management is covered by its own tests and needs a QueryClient; this
-// suite only exercises the provider form's org-transition behavior.
-vi.mock('@/ee/sso/components/verified-domains-section', () => ({
-  VerifiedDomainsSection: () => <div />,
+vi.mock('@/app/workspace/[workspaceId]/components/credential-detail', () => ({
+  UnsavedChangesModal: () => null,
 }))
 
-// Surface the real Save/Update action so submit paths are reachable from tests.
+/** Domain management has its own tests; this suite covers the provider form and tab navigation. */
+vi.mock('@/ee/sso/components/verified-domains-section', () => ({
+  VerifiedDomainsSection: () => <div>Domain ownership settings</div>,
+}))
+
+/** Directory provisioning has its own React Query hooks and its own tests; here it is a sibling section. */
+vi.mock('@/ee/scim/components/scim-section', () => ({
+  ScimSection: () => <div>Directory provisioning settings</div>,
+}))
+
+/** Surface the real Save/Update action so submit paths are reachable from tests. */
 vi.mock('@/components/settings/save-discard-actions', () => ({
   saveDiscardActions: ({ saveLabel, onSave }: { saveLabel?: string; onSave?: () => void }) => [
     { text: saveLabel ?? 'Save', onSelect: onSave },
@@ -122,12 +180,19 @@ vi.mock('@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 vi.mock('@/app/workspace/[workspaceId]/settings/components/settings-panel', () => ({
   SettingsPanel: ({
     actions = [],
+    back,
     children,
   }: {
     actions?: Array<{ text: string; onSelect?: () => void; disabled?: boolean }>
+    back?: { text: string; onSelect: () => void }
     children?: ReactNode
   }) => (
     <div>
+      {back && (
+        <button type='button' onClick={back.onSelect}>
+          {back.text}
+        </button>
+      )}
       {actions.map((action) => (
         <button
           key={action.text}
@@ -143,13 +208,43 @@ vi.mock('@/app/workspace/[workspaceId]/settings/components/settings-panel', () =
   ),
 }))
 
+/** The guard's own behavior is tested with its hook; here leaving is always allowed. */
 vi.mock('@/app/workspace/[workspaceId]/settings/hooks/use-settings-unsaved-guard', () => ({
-  useSettingsUnsavedGuard: vi.fn(),
+  useSettingsUnsavedGuard: () => ({
+    showUnsavedModal: false,
+    setShowUnsavedModal: vi.fn(),
+    guardBack: (onLeave: () => void) => onLeave(),
+    confirmDiscard: vi.fn(),
+  }),
 }))
 
 vi.mock('@/ee/sso/hooks/sso', () => ({
   useConfigureSSO: mockUseConfigureSSO,
+  useDeleteSSOProvider: mockUseDeleteSSOProvider,
   useSSOProviders: mockUseSSOProviders,
+}))
+
+/** The resource row is design-system chrome; here it is a labelled button carrying its text. */
+vi.mock('@/app/workspace/[workspaceId]/settings/components/settings-resource-row', () => ({
+  RESOURCE_LIST_STACK: '',
+  SettingsResourceRow: ({
+    title,
+    description,
+    clickLabel,
+    onClick,
+  }: {
+    title: ReactNode
+    description?: ReactNode
+    clickLabel?: string
+    onClick?: () => void
+  }) => (
+    <div>
+      <button type='button' aria-label={clickLabel} onClick={onClick}>
+        {title}
+        {description}
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('@/hooks/queries/organization', () => ({
@@ -169,8 +264,7 @@ function provider(organizationId: string) {
     jitProvisioningEnabled: true,
     providerType: 'oidc',
     oidcConfig: JSON.stringify({
-      // What the API actually returns: the sentinel plus a display-only hint,
-      // never the secret itself.
+      /** What the API actually returns: the sentinel plus a display-only hint, never the secret itself. */
       clientId: `client-${suffix}`,
       clientSecret: '[REDACTED]',
       clientSecretHint: '4f2a',
@@ -185,16 +279,28 @@ function findButton(text: string) {
   )
 }
 
-function startEditing() {
+/** The sign-in tab lists providers before showing one, so edits start here. */
+function openProvider(providerId: string) {
+  act(() =>
+    container.querySelector<HTMLButtonElement>(`[aria-label="Open ${providerId}"]`)?.click()
+  )
+}
+
+function startEditing(providerId = 'provider-a') {
+  openProvider(providerId)
   act(() => findButton('Edit')?.click())
 }
 
 let container: HTMLDivElement
 let root: Root
 
-function renderSso(organizationId: string) {
+function renderSso(organizationId: string, searchParams = '') {
   act(() => {
-    root.render(<SSO organizationId={organizationId} />)
+    root.render(
+      <NuqsTestingAdapter searchParams={searchParams}>
+        <SSO organizationId={organizationId} />
+      </NuqsTestingAdapter>
+    )
   })
 }
 
@@ -205,9 +311,7 @@ beforeAll(() => {
 afterAll(resetEnvFlagsMock)
 
 beforeEach(() => {
-  // The component reads getBaseUrl() during render; make sure the env var is
-  // present even when the suite runs without a local .env or after another
-  // test file mutated the environment (auto-restored via unstubEnvs).
+  /** The component reads getBaseUrl() during render; make sure the env var is present even when the suite runs without a local .env or after another test file mutated the environment (auto-restored via unstubEnvs). */
   vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   container = document.createElement('div')
@@ -224,6 +328,10 @@ beforeEach(() => {
   mockUseConfigureSSO.mockReturnValue({
     isPending: false,
     mutateAsync: vi.fn(),
+  })
+  mockUseDeleteSSOProvider.mockReturnValue({
+    isPending: false,
+    mutateAsync: vi.fn().mockResolvedValue({ success: true }),
   })
   mockUseSSOProviders.mockImplementation(({ organizationId }: { organizationId: string }) => ({
     data: { providers: [provider(organizationId)] },
@@ -245,8 +353,8 @@ describe('SSO organization transitions', () => {
     renderSso('org-a')
     expect(container).toHaveTextContent('org-a.example.com')
 
-    expect(findButton('Edit')).toBeDefined()
     startEditing()
+    expect(findButton('Edit')).toBeUndefined()
     expect(container.querySelector('input[value="client-a"]')).not.toBeNull()
 
     renderSso('org-b')
@@ -315,9 +423,10 @@ describe('SSO organization transitions', () => {
 describe('SSO member provisioning', () => {
   it('shows the saved automatic provisioning mode', () => {
     renderSso('org-a')
+    openProvider('provider-a')
 
     expect(container).toHaveTextContent('Automatic')
-    expect(container).toHaveTextContent('No workspace access is granted automatically.')
+    expect(container).toHaveTextContent('Grant workspace access separately.')
   })
 
   it('sends invite-only when an admin changes the provisioning mode', async () => {
@@ -459,5 +568,210 @@ describe('SSO client secret preservation', () => {
 
     expect(secretInput()?.value).toBe('••••••••••••4f2a')
     expect(findButton('Replace')).toBeDefined()
+  })
+})
+
+describe('SSO settings tabs', () => {
+  it('keeps the sign-in draft while switching concerns and hides unrelated header actions', () => {
+    renderSso('org-a')
+    startEditing()
+    act(() => findButton('Invite only')?.click())
+    act(() => findButton('Domains')?.click())
+    expect(container).toHaveTextContent('Domain ownership settings')
+    expect(findButton('Update')).toBeUndefined()
+    expect(container.querySelector('form')?.closest('[hidden]')).not.toBeNull()
+    act(() => findButton('Sign-in')?.click())
+    expect(findButton('Invite only')).toHaveAttribute('aria-pressed', 'true')
+    expect(findButton('Update')).toBeDefined()
+  })
+
+  it('opens the domains tab from a shared link without showing provider actions', () => {
+    act(() =>
+      root.render(
+        <NuqsTestingAdapter searchParams='?tab=domains'>
+          <SSO organizationId='org-a' />
+        </NuqsTestingAdapter>
+      )
+    )
+    expect(container.querySelector('[role="radio"][aria-checked="true"]')).toHaveTextContent(
+      'Domains'
+    )
+    expect(container).toHaveTextContent('Domain ownership settings')
+    expect(findButton('Edit')).toBeUndefined()
+  })
+
+  it('falls back to sign-in for an invalid tab', () => {
+    act(() =>
+      root.render(
+        <NuqsTestingAdapter searchParams='?tab=unknown'>
+          <SSO organizationId='org-a' />
+        </NuqsTestingAdapter>
+      )
+    )
+    expect(container.querySelector('[role="radio"][aria-checked="true"]')).toHaveTextContent(
+      'Sign-in'
+    )
+  })
+})
+
+describe('SAML callback URLs', () => {
+  function renderSaml(samlConfig: string) {
+    mockUseSSOProviders.mockReturnValue({
+      data: { providers: [{ ...provider('org-a'), providerType: 'saml', samlConfig }] },
+      isLoading: false,
+    })
+    renderSso('org-a')
+    openProvider('provider-a')
+  }
+
+  function callbackValue() {
+    return container.querySelector<HTMLInputElement>('#sso-callback-url')?.value
+  }
+
+  it('shows the saved override as the copyable ACS URL', () => {
+    const override = 'https://sso.example.com/acs'
+    renderSaml(JSON.stringify({ callbackUrl: override }))
+    expect(callbackValue()).toBe(override)
+  })
+
+  it('keeps the copyable ACS URL in sync with the draft override and its removal', () => {
+    renderSaml(JSON.stringify({ callbackUrl: 'https://sso.example.com/acs' }))
+    startEditing()
+    const input = container.querySelector<HTMLInputElement>('#sso-callback-override')
+    expect(input).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(input, 'https://sso.example.com/updated-acs')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(callbackValue()).toBe('https://sso.example.com/updated-acs')
+    act(() => {
+      setter?.call(input, '')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(callbackValue()).toMatch(/\/api\/auth\/sso\/saml2\/callback\/provider-a$/)
+  })
+
+  it.each(['{}', 'null', 'invalid-json'])(
+    'falls back to the generated ACS URL for stored config %s',
+    (samlConfig) => {
+      renderSaml(samlConfig)
+      expect(callbackValue()).toMatch(/\/api\/auth\/sso\/saml2\/callback\/provider-a$/)
+    }
+  )
+})
+
+describe('SSO provider list', () => {
+  it.each(['', '?provider=new'])(
+    'opens and edits a provider named new with initial search params %s',
+    (searchParams) => {
+      mockUseSSOProviders.mockReturnValue({
+        data: { providers: [{ ...provider('org-a'), providerId: 'new' }] },
+        isLoading: false,
+      })
+      renderSso('org-a', searchParams)
+      if (!searchParams) openProvider('new')
+
+      expect(findButton('Edit')).toBeDefined()
+      expect(findButton('Save')).toBeUndefined()
+      act(() => findButton('Edit')?.click())
+      expect(container.querySelector('input[value="client-a"]')).not.toBeNull()
+    }
+  )
+
+  it('keeps creation separate from an existing provider named new', () => {
+    mockUseSSOProviders.mockReturnValue({
+      data: { providers: [{ ...provider('org-a'), providerId: 'new' }] },
+      isLoading: false,
+    })
+    renderSso('org-a', '?provider=new&createProvider=true')
+
+    expect(findButton('Save')).toBeDefined()
+    expect(findButton('Edit')).toBeUndefined()
+    expect(container.querySelector('input[value="client-a"]')).toBeNull()
+
+    act(() => findButton('Identity providers')?.click())
+    expect(container.querySelector('[aria-label="Open new"]')).not.toBeNull()
+    openProvider('new')
+    expect(findButton('Edit')).toBeDefined()
+  })
+
+  it('lists every provider with its protocol and domain, one row each', () => {
+    mockUseSSOProviders.mockReturnValue({
+      data: {
+        providers: [
+          provider('org-a'),
+          {
+            ...provider('org-a'),
+            id: 'sso-eng',
+            providerId: 'eng-okta',
+            domain: 'eng.org-a.example.com',
+          },
+        ],
+      },
+      error: null,
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+    renderSso('org-a')
+
+    expect(container.querySelector('[aria-label="Open provider-a"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Open eng-okta"]')).not.toBeNull()
+    expect(container).toHaveTextContent('OIDC · eng.org-a.example.com')
+    expect(findButton('Add identity provider')).toBeDefined()
+    expect(findButton('Edit')).toBeUndefined()
+  })
+
+  it('opens the create form from the list and returns to it on cancel', () => {
+    renderSso('org-a')
+    act(() => findButton('Add identity provider')?.click())
+
+    expect(container).toHaveTextContent('Use a verified email domain for this connection.')
+    expect(findButton('Save')).toBeDefined()
+
+    act(() => findButton('Identity providers')?.click())
+    expect(container.querySelector('[aria-label="Open provider-a"]')).not.toBeNull()
+  })
+
+  it('goes straight to the form when the organization has no provider yet', () => {
+    mockUseSSOProviders.mockReturnValue({
+      data: { providers: [] },
+      error: null,
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+    renderSso('org-a')
+
+    expect(findButton('Save')).toBeDefined()
+    expect(findButton('Add identity provider')).toBeUndefined()
+    expect(findButton('Identity providers')).toBeUndefined()
+  })
+
+  it('deletes a provider from its details after confirmation', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ success: true })
+    mockUseDeleteSSOProvider.mockReturnValue({ isPending: false, mutateAsync })
+    renderSso('org-a')
+
+    openProvider('provider-a')
+    act(() => findButton('Delete')?.click())
+    expect(container.querySelector('[role="dialog"]')).toHaveTextContent('Delete identity provider')
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('[role="dialog"] button'))
+        .find((button) => button.textContent === 'Delete')
+        ?.click()
+    })
+    expect(mutateAsync).toHaveBeenCalledWith('provider-a')
+  })
+
+  it('offers delete on the provider detail', () => {
+    renderSso('org-a')
+    openProvider('provider-a')
+
+    expect(findButton('Edit')).toBeDefined()
+    expect(findButton('Delete')).toBeDefined()
+    expect(findButton('Identity providers')).toBeDefined()
   })
 })

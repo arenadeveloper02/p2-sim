@@ -3,9 +3,11 @@
 import { useMemo, useState } from 'react'
 import { ChipCombobox, type ComboboxOption } from '@sim/emcn'
 import { useParams } from 'next/navigation'
+import { type ResourceScope, resourceScopeFromOwner } from '@/lib/core/resource-scope'
 import { projectSelectorContext } from '@/lib/selectors/context'
 import { getSelectorManifestEntry, type SelectorKey } from '@/lib/selectors/manifest'
 import type { SelectorContext } from '@/lib/selectors/types'
+import type { SourceSelectionLabel } from '@/lib/sim-search/source-identity'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import { getDependsOnFields } from '@/lib/workflows/subblocks/dependencies'
 import type {
@@ -21,27 +23,34 @@ import {
 import { useDebounce } from '@/hooks/use-debounce'
 
 interface ConnectorSelectorFieldProps {
+  scope?: ResourceScope
   field: ConnectorConfigField & { selectorKey: SelectorKey }
   value: ConfigFieldValue
-  onChange: (value: ConfigFieldValue) => void
+  onChange: (value: ConfigFieldValue, selectedOptions?: SourceSelectionLabel[]) => void
   credentialId: string | null
+  serviceAccountSubjectFieldId?: string
   sourceConfig: ConfigFieldMap
   configFields: ConnectorConfigField[]
   canonicalModes: Record<string, 'basic' | 'advanced'>
+  selectedLabels?: SourceSelectionLabel[]
   disabled?: boolean
 }
 
 export function ConnectorSelectorField({
+  scope: explicitScope,
   field,
   value,
   onChange,
   credentialId,
+  serviceAccountSubjectFieldId,
   sourceConfig,
   configFields,
   canonicalModes,
+  selectedLabels,
   disabled,
 }: ConnectorSelectorFieldProps) {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const params = useParams<{ workspaceId?: string; organizationId?: string }>()
+  const scope = explicitScope ?? resourceScopeFromOwner(params)
   const isMulti = Boolean(field.multi)
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -49,6 +58,12 @@ export function ConnectorSelectorField({
     const candidate: Record<string, string> = {}
     if (credentialId) candidate.oauthCredential = credentialId
     if (field.mimeType) candidate.mimeType = field.mimeType
+    const subject = serviceAccountSubjectFieldId
+      ? sourceConfig[serviceAccountSubjectFieldId]
+      : undefined
+    if (typeof subject === 'string' && subject.trim()) {
+      candidate.impersonateUserEmail = subject.trim()
+    }
 
     const fieldsById = new Map(configFields.map((f) => [f.id, f]))
     for (const depFieldId of getDependsOnFields(field.dependsOn)) {
@@ -61,6 +76,7 @@ export function ConnectorSelectorField({
     return projectSelectorContext(field.selectorKey, candidate)
   }, [
     credentialId,
+    serviceAccountSubjectFieldId,
     field.mimeType,
     field.dependsOn,
     field.selectorKey,
@@ -92,28 +108,27 @@ export function ConnectorSelectorField({
     error,
   } = useSelectorOptions(field.selectorKey, {
     context,
-    scope: { kind: 'workspace', workspaceId },
+    scope,
     search: debouncedSearch,
     enabled: isEnabled,
     surfaceId: `connector:${field.id}`,
   })
 
-  /**
-   * Label every selected value, including values restored from saved config that no
-   * in-session search would have resolved. Opaque revisions bind each label request to
-   * the active context without placing credential or dependency values in its query key.
-   */
   const singleValue = Array.isArray(value) ? value[0] : value
   const selectedIds = useMemo(
     () => (Array.isArray(value) ? value : value ? [value] : []).filter(Boolean),
     [value]
   )
+  const missingSelectedIds = useMemo(() => {
+    const loadedIds = new Set(options.map((option) => option.id))
+    return selectedIds.filter((id) => !loadedIds.has(id))
+  }, [options, selectedIds])
   const { data: selectedOptions, isLoading: isLoadingSelectedOptions } = useSelectorOptionDetails(
     field.selectorKey,
     {
       context,
-      scope: { kind: 'workspace', workspaceId },
-      detailIds: isEnabled ? selectedIds : [],
+      scope,
+      detailIds: isEnabled ? missingSelectedIds : [],
       surfaceId: `connector:${field.id}`,
     }
   )
@@ -127,7 +142,7 @@ export function ConnectorSelectorField({
   const resolvesUnknownIds = getSelectorManifestEntry(field.selectorKey).resolvesUnknownIds
   const { data: searchedOption } = useSelectorOptionDetail(field.selectorKey, {
     context,
-    scope: { kind: 'workspace', workspaceId },
+    scope,
     detailId:
       resolvesUnknownIds && isEnabled && debouncedSearch.length > 0 ? debouncedSearch : undefined,
     surfaceId: `connector:${field.id}`,
@@ -147,8 +162,21 @@ export function ConnectorSelectorField({
       seen.add(option.id)
       extras.push({ label: option.label, value: option.id })
     }
+    for (const option of selectedLabels ?? []) {
+      if (seen.has(option.id) || !selectedIds.includes(option.id)) continue
+      seen.add(option.id)
+      extras.push({ label: option.label, value: option.id, hidden: true })
+    }
     return extras.length > 0 ? [...extras, ...base] : base
-  }, [options, selectedOptions, searchedOption])
+  }, [options, selectedOptions, searchedOption, selectedLabels, selectedIds])
+
+  const handleChange = (nextValue: ConfigFieldValue) => {
+    const ids = new Set(Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [])
+    const selected = comboboxOptions
+      .filter((option) => ids.has(option.value))
+      .map((option) => ({ id: option.value, label: option.label }))
+    onChange(nextValue, selected)
+  }
 
   if (isMulti) {
     const multiValues = Array.isArray(value) ? value : value ? [value] : []
@@ -157,7 +185,7 @@ export function ConnectorSelectorField({
         multiSelect
         options={comboboxOptions}
         multiSelectValues={multiValues}
-        onMultiSelectChange={onChange}
+        onMultiSelectChange={handleChange}
         searchable
         onSearchChange={setSearchTerm}
         searchPlaceholder={`Search ${field.title.toLowerCase()}...`}
@@ -169,7 +197,7 @@ export function ConnectorSelectorField({
               : field.placeholder || `Select ${field.title.toLowerCase()}`
         }
         disabled={disabled || !credentialId || !depsResolved}
-        isLoading={isEnabled && (isLoading || isLoadingSelectedOptions)}
+        isLoading={isEnabled && (isLoading || (options.length === 0 && isLoadingSelectedOptions))}
         hasMore={hasMore}
         isLoadingMore={isFetchingMore}
         isLoadingAll={isLoadingAll}
@@ -185,7 +213,7 @@ export function ConnectorSelectorField({
     <ChipCombobox
       options={comboboxOptions}
       value={singleValue || undefined}
-      onChange={onChange}
+      onChange={handleChange}
       searchable
       onSearchChange={setSearchTerm}
       searchPlaceholder={`Search ${field.title.toLowerCase()}...`}
@@ -197,7 +225,7 @@ export function ConnectorSelectorField({
             : field.placeholder || `Select ${field.title.toLowerCase()}`
       }
       disabled={disabled || !credentialId || !depsResolved}
-      isLoading={isEnabled && (isLoading || isLoadingSelectedOptions)}
+      isLoading={isEnabled && (isLoading || (options.length === 0 && isLoadingSelectedOptions))}
       hasMore={hasMore}
       isLoadingMore={isFetchingMore}
       isLoadingAll={isLoadingAll}

@@ -15,6 +15,17 @@ const desktopMocks = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }))
 
+const { hostContext } = vi.hoisted(() => ({
+  hostContext: {
+    hostOrganizationId: null as string | null,
+    viewer: { isHostOrganizationMember: false },
+    features: {
+      organizationSearch: undefined as boolean | undefined,
+      knowledgeMemberAccess: false,
+    },
+  },
+}))
+
 vi.mock('@/lib/desktop', () => ({
   getDesktopUpdates: () => ({
     getState: desktopMocks.getState,
@@ -40,11 +51,14 @@ vi.mock('@/hooks/use-workspace-invite-policy', () => ({
   useWorkspaceInvitePolicy: () => ({ isInvitationsDisabled: false }),
 }))
 vi.mock('@/app/workspace/[workspaceId]/providers/workspace-host-provider', () => ({
-  useWorkspaceHostContext: () => null,
+  useWorkspaceHostContext: () => hostContext,
 }))
-vi.mock('@/app/workspace/[workspaceId]/w/components/sidebar/sidebar', () => ({
-  SidebarTooltip: ({ children }: { children: React.ReactNode }) => children,
-}))
+vi.mock(
+  '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip/sidebar-tooltip',
+  () => ({
+    SidebarTooltip: ({ children }: { children: React.ReactNode }) => children,
+  })
+)
 vi.mock('@/components/icons', () => ({
   SlackIcon: ({ className }: { className?: string }) => <svg className={className} />,
 }))
@@ -63,6 +77,7 @@ async function renderFooter(
     root.render(
       <SidebarFooter
         workspaceId='workspace-1'
+        showDivider={false}
         isCollapsed={false}
         showCollapsedTooltips={false}
         getSettingsHref={(section) => `/workspace/workspace-1/settings/${section}`}
@@ -114,6 +129,10 @@ function menuItem(label: string): HTMLElement {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  hostContext.hostOrganizationId = null
+  hostContext.viewer.isHostOrganizationMember = false
+  hostContext.features.organizationSearch = undefined
+  hostContext.features.knowledgeMemberAccess = false
   desktopMocks.listener = null
   desktopMocks.onState.mockImplementation((listener) => {
     desktopMocks.listener = listener
@@ -131,6 +150,52 @@ afterEach(() => {
 })
 
 describe('SidebarFooter', () => {
+  it('links members back to the organization hosting the current workspace', async () => {
+    hostContext.hostOrganizationId = 'host-org'
+    hostContext.viewer.isHostOrganizationMember = true
+    hostContext.features.organizationSearch = true
+    await renderFooter({ status: 'idle' })
+
+    openProfileMenu()
+
+    expect(menuItem('Organization')).toHaveAttribute('href', '/o/host-org')
+    const labels = Array.from(document.querySelectorAll('[role="menuitem"]')).map(
+      (item) => item.textContent
+    )
+    expect(labels.indexOf('Organization')).toBe(labels.indexOf('Settings') + 1)
+    expect(labels.indexOf('Organization')).toBeLessThan(labels.indexOf('Teammates'))
+    expect(document.querySelector('[role="menu"] [role="separator"]')).toBeNull()
+  })
+
+  it.each([false, undefined])(
+    'keeps the workspace profile menu when org rollout is %s',
+    async (enabled) => {
+      hostContext.hostOrganizationId = 'host-org'
+      hostContext.viewer.isHostOrganizationMember = true
+      hostContext.features.organizationSearch = enabled
+      hostContext.features.knowledgeMemberAccess = true
+      await renderFooter({ status: 'idle' })
+
+      openProfileMenu()
+
+      expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Organization')
+      expect(menuItem('Settings')).toHaveAttribute(
+        'href',
+        '/workspace/workspace-1/settings/general'
+      )
+    }
+  )
+
+  it.each([null, 'host-org'])('hides Organization without host membership (%s)', async (orgId) => {
+    hostContext.hostOrganizationId = orgId
+    hostContext.features.organizationSearch = true
+    await renderFooter({ status: 'idle' })
+
+    openProfileMenu()
+
+    expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Organization')
+  })
+
   it('keeps the overflow tooltip disabled while the collapsed tooltip still owns the trigger', async () => {
     await renderFooter({ status: 'idle' }, { isCollapsed: false, showCollapsedTooltips: true })
     const label = profileTrigger().querySelector<HTMLElement>('[data-overflow-text]')

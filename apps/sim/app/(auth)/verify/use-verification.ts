@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { normalizeEmail } from '@sim/utils/string'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { validateCallbackUrl } from '@/lib/core/security/input-validation'
-import { POST_AUTH_REDIRECT_STORAGE_KEY } from '@/app/(auth)/auth-redirect'
+import { DEFAULT_POST_AUTH_ROUTE, POST_AUTH_REDIRECT_STORAGE_KEY } from '@/app/(auth)/auth-redirect'
 
 const logger = createLogger('useVerification')
 
@@ -16,7 +16,7 @@ const logger = createLogger('useVerification')
  *
  * Both redirect sites run in the same commit as the effect that reads session
  * storage, so a cached value is still `null` when they fire and the stored
- * destination is silently replaced by `/workspace`. Reading here removes that
+ * destination is silently replaced by the default entry. Reading here removes that
  * race. `redirectAfter` wins over the stored URL; anything failing callback
  * validation is discarded, and an unsafe stored value is evicted.
  */
@@ -74,20 +74,20 @@ export function useVerification({
   isProduction,
   isEmailVerificationEnabled,
 }: UseVerificationParams): UseVerificationReturn {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const { refetch: refetchSession } = useSession()
+  const { data: session, refetch: refetchSession } = useSession()
   const [otp, setOtp] = useState('')
-  const [email, setEmail] = useState('')
+  const [storedEmail, setStoredEmail] = useState('')
   const [status, setStatus] = useState<VerificationStatus>('idle')
   const [isResending, setIsResending] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     const storedEmail = sessionStorage.getItem('verificationEmail')
-    if (storedEmail) setEmail(storedEmail)
+    if (storedEmail) setStoredEmail(storedEmail)
   }, [])
 
+  const email = session?.user?.email || storedEmail
   const isOtpComplete = otp.length === 6
 
   async function verifyCode() {
@@ -112,7 +112,8 @@ export function useVerification({
           logger.warn('Failed to refetch session after verification', e)
         }
 
-        const destination = resolveRedirectUrl(searchParams.get('redirectAfter')) ?? '/workspace'
+        const destination =
+          resolveRedirectUrl(searchParams.get('redirectAfter')) ?? DEFAULT_POST_AUTH_ROUTE
         sessionStorage.removeItem('verificationEmail')
         sessionStorage.removeItem(POST_AUTH_REDIRECT_STORAGE_KEY)
 
@@ -214,15 +215,12 @@ export function useVerification({
         logger.warn('Failed to refetch session during verification skip:', error)
       }
 
-      if (destination) {
-        window.location.href = destination
-      } else {
-        router.push('/workspace')
-      }
+      /** A document navigation, like signup's, so the workspace shell initializes its own theme store. */
+      window.location.href = destination ?? DEFAULT_POST_AUTH_ROUTE
     }
 
     handleRedirect()
-  }, [isEmailVerificationEnabled, router, searchParams])
+  }, [isEmailVerificationEnabled, searchParams])
 
   return {
     otp,

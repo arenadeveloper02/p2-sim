@@ -26,18 +26,18 @@ describe('MCP server operation registry', () => {
   it('requires a human subject for tool discovery', () => {
     expect(mcpServerOperations.discoverTools).toMatchObject({
       workspaceApiKey: 'deny',
-      principalKinds: ['session', 'personal_api_key', 'delegated'],
+      principalKinds: ['session', 'personal_api_key', 'oauth_access_token', 'delegated'],
       delegatedServices: ['copilot', 'executor'],
     })
   })
 
-  it('admits only the executor delegation for tool execution', () => {
+  it('admits authorized executor and interactive Copilot delegations for tool execution', () => {
     expect(mcpServerOperations.executeTool).toMatchObject({
       id: 'mcp_servers.tools.execute',
       minimumRole: 'read',
       workspaceApiKey: 'deny',
       principalKinds: ['delegated'],
-      delegatedServices: ['executor'],
+      delegatedServices: ['executor', 'copilot'],
     })
   })
 
@@ -109,6 +109,7 @@ describe('MCP server operation registry', () => {
       expect(operation.principalKinds, operation.id).toEqual([
         'session',
         'personal_api_key',
+        'oauth_access_token',
         'delegated',
       ])
       expect(operation.delegatedServices, operation.id).toEqual(['copilot'])

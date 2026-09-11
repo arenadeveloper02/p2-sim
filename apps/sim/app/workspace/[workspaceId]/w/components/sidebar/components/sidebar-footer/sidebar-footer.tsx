@@ -17,21 +17,31 @@ import {
   OverflowText,
   Skeleton,
 } from '@sim/emcn'
-import { BookOpen, Credit, Download, HelpCircle, Settings, Trash, Users } from '@sim/emcn/icons'
+import {
+  BookOpen,
+  Building,
+  Credit,
+  Download,
+  HelpCircle,
+  Settings,
+  Trash,
+  Users,
+} from '@sim/emcn/icons'
 import { SlackIcon } from '@/components/icons'
 import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
 import { useSession } from '@/lib/auth/auth-client'
 import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getDesktopUpdates } from '@/lib/desktop'
+import { organizationRoutes } from '@/lib/navigation/paths'
 import { getUserColor } from '@/lib/workspaces/colors'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
+import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip'
 import {
   SIDEBAR_ITEM_GAP_CLASS,
   SIDEBAR_RAIL_CHIP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
-import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { useUserProfile } from '@/hooks/queries/user-profile'
 import { useDesktopUpdateState } from '@/hooks/use-desktop-update-state'
 import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
@@ -46,11 +56,12 @@ import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
  * never lists a page the server would refuse.
  */
 const PROFILE_MENU_ITEMS: readonly {
-  section: SettingsSection
+  section: SettingsSection | 'organization'
   label: string
   icon: ComponentType<{ className?: string }>
 }[] = [
   { section: 'general', label: 'Settings', icon: Settings },
+  { section: 'organization', label: 'Organization', icon: Building },
   { section: 'billing', label: 'Subscription', icon: Credit },
   { section: 'teammates', label: 'Teammates', icon: Users },
   { section: 'recently-deleted', label: 'Recently deleted', icon: Trash },
@@ -88,6 +99,12 @@ function DesktopUpdateIcon({ className }: { className?: string }) {
 
 interface SidebarFooterProps {
   workspaceId: string
+  /**
+   * True while the scroll region above still hides rows beyond its bottom edge —
+   * the same test the divider under the pinned nav applies at the top. The bar's
+   * top rule is drawn only then, so a list that fits meets the footer with no line.
+   */
+  showDivider: boolean
   isCollapsed: boolean
   showCollapsedTooltips: boolean
   getSettingsHref: (section: SettingsSection) => string
@@ -122,6 +139,7 @@ interface SidebarFooterProps {
  */
 export function SidebarFooter({
   workspaceId,
+  showDivider,
   isCollapsed,
   showCollapsedTooltips,
   getSettingsHref,
@@ -139,6 +157,12 @@ export function SidebarFooter({
 
   const name = profile ? profile.name?.trim() || profile.email : ''
   const updateAvailable = hasAvailableDesktopUpdate(updateState)
+  const organizationHref =
+    hostContext.hostOrganizationId &&
+    hostContext.viewer.isHostOrganizationMember &&
+    hostContext.features?.organizationSearch
+      ? organizationRoutes(hostContext.hostOrganizationId).root
+      : null
 
   const handleUpdateSelect = () => {
     const updates = getDesktopUpdates()
@@ -157,7 +181,9 @@ export function SidebarFooter({
    */
   const menuItems = PROFILE_MENU_ITEMS.filter(
     (item) =>
-      item.section !== 'billing' || canViewWorkspaceBillingSettings(hostContext, session?.user?.id)
+      (item.section !== 'organization' || Boolean(organizationHref)) &&
+      (item.section !== 'billing' ||
+        canViewWorkspaceBillingSettings(hostContext, session?.user?.id))
   )
 
   /**
@@ -251,6 +277,17 @@ export function SidebarFooter({
       </SidebarTooltip>
       <DropdownMenuContent align='start' side='top' sideOffset={4}>
         {menuItems.map(({ section, label, icon: Icon }) => {
+          if (section === 'organization') {
+            if (!organizationHref) return null
+            return (
+              <DropdownMenuItem key={section} asChild>
+                <SettingsIntentLink href={organizationHref}>
+                  <Icon className='size-[14px]' />
+                  <DropdownMenuItemLabel label={label} />
+                </SettingsIntentLink>
+              </DropdownMenuItem>
+            )
+          }
           const destination = resolveMenuDestination(section)
           if (!destination) {
             return (
@@ -346,7 +383,8 @@ export function SidebarFooter({
   return (
     <div
       className={cn(
-        'flex shrink-0 border-t px-2 pt-[9px] pb-2',
+        'flex shrink-0 border-t px-2 pt-[9px] pb-2 transition-colors duration-150',
+        !showDivider && 'border-transparent',
         isCollapsed ? cn(SIDEBAR_ITEM_GAP_CLASS, 'flex-col-reverse') : 'items-center'
       )}
     >

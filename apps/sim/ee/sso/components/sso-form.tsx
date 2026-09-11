@@ -5,14 +5,20 @@ import { Button, cn, Input, Label } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { isApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import { resolveSsoProviderContract } from '@/lib/api/contracts/auth'
 import { client } from '@/lib/auth/auth-client'
 import { getEnv, isFalsy } from '@/lib/core/config/env'
 import { validateCallbackUrl } from '@/lib/core/security/input-validation'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { DEFAULT_POST_AUTH_ROUTE } from '@/app/(auth)/auth-redirect'
 import { AuthFormMessage, AuthSubmitButton } from '@/app/(auth)/components'
 
 const logger = createLogger('SSOForm')
 const SSO_SIGN_IN_ERROR = 'Unable to start SSO. Check your email and try again.'
+const SSO_NO_PROVIDER_ERROR =
+  'No SSO provider is configured for this email domain. Ask your administrator.'
 const SSO_ERROR_MESSAGES = {
   account_not_found: 'No account found. Please contact your administrator to set up SSO access.',
   sso_failed: 'SSO authentication failed. Please try again.',
@@ -88,12 +94,13 @@ function SSOFormContent({
 
   /**
    * Derived during render rather than seeded into state from an effect: the
-   * first painted frame otherwise carries the `/workspace` default, so the
+   * first painted frame otherwise carries the app-entry default, so the
    * "Sign in with email" and "Sign up" links briefly point at the wrong
    * destination on any deep link carrying `?callbackUrl=`.
    */
   const isCallbackValid = callbackParam !== null && validateCallbackUrl(callbackParam)
-  const callbackUrl = callbackParam !== null && isCallbackValid ? callbackParam : '/workspace'
+  const callbackUrl =
+    callbackParam !== null && isCallbackValid ? callbackParam : DEFAULT_POST_AUTH_ROUTE
   const hasEmailError = showEmailValidationError && emailErrors.length > 0
 
   useEffect(() => {
@@ -133,8 +140,20 @@ function SSOFormContent({
     try {
       const safeCallbackUrl = callbackUrl
 
+      /** Named explicitly; see `resolveSsoProviderContract` for why the domain lookup is not trusted. */
+      let resolved: { providerId: string }
+      try {
+        resolved = await requestJson(resolveSsoProviderContract, { body: { email: emailValue } })
+      } catch (error) {
+        const noProvider = isApiClientError(error) && error.status === 404
+        if (!noProvider) logger.error('SSO provider resolution failed', { error })
+        setFormError(noProvider ? SSO_NO_PROVIDER_ERROR : SSO_SIGN_IN_ERROR)
+        return
+      }
+
       const result = await client.signIn.sso({
         email: emailValue,
+        providerId: resolved.providerId,
         callbackURL: safeCallbackUrl,
         errorCallbackURL: `/sso?error=sso_failed&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`,
       })
