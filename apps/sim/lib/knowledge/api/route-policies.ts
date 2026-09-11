@@ -1,3 +1,4 @@
+import { getPostgresErrorCode } from '@sim/utils/errors'
 import {
   createInternalResourceConcealmentPolicy,
   createInternalSessionOrExecutorAuth,
@@ -9,6 +10,7 @@ import {
   type V2ErrorPolicy,
   v2OrchestrationErrorPolicy,
 } from '@/lib/api/server/routes'
+import { getValidationErrorMessage, isZodError } from '@/lib/api/server/validation'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
 import { EmbeddingAPIError, EmbeddingOutputLimitError } from '@/lib/embeddings/client'
 import { KNOWLEDGE_DELEGATION_AUDIENCE } from '@/lib/knowledge/application/authorization'
@@ -54,7 +56,20 @@ const internalKnowledgeSearchErrorPolicy: InternalErrorPolicy = {
     if (error instanceof EmbeddingOutputLimitError) {
       return internalErrorResponse(413, { error: error.message })
     }
-    return internalOrchestrationErrorPolicy.project(error)
+    const orchestrated = internalOrchestrationErrorPolicy.project(error)
+    if (orchestrated) return orchestrated
+    if (isZodError(error)) {
+      return internalErrorResponse(500, {
+        error: `Knowledge search response failed validation: ${getValidationErrorMessage(error)}`,
+      })
+    }
+    if (error instanceof Error && !getPostgresErrorCode(error)) {
+      const message = error.message.trim()
+      if (message.length > 0 && message.length <= 500) {
+        return internalErrorResponse(500, { error: message })
+      }
+    }
+    return null
   },
   unhandled: () => internalErrorResponse(500, { error: 'Failed to perform vector search' }),
 }

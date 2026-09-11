@@ -95,4 +95,14 @@ describe('internal knowledge search error policy', () => {
       body: { error: expect.stringContaining('exceeding the safe aggregate limit') },
     })
   })
+
+  it('returns the operational error message instead of a generic vector-search failure', () => {
+    const projected = internalKnowledgeErrorPolicies.search.project(
+      new Error('OPENROUTER_API_KEY is not configured')
+    )
+    expect(projected).toEqual({
+      status: 500,
+      body: { error: 'OPENROUTER_API_KEY is not configured' },
+    })
+  })
 })

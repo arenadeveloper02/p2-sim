@@ -200,9 +200,19 @@ function summarizeValueForExecutionData(value: unknown, maxBytes: number): unkno
   }
 }
 
-function retainBoundedTraceContent<T>(value: T, maxBytes = MAX_TRACE_IO_BYTES): T | undefined {
+function fitsTraceIoLimit(value: unknown, maxBytes = MAX_TRACE_IO_BYTES): boolean {
   const size = getJsonByteSize(value, maxBytes)
-  return size !== undefined && size <= maxBytes ? value : undefined
+  return size !== undefined && size <= maxBytes
+}
+
+function retainBoundedTraceContent<T>(value: T, maxBytes = MAX_TRACE_IO_BYTES): T {
+  if (value === undefined) return value
+  if (fitsTraceIoLimit(value, maxBytes)) return value
+  return {
+    _truncated: true,
+    reason: 'trace_io_size_limit',
+    summary: describeValue(value),
+  } as T
 }
 
 function stripModelToolCallArguments(
@@ -221,7 +231,7 @@ function compactModelToolCalls(
       ...(retainedArguments !== undefined ? { arguments: retainedArguments } : {}),
     } as (typeof calls)[number]
   })
-  return retainBoundedTraceContent(compacted)
+  return fitsTraceIoLimit(compacted) ? compacted : undefined
 }
 
 function compactLegacyToolCalls(
@@ -229,11 +239,11 @@ function compactLegacyToolCalls(
 ): NonNullable<TraceSpan['toolCalls']> | undefined {
   const compacted = calls.map(({ input, output, error, ...call }) => ({
     ...call,
-    ...(retainBoundedTraceContent(input) !== undefined ? { input } : {}),
-    ...(retainBoundedTraceContent(output) !== undefined ? { output } : {}),
-    ...(retainBoundedTraceContent(error) !== undefined ? { error } : {}),
+    ...(input !== undefined ? { input: retainBoundedTraceContent(input) } : {}),
+    ...(output !== undefined ? { output: retainBoundedTraceContent(output) } : {}),
+    ...(error !== undefined ? { error: retainBoundedTraceContent(error) } : {}),
   }))
-  return retainBoundedTraceContent(compacted)
+  return fitsTraceIoLimit(compacted) ? compacted : undefined
 }
 
 function stripLegacyToolCallContent(
@@ -250,9 +260,15 @@ function compactProviderTiming(
     segments: providerTiming.segments.map(
       ({ assistantContent, thinkingContent, errorMessage, toolCalls, ...segment }) => ({
         ...segment,
-        ...(retainBoundedTraceContent(assistantContent) !== undefined ? { assistantContent } : {}),
-        ...(retainBoundedTraceContent(thinkingContent) !== undefined ? { thinkingContent } : {}),
-        ...(retainBoundedTraceContent(errorMessage) !== undefined ? { errorMessage } : {}),
+        ...(assistantContent !== undefined
+          ? { assistantContent: retainBoundedTraceContent(assistantContent) }
+          : {}),
+        ...(thinkingContent !== undefined
+          ? { thinkingContent: retainBoundedTraceContent(thinkingContent) }
+          : {}),
+        ...(errorMessage !== undefined
+          ? { errorMessage: retainBoundedTraceContent(errorMessage) }
+          : {}),
         ...(toolCalls
           ? {
               toolCalls: compactModelToolCalls(toolCalls) ?? stripModelToolCallArguments(toolCalls),

@@ -557,14 +557,42 @@ function createReadOnlyProjectionStore(context: TraceStoreReadContext) {
 }
 
 /**
+ * Empty complete registry used when stored span provenance cannot vouch.
+ * Matches write-time display projection: incomplete or missing provenance
+ * under-redacts so Knowledge and Image Generator block input/output stay
+ * visible the way Agent traces already are. Malformed or undecryptable
+ * catalogs still fail closed.
+ */
+function registryForSpanDisplayProjection(
+  imported: StoredDisplayEnvelopeImport,
+  provenance: unknown
+): ResolvedSecretTraceRegistry {
+  if (imported.fault === 'malformed' || imported.fault === 'undecryptable') {
+    if (imported.registry) return imported.registry
+    const latched = new ResolvedSecretTraceRegistry([], undefined, { staged: true })
+    latched.markIncomplete('untrusted-provenance', { origin: 'traceStore.spanProvenance' })
+    return latched
+  }
+  if (imported.fault === 'incomplete' || !imported.registry) {
+    return new ResolvedSecretTraceRegistry(
+      [],
+      isResolvedSecretTraceProvenanceV1(provenance) ? provenance.scope : undefined
+    )
+  }
+  return imported.registry
+}
+
+/**
  * Projects execution-log content with the encrypted provenance saved by the
  * trusted executor. Current workflow input and final output values use their
  * exact sidecars; rows predating those fields retain the run-level fallback.
- * Contract-aware rows whose provenance is missing or malformed yield
- * structural-only content rather than data that cannot be proven safe. The one
- * carve-out is the trace spans of a truncated row that lost its provenance to
- * compaction: those were already projected at write time. Truncation also takes
- * the exact per-value sidecars with it, so those rows fall back to the
+ * Envelope fields (`finalOutput`, `workflowInput`) fail closed when provenance
+ * is missing, incomplete, or malformed. Trace spans use the same under-redact
+ * posture as write-time display projection when provenance is incomplete or
+ * absent, so block input/output remain visible. Malformed or undecryptable
+ * catalogs still yield structural-only spans. Truncated rows that lost
+ * provenance to compaction keep their write-time-projected spans; truncation
+ * also takes the exact per-value sidecars, so those rows fall back to the
  * run-level registry for `finalOutput` / `workflowInput`.
  */
 export async function projectExecutionDataForDisplay(
@@ -574,7 +602,9 @@ export async function projectExecutionDataForDisplay(
   const executionState = readRecord(executionData.executionState)
   const hasTopLevelProvenance = Object.hasOwn(executionData, RESOLVED_SECRET_PROVENANCE_KEY)
   const stateProvenance = executionState?.[RESOLVED_SECRET_PROVENANCE_KEY]
-  const provenance = executionData[RESOLVED_SECRET_PROVENANCE_KEY] ?? stateProvenance
+  const provenance = hasTopLevelProvenance
+    ? executionData[RESOLVED_SECRET_PROVENANCE_KEY]
+    : stateProvenance
   const hasProjectionContract =
     Object.hasOwn(executionData, 'secretProjectionVersion') ||
     hasTopLevelProvenance ||
@@ -587,18 +617,20 @@ export async function projectExecutionDataForDisplay(
   const provenanceFaults = new Map<string, StoredDisplayProvenanceFault>()
   const runImport = await importStoredDisplayEnvelope(provenance, 'traceStore.spanProvenance')
   const registry = runImport.registry
+  const spanRegistry = registryForSpanDisplayProjection(runImport, provenance)
   if (runImport.fault) provenanceFaults.set('traceSpans', runImport.fault)
 
   /**
    * Compaction drops `executionState`, and with it the only copy of the
    * provenance on rows written before it was stored top-level. Every write path
-   * projects spans before persisting them, and that projection yields
-   * structural-only spans when its registry is incomplete — so a stored tree
-   * that still carries content was already redacted at write time.
+   * projects spans before persisting them. Incomplete provenance used to force a
+   * structural wipe of block input/output on the logs page even though write-time
+   * projection under-redacts; missing envelopes now take that same posture.
+   * Malformed or undecryptable catalogs still fail closed.
    *
-   * Not a general fallback: scoped to truncated rows whose key is absent
-   * entirely. A present-but-unusable key (malformed, incomplete, explicit null)
-   * and the read-time envelope have no such guarantee and keep failing closed.
+   * Truncated rows whose key is absent entirely keep the write-time tree without
+   * re-projecting. A present-but-unusable key that is malformed or undecryptable
+   * still fails closed.
    *
    * Self-expiring. New rows carry the key, so this only serves rows truncated
    * before that shipped; once the warning below stops firing across a full log
@@ -689,11 +721,22 @@ export async function projectExecutionDataForDisplay(
     ? (executionData.traceSpans as TraceSpan[])
     : []
   const spansToProject = retainStoredTraceSpans ? [] : sourceTraceSpans
-  const projectedSpans = await projectTraceSpansForSecrets([syntheticSpan, ...spansToProject], {
+  const [projectedEnvelopeSpan] = await projectTraceSpansForSecrets([syntheticSpan], {
     registry,
     allowLargeValueWrites: false,
     store: projectionStore,
   })
+  const projectedContentSpans =
+    spansToProject.length > 0
+      ? await projectTraceSpansForSecrets(spansToProject, {
+          registry: spanRegistry,
+          allowLargeValueWrites: false,
+          store: projectionStore,
+        })
+      : []
+  const projectedSpans = projectedEnvelopeSpan
+    ? [projectedEnvelopeSpan, ...projectedContentSpans]
+    : projectedContentSpans
 
   const displayData = omit(executionData, [
     ...LOG_DISPLAY_CONTENT_KEYS,

@@ -407,11 +407,11 @@ describe('projectExecutionDataForDisplay', () => {
     expect(displayData).not.toHaveProperty('finalOutput')
     expect(displayData).not.toHaveProperty('workflowInput')
     expect(displayData.traceSpans).toEqual([
-      expect.not.objectContaining({ output: expect.anything() }),
+      expect.objectContaining({ output: { result: 'unknown-secret' } }),
     ])
   })
 
-  it('fails closed when persisted provenance is incomplete', async () => {
+  it('keeps block input and output when persisted provenance is incomplete', async () => {
     const displayData = await projectExecutionDataForDisplay(
       {
         finalOutput: { result: 'unknown-secret' },
@@ -422,11 +422,29 @@ describe('projectExecutionDataForDisplay', () => {
             entries: [],
           },
         },
+        traceSpans: [
+          {
+            id: 'knowledge-1',
+            name: 'Knowledge',
+            type: 'knowledge',
+            duration: 1,
+            startTime: '2026-07-01T00:00:00.000Z',
+            endTime: '2026-07-01T00:00:00.001Z',
+            input: { query: 'what is sim' },
+            output: { results: [] },
+          },
+        ],
       },
       CONTEXT
     )
 
     expect(displayData).not.toHaveProperty('finalOutput')
+    expect(displayData.traceSpans).toEqual([
+      expect.objectContaining({
+        input: { query: 'what is sim' },
+        output: { results: [] },
+      }),
+    ])
   })
 
   it('preserves direct literals when trusted provenance has no activated secrets', async () => {
@@ -525,8 +543,19 @@ describe('projectExecutionDataForDisplay provenance handling', () => {
     expect(displayData).not.toHaveProperty('finalOutput')
   })
 
+  it('keeps write-time span content when a contract row has no provenance envelope', async () => {
+    const displayData = await projectExecutionDataForDisplay(
+      truncatedRow({ executionDataTruncated: undefined }),
+      CONTEXT
+    )
+
+    expect(firstSpan(displayData)).toMatchObject({
+      input: { code: 'const activeEmails = rows.length' },
+      output: { error: 'nested large values' },
+    })
+  })
+
   it.each([
-    ['the row was never truncated', { executionDataTruncated: undefined }],
     ['the provenance key is present but null', { [RESOLVED_SECRET_PROVENANCE_KEY]: null }],
     ['the provenance is malformed', { [RESOLVED_SECRET_PROVENANCE_KEY]: { version: 99 } }],
   ])('fails closed when %s', async (_case, overrides) => {

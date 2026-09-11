@@ -173,6 +173,7 @@ describe('knowledge search application use case', () => {
       })
     )
     expect(result.results[0]).toMatchObject({
+      chunkId: 'embedding-1',
       embeddingId: 'embedding-1',
       documentId: 'document-1',
       similarity: 0.8,

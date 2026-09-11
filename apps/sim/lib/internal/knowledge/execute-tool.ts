@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import type { AnyApiRouteContract, ApiSchema } from '@/lib/api/contracts'
 import {
   createKnowledgeChunkContract,
@@ -18,6 +19,7 @@ import {
   upsertKnowledgeDocumentContract,
 } from '@/lib/api/contracts/knowledge'
 import type { JsonErrorResponseDescriptor } from '@/lib/api/server/routes/types'
+import { getValidationErrorMessage, isZodError } from '@/lib/api/server/validation'
 import {
   createChunkOperation,
   createDocumentsOperation,
@@ -101,8 +103,21 @@ function projectError(
 }
 
 function schemaSuccessResponse(schema: ApiSchema, result: KnowledgeOperationResponse): Response {
-  const validated = schema.parse(result.body) as Record<string, unknown>
-  return Response.json({ ...validated, ...result.bodyFields }, { headers: result.headers })
+  try {
+    const validated = schema.parse(result.body) as Record<string, unknown>
+    return Response.json({ ...validated, ...result.bodyFields }, { headers: result.headers })
+  } catch (error) {
+    if (isZodError(error)) {
+      logger.error('Knowledge tool response failed contract validation', {
+        error: getValidationErrorMessage(error),
+      })
+    } else {
+      logger.error('Knowledge tool response could not be serialized', {
+        error: getErrorMessage(error),
+      })
+    }
+    throw error
+  }
 }
 
 function successResponse<C extends AnyApiRouteContract>(

@@ -669,7 +669,9 @@ describe('ExecutionLogger', () => {
         activeExecutionPathLength: 0,
         pendingQueueLength: 0,
       })
-      expect(compacted.traceSpans?.[0]?.children?.[0]).not.toHaveProperty('input')
+      expect(compacted.traceSpans?.[0]?.children?.[0]?.input).toEqual(
+        expect.objectContaining({ _truncated: true, reason: 'trace_io_size_limit' })
+      )
     })
 
     test('retains the trusted Copilot binding in metadata-only compaction', () => {
