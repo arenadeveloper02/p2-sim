@@ -1,6 +1,6 @@
 'use client'
 
-import { Credit, Info, Server, Users, Workflow } from '@sim/emcn'
+import { Info } from '@sim/emcn'
 import { useParams } from 'next/navigation'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
@@ -9,7 +9,6 @@ import {
   BillingPersonalRemainingCreditsCard,
   BillingRemainingCreditsCard,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-remaining-credits-card'
-import { BillingUsageMetricCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-metric-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import { BillingUsageSourceRow } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-source-row'
 import {
@@ -22,8 +21,6 @@ import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const USAGE_BY_SOURCE_TOOLTIP =
   'Mothership includes copilot, workspace chat, and related AI usage. Workflow runs covers workflow execution costs.'
-
-const ORG_SUMMARY_DESCRIPTION = 'Credits include combined usage from Mothership and Workflow Runs.'
 
 /**
  * Billing pool / remaining-credits stats for the Usage settings page.
@@ -196,67 +193,22 @@ function PersonalBillingStats({
 }
 
 function OrgAdminBillingStats({ data }: { data: CreditUsageSummary }) {
-  const members = data.members ?? []
-  const totalCreditsDisplay: number | 'unlimited' | null = data.orgPool?.isUnlimited
-    ? 'unlimited'
-    : data.orgPool != null
-      ? data.orgPool.totalCredits
-      : null
+  const orgPool = data.orgPool
+  const isUnlimited = orgPool?.isUnlimited ?? false
+  const totalCredits = orgPool && !orgPool.isUnlimited ? orgPool.totalCredits : null
+  const usedCredits = orgPool?.usedCredits ?? data.summary.totalCredits
+  const remainingCredits =
+    isUnlimited || totalCredits == null ? null : Math.max(0, totalCredits - usedCredits)
 
   return (
-    <div className='flex flex-col gap-6'>
-      <p className='text-[var(--text-muted)] text-small'>
-        Near real-time. Credits reset with your organization&apos;s billing cycle.
-      </p>
-      <BillingUsageSection
-        label='Usage summary'
-        description={ORG_SUMMARY_DESCRIPTION}
-        headerAccessory={
-          <Info side='top' align='start' className='flex-shrink-0 text-[var(--text-icon)]'>
-            {ORG_SUMMARY_DESCRIPTION}
-          </Info>
-        }
-      >
-        <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-5'>
-          {totalCreditsDisplay != null ? (
-            <BillingUsageMetricCard
-              label='Total credits'
-              value={
-                totalCreditsDisplay === 'unlimited'
-                  ? 'Unlimited'
-                  : `${formatCreditCount(totalCreditsDisplay)} credits`
-              }
-              hint='Organization credit pool'
-              icon={<Credit className='size-[14px] text-emerald-700' />}
-              iconClassName='bg-emerald-500/10'
-            />
-          ) : null}
-          <BillingUsageMetricCard
-            label='Total credits consumed'
-            value={`${formatCreditCount(data.summary.totalCredits)} credits`}
-            icon={<Credit className='size-[14px] text-emerald-700' />}
-            iconClassName='bg-emerald-500/10'
-          />
-          <BillingUsageMetricCard
-            label='Mothership usage'
-            value={`${formatCreditCount(data.summary.mothershipCredits)} credits`}
-            icon={<Server className='size-[14px] text-sky-700' />}
-            iconClassName='bg-sky-500/10'
-          />
-          <BillingUsageMetricCard
-            label='Workflow run usage'
-            value={`${formatCreditCount(data.summary.workflowCredits)} credits`}
-            icon={<Workflow className='size-[14px] text-violet-700' />}
-            iconClassName='bg-violet-500/10'
-          />
-          <BillingUsageMetricCard
-            label='Active users'
-            value={String(members.length)}
-            icon={<Users className='size-[14px] text-amber-700' />}
-            iconClassName='bg-amber-500/10'
-          />
-        </div>
-      </BillingUsageSection>
-    </div>
+    <BillingPersonalRemainingCreditsCard
+      totalCredits={totalCredits}
+      usedCredits={usedCredits}
+      remainingCredits={remainingCredits}
+      isUnlimited={isUnlimited}
+      hint='in the organization pool'
+      hideUsedStats
+      barColorClassName='bg-emerald-500'
+    />
   )
 }

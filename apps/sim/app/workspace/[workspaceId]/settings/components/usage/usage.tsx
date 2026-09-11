@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Badge,
   ButtonGroup,
@@ -32,7 +32,7 @@ import {
 import { CostShareBars } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-share-bars'
 import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/data-health-panel'
 import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/lineage-panel'
-import { OrganizationUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/organization-usage-content'
+import { OrganizationAdminUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/organization-admin-usage-content'
 import { UsageBillingStats } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-billing-stats'
 import {
   UsageCollapsibleGroup,
@@ -41,6 +41,7 @@ import {
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import { UserUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-usage-content'
 import {
+  formatAdminPeriodChipLabel,
   formatBillableWithCredits,
   formatPeriodLabel,
   formatTokenCount,
@@ -800,6 +801,24 @@ export function Usage() {
     return scopes
   }, [canViewOrganizationUsage, isWorkspaceAdmin])
 
+  // Org admins land on the admin Usage dashboard by default (screenshot layout).
+  useEffect(() => {
+    if (permissionsLoading || workspaceSettingsLoading || adminOrganizationsLoading) return
+    if (!canViewOrganizationUsage) return
+    if (scope !== 'user') return
+    // Only auto-switch when the URL still has the default scope (no explicit choice).
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('scope')) return
+    void setUsageParams({ scope: 'organization' })
+  }, [
+    adminOrganizationsLoading,
+    canViewOrganizationUsage,
+    permissionsLoading,
+    scope,
+    setUsageParams,
+    workspaceSettingsLoading,
+  ])
+
   const effectiveScope: UsageScope = availableScopes.includes(scope) ? scope : 'user'
   const isUserScope = effectiveScope === 'user'
   const isWorkspaceScope = effectiveScope === 'workspace'
@@ -817,10 +836,12 @@ export function Usage() {
         ? { startTime, endTime }
         : { period: period as UsagePeriod }
 
+    // Org admin Activity detail always includes all billable sources.
+    if (isOrganizationScope) return base
     if (tab === 'workflow') return { ...base, sources: 'workflow' }
     if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
     return base
-  }, [allTime, endTime, isCustomRange, period, startTime, tab])
+  }, [allTime, endTime, isCustomRange, isOrganizationScope, period, startTime, tab])
 
   const handlePeriodChange = (value: string) => {
     if (value === 'custom') {
@@ -911,7 +932,7 @@ export function Usage() {
   )
 
   const orgWorkspaceFilterOptions = useMemo(() => {
-    const options = [{ label: 'All workspaces', value: 'all' }]
+    const options = [{ label: 'All Workspaces', value: 'all' }]
     for (const ws of organizationData?.workspaces ?? []) {
       options.push({ label: ws.name, value: ws.id })
     }
@@ -967,15 +988,24 @@ export function Usage() {
     return map
   }, [permissions?.users])
 
-  const organizationUserNameById = useMemo(() => {
+  const organizationUserLabelById = useMemo(() => {
     const map = new Map<string, string>()
     for (const member of organizationRoster?.members ?? []) {
-      map.set(member.userId, member.name || member.email)
+      // Admin screenshot shows emails in By User.
+      map.set(member.userId, member.email || member.name || member.userId)
     }
     return map
   }, [organizationRoster?.members])
 
-  const userNameById = isOrganizationScope ? organizationUserNameById : workspaceUserNameById
+  const userNameById = isOrganizationScope ? organizationUserLabelById : workspaceUserNameById
+
+  const orgWorkspaceFilterLabel = useMemo(() => {
+    if (!orgWorkspaceId) return 'All Workspaces'
+    return (
+      organizationData?.workspaces.find((workspace) => workspace.id === orgWorkspaceId)?.name ??
+      'Selected workspace'
+    )
+  }, [orgWorkspaceId, organizationData?.workspaces])
 
   const handleSelectRoot = (nextRootExecutionId: string) => {
     void setUsageParams({ rootExecutionId: nextRootExecutionId, tab: 'workflow' })
@@ -1007,6 +1037,12 @@ export function Usage() {
 
   const periodSelectorValue = allTime ? 'all' : isCustomRange ? 'custom' : period
 
+  const periodStatusLabel = allTime
+    ? 'all-time period'
+    : isCustomRange && startTime && endTime
+      ? `custom range (${formatDateShort(startTime)} – ${formatDateShort(endTime)})`
+      : `past ${formatAdminPeriodChipLabel(period).toLowerCase()}`
+
   const emptyCopy = isUserScope
     ? isUserAllWorkspaces
       ? 'No billing ledger entries were found for your activity across membership workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
@@ -1014,6 +1050,130 @@ export function Usage() {
     : isOrganizationScope
       ? 'No billing ledger entries were found across organization workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
       : 'No billing ledger entries were found for this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
+
+  const adminPeriodFilters = (
+    <>
+      <div className='relative flex flex-wrap items-center gap-2'>
+        <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
+          {USAGE_PERIODS.map((periodId) => (
+            <ButtonGroupItem key={periodId} value={periodId}>
+              {formatAdminPeriodChipLabel(periodId)}
+            </ButtonGroupItem>
+          ))}
+          <ButtonGroupItem value='all'>All time</ButtonGroupItem>
+          <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
+        </ButtonGroup>
+        <Popover
+          open={datePickerOpen}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) handleDatePickerCancel()
+          }}
+        >
+          <PopoverAnchor className='pointer-events-none absolute inset-0' />
+          <PopoverContent align='end' sideOffset={4} className='w-auto p-0'>
+            <Calendar
+              mode='range'
+              showTime
+              startDate={startTime ?? undefined}
+              endDate={endTime ?? undefined}
+              onRangeChange={handleDateRangeApply}
+              onCancel={handleDatePickerCancel}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+      <ChipSelect
+        align='end'
+        value={orgWorkspaceId ?? 'all'}
+        onChange={(value) => {
+          void setUsageParams({
+            orgWorkspaceId: value === 'all' ? null : value,
+          })
+        }}
+        options={orgWorkspaceFilterOptions}
+      />
+    </>
+  )
+
+  if (isOrganizationScope) {
+    return (
+      <div className='flex h-full flex-col bg-[var(--bg)]'>
+        <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
+          <div className='mx-auto flex max-w-[56rem] flex-col gap-6 pt-6 pb-8'>
+            <div className='flex flex-wrap items-start justify-between gap-3'>
+              <div className='flex flex-col gap-1'>
+                <span className='font-medium text-[var(--brand-secondary)] text-caption uppercase tracking-wide'>
+                  For admins
+                </span>
+                <h1 className='font-medium text-[var(--text-primary)] text-lg'>Usage</h1>
+                <p className='text-[var(--text-muted)] text-small'>
+                  Near real-time. Credits reset with your organization&apos;s billing cycle.
+                </p>
+              </div>
+              <div className='flex flex-wrap items-center gap-2'>
+                {showScopeToggle && (
+                  <ButtonGroup
+                    value={effectiveScope}
+                    onValueChange={(value) => {
+                      const nextScope = value as UsageScope
+                      void setUsageParams({
+                        scope: nextScope,
+                        rootExecutionId: null,
+                        orgWorkspaceId: nextScope === 'organization' ? orgWorkspaceId : null,
+                        userWorkspaceId: nextScope === 'user' ? userWorkspaceId : null,
+                      })
+                    }}
+                  >
+                    {availableScopes.map((scopeId) => (
+                      <ButtonGroupItem key={scopeId} value={scopeId}>
+                        {SCOPE_LABELS[scopeId]}
+                      </ButtonGroupItem>
+                    ))}
+                  </ButtonGroup>
+                )}
+                <button
+                  type='button'
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                  className='flex items-center gap-1.5 rounded-md px-2 py-1 text-[var(--text-secondary)] text-small transition-colors hover-hover:bg-[var(--surface-2)] hover-hover:text-[var(--text-primary)] disabled:opacity-50'
+                >
+                  <RefreshCw className={cn('size-[14px]', isFetching && 'animate-spin')} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <UsageBillingStats />
+
+            {error && (
+              <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
+                <p className='text-[var(--text-primary)] text-small'>
+                  Failed to load usage analytics.
+                </p>
+                <p className='mt-1 text-[var(--text-muted)] text-small'>{error.message}</p>
+              </div>
+            )}
+
+            {isLoading && !data && (
+              <div className='flex items-center justify-center py-12'>
+                <Loader className='size-5 text-[var(--text-muted)]' />
+              </div>
+            )}
+
+            {data && organizationData && (
+              <OrganizationAdminUsageContent
+                data={organizationData}
+                userLabelById={userNameById}
+                workspaceFilterLabel={orgWorkspaceFilterLabel}
+                periodStatusLabel={periodStatusLabel}
+                filters={adminPeriodFilters}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
@@ -1070,9 +1230,7 @@ export function Usage() {
                   void setUsageParams({
                     tab: value as UsageTab,
                     rootExecutionId:
-                      value === 'mothership' || isOrganizationScope || isUserAllWorkspaces
-                        ? null
-                        : rootExecutionId,
+                      value === 'mothership' || isUserAllWorkspaces ? null : rootExecutionId,
                   })
                 }
               >
@@ -1101,19 +1259,6 @@ export function Usage() {
                     })
                   }}
                   options={userWorkspaceFilterOptions}
-                />
-              )}
-
-              {isOrganizationScope && (
-                <ChipSelect
-                  align='start'
-                  value={orgWorkspaceId ?? 'all'}
-                  onChange={(value) => {
-                    void setUsageParams({
-                      orgWorkspaceId: value === 'all' ? null : value,
-                    })
-                  }}
-                  options={orgWorkspaceFilterOptions}
                 />
               )}
 
@@ -1230,14 +1375,6 @@ export function Usage() {
               rootExecutionId={rootExecutionId}
               onSelectRoot={handleSelectRoot}
               onClearDrillDown={handleClearDrillDown}
-            />
-          )}
-
-          {data && isOrganizationScope && organizationData && (
-            <OrganizationUsageContent
-              data={organizationData}
-              tab={tab}
-              userNameById={userNameById}
             />
           )}
 

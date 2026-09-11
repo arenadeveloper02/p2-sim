@@ -134,3 +134,19 @@ export function formatPeriodLabel(period: UsagePeriod): string {
       return period
   }
 }
+
+/** Shorter period chip labels for the admin Usage screenshot layout. */
+export function formatAdminPeriodChipLabel(period: UsagePeriod): string {
+  switch (period) {
+    case '1d':
+      return '24 hours'
+    case '7d':
+      return '7 days'
+    case '30d':
+      return '30 days'
+    case '90d':
+      return '90 days'
+    default:
+      return period
+  }
+}
