@@ -336,6 +336,16 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
         : Math.min(KNOWLEDGE_SEARCH_COST_POLICY.maxTopK, input.topK * 4)
       : input.topK
     const access = await accessPromise
+    const queryEmbedding = await queryEmbeddingPromise
+    if (hasQuery) {
+      const embedding = queryEmbedding?.embedding
+      if (!Array.isArray(embedding) || embedding.length === 0) {
+        throw new OrchestrationError(
+          'validation',
+          'Failed to generate a search embedding for this query'
+        )
+      }
+    }
     let rows = await executeKnowledgeSearch({
       knowledgeBaseIds,
       topK: candidateTopK,
@@ -345,7 +355,7 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
       query: input.query,
       queryVector: hasQuery
         ? {
-            vector: JSON.stringify((await queryEmbeddingPromise)?.embedding ?? null),
+            vector: JSON.stringify(queryEmbedding!.embedding),
             dimensions: embeddingTarget!.dimensions,
           }
         : undefined,
@@ -469,7 +479,6 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
       rows = rows.slice(0, input.topK)
     }
 
-    const queryEmbedding = await queryEmbeddingPromise
     let tokenCount = 0
     let baseCost: ReturnType<typeof calculateCost> | null = null
     if (hasQuery) {

@@ -8,6 +8,7 @@ import {
   Database,
   FileText,
   FileX,
+  Loader,
   Pencil,
   Plus,
   TagIcon,
@@ -1299,7 +1300,7 @@ export function Document({
         <Resource>
           <Resource.Header icon={FileText} breadcrumbs={loadingBreadcrumbs} />
           <div className='flex flex-1 items-center justify-center'>
-            <span className='text-[var(--text-muted)] text-sm'>Loading chunk…</span>
+            <Loader className='size-[20px] text-[var(--text-secondary)]' animate />
           </div>
         </Resource>
       )

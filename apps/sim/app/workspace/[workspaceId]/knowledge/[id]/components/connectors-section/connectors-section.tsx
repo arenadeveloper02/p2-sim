@@ -202,7 +202,9 @@ export function ConnectorsSection({
       {error && <p className='mt-2 text-[var(--text-error)] text-caption leading-tight'>{error}</p>}
 
       {isLoading ? (
-        <div className='mt-2' />
+        <div className='mt-2 flex items-center py-2'>
+          <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
+        </div>
       ) : connectors.length === 0 ? (
         <p className='mt-2 text-[var(--text-muted)] text-small'>
           No connected sources yet. Connect an external source to automatically sync documents.

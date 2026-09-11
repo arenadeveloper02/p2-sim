@@ -10,6 +10,7 @@ import {
   v2OrchestrationErrorPolicy,
 } from '@/lib/api/server/routes'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
+import { EmbeddingAPIError, EmbeddingOutputLimitError } from '@/lib/embeddings/client'
 import { KNOWLEDGE_DELEGATION_AUDIENCE } from '@/lib/knowledge/application/authorization'
 import { KnowledgeUsageLimitExceededError } from '@/lib/knowledge/application/billing'
 import { KnowledgeDocumentNotReadyError } from '@/lib/knowledge/application/chunk-errors'
@@ -45,6 +46,13 @@ const internalKnowledgeSearchErrorPolicy: InternalErrorPolicy = {
     }
     if (error instanceof KnowledgeSearchProvenanceUnavailableError) {
       return internalErrorResponse(422, { error: error.message })
+    }
+    if (error instanceof EmbeddingAPIError) {
+      const status = error.status >= 400 && error.status < 600 ? error.status : 502
+      return internalErrorResponse(status, { error: error.message })
+    }
+    if (error instanceof EmbeddingOutputLimitError) {
+      return internalErrorResponse(413, { error: error.message })
     }
     return internalOrchestrationErrorPolicy.project(error)
   },

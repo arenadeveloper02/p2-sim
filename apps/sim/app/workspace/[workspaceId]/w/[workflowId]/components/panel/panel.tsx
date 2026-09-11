@@ -7,6 +7,7 @@ import {
   Button,
   Chip,
   ChipConfirmModal,
+  ChipLink,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -24,12 +25,11 @@ import {
   Trash,
   toast,
 } from '@sim/emcn'
-import { BubbleChatDelay, Download, Lock, Unlock } from '@sim/emcn/icons'
+import { BubbleChatDelay, Download, Lock, Unlock, Zap } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Zap } from 'lucide-react'
-import Link from 'next/link'
+import { Plus } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
@@ -168,10 +168,12 @@ const RunAgentExternalChat = ({
   const isExternalUrl = chatUrl.startsWith('http://') || chatUrl.startsWith('https://')
 
   return (
-    <Link
+    <ChipLink
       href={chatUrl}
       target={isExternalUrl ? '_blank' : undefined}
       rel={isExternalUrl ? 'noopener noreferrer' : undefined}
+      variant='primary'
+      leftIcon={Zap}
       onClick={() =>
         workflowRunCTAEvent({
           'Workspace Name': workspaceName || '',
@@ -179,11 +181,8 @@ const RunAgentExternalChat = ({
         })
       }
     >
-      <Button className='h-[32px] w-[61.5px] gap-[8px]' variant={'tertiary'}>
-        <Zap className='h-[11.5px] w-[11.5px] fill-current' />
-        Run
-      </Button>
-    </Link>
+      Run
+    </ChipLink>
   )
 }
 

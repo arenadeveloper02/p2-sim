@@ -60,6 +60,7 @@ import {
 } from '@/app/workspace/[workspaceId]/components/folders'
 import { ResourceActionBar } from '@/app/workspace/[workspaceId]/components/resource/components/action-bar'
 import {
+  ResourceListLoading,
   ResourceNoResults,
   TablesEmptyState,
 } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
@@ -1367,6 +1368,8 @@ export function Tables() {
                 filterCount={filterTags.length}
                 onClear={clearSearchAndFilters}
               />
+            ) : listState === 'loading' ? (
+              <ResourceListLoading />
             ) : undefined
           }
           selectable={canEdit ? selectableConfig : undefined}

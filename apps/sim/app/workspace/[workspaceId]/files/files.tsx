@@ -98,6 +98,7 @@ import {
 import { ResourceActionBar } from '@/app/workspace/[workspaceId]/components/resource/components/action-bar'
 import {
   FilesEmptyState,
+  ResourceListLoading,
   ResourceNoResults,
 } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
 import { DeleteConfirmModal } from '@/app/workspace/[workspaceId]/files/components/delete-confirm-modal'
@@ -2248,6 +2249,8 @@ export function Files() {
                 filterCount={filterTags.length}
                 onClear={clearSearchAndFilters}
               />
+            ) : listState === 'loading' ? (
+              <ResourceListLoading />
             ) : undefined
           }
           selectable={selectableConfig}

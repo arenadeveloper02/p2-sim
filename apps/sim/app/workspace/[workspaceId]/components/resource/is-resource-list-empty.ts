@@ -54,6 +54,8 @@ export function isResourceListEmpty(input: ResourceListEmptyInput): boolean {
  * - `no-results` — a search or filter matched nothing. Distinct from `empty`, because the
  *   copy that invites you to create your first item would be a lie, and distinct from `rows`,
  *   because rendering neither leaves an unexplained blank table.
+ * - `loading` — the first page has not arrived. Distinct from `rows`, because an empty table
+ *   with no spinner reads as a broken page on a cold load.
  *
  * One function rather than two predicates: the two states share every "the rows have actually
  * arrived" condition, and when those lived in both places a new condition could be added to
@@ -68,7 +70,10 @@ export function resourceListState({
   filterCount,
   folderId = null,
   foldersResolved = true,
-}: ResourceListEmptyInput): 'rows' | 'empty' | 'no-results' {
+}: ResourceListEmptyInput): 'rows' | 'empty' | 'no-results' | 'loading' {
+  if (rowCount === 0 && !error && (isLoading || isPlaceholderData || !foldersResolved)) {
+    return 'loading'
+  }
   const settled = rowCount === 0 && !isLoading && !isPlaceholderData && !error && foldersResolved
   if (!settled) return 'rows'
   const narrowed = Boolean(search.trim()) || filterCount > 0

@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { isResourceListEmpty } from '@/app/workspace/[workspaceId]/components/resource/is-resource-list-empty'
+import {
+  isResourceListEmpty,
+  resourceListState,
+} from '@/app/workspace/[workspaceId]/components/resource/is-resource-list-empty'
 
 /** A workspace that genuinely holds nothing — the one case that earns the graphic. */
 const EMPTY = {
@@ -49,5 +52,27 @@ describe('isResourceListEmpty', () => {
   it('treats a list without folder navigation as resolved at the root', () => {
     const { folderId, foldersResolved, ...withoutFolders } = EMPTY
     expect(isResourceListEmpty(withoutFolders)).toBe(true)
+  })
+})
+
+describe('resourceListState', () => {
+  it('is loading while the first page has not arrived', () => {
+    expect(resourceListState({ ...EMPTY, isLoading: true })).toBe('loading')
+  })
+
+  it('is loading while the folder tree has not resolved', () => {
+    expect(resourceListState({ ...EMPTY, foldersResolved: false })).toBe('loading')
+  })
+
+  it('is loading while placeholder data is empty', () => {
+    expect(resourceListState({ ...EMPTY, isPlaceholderData: true })).toBe('loading')
+  })
+
+  it('keeps showing rows when a previous page is still on screen', () => {
+    expect(resourceListState({ ...EMPTY, rowCount: 3, isPlaceholderData: true })).toBe('rows')
+  })
+
+  it('does not treat a failed load as loading', () => {
+    expect(resourceListState({ ...EMPTY, isLoading: true, error: new Error('boom') })).toBe('rows')
   })
 })

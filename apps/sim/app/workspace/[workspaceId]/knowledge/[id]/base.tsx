@@ -65,9 +65,9 @@ import type {
 import {
   FILTER_SECTION_LABEL_CLASS,
   FloatingOverflowText,
-  isResourceListEmpty,
   Resource,
   ResourceNotFound,
+  resourceListState,
   SearchHighlight,
 } from '@/app/workspace/[workspaceId]/components'
 import {
@@ -76,7 +76,11 @@ import {
   folderedResourceListHref,
   useFolderAncestors,
 } from '@/app/workspace/[workspaceId]/components/folders'
-import { DocumentsEmptyState } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
+import {
+  DocumentsEmptyState,
+  ResourceListLoading,
+  ResourceNoResults,
+} from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
 /**
  * Deep import on purpose: the `[documentId]/components` barrel also exports `ChunkEditor`,
  * which needs exact token counts and therefore `js-tiktoken` (~2.5 MB gzip of BPE rank
@@ -1203,14 +1207,25 @@ export function KnowledgeBase({
    * arrived, must not be serving the previous query key's rows, and must not have
    * failed. This list has no folders, so the folder arguments are omitted.
    */
-  const showEmptyState = isResourceListEmpty({
+  const documentFilterCount =
+    (enabledFilter !== 'all' ? 1 : 0) +
+    tagFilterEntries.filter((entry) => Boolean(entry.tagSlot && entry.value.trim())).length
+  const listState = resourceListState({
     rowCount: pagination.total,
     isLoading: isLoadingDocuments,
     isPlaceholderData: isPlaceholderDocuments,
     error: documentsError,
     search: debouncedSearchQuery,
-    filterCount: filterTags.length,
+    filterCount: documentFilterCount,
   })
+
+  const clearDocumentSearchAndFilters = () => {
+    handleSearchChange('')
+    setEnabledFilter('all')
+    setTagFilterEntries([])
+    setSelectedDocuments(new Set())
+    setIsSelectAllMode(false)
+  }
 
   const selectableConfig: SelectableConfig = {
     selectedIds: selectedDocuments,
@@ -1335,11 +1350,24 @@ export function KnowledgeBase({
           columns={DOCUMENT_COLUMNS}
           rows={documentRows}
           emptyState={
-            showEmptyState ? (
+            listState === 'empty' ? (
               <DocumentsEmptyState
                 onAddDocuments={handleAddDocuments}
                 addDisabled={userPermissions.canEdit !== true}
               />
+            ) : listState === 'no-results' ? (
+              <ResourceNoResults
+                search={debouncedSearchQuery}
+                filterCount={documentFilterCount}
+                onClear={clearDocumentSearchAndFilters}
+                description={
+                  debouncedSearchQuery.trim()
+                    ? 'No documents match this search.'
+                    : 'No documents match these filters.'
+                }
+              />
+            ) : listState === 'loading' ? (
+              <ResourceListLoading />
             ) : undefined
           }
           selectable={selectableConfig}

@@ -63,6 +63,7 @@ import {
 import { ResourceActionBar } from '@/app/workspace/[workspaceId]/components/resource/components/action-bar'
 import {
   KnowledgeEmptyState,
+  ResourceListLoading,
   ResourceNoResults,
 } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
 import { BaseTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
@@ -1488,6 +1489,8 @@ export function Knowledge() {
                 filterCount={filterTags.length}
                 onClear={clearSearchAndFilters}
               />
+            ) : listState === 'loading' ? (
+              <ResourceListLoading />
             ) : undefined
           }
           selectable={canEdit ? selectableConfig : undefined}

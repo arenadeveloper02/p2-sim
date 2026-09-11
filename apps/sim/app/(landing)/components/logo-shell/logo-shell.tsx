@@ -1,16 +1,17 @@
 import type { ReactNode } from 'react'
 import { cn } from '@sim/emcn'
+import Image from 'next/image'
 import Link from 'next/link'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
-import { LogoMark, SimWordmark } from '@/app/(landing)/components/navbar/components'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 
 /**
- * The canonical light, logo-only page frame - a Sim wordmark linking home, no
+ * The canonical light, logo-only page frame - an Arena mark linking home, no
  * marketing menus, on the platform's light tokens (the `light` class pins
  * light mode regardless of visitor theme). It is the shared base for every
- * surface that wants minimal chrome: the global 404, and the `(interfaces)`
- * group (which adds a support footer). The `(auth)` group uses its own
- * `AuthShell` with the same look.
+ * surface that wants minimal chrome: the global 404, fatal error, and the
+ * `(interfaces)` group (which adds a support footer). The `(auth)` group uses
+ * its own `AuthShell` with the same look.
  *
  * Children decide their own layout: pass `center` for a single centered column
  * (404 message, simple gates); omit it for full-width content (the live chat
@@ -23,11 +24,11 @@ interface LogoShellProps {
   center?: boolean
   /** Optional footer rendered after the content (e.g. a support footer). */
   footer?: ReactNode
-  /** Override the default Sim wordmark (e.g. Arena logo on deployed chat gates). */
+  /** Override the default Arena mark. */
   logo?: ReactNode
   /** Home link for the header logo. Defaults to `/`. */
   logoHref?: string
-  /** Accessible label for the header logo link. Defaults to `Sim home`. */
+  /** Accessible label for the header logo link. Defaults to `Arena home`. */
   logoLabel?: string
 }
 
@@ -37,7 +38,7 @@ export function LogoShell({
   footer,
   logo,
   logoHref = '/',
-  logoLabel = 'Sim home',
+  logoLabel = 'Arena home',
 }: LogoShellProps) {
   return (
     <div className='light desktop-title-bar-page relative flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
@@ -45,11 +46,7 @@ export function LogoShell({
       <header>
         <nav className='mx-auto flex w-full max-w-[1460px] items-center px-20 py-4 max-sm:px-5 max-lg:px-8'>
           <Link href={logoHref} aria-label={logoLabel} className='flex h-[30px] items-center'>
-            {logo ?? (
-              <LogoMark>
-                <SimWordmark />
-              </LogoMark>
-            )}
+            {logo ?? <Image src={arenaLogo} alt='Arena' width={30} height={30} priority />}
           </Link>
         </nav>
       </header>

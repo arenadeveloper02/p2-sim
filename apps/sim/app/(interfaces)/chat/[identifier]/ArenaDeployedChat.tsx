@@ -7,8 +7,10 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { resolveBrowserSessionResumeHref } from '@/lib/auth/arena-sim-resume'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
+import { isDev } from '@/lib/core/config/env-flags'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import {
   AGENT_STREAM_PROTOCOL_HEADER,
@@ -20,10 +22,8 @@ import {
   ChatInput,
   type ChatMessage,
   ChatMessageContainer,
-  EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  // SSOAuth,
   UnauthorizedEmailError,
 } from '@/app/(interfaces)/chat/components'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
@@ -125,6 +125,20 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
+function isSessionAuthRequiredError(error: string | undefined): boolean {
+  return error === 'auth_required_email' || error === 'auth_required_sso'
+}
+
+function isChatAccessDeniedError(error: string | undefined, message: string | undefined): boolean {
+  return [error, message].some(
+    (value) =>
+      value === 'Email is not authorized for this chat' ||
+      value === 'Email not authorized' ||
+      value === 'You do not have access to this chat' ||
+      value === 'Your email is not authorized to access this resource'
+  )
+}
+
 function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T {
   let timeoutId: NodeJS.Timeout | null = null
   let lastExecTime = 0
@@ -181,7 +195,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const isUserScrollingRef = useRef(false)
 
-  const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
+  const [authRequired, setAuthRequired] = useState<'password' | null>(null)
+  const [isSessionResumeInProgress, setIsSessionResumeInProgress] = useState(false)
+  const sessionResumeStartedRef = useRef(false)
 
   const threadsQuery = useDeployedChatThreads(identifier, Boolean(chatConfig) && !authRequired)
   const threads = threadsQuery.data ?? []
@@ -542,25 +558,36 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
 
-          if (errorData.error === 'auth_required_password') {
+          const authError = typeof errorData.error === 'string' ? errorData.error : undefined
+          const authMessage = typeof errorData.message === 'string' ? errorData.message : undefined
+
+          if (authError === 'auth_required_password') {
             setAuthRequired('password')
             return
           }
 
-          // Skip email auth screen; rely on server to auto-auth or deny
-          if (errorData.error === 'auth_required_email') {
+          if (isSessionAuthRequiredError(authError)) {
+            const sessionRes = await client.getSession()
+            const hasSession = Boolean(sessionRes?.data?.user?.id)
+            if (!hasSession) {
+              if (!sessionResumeStartedRef.current) {
+                sessionResumeStartedRef.current = true
+                setIsSessionResumeInProgress(true)
+                window.location.assign(
+                  resolveBrowserSessionResumeHref(window.location.href, {
+                    isDev,
+                    hostname: window.location.hostname,
+                  })
+                )
+              }
+              return
+            }
+
             setError('You do not have access to this chat')
             return
           }
 
-          // If user email is not authorized, show error
-          if (
-            errorData.error === 'Email is not authorized for this chat' ||
-            errorData.error === 'Email not authorized' ||
-            errorData.message === 'Email not authorized' ||
-            errorData.error === 'You do not have access to this chat' ||
-            errorData.message === 'You do not have access to this chat'
-          ) {
+          if (isChatAccessDeniedError(authError, authMessage)) {
             setError('You do not have access to this chat')
             return
           }
@@ -695,17 +722,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     //     logger.error('Failed to fetch GitHub stars:', err)
     //   })
   }, [identifier])
-
-  const refreshChat = () => {
-    fetchChatConfig()
-  }
-
-  const handleAuthSuccess = () => {
-    setAuthRequired(null)
-    setTimeout(() => {
-      refreshChat()
-    }, 800)
-  }
 
   // Handle sending a message
   const handleSendMessage = async (
@@ -1449,7 +1465,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setFeedbackError(null)
   }, [])
 
-  if (isAutoLoginInProgress) {
+  if (isSessionResumeInProgress) {
     return (
       <div className='fixed inset-0 z-[110] flex items-center justify-center bg-[var(--bg)]'>
         <LoadingAgentP2 size='lg' />
@@ -1470,16 +1486,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   // If authentication is required, use the extracted components
-  if (authRequired) {
-    if (authRequired === 'password') {
-      return <PasswordAuth identifier={identifier} />
-    }
-    if (authRequired === 'email') {
-      return <EmailAuth identifier={identifier} />
-    }
-    // if (authRequired === 'sso') {
-    //   return <SSOAuth identifier={identifier} />
-    // }
+  if (authRequired === 'password') {
+    return <PasswordAuth identifier={identifier} />
   }
 
   return (

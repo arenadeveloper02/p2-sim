@@ -12,7 +12,11 @@ import {
   WorkspaceApiKeyScopeAuthorizationError,
 } from '@/lib/core/application'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
-import { v2KnowledgeErrorPolicies } from '@/lib/knowledge/api/route-policies'
+import { EmbeddingAPIError, EmbeddingOutputLimitError } from '@/lib/embeddings/client'
+import {
+  internalKnowledgeErrorPolicies,
+  v2KnowledgeErrorPolicies,
+} from '@/lib/knowledge/api/route-policies'
 
 describe('v2 knowledge error policies', () => {
   it.each([
@@ -67,6 +71,28 @@ describe('v2 knowledge error policies', () => {
     expect(response?.status).toBe(404)
     expect(await response?.json()).toEqual({
       error: { code: 'NOT_FOUND', message: 'Knowledge base not found' },
+    })
+  })
+})
+
+describe('internal knowledge search error policy', () => {
+  it('returns the embedding API message instead of a generic vector-search failure', () => {
+    const projected = internalKnowledgeErrorPolicies.search.project(
+      new EmbeddingAPIError('The configured embedding API key was rejected.', 401)
+    )
+    expect(projected).toEqual({
+      status: 401,
+      body: { error: 'The configured embedding API key was rejected.' },
+    })
+  })
+
+  it('returns the embedding output-limit message as payload too large', () => {
+    const projected = internalKnowledgeErrorPolicies.search.project(
+      new EmbeddingOutputLimitError(1, 1536, 9_000_000)
+    )
+    expect(projected).toMatchObject({
+      status: 413,
+      body: { error: expect.stringContaining('exceeding the safe aggregate limit') },
     })
   })
 })

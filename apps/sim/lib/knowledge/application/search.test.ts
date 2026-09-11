@@ -180,6 +180,27 @@ describe('knowledge search application use case', () => {
     expect(result.knowledgeBases).toEqual([{ id: 'knowledge-1', name: 'Docs' }])
   })
 
+  it('rejects a query search when the embedding call returns no vector', async () => {
+    mocks.generateEmbedding.mockResolvedValueOnce({ embedding: [], isBYOK: false })
+
+    await expect(
+      searchKnowledge.execute({
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        input: {
+          workspaceId: 'workspace-1',
+          knowledgeBaseIds: ['knowledge-1'],
+          query: 'answer',
+          topK: 5,
+        },
+      })
+    ).rejects.toMatchObject({
+      code: 'validation',
+      message: 'Failed to generate a search embedding for this query',
+    })
+
+    expect(mocks.executeSearch).not.toHaveBeenCalled()
+  })
+
   it('rejects a cross-workspace knowledge base before authorization or spend', async () => {
     mocks.getKnowledgeBase.mockResolvedValueOnce({
       ...knowledgeBase,
@@ -372,7 +393,7 @@ describe('knowledge search application use case', () => {
    * metadata read, which a provenance-bearing search must therefore still make.
    */
   it('keeps the source card metadata when a provenance registry is present', async () => {
-    const registry = { markIncomplete: vi.fn() }
+    const registry = { markIncomplete: vi.fn(), mergeToolCallRegistry: vi.fn() }
     const sourceModifiedAt = new Date('2026-08-20T12:00:00Z')
     mocks.getDocumentMetadata.mockResolvedValueOnce({
       'document-1': {

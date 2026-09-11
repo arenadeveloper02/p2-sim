@@ -903,15 +903,20 @@ export class BlockExecutor {
     return { result: output }
   }
 
-  /** Builds the log-facing input copy from resolver-recorded projections only. */
+  /**
+   * Builds the log-facing input copy. A complete secret projection is preferred so
+   * placeholders replace resolved secrets; an incomplete registry used to return
+   * `{}`, which hid Knowledge and Image Generator input in the terminal and `/logs`
+   * even though the block ran. Fall back to sanitizing the resolved inputs so the
+   * run stays observable under the same under-redact posture as other blocks.
+   */
   private projectInputsForDisplay(
     inputs: Record<string, any>,
     block: SerializedBlock | undefined,
     registry: ResolvedSecretTraceRegistry | undefined
   ): Record<string, any> {
     const projection = registry?.projectResolvedInputSelection(inputs)
-    if (projection && !projection.complete) return {}
-    return this.sanitizeInputsForLog(projection?.value ?? inputs, block)
+    return this.sanitizeInputsForLog(projection?.complete ? projection.value : inputs, block)
   }
 
   /**
