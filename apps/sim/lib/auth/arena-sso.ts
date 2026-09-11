@@ -42,10 +42,7 @@ function simApiSecret(): string {
 /**
  * Redeems an opaque Arena SSO code against sol. Never logs the raw code.
  */
-export async function redeemArenaSsoCode(
-  code: string,
-  aud: string
-): Promise<ArenaSsoRedeemResult> {
+export async function redeemArenaSsoCode(code: string, aud: string): Promise<ArenaSsoRedeemResult> {
   const response = await fetch(`${solBackendBaseUrl()}/sol/v2/sso/redeem`, {
     method: 'POST',
     headers: {
