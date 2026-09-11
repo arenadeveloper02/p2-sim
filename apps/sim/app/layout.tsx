@@ -20,8 +20,6 @@ import { ConsentProvider } from '@/app/_shell/consent/consent-provider'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { PasteAdmissionGuard } from '@/app/_shell/paste-admission-guard'
-import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
-import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
 import { themeFoucScriptSource } from '@/app/_shell/providers/light-forced-segments'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
@@ -56,15 +54,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeProvider>
           <QueryProvider>
             <SessionProvider>
-              <AutoLoginSessionMigrationProvider>
-                <AutoLoginProvider>
-                  <ArenaSessionShell>
-                    <TooltipProvider>
-                      <BrandedLayout>{children}</BrandedLayout>
-                    </TooltipProvider>
-                  </ArenaSessionShell>
-                </AutoLoginProvider>
-              </AutoLoginSessionMigrationProvider>
+              <ArenaSessionShell>
+                <TooltipProvider>
+                  <BrandedLayout>{children}</BrandedLayout>
+                </TooltipProvider>
+              </ArenaSessionShell>
             </SessionProvider>
           </QueryProvider>
         </ThemeProvider>
