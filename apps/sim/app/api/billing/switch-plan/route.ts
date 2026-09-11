@@ -142,9 +142,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const alreadyOnStripePrice = subscriptionItem.price?.id === targetPriceId
     const alreadyInDb = sub.plan === targetPlanName
+    const resolvedInterval = targetInterval as 'month' | 'year'
 
+    // Stripe may already match after a partial prior attempt (price updated,
+    // DB interval write failed). Always heal the interval column/metadata so
+    // host-context reads stop reporting the stale period.
     if (alreadyOnStripePrice && alreadyInDb) {
-      return NextResponse.json({ success: true, message: 'Already on this plan and interval' })
+      await writeBillingInterval(sub.id, resolvedInterval)
+      return NextResponse.json({
+        success: true,
+        plan: targetPlanName,
+        interval: resolvedInterval,
+        message: 'Already on this plan and interval',
+      })
     }
 
     logger.info('Switching subscription', {
@@ -180,7 +190,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         .where(eq(subscriptionTable.id, sub.id))
     }
 
-    await writeBillingInterval(sub.id, targetInterval as 'month' | 'year')
+    await writeBillingInterval(sub.id, resolvedInterval)
 
     logger.info('Subscription switched successfully', {
       userId,

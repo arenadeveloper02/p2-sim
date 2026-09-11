@@ -515,10 +515,10 @@ const LeftNavThread = ({
     }
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname
-      if (hostname.includes('localhost')) return 'http://localhost:3001/hub/agents'
-      if (hostname.includes('dev-agent')) return 'https://dev.thearena.ai/hub/agents'
-      if (hostname.includes('test-agent')) return 'https://test.thearena.ai/hub/agents'
-      return 'https://app.thearena.ai/hub/agents'
+      if (hostname.includes('localhost')) return 'http://localhost:3001/agents'
+      if (hostname.includes('dev-agent')) return 'https://dev.thearena.ai/agents'
+      if (hostname.includes('test-agent')) return 'https://test.thearena.ai/agents'
+      return 'https://app.thearena.ai/agents'
     }
     return '/'
   }

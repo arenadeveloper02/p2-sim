@@ -22,10 +22,11 @@ import {
   isWorkspaceAccessDeniedError,
 } from '@/lib/workspaces/permissions/utils'
 import { listAccessibleWorkspaceRowsForUser } from '@/lib/workspaces/utils'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 
 const logger = createLogger('CopilotChatsListAPI')
 
-const DEFAULT_COPILOT_MODEL = 'claude-opus-4-6'
+const DEFAULT_COPILOT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
 
 export const GET = withRouteHandler(async (_request: NextRequest) => {
   try {

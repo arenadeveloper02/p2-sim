@@ -4,6 +4,7 @@ import { useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import type { WorkspaceHostContext } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
+import { isArenaBilling } from '@/lib/billing/arena/env'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { useOptionalWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -38,7 +39,12 @@ export function resolveSettingsHref({
   viewerUserId,
 }: ResolveSettingsHrefParams): string {
   if (!workspaceId) return '/workspace'
-  const section = options?.section || 'general'
+  let section = options?.section || 'general'
+  // Arena's Subscription nav entry is `arena-billing`; callers still pass
+  // `billing` for usage-limit / upgrade CTAs (e.g. Test when credits are exhausted).
+  if (section === 'billing' && isArenaBilling()) {
+    section = 'arena-billing'
+  }
   if (
     (section === 'billing' || section === 'arena-billing') &&
     hostContext &&

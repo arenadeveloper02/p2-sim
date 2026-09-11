@@ -1,3 +1,4 @@
+import { generateId } from '@sim/utils/id'
 import type { QueryClient } from '@tanstack/react-query'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
@@ -8,9 +9,11 @@ import {
   getUserBillingContract,
   getUserUsageLimitContract,
   type InvoicesApiResponse,
+  purchaseCreditsContract,
   type SubscriptionApiResponse,
   updateUsageLimitContract,
 } from '@/lib/api/contracts/subscription'
+import { organizationKeys } from '@/hooks/queries/organization'
 import { invalidateWorkspaceUsage } from '@/hooks/queries/utils/invalidate-usage'
 import { subscriptionKeys } from '@/hooks/queries/utils/subscription-keys'
 
@@ -254,6 +257,31 @@ export function useUpdateUsageLimit() {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: subscriptionKeys.users() }),
         queryClient.invalidateQueries({ queryKey: subscriptionKeys.usage() }),
+        invalidateWorkspaceUsage(queryClient),
+      ])
+    },
+  })
+}
+
+/**
+ * Purchase prepaid usage credits (charges the saved payment method immediately).
+ */
+export function usePurchaseCredits() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (amountDollars: number) => {
+      return requestJson(purchaseCreditsContract, {
+        body: {
+          amount: amountDollars,
+          requestId: generateId(),
+        },
+      })
+    },
+    onSettled: () => {
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all }),
+        queryClient.invalidateQueries({ queryKey: organizationKeys.all }),
         invalidateWorkspaceUsage(queryClient),
       ])
     },

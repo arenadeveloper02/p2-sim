@@ -45,7 +45,9 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'workflow',
     weight: 2,
     patterns: [
-      /\b(build|create|edit|add|wire|connect|workflow|block|automate|pipeline)\b/i,
+      /\b(workflows?|automate|automation|pipeline)\b/i,
+      /\b(build|create|edit|add|wire|connect)\s+(an?\s+)?(workflow|automation|pipeline)\b/i,
+      /\b(add|edit|wire|connect|delete)\s+(a\s+)?blocks?\b/i,
       /\b(modify|update|change|fix)\s+(the\s+)?(workflow|block)/i,
     ],
   },
@@ -53,7 +55,7 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'file',
     weight: 3,
     patterns: [
-      /\b(file|folder|vfs|markdown|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
+      /\b(file|folder|vfs|markdown|html|htm|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
       /\b(create|make|generate|build|write)\s+(an?\s+)?(ppt|pptx|powerpoint|presentation|slides?|deck|docx?|pdf|document)\b/i,
     ],
   },
@@ -194,6 +196,13 @@ const SEQUENTIAL_WORKFLOW_DOMAINS = new Set<LocalCopilotCloudSpecialistDomain>([
   'run',
 ])
 
+/**
+ * Domains that can usefully run ahead of the parent in parallel with a build
+ * domain (lookups / auth prep). Other multi-domain matches stay with the parent
+ * so we do not pay slowest-wins latency for weakly related specialists.
+ */
+const AUTO_FAN_PREP_DOMAINS = new Set<LocalCopilotCloudSpecialistDomain>(['research', 'auth'])
+
 function collapseSequentialWorkflowDomains(
   domains: LocalCopilotCloudSpecialistDomain[],
   primary: LocalCopilotIntent['primary']
@@ -207,6 +216,13 @@ function collapseSequentialWorkflowDomains(
   return domains.filter((domain) => !SEQUENTIAL_WORKFLOW_DOMAINS.has(domain) || domain === keep)
 }
 
+/**
+ * Selects domains for the turn-start parallel specialist pre-pass.
+ *
+ * Conservative by design: only fan when a prep domain (research/auth) coexists
+ * with another domain, and never more than {@link MAX_PARALLEL_SUBAGENTS}.
+ * Parent-invoked specialists can still run in parallel later via tool calls.
+ */
 export function selectParallelSubagentDomains(
   intent: LocalCopilotIntent
 ): LocalCopilotCloudSpecialistDomain[] {
@@ -225,5 +241,29 @@ export function selectParallelSubagentDomains(
   )
   if (selected.length < 2) return []
 
-  return selected.slice(0, MAX_PARALLEL_SUBAGENTS)
+  const prep = selected.find((domain) => AUTO_FAN_PREP_DOMAINS.has(domain))
+  if (!prep) return []
+
+  const build = selected.find((domain) => domain !== prep)
+  if (!build) return []
+
+  return [prep, build].slice(0, MAX_PARALLEL_SUBAGENTS)
+}
+
+/**
+ * Scopes an auto-fan-out specialist to its domain so a shared user prompt
+ * cannot make every specialist recreate the whole request (e.g. 2 workflows
+ * and 2 files from "create a markdown file").
+ */
+export function buildAutoFanoutSpecialistUserMessage(
+  domain: LocalCopilotCloudSpecialistDomain,
+  userMessage: string
+): string {
+  const scope =
+    domain === 'file'
+      ? 'Handle ONLY file/document work. Do not create or edit workflows. Do not call create_workflow.'
+      : domain === 'workflow'
+        ? 'Handle ONLY workflow work. Do not create workspace files. Do not call create_file.'
+        : `Handle ONLY the ${domain} parts of this request. Do not create resources for other domains.`
+  return `${scope}\n\nUser request:\n${userMessage.trim()}`
 }

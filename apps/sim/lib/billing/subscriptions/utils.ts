@@ -4,7 +4,7 @@ import {
   DEFAULT_PRO_TIER_COST_LIMIT,
   DEFAULT_TEAM_TIER_COST_LIMIT,
 } from '@/lib/billing/constants'
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import {
   getPlanTierCredits,
   isEnterprise,
@@ -164,7 +164,7 @@ export function getPerUserMinimumLimit(subscription: any): number {
 
   if (isPro(subscription.plan)) {
     const tierCredits = getPlanTierCredits(subscription.plan)
-    if (tierCredits > 0) return tierCredits / CREDIT_MULTIPLIER
+    if (tierCredits > 0) return tierCredits / getCreditsPerDollar()
     return getProTierLimit()
   }
 
@@ -202,7 +202,7 @@ export function getPlanPricing(plan: string): { basePrice: number } {
 
   if (isPro(plan) || isTeam(plan)) {
     const tierCredits = getPlanTierCredits(plan)
-    if (tierCredits > 0) return { basePrice: tierCredits / CREDIT_MULTIPLIER }
+    if (tierCredits > 0) return { basePrice: tierCredits / getCreditsPerDollar() }
     return { basePrice: isPro(plan) ? getProTierLimit() : getTeamTierLimitPerSeat() }
   }
 

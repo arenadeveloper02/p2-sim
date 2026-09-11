@@ -41,8 +41,8 @@ describe('payload builders align with the shared field constants', () => {
       workflowName: 'Source',
       runId: 'exec-1',
       durationMs: 1000,
-      // $0.25 reported as credits (1 credit = $0.005)
-      cost: 50,
+      // $0.25 reported as credits at 65 credits per dollar.
+      cost: 16,
     })
   })
 
@@ -81,8 +81,8 @@ describe('payload builders align with the shared field constants', () => {
       triggeringRun: {
         runId: 'exec-1',
         durationMs: 1000,
-        // $0.25 reported as credits (1 credit = $0.005)
-        cost: 50,
+        // $0.25 reported as credits at 65 credits per dollar.
+        cost: 16,
         finalOutput: { result: 42 },
       },
     })

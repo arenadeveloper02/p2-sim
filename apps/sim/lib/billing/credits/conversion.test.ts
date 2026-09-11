@@ -10,10 +10,10 @@ import {
 } from '@/lib/billing/credits/conversion'
 
 describe('creditsToDollars', () => {
-  it('converts credits to dollars at 200 credits per dollar', () => {
-    expect(creditsToDollars(200)).toBe(1)
+  it('converts credits to dollars at 65 credits per dollar', () => {
+    expect(creditsToDollars(65)).toBe(1)
     expect(creditsToDollars(0)).toBe(0)
-    expect(creditsToDollars(1)).toBe(0.005)
+    expect(creditsToDollars(1)).toBe(1 / 65)
   })
 
   it('round-trips with dollarsToCredits for whole-credit values', () => {
@@ -24,9 +24,9 @@ describe('creditsToDollars', () => {
 
 describe('formatCreditCost', () => {
   it('renders multiplier-inclusive dollars as a single-rounded credit label', () => {
-    expect(formatCreditCost(0.005)).toBe('1 credit')
-    expect(formatCreditCost(0.03141848)).toBe('6 credits')
-    expect(formatCreditCost(1.234)).toBe('247 credits')
+    expect(formatCreditCost(0.005)).toBe('<1 credit')
+    expect(formatCreditCost(0.03141848)).toBe('2 credits')
+    expect(formatCreditCost(1.234)).toBe('80 credits')
   })
 
   it('distinguishes sub-credit charges from zero', () => {
@@ -53,9 +53,9 @@ describe('apportionCredits', () => {
     ])
 
     const total = dollarsToCredits(0.005 + 0.018798 + 0.00762 + 0)
-    expect(total).toBe(6)
+    expect(total).toBe(2)
     expect(credits.base + credits.input + credits.output + credits.tool).toBe(total)
-    expect(credits.base).toBe(1)
+    expect(credits.base).toBe(0)
   })
 
   it('handles all-zero components', () => {
@@ -72,7 +72,7 @@ describe('apportionCredits', () => {
       { key: 'model', dollars: Number.NaN },
       { key: 'tool', dollars: -1 },
     ])
-    expect(credits.base).toBe(1)
+    expect(credits.base).toBe(0)
     expect(credits.model).toBe(0)
     expect(credits.tool).toBe(0)
   })

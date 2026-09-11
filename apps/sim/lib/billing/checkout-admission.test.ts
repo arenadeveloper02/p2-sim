@@ -27,6 +27,7 @@ vi.mock('@/lib/core/idempotency/service', () => ({
 
 import {
   claimCheckoutAdmission,
+  getCheckoutAdmissionClaimFromHookContext,
   releaseCheckoutAdmission,
   resolveCheckoutReferenceId,
 } from '@/lib/billing/checkout-admission'
@@ -57,6 +58,29 @@ describe('checkout admission', () => {
       resolveCheckoutReferenceId({ customerType: 'organization' }, 'user-1', 'org-active')
     ).toBe('org-active')
     expect(resolveCheckoutReferenceId({}, 'user-1', 'org-active')).toBe('user-1')
+  })
+
+  it('reads the claim from the endpoint context root where Better Auth merges it', () => {
+    const claim = {
+      normalizedKey: 'billing-checkout-admission:stripe:org-1',
+      storageMethod: 'database' as const,
+      claimToken: 'claim-1',
+    }
+
+    expect(
+      getCheckoutAdmissionClaimFromHookContext({
+        billingCheckoutAdmissionClaim: claim,
+        context: {},
+      })
+    ).toBe(claim)
+
+    expect(
+      getCheckoutAdmissionClaimFromHookContext({
+        context: { billingCheckoutAdmissionClaim: claim },
+      })
+    ).toBe(claim)
+
+    expect(getCheckoutAdmissionClaimFromHookContext({ context: {} })).toBeUndefined()
   })
 
   it('admits only one overlapping checkout for a billing reference', async () => {

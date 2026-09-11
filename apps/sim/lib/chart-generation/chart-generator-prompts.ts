@@ -25,11 +25,15 @@ Generate ECharts chart JSON ONLY if the user's input does at least one of:
 
 Do NOT generate a chart if:
 - The user asks an analytical/factual question about the data ("what's my CTR", "which campaign performed best", "give me total impressions", "summarize this", "why did spend spike")
-- The user asks for a table, list, or summary — these are NOT charts even if the data is tabular
+- The user asks for a table, list, or summary — these are NOT charts even if the data is tabular (but if they ask for a table AND a chart, produce both per the MIXED RESPONSES rule below)
 - The only signal is the presence of numeric/tabular data — data shape never implies charting intent
 - The request is ambiguous about visualization — default to plain text, and at the end offer: "I can also plot this as a [bar/line] chart if you'd like."
 
-If the user's message contains BOTH a question and an explicit chart request (e.g. "which ad group has the best CTR, and plot it"), do BOTH: answer the question in text first, then output the chart JSON below it. This is the only case where mixing modes is allowed.
+MIXED RESPONSES (text + tables + charts together):
+If the user's message asks for ANY combination of a text answer, a table/breakdown, and an explicit chart request (e.g. "which ad group has the best CTR, and plot it", or "summarize spend, give me a table per campaign, and plot the trend"), do ALL of them in one response:
+1. First the text answer and any markdown tables, following the STEP 2 output quality rules (tables ARE allowed and encouraged in this text portion when a breakdown is requested).
+2. Then a blank line, then the chart JSON (bare object or bare array per 3.4) as the LAST thing in the response. Nothing after the JSON.
+Never drop the table because a chart was also requested, and never drop the chart because a table was also requested — each explicitly requested element must appear. This is the only case where mixing modes is allowed.
 
 =====================================================
 STEP 1.5 — SINGLE vs MULTIPLE CHARTS (decide how many charts to produce)
@@ -97,6 +101,14 @@ STEP 3 — IF INTENT GATE PASSES → CHART JSON MODE
 - Alternative: reverse both yAxis.data and series.data so the highest value is last.
 - Vertical bar charts: keep natural left-to-right descending order, no inverse needed.
 
+3.2b AXIS / LABEL ALIGNMENT (strict)
+- Category labels must sit directly under (or beside) their ticks. Never rotate labels when there are 8 or fewer categories — keep "axisLabel.rotate": 0 and "axisLabel.interval": 0 so every label is shown and centered on its bar group.
+- If you must rotate (9+ long labels): set "axisLabel.rotate": 30, "axisLabel.align": "right", "axisLabel.verticalAlign": "middle", and "axisLabel.interval": 0. Do not rotate without align — that shifts labels left of their bars.
+- Always set "grid.containLabel": true so axis names and ticks are not clipped.
+- Dual value y-axes (e.g. Spend vs Conversions): set "grid.right" to at least 64.
+- When both title and legend are present, set "grid.top" to at least 72 so they do not collide with the plot.
+- Do not use a tiny "grid.bottom" (e.g. 48) with rotated or long category labels — use 80+ if labels are rotated, otherwise at least 56.
+
 3.3 DATA MAPPING RULES
 - Identify the correct x/category field and y/value field(s) from the ACTUAL data provided. Never invent field names or fabricate data points not present or derivable from the source.
 - If the user asks for a metric not directly present but derivable (e.g. CTR from clicks/impressions), compute it correctly before charting.
@@ -112,7 +124,7 @@ STEP 3 — IF INTENT GATE PASSES → CHART JSON MODE
   Do NOT merge distinct charts into one option, and do NOT concatenate multiple bare objects one after another without an enclosing array — that is not valid JSON and will fail to parse.
 - In BOTH cases: no outer wrapper key of any kind. Do NOT prefix with "option =". Do NOT use JavaScript syntax. Strict parseable JSON only: double-quoted keys/strings, no trailing commas, no semicolons, no comments.
 - No markdown code fences, no explanatory text before or after — in chart mode the entire response body is the JSON (a single object, or a bare array of objects) and nothing else.
-- In the MIXED case (question + explicit chart request): write the text answer first, then a blank line, then the bare JSON (object or array) starting on its own line. Nothing after the JSON.
+- In the MIXED case (question and/or table request + explicit chart request): write the text answer and any markdown tables first, then a blank line, then the bare JSON (object or array) starting on its own line. Nothing after the JSON.
 - Each option must directly contain valid ECharts config keys: "title", "tooltip", "grid" (if applicable), "xAxis"/"yAxis" or "radiusAxis"/"angleAxis" as needed, and "series".
 - Each "title.text" should be a short descriptive title inferred from that specific chart's request/data.
 - If assumptions, truncations, or computed fields were involved for a chart, add a top-level "warnings" array of strings on that specific option (the only permitted non-standard key on an option — extra keys are ignored by ECharts renderers). For multi-chart responses, warnings that apply to a specific chart go on that chart's own option; there is no separate top-level wrapper to attach cross-chart warnings to, so if a requested chart can't be generated at all, note this as a "warnings" entry on the nearest related chart, or, if no chart can be generated, fall back to plain text mode and explain what's missing.
@@ -244,8 +256,8 @@ Bar chart (single chart — bare object):
 {
   "title": { "text": "Compare revenue by month", "left": "center" },
   "tooltip": { "trigger": "axis" },
-  "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true },
+  "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true, "axisLabel": { "rotate": 0, "interval": 0 } },
   "yAxis": { "type": "value" },
   "series": [ { "name": "revenue", "type": "bar", "data": [100, 120, 90] } ]
 }
@@ -254,8 +266,8 @@ Line chart (single chart — bare object):
 {
   "title": { "text": "Revenue trend by month", "left": "center" },
   "tooltip": { "trigger": "axis" },
-  "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false },
+  "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false, "axisLabel": { "rotate": 0, "interval": 0 } },
   "yAxis": { "type": "value" },
   "series": [ { "name": "revenue", "type": "line", "data": [100, 120, 90] } ]
 }
@@ -264,7 +276,7 @@ Horizontal bar ranking (single chart — top item on top via inverse):
 {
   "title": { "text": "Top ad groups by conversion rate", "left": "center" },
   "tooltip": { "trigger": "axis" },
-  "grid": { "left": 120, "right": 24, "top": 56, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 120, "right": 24, "top": 56, "bottom": 48 },
   "xAxis": { "type": "value" },
   "yAxis": { "type": "category", "inverse": true, "data": ["Group A", "Group B", "Group C"], "boundaryGap": true },
   "series": [ { "name": "Conversion Rate", "type": "bar", "data": [0.40, 0.36, 0.33] } ]
@@ -293,7 +305,7 @@ Heat map chart (single chart — bare object):
 {
   "title": { "text": "Activity by Day and Hour", "left": "center" },
   "tooltip": { "position": "top" },
-  "grid": { "left": 80, "right": 24, "top": 56, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 80, "right": 24, "top": 56, "bottom": 56 },
   "xAxis": {
     "type": "category",
     "data": ["12am", "3am", "6am", "9am", "12pm", "3pm", "6pm", "9pm"],
@@ -329,7 +341,7 @@ Scatter chart (single chart — bare object):
     "trigger": "item",
     "formatter": "{a}<br/>CPC: {c[0]}<br/>Conversion Rate: {c[1]}"
   },
-  "grid": { "left": 60, "right": 24, "top": 56, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 60, "right": 24, "top": 56, "bottom": 48 },
   "xAxis": { "type": "value", "name": "CPC" },
   "yAxis": { "type": "value", "name": "Conversion Rate" },
   "series": [
@@ -355,7 +367,7 @@ Scatter chart with conditional coloring (single chart — bare object, NO callba
     "formatter": "{a}<br/>CPC: {c[0]}<br/>Conversion Rate: {c[1]}"
   },
   "legend": { "top": 24 },
-  "grid": { "left": 60, "right": 24, "top": 80, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 60, "right": 24, "top": 80, "bottom": 48 },
   "xAxis": { "type": "value", "name": "CPC" },
   "yAxis": { "type": "value", "name": "Conversion Rate" },
   "series": [
@@ -388,16 +400,16 @@ MULTIPLE CHARTS (bare array form, no wrapper — Bar Chart + Line Chart requeste
   {
     "title": { "text": "Compare revenue by month", "left": "center" },
     "tooltip": { "trigger": "axis" },
-    "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true },
+    "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true, "axisLabel": { "rotate": 0, "interval": 0 } },
     "yAxis": { "type": "value" },
     "series": [ { "name": "revenue", "type": "bar", "data": [100, 120, 90] } ]
   },
   {
     "title": { "text": "Revenue trend by month", "left": "center" },
     "tooltip": { "trigger": "axis" },
-    "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false },
+    "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false, "axisLabel": { "rotate": 0, "interval": 0 } },
     "yAxis": { "type": "value" },
     "series": [ { "name": "revenue", "type": "line", "data": [100, 120, 90] } ]
   }
@@ -407,7 +419,7 @@ export function buildChartGeneratorUserPrompt(userRequest: string, data: string)
   return `Analyse the user's latest input together with the provided data below, and follow the system prompt's INTENT GATE strictly:
 - If the user explicitly asks for a graph/chart/plot/visualization/dashboard or names a chart type → output ONLY pure ECharts "option" JSON per the STEP 3.4 format rules (no wrapper, no markdown fences, no extra text). If the user requests MULTIPLE visualizations, output a JSON ARRAY of option objects, one per requested chart, in order — never drop or merge any.
 - If the user asks a question, wants a summary, or anything else without explicit chart intent → answer normally in plain text/markdown per the STEP 2 output quality rules, using the actual data. No chart JSON.
-- If the message contains both a question and an explicit chart request → answer the question in text first, then output the chart JSON below it.
+- If the message combines a question/table request AND an explicit chart request → produce every requested element: text answer and any markdown tables first, then the chart JSON below them (JSON last, nothing after it).
 
 User input: ${userRequest || '(none)'}
 

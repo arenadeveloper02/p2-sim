@@ -74,7 +74,7 @@ export const MOTHERSHIP_USAGE_SOURCES =
 
 type UsageMetrics = WorkspaceUsageAnalytics['summary']['usage']
 
-/** Format billable dollar cost as credits for the usage dashboard (1 credit = $0.005). */
+/** Format billable dollar cost as credits for the usage dashboard. */
 export function formatBillableWithCredits(dollars: number): string {
   return formatCreditCost(dollars, { emptyForZeroOrLess: false }) ?? '—'
 }

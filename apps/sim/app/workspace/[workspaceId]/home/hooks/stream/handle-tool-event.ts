@@ -11,6 +11,7 @@ import {
   extractResourcesFromToolResult,
   isResourceToolName,
 } from '@/lib/copilot/resources/extraction'
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 import { isUserLocalVfsToolCall } from '@/lib/copilot/tools/local-filesystem'
 import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
 import { invalidateResourceQueries } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
@@ -52,6 +53,18 @@ function agentIdForSpan(ctx: StreamLoopContext, spanId: string): string | undefi
   return agent?.kind === 'agent' ? agent.agentId : undefined
 }
 
+/** Opens a newly created/written workspace resource in the mothership panel. */
+function surfaceCreatedResource(ctx: StreamLoopContext, resource: MothershipResource): void {
+  const { deps } = ctx
+  invalidateResourceQueries(deps.queryClient, deps.workspaceId, resource.type, resource.id)
+  if (resource.type === 'file') {
+    deps.promoteFileResource(resource.id, resource.title)
+  } else {
+    deps.addResource(resource)
+  }
+  deps.onResourceEventRef.current?.(resource.id)
+}
+
 /**
  * Runs the external side effects of a finished tool (resource extraction, query
  * invalidation, file-resource promotion, preview cleanup, onToolResult). The
@@ -90,7 +103,7 @@ function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode): void 
       ? extractResourcesFromToolResult(name, params, output)
       : []
   for (const resource of extractedResources) {
-    invalidateResourceQueries(deps.queryClient, deps.workspaceId, resource.type, resource.id)
+    surfaceCreatedResource(ctx, resource)
   }
 
   if ((name === 'edit_content' || name === WorkspaceFile.id) && isSuccess) {
@@ -107,9 +120,7 @@ function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode): void 
         (typeof editData?.name === 'string' ? editData.name : undefined) ??
         deps.previewSessionRef.current?.fileName ??
         'File'
-      deps.promoteFileResource(editedFileId, editedFileName)
-      deps.onResourceEventRef.current?.(editedFileId)
-      invalidateResourceQueries(deps.queryClient, deps.workspaceId, 'file', editedFileId)
+      surfaceCreatedResource(ctx, { type: 'file', id: editedFileId, title: editedFileName })
     }
   }
 
@@ -131,9 +142,7 @@ function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode): void 
     }
     const fileResource = extractedResources.find((r) => r.type === 'file')
     if (fileResource) {
-      deps.promoteFileResource(fileResource.id, fileResource.title)
-      deps.onResourceEventRef.current?.(fileResource.id)
-      invalidateResourceQueries(deps.queryClient, deps.workspaceId, 'file', fileResource.id)
+      surfaceCreatedResource(ctx, fileResource)
     } else if (calledBy !== FILE_SUBAGENT_ID) {
       deps.setResources((rs) => rs.filter((r) => r.id !== 'streaming-file'))
     }

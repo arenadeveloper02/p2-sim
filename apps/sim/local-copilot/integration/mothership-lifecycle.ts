@@ -59,9 +59,8 @@ import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
   type LocalCopilotCatalogId,
+  resolveLocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
@@ -96,11 +95,7 @@ function extractWorkspaceSnapshot(value: unknown): VfsSnapshotV1 | undefined {
 function resolveCatalogIdFromPayload(
   requestPayload: Record<string, unknown>
 ): LocalCopilotCatalogId {
-  const model = extractString(requestPayload.model)
-  if (!model || !isLocalCopilotCatalogId(model)) {
-    return DEFAULT_LOCAL_COPILOT_CATALOG_ID
-  }
-  return model
+  return resolveLocalCopilotCatalogId(extractString(requestPayload.model))
 }
 
 function extractContexts(value: unknown): CopilotContextEntry[] | undefined {
@@ -353,34 +348,32 @@ async function dispatchLocalCopilotEvent(
           dispatchStreamEvent(streamEvent, context, execContext, options, filePreview),
         () => Boolean(options.abortSignal?.aborted)
       )
-      const fileResources = extractLocalFileChatResources(
+      const createdResources = extractLocalFileChatResources(
         event.toolName,
         toolArgsByCallId.get(event.toolCallId),
         event.output
       )
-      if (fileResources.length > 0) {
-        await persistChatResources(chatId, fileResources)
-        if (event.toolName === 'edit_content' || event.toolName === 'create_file') {
-          for (const resource of fileResources) {
-            await dispatchStreamEvent(
-              {
-                type: MothershipStreamV1EventType.resource,
-                payload: {
-                  op: MothershipStreamV1ResourceOp.upsert,
-                  resource: {
-                    type: resource.type,
-                    id: resource.id,
-                    title: resource.title,
-                    ...(resource.path ? { path: resource.path } : {}),
-                  },
+      if (createdResources.length > 0) {
+        await persistChatResources(chatId, createdResources)
+        for (const resource of createdResources) {
+          await dispatchStreamEvent(
+            {
+              type: MothershipStreamV1EventType.resource,
+              payload: {
+                op: MothershipStreamV1ResourceOp.upsert,
+                resource: {
+                  type: resource.type,
+                  id: resource.id,
+                  title: resource.title,
+                  ...(resource.path ? { path: resource.path } : {}),
                 },
               },
-              context,
-              execContext,
-              options,
-              filePreview
-            )
-          }
+            },
+            context,
+            execContext,
+            options,
+            filePreview
+          )
         }
       }
     }

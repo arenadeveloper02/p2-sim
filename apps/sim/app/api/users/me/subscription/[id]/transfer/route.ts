@@ -3,11 +3,13 @@ import { db } from '@sim/db'
 import { member, organization, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { subscriptionTransferContract } from '@/lib/api/contracts/user'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { isBlockingOrgSubscription } from '@/lib/billing/arena/checkout-policy'
+import { supersedeStarterSubscriptions } from '@/lib/billing/arena/supersede-starter'
 import {
   assertNoUnresolvedEnterpriseIssuance,
   EnterpriseIssuanceInProgressError,
@@ -118,22 +120,26 @@ export const POST = withRouteHandler(
         }
 
         const [existingOrgSub] = await tx
-          .select({ id: subscription.id })
+          .select({ id: subscription.id, plan: subscription.plan })
           .from(subscription)
           .where(
             and(
               eq(subscription.referenceId, organizationId),
-              inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES)
+              inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES),
+              ne(subscription.id, subscriptionId)
             )
           )
           .limit(1)
 
         if (existingOrgSub) {
-          return {
-            kind: 'error',
-            status: 409,
-            error: 'Organization already has an active subscription',
+          if (isBlockingOrgSubscription(existingOrgSub)) {
+            return {
+              kind: 'error',
+              status: 409,
+              error: 'Organization already has an active subscription',
+            }
           }
+          await supersedeStarterSubscriptions(organizationId, subscriptionId, tx)
         }
 
         await tx

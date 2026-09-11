@@ -40,19 +40,19 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
       const hostname = window.location.hostname
 
       if (hostname.includes('localhost')) {
-        return 'http://localhost:3001/hub/agents'
+        return 'http://localhost:3001/agents'
       }
       if (hostname.includes('dev-agent')) {
-        return 'https://dev.thearena.ai/hub/agents'
+        return 'https://dev.thearena.ai/agents'
       }
       if (hostname.includes('test-agent')) {
-        return 'https://test.thearena.ai/hub/agents'
+        return 'https://test.thearena.ai/agents'
       }
       if (hostname.includes('sandbox-agent')) {
-        return 'https://sandbox.thearena.ai/hub/agents'
+        return 'https://sandbox.thearena.ai/agents'
       }
       // prod - agent.thearena.ai
-      return 'https://app.thearena.ai/hub/agents'
+      return 'https://app.thearena.ai/agents'
     }
 
     return '/'

@@ -5,23 +5,23 @@ import { dbChainMockFns, hasMockCondition, resetDbChainMock, schemaMock } from '
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockHasPaidSubscription,
+  mockHasBlockingOrgCheckoutSubscription,
   mockIsOwnerOrAdmin,
   mockAssertNoUnresolved,
   mockGetOrganizationCoverageForMember,
 } = vi.hoisted(() => ({
-  mockHasPaidSubscription: vi.fn(),
+  mockHasBlockingOrgCheckoutSubscription: vi.fn(),
   mockIsOwnerOrAdmin: vi.fn(),
   mockAssertNoUnresolved: vi.fn(),
   mockGetOrganizationCoverageForMember: vi.fn(),
 }))
 
-vi.mock('@/lib/billing', () => ({ hasPaidSubscription: mockHasPaidSubscription }))
 vi.mock('@/lib/billing/core/organization', () => ({
   isOrganizationOwnerOrAdmin: mockIsOwnerOrAdmin,
 }))
 vi.mock('@/lib/billing/core/subscription', () => ({
   getOrganizationCoverageForMember: mockGetOrganizationCoverageForMember,
+  hasBlockingOrgCheckoutSubscription: mockHasBlockingOrgCheckoutSubscription,
 }))
 vi.mock('@/lib/billing/subscriptions/utils', () => ({
   isOrgScopedSubscription: ({ referenceId }: { referenceId: string }, userId: string) =>
@@ -72,7 +72,7 @@ describe('isPersonalCheckoutRequest', () => {
 describe('authorizeSubscriptionReference', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHasPaidSubscription.mockResolvedValue(false)
+    mockHasBlockingOrgCheckoutSubscription.mockResolvedValue(false)
     mockAssertNoUnresolved.mockResolvedValue(undefined)
     mockIsOwnerOrAdmin.mockResolvedValue(true)
     mockGetOrganizationCoverageForMember.mockResolvedValue({ status: 'not-covered' })
@@ -105,7 +105,7 @@ describe('authorizeSubscriptionReference', () => {
       authorizeSubscriptionReference('owner-1', 'org-1', 'upgrade-subscription', 'team_6000')
     ).rejects.toThrow(/subscription payment is still processing/)
 
-    expect(mockHasPaidSubscription).not.toHaveBeenCalled()
+    expect(mockHasBlockingOrgCheckoutSubscription).not.toHaveBeenCalled()
     expect(mockAssertNoUnresolved).not.toHaveBeenCalled()
     expect(mockIsOwnerOrAdmin).not.toHaveBeenCalled()
   })
@@ -115,7 +115,7 @@ describe('authorizeSubscriptionReference', () => {
       authorizeSubscriptionReference('owner-1', 'org-1', 'upgrade-subscription', 'pro_6000')
     ).rejects.toThrow('Organizations can only subscribe to Team or Enterprise plans.')
 
-    expect(mockHasPaidSubscription).not.toHaveBeenCalled()
+    expect(mockHasBlockingOrgCheckoutSubscription).not.toHaveBeenCalled()
     expect(mockIsOwnerOrAdmin).not.toHaveBeenCalled()
   })
 
@@ -125,12 +125,20 @@ describe('authorizeSubscriptionReference', () => {
     ).rejects.toThrow('Organizations can only subscribe to Team or Enterprise plans.')
   })
 
-  it('blocks an organization checkout when the organization already has an active subscription', async () => {
-    mockHasPaidSubscription.mockResolvedValueOnce(true)
+  it('blocks an organization checkout when the organization already has a blocking subscription', async () => {
+    mockHasBlockingOrgCheckoutSubscription.mockResolvedValueOnce(true)
 
     await expect(
       authorizeSubscriptionReference('owner-1', 'org-1', 'upgrade-subscription', 'team_6000')
     ).rejects.toThrow(/already has an active subscription/)
+  })
+
+  it('allows an organization checkout when only Starter entitlements remain', async () => {
+    mockHasBlockingOrgCheckoutSubscription.mockResolvedValueOnce(false)
+
+    await expect(
+      authorizeSubscriptionReference('owner-1', 'org-1', 'upgrade-subscription', 'team_6500')
+    ).resolves.toBe(true)
   })
 
   it('does not apply checkout-only rules to other billing actions', async () => {
@@ -138,7 +146,7 @@ describe('authorizeSubscriptionReference', () => {
       authorizeSubscriptionReference('owner-1', 'org-1', 'cancel-subscription')
     ).resolves.toBe(true)
 
-    expect(mockHasPaidSubscription).not.toHaveBeenCalled()
+    expect(mockHasBlockingOrgCheckoutSubscription).not.toHaveBeenCalled()
     expect(mockIsOwnerOrAdmin).toHaveBeenCalledWith('owner-1', 'org-1')
   })
 

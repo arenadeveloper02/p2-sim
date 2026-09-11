@@ -89,6 +89,10 @@ vi.mock('@/app/workspace/[workspaceId]/providers/provider-models-loader', () => 
   ProviderModelsLoader: () => null,
 }))
 
+vi.mock('@/app/workspace/[workspaceId]/providers/arena-theme-sync', () => ({
+  ArenaThemeSync: () => null,
+}))
+
 vi.mock('@/app/workspace/[workspaceId]/providers/settings-loader', () => ({
   SettingsLoader: () => null,
 }))

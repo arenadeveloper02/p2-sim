@@ -22,6 +22,11 @@ const Admin = dynamic(() =>
     (module) => module.Admin
   )
 )
+const SkillShare = dynamic(() =>
+  import('@/app/workspace/[workspaceId]/settings/components/skill-share/skill-share').then(
+    (module) => module.SkillShare
+  )
+)
 const Mothership = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/mothership/mothership').then(
     (module) => module.Mothership
@@ -43,5 +48,6 @@ export function AccountSettingsRenderer({ section }: AccountSettingsRendererProp
   if (section === 'billing') return <Billing scope='account' />
   if (section === 'api-keys') return <ApiKeys scope='personal' />
   if (section === 'admin') return <Admin />
+  if (section === 'skill-share') return <SkillShare />
   return <Mothership />
 }

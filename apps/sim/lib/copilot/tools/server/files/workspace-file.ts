@@ -10,6 +10,7 @@ import {
   messageForCopilotFileError,
   resolveCopilotFilePrincipal,
 } from '@/lib/copilot/auth/file-delegation'
+import { isPlainTextWorkspaceFileName } from '@/lib/copilot/chat/document-format-guidance'
 import { WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
 import {
   assertServerToolNotAborted,
@@ -573,6 +574,24 @@ export const workspaceFileServerTool: BaseServerTool<WorkspaceFileArgs, Workspac
           const { fileRecord, vfsPath, error } = await resolveExistingTarget(target, 'update')
           if (error || !fileRecord) return { success: false, message: error || 'File not found' }
 
+          const currentBuffer = (
+            await executeCopilotFileUseCase(
+              context,
+              readWorkspaceFileContent,
+              {
+                fileId: fileRecord.id,
+                assertedWorkspaceId: workspaceId,
+              },
+              { fileId: fileRecord.id }
+            )
+          ).content
+          const existingContent = currentBuffer.toString('utf-8')
+          const isPlainTextUpdate = isPlainTextWorkspaceFileName(fileRecord.name)
+          const preserveHint =
+            isPlainTextUpdate && existingContent.length > 0
+              ? ' edit_content must start from the current file with only the requested change — do not regenerate from scratch. For a small change (title, heading, one string) prefer operation=patch with search_replace instead.'
+              : ''
+
           await storeFileIntent(workspaceId, fileRecord.id, {
             operation: 'update',
             fileId: fileRecord.id,
@@ -582,6 +601,7 @@ export const workspaceFileServerTool: BaseServerTool<WorkspaceFileArgs, Workspac
             messageId: context.messageId,
             channelId: context.parentToolCallId,
             fileRecord,
+            existingContent,
             contentType: normalized.contentType,
             title: normalized.title,
             createdAt: Date.now(),
@@ -590,7 +610,7 @@ export const workspaceFileServerTool: BaseServerTool<WorkspaceFileArgs, Workspac
           return {
             success: true,
             message: withMessageId(
-              `Intent set: update "${fileRecord.name}". Wait for this success result, then call edit_content in the next step with the replacement content. Do not call edit_content in parallel.`
+              `Intent set: update "${fileRecord.name}". Wait for this success result, then call edit_content in the next step with the replacement content.${preserveHint} Do not call edit_content in parallel.`
             ),
             data: { id: fileRecord.id, name: fileRecord.name, vfsPath, operation: 'update' },
           }

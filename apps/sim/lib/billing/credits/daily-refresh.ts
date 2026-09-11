@@ -15,6 +15,7 @@ import { db } from '@sim/db'
 import { member, usageLog, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, gte, inArray, lt, or, sql, sum } from 'drizzle-orm'
+import { isDailyRefreshEnabled } from '@/lib/billing/arena/daily-refresh-policy'
 import { DAILY_REFRESH_RATE } from '@/lib/billing/constants'
 import type { DbClient } from '@/lib/db/types'
 
@@ -64,6 +65,7 @@ export async function computeDailyRefreshConsumed(
     billingEntity,
   } = params
 
+  if (!isDailyRefreshEnabled()) return 0
   if (planDollars <= 0 || userIds.length === 0) return 0
 
   const dailyRefreshDollars = planDollars * DAILY_REFRESH_RATE * seats
@@ -153,6 +155,7 @@ export async function computeDailyRefreshConsumed(
  * Get the daily refresh allowance in dollars for a plan.
  */
 export function getDailyRefreshDollars(planDollars: number): number {
+  if (!isDailyRefreshEnabled()) return 0
   return planDollars * DAILY_REFRESH_RATE
 }
 

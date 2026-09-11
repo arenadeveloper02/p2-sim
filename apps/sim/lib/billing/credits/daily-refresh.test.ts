@@ -20,6 +20,10 @@ vi.mock('@/lib/billing/constants', () => ({
   DAILY_REFRESH_RATE: 0.01,
 }))
 
+vi.mock('@/lib/billing/arena/daily-refresh-policy', () => ({
+  isDailyRefreshEnabled: vi.fn(() => true),
+}))
+
 import {
   computeDailyRefreshConsumed,
   getDailyRefreshDollars,

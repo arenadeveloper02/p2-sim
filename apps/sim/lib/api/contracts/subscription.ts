@@ -152,7 +152,7 @@ export const organizationBillingDataSchema = z
   .object({
     organizationId: z.string(),
     organizationName: z.string(),
-    subscriptionState: z.enum(['active', 'free', 'lapsed']),
+    subscriptionState: z.enum(['active', 'free', 'lapsed', 'starter_expired']),
     hasSubscription: z.boolean(),
     subscriptionPlan: z.string(),
     subscriptionStatus: z.string().nullable(),

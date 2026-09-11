@@ -143,6 +143,43 @@ export const updateUserSettingsContract = defineRouteContract({
   },
 })
 
+export const getArenaUserSettingsQuerySchema = z.object({
+  emailId: z.string().email('Please provide a valid email address'),
+})
+
+export type GetArenaUserSettingsQuery = z.input<typeof getArenaUserSettingsQuerySchema>
+
+export const getArenaUserSettingsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/users/me/settings/arena',
+  query: getArenaUserSettingsQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      data: userSettingsSchema,
+    }),
+  },
+})
+
+export const updateArenaUserSettingsBodySchema = z.object({
+  emailId: z.string().email('Please provide a valid email address'),
+  theme: z.enum(['system', 'light', 'dark']),
+})
+
+export type UpdateArenaUserSettingsBody = z.input<typeof updateArenaUserSettingsBodySchema>
+
+export const updateArenaUserSettingsContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/users/me/settings/arena',
+  body: updateArenaUserSettingsBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+    }),
+  },
+})
+
 export const forgetPasswordBodySchema = z.object({
   email: z.string({ error: 'Email is required' }).email('Please provide a valid email address'),
   redirectTo: z

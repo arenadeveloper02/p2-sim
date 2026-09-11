@@ -528,12 +528,7 @@ export function ChatDeploy({
 
   return (
     <>
-      <form
-        id='chat-deploy-form'
-        ref={formRef}
-        onSubmit={handleSubmit}
-        className='-mx-1 space-y-4 px-1'
-      >
+      <form id={formId} ref={formRef} onSubmit={handleSubmit} className='-mx-1 space-y-4 px-1'>
         {errors.general && (
           <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
             <TriangleAlert className='size-4 flex-shrink-0' />

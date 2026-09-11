@@ -7,8 +7,8 @@ import { DEFAULT_BILLING_CONCURRENCY_LIMITS } from '@/lib/billing/concurrency-de
 export interface PlanCredits {
   /** Formatted credits string, e.g. `"6,000 credits/mo"`. */
   credits: string
-  /** Formatted daily-refresh string, e.g. `"+50/day refresh"`. */
-  refresh: string
+  /** Formatted daily-refresh string, e.g. `"+50/day refresh"`. Omitted when refresh is disabled. */
+  refresh?: string
 }
 
 export const PRO_PLAN_CREDITS: PlanCredits = {

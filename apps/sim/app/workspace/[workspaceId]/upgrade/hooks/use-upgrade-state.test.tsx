@@ -5,21 +5,29 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockHandleUpgrade, mockInvalidateQueries, mockRequestJson, mockToastError } = vi.hoisted(
-  () => ({
-    mockHandleUpgrade: vi.fn(),
-    mockInvalidateQueries: vi.fn(),
-    mockRequestJson: vi.fn(),
-    mockToastError: vi.fn(),
-  })
-)
+const {
+  mockHandleUpgrade,
+  mockInvalidateQueries,
+  mockSetQueryData,
+  mockRequestJson,
+  mockToastError,
+} = vi.hoisted(() => ({
+  mockHandleUpgrade: vi.fn(),
+  mockInvalidateQueries: vi.fn(),
+  mockSetQueryData: vi.fn(),
+  mockRequestJson: vi.fn(),
+  mockToastError: vi.fn(),
+}))
 
 vi.mock('@sim/emcn', () => ({
   toast: { error: mockToastError },
 }))
 
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+  useQueryClient: () => ({
+    invalidateQueries: mockInvalidateQueries,
+    setQueryData: mockSetQueryData,
+  }),
 }))
 
 vi.mock('@/lib/api/client/request', () => ({
@@ -27,7 +35,11 @@ vi.mock('@/lib/api/client/request', () => ({
 }))
 
 vi.mock('@/lib/billing/client/upgrade', () => ({
-  useSubscriptionUpgrade: () => ({ handleUpgrade: mockHandleUpgrade }),
+  useSubscriptionUpgrade: () => ({
+    handleUpgrade: mockHandleUpgrade,
+    isSessionPending: false,
+    hasAuthenticatedUser: true,
+  }),
 }))
 
 import type { WorkspaceHostContext } from '@/lib/api/contracts/workspaces'
@@ -155,5 +167,135 @@ describe('useUpgradeState', () => {
         },
       })
     )
+  })
+
+  it('optimistically aligns the toggle and host-context interval after a switch', async () => {
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    expect(currentState?.isAnnual).toBe(false)
+
+    await act(async () => {
+      await currentState?.handleSwitchInterval('year')
+    })
+
+    expect(currentState?.isAnnual).toBe(true)
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['workspace-host', 'detail', 'workspace-b'],
+      expect.any(Function)
+    )
+
+    const updater = mockSetQueryData.mock.calls[0][1] as (
+      previous: WorkspaceHostContext | undefined
+    ) => WorkspaceHostContext | undefined
+    expect(updater(HOST_CONTEXT)?.ownerBilling.billingInterval).toBe('year')
+    expect(updater(undefined)).toBeUndefined()
+  })
+
+  it('exposes checkout and interval pending flags while requests are in flight', async () => {
+    let resolveUpgrade: (() => void) | undefined
+    mockHandleUpgrade.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveUpgrade = resolve
+        })
+    )
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(false)
+    expect(currentState?.isSwitchingInterval).toBe(false)
+
+    let upgradePromise: Promise<void> | undefined
+    await act(async () => {
+      upgradePromise = currentState?.doUpgrade('team', 25000)
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(true)
+
+    await act(async () => {
+      resolveUpgrade?.()
+      await upgradePromise
+    })
+
+    // Stripe redirect leaves pending locked until the page unloads.
+    expect(currentState?.isStartingCheckout).toBe(true)
+
+    let resolveSwitch: (() => void) | undefined
+    mockRequestJson.mockImplementationOnce(
+      () =>
+        new Promise<{ success: true }>((resolve) => {
+          resolveSwitch = () => resolve({ success: true })
+        })
+    )
+
+    // Simulate a fresh mount after returning from Stripe (refs reset).
+    await act(async () => {
+      root.unmount()
+      root = createRoot(container)
+      root.render(<Harness />)
+    })
+
+    let switchPromise: Promise<void> | undefined
+    await act(async () => {
+      switchPromise = currentState?.handleSwitchInterval('year')
+    })
+
+    expect(currentState?.isSwitchingInterval).toBe(true)
+
+    await act(async () => {
+      resolveSwitch?.()
+      await switchPromise
+    })
+
+    expect(currentState?.isSwitchingInterval).toBe(false)
+  })
+
+  it('ignores overlapping checkout starts while one is already in flight', async () => {
+    let resolveUpgrade: (() => void) | undefined
+    mockHandleUpgrade.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveUpgrade = resolve
+        })
+    )
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    let first: Promise<void> | undefined
+    await act(async () => {
+      first = currentState?.doUpgrade('team', 25000)
+      void currentState?.doUpgrade('team', 25000)
+      void currentState?.doUpgrade('team', 25000)
+    })
+
+    expect(mockHandleUpgrade).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveUpgrade?.()
+      await first
+    })
+
+    expect(mockHandleUpgrade).toHaveBeenCalledTimes(1)
+  })
+
+  it('unlocks checkout CTAs when Stripe checkout fails to start', async () => {
+    mockHandleUpgrade.mockRejectedValueOnce(new Error('Checkout could not be started.'))
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+
+    await act(async () => {
+      await currentState?.doUpgrade('team', 25000)
+    })
+
+    expect(currentState?.isStartingCheckout).toBe(false)
+    expect(mockToastError).toHaveBeenCalledWith('Checkout could not be started.')
   })
 })

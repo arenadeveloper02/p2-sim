@@ -1,10 +1,13 @@
 import {
   buildUnifiedSettingsNavigation,
+  isPlatformAdminSettingsSection,
   SETTINGS_NAVIGATION_BILLING_ENABLED,
   type UnifiedNavigationSection,
   type UnifiedSettingsNavigationItem,
   type UnifiedSettingsSection,
 } from '@/components/settings/navigation'
+
+export { isPlatformAdminSettingsSection }
 
 export type SettingsSection = UnifiedSettingsSection
 

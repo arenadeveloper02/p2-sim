@@ -39,6 +39,7 @@ import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFile } from '@/lib/core/utils/user-file'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
+import { pickPreferredOAuthCredential } from '@/lib/credentials/pick-oauth-credential'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import {
   isDurableSecretProvenanceEnforced,
@@ -714,19 +715,7 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
   if (!userId || !workspaceId) return
   try {
     const accessible = await getAccessibleOAuthCredentials(workspaceId, userId)
-    const exact = accessible.find((c) => c.providerId === oauth.provider)
-    const googleDriveScopeProviders = new Set([
-      'google-drive',
-      'google-docs',
-      'google-sheets',
-      'google-slides',
-      'google-forms',
-    ])
-    const match =
-      exact ??
-      (googleDriveScopeProviders.has(oauth.provider)
-        ? accessible.find((c) => googleDriveScopeProviders.has(c.providerId))
-        : undefined)
+    const match = pickPreferredOAuthCredential(accessible, oauth.provider, userId)
     if (!match) return
     params.credential = match.id
     logger.info(`[${requestId}] Auto-resolved OAuth credential for ${tool.id}`, {

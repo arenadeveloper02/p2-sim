@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import {
   ArrowRight,
   Badge,
@@ -12,14 +13,17 @@ import {
   Tooltip,
   toast,
 } from '@sim/emcn'
+import { Loader } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { getErrorMessage } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
 import { useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
+import { isArenaBilling } from '@/lib/billing/arena/env'
+import { isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import {
   getCoveredUsage,
   getIsOnDemandActive,
@@ -43,7 +47,9 @@ import {
 } from '@/lib/billing/subscriptions/utils'
 import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { CancelPlanModal } from '@/app/workspace/[workspaceId]/settings/components/billing/components/cancel-plan-modal/cancel-plan-modal'
 import { CreditUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section'
+import { PrepaidTopUpSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/prepaid-top-up-section/prepaid-top-up-section'
 import { UsageLimitField } from '@/app/workspace/[workspaceId]/settings/components/billing/components/usage-limit-field/usage-limit-field'
 import { getSubscriptionPermissions } from '@/app/workspace/[workspaceId]/settings/components/billing/subscription-permissions'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
@@ -104,8 +110,6 @@ interface BillingProps {
   organizationId?: string
   creditUsageHref?: string
   governingWorkspaceName?: string
-  /** When true, skip the compact credit-usage glance (Arena shell renders BillingCreditUsagePanel instead). */
-  hideCreditUsageSection?: boolean
 }
 
 export function Billing({
@@ -113,7 +117,6 @@ export function Billing({
   organizationId,
   creditUsageHref,
   governingWorkspaceName,
-  hideCreditUsageSection = false,
 }: BillingProps) {
   const router = useRouter()
   const isOrganizationScope = scope === 'organization'
@@ -143,6 +146,9 @@ export function Billing({
   const { data: session } = useSession()
   const betterAuthSubscription = useSubscription()
   const openBillingPortal = useOpenBillingPortal()
+  const [cancelModalOpen, setCancelModalOpen] = useState(false)
+  const [isCancelPending, setIsCancelPending] = useState(false)
+  const [isRestorePending, setIsRestorePending] = useState(false)
 
   const organizationBilling = organizationBillingData?.data
   const upgradeWorkspaceId = isOrganizationScope
@@ -213,7 +219,7 @@ export function Billing({
   const planIncludedAmount =
     subscription.isOrgScoped && organizationBilling
       ? organizationBilling.minimumBillingAmount
-      : getPlanTierCredits(subscription.plan) / CREDIT_MULTIPLIER
+      : getPlanTierCredits(subscription.plan) / getCreditsPerDollar()
 
   const effectiveUsageLimit =
     subscription.isOrgScoped && organizationBilling
@@ -358,6 +364,7 @@ export function Billing({
       return
     }
     if (!betterAuthSubscription.cancel) return
+    setIsCancelPending(true)
     try {
       if (subscription.isOrgScoped && !billingOrganizationId) {
         throw new Error(
@@ -367,11 +374,14 @@ export function Billing({
       const referenceId = subscription.isOrgScoped ? billingOrganizationId : session?.user?.id
       const returnUrl = getBaseUrl() + window.location.pathname
       await betterAuthSubscription.cancel({ returnUrl, referenceId: referenceId || '' })
+      setCancelModalOpen(false)
     } catch (error) {
       logger.error('Failed to cancel subscription', { error })
       toast.error("Couldn't cancel subscription", {
         description: getErrorMessage(error, 'Please try again in a moment.'),
       })
+    } finally {
+      setIsCancelPending(false)
     }
   }
 
@@ -383,6 +393,7 @@ export function Billing({
       return
     }
     if (!betterAuthSubscription.restore) return
+    setIsRestorePending(true)
     try {
       if (subscription.isOrgScoped && !billingOrganizationId) {
         throw new Error(
@@ -398,6 +409,8 @@ export function Billing({
       toast.error("Couldn't restore subscription", {
         description: getErrorMessage(error, 'Please try again in a moment.'),
       })
+    } finally {
+      setIsRestorePending(false)
     }
   }
 
@@ -422,7 +435,7 @@ export function Billing({
         ? 'Choose a new plan for this organization'
         : subscription.isEnterprise
           ? 'Custom pricing'
-          : `$${getPlanTierDollars(subscription.plan)} per user/month, ${billingPeriod}`
+          : `$${getPlanTierDollars(subscription.plan)}/month per organization, ${billingPeriod}`
 
   const periodEnd = isOrganizationScope
     ? (organizationBilling?.billingPeriodEnd ?? null)
@@ -444,6 +457,12 @@ export function Billing({
   const canExplorePlans = permissions.showUpgradePlans
   const showUsageLimit = subscription.isPaid && !subscription.isEnterprise
   const showOnDemand = hasUsablePaidAccess && !subscription.isEnterprise
+  const showPrepaidTopUp =
+    isOrganizationScope &&
+    subscription.isPaid &&
+    !subscription.isEnterprise &&
+    hasUsablePaidAccess &&
+    !isCancelledAtPeriodEnd
 
   const usageLimitCurrent =
     subscription.isOrgScoped && organizationBilling
@@ -496,7 +515,14 @@ export function Billing({
           ))}
       </div>
 
-      {showUsageLimit && (
+      {showPrepaidTopUp && (
+        <PrepaidTopUpSection
+          canPurchase={canManageBilling}
+          onManagePaymentMethod={handleOpenBillingPortal}
+        />
+      )}
+
+      {false && showUsageLimit && (
         <UsageLimitField
           currentLimit={usageLimitCurrent}
           minimumLimit={usageLimitMinimum}
@@ -508,7 +534,7 @@ export function Billing({
         />
       )}
 
-      {showOnDemand && (
+      {false && showOnDemand && (
         <SettingsSection label='Enable on-demand usage'>
           <div className='flex items-center justify-between'>
             <Label htmlFor='on-demand-usage'>Allow usage to go past included usage</Label>
@@ -597,17 +623,14 @@ export function Billing({
                 {isCancelledAtPeriodEnd ? (
                   <Chip
                     variant='primary'
-                    disabled={!canManageBilling}
+                    disabled={!canManageBilling || isRestorePending}
                     onClick={handleRestoreSubscription}
+                    leftIcon={isRestorePending ? Loader : undefined}
                   >
-                    Restore
+                    {isRestorePending ? 'Restoring...' : 'Restore'}
                   </Chip>
                 ) : (
-                  <Chip
-                    variant='destructive'
-                    disabled={!canManageBilling}
-                    onClick={handleCancelSubscription}
-                  >
+                  <Chip disabled={!canManageBilling} onClick={() => setCancelModalOpen(true)}>
                     Cancel
                   </Chip>
                 )}
@@ -676,9 +699,18 @@ export function Billing({
         </SettingsSection>
       )}
 
-      {!hideCreditUsageSection && !isOrganizationScope && !subscription.isEnterprise && (
-        <CreditUsageSection href={creditUsageHref} />
-      )}
+      {!isStarterPlan(subscription.plan) && <CreditUsageSection href={creditUsageHref} />}
+
+      <CancelPlanModal
+        open={cancelModalOpen}
+        onOpenChange={setCancelModalOpen}
+        planName={planName}
+        isArena={isArenaBilling()}
+        onConfirmCancel={() => {
+          void handleCancelSubscription()
+        }}
+        isConfirming={isCancelPending}
+      />
     </SettingsPanel>
   )
 }

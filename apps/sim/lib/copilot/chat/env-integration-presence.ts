@@ -34,6 +34,8 @@ export interface OAuthIntegrationPresence {
   providerId: string
   displayName?: string | null
   role?: string | null
+  /** True when this OAuth connection belongs to the signed-in user. */
+  isOwn?: boolean
 }
 
 /**

@@ -60,6 +60,8 @@ const PROVIDER_SERVICES: Record<string, string[]> = {
 export interface WorkspaceMdData {
   workspace: { id: string; name: string; ownerId: string } | null
   members: Array<{ name: string; email: string; permissionType: string }>
+  /** Signed-in user for this Copilot turn — used to resolve "my account" questions. */
+  currentUser?: { name?: string | null; email: string }
   workflows: Array<{
     id: string
     name: string
@@ -84,6 +86,7 @@ export interface WorkspaceMdData {
     providerId: string
     displayName?: string | null
     role?: string | null
+    isOwn?: boolean
   }>
   envVariables: string[]
   customTools?: Array<{ id: string; name: string }>
@@ -135,6 +138,15 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
   if (data.workspace) {
     sections.push(
       `## Workspace\n- **Name**: ${data.workspace.name}\n- **ID**: ${data.workspace.id}\n- **Owner**: ${data.workspace.ownerId}`
+    )
+  }
+
+  if (data.currentUser?.email) {
+    const display = data.currentUser.name
+      ? `${data.currentUser.name} (${data.currentUser.email})`
+      : data.currentUser.email
+    sections.push(
+      `## Current user\n- **You are** ${display}. For "my email", "my account", "my inbox", and similar, use this identity and Connected Integrations marked current user — not other workspace members.`
     )
   }
 
@@ -263,7 +275,8 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
         const svc = services ? ` (${services.join(', ')})` : ''
         const who = c.displayName ? ` — ${c.displayName}` : ''
         const role = c.role ? `, ${c.role}` : ''
-        return `- ${c.providerId}${svc}${who}${role} — credentialId: \`${c.id}\``
+        const own = c.isOwn ? ' — current user' : ''
+        return `- ${c.providerId}${svc}${who}${role}${own} — credentialId: \`${c.id}\``
       })
     sections.push(
       `## Connected Integrations\nPass these credentialId values directly on OAuth tool calls — no need to read environment/credentials.json for them.\n${lines.join('\n')}`
@@ -343,15 +356,15 @@ export function buildWorkspaceContextMd(data: WorkspaceMdData): string {
  * Injected into mothership workspace context so the agent uses built-in file tools
  * for DOCX/PPTX/PDF instead of function_execute (Python docx/matplotlib, etc.).
  */
-const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF, Markdown)
+const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF, Markdown, HTML)
 
 Do **not** use \`function_execute\` to create or edit Word, PowerPoint, or PDF workspace files (no Python \`python-docx\` / \`matplotlib\`, no shell, no \`require\` hacks) unless the user explicitly asks to run code in a sandbox.
 
 Use the built-in file tools instead:
 
-1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`, \`Notes.md\`). Pass \`content\` for markdown/text; empty shell for office formats.
-2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\` or \`target.kind=path\`, and a short \`title\`. Wait for success before the next step.
-3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file). For office files this is **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python). Never \`require\` / \`import\`. Never \`docx.addSection\` — use global \`addSection\`.
+1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`, \`Notes.md\`, \`Page.html\`). Pass \`content\` for markdown/text/html; empty shell for office formats.
+2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\` or \`target.kind=path\`, and a short \`title\`. Wait for success before the next step. For existing HTML/text, \`read\` \`files/<path>/content\` first. Targeted edits (title, heading, one string) must use \`operation=patch\` with \`search_replace\` — \`update\` replaces the entire file.
+3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file). For office files this is **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python). Never \`require\` / \`import\`. Never \`docx.addSection\` — use global \`addSection\`. For HTML patches, pass only the replacement substring.
 
 ${DOCUMENT_FORMAT_GUIDANCE}
 
@@ -530,10 +543,14 @@ async function buildWorkspaceMdData(
     }
 
     const hubspotSharedAccounts = getHubSpotSharedAccountOptionIds()
+    const currentMember = members.find((member) => member.userId === userId)
 
     return {
       workspace: wsRow,
       members,
+      currentUser: currentMember?.email
+        ? { name: currentMember.name, email: currentMember.email }
+        : undefined,
       workflows: workflows.map((wf) => ({
         ...wf,
         folderPath: wf.folderId ? resolveFolderPath(wf.folderId) : null,
@@ -560,6 +577,7 @@ async function buildWorkspaceMdData(
           providerId: c.providerId,
           displayName: c.displayName,
           role: c.role,
+          isOwn: c.ownerUserId === userId,
         })),
         envCredentials.map((credential) => credential.envKey),
         hubspotSharedAccounts

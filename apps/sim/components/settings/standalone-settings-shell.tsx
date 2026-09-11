@@ -12,6 +12,7 @@ import {
   getOrganizationSettingsHref,
   getSelfHostSettingsHref,
   isOrganizationSettingsSectionAvailable,
+  isPlatformAdminSettingsSection,
   ORGANIZATION_SETTINGS_GROUPS,
   ORGANIZATION_SETTINGS_ITEMS,
   ORGANIZATION_SETTINGS_PATH_ALIASES,
@@ -64,7 +65,7 @@ export function StandaloneSettingsShell(props: StandaloneSettingsShellProps) {
   const organizationFeatures = getOrganizationSettingsFeatures(hasEnterprisePlan)
   const accountItems = ACCOUNT_SETTINGS_ITEMS.filter((item) => {
     if (item.id === 'billing' && !isBillingEnabled) return false
-    if ((item.id === 'admin' || item.id === 'mothership') && !isSuperUser) return false
+    if (isPlatformAdminSettingsSection(item.id) && !isSuperUser) return false
     return true
   })
   const organizationItems = ORGANIZATION_SETTINGS_ITEMS.filter(

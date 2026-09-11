@@ -61,12 +61,12 @@ const POOL: Record<AutoMediaKind, Record<AutoTierId, readonly string[]>> = {
     '3': ['fireworks/kimi-k3'],
   },
   image: {
-    '1': ['gemini-3.6-flash'],
+    '1': ['gemini-3.8-flash'],
     '2': ['fireworks/kimi-k3'],
     '3': ['fireworks/kimi-k3'],
   },
   file: {
-    '1': ['gemini-3.6-flash'],
+    '1': ['gemini-3.8-flash'],
     '2': ['claude-sonnet-5'],
     '3': ['gpt-5.6-sol'],
   },

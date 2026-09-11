@@ -4,6 +4,7 @@ import { createBedrockProvider } from '@/local-copilot/lib/providers/bedrock'
 import { createGeminiProvider } from '@/local-copilot/lib/providers/gemini'
 import { createOpenAiCompatibleProvider } from '@/local-copilot/lib/providers/openai-compatible'
 import type { LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
+import { createVertexProvider } from '@/local-copilot/lib/providers/vertex'
 import type { LocalCopilotConfig } from '@/local-copilot/lib/types'
 
 let cachedProvider: LocalCopilotProvider | null = null
@@ -18,6 +19,8 @@ export function createLocalCopilotProvider(config: LocalCopilotConfig): LocalCop
       return createAnthropicProvider(config)
     case 'gemini':
       return createGeminiProvider(config)
+    case 'vertex':
+      return createVertexProvider(config)
     case 'bedrock':
       return createBedrockProvider(config)
     default:
@@ -30,7 +33,7 @@ export function createLocalCopilotProvider(config: LocalCopilotConfig): LocalCop
  */
 export function getLocalCopilotProvider(): LocalCopilotProvider {
   const config = getLocalCopilotConfig()
-  const cacheKey = `${config.provider}:${config.baseUrl ?? ''}:${config.model}:${config.apiKey ?? ''}:${config.region ?? ''}`
+  const cacheKey = `${config.provider}:${config.baseUrl ?? ''}:${config.model}:${config.apiKey ?? ''}:${config.region ?? ''}:${process.env.VERTEX_PROJECT ?? ''}:${process.env.VERTEX_LOCATION ?? ''}`
 
   if (cachedProvider && cachedProviderKey === cacheKey) {
     return cachedProvider

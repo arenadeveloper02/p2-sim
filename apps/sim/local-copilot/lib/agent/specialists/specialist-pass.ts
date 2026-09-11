@@ -23,6 +23,7 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { resolveLocalCopilotMaxOutputTokens } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import {
@@ -30,12 +31,13 @@ import {
   waitForLocalToolConfirmation,
 } from '@/local-copilot/lib/security/request-tool-confirmation'
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
-  detectMandatoryFollowUp,
+  detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
@@ -107,6 +109,7 @@ export interface SpecialistPassResult {
   structured?: SpecialistStructuredResult
   verifications?: VerificationRecord[]
   mutationOutcomes?: MutationOutcome[]
+  pendingFollowUps?: MandatoryFollowUp[]
 }
 
 function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
@@ -224,6 +227,9 @@ export async function executeSpecialistLoop(
         role: 'system',
         content: `You are a focused Arena Copilot specialist (${params.domain}). ${domainSystemHint(params.domain)} Complete the request using your tools — you may perform domain writes when needed. You may call other specialist tools if another domain is required (nesting is budgeted). Keep the final reply under 8 sentences with actionable facts and outcomes.`,
       },
+      ...(params.toolCtx.relevantSkillGuidance
+        ? [{ role: 'system' as const, content: params.toolCtx.relevantSkillGuidance }]
+        : []),
       { role: 'user', content: params.userMessage },
     ]
 
@@ -270,6 +276,7 @@ export async function executeSpecialistLoop(
           model: params.model,
           messages,
           tools,
+          maxTokens: resolveLocalCopilotMaxOutputTokens(params.model),
           signal,
         })) {
           if (chunk.type === 'text' && chunk.content) assistantText += chunk.content
@@ -481,9 +488,6 @@ export async function executeSpecialistLoop(
 
         if (toolResult.createdWorkflowId) {
           params.toolCtx.workflowId = toolResult.createdWorkflowId
-          const refreshed = await refreshToolContext(params.toolCtx)
-          params.toolCtx.structuredContext = refreshed.structuredContext
-          params.toolCtx.workflowRevision = refreshed.workflowRevision
         } else if (call.name === 'edit_workflow' && toolResult.success) {
           const output =
             toolResult.result && typeof toolResult.result === 'object'
@@ -496,6 +500,16 @@ export async function executeSpecialistLoop(
           if (resolvedWorkflowId) {
             params.toolCtx.workflowId = resolvedWorkflowId
           }
+        }
+
+        if (
+          toolRequiresWorkflowContextRefresh({
+            toolName: call.name,
+            success: toolResult.success,
+            createdWorkflowId: toolResult.createdWorkflowId,
+            result: toolResult.result,
+          })
+        ) {
           const refreshed = await refreshToolContext(params.toolCtx)
           params.toolCtx.structuredContext = refreshed.structuredContext
           params.toolCtx.workflowRevision = refreshed.workflowRevision
@@ -508,7 +522,12 @@ export async function executeSpecialistLoop(
             artifactStore: params.toolCtx.artifactStore,
           }
         )
-        const mandatoryFollowUp = detectMandatoryFollowUp(call.name, llmPayload)
+        const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
+          call.name,
+          toolResult.success,
+          toolResult.result,
+          llmPayload
+        )
         if (mandatoryFollowUp) {
           pendingFollowUps = [
             ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
@@ -628,6 +647,7 @@ export async function executeSpecialistLoop(
       structured,
       verifications,
       mutationOutcomes,
+      ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
     }
   } catch (error) {
     const message = getErrorMessage(error, 'specialist failed')

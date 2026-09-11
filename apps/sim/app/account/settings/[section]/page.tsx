@@ -7,6 +7,7 @@ import {
   ACCOUNT_SETTINGS_PATH_ALIASES,
   getAccountSettingsHref,
   getSettingsSectionMeta,
+  isPlatformAdminSettingsSection,
   parseSettingsPathSection,
 } from '@/components/settings/navigation'
 import { getSession } from '@/lib/auth'
@@ -46,7 +47,7 @@ export default async function AccountSettingsSectionPage({
   })
   if (!parsed) notFound()
   if (parsed === 'billing' && !isBillingEnabled) redirect(getAccountSettingsHref('general'))
-  if (parsed === 'admin' || parsed === 'mothership') {
+  if (isPlatformAdminSettingsSection(parsed)) {
     const isSuperUser = await isPlatformAdmin(session.user.id)
     if (!isSuperUser) notFound()
   }

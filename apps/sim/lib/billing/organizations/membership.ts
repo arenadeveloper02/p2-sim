@@ -33,7 +33,7 @@ import {
 } from '@/lib/billing/enterprise-outbox'
 import { acquireUserBillingIdentityLock } from '@/lib/billing/organizations/billing-identity-lock'
 import { setOrgMemberUsageLimit } from '@/lib/billing/organizations/member-limits'
-import { isPaid, sqlIsPro } from '@/lib/billing/plan-helpers'
+import { hasOrganizationSeatEntitlement, isPaid, sqlIsPro } from '@/lib/billing/plan-helpers'
 import { changeOrganizationWorkspaceBilledAccountsInTx } from '@/lib/billing/storage/payer-transfer'
 import {
   ENTITLED_SUBSCRIPTION_STATUSES,
@@ -715,7 +715,7 @@ export async function ensureUserInOrganizationTx(
         )
       )
       .limit(1)
-    if (!organizationSubscription || !isPaid(organizationSubscription.plan)) {
+    if (!organizationSubscription || !hasOrganizationSeatEntitlement(organizationSubscription)) {
       return {
         success: false,
         alreadyMember: false,

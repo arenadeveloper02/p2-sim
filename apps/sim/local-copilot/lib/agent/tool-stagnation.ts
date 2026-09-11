@@ -17,6 +17,8 @@ export const TOOL_STAGNATION_THRESHOLD = 3
  */
 export const DISCOVERY_STAGNATION_THRESHOLD = 4
 
+const STAGNATION_EXEMPT_TOOLS = new Set(['validate_workflow', 'load_user_skill'])
+
 /** Cap fingerprint payload size so huge args don't dominate. */
 const FINGERPRINT_ARGS_MAX = 400
 
@@ -36,7 +38,7 @@ export function fingerprintToolCall(
   success: boolean,
   result: unknown
 ): string {
-  const normalizedArgs = normalizeArgsForStagnation(toolName, argsJson)
+  const normalizedArgs = normalizeArgsForStagnation(toolName, argsJson, success, result)
   const outcome = success
     ? `ok:${successOutcomeSignature(toolName, result)}`
     : `err:${outcomeSignature(result)}`
@@ -59,7 +61,7 @@ export function createToolStagnationTracker(threshold = TOOL_STAGNATION_THRESHOL
 
   return {
     record(toolName, argsJson, success, result) {
-      if (toolName === 'validate_workflow') {
+      if (STAGNATION_EXEMPT_TOOLS.has(toolName)) {
         return null
       }
 
@@ -103,23 +105,33 @@ export function buildStagnationSystemMessage(hit: ToolStagnationHit): string {
 }
 
 /**
- * Coarse arg shape for stagnation: edit retries that only tweak param values or
- * JSON formatting still count as the same loop; discovery fingerprints on ids only.
+ * Coarse arg shape for failed / incomplete edits so value-only retries still
+ * count as the same loop. Successful edits fingerprint the full args.
  */
-function normalizeArgsForStagnation(toolName: string, argsJson: string): string {
+function normalizeArgsForStagnation(
+  toolName: string,
+  argsJson: string,
+  success: boolean,
+  result: unknown
+): string {
   const trimmed = argsJson.trim() || '{}'
   try {
     const parsed = JSON.parse(trimmed) as unknown
-    if (toolName === 'edit_workflow') {
-      return JSON.stringify(editWorkflowStagnationShape(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
-    }
     if (toolName === 'get_blocks_metadata') {
       return JSON.stringify(blockIdsStagnationShape(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
+    }
+    if (toolName === 'edit_workflow' && shouldCoarseEditWorkflowArgs(success, result)) {
+      return JSON.stringify(editWorkflowStagnationShape(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
     }
     return JSON.stringify(sortJson(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
   } catch {
     return trimmed.slice(0, FINGERPRINT_ARGS_MAX)
   }
+}
+
+function shouldCoarseEditWorkflowArgs(success: boolean, result: unknown): boolean {
+  if (!success) return true
+  return editWorkflowNeedsFollowUp(result) || isOAuthOnlyEditResult(result)
 }
 
 function editWorkflowStagnationShape(value: unknown): unknown {

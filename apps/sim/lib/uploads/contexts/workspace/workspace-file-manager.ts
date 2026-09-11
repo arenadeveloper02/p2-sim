@@ -14,7 +14,7 @@ import {
   getPostgresErrorCode,
 } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
-import { and, eq, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm'
 import type { ShareRecord } from '@/lib/api/contracts/public-shares'
 import type { V2FileSortBy } from '@/lib/api/contracts/v2/files'
 import type { ListSortOrder } from '@/lib/api/list-query'
@@ -1071,18 +1071,20 @@ async function mapSingleWorkspaceFileRecord(
   file: typeof workspaceFiles.$inferSelect,
   workspaceId: string
 ): Promise<WorkspaceFileRecord> {
-  if (!file.folderId) {
-    return mapWorkspaceFileRecord(file, workspaceId, new Map())
-  }
-
-  const folderPath = await getWorkspaceFileFolderPath(workspaceId, file.folderId, {
-    includeDeleted: true,
-  })
-  return mapWorkspaceFileRecord(
+  const folderPath = file.folderId
+    ? await getWorkspaceFileFolderPath(workspaceId, file.folderId, {
+        includeDeleted: true,
+      })
+    : null
+  const record = mapWorkspaceFileRecord(
     file,
     workspaceId,
-    folderPath ? new Map([[file.folderId, folderPath]]) : new Map()
+    file.folderId && folderPath ? new Map([[file.folderId, folderPath]]) : new Map()
   )
+  if (file.context === 'mothership') {
+    record.storageContext = 'mothership'
+  }
+  return record
 }
 
 /**
@@ -1430,10 +1432,13 @@ export async function resolveWorkspaceFileReference(
 /**
  * Load the canonical authorization context for an active workspace file by resource ID.
  * Database failures propagate so callers never confuse unavailable state with a missing file.
+ *
+ * Chat attachments share `workspace/` storage keys but are stored as `context='mothership'`.
+ * Pass `includeMothership` when serving by key so those rows authorize the same way.
  */
 export async function loadActiveWorkspaceFileContext(
   fileId: string,
-  options?: { includeDeleted?: boolean }
+  options?: { includeDeleted?: boolean; includeMothership?: boolean }
 ): Promise<ActiveWorkspaceFileContext | null> {
   const [context] = await db
     .select({
@@ -1448,7 +1453,7 @@ export async function loadActiveWorkspaceFileContext(
     .where(
       and(
         eq(workspaceFiles.id, fileId),
-        eq(workspaceFiles.context, 'workspace'),
+        servableWorkspaceFileContext(options?.includeMothership),
         ...(options?.includeDeleted ? [] : [isNull(workspaceFiles.deletedAt)]),
         isNull(workspace.archivedAt)
       )
@@ -1456,6 +1461,12 @@ export async function loadActiveWorkspaceFileContext(
     .limit(1)
 
   return context ?? null
+}
+
+function servableWorkspaceFileContext(includeMothership?: boolean) {
+  return includeMothership
+    ? inArray(workspaceFiles.context, ['workspace', 'mothership'])
+    : eq(workspaceFiles.context, 'workspace')
 }
 
 /**
@@ -1514,14 +1525,17 @@ export async function loadActiveWorkspaceContext(
  * distinguish a genuinely-absent file (`null`) from a transient read failure (throws): the
  * collaborative-doc seed builder relies on this so a DB blip never looks like an empty file and gets
  * seeded as blank content over the real document.
+ *
+ * Pass `{ includeMothership: true }` to also load chat attachments, which share `workspace/` keys
+ * but are stored as `context='mothership'`.
  */
 export async function getWorkspaceFile(
   workspaceId: string,
   fileId: string,
-  options?: { includeDeleted?: boolean; throwOnError?: boolean }
+  options?: { includeDeleted?: boolean; throwOnError?: boolean; includeMothership?: boolean }
 ): Promise<WorkspaceFileRecord | null> {
   try {
-    const { includeDeleted = false } = options ?? {}
+    const { includeDeleted = false, includeMothership = false } = options ?? {}
     const files = await db
       .select()
       .from(workspaceFiles)
@@ -1530,12 +1544,12 @@ export async function getWorkspaceFile(
           ? and(
               eq(workspaceFiles.id, fileId),
               eq(workspaceFiles.workspaceId, workspaceId),
-              eq(workspaceFiles.context, 'workspace')
+              servableWorkspaceFileContext(includeMothership)
             )
           : and(
               eq(workspaceFiles.id, fileId),
               eq(workspaceFiles.workspaceId, workspaceId),
-              eq(workspaceFiles.context, 'workspace'),
+              servableWorkspaceFileContext(includeMothership),
               isNull(workspaceFiles.deletedAt)
             )
       )

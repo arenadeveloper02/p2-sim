@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
@@ -20,6 +21,7 @@ import {
   WORKFLOW_SCOPED_DELEGATED_TOOLS,
 } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
+import { assertWorkspaceFileLookBeforeWrite } from '@/local-copilot/lib/writes/look-before-write'
 
 export {
   MOTHERSHIP_DELEGATED_TOOL_NAMES,
@@ -203,13 +205,20 @@ async function executeCopilotServerTool(
   )
   const handler = createServerToolHandler(toolName)
   const result = await handler(args, toCopilotServerToolContext(ctx, workflowId))
+  const output = result.output ?? (result.error ? { error: result.error } : {})
+  const resources =
+    result.resources && result.resources.length > 0
+      ? result.resources
+      : result.success
+        ? extractResourcesFromToolResult(toolName, args, output)
+        : []
 
   return {
     toolName,
     success: result.success,
-    result: result.output ?? (result.error ? { error: result.error } : {}),
+    result: output,
     error: result.error,
-    resources: result.resources,
+    ...(resources.length > 0 ? { resources } : {}),
   }
 }
 
@@ -319,6 +328,18 @@ export async function executeMothershipDelegatedTool(
 
   if (toolName === 'workspace_file') {
     enrichWorkspaceFileArgs(enrichedArgs)
+    const lookBefore = assertWorkspaceFileLookBeforeWrite({
+      args: enrichedArgs,
+      readVfsPaths: ctx.readVfsPaths,
+    })
+    if (!lookBefore.ok) {
+      return {
+        toolName,
+        success: false,
+        error: lookBefore.error,
+        result: { success: false, message: lookBefore.error },
+      }
+    }
   }
 
   if (toolName === 'edit_content') {
@@ -356,17 +377,11 @@ export async function executeMothershipDelegatedTool(
     workspaceId: ctx.workspaceId,
   })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
-  const result = await executeTool(toolName, enrichedArgs, {
-    userId: ctx.userId,
-    workspaceId: ctx.workspaceId,
-    workflowId: workflowId ?? ctx.workflowId ?? '',
-    chatId: ctx.chatId,
-    abortSignal: ctx.abortSignal,
-    copilotToolExecution: true,
-    userPermission: ctx.userPermission,
-    ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
-    ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
-  })
+  const result = await executeTool(
+    toolName,
+    enrichedArgs,
+    toCopilotServerToolContext(ctx, workflowId)
+  )
 
   if (!result.success) {
     logger.warn('Delegated Mothership tool failed', {

@@ -88,7 +88,7 @@ const MATERIALIZER_REVISION_RADIX = 1000
 export const E2B_SANDBOX_MATERIALIZER_REVISION = FUNCTION_SANDBOX_MATERIALIZER_REVISION
 
 /** Maximum continuous sandbox lifetime supported by E2B. */
-export const E2B_MAX_SANDBOX_LIFETIME_MS = 24 * 60 * 60 * 1000
+export const E2B_MAX_SANDBOX_LIFETIME_MS = 60 * 60 * 1000
 
 const E2B_PROVIDER_LIMIT_ERROR =
   'E2B reached its 24-hour limit for a single sandbox execution. The workflow timeout may be longer, but this Function call must finish within 24 hours.'

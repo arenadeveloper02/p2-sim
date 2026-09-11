@@ -21,7 +21,13 @@ export const DEFAULT_ENTERPRISE_TIER_COST_LIMIT = 200
  * Base charge applied to every workflow execution
  * This charge is applied regardless of whether the workflow uses AI models
  */
-export const BASE_EXECUTION_CHARGE = 0.005
+/**
+Since now we have update the credits per dollar, we need to update the base execution charge
+$1 = 65 credits
+Basically our cost is almost thrice then Sim
+ */
+// export const BASE_EXECUTION_CHARGE = 0.005
+export const BASE_EXECUTION_CHARGE = 0.015
 
 /**
  * Fixed cost for search tool invocation (in dollars)
@@ -41,7 +47,6 @@ export const BILLING_LOCK_TIMEOUT_MS = 5_000
 
 /**
  * Available credit tiers. Each tier maps a credit amount to the underlying dollar cost.
- * 1 credit = $0.005, so credits = dollars * 200.
  */
 const PRO_CREDIT_TIER = { credits: 6000, dollars: 25, name: 'Pro' } as const
 const MAX_CREDIT_TIER = { credits: 25000, dollars: 100, name: 'Max' } as const
@@ -62,10 +67,11 @@ export type CreditTier = (typeof CREDIT_TIERS)[number]
 export const MAX_TIER_CREDITS = MAX_CREDIT_TIER.credits
 
 /**
- * Credits granted per dollar of plan spend. A credit is $0.005, so a dollar
- * buys 200 — the conversion behind both free-tier and daily-refresh credits.
+ * Fallback credits granted per dollar of plan spend when master_config is
+ * unavailable. This is also the browser-safe default before runtime config is
+ * loaded.
  */
-export const CREDITS_PER_DOLLAR = 200
+export const CREDITS_PER_DOLLAR = 65
 
 /**
  * Daily refresh rate: 1% of plan cost per day.

@@ -10,6 +10,11 @@ Markdown (.md) — write finished GitHub-flavored markdown in create_file \`cont
 - Use lists, tables, and **bold** for key terms. Fenced code only for actual code — never wrap the whole file in a fence.
 - Do not emit \`<options>\`, tool names, or HTML chrome. Keep paragraphs to 3–5 sentences.
 
+HTML (.html) — create_file with the full page. When editing an existing HTML file:
+- ALWAYS \`read\` \`files/<name>.html/content\` first. Never invent a new page from the filename or the user's one-line request.
+- Targeted changes (title, heading, copy, one CSS rule): \`workspace_file\` operation=patch, strategy=search_replace, search=the exact current substring, then \`edit_content\` with ONLY the replacement. Do not regenerate the file.
+- Full rewrite only when the user asked to rebuild the page — then \`edit_content\` must start from the read result.
+
 PPTX — 16:9 globals already exist: SLIDE_W=10, SLIDE_H=5.625, MARGIN=0.5, CONTENT_W=9, CONTENT_H=3.8 (inches). Never require/import.
 - Title slide: accent bar + large title (28–32pt) + subtitle. Content slides: title at y=MARGIN (22–26pt bold), body at y=1.15 with bullets (14–18pt), valign top.
 - One idea per slide. 4–7 bullets max. Do not put the whole deck in one addText box.
@@ -36,6 +41,22 @@ DOCX — twip globals: PAGE_W, PAGE_H, MARGIN, CONTENT_W. Prefer addSection (nev
 
 PDF — globals: pdf, rgb, StandardFonts, LETTER=[612,792]. Add pages with pdf.addPage(LETTER). 54pt margins, Helvetica-Bold titles, wrap body text — never one drawText line for a paragraph.`
 
+const PLAIN_TEXT_WORKSPACE_FILE_EXT = /\.(html|htm|md|markdown|txt|json|csv)$/i
+
+/**
+ * True for workspace files whose body is stored as UTF-8 text (not compiled office docs).
+ */
+export function isPlainTextWorkspaceFileName(fileName: string): boolean {
+  const leaf =
+    fileName
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/\/content$/i, '')
+      .split('/')
+      .pop() ?? ''
+  return PLAIN_TEXT_WORKSPACE_FILE_EXT.test(leaf)
+}
+
 /**
  * Short reminder injected on workspace_file success so the next edit_content
  * call is laid out, not a hello-world probe.
@@ -53,6 +74,9 @@ export function documentLayoutFollowUpHint(fileName: string, baseHint: string): 
   }
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
     return `${baseHint} Write finished GFM: # title, ## sections, lists/tables, blank lines. Do not wrap the whole file in a code fence.`
+  }
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+    return `${baseHint} Preserve the existing HTML. For a title/heading/string change use operation=patch with search_replace and the exact current substring — do not regenerate the page. If using update, edit_content must start from the current file.`
   }
   return baseHint
 }

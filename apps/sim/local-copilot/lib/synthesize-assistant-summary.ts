@@ -1,5 +1,6 @@
 import { truncate } from '@sim/utils/string'
 import { buildOAuthConnectControl } from '@/local-copilot/lib/oauth-connect-text'
+import { stripDeepSeekDsmlMarkup } from '@/local-copilot/lib/providers/deepseek-dsml'
 import { extractCapturedOutput } from '@/local-copilot/lib/tools/format-tool-result'
 
 const LEAKED_TOOL_MARKER_PATTERN = /\[Tool [^\]]+\]/g
@@ -203,7 +204,9 @@ export function shouldAppendWorkflowRunChatResult(options: {
  *   for streaming deltas where spaces live on chunk boundaries. Defaults to `true`.
  */
 export function stripLeakedToolMarkers(text: string, options?: { trim?: boolean }): string {
-  const stripped = text.replace(LEAKED_TOOL_MARKER_PATTERN, '').replace(/\n{3,}/g, '\n\n')
+  const stripped = stripDeepSeekDsmlMarkup(text)
+    .replace(LEAKED_TOOL_MARKER_PATTERN, '')
+    .replace(/\n{3,}/g, '\n\n')
   return options?.trim === false ? stripped : stripped.trim()
 }
 
@@ -234,6 +237,15 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
         (typeof payload.workflowName === 'string' && payload.workflowName.trim()) ||
         (typeof payload.name === 'string' && payload.name.trim()) ||
         null
+      const populated = records.some((item) => item.name === 'edit_workflow' && item.success)
+      if (!populated) {
+        parts.push(
+          name
+            ? `Created "${name}" as an empty workflow. The requested blocks still need to be added.`
+            : 'Created an empty workflow. The requested blocks still need to be added.'
+        )
+        continue
+      }
       parts.push(
         name
           ? `Created the workflow "${name}" and opened it in the panel.`

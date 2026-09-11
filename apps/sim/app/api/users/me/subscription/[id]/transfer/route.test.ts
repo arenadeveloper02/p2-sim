@@ -10,11 +10,15 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockAcquireOrganizationMutationLock, mockAssertNoUnresolvedEnterpriseIssuance } =
-  vi.hoisted(() => ({
-    mockAcquireOrganizationMutationLock: vi.fn(),
-    mockAssertNoUnresolvedEnterpriseIssuance: vi.fn(),
-  }))
+const {
+  mockAcquireOrganizationMutationLock,
+  mockAssertNoUnresolvedEnterpriseIssuance,
+  mockSupersedeStarterSubscriptions,
+} = vi.hoisted(() => ({
+  mockAcquireOrganizationMutationLock: vi.fn(),
+  mockAssertNoUnresolvedEnterpriseIssuance: vi.fn(),
+  mockSupersedeStarterSubscriptions: vi.fn(),
+}))
 
 vi.mock('@/lib/billing/enterprise-outbox', () => {
   class EnterpriseIssuanceInProgressError extends Error {}
@@ -26,6 +30,14 @@ vi.mock('@/lib/billing/enterprise-outbox', () => {
 
 vi.mock('@/lib/billing/organizations/membership', () => ({
   acquireOrganizationMutationLock: mockAcquireOrganizationMutationLock,
+}))
+
+vi.mock('@/lib/billing/arena/env', () => ({
+  isArenaBilling: () => true,
+}))
+
+vi.mock('@/lib/billing/arena/supersede-starter', () => ({
+  supersedeStarterSubscriptions: mockSupersedeStarterSubscriptions,
 }))
 
 vi.mock('@/lib/billing/plan-helpers', () => ({
@@ -55,6 +67,7 @@ describe('POST /api/users/me/subscription/[id]/transfer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    mockSupersedeStarterSubscriptions.mockResolvedValue({ canceledIds: [] })
     authMockFns.mockGetSession.mockResolvedValue(
       createSession({
         userId: 'user-1',
@@ -158,7 +171,7 @@ describe('POST /api/users/me/subscription/[id]/transfer', () => {
     expect(dbChainMockFns.update).not.toHaveBeenCalled()
   })
 
-  it('rejects the transfer when the target organization already has an active subscription', async () => {
+  it('rejects the transfer when the target organization already has a blocking subscription', async () => {
     dbChainMockFns.for
       .mockResolvedValueOnce([
         { id: 'sub-1', referenceId: 'user-1', plan: 'team', status: 'active' },
@@ -166,7 +179,7 @@ describe('POST /api/users/me/subscription/[id]/transfer', () => {
       .mockResolvedValueOnce([{ id: 'org-1' }])
     dbChainMockFns.limit
       .mockResolvedValueOnce([{ role: 'owner' }])
-      .mockResolvedValueOnce([{ id: 'existing-sub' }])
+      .mockResolvedValueOnce([{ id: 'existing-sub', plan: 'team_6500' }])
 
     const response = await makeRequest({ organizationId: 'org-1' })
 
@@ -175,5 +188,31 @@ describe('POST /api/users/me/subscription/[id]/transfer', () => {
       error: 'Organization already has an active subscription',
     })
     expect(dbChainMockFns.update).not.toHaveBeenCalled()
+    expect(mockSupersedeStarterSubscriptions).not.toHaveBeenCalled()
+  })
+
+  it('supersedes Starter and transfers when the organization only has Starter', async () => {
+    dbChainMockFns.for
+      .mockResolvedValueOnce([
+        { id: 'sub-1', referenceId: 'user-1', plan: 'team', status: 'active' },
+      ])
+      .mockResolvedValueOnce([{ id: 'org-1' }])
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([{ role: 'owner' }])
+      .mockResolvedValueOnce([{ id: 'starter-sub', plan: 'starter' }])
+
+    const response = await makeRequest({ organizationId: 'org-1' })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      message: 'Subscription transferred successfully',
+    })
+    expect(mockSupersedeStarterSubscriptions).toHaveBeenCalledWith(
+      'org-1',
+      'sub-1',
+      expect.anything()
+    )
+    expect(dbChainMockFns.update).toHaveBeenCalled()
   })
 })

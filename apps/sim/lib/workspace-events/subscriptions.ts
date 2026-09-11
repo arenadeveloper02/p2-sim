@@ -69,8 +69,8 @@ function parseStringArray(value: unknown): string[] {
  * inside the designed envelope regardless of what the free-text subblocks
  * contain. Integer fields are rounded — counts feed SQL LIMIT, which rejects
  * fractional values. The credit bounds are the legacy dollar bounds
- * ($0.01-$1000) at 200 credits per dollar; credits stay fractional like the
- * legacy dollar threshold.
+ * ($0.01-$1000) converted using the configured credits-per-dollar rate; credits
+ * stay fractional like the legacy dollar threshold.
  */
 const SIM_RULE_BOUNDS = {
   consecutiveFailures: { min: 1, max: 100, integer: true },

@@ -47,7 +47,7 @@ function makeConfig(overrides: Partial<SimSubscriptionConfig> = {}): SimSubscrip
     windowHours: 24,
     durationThresholdMs: 30000,
     latencySpikePercent: 100,
-    costThresholdCredits: 200,
+    costThresholdCredits: 65,
     errorCountThreshold: 10,
     inactivityHours: 24,
     ...overrides,

@@ -145,6 +145,8 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'nvidia.nemotron-super-3-120b',
   // Z.AI GLM 5 model cards list Geo inference ID as "Not supported".
   'zai.glm-5',
+  // DeepSeek V3.2 model card lists Geo inference ID as "Not supported".
+  'deepseek.v3.2',
 ])
 
 /** Cross-region inference profile prefixes Bedrock prepends to a base model ID. */

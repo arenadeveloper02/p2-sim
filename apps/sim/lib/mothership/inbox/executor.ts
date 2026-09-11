@@ -29,6 +29,7 @@ import { uploadFile } from '@/lib/uploads/core/storage-service'
 import { createFileContent, type MessageContent } from '@/lib/uploads/utils/file-utils'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 
 const logger = createLogger('InboxExecutor')
 
@@ -142,7 +143,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       const chatResult = await resolveOrCreateChat({
         userId,
         workspaceId: ws.id,
-        model: 'claude-opus-4-8',
+        model: DEFAULT_LOCAL_COPILOT_MODEL,
         type: 'mothership',
       })
       chatId = chatResult.chatId
@@ -156,7 +157,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
 
       requestChatTitle({
         message: titleInput,
-        model: 'claude-opus-4-8',
+        model: DEFAULT_LOCAL_COPILOT_MODEL,
         userId,
         workspaceId: ws.id,
       })

@@ -8,6 +8,21 @@ import { useQueryState } from 'nuqs'
 import { PAGE_HEADER_BAR } from '@/components/page-header-bar'
 import { useSession } from '@/lib/auth/auth-client'
 import {
+  ARENA_COMPARISON_SECTIONS,
+  ARENA_PLAN_COLUMNS,
+} from '@/lib/billing/arena/upgrade-comparison'
+import {
+  ARENA_ENTERPRISE_PLAN_CREDITS,
+  ARENA_ENTERPRISE_PLAN_FEATURES,
+  ARENA_MAX_PLAN_CREDITS,
+  ARENA_MAX_PLAN_FEATURES,
+  ARENA_PRO_PLAN_CREDITS,
+  ARENA_PRO_PLAN_FEATURES,
+  ARENA_STARTER_PLAN_CREDITS,
+  ARENA_STARTER_PLAN_FEATURES,
+  getArenaPriceSubtext,
+} from '@/lib/billing/arena/upgrade-presenter'
+import {
   getUpgradeCardCta,
   type PlanCardCta,
   type PlanTier,
@@ -37,8 +52,8 @@ import {
 } from '@/app/workspace/[workspaceId]/upgrade/search-params'
 import { useFullscreenOriginStore } from '@/stores/fullscreen-origin'
 
-/** Enterprise "Talk to sales" books time with the sales team on Cal.com. */
-const SALES_CAL_URL = 'https://cal.com/team/sim/demo' as const
+/** Enterprise "Talk to sales" contact form. */
+const SALES_CONTACT_URL = 'https://thearena.ai/contact' as const
 
 /**
  * Props for {@link Upgrade}.
@@ -107,9 +122,18 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
     )
   }
 
-  // Enterprise is redirected above, so the current plan is only ever free/pro/max here.
-  const planTier: PlanTier = state.subscription.isFree ? 'free' : state.isOnMaxTier ? 'max' : 'pro'
-  const checkoutTarget = state.subscription.isOrgScoped ? 'team' : 'pro'
+  // Starter is product-active but not Stripe-paid — CTA matrix treats it like free.
+  const planTier: PlanTier =
+    state.subscription.isFree || state.subscription.isStarter
+      ? 'free'
+      : state.isOnMaxTier
+        ? 'max'
+        : 'pro'
+  const checkoutTarget = state.subscription.isOrgScoped || state.isArena ? 'team' : 'pro'
+
+  // After Stripe cancel reloads the page, session can still be settling — keep
+  // checkout CTAs locked until the session query finishes.
+  const isPending = state.isSwitchingInterval || state.isStartingCheckout || state.isSessionPending
 
   /**
    * Resolve a card's CTA from the canonical matrix, then bind it to the matching
@@ -128,7 +152,10 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
       if (state.wantsIntervalSwitch) {
         return {
           ...cta,
-          label: `Switch to ${state.isAnnual ? 'Annual' : 'Monthly'}`,
+          label: state.isSwitchingInterval
+            ? 'Switching…'
+            : `Switch to ${state.isAnnual ? 'Annual' : 'Monthly'}`,
+          disabled: isPending,
           onClick: () =>
             state
               .handleSwitchInterval(state.isAnnual ? 'year' : 'month')
@@ -139,34 +166,48 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
     }
 
     const onClick = (): void => {
+      if (isPending) return
       switch (cta.intent) {
         case 'sales':
-          window.open(SALES_CAL_URL, '_blank', 'noopener,noreferrer')
+          window.open(SALES_CONTACT_URL, '_blank', 'noopener,noreferrer')
           return
         case 'downgrade':
           void state.onUpgradeToOtherTier()
           return
         case 'upgrade':
           if (card === 'max') {
-            if (state.subscription.isPaid) void state.upgradeOrSwitchToMax()
-            else state.doUpgrade(checkoutTarget, state.maxTier.credits)
+            if (state.subscription.isStripePaid) void state.upgradeOrSwitchToMax()
+            else void state.doUpgrade(checkoutTarget, state.maxTier.credits)
           } else {
-            state.doUpgrade(checkoutTarget, state.proTier.credits)
+            void state.doUpgrade(checkoutTarget, state.proTier.credits)
           }
       }
     }
 
-    return { ...cta, onClick }
+    const label =
+      state.isStartingCheckout && (cta.intent === 'upgrade' || cta.intent === 'downgrade')
+        ? 'Redirecting to checkout…'
+        : cta.label
+
+    return { ...cta, label, onClick, disabled: isPending }
   }
 
   const proCta = resolveCta('pro')
-  const maxCta = resolveCta('max')
+  const maxCtaRaw = resolveCta('max')
+  // Arena hides Pro, so Max is the next self-serve step up from Starter/free.
+  const maxCta =
+    state.isArena && planTier === 'free' && maxCtaRaw.intent === 'upgrade'
+      ? { ...maxCtaRaw, variant: 'primary' as const, highlighted: true }
+      : maxCtaRaw
   const enterpriseCta = resolveCta('enterprise')
 
   // Comparison-table CTAs reuse the card CTAs verbatim so both stay in sync.
-  // Free has no card and intentionally renders no button.
-  const comparisonCtas = { Pro: proCta, Max: maxCta, Enterprise: enterpriseCta }
+  // Free/Starter has no card and intentionally renders no button.
+  const comparisonCtas = state.isArena
+    ? { Max: maxCta, Enterprise: enterpriseCta }
+    : { Pro: proCta, Max: maxCta, Enterprise: enterpriseCta }
 
+  const starterBanner = state.isOnStarter ? 'Your plan' : undefined
   const proBanner = state.isOnPro ? 'Your plan' : undefined
   const maxBanner = state.isOnMax ? 'Your plan' : undefined
 
@@ -177,9 +218,20 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
   const maxPrice = state.isAnnual
     ? Math.round(state.maxTier.dollars * (1 - ANNUAL_DISCOUNT_RATE))
     : state.maxTier.dollars
-  const priceSubtext = state.isAnnual
-    ? 'per user/month, billed annually'
-    : 'per user/month, billed monthly'
+  const priceSubtext = state.isArena
+    ? getArenaPriceSubtext(state.isAnnual)
+    : state.isAnnual
+      ? 'per user/month, billed annually'
+      : 'per user/month, billed monthly'
+
+  const proCredits = state.isArena ? ARENA_PRO_PLAN_CREDITS : PRO_PLAN_CREDITS
+  const maxCredits = state.isArena ? ARENA_MAX_PLAN_CREDITS : MAX_PLAN_CREDITS
+  const enterpriseCredits = state.isArena ? ARENA_ENTERPRISE_PLAN_CREDITS : ENTERPRISE_PLAN_CREDITS
+  const proFeatures = state.isArena ? ARENA_PRO_PLAN_FEATURES : PRO_PLAN_FEATURES
+  const maxFeatures = state.isArena ? ARENA_MAX_PLAN_FEATURES : MAX_PLAN_FEATURES
+  const enterpriseFeatures = state.isArena
+    ? ARENA_ENTERPRISE_PLAN_FEATURES
+    : ENTERPRISE_PLAN_FEATURES
 
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
@@ -190,34 +242,55 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
       </div>
 
       <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
-        <div className='mx-auto flex w-full max-w-[960px] flex-col gap-7 pt-6 pb-3'>
+        <div className='mx-auto flex w-full max-w-5xl flex-col gap-7 pt-8 pb-3'>
           <div className='flex flex-col items-center gap-4'>
             <h1 className='text-balance text-center font-season text-[30px] text-[var(--text-primary)]'>
               {header}
             </h1>
             {state.showUpgradePlans && (
-              <BillingPeriodToggle isAnnual={state.isAnnual} onChange={state.setIsAnnual} />
+              <BillingPeriodToggle
+                isAnnual={state.isAnnual}
+                onChange={state.setIsAnnual}
+                disabled={isPending}
+              />
             )}
           </div>
 
           {state.showUpgradePlans && (
             <>
               <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3'>
-                <UpgradePlanCard
-                  name='Pro'
-                  price={`$${proPrice}`}
-                  discountLabel={state.isAnnual ? `${discountPct}% off` : undefined}
-                  priceSubtext={priceSubtext}
-                  segmentLabel='For growing teams'
-                  credits={PRO_PLAN_CREDITS.credits}
-                  refresh={PRO_PLAN_CREDITS.refresh}
-                  features={PRO_PLAN_FEATURES}
-                  buttonText={proCta.label}
-                  onButtonClick={proCta.onClick}
-                  buttonDisabled={proCta.disabled}
-                  highlighted={proCta.variant === 'primary'}
-                  bannerText={proBanner}
-                />
+                {state.isArena && (
+                  <UpgradePlanCard
+                    name='Starter'
+                    price='$0'
+                    priceSubtext='1 month included'
+                    segmentLabel='For new organizations'
+                    credits={ARENA_STARTER_PLAN_CREDITS.credits}
+                    features={ARENA_STARTER_PLAN_FEATURES}
+                    buttonText={state.isOnStarter ? 'Current Plan' : 'Included for new orgs'}
+                    onButtonClick={() => {}}
+                    buttonDisabled
+                    bannerText={starterBanner}
+                  />
+                )}
+
+                {!state.isArena && (
+                  <UpgradePlanCard
+                    name='Pro'
+                    price={`$${proPrice}`}
+                    discountLabel={state.isAnnual ? `${discountPct}% off` : undefined}
+                    priceSubtext={priceSubtext}
+                    segmentLabel='For growing teams'
+                    credits={proCredits.credits}
+                    refresh={'refresh' in proCredits ? proCredits.refresh : undefined}
+                    features={proFeatures}
+                    buttonText={proCta.label}
+                    onButtonClick={proCta.onClick}
+                    buttonDisabled={proCta.disabled}
+                    highlighted={proCta.variant === 'primary'}
+                    bannerText={proBanner}
+                  />
+                )}
 
                 <UpgradePlanCard
                   name='Max'
@@ -225,9 +298,9 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
                   discountLabel={state.isAnnual ? `${discountPct}% off` : undefined}
                   priceSubtext={priceSubtext}
                   segmentLabel='For scaling businesses'
-                  credits={MAX_PLAN_CREDITS.credits}
-                  refresh={MAX_PLAN_CREDITS.refresh}
-                  features={MAX_PLAN_FEATURES}
+                  credits={maxCredits.credits}
+                  refresh={'refresh' in maxCredits ? maxCredits.refresh : undefined}
+                  features={maxFeatures}
                   buttonText={maxCta.label}
                   onButtonClick={maxCta.onClick}
                   buttonDisabled={maxCta.disabled}
@@ -239,9 +312,9 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
                   name='Enterprise'
                   price='Custom'
                   segmentLabel='For large organizations'
-                  credits={ENTERPRISE_PLAN_CREDITS.credits}
-                  refresh={ENTERPRISE_PLAN_CREDITS.refresh}
-                  features={ENTERPRISE_PLAN_FEATURES}
+                  credits={enterpriseCredits.credits}
+                  refresh={'refresh' in enterpriseCredits ? enterpriseCredits.refresh : undefined}
+                  features={enterpriseFeatures}
                   buttonText={enterpriseCta.label}
                   onButtonClick={enterpriseCta.onClick}
                   buttonDisabled={enterpriseCta.disabled}
@@ -264,7 +337,10 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
                     maxPrice={`$${maxPrice}`}
                     isAnnual={state.isAnnual}
                     onIsAnnualChange={state.setIsAnnual}
+                    billingPeriodDisabled={isPending}
                     ctas={comparisonCtas}
+                    sections={state.isArena ? ARENA_COMPARISON_SECTIONS : undefined}
+                    columns={state.isArena ? ARENA_PLAN_COLUMNS : undefined}
                   />
                 )}
               </div>

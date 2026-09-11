@@ -8,7 +8,7 @@ export const FILE_WRITE_ALIAS_NAMES = ['prepare_file_edit', 'edit_file', 'file_e
 export const FUNCTION_EXECUTE_ALIAS_NAMES = ['run_function'] as const
 
 export const FILE_WRITE_ALIAS_ERROR =
-  'There is no prepare_file_edit, edit_file, or run_function tool. To write a workspace file: (1) create_file with fileName (pass content for md/txt/json/csv/html; empty shell for pptx/docx/pdf), (2) workspace_file with operation, target={kind:"path", path:"files/..."}, and title, (3) edit_content with the body in the NEXT round. For sandbox data processing call function_execute with outputs.files — not a separate run_function tool.'
+  'There is no prepare_file_edit, edit_file, or run_function tool. To create a workspace file: create_file with fileName (pass content for md/txt/json/csv/html; empty shell for pptx/docx/pdf). To edit an existing HTML/text file: read files/<path>/content first, then workspace_file operation=patch with search_replace for a small change (or operation=update only for a full rewrite), then edit_content in the NEXT round. For sandbox data processing call function_execute with outputs.files — not a separate run_function tool.'
 
 export type ResolvedLocalCopilotToolName =
   | { kind: 'ok'; name: string }

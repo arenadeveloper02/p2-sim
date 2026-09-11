@@ -1019,27 +1019,27 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2025-11-24',
       },
-      {
-        id: 'claude-opus-4-1',
-        pricing: {
-          input: 15.0,
-          cachedInput: 1.5,
-          output: 75.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 32000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-            streamed: 'summary',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-08-05',
-        sunset: { status: 'legacy' },
-      },
+      // {
+      //   id: 'claude-opus-4-1',
+      //   pricing: {
+      //     input: 15.0,
+      //     cachedInput: 1.5,
+      //     output: 75.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 32000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //       streamed: 'summary',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-08-05',
+      //   sunset: { status: 'legacy' },
+      // },
       // {
       //   id: 'claude-opus-4-0',
       //   pricing: {
@@ -1617,6 +1617,28 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     color: '#4285F4',
     models: [
       {
+        id: 'gemini-3.8-flash',
+        pricing: {
+          // Introductory rates through 2026-12-31; standard becomes 1.5 / 7.5 on 2027-01-01.
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-08',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          thinking: {
+            // `minimal` is rejected by the API on 3.8 Flash.
+            levels: ['low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-09-02',
+        recommended: true,
+      },
+      {
         id: 'gemini-3.6-flash',
         pricing: {
           input: 1.5,
@@ -1634,7 +1656,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2026-07-21',
-        recommended: true,
       },
       {
         id: 'gemini-3.5-flash-lite',
@@ -4184,6 +4205,20 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2026-02-11',
+      },
+      {
+        id: 'bedrock/deepseek.v3.2',
+        pricing: {
+          input: 0.62,
+          output: 1.85,
+          updatedAt: '2026-09-01',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          maxOutputTokens: 8192,
+        },
+        contextWindow: 164000,
+        releaseDate: '2025-12-01',
       },
     ],
   },

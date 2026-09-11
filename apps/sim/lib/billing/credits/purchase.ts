@@ -3,6 +3,7 @@ import { organization, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
+import { getFlatOrgPriceDollars } from '@/lib/billing/arena/org-pricing'
 import { getPlanPricing } from '@/lib/billing/core/billing'
 import { isOrganizationOwnerOrAdmin } from '@/lib/billing/core/organization'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
@@ -30,8 +31,13 @@ export async function setUsageLimitForCredits(
     const { basePrice } = getPlanPricing(plan)
 
     const seatCount = seats || 1
+    const flatPrice = entityType === 'organization' ? getFlatOrgPriceDollars(plan) : null
     const planBase =
-      entityType === 'organization' ? Number(basePrice) * seatCount : Number(basePrice)
+      entityType === 'organization'
+        ? flatPrice != null
+          ? Number(flatPrice)
+          : Number(basePrice) * seatCount
+        : Number(basePrice)
     const creditBalanceNum = Number(creditBalance)
     const newLimit = planBase + creditBalanceNum
 

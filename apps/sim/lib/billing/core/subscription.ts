@@ -4,6 +4,10 @@ import { member, organization, subscription, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, eq, inArray, sql } from 'drizzle-orm'
+import type Stripe from 'stripe'
+import { isArenaStarterProductAccess } from '@/lib/billing/arena/access'
+import { isBlockingOrgSubscription } from '@/lib/billing/arena/checkout-policy'
+import { applyArenaOrganizationSubscriptionPolicy } from '@/lib/billing/arena/subscription-resolution'
 import { getEffectiveBillingStatus, isOrganizationBillingBlocked } from '@/lib/billing/core/access'
 import {
   getHighestPriorityPersonalSubscription,
@@ -17,6 +21,7 @@ import {
   isTeam as isPlanTeam,
   sqlIsPaid,
 } from '@/lib/billing/plan-helpers'
+import { getCustomerId } from '@/lib/billing/stripe-payment-method'
 import {
   checkEnterprisePlan,
   checkProPlan,
@@ -64,7 +69,10 @@ export function getBillingInterval(
  * `billingInterval` column — the only source populated on enterprise/manual
  * subscriptions, which skip the checkout flow that writes the metadata value — and
  * falls back to `metadata.billingInterval` (the column is often null on
- * checkout-created subs), defaulting to monthly. Where both are set they agree.
+ * checkout-created subs), defaulting to monthly.
+ *
+ * {@link writeBillingInterval} keeps both sources in sync for self-serve switches;
+ * prefer that helper over writing only one of them.
  */
 export function resolveBillingInterval(
   sub: { billingInterval?: string | null; metadata?: unknown } | null | undefined
@@ -75,7 +83,12 @@ export function resolveBillingInterval(
 }
 
 /**
- * Merge a `billingInterval` value into a subscription's metadata JSON column.
+ * Persist a billing interval on both the dedicated column and metadata JSON.
+ *
+ * `resolveBillingInterval` prefers the column when set, so metadata-only writes
+ * are ignored for rows that already have `billing_interval` populated (common on
+ * Dev after enterprise/manual syncs). Writing both keeps switch-plan, checkout,
+ * and webhook paths consistent.
  */
 export async function writeBillingInterval(
   subscriptionId: string,
@@ -85,9 +98,49 @@ export async function writeBillingInterval(
   await db
     .update(subscription)
     .set({
+      billingInterval: interval,
       metadata: sql`(COALESCE(metadata::jsonb, '{}'::jsonb) || ${patch}::jsonb)::json`,
     })
     .where(eq(subscription.id, subscriptionId))
+}
+
+/**
+ * Backfills `subscription.stripeCustomerId` from the Stripe subscription when
+ * the DB row is missing it.
+ *
+ * Better Auth sets the customer id only when creating an `incomplete` checkout
+ * row. Arena Starter→paid reuses the existing active Starter row (customer null),
+ * and `checkout.session.completed` updates plan/status/`stripeSubscriptionId`
+ * without writing the customer — leaving invoices/portal/threshold billing blind.
+ *
+ * Idempotent: no-ops when the row already has a customer id, or Stripe has none.
+ * Returns the customer id that should be treated as authoritative afterward.
+ */
+export async function ensureSubscriptionStripeCustomerId(params: {
+  subscriptionId: string
+  currentStripeCustomerId: string | null | undefined
+  stripeSubscription: Pick<Stripe.Subscription, 'customer'>
+}): Promise<string | null> {
+  const { subscriptionId, currentStripeCustomerId, stripeSubscription } = params
+  if (currentStripeCustomerId) return currentStripeCustomerId
+
+  const customerId = getCustomerId(stripeSubscription.customer) ?? null
+  if (!customerId) {
+    logger.warn('Stripe subscription has no customer id to backfill', { subscriptionId })
+    return null
+  }
+
+  await db
+    .update(subscription)
+    .set({ stripeCustomerId: customerId })
+    .where(and(eq(subscription.id, subscriptionId), sql`${subscription.stripeCustomerId} IS NULL`))
+
+  logger.info('Backfilled subscription stripeCustomerId from Stripe', {
+    subscriptionId,
+    stripeCustomerId: customerId,
+  })
+
+  return customerId
 }
 
 /**
@@ -185,7 +238,7 @@ export async function getOrganizationSubscriptionUsable(
       )
       .limit(1)
 
-    return orgSub ?? null
+    return applyArenaOrganizationSubscriptionPolicy(orgSub ?? null)
   } catch (error) {
     logger.error('Error getting usable organization subscription', { error, organizationId })
     if (onError === 'throw') {
@@ -222,6 +275,42 @@ export async function hasPaidSubscription(
     return !!activeSub
   } catch (error) {
     logger.error('Error checking active subscription', { error, referenceId })
+
+    if (onError === 'throw') {
+      throw error
+    }
+
+    return true
+  }
+}
+
+/**
+ * True when the reference has an entitled subscription that should block a new
+ * org Stripe checkout. Arena Starter rows do not block — they are superseded
+ * after paid checkout succeeds.
+ */
+export async function hasBlockingOrgCheckoutSubscription(
+  referenceId: string,
+  options: HasPaidSubscriptionOptions = {}
+): Promise<boolean> {
+  const { onError = 'assume-active' } = options
+
+  try {
+    const [activeSub] = await db
+      .select({ id: subscription.id, plan: subscription.plan })
+      .from(subscription)
+      .where(
+        and(
+          eq(subscription.referenceId, referenceId),
+          inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES)
+        )
+      )
+      .limit(1)
+
+    if (!activeSub) return false
+    return isBlockingOrgSubscription(activeSub)
+  } catch (error) {
+    logger.error('Error checking blocking org checkout subscription', { error, referenceId })
 
     if (onError === 'throw') {
       throw error
@@ -413,7 +502,16 @@ export async function isEnterpriseOrgAdminOrOwner(userId: string): Promise<boole
 
     const orgSub = await getOrganizationSubscriptionUsable(memberRecord.organizationId)
 
-    const isEnterprise = orgSub && checkEnterprisePlan(orgSub)
+    const isEnterprise =
+      !!orgSub &&
+      (checkEnterprisePlan(orgSub) ||
+        isArenaStarterProductAccess({
+          plan: orgSub.plan,
+          status: orgSub.status,
+          periodEnd: orgSub.periodEnd,
+          billingBlocked: false,
+        }) ||
+        ((checkProPlan(orgSub) || checkTeamPlan(orgSub)) && isMaxTier(orgSub.plan)))
 
     if (isEnterprise) {
       logger.info('User is enterprise org admin/owner', {
@@ -446,7 +544,17 @@ async function resolveOrganizationEnterprisePlan(organizationId: string): Promis
 
     const orgSub = await getOrganizationSubscriptionUsable(organizationId)
 
-    return !!orgSub && checkEnterprisePlan(orgSub)
+    return (
+      !!orgSub &&
+      (checkEnterprisePlan(orgSub) ||
+        isArenaStarterProductAccess({
+          plan: orgSub.plan,
+          status: orgSub.status,
+          periodEnd: orgSub.periodEnd,
+          billingBlocked: false,
+        }) ||
+        ((checkProPlan(orgSub) || checkTeamPlan(orgSub)) && isMaxTier(orgSub.plan)))
+    )
   } catch (error) {
     logger.error('Error checking organization enterprise plan status', { error, organizationId })
     return false
@@ -602,7 +710,19 @@ async function hasWorkspaceTierAccess(
     ])
     if (!orgSub) return false
     if (!hasUsableSubscriptionAccess(orgSub.status, billingBlocked)) return false
-    return isTierEntitled(orgSub.plan)
+    if (isTierEntitled(orgSub.plan)) return true
+    if (
+      isTierEntitled === isMaxTier &&
+      isArenaStarterProductAccess({
+        plan: orgSub.plan,
+        status: orgSub.status,
+        periodEnd: orgSub.periodEnd,
+        billingBlocked,
+      })
+    ) {
+      return true
+    }
+    return false
   }
 
   const [billedSub, billingStatus] = await Promise.all([

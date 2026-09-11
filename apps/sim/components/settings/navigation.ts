@@ -14,6 +14,7 @@ import {
   // Send,
   Server,
   Settings,
+  Share,
   ShieldCheck,
   Sprout,
   TerminalWindow,
@@ -41,7 +42,20 @@ import {
 
 export type SettingsPlane = 'account' | 'organization' | 'selfhost' | 'workspace'
 
-export type AccountSettingsSection = 'general' | 'billing' | 'api-keys' | 'admin' | 'mothership'
+export type AccountSettingsSection =
+  | 'general'
+  | 'billing'
+  | 'api-keys'
+  | 'admin'
+  | 'mothership'
+  | 'skill-share'
+
+/**
+ * Settings pages only platform admins (`user.role === 'admin'`) may open.
+ */
+export function isPlatformAdminSettingsSection(section: string): boolean {
+  return section === 'admin' || section === 'mothership' || section === 'skill-share'
+}
 
 /**
  * Settings a self-hoster needs from the managed service: their profile, what
@@ -120,6 +134,7 @@ export type UnifiedSettingsSection =
   | 'inbox'
   | 'sandboxes'
   | 'admin'
+  | 'skill-share'
   | 'sessions'
   | 'data-retention'
   | 'data-drains'
@@ -372,7 +387,8 @@ export const WORKSPACE_SETTINGS_GROUPS = [
 ] as const
 
 /**
- * Arena Agents billing — Subscription sidebar entry that opens billing-usage.
+ * Arena Agents billing — Subscription sidebar entry that opens the standard
+ * Billing settings panel (plan, limits, invoices).
  * Sidebar visibility is gated to org admins / owners (and personal payers) via
  * `canManageWorkspaceBilling`; org members get remaining-credits stats on Usage.
  */
@@ -642,18 +658,18 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
   },
   {
-    label: 'Sim API keys',
+    label: 'Arena API keys',
     icon: TerminalWindow,
     unified: {
       id: 'apikeys',
-      description: 'Create and manage API keys for the Sim API.',
+      description: 'Create and manage API keys for the Arena API.',
       group: 'workspace',
       order: 7,
     },
     planes: {
       account: {
         id: 'api-keys',
-        description: 'Create and manage your personal Sim API keys.',
+        description: 'Create and manage your personal Arena API keys.',
         group: 'developer',
         order: 2,
       },
@@ -756,7 +772,7 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     icon: Sprout,
     unified: {
       id: 'self-host',
-      description: 'Manage this deployment from the Sim managed service.',
+      description: 'Manage this deployment from the Arena managed service.',
       group: 'platform',
       order: 2,
       requiresSelfHosted: true,
@@ -915,6 +931,20 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
     planes: {
       account: { id: 'admin', group: 'platform', order: 4 },
+    },
+  },
+  {
+    label: 'Skill share',
+    icon: Share,
+    unified: {
+      id: 'skill-share',
+      description: 'Publish skills and copy them into workspaces.',
+      group: 'platform',
+      order: 1,
+      requiresAdminRole: true,
+    },
+    planes: {
+      account: { id: 'skill-share', group: 'platform', order: 5 },
     },
   },
   // {

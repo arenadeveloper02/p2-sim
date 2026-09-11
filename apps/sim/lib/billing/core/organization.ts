@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { member, organization, user, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
+import { getFlatOrgPriceDollars } from '@/lib/billing/arena/org-pricing'
 import { isOrganizationBillingBlocked } from '@/lib/billing/core/access'
 import { getOrganizationSubscription, getPlanPricing } from '@/lib/billing/core/billing'
 import {
@@ -223,7 +224,8 @@ export async function getOrganizationBillingData(
       minimumBillingAmount = configuredLimit
       totalUsageLimit = configuredLimit
     } else {
-      minimumBillingAmount = licensedSeats * pricePerSeat
+      const flatPrice = getFlatOrgPriceDollars(subscription.plan)
+      minimumBillingAmount = flatPrice != null ? flatPrice : licensedSeats * pricePerSeat
 
       const configuredLimit = organizationData.orgUsageLimit
         ? toNumber(toDecimal(organizationData.orgUsageLimit))
@@ -311,8 +313,9 @@ export async function updateOrganizationUsageLimit(
     }
 
     const { basePrice } = getPlanPricing(subscription.plan)
+    const flatPrice = getFlatOrgPriceDollars(subscription.plan)
     const seatCount = subscription.seats || 1
-    const minimumLimit = seatCount * basePrice
+    const minimumLimit = flatPrice != null ? flatPrice : seatCount * basePrice
 
     if (newLimit < minimumLimit) {
       return {

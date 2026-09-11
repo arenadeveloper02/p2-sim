@@ -21,6 +21,7 @@ import {
   assertActiveWorkspaceAccess,
   isWorkspaceAccessDeniedError,
 } from '@/lib/workspaces/permissions/utils'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 
 const logger = createLogger('MothershipChatsAPI')
 
@@ -78,7 +79,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         workspaceId,
         type: 'mothership',
         title: null,
-        model: 'claude-opus-4-6',
+        model: DEFAULT_LOCAL_COPILOT_MODEL,
         updatedAt: now,
         lastSeenAt: now,
       })

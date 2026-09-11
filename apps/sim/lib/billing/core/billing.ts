@@ -1,6 +1,9 @@
 import { db } from '@sim/db'
 import { member, organization, subscription, userStats } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, desc, eq, inArray } from 'drizzle-orm'
+import { getFlatOrgSubscriptionAmount } from '@/lib/billing/arena/org-pricing'
+import { applyArenaOrganizationSubscriptionPolicy } from '@/lib/billing/arena/subscription-resolution'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import {
   getHighestPriorityPersonalSubscription,
@@ -27,8 +30,6 @@ import { Decimal, toDecimal, toNumber } from '@/lib/billing/utils/decimal'
 import type { DbClient, DbOrTx } from '@/lib/db/types'
 
 export { getPlanPricing }
-
-import { createLogger } from '@sim/logger'
 
 const logger = createLogger('Billing')
 
@@ -72,7 +73,8 @@ export async function getOrganizationSubscription(
       .limit(1)
     const orgSubs = forUpdate ? await query.for('update') : await query
 
-    return orgSubs.length > 0 ? orgSubs[0] : null
+    const orgSub = orgSubs.length > 0 ? orgSubs[0] : null
+    return applyArenaOrganizationSubscriptionPolicy(orgSub)
   } catch (error) {
     logger.error('Error getting organization subscription', { error, organizationId })
     if (onError === 'throw') {
@@ -212,7 +214,8 @@ export async function computeOrgOverageAmount(params: {
 
   const effectiveUsage = Math.max(0, totalUsage - dailyRefreshDeduction)
   const { basePrice } = getPlanPricing(params.plan ?? '')
-  const baseSubscriptionAmount = (params.seats || 1) * basePrice
+  const flatAmount = getFlatOrgSubscriptionAmount(params.plan)
+  const baseSubscriptionAmount = flatAmount != null ? flatAmount : (params.seats || 1) * basePrice
   const totalOverage = Math.max(0, effectiveUsage - baseSubscriptionAmount)
 
   return { effectiveUsage, baseSubscriptionAmount, dailyRefreshDeduction, totalOverage }

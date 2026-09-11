@@ -1,3 +1,4 @@
+import { hasArenaTeamProductAccess, isArenaStarterProductAccess } from '@/lib/billing/arena/access'
 import { getBillingEntityBlockStatus } from '@/lib/billing/core/access'
 import { resolveWorkspaceBillingPayer } from '@/lib/billing/core/billing-attribution'
 import { resolveBillingInterval } from '@/lib/billing/core/subscription'
@@ -17,6 +18,7 @@ import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 export interface WorkspaceOwnerSubscriptionAccess {
   plan: string
   status: string | null
+  periodEnd: Date | null
   isPaid: boolean
   isPro: boolean
   isTeam: boolean
@@ -50,16 +52,34 @@ export async function getWorkspaceOwnerSubscriptionAccess(
     : { billingBlocked: false, billingBlockedReason: null }
 
   const plan = subscription?.plan ?? 'free'
+  const periodEnd = subscription?.periodEnd ?? null
   const hasPaidEntitlement =
     hasPaidSubscriptionStatus(subscription?.status) && !billingStatus.billingBlocked
+  const starterAccess = isArenaStarterProductAccess({
+    plan,
+    status: subscription?.status ?? null,
+    periodEnd,
+    billingBlocked: billingStatus.billingBlocked,
+  })
   const orgScoped = Boolean(payer?.organizationId)
+  const arenaAccessInput = {
+    plan,
+    status: subscription?.status ?? null,
+    periodEnd,
+    billingBlocked: billingStatus.billingBlocked,
+    isOrgScoped: orgScoped,
+    hasPaidEntitlement,
+  }
 
   return {
     plan,
     status: subscription?.status ?? null,
-    isPaid: hasPaidEntitlement && isPaid(plan),
+    periodEnd,
+    isPaid: starterAccess || (hasPaidEntitlement && isPaid(plan)),
     isPro: hasPaidEntitlement && isPro(plan),
-    isTeam: hasPaidEntitlement && isTeam(plan),
+    isTeam:
+      hasArenaTeamProductAccess(arenaAccessInput) ||
+      (hasPaidEntitlement && (isTeam(plan) || starterAccess)),
     isEnterprise: hasPaidEntitlement && isEnterprise(plan),
     isOrgScoped: orgScoped,
     organizationId: payer?.organizationId ?? null,

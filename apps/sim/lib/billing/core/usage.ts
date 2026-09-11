@@ -12,6 +12,8 @@ import {
   renderUsageLimitReachedEmail,
   renderUsageThresholdEmail,
 } from '@/components/emails'
+import { resolveFlatOrgUsageLimit } from '@/lib/billing/arena/org-pricing'
+import { resolveArenaStarterOrgUsageLimit } from '@/lib/billing/arena/usage-limit'
 import { getEffectiveBillingStatus } from '@/lib/billing/core/access'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
@@ -119,6 +121,21 @@ export async function getOrgUsageLimit(
     orgData.length > 0 && orgData[0].orgUsageLimit
       ? toNumber(toDecimal(orgData[0].orgUsageLimit))
       : null
+
+  const arenaStarterLimit = await resolveArenaStarterOrgUsageLimit(
+    organizationId,
+    plan,
+    configured,
+    executor
+  )
+  if (arenaStarterLimit) {
+    return arenaStarterLimit
+  }
+
+  const flatOrgLimit = resolveFlatOrgUsageLimit(plan, configured)
+  if (flatOrgLimit) {
+    return flatOrgLimit
+  }
 
   if (isEnterprise(plan)) {
     // Enterprise: Use configured limit directly (no per-seat minimum)
