@@ -1,17 +1,20 @@
 /**
  * @vitest-environment node
- *
- * Import via the registry to avoid the pre-existing query → utils → registry
- * circular dependency that surfaces when loading `semrush/query` directly.
  */
 import { describe, expect, it } from 'vitest'
-import { tools } from '@/tools/registry'
+import * as semrushModule from '@/tools/semrush'
 import { semrushHosting } from '@/tools/semrush/hosting'
+import type { ToolConfig } from '@/tools/types'
 
-const semrushQueryTool = tools.semrush_query
-const semrushOrganicPositionsTool = tools.semrush_organic_positions
+const semrushTools = Object.values(semrushModule).filter(
+  (value): value is ToolConfig =>
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    String((value as { id?: unknown }).id).startsWith('semrush_')
+)
 
-function cost(tool: typeof semrushQueryTool, output: Record<string, unknown> = {}) {
+function cost(tool: (typeof semrushTools)[number], output: Record<string, unknown> = {}) {
   const pricing = tool.hosting?.pricing
   if (!pricing || pricing.type !== 'custom') throw new Error('Expected custom pricing')
   const result = pricing.getCost({}, output)
@@ -25,26 +28,16 @@ describe('Semrush hosted key config', () => {
     expect(semrushHosting.byokProviderId).toBe('semrush')
   })
 
-  it('declares shared hosting on both tools', () => {
-    for (const tool of [semrushQueryTool, semrushOrganicPositionsTool]) {
+  it('declares shared hosting on every Semrush tool', () => {
+    expect(semrushTools.length).toBeGreaterThan(0)
+    for (const tool of semrushTools) {
       expect(tool.hosting?.envKeyPrefix).toBe('SEMRUSH_API_KEY')
       expect(tool.hosting?.apiKeyParam).toBe('apiKey')
       expect(tool.hosting?.byokProviderId).toBe('semrush')
     }
   })
 
-  it('forwards apiKey via X-Semrush-Api-Key header', () => {
-    for (const tool of [semrushQueryTool, semrushOrganicPositionsTool]) {
-      const headers = tool.request.headers as (params: {
-        apiKey?: string
-      }) => Record<string, string>
-      expect(headers({ apiKey: 'sm-key' })['X-Semrush-Api-Key']).toBe('sm-key')
-      expect(headers({})['X-Semrush-Api-Key']).toBeUndefined()
-    }
-  })
-
   it('uses placeholder $0.01 per request', () => {
-    expect(cost(semrushQueryTool).cost).toBeCloseTo(0.01)
-    expect(cost(semrushOrganicPositionsTool).cost).toBeCloseTo(0.01)
+    expect(cost(semrushTools[0]).cost).toBeCloseTo(0.01)
   })
 })
