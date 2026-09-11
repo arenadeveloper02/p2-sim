@@ -275,8 +275,7 @@ export async function resolveLocalCopilotTools(
       ? buildLocalCopilotUserSkillToolFromSummaries(options.skills)
       : await buildLocalCopilotUserSkillTool(workspaceId)
   const tools = skillTool ? [...LOCAL_COPILOT_TOOLS, skillTool] : LOCAL_COPILOT_TOOLS
-  const sandboxEntitled =
-    options?.sandboxEntitled ?? (await hasWorkspaceSandboxAccess(workspaceId))
+  const sandboxEntitled = options?.sandboxEntitled ?? (await hasWorkspaceSandboxAccess(workspaceId))
   if (sandboxEntitled) return tools
   return tools.filter((tool) => tool.name !== 'manage_sandbox')
 }

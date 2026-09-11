@@ -180,7 +180,7 @@ const matchesEntryForUpdate = (
   }
 
   if (typeof update !== 'object') {
-    return true
+    return isLiveConsoleEntry(entry)
   }
 
   if (update.executionOrder !== undefined && entry.executionOrder !== update.executionOrder) {
@@ -213,7 +213,164 @@ const matchesEntryForUpdate = (
     return false
   }
 
+  if (!consoleUpdateHasIdentity(update)) {
+    return isLiveConsoleEntry(entry)
+  }
+
   return true
+}
+
+function isLiveConsoleEntry(entry: ConsoleEntry): boolean {
+  return entry.isRunning === true || entry.agentStreamActive === true
+}
+
+function consoleUpdateHasIdentity(update: ConsoleUpdate): boolean {
+  return (
+    update.executionOrder !== undefined ||
+    update.iterationCurrent !== undefined ||
+    update.iterationContainerId !== undefined ||
+    update.childWorkflowBlockId !== undefined ||
+    update.childWorkflowInstanceId !== undefined
+  )
+}
+
+function applyObjectUpdate(entry: ConsoleEntry, update: ConsoleUpdate): ConsoleEntry {
+  const updatedEntry = { ...entry }
+
+  if (update.content !== undefined) {
+    updatedEntry.output = normalizeConsoleOutput(updateBlockOutput(entry.output, update.content))
+  }
+
+  if (update.replaceOutput !== undefined) {
+    const redactedOutput =
+      typeof update.replaceOutput === 'object' && update.replaceOutput !== null
+        ? redactApiKeys(update.replaceOutput)
+        : update.replaceOutput
+    updatedEntry.output = normalizeConsoleOutput(redactedOutput)
+  } else if (update.output !== undefined) {
+    const mergedOutput = {
+      ...(entry.output || {}),
+      ...update.output,
+    }
+    updatedEntry.output =
+      typeof mergedOutput === 'object'
+        ? normalizeConsoleOutput(redactApiKeys(mergedOutput))
+        : normalizeConsoleOutput(mergedOutput)
+  }
+
+  if (update.blockName !== undefined) {
+    updatedEntry.blockName = update.blockName
+  }
+
+  if (update.blockType !== undefined) {
+    updatedEntry.blockType = update.blockType
+  }
+
+  if (update.executionOrder !== undefined) {
+    updatedEntry.executionOrder = update.executionOrder
+  }
+
+  if (update.error !== undefined) {
+    updatedEntry.error = normalizeConsoleError(update.error)
+  }
+
+  if (update.warning !== undefined) {
+    updatedEntry.warning = normalizeConsoleError(update.warning) ?? undefined
+  }
+
+  if (update.success !== undefined) {
+    updatedEntry.success = update.success
+  }
+
+  if (update.startedAt !== undefined) {
+    updatedEntry.startedAt = update.startedAt
+  }
+
+  if (update.endedAt !== undefined) {
+    updatedEntry.endedAt = update.endedAt
+  }
+
+  if (update.durationMs !== undefined) {
+    updatedEntry.durationMs = update.durationMs
+  }
+
+  if (update.input !== undefined) {
+    updatedEntry.input =
+      typeof update.input === 'object' && update.input !== null
+        ? normalizeConsoleInput(redactApiKeys(update.input))
+        : normalizeConsoleInput(update.input)
+  }
+
+  if (update.isRunning !== undefined) {
+    updatedEntry.isRunning = update.isRunning
+  }
+
+  if (update.isCanceled !== undefined) {
+    updatedEntry.isCanceled = update.isCanceled
+  }
+
+  if (update.iterationCurrent !== undefined) {
+    updatedEntry.iterationCurrent = update.iterationCurrent
+  }
+
+  if (update.iterationTotal !== undefined) {
+    updatedEntry.iterationTotal = update.iterationTotal
+  }
+
+  if (update.iterationType !== undefined) {
+    updatedEntry.iterationType = update.iterationType
+  }
+
+  if (update.iterationContainerId !== undefined) {
+    updatedEntry.iterationContainerId = update.iterationContainerId
+  }
+
+  if (update.parentIterations !== undefined) {
+    updatedEntry.parentIterations = update.parentIterations
+  }
+
+  if (update.childWorkflowBlockId !== undefined) {
+    updatedEntry.childWorkflowBlockId = update.childWorkflowBlockId
+  }
+
+  if (update.childWorkflowName !== undefined) {
+    updatedEntry.childWorkflowName = update.childWorkflowName
+  }
+
+  if (update.childWorkflowInstanceId !== undefined) {
+    updatedEntry.childWorkflowInstanceId = update.childWorkflowInstanceId
+  }
+
+  if (update.agentStreamThinking !== undefined) {
+    updatedEntry.agentStreamThinking = update.agentStreamThinking
+  }
+
+  if (update.clearAgentStreamThinking) {
+    updatedEntry.agentStreamThinking = undefined
+  }
+
+  if (update.agentStreamToolCalls !== undefined) {
+    updatedEntry.agentStreamToolCalls = update.agentStreamToolCalls
+  }
+
+  if (update.agentStreamActive !== undefined) {
+    updatedEntry.agentStreamActive = update.agentStreamActive
+  }
+
+  const shouldSettleAgentStream =
+    update.isRunning === false || update.agentStreamActive === false || update.isCanceled === true
+  if (shouldSettleAgentStream) {
+    const settled = settleAgentStreamChrome(
+      updatedEntry,
+      resolveAgentStreamSettleStatus(updatedEntry, update)
+    )
+    updatedEntry.agentStreamActive = settled.agentStreamActive
+    if (update.agentStreamToolCalls === undefined) {
+      updatedEntry.agentStreamToolCalls = settled.agentStreamToolCalls
+    }
+  }
+
+  return updatedEntry
 }
 
 function cloneWorkflowEntries(
@@ -607,147 +764,46 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
           if (typeof update === 'string') {
             const newOutput = normalizeConsoleOutput(updateBlockOutput(entry.output, update))
             nextEntries[location.index] = { ...entry, output: newOutput }
-            continue
+          } else {
+            nextEntries[location.index] = applyObjectUpdate(entry, update)
           }
+          break
+        }
 
-          const updatedEntry = { ...entry }
-
-          if (update.content !== undefined) {
-            updatedEntry.output = normalizeConsoleOutput(
-              updateBlockOutput(entry.output, update.content)
+        if (!nextEntries && typeof update === 'object' && consoleUpdateHasIdentity(update)) {
+          const templateLocation = state.entryLocationById[candidateIds[candidateIds.length - 1]]
+          const template =
+            templateLocation && templateLocation.workflowId === workflowId
+              ? currentEntries[templateLocation.index]
+              : undefined
+          if (template) {
+            const createdEntry = applyObjectUpdate(
+              {
+                ...template,
+                id: generateId(),
+                timestamp: new Date().toISOString(),
+                input: undefined,
+                output: undefined,
+                error: undefined,
+                warning: undefined,
+                success: undefined,
+                durationMs: undefined,
+                endedAt: undefined,
+                isRunning: false,
+                isCanceled: false,
+                agentStreamThinking: undefined,
+                agentStreamToolCalls: undefined,
+                agentStreamActive: false,
+                executionOrder: update.executionOrder ?? template.executionOrder,
+              },
+              update
             )
-          }
-
-          if (update.replaceOutput !== undefined) {
-            const redactedOutput =
-              typeof update.replaceOutput === 'object' && update.replaceOutput !== null
-                ? redactApiKeys(update.replaceOutput)
-                : update.replaceOutput
-            updatedEntry.output = normalizeConsoleOutput(redactedOutput)
-          } else if (update.output !== undefined) {
-            const mergedOutput = {
-              ...(entry.output || {}),
-              ...update.output,
-            }
-            updatedEntry.output =
-              typeof mergedOutput === 'object'
-                ? normalizeConsoleOutput(redactApiKeys(mergedOutput))
-                : normalizeConsoleOutput(mergedOutput)
-          }
-
-          if (update.blockName !== undefined) {
-            updatedEntry.blockName = update.blockName
-          }
-
-          if (update.blockType !== undefined) {
-            updatedEntry.blockType = update.blockType
-          }
-
-          if (update.error !== undefined) {
-            updatedEntry.error = normalizeConsoleError(update.error)
-          }
-
-          if (update.warning !== undefined) {
-            updatedEntry.warning = normalizeConsoleError(update.warning) ?? undefined
-          }
-
-          if (update.success !== undefined) {
-            updatedEntry.success = update.success
-          }
-
-          if (update.startedAt !== undefined) {
-            updatedEntry.startedAt = update.startedAt
-          }
-
-          if (update.endedAt !== undefined) {
-            updatedEntry.endedAt = update.endedAt
-          }
-
-          if (update.durationMs !== undefined) {
-            updatedEntry.durationMs = update.durationMs
-          }
-
-          if (update.input !== undefined) {
-            updatedEntry.input =
-              typeof update.input === 'object' && update.input !== null
-                ? normalizeConsoleInput(redactApiKeys(update.input))
-                : normalizeConsoleInput(update.input)
-          }
-
-          if (update.isRunning !== undefined) {
-            updatedEntry.isRunning = update.isRunning
-          }
-
-          if (update.isCanceled !== undefined) {
-            updatedEntry.isCanceled = update.isCanceled
-          }
-
-          if (update.iterationCurrent !== undefined) {
-            updatedEntry.iterationCurrent = update.iterationCurrent
-          }
-
-          if (update.iterationTotal !== undefined) {
-            updatedEntry.iterationTotal = update.iterationTotal
-          }
-
-          if (update.iterationType !== undefined) {
-            updatedEntry.iterationType = update.iterationType
-          }
-
-          if (update.iterationContainerId !== undefined) {
-            updatedEntry.iterationContainerId = update.iterationContainerId
-          }
-
-          if (update.parentIterations !== undefined) {
-            updatedEntry.parentIterations = update.parentIterations
-          }
-
-          if (update.childWorkflowBlockId !== undefined) {
-            updatedEntry.childWorkflowBlockId = update.childWorkflowBlockId
-          }
-
-          if (update.childWorkflowName !== undefined) {
-            updatedEntry.childWorkflowName = update.childWorkflowName
-          }
-
-          if (update.childWorkflowInstanceId !== undefined) {
-            updatedEntry.childWorkflowInstanceId = update.childWorkflowInstanceId
-          }
-
-          if (update.agentStreamThinking !== undefined) {
-            updatedEntry.agentStreamThinking = update.agentStreamThinking
-          }
-
-          if (update.clearAgentStreamThinking) {
-            updatedEntry.agentStreamThinking = undefined
-          }
-
-          if (update.agentStreamToolCalls !== undefined) {
-            updatedEntry.agentStreamToolCalls = update.agentStreamToolCalls
-          }
-
-          if (update.agentStreamActive !== undefined) {
-            updatedEntry.agentStreamActive = update.agentStreamActive
-          }
-
-          // Settle live chrome whenever an entry stops running or stream activity ends.
-          // block:error / timeouts often skip stream:done and only flip isRunning.
-          const shouldSettleAgentStream =
-            update.isRunning === false ||
-            update.agentStreamActive === false ||
-            update.isCanceled === true
-          if (shouldSettleAgentStream) {
-            const settled = settleAgentStreamChrome(
-              updatedEntry,
-              resolveAgentStreamSettleStatus(updatedEntry, update)
-            )
-            updatedEntry.agentStreamActive = settled.agentStreamActive
-            if (update.agentStreamToolCalls === undefined) {
-              updatedEntry.agentStreamToolCalls = settled.agentStreamToolCalls
+            const trimmedEntries = trimWorkflowConsoleEntries([createdEntry, ...currentEntries])
+            return {
+              ...state,
+              ...appendWorkflowEntry(state, workflowId, createdEntry, trimmedEntries),
             }
           }
-
-          nextEntries[location.index] = updatedEntry
         }
 
         if (!nextEntries) {

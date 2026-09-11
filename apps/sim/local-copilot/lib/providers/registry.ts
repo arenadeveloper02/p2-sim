@@ -3,8 +3,8 @@ import { createAnthropicProvider } from '@/local-copilot/lib/providers/anthropic
 import { createBedrockProvider } from '@/local-copilot/lib/providers/bedrock'
 import { createGeminiProvider } from '@/local-copilot/lib/providers/gemini'
 import { createOpenAiCompatibleProvider } from '@/local-copilot/lib/providers/openai-compatible'
-import { createVertexProvider } from '@/local-copilot/lib/providers/vertex'
 import type { LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
+import { createVertexProvider } from '@/local-copilot/lib/providers/vertex'
 import type { LocalCopilotConfig } from '@/local-copilot/lib/types'
 
 let cachedProvider: LocalCopilotProvider | null = null

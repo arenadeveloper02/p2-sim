@@ -96,9 +96,7 @@ describe('resolveLocalCopilotPromptTokenBudget', () => {
     })
     expect(budget.tokenBudget).toBe(LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET)
     expect(budget.softCapped).toBe(true)
-    expect(budget.reservedTokens).toBe(
-      LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS + 4_000
-    )
+    expect(budget.reservedTokens).toBe(LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS + 4_000)
   })
 })
 

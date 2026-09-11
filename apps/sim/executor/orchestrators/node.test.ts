@@ -461,4 +461,50 @@ describe('NodeExecutionOrchestrator parallel sentinel batching', () => {
 
     expect(loopOrchestrator.storeLoopNodeOutput).not.toHaveBeenCalled()
   })
+
+  it('stores a per-iteration copy of loop-body output alongside the current write', async () => {
+    const loopNode: DAGNode = {
+      id: 'worker',
+      block: {
+        id: 'worker',
+        position: { x: 0, y: 0 },
+        enabled: true,
+        metadata: { id: 'function', name: 'Worker' },
+        config: { params: {} },
+        inputs: {},
+        outputs: {},
+      },
+      incomingEdges: new Set(),
+      outgoingEdges: new Map(),
+      metadata: {
+        isLoopNode: true,
+        subflowId: 'loop-1',
+        subflowType: 'loop',
+        originalBlockId: 'worker',
+      },
+    }
+    const dag: DAG = {
+      nodes: new Map([[loopNode.id, loopNode]]),
+      loopConfigs: new Map(),
+      parallelConfigs: new Map(),
+    }
+    const state = createState()
+    const loopOrchestrator = {
+      storeLoopNodeOutput: vi.fn(),
+      getLoopScope: vi.fn(() => ({ iteration: 3 })),
+    }
+    const orchestrator = createOrchestrator(dag, state, {}, loopOrchestrator)
+    const output = { result: 'iter-3' }
+
+    await orchestrator.handleNodeCompletion(createContext(), loopNode.id, output)
+
+    expect(loopOrchestrator.storeLoopNodeOutput).toHaveBeenCalledWith(
+      expect.any(Object),
+      'loop-1',
+      'worker',
+      output
+    )
+    expect(state.setBlockOutput).toHaveBeenCalledWith('worker', output)
+    expect(state.setBlockOutput).toHaveBeenCalledWith('worker_loop3', output)
+  })
 })

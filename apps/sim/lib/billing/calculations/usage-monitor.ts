@@ -48,7 +48,10 @@ interface ServerSideUsageLimitsResult {
 }
 
 const usageStatusCache = new Map<string, UsageMonitorCacheEntry<UsageData>>()
-const serverSideUsageLimitsCache = new Map<string, UsageMonitorCacheEntry<ServerSideUsageLimitsResult>>()
+const serverSideUsageLimitsCache = new Map<
+  string,
+  UsageMonitorCacheEntry<ServerSideUsageLimitsResult>
+>()
 
 function readUsageMonitorCache<T>(
   store: Map<string, UsageMonitorCacheEntry<T>>,

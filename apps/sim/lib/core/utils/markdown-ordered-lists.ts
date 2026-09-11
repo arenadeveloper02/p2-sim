@@ -32,11 +32,7 @@ export function renumberMarkdownOrderedLists(markdown: string): string {
     }
     if (inFence) {
       const fenceClose = line.match(/^(\s*)([`~]{3,})\s*$/)
-      if (
-        fenceClose &&
-        fenceClose[2][0] === fenceChar &&
-        fenceClose[2].length >= fenceLen
-      ) {
+      if (fenceClose && fenceClose[2][0] === fenceChar && fenceClose[2].length >= fenceLen) {
         inFence = false
         fenceChar = null
         fenceLen = 0

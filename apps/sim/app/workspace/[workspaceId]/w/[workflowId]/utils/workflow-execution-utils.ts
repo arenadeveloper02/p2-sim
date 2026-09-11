@@ -13,7 +13,7 @@ import type {
   BlockStartedData,
 } from '@/lib/workflows/executor/execution-events'
 import type { BlockLog, BlockState, ExecutionResult, StreamingExecution } from '@/executor/types'
-import { stripCloneSuffixes } from '@/executor/utils/subflow-utils'
+import { buildLoopScopedId, stripCloneSuffixes } from '@/executor/utils/subflow-utils'
 import {
   ExecutionStreamHttpError,
   processSSEStream,
@@ -35,6 +35,41 @@ const logger = createLogger('workflow-execution-utils')
 const BLOCK_FAILURE_DISPLAY_MESSAGE = 'Block failed'
 const RUN_FAILURE_DISPLAY_MESSAGE = 'Run failed'
 const VALIDATION_FAILURE_DISPLAY_MESSAGE = 'Workflow validation failed'
+
+function blockLogIterationFields(
+  data: Pick<
+    BlockCompletedData | BlockErrorData,
+    'iterationCurrent' | 'iterationType' | 'iterationContainerId' | 'parentIterations'
+  >
+): Pick<BlockLog, 'iterationIndex' | 'loopId' | 'parallelId' | 'parentIterations'> {
+  return {
+    ...(data.iterationCurrent !== undefined && { iterationIndex: data.iterationCurrent }),
+    ...(data.iterationType === 'loop' && data.iterationContainerId
+      ? { loopId: data.iterationContainerId }
+      : {}),
+    ...(data.iterationType === 'parallel' && data.iterationContainerId
+      ? { parallelId: data.iterationContainerId }
+      : {}),
+    ...(data.parentIterations?.length ? { parentIterations: data.parentIterations } : {}),
+  }
+}
+
+function iterationFieldsFromBlockLog(
+  log: Pick<BlockLog, 'iterationIndex' | 'loopId' | 'parallelId' | 'parentIterations'>
+): Pick<
+  ConsoleUpdate,
+  'iterationCurrent' | 'iterationType' | 'iterationContainerId' | 'parentIterations'
+> {
+  return {
+    ...(log.iterationIndex !== undefined && { iterationCurrent: log.iterationIndex }),
+    ...(log.loopId
+      ? { iterationType: 'loop' as const, iterationContainerId: log.loopId }
+      : log.parallelId
+        ? { iterationType: 'parallel' as const, iterationContainerId: log.parallelId }
+        : {}),
+    ...(log.parentIterations?.length ? { parentIterations: log.parentIterations } : {}),
+  }
+}
 
 /**
  * Updates the active blocks set and ref counts for a single block.
@@ -254,6 +289,17 @@ export function createBlockEventHandlers(
     }),
   })
 
+  const recordAccumulatedBlockState = (
+    blockId: string,
+    state: BlockState,
+    data: { iterationCurrent?: number; iterationType?: BlockStartedData['iterationType'] }
+  ) => {
+    accumulatedBlockStates.set(blockId, state)
+    if (data.iterationType === 'loop' && data.iterationCurrent !== undefined) {
+      accumulatedBlockStates.set(buildLoopScopedId(blockId, data.iterationCurrent), state)
+    }
+  }
+
   const parentIterationsMatch = (
     left: ConsoleEntry['parentIterations'],
     right: BlockStartedData['parentIterations']
@@ -357,6 +403,7 @@ export function createBlockEventHandlers(
     startedAt: data.startedAt,
     executionOrder: data.executionOrder,
     endedAt: data.endedAt,
+    ...blockLogIterationFields(data),
   })
 
   const updateConsoleEntry = (data: BlockCompletedData) => {
@@ -453,11 +500,15 @@ export function createBlockEventHandlers(
     if (workflowId) setBlockRunStatus(workflowId, data.blockId, 'success')
     markOutgoingEdges(data.blockId, data.output as Record<string, any> | undefined)
     executedBlockIds.add(data.blockId)
-    accumulatedBlockStates.set(data.blockId, {
-      output: data.output,
-      executed: true,
-      executionTime: data.durationMs,
-    })
+    recordAccumulatedBlockState(
+      data.blockId,
+      {
+        output: data.output,
+        executed: true,
+        executionTime: data.durationMs,
+      },
+      data
+    )
 
     if (isContainerBlockType(data.blockType)) {
       const originalId = stripCloneSuffixes(data.blockId)
@@ -496,11 +547,15 @@ export function createBlockEventHandlers(
     markOutgoingEdges(data.blockId, { error: data.error })
 
     executedBlockIds.add(data.blockId)
-    accumulatedBlockStates.set(data.blockId, {
-      output: { error: data.error },
-      executed: true,
-      executionTime: data.durationMs || 0,
-    })
+    recordAccumulatedBlockState(
+      data.blockId,
+      {
+        output: { error: data.error },
+        executed: true,
+        executionTime: data.durationMs || 0,
+      },
+      data
+    )
 
     if (isContainerBlockType(data.blockType)) {
       const originalId = stripCloneSuffixes(data.blockId)
@@ -606,6 +661,7 @@ export function reconcileFinalBlockLogs(
           isRunning: cancelledWhileRunning,
           isCanceled: false,
           ...(projectionOmittedContent ? { clearAgentStreamThinking: true } : {}),
+          ...iterationFieldsFromBlockLog(log),
         },
         executionId
       )
