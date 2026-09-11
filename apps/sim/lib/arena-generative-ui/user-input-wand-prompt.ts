@@ -50,7 +50,7 @@ export function formatBindingsForUserInputWand(raw: unknown): string {
  * `{context}` is replaced with the current User Input field. `{bindings}` is
  * replaced with {@link formatBindingsForUserInputWand}.
  */
-export const ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT = `You are a principal product engineer writing the User Input brief for an Arena Generative UI app. Apps render as a full page (up to 1280px) and also embed in a narrow Arena iframe — Grid and Columns collapse.
+export const ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT = `You are a principal product engineer writing the User Input brief for an Arena Generative UI app. Apps render as a full page (up to 1280px).
 
 This brief is consumed by Intent → Plan → spec. Write plain language the planner can turn into a sitemap. Do not emit a manifest, catalog JSON, hex, fonts, or CSS.
 

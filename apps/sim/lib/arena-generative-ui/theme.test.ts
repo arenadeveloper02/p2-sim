@@ -18,6 +18,8 @@ describe('parseArenaGenerativeTheme', () => {
         density: 'compact',
         font: 'serif',
         colorScheme: 'dark',
+        ink: 'strong',
+        loadingChrome: 'spinner',
       })
     ).toEqual({
       brandColor: '#2563eb',
@@ -25,6 +27,8 @@ describe('parseArenaGenerativeTheme', () => {
       density: 'compact',
       font: 'serif',
       colorScheme: 'dark',
+      ink: 'strong',
+      loadingChrome: 'spinner',
     })
   })
 
@@ -85,6 +89,13 @@ describe('arenaGenerativeThemeStyle', () => {
       '--gui-brand-hover': 'color-mix(in srgb, #112233 82%, #fff)',
       '--gui-brand-pressed': 'color-mix(in srgb, #112233 68%, #fff)',
       '--gui-brand-surface': 'color-mix(in srgb, #112233 22%, #12141a)',
+    })
+  })
+
+  it('darkens body ink when theme.ink is strong', () => {
+    expect(arenaGenerativeThemeStyle({ ink: 'strong' }, 'light')).toMatchObject({
+      '--gui-text': '#1a1b1f',
+      '--gui-text-muted': '#3d3f47',
     })
   })
 

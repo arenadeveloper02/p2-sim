@@ -27,6 +27,14 @@ export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = [
   'host-refresh',
   'unrequested-pages',
   'repeat-prose',
+  'collection-density',
+  'heading-scale',
+  'text-contrast',
+  'loading-chrome',
+  'empty-while-pending',
+  'edit-nearest',
+  'edit-missed',
+  'split-results-back',
 ] as const
 
 export const arenaGenerativeAdoptedChangeSchema = z.object({

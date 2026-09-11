@@ -91,6 +91,14 @@ describe('compileGenerativeUx', () => {
     })
   })
 
+  it('copies theme.loadingChrome onto the UX plan', () => {
+    const compiled = compileGenerativeUx(
+      { ...twoPageManifest, theme: { loadingChrome: 'spinner' } },
+      twoPageApiBindings
+    )
+    expect(compiled.uxPlan.loadingChrome).toBe('spinner')
+  })
+
   it('sets confirm when a Button variant is destructive', () => {
     const manifest: ArenaGenerativeAppManifest = {
       entryPath: 'home',

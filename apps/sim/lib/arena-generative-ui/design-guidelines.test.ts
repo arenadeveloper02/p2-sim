@@ -91,8 +91,9 @@ describe('ARENA_GENERATIVE_UI_COMPOSITION_PROMPT', () => {
 
   it('teaches Grid collapse without host loading chrome', () => {
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
-      'Grid and Columns collapse to one column'
+      'The host collapses Grid and Columns on a narrow viewport'
     )
+    expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).not.toContain('Arena iframe')
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).not.toContain('Retry')
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).not.toContain('Refresh')
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).not.toContain('aria-busy')

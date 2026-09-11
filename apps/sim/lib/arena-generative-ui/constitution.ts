@@ -313,7 +313,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'shared',
         text: 'Design desktop-first only when the information architecture requires it.',
         prompt:
-          'Compose for a full page up to 1280px. Grid and Columns collapse in a narrow Arena iframe — do not author a permanently narrow centre column, and do not assume the iframe is 1280px.',
+          'Compose for a full page up to 1280px. Do not author a permanently narrow centre column.',
       },
       {
         ownership: 'host',

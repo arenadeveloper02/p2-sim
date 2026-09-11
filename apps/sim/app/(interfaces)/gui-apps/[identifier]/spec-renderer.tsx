@@ -2,10 +2,12 @@
 
 import {
   type CSSProperties,
+  createContext,
   type FormEvent,
   Fragment,
   type KeyboardEvent,
   type ReactNode,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -1202,7 +1204,24 @@ interface SkeletonBlockProps {
  * Shape-matched loading placeholder. Widths taper so a text block reads as prose
  * rather than a solid slab.
  */
+const LoadingChromeContext = createContext<'skeleton' | 'spinner'>('skeleton')
+
+function CircularLoader() {
+  return (
+    <div
+      aria-busy='true'
+      aria-live='polite'
+      data-testid='circular-loader'
+      className='flex w-full items-center justify-center py-8'
+    >
+      <Loader2 className='size-8 animate-spin text-[var(--gui-brand,#1a73e8)]' />
+    </div>
+  )
+}
+
 function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
+  const chrome = useContext(LoadingChromeContext)
+  if (chrome === 'spinner') return <CircularLoader />
   const rows = Math.max(1, Math.min(12, lines))
 
   if (variant === 'stat') {
@@ -2384,6 +2403,28 @@ export function SpecRenderer({
       : pending
   }
 
+  const hideCatalogEmptyWhilePending = (() => {
+    if (pending) return true
+    for (const element of Object.values(elements)) {
+      if (
+        element.type !== 'Repeat' &&
+        element.type !== 'Table' &&
+        element.type !== 'Calendar' &&
+        element.type !== 'Timeline' &&
+        element.type !== 'Map' &&
+        element.type !== 'Tree' &&
+        element.type !== 'Carousel' &&
+        element.type !== 'KeyValue'
+      ) {
+        continue
+      }
+      const path = asString(element.props?.statePath)
+      if (!path) continue
+      if (boundPending(path) && isEmptyStateValue(readStatePath(state, path))) return true
+    }
+    return false
+  })()
+
   const controlPending = (actionId: string) => {
     if (!UX_DEFAULTS.Button.disabledWhileLoading) return false
     if (uxPlan && actionId && !(actionId in uxPlan.actions)) return false
@@ -3500,6 +3541,7 @@ export function SpecRenderer({
         )
       }
       case 'EmptyState':
+        if (hideCatalogEmptyWhilePending) return null
         return (
           <div
             data-testid='empty-state'
@@ -4628,5 +4670,11 @@ export function SpecRenderer({
     }
   }
 
-  return <>{renderNode(spec.root)}</>
+  return (
+    <LoadingChromeContext.Provider
+      value={uxPlan?.loadingChrome === 'spinner' ? 'spinner' : 'skeleton'}
+    >
+      {renderNode(spec.root)}
+    </LoadingChromeContext.Provider>
+  )
 }

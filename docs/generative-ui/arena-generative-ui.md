@@ -47,7 +47,7 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 - Preview skips Arena `emailId` and the published password / email / SSO gates.
 - Preview captures runtime render problems (unresolved `statePath`, unknown component types, a SpecRenderer throw) and offers **Copy as edit instructions** to paste into **Requested Changes**.
 - Preview always offers **Copy page edit prompt**, which starts Requested Changes with `On the "{path}" page, ` so Edit scopes to that screen.
-- Preview includes a **theme picker** (brand, density, radius, light/dark). Changes are live in the iframe. Persist them by copying **Copy theme as edit instructions** into Requested Changes — theme-only edits skip the generator and patch `manifest.theme` in place.
+- Preview includes a **theme picker** (brand, density, radius, light/dark). Changes are live in Preview. Persist them by copying **Copy theme as edit instructions** into Requested Changes — theme-only edits skip the generator and patch `manifest.theme` in place.
 - `preview` is a reserved public identifier because it is a static `/gui-apps` segment.
 
 ---
@@ -251,7 +251,7 @@ Derivation walks 3 object levels, unions object keys across sampled array items 
 
 ### Design Notes (optional)
 
-Brand, density, tone, or a theme knob (`brandColor`, `density`, `radius`, `colorScheme`). Layout is a **full page up to 1280px**; Grid and Columns collapse to one column in a narrow Arena iframe — do not author a permanently narrow centre column. App identity is `AppHeader` (sticky mark + name at the left edge), not a decorative Image. Example: “Calm Arena-like layout. Density compact. Dark mode.”
+Brand, density, tone, or a theme knob (`brandColor`, `density`, `radius`, `colorScheme`). Layout is a **full page up to 1280px**. Do not author a permanently narrow centre column. App identity is `AppHeader` (sticky mark + name at the left edge), not a decorative Image. Example: “Calm Arena-like layout. Density compact. Dark mode.”
 
 Ask for `narrow` explicitly in Design Notes if you want the old focused single-column form look.
 
@@ -342,7 +342,7 @@ Updating: pick a newer draft/revision (after an Edit run), keep the same identif
 
 ## Opening the live app
 
-Open in a browser tab (no iframe required):
+Open in a browser tab:
 
 ```
 https://{host}/gui-apps/{identifier}

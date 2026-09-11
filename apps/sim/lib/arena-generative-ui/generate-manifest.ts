@@ -46,6 +46,14 @@ import {
   pageHintsFromStructuredBrief,
   planArenaGenerativeStructuredBrief,
 } from '@/lib/arena-generative-ui/structured-brief'
+import {
+  applyHostEditKnobs,
+  applySplitResultsBack,
+  formatLandCheckRepair,
+  hostEditLandMisses,
+  isPaintOnlyEdit,
+  parseHostEditKnobs,
+} from '@/lib/arena-generative-ui/host-edit-knobs'
 import { applyThemeOnlyEdit, isThemeOnlyEdit } from '@/lib/arena-generative-ui/theme-from-edit'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import type {
@@ -302,10 +310,19 @@ function evaluateGeneratedCandidate(
   if (hostIssues.length > 0) {
     return { success: false, error: formatHostCriticRepairError(hostIssues) }
   }
+  const knobs = parseHostEditKnobs(options.userInput ?? '')
+  const knobbed = applyHostEditKnobs(repaired.manifest, knobs, {
+    userInput: options.userInput,
+    authoredPagePaths: options.validationOptions.authoredPagePaths,
+  })
   return {
     success: true,
-    manifest: repaired.manifest,
-    adoptedChanges: [...sanitized.adoptedChanges, ...repaired.adoptedChanges],
+    manifest: knobbed.manifest,
+    adoptedChanges: [
+      ...sanitized.adoptedChanges,
+      ...repaired.adoptedChanges,
+      ...knobbed.adoptedChanges,
+    ],
   }
 }
 
@@ -416,6 +433,9 @@ export const EDIT_PRESERVATION_INSTRUCTION = [
  * validation (duplicate paths) and invented keys are rejected — both look like
  * a no-op. Map those phrases onto Chip + layoutPlan.hostKeys instead of refusing.
  */
+export const EDIT_HOST_KNOBS_INSTRUCTION =
+  'When Requested Changes names N cards per row, a smaller title, darker text, or a circular loader, emit Grid columns N wrapping Repeat and leave theme ink / loadingChrome to the host — the host applies those knobs if omitted. Do not emit spec Spinner or CSS fontSize.'
+
 export const EDIT_RESULT_VIEWS_INSTRUCTION = [
   'Same-page result "tabs" (Enhance Article, Coverage, Gap Analysis, Recommendations) after History View or after a form submit are Chip setValue, not catalog Tabs with Label|path.',
   'Default layout: one horizontal Chip row ABOVE the bound DataText/KeyValue panels (Section/Card top). Do not put Chips left of a horizontal split and do not wrap them in a vertical Stack unless Requested Changes explicitly asks for a left rail.',
@@ -507,19 +527,27 @@ export async function generateArenaGenerativeManifest(
     isPreserveEdit &&
     params.existingManifest &&
     !visualBrief &&
-    isThemeOnlyEdit(userInput, null)
+    (isThemeOnlyEdit(userInput, null) || isPaintOnlyEdit(userInput, null))
   ) {
-    const manifest = applyThemeOnlyEdit(params.existingManifest, userInput, params.designNotes)
+    const themed = applyThemeOnlyEdit(params.existingManifest, userInput, params.designNotes)
+    const applied = applyHostEditKnobs(themed, parseHostEditKnobs(userInput), {
+      userInput,
+    })
+    const pagesUnchanged =
+      JSON.stringify(applied.manifest.pages) === JSON.stringify(params.existingManifest.pages)
     return {
       success: true,
       title:
         params.existingManifest.pages[params.existingManifest.entryPath]?.title || 'Generated app',
       content: withStatusPrefix(
-        'Updated theme without rewriting pages.',
-        formatEditScopeStatus(null, true)
+        pagesUnchanged
+          ? 'Updated theme without rewriting pages.'
+          : 'Applied host layout knobs without a spec rewrite.',
+        formatEditScopeStatus(null, pagesUnchanged)
       ),
-      manifest,
-      editScope: { mode: 'theme', pages: [] },
+      manifest: applied.manifest,
+      adoptedChanges: applied.adoptedChanges,
+      editScope: { mode: pagesUnchanged ? 'theme' : 'global', pages: [] },
     }
   }
 
@@ -656,6 +684,7 @@ export async function generateArenaGenerativeManifest(
       : '',
     isPreserveEdit && intentBrief ? formatStructuredBriefForEdit(intentBrief) : '',
     isPreserveEdit ? EDIT_RESULT_VIEWS_INSTRUCTION : '',
+    isPreserveEdit ? EDIT_HOST_KNOBS_INSTRUCTION : '',
   ]
   const userPayload = (
     isScopedEdit && params.existingManifest
@@ -855,6 +884,60 @@ export async function generateArenaGenerativeManifest(
       criticRepaired = true
     }
 
+    const landAdopted: ArenaGenerativeAdoptedChange[] = []
+    if (isPreserveEdit && validation.manifest) {
+      let misses = hostEditLandMisses(validation.manifest, userInput)
+      if (misses.length > 0 && attempt < MAX_REPAIR_ATTEMPTS) {
+        logger.warn('Arena Generative UI land-check requested a repair turn', {
+          misses: misses.length,
+        })
+        messages.push(
+          { role: 'assistant', content: lastRawText },
+          { role: 'user', content: repairUserMessage(formatLandCheckRepair(misses), scopedPaths) }
+        )
+        const landMessage = await createAnthropicMessage(anthropic, {
+          ...messageOptions,
+          messages,
+        })
+        const landText = extractMessageText(landMessage)
+        if (landText) {
+          try {
+            parsed = parseLlmJsonObject(landText)
+            const landed = evaluateGeneratedCandidate(
+              extractManifestCandidate(parsed),
+              evaluateOptions
+            )
+            if (landed.success && landed.manifest) {
+              validation = landed
+              lastRawText = landText
+            }
+          } catch (error) {
+            logger.warn('Arena Generative UI land-check repair held no parseable JSON', {
+              error: toError(error).message,
+            })
+          }
+        }
+        misses = validation.manifest
+          ? hostEditLandMisses(validation.manifest, userInput)
+          : misses
+      }
+      if (validation.manifest && misses.length > 0) {
+        const backed = applySplitResultsBack(validation.manifest, userInput)
+        if (backed.adoptedChanges.length > 0) {
+          validation = { ...validation, manifest: backed.manifest }
+          landAdopted.push(...backed.adoptedChanges)
+          misses = hostEditLandMisses(backed.manifest, userInput)
+        }
+      }
+      if (misses.length > 0) {
+        landAdopted.push({
+          code: 'edit-missed',
+          asked: truncate(userInput, 200),
+          adopted: truncate(misses.join(' '), 500),
+        })
+      }
+    }
+
     const title =
       typeof parsed.title === 'string' && parsed.title.trim()
         ? parsed.title.trim()
@@ -885,7 +968,7 @@ export async function generateArenaGenerativeManifest(
     const adoptedChanges = collectAdoptedChanges({
       isPreserveEdit,
       existing: params.existingAdoptedChanges,
-      current: validation.adoptedChanges,
+      current: [...(validation.adoptedChanges ?? []), ...landAdopted],
     })
     const statusLines = isReplan
       ? [

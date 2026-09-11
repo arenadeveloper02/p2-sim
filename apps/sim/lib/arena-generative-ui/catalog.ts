@@ -1044,7 +1044,7 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'radius: sm md lg — manifest.theme.radius only.',
   'typography: display h1 h2 h3 body bodySmall caption — host maps PageHeader and Heading.level; do not set fontSize.',
   'density: compact comfortable roomy — manifest.theme.density only. Tokens scale with density.',
-  'Viewport: full page up to 1280px; the same layout stacks in a narrow Arena iframe because Grid and Columns collapse. Do not author a permanently narrow centre column.',
+  'Viewport: full page up to 1280px. Do not author a permanently narrow centre column. The host collapses Grid and Columns on a narrow viewport.',
   'Every generate reply includes the default theme. Page → AppHeader → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "lg". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; app identity is AppHeader, not Image.',
 ].join('\n')
 

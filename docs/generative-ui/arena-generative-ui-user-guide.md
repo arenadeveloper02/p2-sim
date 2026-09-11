@@ -94,6 +94,7 @@ Results:
 - No onLoad — data comes from generate or from History Open, not a fetch on arrival
 - Back to Generator at the top
 - Two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}"
+- Buttons "Copy Markdown" and "Download PDF" (host actions, no actionId — they copy or download the article, not recommend_articles)
 - Bind the markdown on DataText statePath "content" (or the string field name).
   Do not bind `field.content` when the API returns a string (for example `artical_data.content`).
   (H1 title, repeating H2 sections with bold Writing Instructions and Target Keywords bullet lists,
@@ -102,7 +103,10 @@ Results:
   Header copy can be Working on "{targetKeyword}" for {clientBrand}…
 
 History page onLoad calls run_history (do not call it from the tab click).
-Repeat cards, most recent first: keyword, client, and date only.
+Repeat cards in a two-column Grid, most recent first: keyword, client, and date only.
+ISO timestamps on the card are formatted by the host (default `Aug 24, 2026`) — bind `{item.date}`, do not paste a formatted copy of the API value.
+To pick a format, bind `{item.date|DD/MM/YYYY}` or `{item.date|relative}`, or set Card `dateFormat` (`short`, `medium`, `long`, `iso`, `numeric`, `numeric-eu`, `datetime`, `relative`, `ago`, or a token pattern).
+Bound numbers stay raw unless you name a format: Stat/Card `numberFormat` (`integer`, `currency`, `usd`, `percent`, `compact`) or `{item.price|currency}` / `{item.rate|percent}`. Table columns can use `price|currency`, `date|relative`, footer aggregates `amount|sum`, and an index column `#`. Table headers sort the loaded rows. DateInput uses a month-grid picker. Dated collections can bind `Calendar` (month/week) or `Timeline` (chronological spine). Locations with lat/lng bind `Map`. Nested folders bind `Tree`. A cycling gallery binds `Carousel`. Set `reorderable` on Table/Repeat only when you asked to drag dummy/local rows.
 Do not bind item.output, content, body, or a Table column for the markdown — not on the card, not as Card.description.
 Each card has a Button labeled "Open" with selectItem true, no actionId, and no navigateTo.
 Open stays on History. Hide the list (Repeat or its wrapper showWhen "!selectedId") and show that row's markdown
@@ -162,7 +166,7 @@ Wrong (generate Response envelope — do not use this on History):
 
 The history sample may include `output` so generate knows the row shape. History cards must still bind only keyword, client, and date. Open uses `selectItem` (no `actionId`, no `navigateTo`); a `clearItem` Back restores the list. Generate still lands on Results.
 
-Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add them later in **Requested Changes** only if you implement them yourself.
+Leave **Pages** blank. Copy Markdown / Download PDF are host actions (labels are enough, or `copyContent` / `downloadPdf` true, no `actionId`). They copy or download the visible article markdown.
 
 ### What this brief is asking the host to do
 
@@ -176,17 +180,30 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 | Open: `selectItem true`, no `actionId`, no `navigateTo` | Copies that row into `selected` / `selectedId` / `content`. On History the host hides Repeat while `selectedId` is set. Workspace/Drawer keep the list visible. |
 | Back: `clearItem true`, `showWhen "selectedId"` | Drops the copied row. The list returns. Do not `navigateTo "history"` — that is a no-op on History. |
 | Generate Results: no `onLoad` | Loading the generate CTA on Results would refetch and replace streamed markdown. History `onLoad` no longer wipes it. History Open does not use this page. |
+| Copy Markdown / Download PDF | Host copies or downloads the visible DataText (`content`). No `actionId`. Do not bind `recommend_articles`. |
 
 `{item.title}` is only for rows inside a Repeat (a list from the API). Do not use `{item…}` for values the visitor just typed.
 
 **What to check in Preview**
 
-1. Generator → Generate Recommendations lands on Results; pills show the typed keyword and client; markdown fills `content`.
-2. History loads on arrival (not on tab click). Cards show keyword, client, date — **not** the full markdown.
+1. Generator → Generate Recommendations lands on Results; pills show the typed keyword and client; markdown fills `content`. Copy Markdown copies that markdown; Download PDF saves a `.pdf`.
+2. History loads on arrival (not on tab click). Cards show keyword, client, date — **not** the full markdown. Two cards sit in a row on a wide History section; dates are readable (Aug 24, 2026), not `2026-08-24T06:28:56.717Z`.
 3. Open on a row hides the History cards and shows **that** run’s markdown on the same page. Back restores the list. It must not call `run_history` or `recommend_articles`, and it must not leave History.
 4. Back from Results returns to Generator. Opening History again still shows the short list.
 
 **History is empty but the API returned data:** Run `run_history` once after changing its Response block (or paste a Sample), then edit with a page-scoped prompt (`On the "history" page, bind Repeat to items`). Generate/edit re-reads last-run, then the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
+
+**History cards stay stacked in one column:** **Edit Existing Draft**, paste **Copy page edit prompt** from History, then ask in ordinary language:
+
+```
+On the "history" page, show two run cards in a row.
+```
+
+The host wraps Repeat in a two-column Grid. You do not need to say Grid.
+
+Other ordinary-language edits the host applies without catalog jargon: “the title is too big — use a normal size”, “make the text a bit darker”, “don’t show the skeleton, use a circular loader”, “hide no-results while data is loading”. Moving results to a new page (“titled Requested Info, with Back”) is a scoped edit, not a full re-plan.
+
+**History dates stay ISO timestamps:** bind `{item.date}` (or `{item.createdAt}`). The host formats ISO values. To change the format, **Edit Existing Draft** with `{item.date|DD/MM/YYYY}` or Card `dateFormat` `numeric-eu` — do not rewrite the API string.
 
 **History Open appends markdown below the list:** Preview/Launch compile missing `showWhen` and a `clearItem` Back. If markdown still sits under the cards, the draft bound `item.output` on the list or never authored a `DataText` for `content`. **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
 
@@ -288,6 +305,15 @@ the inspector.
 4. Theme (brand, density, dark mode): use the preview picker, copy the theme instructions, paste into Requested Changes. Theme-only edits do not call the generator.
 5. Launch from **Deploy → GUI App** when Preview is good. Do not use identifier `preview`. Reopening the tab should show the saved description, category, access control, and allowed emails. A direct `/gui-apps/{identifier}` URL (no `?emailId=`) uses Access control — email OTP, password, or SSO — not the Arena hard deny. Allowed emails do not bypass **Require Arena emailId** on a `public` app.
 
+**Host owns these — Requested Changes that ask for them are ignored.** Generate still succeeds; Preview/Launch drop the extra chrome.
+
+- Custom spinner, progress bar, elapsed timer, or Cancel on the form (wait belongs on Results / WorkingCard)
+- Custom error Alert, save-success Toast, or delete-confirm Modal
+- A Refresh button (the host already offers Refresh)
+- Extra dashboard / stats / history pages the job did not ask for
+- A second primary button on the same screen (the critic demotes it)
+- Binding `item.output` onto every History card
+
 ---
 
 ## Short checklist
@@ -302,3 +328,4 @@ the inspector.
 - To show typed values on Results, write `{targetKeyword}` (or the form `name`) there — not History keys like `{keyword}` / `{client}`, and do not wait for the API to echo them.
 - History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`, no `navigateTo`); hide the list with `!selectedId`; Back is `clearItem`. Do not bind `item.output` on the list. Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`; child rows use `projectId` so the host can filter.
 - Edits are deltas. Do not paste the original brief again.
+- The host owns wait, error, save toast, delete confirm, and Refresh. Asking for a form spinner, error Alert, or Refresh button in Requested Changes is ignored.

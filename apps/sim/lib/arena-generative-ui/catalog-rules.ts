@@ -50,8 +50,7 @@ export const ARENA_GENERATIVE_UI_INTERACTION_RULES = [
 ] as const
 
 export const ARENA_GENERATIVE_UI_RESPONSIVE_RULES = [
-  'Layout: compose for a full page up to 1280px. Grid and Columns collapse to one column in a narrow Arena iframe — do not design as a permanently narrow single column, and do not assume the iframe is 1280px. Do not set maxWidth unless the brief demands an exact cap.',
-  'This app renders as a full page up to 1280px and also embeds in a narrow Arena iframe (Grid and Columns collapse).',
+  'Layout: compose for a full page up to 1280px. Do not design as a permanently narrow single column. Do not set maxWidth unless the brief demands an exact cap. The host collapses Grid and Columns on a narrow viewport — do not emit a second mobile-only layout.',
 ] as const
 
 export const ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES = [

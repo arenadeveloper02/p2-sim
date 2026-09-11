@@ -2631,6 +2631,45 @@ describe('SpecRenderer', () => {
     expect(container.textContent).toContain('New orders will show up here.')
   })
 
+  it('hides catalog EmptyState while the page is pending', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['empty'] },
+        empty: {
+          type: 'EmptyState',
+          props: { title: 'No results', body: 'Try again later.' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, pending: true })
+    expect(container.querySelector('[data-testid="empty-state"]')).toBeNull()
+  })
+
+  it('paints a circular loader instead of skeletons when uxPlan asks', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['repeat'] },
+        repeat: {
+          type: 'Repeat',
+          props: { statePath: 'items', emptyText: 'None' },
+          children: ['card'],
+        },
+        card: { type: 'Card', props: { title: '{item.title}' }, children: [] },
+      },
+    }
+    const { container } = render({
+      spec,
+      pending: true,
+      state: { items: [] },
+      uxPlan: { actions: {}, fallbackLoading: {}, loadingChrome: 'spinner' },
+    })
+    expect(container.querySelector('[data-testid="circular-loader"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
+  })
+
   it('renders EmptyState children as the next useful action', () => {
     const spec: Spec = {
       root: 'page',

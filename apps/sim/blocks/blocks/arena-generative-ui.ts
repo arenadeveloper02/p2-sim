@@ -172,7 +172,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       type: 'long-input',
       placeholder: 'Optional Arena DS / brand / density notes',
       tooltip:
-        'Optional. Tone and density, or name a theme knob (brandColor, density, radius, colorScheme). Layout is full-page up to 1280px and stacks in a narrow Arena iframe.\n\nCalm Arena-like layout. Density compact. Dark mode.',
+        'Optional. Tone and density, or name a theme knob (brandColor, density, radius, colorScheme). Layout is a full page up to 1280px.\n\nCalm Arena-like layout. Density compact. Dark mode.',
     },
   ],
   tools: {

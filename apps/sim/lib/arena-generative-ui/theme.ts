@@ -53,11 +53,16 @@ export const ARENA_GENERATIVE_THEME_RADII = ['sm', 'md', 'lg'] as const
 export const ARENA_GENERATIVE_THEME_DENSITIES = ['compact', 'comfortable', 'roomy'] as const
 export const ARENA_GENERATIVE_THEME_FONTS = ['sans', 'serif'] as const
 export const ARENA_GENERATIVE_THEME_COLOR_SCHEMES = ['light', 'dark', 'system'] as const
+export const ARENA_GENERATIVE_THEME_INKS = ['default', 'strong'] as const
+export const ARENA_GENERATIVE_THEME_LOADING_CHROMES = ['skeleton', 'spinner'] as const
 
 export type ArenaGenerativeThemeRadius = (typeof ARENA_GENERATIVE_THEME_RADII)[number]
 export type ArenaGenerativeThemeDensity = (typeof ARENA_GENERATIVE_THEME_DENSITIES)[number]
 export type ArenaGenerativeThemeFont = (typeof ARENA_GENERATIVE_THEME_FONTS)[number]
 export type ArenaGenerativeThemeColorScheme = (typeof ARENA_GENERATIVE_THEME_COLOR_SCHEMES)[number]
+export type ArenaGenerativeThemeInk = (typeof ARENA_GENERATIVE_THEME_INKS)[number]
+export type ArenaGenerativeThemeLoadingChrome =
+  (typeof ARENA_GENERATIVE_THEME_LOADING_CHROMES)[number]
 
 export interface ArenaGenerativeTheme {
   brandColor?: string
@@ -65,6 +70,10 @@ export interface ArenaGenerativeTheme {
   density?: ArenaGenerativeThemeDensity
   font?: ArenaGenerativeThemeFont
   colorScheme?: ArenaGenerativeThemeColorScheme
+  /** Stronger body/muted ink. App-wide — not a per-card hex. */
+  ink?: ArenaGenerativeThemeInk
+  /** Pending region chrome. Host paints this; do not emit spec Spinner. */
+  loadingChrome?: ArenaGenerativeThemeLoadingChrome
 }
 
 export const DEFAULT_ARENA_GENERATIVE_THEME: ArenaGenerativeTheme = {
@@ -99,6 +108,10 @@ export function parseArenaGenerativeTheme(raw: unknown): ArenaGenerativeTheme | 
   if (font) theme.font = font
   const colorScheme = asEnum(record.colorScheme, ARENA_GENERATIVE_THEME_COLOR_SCHEMES)
   if (colorScheme) theme.colorScheme = colorScheme
+  const ink = asEnum(record.ink, ARENA_GENERATIVE_THEME_INKS)
+  if (ink) theme.ink = ink
+  const loadingChrome = asEnum(record.loadingChrome, ARENA_GENERATIVE_THEME_LOADING_CHROMES)
+  if (loadingChrome) theme.loadingChrome = loadingChrome
   return Object.keys(theme).length > 0 ? theme : undefined
 }
 
@@ -151,6 +164,15 @@ export function arenaGenerativeThemeStyle(
   }
   if (theme.font === 'serif') {
     style.fontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif'
+  }
+  if (theme.ink === 'strong') {
+    if (scheme === 'dark') {
+      style['--gui-text'] = '#f4f5f7'
+      style['--gui-text-muted'] = '#d0d3db'
+    } else {
+      style['--gui-text'] = '#1a1b1f'
+      style['--gui-text-muted'] = '#3d3f47'
+    }
   }
   return style as CSSProperties
 }

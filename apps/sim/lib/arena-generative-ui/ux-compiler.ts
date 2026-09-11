@@ -26,6 +26,8 @@ export interface ArenaGenerativeUxActionPlan {
 export interface ArenaGenerativeUxPlan {
   actions: Record<string, ArenaGenerativeUxActionPlan>
   fallbackLoading: Record<string, ArenaGenerativeFallbackLoading>
+  /** Host pending chrome. Default skeleton. */
+  loadingChrome?: 'skeleton' | 'spinner'
 }
 
 export interface CompileGenerativeUxResult {
@@ -787,6 +789,7 @@ export function compileGenerativeUx(
     uxPlan: {
       actions: planActions(manifest, bindings),
       fallbackLoading,
+      ...(manifest.theme?.loadingChrome === 'spinner' ? { loadingChrome: 'spinner' as const } : {}),
     },
   }
 }

@@ -256,11 +256,12 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).not.toContain('640px')
     expect(system).not.toContain('Single column only')
     expect(system).not.toContain('iframe-narrow')
+    expect(system).not.toContain('narrow Arena iframe')
+    expect(system).not.toContain('Arena iframe')
     expect(system).not.toContain('one Card')
     expect(system).not.toContain('one primary CTA per page')
     expect(system).not.toContain('full-page app shell')
     expect(system).toContain('full page up to 1280px')
-    expect(system).toContain('narrow Arena iframe')
     expect(system).toContain('Grid')
     expect(system).toContain('Table')
     expect(system).toContain('Repeat')
@@ -1598,6 +1599,21 @@ describe('generateArenaGenerativeManifest', () => {
       expect(result.manifest?.theme?.colorScheme).toBe('dark')
       expect(result.manifest?.theme?.density).toBe('compact')
       expect(JSON.stringify(result.manifest?.pages)).toBe(JSON.stringify(twoPageManifest.pages))
+    })
+
+    it('applies paint knobs without calling the model', async () => {
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Make the text a bit darker. Use a circular loader.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+      })
+
+      expect(mockCreateAnthropicMessage).not.toHaveBeenCalled()
+      expect(result.success).toBe(true)
+      expect(result.editScope).toEqual({ mode: 'theme', pages: [] })
+      expect(result.manifest?.theme?.ink).toBe('strong')
+      expect(result.manifest?.theme?.loadingChrome).toBe('spinner')
+      expect(result.adoptedChanges?.some((change) => change.code === 'text-contrast')).toBe(true)
     })
   })
 

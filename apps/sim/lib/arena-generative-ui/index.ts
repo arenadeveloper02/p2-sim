@@ -45,6 +45,11 @@ export {
 } from '@/lib/arena-generative-ui/generate-warnings'
 export { repairHostCriticExtras } from '@/lib/arena-generative-ui/host-critic-repair'
 export {
+  applyHostEditKnobs,
+  isPaintOnlyEdit,
+  parseHostEditKnobs,
+} from '@/lib/arena-generative-ui/host-edit-knobs'
+export {
   sanitizeHostOwnedManifest,
   stripHostOwnedChrome,
 } from '@/lib/arena-generative-ui/strip-host-owned-chrome'

@@ -65,7 +65,7 @@ export const ARENA_GENERATIVE_UI_COMPOSITION_PROMPT = [
   'ICONS',
   'Use icons consistently. Icons reinforce meaning rather than replace important labels. Do not use decorative icons merely to fill space. Use the same icon for the same semantic action throughout the application.',
   'RESPONSIVE DESIGN',
-  'Compose for a full page up to 1280px. Prefer fluid Grid / Columns / Stack, not fixed positioning. Grid and Columns collapse to one column in a narrow Arena iframe — do not design as a permanently narrow single column, and do not assume the iframe is 1280px. Do not set maxWidth unless the brief demands an exact cap. Keep primary actions accessible when columns stack. Avoid horizontal scrolling except for inherently wide Table. Never rely on hover to expose essential information or actions (the catalog has no hover-only chrome).',
+  'Compose for a full page up to 1280px. Prefer fluid Grid / Columns / Stack, not fixed positioning. Do not design as a permanently narrow single column. Do not set maxWidth unless the brief demands an exact cap. The host collapses Grid and Columns on a narrow viewport — keep primary actions accessible when columns stack, and do not emit a second mobile-only layout. Avoid horizontal scrolling except for inherently wide Table. Never rely on hover to expose essential information or actions (the catalog has no hover-only chrome).',
   'CONTENT',
   'Design for realistic content lengths, not only short placeholder text. Handle long titles, descriptions, names, and numbers gracefully. Avoid awkward truncation of important information. Use meaningful labels rather than generic Submit, Click, or View.',
   'DENSITY',
