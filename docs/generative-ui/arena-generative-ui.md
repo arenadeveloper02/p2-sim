@@ -65,7 +65,7 @@ Describe the app in **plain language**. This field is prose, not JSON. Only **Pa
 
 The model uses this brief to invent pages, copy, forms, and navigation. Do not describe loaders, toasts, or confirm dialogs — the host compiles those. Every generate run also applies the **Universal UI/UX Constitution** (hierarchy, one primary action, density, empty copy, Back) so those quality rules are not left to the archetype recipe.
 
-Generation is Intent → Plan → spec: a cheap analyzer extracts task and entities, a cheap planner emits a flat App Blueprint (complexity, sitemap, page archetypes, compose vs navigate vs local, optional Workspace regions, capabilities, data.mode), then the spec call renders the json-render manifest with **only the recipes that blueprint selected**, so a dashboard is not taught as a search hero. Page jobs are `collection`, `detail`, `task`, `results`, `dashboard`, `workflow`, or `workspace` — not the old form→result / list→detail / wizard labels (those still parse as aliases on stored drafts). Analyzer and planner both fail open — generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run analyzer and planner again on this draft. The block `content` line starts with `Intent:`, `Planner:`, `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite.
+Generation is Intent → Plan → spec: a cheap analyzer extracts task and entities, a cheap planner emits a flat App Blueprint (complexity, sitemap, page archetypes, compose vs navigate vs local, optional Workspace regions, capabilities, data.mode), then the spec call renders the json-render manifest with **only the recipes that blueprint selected**, so a dashboard is not taught as a search hero. Page jobs are `collection`, `detail`, `task`, `results`, `dashboard`, `workflow`, or `workspace` — not the old form→result / list→detail / wizard labels (those still parse as aliases on stored drafts). Analyzer and planner both fail open — generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** or **paint-only** Requested Changes (`dark mode`, `two cards in a row`, `circular loader`) which patch theme / host knobs without a spec LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run analyzer and planner again on this draft. The block `content` line starts with `Intent:`, `Planner:`, `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite. See **What Requested Changes honors** for the full honor / ignore list.
 
 Include:
 
@@ -128,9 +128,66 @@ Nothing about this is a setting, and a fallback is not an error — it is the pr
 
 The scope call can occasionally include a page your change did not need, which only costs tokens. If it *misses* the page you meant, the edit will appear to do nothing — name the page explicitly ("on the **results** page, …") and run again. Preview's **Copy page edit prompt** pastes that prefix for you.
 
-#### Theme-only edits
+#### Theme-only and paint-only edits
 
-If Requested Changes is only branding (`dark mode`, `density compact`, `brandColor #1A73E8`, or the string copied from the preview theme picker), Sim patches `manifest.theme` and does **not** call the generator. Pages stay byte-identical. Mix in a layout word (`page`, `form`, `search`, `title`) and the usual edit path runs instead.
+If Requested Changes is only branding (`dark mode`, `density compact`, `brandColor #1A73E8`, or the string copied from the preview theme picker), Sim patches `manifest.theme` and does **not** call the generator. Pages stay byte-identical.
+
+The same skip applies when the ask is only a **host paint knob**: card density, title size, text contrast, circular loader vs skeleton, or hide no-results while fetching. Mix in a layout word that is not one of those knobs (`form`, `search`, `bind`, `move`, `page`) and the usual scoped edit path runs instead.
+
+#### What Requested Changes honors
+
+Type ordinary language. You do not need catalog names (`Grid`, `theme.ink`). Name the page when the app has several (`On the "history" page, …` or Preview **Copy page edit prompt**).
+
+**Honored without rewriting pages** (no spec LLM):
+
+| You type | What the host does |
+|---|---|
+| `dark mode` / `light mode` / `density compact` / `roomy` / `brandColor #1A73E8` / `radius lg` | Patches `manifest.theme`. Pages stay byte-identical. |
+| `show two history cards in a row` / `three-up cards` / `stack the cards` | Wraps Repeat-of-Card in `Grid columns` 2, 3, or a single Stack. |
+| `327px cards` / `cards 327px` | Not pixel-perfect. Nearest catalog density is **two** columns (`edit-nearest`). |
+| `the title is too big` / `use a normal size` | Demotes extra `Heading` h1 to the host type scale (h2). |
+| `make the text a bit darker` | App-wide `theme.ink: strong`. Not a per-card hex. |
+| `don't show the skeleton, use a circular loader` | Persists `theme.loadingChrome: spinner`. Pending regions paint Loader2. |
+| `hide no-results while data is loading` | Always-on paint: catalog EmptyState stays hidden while the page or bound collection is pending. |
+
+**Honored as a scoped delta** (spec LLM on the pages in scope, then one land-check repair if the ask missed — not a re-plan):
+
+| You type | What happens |
+|---|---|
+| Copy, labels, field names, CTA wording | Rewritten on the named page(s). Untouched pages stay byte-identical. |
+| Bind / rebind a result to a declared host key | `statePath` updates to a `layoutPlan.hostKeys` name. Misspelled keys are mapped to the declared spelling. |
+| Same-page result “tabs” (Enhance Article / Coverage / …) | Chip `setValue` above the bound panels — not catalog Tabs. |
+| `move results to a page titled Requested Info, with Back` | New results page plus Back. If Back is still missing after repair, the host inserts a NavLink. |
+| Add or remove a page, rewire CTAs, “on every page” | Honored, but the run may rewrite the whole manifest (see scope fallback above). |
+
+**Rebuilds the app** (current pages are not preserved):
+
+`re-plan`, `rebuild the app`, `start over`, `from scratch`, `replace the whole app`, or `turn this into a dashboard` / wizard / list-detail. Local wording (`rebuild the search row`, `regenerate the score`) stays a delta.
+
+If a scoped ask still missed after one repair, the draft records `edit-missed` and keeps the last valid spec. The host does **not** throw away History, copy, or bindings unless you ask to rebuild.
+
+#### What Requested Changes ignores
+
+The run still succeeds. Preview and Launch drop or nearest-map the ask. Adopted notes on the draft (and Preview **Copy as edit instructions**) list what the host kept or stripped.
+
+| You ask | Why it is ignored or rewritten |
+|---|---|
+| Custom spinner, progress bar, elapsed timer, or Cancel on the form | Host owns wait chrome and WorkingCard. Extra Spinner / ProgressBar / ProgressSteps are stripped. |
+| Custom error Alert, save-success Toast, or delete-confirm Modal | Host owns the banner, toast, and destructive confirm. |
+| A Refresh button | Host already offers Refresh after `onLoad`. |
+| Pixel-perfect Figma, custom CSS, `fontSize`, or a hex on one Card | Catalog + theme tokens only. Use Design Notes or the paint knobs above. |
+| A separate mobile-only layout | One layout. The host collapses Grid and Columns on a narrow viewport. |
+| Three peer page columns | Forbidden except Workspace (navigator + primary + inspector). |
+| Generate form beside an empty results pane | Stack wait then results, or navigate. Not two columns. |
+| Nested Cards / Card-in-Card | Flattened. |
+| Hover-only menus | Catalog has no hover-only chrome. Actions stay visible. |
+| Extra dashboard / stats / history / settings pages the job did not ask for | Dropped on generate. An edit may add a page only if you name it. |
+| Invent a new API key | Rejected. Use a declared API Bindings key. |
+| Paste the original User Input brief again | Invites a rebuild. Type only the delta. |
+| A second primary button on the same screen | Demoted to secondary. |
+| Bind `item.output` / `item.content` on every History card | Stripped. Open (`selectItem`) copies prose to `content`. |
+
+An edit that **appears** to do nothing is usually a **scope miss** (the page was never sent), not an ignore. Name the page and rerun. See Troubleshooting.
 
 ### Pages (optional JSON)
 
@@ -655,7 +712,7 @@ The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guid
 | “Do not have access” | Access control is `public` (or unset), Require Arena emailId is on, and `emailId` is missing. Allowed emails do not bypass this. Add `?emailId=`, open from Arena so the cookie is set, switch Access control to `email`, or turn the gate off |
 | Open goes to chat or an external App URL | Control-bar Open prefers Chat/App. Use Launch GUI App from Deploy → GUI App |
 | Edit cannot find the draft | Draft must belong to this workflow; Generate created it on another workflow |
-| Edit ran but nothing changed | The scope call may have missed the page you meant. Name the page in **Requested Changes** ("on the results page, …") or paste **Copy page edit prompt** from preview, then rerun. The block's `content` output lists which pages actually changed |
+| Edit ran but nothing changed | The scope call may have missed the page you meant, or the ask is on the **ignore** list (custom spinner, CSS, hover-only, invented API key). Name the page in **Requested Changes** ("on the results page, …") or paste **Copy page edit prompt** from preview, then rerun. See **What Requested Changes honors**. The block's `content` output lists which pages actually changed |
 | CTA fails with 429 / "Too many requests for this app" | The per-IP CTA limit (120 per 5 minutes per app) tripped. Wait for `Retry-After`. If real use hits it, the page is probably running `onLoad` actions on every navigation — cut them down or widen the limit |
 | A workflow CTA gets no `arenaEmailId` | It is only absent when no emailId resolved for that visitor. `inputMapping` does not drop it. For an **HTTP** binding it is withheld unless the binding sets `forwardEmailId` |
 | Generation error about a SubmitButton doing nothing | A `SubmitButton` ended up outside its `Form` with no `actionId`. Rerun; if it repeats, say in the brief which form the button submits |
