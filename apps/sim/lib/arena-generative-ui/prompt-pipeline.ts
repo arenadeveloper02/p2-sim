@@ -58,6 +58,7 @@ export interface BuildGeneratorSystemPromptOptions {
   hasDummyData?: boolean
   needsForms?: boolean
   needsTables?: boolean
+  needsCalendar?: boolean
   needsWait?: boolean
   needsWorkspace?: boolean
   /** Planned page jobs for gold selection. Not region archetypes. */
@@ -90,6 +91,7 @@ export function generatorPromptOptionsFromBrief(
   | 'hasDummyData'
   | 'needsForms'
   | 'needsTables'
+  | 'needsCalendar'
   | 'needsWait'
   | 'needsWorkspace'
   | 'pageArchetypes'
@@ -100,6 +102,7 @@ export function generatorPromptOptionsFromBrief(
       hasDummyData: false,
       needsForms: false,
       needsTables: false,
+      needsCalendar: false,
       needsWait: false,
       needsWorkspace: false,
       pageArchetypes: [],
@@ -108,7 +111,8 @@ export function generatorPromptOptionsFromBrief(
   }
   const shapes = new Set<ArenaGenerativeArchetype>([brief.archetype])
   const pageArchetypes: ArenaGenerativeArchetype[] = []
-  let needsTables = brief.representation === 'table'
+  let needsTables = brief.representation === 'table' || brief.representation === 'calendar'
+  let needsCalendar = brief.representation === 'calendar'
   let hasRegions = false
   let hasWorkspacePage = brief.archetype === 'workspace'
   for (const page of brief.pages ?? []) {
@@ -117,12 +121,16 @@ export function generatorPromptOptionsFromBrief(
       pageArchetypes.push(page.archetype)
       if (page.archetype === 'workspace') hasWorkspacePage = true
     }
-    if (page.representation === 'table') needsTables = true
+    if (page.representation === 'table' || page.representation === 'calendar') needsTables = true
+    if (page.representation === 'calendar') needsCalendar = true
     if (page.regions) {
       hasRegions = true
       for (const region of Object.values(page.regions)) {
         if (region?.archetype) shapes.add(region.archetype)
-        if (region?.representation === 'table') needsTables = true
+        if (region?.representation === 'table' || region?.representation === 'calendar') {
+          needsTables = true
+        }
+        if (region?.representation === 'calendar') needsCalendar = true
       }
     }
   }
@@ -134,6 +142,7 @@ export function generatorPromptOptionsFromBrief(
     hasDummyData: briefHasDummyOrLocalData(brief),
     needsForms: shapes.has('task') || shapes.has('workflow'),
     needsTables,
+    needsCalendar,
     needsWait: capabilities.some((capability) => WAIT_CAPABILITIES.has(capability)),
     needsWorkspace: hasWorkspacePage || hasRegions,
     pageArchetypes,
@@ -255,6 +264,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
         pageArchetypes: options.pageArchetypes,
         hasRegions: options.hasRegions,
         shell: options.shell,
+        needsCalendar: options.needsCalendar,
       }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
       catalogAndEnvelope,

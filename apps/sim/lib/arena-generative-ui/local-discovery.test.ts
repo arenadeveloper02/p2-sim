@@ -21,8 +21,13 @@ import {
   stampSelectionForeignKeys,
   isLocalDiscoveryPassthrough,
   itemMatchesLocalDiscovery,
-  LOCAL_COLLECTION_PAGE_SIZE,
+  sortCollectionItems,
+  sortStaticTableRows,
+  spliceCollectionItems,
+  collectionHasApiOwnedSort,
+  hostStatePatchAtPath,
   paginateCollection,
+  LOCAL_COLLECTION_PAGE_SIZE,
 } from '@/lib/arena-generative-ui/local-discovery'
 
 const headers = ['TASK', 'CATEGORY', 'PRIORITY', 'STATUS']
@@ -627,6 +632,72 @@ describe('paginateCollection', () => {
   it('honors an explicit page size', () => {
     expect(paginateCollection(items, 3, 10).items).toEqual([21, 22, 23, 24, 25])
     expect(paginateCollection(items, 3, 10).pageCount).toBe(3)
+  })
+})
+
+describe('sortCollectionItems', () => {
+  it('sorts numbers, ISO dates, and strings with missing values last', () => {
+    const items = [
+      { name: 'b', amount: 2, date: '2026-09-11' },
+      { name: 'a', amount: 10, date: '2026-09-01' },
+      { name: 'c', amount: undefined, date: '' },
+    ]
+    expect(sortCollectionItems(items, { key: 'amount', direction: 'desc' }).map((row) => row.name)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+    expect(sortCollectionItems(items, { key: 'date', direction: 'asc' }).map((row) => row.name)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+    expect(sortCollectionItems(items, { key: 'name', direction: 'asc' }).map((row) => row.name)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+  })
+
+  it('sorts after filter and splices the full host array', () => {
+    const items = [
+      { id: '1', status: 'Open', name: 'B' },
+      { id: '2', status: 'Done', name: 'A' },
+      { id: '3', status: 'Open', name: 'C' },
+    ]
+    const filtered = filterCollectionItems(items, { search: '', filters: { status: 'Open' } })
+    expect(sortCollectionItems(filtered, { key: 'name', direction: 'asc' }).map((row) => row.id)).toEqual([
+      '1',
+      '3',
+    ])
+    expect(spliceCollectionItems(items, 0, 2).map((row) => row.id)).toEqual(['2', '3', '1'])
+    expect(sortStaticTableRows(['TASK', 'STATUS'], rows, { key: 'TASK', direction: 'asc' })[0]?.[0]).toBe(
+      'Prepare Q3 budget report'
+    )
+  })
+
+  it('detects API-owned sort controls and patches nested host paths', () => {
+    expect(
+      collectionHasApiOwnedSort(
+        {
+          toolbar: { type: 'Toolbar', children: ['sort'] },
+          sort: { type: 'Select', props: { name: 'order', actionId: 'load_tasks' } },
+        },
+        new Set(['load_tasks'])
+      )
+    ).toBe(true)
+    expect(
+      collectionHasApiOwnedSort(
+        {
+          toolbar: { type: 'Toolbar', children: ['sort'] },
+          sort: { type: 'Select', props: { name: 'order' } },
+        },
+        new Set(['load_tasks'])
+      )
+    ).toBe(false)
+    expect(hostStatePatchAtPath({ report: { items: [1] } }, 'report.items', [2])).toEqual({
+      report: { items: [2] },
+    })
   })
 })
 

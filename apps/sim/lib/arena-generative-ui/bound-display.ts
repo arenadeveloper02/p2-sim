@@ -10,6 +10,8 @@ export interface BoundDisplayOptions {
   dateFormat?: string
   /** Preset or token from Stat/Card.numberFormat when the binding has no pipe. */
   numberFormat?: string
+  /** Clock for relative/ago dates. Defaults to Date.now(). */
+  nowMs?: number
 }
 
 /**
@@ -24,12 +26,12 @@ export function formatBoundDisplay(
 ): string {
   if (pipeFormat) {
     if (isBoundNumberFormat(pipeFormat)) return formatBoundNumberDisplay(value, pipeFormat)
-    return formatBoundDateDisplay(value, pipeFormat)
+    return formatBoundDateDisplay(value, pipeFormat, options.nowMs)
   }
   if (options.numberFormat && parseBoundNumber(value) !== undefined && !isBoundIsoDate(value)) {
     return formatBoundNumberDisplay(value, options.numberFormat)
   }
-  return formatBoundDateDisplay(value, options.dateFormat)
+  return formatBoundDateDisplay(value, options.dateFormat, options.nowMs)
 }
 
 /** Display formatting when the binding has no pipe — dates auto, numbers only if named. */

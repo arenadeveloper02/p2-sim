@@ -4465,4 +4465,187 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('[data-testid="action-success-toast"]')).toBeNull()
     })
   })
+
+  describe('host reshape', () => {
+    it('sorts bound table rows when a header is clicked', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { columns: 'name, amount', statePath: 'items' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: {
+          items: [
+            { name: 'B', amount: 2 },
+            { name: 'A', amount: 10 },
+          ],
+        },
+      })
+      const header = Array.from(container.querySelectorAll('th button')).find(
+        (button) => button.textContent === 'name'
+      )
+      expect(header).toBeTruthy()
+      act(() => {
+        header?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      const cells = Array.from(container.querySelectorAll('tbody tr td:first-child')).map(
+        (cell) => cell.textContent
+      )
+      expect(cells).toEqual(['A', 'B'])
+    })
+
+    it('renders an index column, totals row, and relative dates', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { columns: '#,amount|sum,date|relative', statePath: 'items' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: {
+          items: [
+            { amount: 10, date: '2020-01-01' },
+            { amount: 5, date: '2020-01-02' },
+          ],
+        },
+      })
+      expect(container.querySelector('thead')?.textContent).toContain('#')
+      expect(container.querySelector('tbody tr td')?.textContent).toBe('1')
+      expect(container.querySelector('tfoot')?.textContent).toContain('15')
+      expect(container.textContent).not.toContain('2020-01-01')
+      expect(container.textContent).toMatch(/days ago/)
+    })
+
+    it('parses a markdown table string and falls back to DataText when it is prose', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { columns: null, statePath: 'content' },
+            children: [],
+          },
+        },
+      }
+      const markdown = {
+        spec,
+        state: {
+          content: '| Name | Score |\n| --- | --- |\n| Ada | 12 |',
+        },
+      }
+      const parsed = render(markdown)
+      expect(parsed.container.querySelector('table')?.textContent).toContain('Ada')
+      parsed.container.remove()
+      const prose = render({
+        spec,
+        state: { content: '# Hello\n\nJust an article.' },
+      })
+      expect(prose.container.querySelector('table')).toBeNull()
+      expect(prose.container.textContent).toContain('Hello')
+    })
+
+    it('opens a DateInput month-grid popover', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['start'] },
+          start: {
+            type: 'DateInput',
+            props: { name: 'start', label: 'Start', defaultValue: '2026-09-11' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec })
+      const trigger = container.querySelector('button[aria-haspopup="dialog"]') as HTMLButtonElement
+      expect(container.querySelector('[data-testid="gui-month-grid"]')).toBeNull()
+      act(() => {
+        trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.querySelector('[data-testid="gui-month-grid"]')).toBeTruthy()
+      expect(container.querySelector('input[type="date"]')).toBeTruthy()
+    })
+
+    it('plots Calendar items and keeps unscheduled rows', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['calendar'] },
+          calendar: {
+            type: 'Calendar',
+            props: {
+              statePath: 'events',
+              dateField: 'date',
+              titleField: 'title',
+              view: 'month',
+              emptyText: 'None',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          events: [
+            { id: 'e1', title: 'Kickoff', date: '2026-09-11' },
+            { id: 'e2', title: 'Backlog' },
+          ],
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-calendar"]')).toBeTruthy()
+      expect(container.querySelector('[data-testid="unscheduled"]')?.textContent).toContain(
+        'Backlog'
+      )
+      const chip = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Backlog'
+      )
+      act(() => {
+        chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('splices reorderable table rows with Alt+Arrow', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { columns: 'name', statePath: 'items', reorderable: true },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: { items: [{ id: '1', name: 'A' }, { id: '2', name: 'B' }] },
+      })
+      const row = container.querySelector('tbody tr') as HTMLTableRowElement
+      act(() => {
+        row.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true })
+        )
+      })
+      const names = Array.from(container.querySelectorAll('tbody tr')).map(
+        (row) => row.querySelectorAll('td')[1]?.textContent
+      )
+      expect(names[0]).toBe('B')
+    })
+  })
 })

@@ -79,7 +79,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   sort: [
     'CAPABILITY: SORT',
-    'Ordering an already-loaded collection. Put a Select (or Chip set) in the Toolbar next to Filter. The control must be a query param the collection onLoad / CTA actually sends. Do not invent column-header sort on Table.',
+    'Ordering an already-loaded collection. Table headers sort the loaded rows locally on click. Emit a Select (or Chip set) in the Toolbar only when a collection onLoad / CTA actually sends sort/order/orderby/direction. Do not emit a sort Select that the binding does not send.',
   ].join('\n'),
   pagination: [
     'CAPABILITY: PAGINATION',

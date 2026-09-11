@@ -10,6 +10,7 @@ import {
 describe('parseArenaGenerativeRepresentation', () => {
   it('accepts the closed enum and aliases, and fails unknown values open to auto', () => {
     expect(parseArenaGenerativeRepresentation('table')).toBe('table')
+    expect(parseArenaGenerativeRepresentation('calendar')).toBe('calendar')
     expect(parseArenaGenerativeRepresentation('kanban')).toBe('kanban')
     expect(parseArenaGenerativeRepresentation('timeline')).toBe('timeline')
     expect(parseArenaGenerativeRepresentation('card')).toBe('cards')
@@ -23,6 +24,7 @@ describe('ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT', () => {
   it('separates representation from archetype and forbids invented types', () => {
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('REPRESENTATION')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('Archetype is the job')
+    expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('Use Calendar')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('No Kanban type')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('No Timeline type')
     expect(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT).toContain('Repeat of Disclosure')

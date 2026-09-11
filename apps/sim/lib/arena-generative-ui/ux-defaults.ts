@@ -27,10 +27,7 @@ export const UX_DEFAULTS = {
     loadingState: 'skeleton' as const,
     emptyState: true,
   },
-  Repeat: {
-    loadingState: 'skeleton' as const,
-    emptyState: true,
-  },
+  Calendar: { loadingState: 'skeleton' as const, emptyState: true },
   Stat: { loadingState: 'skeleton' as const },
   KeyValue: { loadingState: 'skeleton' as const, emptyState: true },
   DataText: { loadingState: 'skeleton' as const },

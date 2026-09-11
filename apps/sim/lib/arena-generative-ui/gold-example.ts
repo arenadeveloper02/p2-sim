@@ -1,6 +1,7 @@
 import type { Spec } from '@json-render/core'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
@@ -210,6 +211,8 @@ export interface GoldExamplePickerOptions {
    * Sidebar chrome remains the shell recipe, not gold.
    */
   shell?: ArenaGenerativeShell
+  /** Dummy collection plotted on Calendar (representation calendar). */
+  needsCalendar?: boolean
 }
 
 /**
@@ -243,6 +246,9 @@ export function goldExamplePromptForArchetype(
   }
   if (shapes.has('task')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+  }
+  if (shapes.has('collection') && options?.needsCalendar) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR
   }
   if (shapes.has('collection')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION

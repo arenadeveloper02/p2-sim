@@ -41,6 +41,11 @@ describe('capabilityRecipePrompt', () => {
     )
   })
 
+  it('tells sort recipes that header click sorts loaded rows', () => {
+    expect(capabilityRecipePrompt(['sort'])).toContain('Table headers sort the loaded rows')
+    expect(capabilityRecipePrompt(['sort'])).not.toContain('Do not invent column-header sort')
+  })
+
   it('keeps Workspace regions visible on select and still teaches History Open', () => {
     const prompt = capabilityRecipePrompt(['select'])
     expect(prompt).toContain('Honour pages[].interaction.selection')

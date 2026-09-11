@@ -764,7 +764,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: collection',
     'Purpose: Display and operate on a collection of entities.',
     'Structure: Header → Toolbar (only if CAPABILITY search/filter/sort is selected) → Collection.',
-    'Rules: Honour pages[].representation (list / table / cards). Bind collection data when bindings exist; dummy/local mode seeds 4–8 static Table rows or Repeat items. Do not add search, filter, stats, or a detail page unless the blueprint listed them. Entity actions stay on the entity. Inspect is CAPABILITY inspect: same-page when pages[].regions.inspector or interaction.inspect is not navigate; a Detail page only when the sitemap already has one. Loading, empty, and error are host — set emptyText.',
+    'Rules: Honour pages[].representation (list / table / cards / calendar). Bind collection data when bindings exist; dummy/local mode seeds 4–8 static Table rows, Repeat items, or Calendar events. Do not add search, filter, stats, or a detail page unless the blueprint listed them. Entity actions stay on the entity. Inspect is CAPABILITY inspect: same-page when pages[].regions.inspector or interaction.inspect is not navigate; a Detail page only when the sitemap already has one. Loading, empty, and error are host — set emptyText.',
   ].join('\n'),
   detail: [
     'ARCHETYPE RECIPE: detail',
@@ -885,7 +885,7 @@ export function recipesForBlueprint(brief: ArenaGenerativeStructuredBrief): stri
   const chrome = shellRecipe(brief.shell)
   if (chrome) recipes.push(chrome)
   const usedBodies = [...representations].some(
-    (value) => value === 'list' || value === 'table' || value === 'cards'
+    (value) => value === 'list' || value === 'table' || value === 'cards' || value === 'calendar'
   )
   if (usedBodies) recipes.push(ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT)
   const dummy = (brief.pages ?? []).some(

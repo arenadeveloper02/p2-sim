@@ -5,6 +5,8 @@
  */
 
 import { generateId } from '@sim/utils/id'
+import { boundDateSortValue } from '@/lib/arena-generative-ui/bound-date-format'
+import { parseBoundNumber } from '@/lib/arena-generative-ui/bound-number-format'
 import {
   ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
@@ -20,6 +22,11 @@ import {
 export interface LocalDiscoveryQuery {
   search: string
   filters: Record<string, string | readonly string[]>
+}
+
+export interface CollectionSort {
+  key: string
+  direction: 'asc' | 'desc'
 }
 
 interface SpecElement {
@@ -282,6 +289,170 @@ export function filterCollectionItems<T>(items: readonly T[], query: LocalDiscov
   return items.filter((item) => itemMatchesLocalDiscovery(item, query))
 }
 
+/**
+ * True when a Toolbar/Filter field named sort/order is wired to a runnable action.
+ * Header click must not fight that API.
+ */
+export function collectionHasApiOwnedSort(
+  elements: Record<string, SpecElement>,
+  knownActionIds: ReadonlySet<string>
+): boolean {
+  for (const element of Object.values(elements)) {
+    if (!FILTER_PARENT_TYPES.has(element.type ?? '')) continue
+    let owned = false
+    walk(elements, element.children ?? [], (_id, child) => {
+      if (owned) return
+      const props = child.props ?? {}
+      const actionId = asString(props.actionId)
+      if (!actionId || !knownActionIds.has(actionId)) return
+      const name = asString(props.name, child.type === 'Chip' ? asString(props.setValue) : '')
+      const key = normalizeDiscoveryKey(name.includes('=') ? name.slice(0, name.indexOf('=')) : name)
+      if (IGNORED_FILTER_KEYS.has(key)) owned = true
+    })
+    if (owned) return true
+  }
+  return false
+}
+
+/** Stable id for a collection row (id/key/slug, else empty). */
+export function collectionItemIdentity(item: unknown): string {
+  return itemIdentityId(item)
+}
+
+/**
+ * Orders already-loaded rows. Strings compare case-insensitively, numbers and
+ * ISO dates numerically. Missing values sort last in both directions.
+ */
+export function sortCollectionItems<T>(items: readonly T[], sort?: CollectionSort | null): T[] {
+  if (!sort?.key) return [...items]
+  const direction = sort.direction === 'desc' ? -1 : 1
+  return [...items].sort((left, right) => {
+    const leftValue = sortValueForItem(left, sort.key)
+    const rightValue = sortValueForItem(right, sort.key)
+    if (leftValue === undefined && rightValue === undefined) return 0
+    if (leftValue === undefined) return 1
+    if (rightValue === undefined) return -1
+    if (leftValue < rightValue) return -1 * direction
+    if (leftValue > rightValue) return 1 * direction
+    return 0
+  })
+}
+
+export function sortStaticTableRows(
+  headers: readonly string[],
+  rows: readonly string[][],
+  sort?: CollectionSort | null
+): string[][] {
+  if (!sort?.key) return rows.map((row) => [...row])
+  const records = rows.map((row) => {
+    const record: Record<string, unknown> = {}
+    headers.forEach((header, index) => {
+      record[header] = row[index]
+    })
+    return record
+  })
+  return sortCollectionItems(records, sort).map((record) =>
+    headers.map((header) => String(record[header] ?? ''))
+  )
+}
+
+/**
+ * Moves `fromIndex` to `toIndex` in the full host array (not a page slice).
+ */
+export function spliceCollectionItems<T>(
+  items: readonly T[],
+  fromIndex: number,
+  toIndex: number
+): T[] {
+  const next = [...items]
+  if (next.length === 0) return next
+  const from = Math.min(Math.max(Math.trunc(fromIndex), 0), next.length - 1)
+  const to = Math.min(Math.max(Math.trunc(toIndex), 0), next.length - 1)
+  if (from === to) return next
+  const [moved] = next.splice(from, 1)
+  if (moved === undefined) return next
+  next.splice(to, 0, moved)
+  return next
+}
+
+/**
+ * Moves a visible (filtered/paged) row inside the full host array by identity.
+ */
+export function spliceVisibleCollectionItems<T>(
+  full: readonly T[],
+  visible: readonly T[],
+  fromVisible: number,
+  toVisible: number
+): T[] {
+  const fromItem = visible[fromVisible]
+  const toItem = visible[toVisible]
+  if (fromItem === undefined || toItem === undefined) return [...full]
+  const fromId = collectionItemIdentity(fromItem)
+  const toId = collectionItemIdentity(toItem)
+  const fromIndex = full.findIndex((item) =>
+    fromId ? collectionItemIdentity(item) === fromId : item === fromItem
+  )
+  const toIndex = full.findIndex((item) =>
+    toId ? collectionItemIdentity(item) === toId : item === toItem
+  )
+  if (fromIndex < 0 || toIndex < 0) return [...full]
+  return spliceCollectionItems(full, fromIndex, toIndex)
+}
+
+function sortValueForItem(item: unknown, key: string): string | number | undefined {
+  if (Array.isArray(item)) {
+    const index = Number(key)
+    if (Number.isInteger(index) && index >= 0) return sortComparable(item[index])
+    return undefined
+  }
+  const record = recordFromUnknown(item)
+  if (!record) return sortComparable(item)
+  const actual = valueForFilterKey(record, key)
+  return sortComparable(actual)
+}
+
+function sortComparable(value: unknown): string | number | undefined {
+  if (value == null || value === '') return undefined
+  if (typeof value === 'boolean') return value ? 1 : 0
+  const date = boundDateSortValue(value)
+  if (date !== undefined) return date
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const numeric = parseBoundNumber(value)
+    if (numeric !== undefined) return numeric
+    return value.trim().toLowerCase()
+  }
+  return undefined
+}
+
+/**
+ * Writes `value` at a possibly nested host path without dropping sibling keys.
+ */
+export function hostStatePatchAtPath(
+  current: Record<string, unknown>,
+  path: string,
+  value: unknown
+): Record<string, unknown> {
+  const parts = path.split('.').map((part) => part.trim()).filter(Boolean)
+  if (parts.length === 0) return {}
+  if (parts.length === 1) return { [parts[0] as string]: value }
+  const rootKey = parts[0] as string
+  const root = recordFromUnknown(current[rootKey])
+    ? { ...(current[rootKey] as Record<string, unknown>) }
+    : {}
+  let cursor = root
+  for (let index = 1; index < parts.length - 1; index += 1) {
+    const key = parts[index] as string
+    const nested = recordFromUnknown(cursor[key])
+      ? { ...(cursor[key] as Record<string, unknown>) }
+      : {}
+    cursor[key] = nested
+    cursor = nested
+  }
+  cursor[parts[parts.length - 1] as string] = value
+  return { [rootKey]: root }
+}
+
 function itemIdentityId(item: unknown): string {
   const record = recordFromUnknown(item)
   if (!record) return ''
@@ -480,7 +651,9 @@ const SIMPLE_HOST_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
 export const IMPLICIT_DUMMY_TABLE_STATE_PATH = 'rows'
 
 function simpleCollectionStatePath(element: SpecElement): string {
-  if (element.type !== 'Repeat' && element.type !== 'Table') return ''
+  if (element.type !== 'Repeat' && element.type !== 'Table' && element.type !== 'Calendar') {
+    return ''
+  }
   const key = asString(element.props?.statePath).trim()
   return SIMPLE_HOST_STATE_KEY.test(key) ? key : ''
 }

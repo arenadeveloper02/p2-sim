@@ -1977,3 +1977,77 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL = goldPrompt(
     manifest: goldAgentShellManifest,
   }
 )
+
+const calendarHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Schedule', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'calendar'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Schedule',
+        subtitle: 'Dated items on a month grid.',
+        kicker: 'Calendar',
+        align: 'start',
+      },
+      children: [],
+    },
+    calendar: {
+      type: 'Calendar',
+      props: {
+        statePath: 'events',
+        dateField: 'date',
+        titleField: 'title',
+        view: 'month',
+        emptyText: 'No events.',
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldCalendarManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Schedule',
+      spec: calendarHomeSpec,
+      onLoad: ['load_events'],
+    },
+  },
+  actions: {
+    load_events: {
+      onSuccess: {
+        setState: {
+          events: [
+            { id: 'e1', title: 'Kickoff', date: '2026-09-11' },
+            { id: 'e2', title: 'Review', date: '2026-09-14' },
+            { id: 'e3', title: 'Ship', date: '2026-09-18' },
+            { id: 'e4', title: 'Backlog' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR = goldPrompt(
+  'calendar',
+  'One collection page whose representation is calendar. onLoad setState seeds 4 dummy events including one without a date (Unscheduled). Emit Calendar view="month" with dateField and titleField — not a dated Repeat. Clicking a chip copies the row like Repeat selectItem. Match REPRESENTATION, not this body, when the brief picked table or cards. Do not invent API keys.',
+  {
+    title: 'Schedule',
+    content: 'Plot dated items on a month grid.',
+    manifest: goldCalendarManifest,
+  }
+)

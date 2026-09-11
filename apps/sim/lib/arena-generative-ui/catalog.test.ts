@@ -18,6 +18,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Section',
       'Repeat',
       'Table',
+      'Calendar',
       'SubmitButton',
       'Tabs',
       'PageHeader',
@@ -129,6 +130,7 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Workspace')).toBe(true)
     expect(isArenaGenerativeCatalogType('Stepper')).toBe(true)
     expect(isArenaGenerativeCatalogType('Disclosure')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Calendar')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
   })
 })
@@ -142,6 +144,7 @@ describe('resolveCatalogComponentNames', () => {
       })
     )
     expect(names.has('Repeat')).toBe(true)
+    expect(names.has('Calendar')).toBe(true)
     expect(names.has('Form')).toBe(true)
     expect(names.has('WorkingCard')).toBe(false)
     expect(names.has('Workspace')).toBe(false)

@@ -70,10 +70,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         statePath: z.string(),
         emptyText: z.string().nullable(),
         showWhen: z.string().nullable(),
+        reorderable: z.boolean().nullable(),
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use Calendar when the brief asks for a month or week plot of dated rows. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
     },
     Columns: {
       props: z.object({
@@ -179,7 +180,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. Bound ISO dates in title/subtitle/footerText are formatted by the host. Honour a brief that names a date format: set dateFormat to a preset (short, medium, long, iso, numeric, numeric-eu, datetime) or a token pattern (DD/MM/YYYY, D MMM YYYY, MMM D, YYYY), or bind `{item.date|DD/MM/YYYY}`. Default is medium (Aug 23, 2026). Bound numbers stay raw unless the brief names a format: set numberFormat (number, integer, currency, usd, eur, gbp, percent, compact) or bind `{item.price|currency}` / `{item.rate|percent}`. Do not invent a formatted copy of the API value. The first Icon or Avatar child is media (feature well or entity logo). Button, NavLink, Link, Toolbar, and non-view Chip children render in a footer under a divider with optional footerText. Same-page result-view Chips (shared setValue field) are a tab row at the top of the Card, never footer actions. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. Not a FAQ/criteria row — that is Disclosure. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
+        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. Bound ISO dates in title/subtitle/footerText are formatted by the host. Honour a brief that names a date format: set dateFormat to a preset (short, medium, long, iso, numeric, numeric-eu, datetime, relative, ago) or a token pattern (DD/MM/YYYY, D MMM YYYY, MMM D, YYYY), or bind `{item.date|DD/MM/YYYY}` / `{item.date|relative}`. Default is medium (Aug 23, 2026). relative/ago is calendar-stable for date-only values. Bound numbers stay raw unless the brief names a format: set numberFormat (number, integer, currency, usd, eur, gbp, percent, compact) or bind `{item.price|currency}` / `{item.rate|percent}`. Do not invent a formatted copy of the API value. The first Icon or Avatar child is media (feature well or entity logo). Button, NavLink, Link, Toolbar, and non-view Chip children render in a footer under a divider with optional footerText. Same-page result-view Chips (shared setValue field) are a tab row at the top of the Card, never footer actions. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. Not a FAQ/criteria row — that is Disclosure. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
     },
     Disclosure: {
       props: z.object({
@@ -209,7 +210,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         numberFormat: z.string().nullable(),
       }),
       description:
-        'Paragraph text. Markdown is rendered (emphasis, lists, links). Bound ISO dates in text are formatted by the host; set dateFormat or `{item.date|DD/MM/YYYY}` when the brief names a format. Bound numbers: set numberFormat or `{item.price|currency}` / `{item.rate|percent}` (presets number, integer, currency, usd, eur, gbp, percent, compact).',
+        'Paragraph text. Markdown is rendered (emphasis, lists, links). Bound ISO dates in text are formatted by the host; set dateFormat or `{item.date|DD/MM/YYYY}` / `{item.date|relative}` when the brief names a format (presets include relative, ago). Bound numbers: set numberFormat or `{item.price|currency}` / `{item.rate|percent}` (presets number, integer, currency, usd, eur, gbp, percent, compact).',
     },
     DataText: {
       props: z.object({
@@ -228,9 +229,21 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         rows: z.string().nullable(),
         statePath: z.string().nullable(),
         emptyText: z.string().nullable(),
+        reorderable: z.boolean().nullable(),
       }),
       description:
-        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Honour a named number format per column with `price|currency` or `coverage|percent` in columns (the key before the pipe is the field). Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. When the binding has no pagination the host pages long tables locally; do not emit a Load more Button. A bound table with no rows shows emptyText (default "No results").',
+        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Honour a named format or footer aggregate per column with pipes: `price|currency`, `date|relative`, `amount|sum` (sum, avg, min, max, count — the cell still shows the row value; the host paints a totals row). Invented index column `#` or `index` is 1-based on the visible rows. Do not invent API fields (sentiment, YoY) that are not on the row. Header click sorts the loaded rows locally unless a Toolbar/Filter sort field has a known actionId — only emit a sort Select when the binding actually sends that param. Emit Table on a prose string (markdown table, JSON object array, CSV) only when Requested Changes / the brief says to show that field as a table; otherwise DataText. Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. When the binding has no pagination the host pages long tables locally; do not emit a Load more Button. A bound table with no rows shows emptyText (default "No results"). Set reorderable true only when the brief asked to reorder dummy/local rows.',
+    },
+    Calendar: {
+      props: z.object({
+        statePath: z.string(),
+        dateField: z.string().nullable(),
+        titleField: z.string().nullable(),
+        view: z.enum(['month', 'week']).nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Month or week plot of a host-state array at statePath. dateField is the ISO date key (default: first ISO-ish key); titleField is the chip label (default: name/title). view is month (6-week grid) or week (7 day columns). Omit view only when the brief asked for both — the host then offers a toggle. Clicking a chip copies the row like Repeat selectItem. Rows with no parseable date sit in Unscheduled — do not drop them. Use this when representation is calendar; do not degrade to a dated Repeat. Dummy/local: seed 4–8 dated rows. Not drag across days, not Gantt.',
     },
     Stat: {
       props: z.object({
@@ -242,9 +255,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         deltaTone: z.enum(['positive', 'negative', 'neutral']).nullable(),
         size: z.enum(['default', 'display']).nullable(),
         numberFormat: z.string().nullable(),
+        aggregate: z.string().nullable(),
       }),
       description:
-        'Single metric with a label and a primary value. size "display" is the large KPI used on dashboards; default is the compact metric. Use value for static numbers or statePath to read one from host state. Bound numeric state values are grouped by the host (12,800); honour a brief that names currency or percent with numberFormat (currency, usd, percent, percent-ratio, integer, compact) or `{score|percent}`. percent is already-in-percent units (14.2 → 14.2%); percent-ratio is 0–1 (0.94 → 94%). Do not invent API values to make a Stat look filled. delta is a short change indicator such as "+14.2%" and deltaTone colours it. Place several inside a Grid.',
+        'Single metric with a label and a primary value. size "display" is the large KPI used on dashboards; default is the compact metric. Use value for static numbers or statePath to read one from host state. Bound numeric state values are grouped by the host (12,800); honour a brief that names currency or percent with numberFormat (currency, usd, percent, percent-ratio, integer, compact) or `{score|percent}`. percent is already-in-percent units (14.2 → 14.2%); percent-ratio is 0–1 (0.94 → 94%). To total a collection without an API total field, point statePath at the array and set aggregate `sum:amount` (sum, avg, min, max, count). Do not invent API values to make a Stat look filled. delta is a short change indicator such as "+14.2%" and deltaTone colours it. Place several inside a Grid.',
     },
     Sparkline: {
       props: z.object({
@@ -539,7 +553,8 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         min: z.string().nullable(),
         max: z.string().nullable(),
       }),
-      description: 'Date field. Value is YYYY-MM-DD. min and max are the same format.',
+      description:
+        'Date field. Value is YYYY-MM-DD. min and max are the same format. The host paints a text field plus month-grid picker — do not emit a second calendar widget for a form date.',
     },
     Checkbox: {
       props: formFieldProps({
@@ -749,7 +764,7 @@ export const ARENA_GENERATIVE_CATALOG_CORE = [
 
 /** Optional catalog families injected from the blueprint. */
 export const ARENA_GENERATIVE_CATALOG_FAMILIES = {
-  collection: ['Repeat', 'Table', 'Filter', 'Disclosure', 'Avatar', 'EntityHeader'],
+  collection: ['Repeat', 'Table', 'Calendar', 'Filter', 'Disclosure', 'Avatar', 'EntityHeader'],
   forms: [
     'Form',
     'TextInput',

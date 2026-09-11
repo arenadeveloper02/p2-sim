@@ -43,6 +43,11 @@ const PRESETS: Record<string, string> = {
   datetime: 'MMM D, YYYY, h:mm A',
 }
 
+const RELATIVE_PRESETS = new Set(['relative', 'ago'])
+const MS_MINUTE = 60_000
+const MS_HOUR = 60 * MS_MINUTE
+const MS_DAY = 24 * MS_HOUR
+
 /** Default readable card/table date when the brief does not name a format. */
 export const DEFAULT_BOUND_DATE_FORMAT = 'medium'
 
@@ -71,6 +76,8 @@ interface BoundDateParts {
   hour24?: number
   minute?: number
   second?: number
+  /** Epoch ms for ISO datetimes. Date-only values omit this (calendar-stable). */
+  instantMs?: number
 }
 
 /**
@@ -91,18 +98,45 @@ export function splitBindingDateFormat(rawToken: string): { name: string; format
 /**
  * Turns a bound ISO date or datetime into readable copy.
  * Date-only values stay calendar-stable (no timezone shift). Other strings pass through.
- * `format` is a preset (`medium`, `numeric-eu`) or a token pattern (`DD/MM/YYYY`).
+ * `format` is a preset (`medium`, `numeric-eu`, `relative`) or a token pattern (`DD/MM/YYYY`).
  * Do not use this on navigation targets or query params.
  */
-export function formatBoundDateDisplay(value: string, format?: string): string {
+export function formatBoundDateDisplay(value: string, format?: string, nowMs = Date.now()): string {
   const parts = parseBoundDateParts(value)
   if (!parts) return value
+  if (isBoundRelativeDateFormat(format)) return formatRelativeDate(parts, nowMs)
   return applyDatePattern(parts, resolveDatePattern(format))
+}
+
+/** True when a binding pipe or Card.dateFormat is relative / ago. */
+export function isBoundRelativeDateFormat(format?: string): boolean {
+  return Boolean(format && RELATIVE_PRESETS.has(format.trim().toLowerCase()))
 }
 
 /** True when `value` is an ISO date or datetime the host can pretty-print. */
 export function isBoundIsoDate(value: string): boolean {
   return parseBoundDateParts(value) !== undefined
+}
+
+/**
+ * Sortable numeric value for an ISO date or datetime. Date-only uses UTC midnight
+ * of that calendar day. Non-dates return undefined (sort last).
+ */
+export function boundDateSortValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string') return undefined
+  const parts = parseBoundDateParts(value)
+  if (!parts) return undefined
+  if (parts.instantMs !== undefined) return parts.instantMs
+  return Date.UTC(parts.year, parts.month - 1, parts.day)
+}
+
+/** `YYYY-MM-DD` for an ISO date/datetime, calendar-stable for date-only values. */
+export function boundIsoDateOnly(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const parts = parseBoundDateParts(value)
+  if (!parts) return undefined
+  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`
 }
 
 function parseBoundDateParts(value: string): BoundDateParts | undefined {
@@ -126,7 +160,51 @@ function parseBoundDateParts(value: string): BoundDateParts | undefined {
     hour24: parsed.getHours(),
     minute: parsed.getMinutes(),
     second: parsed.getSeconds(),
+    instantMs: parsed.getTime(),
   }
+}
+
+function calendarDayIndex(year: number, month: number, day: number): number {
+  return Math.floor(Date.UTC(year, month - 1, day) / MS_DAY)
+}
+
+function formatRelativeDate(parts: BoundDateParts, nowMs: number): string {
+  const now = new Date(nowMs)
+  if (parts.instantMs !== undefined) {
+    const delta = nowMs - parts.instantMs
+    const abs = Math.abs(delta)
+    if (abs < 45_000) return 'just now'
+    if (abs < MS_HOUR) {
+      const minutes = Math.max(1, Math.round(abs / MS_MINUTE))
+      return relativePhrase(minutes, 'minute', delta >= 0)
+    }
+    if (abs < MS_DAY) {
+      const hours = Math.max(1, Math.round(abs / MS_HOUR))
+      return relativePhrase(hours, 'hour', delta >= 0)
+    }
+    const then = new Date(parts.instantMs)
+    return formatRelativeDays(
+      calendarDayIndex(now.getFullYear(), now.getMonth() + 1, now.getDate()) -
+        calendarDayIndex(then.getFullYear(), then.getMonth() + 1, then.getDate())
+    )
+  }
+  return formatRelativeDays(
+    calendarDayIndex(now.getFullYear(), now.getMonth() + 1, now.getDate()) -
+      calendarDayIndex(parts.year, parts.month, parts.day)
+  )
+}
+
+function relativePhrase(count: number, unit: 'minute' | 'hour', past: boolean): string {
+  const noun = count === 1 ? unit : `${unit}s`
+  return past ? `${count} ${noun} ago` : `in ${count} ${noun}`
+}
+
+function formatRelativeDays(dayDelta: number): string {
+  if (dayDelta === 0) return 'today'
+  if (dayDelta === 1) return 'yesterday'
+  if (dayDelta === -1) return 'tomorrow'
+  if (dayDelta > 1) return `${dayDelta} days ago`
+  return `in ${Math.abs(dayDelta)} days`
 }
 
 function resolveDatePattern(format?: string): string {

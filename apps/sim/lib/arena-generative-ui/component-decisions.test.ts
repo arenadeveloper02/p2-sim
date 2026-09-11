@@ -10,6 +10,7 @@ const CATALOG_TYPES = [
   'AppHeader',
   'Card',
   'Table',
+  'Calendar',
   'Repeat',
   'Grid',
   'Tabs',

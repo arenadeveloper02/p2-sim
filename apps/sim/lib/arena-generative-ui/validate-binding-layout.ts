@@ -10,6 +10,10 @@ import { isFormFieldType, parseShowWhen } from '@/lib/arena-generative-ui/form-f
 import { isCopyOrDownloadLabel } from '@/lib/arena-generative-ui/host-content-actions'
 import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import {
+  isComputedTableColumnKey,
+  parseBoundTableColumn,
+} from '@/lib/arena-generative-ui/bound-table-reshape'
+import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   type ArenaGenerativeAppManifest,
@@ -21,6 +25,7 @@ import {
 const BOUND_RESULT_TYPES = new Set([
   'Table',
   'Repeat',
+  'Calendar',
   'Stat',
   'KeyValue',
   'DataText',
@@ -31,7 +36,7 @@ const BOUND_RESULT_TYPES = new Set([
 
 const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat'])
 
-const COLLECTION_TYPES = new Set(['Table', 'Repeat', 'Chart'])
+const COLLECTION_TYPES = new Set(['Table', 'Repeat', 'Chart', 'Calendar'])
 
 const ENVELOPE_ROOTS = new Set(['data', 'response'])
 
@@ -435,7 +440,7 @@ function boundPathError(
           return undefined
         }
         if (type === 'DataText' || type === 'KeyValue') {
-          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat or Table.`
+          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat, Table, or Calendar.`
         }
       }
       if (collection.wrapperKeys.includes(statePath) && COLLECTION_TYPES.has(type)) {
@@ -449,6 +454,7 @@ function boundPathError(
       return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; ${root} is a string. Bind "${root}" or "content".`
     }
     if (COLLECTION_TYPES.has(type) && plan.stringFieldNames.includes(statePath)) {
+      if (type === 'Table') return undefined
       return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a string. Use DataText on "${statePath}" or "content".`
     }
     if (COLLECTION_TYPES.has(type) && plan.metricPaths.includes(statePath)) {
@@ -467,14 +473,26 @@ function tableColumnError(
   statePath: string
 ): string | undefined {
   const collection = collectionForStatePath(plans, statePath)
-  if (!collection || collection.proseFields.length === 0) return undefined
+  if (!collection) return undefined
   const headers = asString(columns)
     .split(',')
     .map((header) => header.trim())
     .filter(Boolean)
-  const prose = headers.find((header) => collection.proseFields.includes(header))
-  if (!prose) return undefined
-  return `Page "${pagePath}" Table "${elementId}" includes column "${prose}"; that field is prose. Bind short scalars only and use selectItem to copy prose to content.`
+  for (const header of headers) {
+    const column = parseBoundTableColumn(header)
+    if (column.indexColumn || isComputedTableColumnKey(column.key)) continue
+    if (collection.proseFields.includes(column.key)) {
+      return `Page "${pagePath}" Table "${elementId}" includes column "${column.key}"; that field is prose. Bind short scalars only and use selectItem to copy prose to content.`
+    }
+    if (collection.itemFields.length === 0) continue
+    const known = collection.itemFields.some(
+      (field) => field === column.key || field.endsWith(`.${column.key}`)
+    )
+    if (!known) {
+      return `Page "${pagePath}" Table "${elementId}" includes column "${column.key}"; that field is not on the row. Use output-schema keys or a closed host token (#, index, field|relative, field|sum).`
+    }
+  }
+  return undefined
 }
 
 function repeatItemError(

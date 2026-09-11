@@ -23,6 +23,7 @@ import {
   ChevronRight,
   FileText,
   Globe,
+  GripVertical,
   Inbox,
   Link2,
   Loader2,
@@ -77,20 +78,39 @@ import {
 import {
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
+  collectionHasApiOwnedSort,
   dummyCollectionSeedFromSpec,
   filterCollectionItems,
   filterCollectionItemsBySelection,
   filterStaticTableRows,
   filterStaticTableRowsBySelection,
+  hostStatePatchAtPath,
   implicitDummyTableStatePath,
   LOCAL_COLLECTION_PAGE_SIZE,
+  type CollectionSort,
   type PaginatedCollection,
   paginateCollection,
+  sortCollectionItems,
+  sortStaticTableRows,
+  spliceVisibleCollectionItems,
   withDummyCollectionSeed,
 } from '@/lib/arena-generative-ui/local-discovery'
-import { isBoundIsoDate, splitBindingDateFormat } from '@/lib/arena-generative-ui/bound-date-format'
+import {
+  isBoundRelativeDateFormat,
+  isBoundIsoDate,
+} from '@/lib/arena-generative-ui/bound-date-format'
 import { formatBoundDisplay } from '@/lib/arena-generative-ui/bound-display'
 import { parseBoundNumber } from '@/lib/arena-generative-ui/bound-number-format'
+import {
+  aggregateStatCollection,
+  aggregateTableColumn,
+  boundTableColumnLabel,
+  parseBoundTableColumns,
+  parseProseTable,
+  parseStatAggregate,
+  tableCellValue,
+  type BoundTableColumn,
+} from '@/lib/arena-generative-ui/bound-table-reshape'
 import {
   copyTextToClipboard,
   downloadMarkdownPdf,
@@ -122,6 +142,7 @@ import {
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
+import { GuiHostCalendar, GuiHostDateInput } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 
@@ -759,6 +780,7 @@ function specHasColumnLayout(
 const WIDE_SECTION_TYPES = new Set([
   'Table',
   'Repeat',
+  'Calendar',
   'Chart',
   'Sparkline',
   'Workspace',
@@ -872,17 +894,6 @@ function splitTableRow(row: string): string[] {
   return row.split('|').map((cell) => cell.trim())
 }
 
-function tableRowsFromState(value: unknown, headers: string[]): unknown[][] {
-  if (!Array.isArray(value)) return []
-  return value.map((entry) => {
-    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-      const record = entry as Record<string, unknown>
-      return headers.map((header) => record[header])
-    }
-    return [entry]
-  })
-}
-
 function tableHeadersFromState(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   const headers: string[] = []
@@ -923,10 +934,18 @@ function looksLikeHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value.trim())
 }
 
-function ScalarValue({ value, format }: { value: unknown; format?: string }) {
+function ScalarValue({
+  value,
+  format,
+  nowMs,
+}: {
+  value: unknown
+  format?: string
+  nowMs?: number
+}) {
   if (typeof value === 'boolean') return <>{value ? 'Yes' : 'No'}</>
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return <>{formatBoundDisplay(String(value), format)}</>
+    return <>{formatBoundDisplay(String(value), format, { nowMs })}</>
   }
   if (typeof value === 'string' && looksLikeHttpUrl(value)) {
     const href = value.trim()
@@ -940,7 +959,7 @@ function ScalarValue({ value, format }: { value: unknown; format?: string }) {
       </a>
     )
   }
-  const text = displayFromStateValue(value, '', format)
+  const text = displayFromStateValue(value, '', format, nowMs)
   return <>{text}</>
 }
 
@@ -1271,11 +1290,16 @@ function readStatePath(
   return readScopedStatePath(state, path, scope)
 }
 
-function displayFromStateValue(value: unknown, fallback: string, format?: string): string {
+function displayFromStateValue(
+  value: unknown,
+  fallback: string,
+  format?: string,
+  nowMs?: number
+): string {
   if (isEmptyStateValue(value)) return fallback
   const fromAction = displayTextFromActionData(value)
   const text = fromAction || String(value)
-  return formatBoundDisplay(text, format)
+  return formatBoundDisplay(text, format, { nowMs })
 }
 
 /** Group Stat numbers when the brief did not name a format. Dates still auto-pretty-print. */
@@ -1286,15 +1310,24 @@ function statDefaultNumberFormat(value: unknown): string | undefined {
   return parseBoundNumber(value) === undefined ? undefined : 'number'
 }
 
-function parseTableColumns(columns?: string): Array<{ key: string; format?: string }> {
-  return (columns ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const { name, format } = splitBindingDateFormat(part)
-      return { key: name, format }
-    })
+function specUsesRelativeDates(elements: Record<string, SpecElement>): boolean {
+  for (const element of Object.values(elements)) {
+    if (isBoundRelativeDateFormat(asString(element.props?.dateFormat))) return true
+    for (const column of parseBoundTableColumns(asString(element.props?.columns))) {
+      if (isBoundRelativeDateFormat(column.displayFormat)) return true
+    }
+    for (const value of Object.values(element.props ?? {})) {
+      if (typeof value === 'string' && /\|(?:relative|ago)\b/i.test(value)) return true
+    }
+  }
+  return false
+}
+
+function nextTableSort(current: CollectionSort | undefined, key: string): CollectionSort {
+  if (current?.key === key) {
+    return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+  }
+  return { key, direction: 'asc' }
 }
 
 function StateTable({
@@ -1302,20 +1335,42 @@ function StateTable({
   columns,
   style,
   busy,
+  sort,
+  sortable = false,
+  onSort,
+  footerItems,
+  nowMs,
+  reorderable = false,
+  onReorder,
 }: {
   value: unknown
   columns?: string
   style?: CSSProperties
   busy?: boolean
+  sort?: CollectionSort
+  sortable?: boolean
+  onSort?: (key: string) => void
+  footerItems?: readonly unknown[]
+  nowMs?: number
+  reorderable?: boolean
+  onReorder?: (fromIndex: number, toIndex: number) => void
 }) {
-  const declaredColumns = parseTableColumns(columns)
-  const headers =
-    declaredColumns.length > 0 ? declaredColumns.map((column) => column.key) : tableHeadersFromState(value)
-  const formats = Object.fromEntries(
-    declaredColumns.filter((column) => column.format).map((column) => [column.key, column.format])
-  )
-  const rows = tableRowsFromState(value, headers)
-  if (headers.length === 0 && rows.length === 0) return null
+  const items = Array.isArray(value) ? value : []
+  const declaredColumns = parseBoundTableColumns(columns)
+  const inferred = tableHeadersFromState(value).map((key) => ({
+    key,
+    indexColumn: false as const,
+  }))
+  const columnDefs: BoundTableColumn[] =
+    declaredColumns.length > 0
+      ? declaredColumns
+      : inferred.map((column) => ({ key: column.key, indexColumn: false }))
+  if (columnDefs.length === 0 && items.length === 0) return null
+  const footerSource = footerItems ?? items
+  const showFooter = columnDefs.some((column) => column.aggregate)
+  const headerClass =
+    'px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
+
   return (
     <div
       aria-busy={busy || undefined}
@@ -1323,37 +1378,119 @@ function StateTable({
       style={style}
     >
       <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
-        {headers.length > 0 ? (
+        {columnDefs.length > 0 ? (
           <thead>
             <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
-              {headers.map((header) => (
-                <th
-                  key={header}
-                  className='px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
-                >
-                  {header}
-                </th>
-              ))}
+              {reorderable ? <th className={headerClass} aria-label='Reorder' /> : null}
+              {columnDefs.map((column) => {
+                const label = boundTableColumnLabel(column)
+                const sortKey = column.indexColumn ? '' : column.key
+                const active = Boolean(sort && sortKey && sort.key === sortKey)
+                const canSort = Boolean(sortable && onSort && sortKey)
+                return (
+                  <th
+                    key={`${column.key}-${column.aggregate ?? ''}`}
+                    aria-sort={
+                      active ? (sort?.direction === 'desc' ? 'descending' : 'ascending') : 'none'
+                    }
+                    className={headerClass}
+                  >
+                    {canSort ? (
+                      <button
+                        type='button'
+                        className='uppercase tracking-[0.25px]'
+                        onClick={() => onSort?.(sortKey)}
+                      >
+                        {label}
+                      </button>
+                    ) : (
+                      label
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
         ) : null}
         <tbody>
-          {rows.map((row, rowIndex) => (
+          {items.map((item, rowIndex) => (
             <tr
               key={`row-${rowIndex}`}
+              draggable={reorderable}
+              onDragStart={(event) => {
+                event.dataTransfer.setData('text/plain', String(rowIndex))
+                event.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(event) => {
+                if (!reorderable) return
+                event.preventDefault()
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const from = Number(event.dataTransfer.getData('text/plain'))
+                if (!Number.isInteger(from)) return
+                onReorder?.(from, rowIndex)
+              }}
+              onKeyDown={(event) => {
+                if (!reorderable || !event.altKey) return
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  onReorder?.(rowIndex, Math.max(0, rowIndex - 1))
+                }
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  onReorder?.(rowIndex, Math.min(items.length - 1, rowIndex + 1))
+                }
+              }}
               className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
             >
-              {row.map((cell, cellIndex) => (
+              {reorderable ? (
+                <td className='px-2 py-3'>
+                  <span
+                    aria-pressed={false}
+                    className='inline-flex text-[var(--gui-text-tertiary,#8a8d99)]'
+                  >
+                    <GripVertical className='size-[14px]' />
+                  </span>
+                </td>
+              ) : null}
+              {columnDefs.map((column, cellIndex) => (
                 <td
-                  key={`cell-${cellIndex}`}
+                  key={`cell-${cellIndex}-${column.key}`}
                   className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
                 >
-                  <ScalarValue value={cell} format={formats[headers[cellIndex] ?? '']} />
+                  <ScalarValue
+                    value={tableCellValue(item, column, rowIndex)}
+                    format={column.displayFormat}
+                    nowMs={nowMs}
+                  />
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
+        {showFooter ? (
+          <tfoot>
+            <tr className='border-[var(--gui-border,#e2e3e5)] border-t bg-[var(--gui-canvas,#f7f8f9)] font-medium'>
+              {reorderable ? <td className='px-2 py-3' /> : null}
+              {columnDefs.map((column) => {
+                const total = aggregateTableColumn(footerSource, column)
+                return (
+                  <td
+                    key={`footer-${column.key}`}
+                    className='px-4 py-3 text-[var(--gui-text,#2c2d33)]'
+                  >
+                    {total === undefined ? (
+                      ''
+                    ) : (
+                      <ScalarValue value={total} format={column.displayFormat} nowMs={nowMs} />
+                    )}
+                  </td>
+                )
+              })}
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </div>
   )
@@ -2131,8 +2268,9 @@ export function SpecRenderer({
   onCancelPending,
 }: SpecRendererProps) {
   const dummySeed = useMemo(() => dummyCollectionSeedFromSpec(spec), [spec])
+  const host = useGenerativeAppHostState()
   const state = withAliasedProseState(
-    withDummyCollectionSeed(rawState, spec),
+    withDummyCollectionSeed({ ...rawState, ...host.state }, spec),
     proseAliasKeys ?? []
   )
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
@@ -2140,10 +2278,13 @@ export function SpecRenderer({
     if (element.type !== 'WorkingCard') return false
     return element.props?.skeleton !== false
   })
-  const host = useGenerativeAppHostState()
   useLayoutEffect(() => {
-    host.fillMissingState(dummySeed)
-  }, [dummySeed, host.fillMissingState])
+    const fill: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(dummySeed)) {
+      if (rawState[key] === undefined) fill[key] = value
+    }
+    host.fillMissingState(fill)
+  }, [dummySeed, host.fillMissingState, rawState])
   const pageKey = currentPath ?? ''
   const [formValues, setFormValuesState] = useState<Record<string, unknown>>(
     () => (pageKey ? host.pageFormValues(pageKey) : {})
@@ -2154,6 +2295,14 @@ export function SpecRenderer({
     () => (pageKey ? host.pageLocalPages(pageKey) : {})
   )
   const [disclosureOpen, setDisclosureOpen] = useState<Record<string, boolean>>({})
+  const [tableSorts, setTableSorts] = useState<Record<string, CollectionSort>>({})
+  const usesRelativeDates = specUsesRelativeDates(elements)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    if (!usesRelativeDates) return
+    const timer = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [usesRelativeDates])
   const setFormValues = (
     update: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)
   ) => {
@@ -2184,6 +2333,7 @@ export function SpecRenderer({
     actionChatProtocol,
     uxPlan?.actions
   )
+  const headerSortDisabled = collectionHasApiOwnedSort(elements, knownActionIds)
   const localDiscovery = collectLocalDiscoveryQuery({
     formValues,
     elements,
@@ -2191,7 +2341,10 @@ export function SpecRenderer({
   })
   const discoverySignature = `${localDiscovery.search}\u0000${JSON.stringify(localDiscovery.filters)}`
   const collectionLengthSignature = Object.entries(elements)
-    .filter(([, element]) => element.type === 'Table' || element.type === 'Repeat')
+    .filter(
+      ([, element]) =>
+        element.type === 'Table' || element.type === 'Repeat' || element.type === 'Calendar'
+    )
     .map(([id, element]) => {
       const statePath =
         asString(element.props?.statePath) || implicitDummyTableStatePath(spec, id)
@@ -2308,6 +2461,18 @@ export function SpecRenderer({
         />
       ),
     }
+  }
+
+  const applyCollectionReorder = (
+    statePath: string,
+    fullItems: readonly unknown[],
+    visibleItems: readonly unknown[],
+    fromIndex: number,
+    toIndex: number
+  ) => {
+    if (!statePath) return
+    const next = spliceVisibleCollectionItems(fullItems, visibleItems, fromIndex, toIndex)
+    host.mergeState(hostStatePatchAtPath(state, statePath, next))
   }
 
   /**
@@ -2614,16 +2779,72 @@ export function SpecRenderer({
         }
         const { visible: visibleItems, chrome } = pageCollection(id, items, statePath, scope)
         const refetching = Boolean(statePath && boundPending(statePath))
+        const canReorder =
+          asBoolean(props.reorderable) &&
+          Boolean(statePath) &&
+          !collectionUsesApiPagination(statePath, actionHostKeys)
         return (
           <>
             <div className='contents' aria-busy={refetching || undefined}>
-              {visibleItems.map((item, index) => (
-                <Fragment key={repeatItemKey(item, index)}>
-                  {childIds.map((childId) => (
-                    <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
-                  ))}
-                </Fragment>
-              ))}
+              {visibleItems.map((item, index) =>
+                canReorder ? (
+                  <div
+                    key={repeatItemKey(item, index)}
+                    className='relative'
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/plain', String(index))
+                      event.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      const from = Number(event.dataTransfer.getData('text/plain'))
+                      if (!Number.isInteger(from)) return
+                      applyCollectionReorder(statePath, items, visibleItems, from, index)
+                    }}
+                    onKeyDown={(event) => {
+                      if (!event.altKey) return
+                      if (event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        applyCollectionReorder(
+                          statePath,
+                          items,
+                          visibleItems,
+                          index,
+                          Math.max(0, index - 1)
+                        )
+                      }
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        applyCollectionReorder(
+                          statePath,
+                          items,
+                          visibleItems,
+                          index,
+                          Math.min(visibleItems.length - 1, index + 1)
+                        )
+                      }
+                    }}
+                  >
+                    <span
+                      aria-pressed={false}
+                      className='absolute top-3 left-2 z-10 text-[var(--gui-text-tertiary,#8a8d99)]'
+                    >
+                      <GripVertical className='size-[14px]' />
+                    </span>
+                    {childIds.map((childId) => (
+                      <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
+                    ))}
+                  </div>
+                ) : (
+                  <Fragment key={repeatItemKey(item, index)}>
+                    {childIds.map((childId) => (
+                      <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
+                    ))}
+                  </Fragment>
+                )
+              )}
             </div>
             {chrome}
           </>
@@ -2815,10 +3036,25 @@ export function SpecRenderer({
         const statePath = asString(props.statePath) || implicitDummyTableStatePath(spec, id)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawCollection = collectionFromBoundValue(stateValue)
-        const discoveredCollection = rawCollection
-          ? filterCollectionItems(rawCollection, localDiscovery)
+        const proseTable = rawCollection ? undefined : parseProseTable(stateValue)
+        if (typeof stateValue === 'string' && !rawCollection && !proseTable && statePath) {
+          if (boundPending(statePath) && isEmptyStateValue(stateValue)) {
+            return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
+          }
+          return (
+            <DataTextView
+              value={stateValue}
+              fallback={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+              pending={boundPending(statePath)}
+              style={styleFromProps(props)}
+            />
+          )
+        }
+        const sourceCollection = rawCollection ?? proseTable?.records
+        const discoveredCollection = sourceCollection
+          ? filterCollectionItems(sourceCollection, localDiscovery)
           : undefined
-        const collection =
+        const filteredCollection =
           discoveredCollection && specKeepsCollectionVisible(spec) && selectedIdSet
             ? filterCollectionItemsBySelection(
                 discoveredCollection,
@@ -2826,8 +3062,12 @@ export function SpecRenderer({
                 state[ARENA_GENERATIVE_SELECTED_KEY]
               )
             : discoveredCollection
+        const tableSort = tableSorts[id]
+        const collection = filteredCollection
+          ? sortCollectionItems(filteredCollection, tableSort)
+          : undefined
         const boundEmpty = Boolean(
-          statePath && (rawCollection ? rawCollection.length === 0 : isEmptyStateValue(stateValue))
+          statePath && (sourceCollection ? sourceCollection.length === 0 : isEmptyStateValue(stateValue))
         )
         if (statePath && boundPending(statePath) && boundEmpty) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
@@ -2839,18 +3079,37 @@ export function SpecRenderer({
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
           }
         }
-        if (rawCollection && rawCollection.length > 0 && collection && collection.length === 0) {
+        if (sourceCollection && sourceCollection.length > 0 && collection && collection.length === 0) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
+        const canReorder =
+          asBoolean(props.reorderable) &&
+          Boolean(statePath) &&
+          !collectionUsesApiPagination(statePath, actionHostKeys)
+        const headerSortable = !headerSortDisabled
         if (collection && collection.length > 0) {
           const { visible, chrome } = pageCollection(id, collection, statePath, scope)
           return (
             <div className='flex w-full flex-col'>
               <StateTable
                 value={visible}
-                columns={asString(props.columns)}
+                columns={asString(props.columns) || proseTable?.headers.join(',')}
                 style={styleFromProps(props)}
                 busy={Boolean(statePath && boundPending(statePath))}
+                sort={tableSort}
+                sortable={headerSortable}
+                onSort={(key) =>
+                  setTableSorts((current) => ({
+                    ...current,
+                    [id]: nextTableSort(current[id], key),
+                  }))
+                }
+                footerItems={collection}
+                nowMs={nowMs}
+                reorderable={canReorder}
+                onReorder={(from, to) =>
+                  applyCollectionReorder(statePath, collection, visible, from, to)
+                }
               />
               {chrome}
             </div>
@@ -2870,7 +3129,7 @@ export function SpecRenderer({
               .map(splitTableRow),
             localDiscovery
           )
-          const rows =
+          const selectedRows =
             specKeepsCollectionVisible(spec) && selectedIdSet
               ? filterStaticTableRowsBySelection(
                   headers,
@@ -2879,51 +3138,36 @@ export function SpecRenderer({
                   state[ARENA_GENERATIVE_SELECTED_KEY]
                 )
               : discoveredRows
+          const rows = sortStaticTableRows(headers, selectedRows, tableSort)
           if (headers.length === 0 && rows.length === 0) return null
           if (rows.length === 0) {
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
           }
-          const { visible, chrome } = pageCollection(id, rows, '', scope)
+          const records = rows.map((row) => {
+            const record: Record<string, unknown> = {}
+            headers.forEach((header, index) => {
+              record[parseBoundTableColumns(header)[0]?.key ?? header] = row[index]
+            })
+            return record
+          })
+          const { visible, chrome } = pageCollection(id, records, '', scope)
           return (
             <div className='flex w-full flex-col'>
-              <div
-                className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
+              <StateTable
+                value={visible}
+                columns={asString(props.columns)}
                 style={styleFromProps(props)}
-              >
-                <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
-                  {headers.length > 0 ? (
-                    <thead>
-                      <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
-                        {headers.map((header) => (
-                          <th
-                            key={header}
-                            className='px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
-                          >
-                            {header}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                  ) : null}
-                  <tbody>
-                    {visible.map((row, rowIndex) => (
-                      <tr
-                        key={`row-${rowIndex}`}
-                        className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
-                      >
-                        {row.map((cell, cellIndex) => (
-                          <td
-                            key={`cell-${cellIndex}`}
-                            className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
-                          >
-                            {cell}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                sort={tableSort}
+                sortable={headerSortable}
+                onSort={(key) =>
+                  setTableSorts((current) => ({
+                    ...current,
+                    [id]: nextTableSort(current[id], key),
+                  }))
+                }
+                footerItems={records}
+                nowMs={nowMs}
+              />
               {chrome}
             </div>
           )
@@ -2934,6 +3178,42 @@ export function SpecRenderer({
             columns={asString(props.columns)}
             style={styleFromProps(props)}
             busy={Boolean(statePath && boundPending(statePath))}
+            nowMs={nowMs}
+          />
+        )
+      }
+      case 'Calendar': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (statePath && boundPending(statePath) && isEmptyStateValue(stateValue) && (!rawItems || rawItems.length === 0)) {
+          return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        const viewProp = asString(props.view)
+        const view = viewProp === 'week' || viewProp === 'month' ? viewProp : undefined
+        return (
+          <GuiHostCalendar
+            items={items}
+            dateField={asString(props.dateField) || undefined}
+            titleField={asString(props.titleField) || undefined}
+            view={view}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            allowViewToggle={!view}
+            onSelectItem={onSelectItem}
           />
         )
       }
@@ -2948,15 +3228,21 @@ export function SpecRenderer({
         ) {
           return <SkeletonBlock variant='stat' lines={DEFAULT_SKELETON_LINES.stat} />
         }
+        const aggregate = parseStatAggregate(asString(props.aggregate))
+        const collection = collectionFromBoundValue(stateValue)
+        const aggregated =
+          aggregate && collection ? aggregateStatCollection(collection, aggregate) : undefined
+        const displaySource = aggregated !== undefined ? aggregated : stateValue
         const value =
-          stateValue === undefined
+          displaySource === undefined
             ? asString(props.value)
             : displayFromStateValue(
-                stateValue,
+                displaySource,
                 asString(props.value),
                 asString(props.numberFormat) ||
                   asString(props.dateFormat) ||
-                  statDefaultNumberFormat(stateValue)
+                  statDefaultNumberFormat(displaySource),
+                nowMs
               )
         const delta = asString(props.delta)
         const isDisplay = asString(props.size) === 'display'
@@ -3958,8 +4244,23 @@ export function SpecRenderer({
             </FieldShell>
           )
         }
-        const inputType =
-          element.type === 'NumberInput' ? 'number' : element.type === 'DateInput' ? 'date' : 'text'
+        if (element.type === 'DateInput') {
+          return (
+            <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
+              <GuiHostDateInput
+                id={fieldId}
+                name={name}
+                value={asFieldString(value)}
+                required={required}
+                min={asString(props.min) || undefined}
+                max={asString(props.max) || undefined}
+                className={inputClass}
+                onChange={(next) => setNamedValue(name, next)}
+              />
+            </FieldShell>
+          )
+        }
+        const inputType = element.type === 'NumberInput' ? 'number' : 'text'
         return (
           <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
             <input
