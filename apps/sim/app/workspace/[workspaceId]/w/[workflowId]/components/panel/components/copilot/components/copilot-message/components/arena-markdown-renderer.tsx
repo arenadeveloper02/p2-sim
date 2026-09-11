@@ -545,6 +545,9 @@ export default function ArenaCopilotMarkdownRenderer({
                 attributes: {
                   a: ['href', 'title', 'target', 'rel'],
                   img: ['src', 'alt', 'title', 'width', 'height'],
+                  // GFM sets start when a split ordered list continues (2., 3.…).
+                  // Without it, every separate <ol> renders as 1. 1. 1.
+                  ol: ['start'],
                   '*': ['className', 'id'],
                 },
               },

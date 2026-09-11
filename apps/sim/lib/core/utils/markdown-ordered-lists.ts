@@ -4,11 +4,12 @@
  *
  * Models (especially Gemini) often emit every item as `1.`. That is valid GFM
  * inside one `<ol>`, but a blank line between items starts a new list — and each
- * new `<ol>` restarts at 1. Rewriting markers before render keeps one sequence
- * across those splits without changing nested / indented lists or fenced code.
+ * new `<ol>` restarts at 1 unless the renderer forwards `start`. Rewriting
+ * markers and collapsing blank lines between consecutive top-level items keeps
+ * one continuous list without changing nested / indented lists or fenced code.
  */
 export function renumberMarkdownOrderedLists(markdown: string): string {
-  if (!markdown.includes('1.')) return markdown
+  if (!/^\d+\./m.test(markdown)) return markdown
 
   const lines = markdown.split('\n')
   const out: string[] = []
@@ -46,6 +47,13 @@ export function renumberMarkdownOrderedLists(markdown: string): string {
 
     const orderedItem = line.match(/^(\d+)\.(\s+.*)$/)
     if (orderedItem) {
+      // Drop blank lines between consecutive top-level items so remark/GFM
+      // keeps a single <ol> (blank lines otherwise restart numbering at 1).
+      if (inOrderedList) {
+        while (out.length > 0 && out[out.length - 1].trim() === '') {
+          out.pop()
+        }
+      }
       out.push(`${nextNumber}.${orderedItem[2]}`)
       nextNumber += 1
       inOrderedList = true
