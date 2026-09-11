@@ -2,11 +2,11 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
-import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import {
   type BillingAttributionSnapshot,
   resolveBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
+import { resolveLocalCopilotSpendCap } from '@/local-copilot/lib/billing/resolve-spend-cap'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
@@ -107,6 +107,7 @@ import {
   updateTaskStateFromTurn,
 } from '@/local-copilot/lib/context/task-state'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
+import { createLocalCopilotTurnTiming } from '@/local-copilot/lib/diagnostics/turn-timing'
 import {
   extractOptionsTitles,
   formatOptionsTag,
@@ -254,6 +255,7 @@ export async function* runLocalCopilotAgent(
   params: RunAgentParams
 ): AsyncGenerator<LocalCopilotStreamEvent, LocalTurnCostSummary | undefined, undefined> {
   const startedAt = Date.now()
+  const timing = createLocalCopilotTurnTiming(startedAt)
   const catalogId = params.catalogId ?? DEFAULT_LOCAL_COPILOT_CATALOG_ID
   const config = params.catalogId
     ? buildLocalCopilotConfigForCatalog(catalogId)
@@ -277,6 +279,7 @@ export async function* runLocalCopilotAgent(
     hasApiKey: Boolean(config.apiKey),
     messageChars: params.message.length,
     priorTurns: params.priorMessages?.length ?? 0,
+    hasCallerSnapshot: Boolean(params.workspaceSnapshot && params.workspaceContext),
     memory: getLocalCopilotMemorySnapshot(),
   })
 
@@ -300,11 +303,34 @@ export async function* runLocalCopilotAgent(
     ...(params.contexts?.length ? { contexts: params.contexts } : {}),
     ...(params.fileAttachments?.length ? { fileAttachments: params.fileAttachments } : {}),
   })
-  const usageLimitsPromise = checkServerSideUsageLimits(params.userId).catch(() => ({
-    isExceeded: false,
-    currentUsage: 0,
-    limit: Number.POSITIVE_INFINITY,
-  }))
+  const snapshotSandboxEntitled =
+    params.workspaceSnapshot?.sandboxes !== undefined ? true : undefined
+  if (params.workspaceSnapshot?.skills?.length) {
+    promptPrefetch.startSkills(
+      params.workspaceSnapshot.skills.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description ?? '',
+      })),
+      snapshotSandboxEntitled
+    )
+  }
+  const earlySessionMemoryPromise = params.priorMessages?.length
+    ? ensureSessionMemory({
+        chatId: params.chatId,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        historyMessages: params.priorMessages,
+        turns: params.sessionMemoryTurns ?? [],
+        signal: params.signal,
+      })
+    : null
+  // Overlap with context / session / prefetch. Prefer attributed payer check so
+  // mothership's earlier UsageMonitor cache hit can make this near-instant.
+  const spendCapPromise = resolveLocalCopilotSpendCap({
+    userId: params.userId,
+    ...(params.billingAttribution ? { billingAttribution: params.billingAttribution } : {}),
+  })
 
   let structuredContext
   try {
@@ -326,8 +352,10 @@ export async function* runLocalCopilotAgent(
     throw error
   }
 
-  // Skill bodies do not depend on the user message — start while session memory runs.
-  promptPrefetch.startSkills(structuredContext.skills)
+  const contextSandboxEntitled =
+    structuredContext.vfsSnapshot?.sandboxes !== undefined ? true : undefined
+  promptPrefetch.startSkills(structuredContext.skills, contextSandboxEntitled)
+  timing.mark('contextReady')
 
   logger.info('Arena Copilot context built', {
     workspaceId: params.workspaceId,
@@ -335,7 +363,8 @@ export async function* runLocalCopilotAgent(
     openWorkflowLoaded: Boolean(structuredContext.workflow),
     workspaceWorkflowCount: structuredContext.workspaceWorkflows?.length ?? 0,
     availableBlockCount: structuredContext.availableBlocks?.length ?? 0,
-    durationMs: Date.now() - startedAt,
+    durationMs: timing.elapsed('contextReady'),
+    hasCallerSnapshot: Boolean(workspaceSnapshotBundle),
     memory: getLocalCopilotMemorySnapshot(),
   })
 
@@ -343,35 +372,16 @@ export async function* runLocalCopilotAgent(
   const writeChatLedger = params.writeChatLedger !== false
   const turnCost = new LocalTurnCostAccumulator()
 
-  const usageLimits = await usageLimitsPromise
-  const spendGate = assertSpendCapAllows({
-    isExceeded: usageLimits.isExceeded,
-    currentUsage: usageLimits.currentUsage,
-    limit: usageLimits.limit,
-    turnSoFar: 0,
-    message: usageLimits.message,
-  })
-  if (!spendGate.ok) {
-    await auditLocalOpsEvent({
-      counter: LOCAL_OPS_COUNTERS.spendCapHit,
+  let conversationId = params.conversationId
+  const extractedDirectives = extractFollowUpDirectives(params.message)
+  if (extractedDirectives.preferences.length > 0) {
+    void persistInferredUserMemories({
       userId: params.userId,
       workspaceId: params.workspaceId,
-      workflowId: params.workflowId,
-      chatId: params.chatId,
-      runId: params.runId,
-      metadata: {
-        currentUsage: usageLimits.currentUsage,
-        limit: usageLimits.limit,
-      },
-    })
-    yield {
-      type: 'error',
-      message: spendGate.error ?? 'Usage limit exceeded',
-    }
-    return undefined
+      preferences: extractedDirectives.preferences,
+    }).catch(() => undefined)
   }
 
-  let conversationId = params.conversationId
   if (persistLocally) {
     if (!conversationId) {
       conversationId = await createConversation({
@@ -390,7 +400,7 @@ export async function* runLocalCopilotAgent(
     })
   }
 
-  await logCopilotAction({
+  void logCopilotAction({
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
@@ -415,16 +425,21 @@ export async function* runLocalCopilotAgent(
         })
       : []
 
-  let sessionMemory = await ensureSessionMemory({
-    chatId: params.chatId,
-    userId: params.userId,
-    workspaceId: params.workspaceId,
-    historyMessages: rawHistory,
-    turns: params.sessionMemoryTurns ?? [],
-    signal: params.signal,
-  })
+  const [sessionMemoryInitial, settledPrefetch] = await Promise.all([
+    earlySessionMemoryPromise ??
+      ensureSessionMemory({
+        chatId: params.chatId,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        historyMessages: rawHistory,
+        turns: params.sessionMemoryTurns ?? [],
+        signal: params.signal,
+      }),
+    promptPrefetch.settle(),
+  ])
+  timing.mark('sessionPrefetchReady')
 
-  const extractedDirectives = extractFollowUpDirectives(params.message)
+  let sessionMemory = sessionMemoryInitial
   if (extractedDirectives.constraints.length > 0 || extractedDirectives.activeDirective) {
     sessionMemory = await mergeFollowUpDirectivesIntoSessionMemory({
       chatId: params.chatId,
@@ -432,14 +447,6 @@ export async function* runLocalCopilotAgent(
       previous: sessionMemory,
       constraints: extractedDirectives.constraints,
       activeDirective: extractedDirectives.activeDirective,
-    })
-  }
-
-  if (extractedDirectives.preferences.length > 0) {
-    await persistInferredUserMemories({
-      userId: params.userId,
-      workspaceId: params.workspaceId,
-      preferences: extractedDirectives.preferences,
     })
   }
 
@@ -461,7 +468,6 @@ export async function* runLocalCopilotAgent(
     tokenCountModel
   )
 
-  const settledPrefetch = await promptPrefetch.settle()
   const { relevantSkills, allTools, userTurn, chatConfig } = settledPrefetch
   let taskState = settledPrefetch.taskState
   if (relevantSkills.names.length > 0) {
@@ -577,6 +583,7 @@ export async function* runLocalCopilotAgent(
   )
 
   const specialistBudget = createSpecialistBudget()
+  timing.mark('promptReady')
 
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
@@ -606,6 +613,65 @@ export async function* runLocalCopilotAgent(
     skillToolEnabled: allTools.length > LOCAL_COPILOT_TOOLS.length,
     memory: getLocalCopilotMemorySnapshot(),
   })
+
+  logger.info('Arena Copilot latency checkpoint', {
+    phase: 'prompt_ready',
+    usageTurnId,
+    workspaceId: params.workspaceId,
+    prepMs: timing.elapsed('promptReady'),
+    contextBuildMs: timing.elapsed('contextReady'),
+    sessionAndPrefetchMs: timing.since('contextReady', 'sessionPrefetchReady'),
+    promptAssembleMs: timing.since('sessionPrefetchReady', 'promptReady'),
+    hasCallerSnapshot: Boolean(workspaceSnapshotBundle),
+    provider: config.provider,
+    model: config.model,
+    marks: timing.snapshot(),
+  })
+
+  // Gate spend only before model/tool cost — overlaps context + prefetch + prompt.
+  const usageLimits = await spendCapPromise
+  timing.mark('spendCapReady')
+  logger.info('Arena Copilot latency checkpoint', {
+    phase: 'spend_cap_ready',
+    usageTurnId,
+    workspaceId: params.workspaceId,
+    prepMs: timing.elapsed('promptReady'),
+    contextBuildMs: timing.elapsed('contextReady'),
+    sessionAndPrefetchMs: timing.since('contextReady', 'sessionPrefetchReady'),
+    promptAssembleMs: timing.since('sessionPrefetchReady', 'promptReady'),
+    spendCapMs: timing.elapsed('spendCapReady'),
+    spendCapWaitAfterPromptMs: timing.since('promptReady', 'spendCapReady'),
+    hasCallerSnapshot: Boolean(workspaceSnapshotBundle),
+    provider: config.provider,
+    model: config.model,
+    marks: timing.snapshot(),
+  })
+  const spendGate = assertSpendCapAllows({
+    isExceeded: usageLimits.isExceeded,
+    currentUsage: usageLimits.currentUsage,
+    limit: usageLimits.limit,
+    turnSoFar: 0,
+    message: usageLimits.message,
+  })
+  if (!spendGate.ok) {
+    await auditLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.spendCapHit,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      chatId: params.chatId,
+      runId: params.runId,
+      metadata: {
+        currentUsage: usageLimits.currentUsage,
+        limit: usageLimits.limit,
+      },
+    })
+    yield {
+      type: 'error',
+      message: spendGate.error ?? 'Usage limit exceeded',
+    }
+    return undefined
+  }
 
   const provider = params.catalogId ? createLocalCopilotProvider(config) : getLocalCopilotProvider()
   const billingAttribution =
@@ -857,6 +923,20 @@ export async function* runLocalCopilotAgent(
       message: round === 0 ? formatUxPhaseStatus(proposePhase) : 'Deciding next step…',
     }
 
+    const modelRoundMark = `modelRound${round}Start`
+    timing.mark(modelRoundMark)
+    let firstModelOutputMs: number | null = null
+    logger.info('Arena Copilot model round starting', {
+      usageTurnId,
+      workspaceId: params.workspaceId,
+      round,
+      provider: config.provider,
+      model: config.model,
+      elapsedMs: timing.elapsed(),
+      prepMs: timing.elapsed('promptReady'),
+      marks: timing.snapshot(),
+    })
+
     // Status heartbeats cover the immediate first line + rotation while the
     // model stream is quiet (including pauses after the first token).
     for await (const event of iterateWithIdleStatus({
@@ -891,11 +971,40 @@ export async function* runLocalCopilotAgent(
         if (!cleaned) continue
         const delta = textStreamer.pushText(cleaned)
         if (delta) {
+          if (firstModelOutputMs === null) {
+            firstModelOutputMs = timing.elapsed()
+            timing.mark('firstModelOutput')
+            logger.info('Arena Copilot latency checkpoint', {
+              phase: 'ttft',
+              usageTurnId,
+              workspaceId: params.workspaceId,
+              round,
+              ttftMs: timing.since(modelRoundMark, 'firstModelOutput'),
+              prepMs: timing.elapsed('promptReady'),
+              provider: config.provider,
+              model: config.model,
+            })
+          }
           streamedUserFacingText += delta
           yield { type: 'text_delta', content: delta }
         }
       }
       if (chunk.type === 'tool_call' && chunk.toolCall) {
+        if (firstModelOutputMs === null) {
+          firstModelOutputMs = timing.elapsed()
+          timing.mark('firstModelOutput')
+          logger.info('Arena Copilot latency checkpoint', {
+            phase: 'ttft',
+            usageTurnId,
+            workspaceId: params.workspaceId,
+            round,
+            ttftMs: timing.since(modelRoundMark, 'firstModelOutput'),
+            prepMs: timing.elapsed('promptReady'),
+            provider: config.provider,
+            model: config.model,
+            via: 'tool_call',
+          })
+        }
         textStreamer.markToolCall()
         pendingToolCalls.push(chunk.toolCall)
       }
@@ -939,6 +1048,8 @@ export async function* runLocalCopilotAgent(
       outputTokens: roundOutputTokens,
       cacheReadTokens: roundCacheReadTokens,
       cacheCreationTokens: roundCacheCreationTokens,
+      roundDurationMs: timing.since(modelRoundMark),
+      ttftMs: firstModelOutputMs === null ? null : timing.since(modelRoundMark, 'firstModelOutput'),
       memory: getLocalCopilotMemorySnapshot(),
     })
 
@@ -2327,8 +2438,31 @@ export async function* runLocalCopilotAgent(
     hasPatch: Boolean(proposedPatch),
     turnCost: costSummary.total,
     writeChatLedger,
-    durationMs: Date.now() - startedAt,
+    durationMs: timing.elapsed(),
+    prepMs: timing.elapsed('promptReady'),
+    contextBuildMs: timing.elapsed('contextReady'),
+    ttftMs: timing.since('modelRound0Start', 'firstModelOutput'),
+    hasCallerSnapshot: Boolean(workspaceSnapshotBundle),
+    marks: timing.snapshot(),
     memory: getLocalCopilotMemorySnapshot(),
+  })
+
+  logger.info('Arena Copilot latency checkpoint', {
+    phase: 'turn_complete',
+    usageTurnId,
+    workspaceId: params.workspaceId,
+    durationMs: timing.elapsed(),
+    prepMs: timing.elapsed('promptReady'),
+    contextBuildMs: timing.elapsed('contextReady'),
+    sessionAndPrefetchMs: timing.since('contextReady', 'sessionPrefetchReady'),
+    promptAssembleMs: timing.since('sessionPrefetchReady', 'promptReady'),
+    spendCapMs: timing.elapsed('spendCapReady'),
+    spendCapWaitAfterPromptMs: timing.since('promptReady', 'spendCapReady'),
+    ttftMs: timing.since('modelRound0Start', 'firstModelOutput'),
+    hasCallerSnapshot: Boolean(workspaceSnapshotBundle),
+    provider: config.provider,
+    model: config.model,
+    marks: timing.snapshot(),
   })
 
   if (writeChatLedger) {
