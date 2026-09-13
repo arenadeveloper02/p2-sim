@@ -751,6 +751,29 @@ describe('SpecRenderer', () => {
     expect(full.container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
   })
 
+  it('narrows a SearchField hero Section even when width is wide', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { width: 'wide' },
+          children: ['header', 'search'],
+        },
+        header: { type: 'PageHeader', props: { title: 'Analyze a company' }, children: [] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'company', placeholder: 'Company name', actionId: 'analyze' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('section')?.className).toContain('max-w-2xl')
+    expect(container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
+  })
+
   it('narrows a form-only Section and stretches Form to fill its Card', () => {
     const spec: Spec = {
       root: 'page',
@@ -3443,7 +3466,8 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec })
     expect(container.textContent).toContain('Watchtower')
-    expect(container.querySelector('h1')?.className).toContain('gui-display-size')
+    expect(container.querySelector('h1')?.className).toContain('gui-heading-size')
+    expect(container.querySelector('h1')?.className).not.toContain('gui-display-size')
     const copy = container.querySelector('h1')?.parentElement
     expect(copy?.className).toContain('text-center')
     expect(container.textContent).toContain('View analysis history')

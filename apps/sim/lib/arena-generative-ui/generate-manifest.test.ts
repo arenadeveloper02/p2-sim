@@ -1925,13 +1925,15 @@ describe('generateArenaGenerativeManifest', () => {
 
       expect(result.success).toBe(true)
       expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
-      expect(result.adoptedChanges).toEqual([
-        expect.objectContaining({
-          code: 'extra-primary',
-          asked: expect.stringContaining('more than one primary action'),
-          adopted: expect.stringContaining('secondary Button'),
-        }),
-      ])
+      expect(result.adoptedChanges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'extra-primary',
+            asked: expect.stringContaining('more than one primary action'),
+            adopted: expect.stringContaining('secondary Button'),
+          }),
+        ])
+      )
       const go = result.manifest?.pages.home.spec.elements.go as {
         props?: { variant?: string }
       }

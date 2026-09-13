@@ -35,6 +35,7 @@ export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = [
   'edit-nearest',
   'edit-missed',
   'split-results-back',
+  'task-measure',
 ] as const
 
 export const arenaGenerativeAdoptedChangeSchema = z.object({

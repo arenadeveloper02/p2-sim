@@ -669,7 +669,7 @@ const wizardStepOneSpec: Spec = {
     },
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['stepper', 'header', 'form'],
     },
     stepper: {
@@ -755,7 +755,7 @@ const wizardStepTwoSpec: Spec = {
     },
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['header', 'form'],
     },
     header: {
@@ -830,7 +830,7 @@ const wizardStepThreeSpec: Spec = {
     },
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['header', 'form'],
     },
     header: {
@@ -1419,7 +1419,7 @@ const agentHomeSpec: Spec = {
     tabs: agentShellTabs('home'),
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['header', 'form'],
     },
     header: {

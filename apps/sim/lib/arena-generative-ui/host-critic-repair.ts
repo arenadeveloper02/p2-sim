@@ -5,7 +5,11 @@ import {
   type SanitizeHostOwnedManifestOptions,
 } from '@/lib/arena-generative-ui/strip-host-owned-chrome'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
-import { extraPrimarySections } from '@/lib/arena-generative-ui/ui-critic'
+import {
+  extraDisplayHeadingIds,
+  extraPrimarySections,
+  measureOnlyWideSections,
+} from '@/lib/arena-generative-ui/ui-critic'
 
 interface FlatElement {
   type?: string
@@ -55,6 +59,58 @@ function demotePrimary(element: FlatElement): void {
   }
 }
 
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function isCssLength(value: string): boolean {
+  return /\d/.test(value)
+}
+
+function demoteDisplayHeading(element: FlatElement): boolean {
+  if (element.type !== 'Heading') return false
+  const props = { ...element.props }
+  let touched = false
+  if (asString(props.level) === 'h1') {
+    props.level = 'h2'
+    touched = true
+  }
+  if (asString(props.color)) {
+    props.color = null
+    touched = true
+  }
+  const size = asString(props.size)
+  if (size && isCssLength(size)) {
+    props.size = null
+    touched = true
+  }
+  if (!touched) return false
+  element.props = props
+  return true
+}
+
+function leftAlignPageHeadersInSection(
+  sectionId: string,
+  elements: Record<string, FlatElement>
+): boolean {
+  const section = elements[sectionId]
+  if (!section) return false
+  let changed = false
+  const visit = (ids: string[]) => {
+    for (const id of ids) {
+      const element = elements[id]
+      if (!element) continue
+      if (element.type === 'PageHeader' && asString(element.props?.align) === 'center') {
+        element.props = { ...element.props, align: 'start' }
+        changed = true
+      }
+      visit(element.children ?? [])
+    }
+  }
+  visit(section.children ?? [])
+  return changed
+}
+
 /**
  * Nearest host fix for proveable critic issues and host-owned chrome the
  * model emitted anyway. Extra primary CTAs keep one (SubmitButton, then
@@ -76,7 +132,11 @@ export function repairHostCriticExtras(
   for (const [pagePath, page] of Object.entries(manifest.pages)) {
     if (authored && !authored.has(pagePath)) continue
     const extras = extraPrimarySections(page.spec)
-    if (extras.length === 0) continue
+    const measureSections = measureOnlyWideSections(page.spec)
+    const displayHeadings = extraDisplayHeadingIds(page.spec)
+    if (extras.length === 0 && measureSections.length === 0 && displayHeadings.length === 0) {
+      continue
+    }
     next ??= structuredClone(manifest)
     const spec = next.pages[pagePath]?.spec
     if (!spec) continue
@@ -98,6 +158,30 @@ export function repairHostCriticExtras(
         code: 'extra-primary',
         asked: `Section "${section.sectionId}" on page "${pagePath}" had more than one primary action (${section.primaryIds.join(', ')}).`,
         adopted: `Kept "${keeper}" as primary; changed ${demoted.join(', ')}.`,
+      })
+    }
+    for (const section of measureSections) {
+      const element = elements[section.sectionId]
+      if (!element) continue
+      element.props = { ...element.props, width: 'narrow' }
+      leftAlignPageHeadersInSection(section.sectionId, elements)
+      adoptedChanges.push({
+        code: 'task-measure',
+        asked: `Section "${section.sectionId}" on page "${pagePath}" was a form or search hero on a wide measure.`,
+        adopted: `Set Section width to narrow and left-aligned the PageHeader.`,
+      })
+    }
+    const demotedHeadings: string[] = []
+    for (const id of displayHeadings) {
+      const element = elements[id]
+      if (!element) continue
+      if (demoteDisplayHeading(element)) demotedHeadings.push(`"${id}"`)
+    }
+    if (demotedHeadings.length > 0) {
+      adoptedChanges.push({
+        code: 'heading-scale',
+        asked: `Page "${pagePath}" had a display Heading beside PageHeader.`,
+        adopted: `Demoted ${demotedHeadings.join(', ')} to the host type scale (h2).`,
       })
     }
   }

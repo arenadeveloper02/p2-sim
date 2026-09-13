@@ -14,7 +14,7 @@ export const twoPageHomeSpec: Spec = {
     },
     section: {
       type: 'Section',
-      props: { padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['heading', 'nav', 'form'],
     },
     heading: {

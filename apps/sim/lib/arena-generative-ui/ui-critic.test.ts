@@ -452,6 +452,42 @@ describe('compactManifestForCritic', () => {
     }
   })
 
+  it('rejects a wide SearchField hero Section', () => {
+    const spec = pageSpec(
+      {
+        header: { type: 'PageHeader', props: { title: 'Analyze' }, children: [] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'q', placeholder: 'Search', actionId: 'analyze' },
+          children: [],
+        },
+      },
+      ['header', 'search']
+    )
+    const elements = spec.elements as Record<string, { props?: Record<string, unknown> }>
+    elements.section.props = { ...elements.section.props, width: 'wide' }
+    const error = hostCriticManifest(manifestWithHome(spec))
+    expect(error).toContain('form or search hero on a wide measure')
+    expect(error).toContain('width "narrow"')
+  })
+
+  it('rejects a display Heading beside PageHeader', () => {
+    const spec = pageSpec(
+      {
+        header: { type: 'PageHeader', props: { title: 'Analyze' }, children: [] },
+        extra: {
+          type: 'Heading',
+          props: { text: 'Analyze a company', level: 'h1' },
+          children: [],
+        },
+      },
+      ['header', 'extra']
+    )
+    const error = hostCriticManifest(manifestWithHome(spec))
+    expect(error).toContain('Heading "extra"')
+    expect(error).toContain('PageHeader.title is the page h1')
+  })
+
   it('omits unauthored pages from a scoped compact view', () => {
     const compact = compactManifestForCritic(twoPageManifest, ['results'])
     expect(compact.pages.map((page) => page.path)).toEqual(['results'])

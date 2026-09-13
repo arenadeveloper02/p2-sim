@@ -70,13 +70,61 @@ describe('repairHostCriticExtras', () => {
       props?: { variant?: string }
     }
     expect(go.props?.variant).toBe('secondary')
-    expect(result.adoptedChanges).toEqual([
+    expect(result.adoptedChanges.some((change) => change.code === 'extra-primary')).toBe(true)
+    expect(result.adoptedChanges.some((change) => change.code === 'task-measure')).toBe(true)
+    expect(result.manifest.pages.home.spec.elements.section?.props).toMatchObject({
+      width: 'narrow',
+    })
+  })
+
+  it('narrows a wide SearchField hero and left-aligns PageHeader', () => {
+    const spec = pageSpec(
       {
-        code: 'extra-primary',
-        asked: 'Section "section" on page "home" had more than one primary action (search, go).',
-        adopted: 'Kept "search" as primary; changed "go" to a secondary Button.',
+        header: {
+          type: 'PageHeader',
+          props: { title: 'Analyze a company', align: 'center' },
+          children: [],
+        },
+        search: {
+          type: 'SearchField',
+          props: { name: 'q', placeholder: 'Search', actionId: 'analyze' },
+          children: [],
+        },
       },
-    ])
+      ['header', 'search']
+    )
+    const elements = spec.elements as Record<string, { props?: Record<string, unknown> }>
+    elements.section.props = { ...elements.section.props, width: 'wide' }
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.section?.props).toMatchObject({
+      width: 'narrow',
+    })
+    expect(result.manifest.pages.home.spec.elements.header?.props).toMatchObject({
+      align: 'start',
+    })
+    expect(result.adoptedChanges.some((change) => change.code === 'task-measure')).toBe(true)
+  })
+
+  it('demotes an extra display Heading beside PageHeader', () => {
+    const spec = pageSpec(
+      {
+        header: { type: 'PageHeader', props: { title: 'Analyze' }, children: [] },
+        extra: {
+          type: 'Heading',
+          props: { text: 'Analyze a company', level: 'h1', size: '40px' },
+          children: [],
+        },
+      },
+      ['header', 'extra']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.extra?.props).toMatchObject({
+      level: 'h2',
+      size: null,
+    })
+    expect(result.adoptedChanges.some((change) => change.code === 'heading-scale')).toBe(true)
   })
 
   it('keeps SubmitButton and demotes an extra primary Button', () => {

@@ -19,7 +19,7 @@ import { DEFAULT_ARENA_GENERATIVE_THEME } from '@/lib/arena-generative-ui/theme'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 
 /**
- * Task entry: centered header and a single SearchField that runs the analyze CTA.
+ * Task entry: left-aligned header and a SearchField on the readable measure.
  */
 const goldHomeSpec: Spec = {
   root: 'page',
@@ -36,7 +36,7 @@ const goldHomeSpec: Spec = {
     },
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['header', 'search', 'hints'],
     },
     header: {
@@ -45,7 +45,7 @@ const goldHomeSpec: Spec = {
         title: 'Analyze a company',
         subtitle: 'Enter a name or domain and receive a structured report.',
         kicker: 'Research',
-        align: 'center',
+        align: 'start',
       },
       children: [],
     },
@@ -71,8 +71,8 @@ const goldHomeSpec: Spec = {
       props: {
         direction: 'horizontal',
         gap: 'sm',
-        align: 'center',
-        justify: 'center',
+        align: 'start',
+        justify: 'start',
         wrap: true,
       },
       children: ['try_stripe'],
@@ -197,7 +197,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (task)',
   GOLD_RENDER_CONTRACT,
-  'This sample uses two screens (centered company input, report destination) because a task page then a results page is the blueprint. AppHeader is sticky product chrome on Page; Section holds SearchField with nested submit, WorkingCard then DataText bound by statePath. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted.',
+  'This sample uses two screens (left-aligned company input on a narrow Section, report destination) because a task page then a results page is the blueprint. AppHeader is sticky product chrome on Page; the home Section is width "narrow" with PageHeader align start, then SearchField with nested submit. WorkingCard then DataText bound by statePath live on results. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted. Do not author a centered SearchField hero on a 1280px Section.',
   `SearchField actionId is "${GOLD_EXAMPLE_API_KEY}" — do not paraphrase it as company_search. This sample has no apiKey: onSuccess.setState fills content then navigates. When a binding was declared, add that apiKey and omit the dummy content setState. Do not invent API keys. Do not drop manifest.actions.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

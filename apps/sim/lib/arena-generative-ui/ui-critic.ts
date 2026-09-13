@@ -1,5 +1,9 @@
 import type { Spec } from '@json-render/core'
 import {
+  sectionIsMeasureOnly,
+  sectionWidthNeedsMeasure,
+} from '@/lib/arena-generative-ui/section-measure'
+import {
   type ArenaGenerativeAppManifest,
   parseTabItems,
   splitNavTarget,
@@ -275,6 +279,62 @@ function extraPrimaryErrors(pagePath: string, spec: Spec): string[] {
   )
 }
 
+export interface MeasureOnlyWideSection {
+  sectionId: string
+}
+
+/**
+ * Form or search-hero Sections that still paint at the 1280px wide default.
+ */
+export function measureOnlyWideSections(spec: Spec): MeasureOnlyWideSection[] {
+  const sections: MeasureOnlyWideSection[] = []
+  const elements = elementsOf(spec)
+  for (const [sectionId, element] of Object.entries(elements)) {
+    if (element.type !== 'Section') continue
+    if (!sectionIsMeasureOnly(elements, element.children ?? [])) continue
+    if (!sectionWidthNeedsMeasure(element.props?.width)) continue
+    sections.push({ sectionId })
+  }
+  return sections
+}
+
+function measureOnlyWideErrors(pagePath: string, spec: Spec): string[] {
+  return measureOnlyWideSections(spec).map(
+    (section) =>
+      `Page "${pagePath}" Section "${section.sectionId}" is a form or search hero on a wide measure. Use Section width "narrow".`
+  )
+}
+
+function isCssLength(value: string): boolean {
+  return /\d/.test(value)
+}
+
+/**
+ * Extra display Headings when PageHeader already owns the page h1.
+ */
+export function extraDisplayHeadingIds(spec: Spec): string[] {
+  const elements = elementsOf(spec)
+  const hasPageHeader = Object.values(elements).some((element) => element.type === 'PageHeader')
+  if (!hasPageHeader) return []
+  const ids: string[] = []
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Heading') continue
+    const level = asString(element.props?.level)
+    const size = asString(element.props?.size)
+    if (level === 'h1' || (size.length > 0 && isCssLength(size))) {
+      ids.push(id)
+    }
+  }
+  return ids
+}
+
+function extraDisplayHeadingErrors(pagePath: string, spec: Spec): string[] {
+  return extraDisplayHeadingIds(spec).map(
+    (id) =>
+      `Page "${pagePath}" Heading "${id}" restates the page title at display size. PageHeader.title is the page h1 — use Heading h2+ without a CSS size.`
+  )
+}
+
 function tooManyCardsErrors(pagePath: string, spec: Spec): string[] {
   const elements = elementsOf(spec)
   const insideRepeat = idsInsideType(elements, 'Repeat')
@@ -364,6 +424,8 @@ export function hostCriticManifestIssues(
     }
     issues.push(...nestedCardErrors(path, page.spec))
     issues.push(...extraPrimaryErrors(path, page.spec))
+    issues.push(...measureOnlyWideErrors(path, page.spec))
+    issues.push(...extraDisplayHeadingErrors(path, page.spec))
     issues.push(...tooManyCardsErrors(path, page.spec))
     issues.push(...missingReturnNavErrors(path, page.spec, manifest.entryPath, navigateTargets))
     issues.push(...inventedRepresentationTypeErrors(path, page.spec))

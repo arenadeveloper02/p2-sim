@@ -77,6 +77,7 @@ import {
   validateVisibleFields,
   valuesFromFormElement,
 } from '@/lib/arena-generative-ui/form-fields'
+import { sectionIsMeasureOnly } from '@/lib/arena-generative-ui/section-measure'
 import {
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
@@ -706,12 +707,12 @@ const SURFACE_STAT =
 const HEADING_SIZE_CLASSES = {
   h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
   h2: 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]',
-  h3: 'text-xl leading-7',
-  h4: 'text-base leading-6',
+  h3: 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]',
+  h4: 'text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]',
 } as const
 
-function sectionWidthClass(value: unknown, formOnly = false): string {
-  if (formOnly && asString(value) !== 'full') return SECTION_WIDTHS.narrow
+function sectionWidthClass(value: unknown, measureOnly = false): string {
+  if (measureOnly && asString(value) !== 'full') return SECTION_WIDTHS.narrow
   const width = asString(value, 'wide')
   return SECTION_WIDTHS[width as keyof typeof SECTION_WIDTHS] ?? SECTION_WIDTHS.wide
 }
@@ -771,28 +772,6 @@ function repeatSkeletonCount(
 function isEqualTwoColFormGrid(withinForm: boolean, props: Record<string, unknown>): boolean {
   return withinForm && gridColumnCount(props) === '2'
 }
-
-function specHasColumnLayout(
-  elements: Record<string, SpecElement>,
-  childIds: string[]
-): boolean {
-  for (const childId of childIds) {
-    const child = elements[childId]
-    if (!child) continue
-    if (child.type === 'Grid' || child.type === 'Columns') return true
-    if (specHasColumnLayout(elements, child.children ?? [])) return true
-  }
-  return false
-}
-
-const WIDE_SECTION_TYPES = new Set([
-  'Table',
-  'Repeat',
-  'Calendar',
-  'Chart',
-  'Sparkline',
-  'Workspace',
-])
 
 function visibleLayoutChildIds(
   elements: Record<string, SpecElement>,
@@ -856,45 +835,6 @@ function isRepeatCollectionRoot(
   if (element.type !== 'Stack' && element.type !== 'Section') return false
   const nestedId = singleVisibleLayoutChildId(elements, element.children ?? [], visibilityValues)
   return isRepeatCollectionRoot(elements, nestedId, visibilityValues)
-}
-
-/**
- * True when this Section's visible job is a stacked Form (no Grid/Columns
- * inside the Form, no collection sibling). A Columns/Grid that only wraps that
- * Form is still form-only — generated specs often emit a two-column shell with
- * one child, which left the fields in half the Card.
- */
-function sectionIsFormOnly(
-  elements: Record<string, SpecElement>,
-  childIds: string[]
-): boolean {
-  let hasSingleColumnForm = false
-  let hasWideContent = false
-
-  const visit = (ids: string[]) => {
-    for (const id of ids) {
-      const child = elements[id]
-      if (!child) continue
-      if (child.type === 'Modal' || child.type === 'Drawer') continue
-      if (child.type === 'Form') {
-        if (specHasColumnLayout(elements, child.children ?? [])) {
-          hasWideContent = true
-        } else {
-          hasSingleColumnForm = true
-        }
-        continue
-      }
-      if (WIDE_SECTION_TYPES.has(child.type)) hasWideContent = true
-      if (child.type === 'Grid' || child.type === 'Columns') {
-        if (visibleLayoutChildIds(elements, child.children ?? []).length >= 2) {
-          hasWideContent = true
-        }
-      }
-      visit(child.children ?? [])
-    }
-  }
-  visit(childIds)
-  return hasSingleColumnForm && !hasWideContent
 }
 
 /** Splits `a | b | c` cells, keeping empty middles so columns stay aligned. */
@@ -2663,7 +2603,7 @@ export function SpecRenderer({
           <section
             className={cn(
               'mx-auto flex w-full flex-col gap-[var(--gui-section-gap,24px)] px-6 py-8',
-              sectionWidthClass(props.width, sectionIsFormOnly(elements, childIds))
+              sectionWidthClass(props.width, sectionIsMeasureOnly(elements, childIds))
             )}
             style={styleFromProps(props)}
           >
@@ -2972,9 +2912,7 @@ export function SpecRenderer({
           <h1
             className={cn(
               'font-semibold text-[var(--gui-text,#2c2d33)] tracking-tight',
-              isCenter
-                ? 'text-[length:var(--gui-display-size,40px)] leading-[var(--gui-display-leading,48px)]'
-                : 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]'
+              'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]'
             )}
           >
             {asString(props.title)}

@@ -28,10 +28,7 @@ import {
   resolveConstitutionSections,
 } from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
-import {
-  ARENA_GENERATIVE_UI_COMPOSITION_PROMPT,
-  ARENA_GENERATIVE_UI_HIERARCHY_PROMPT,
-} from '@/lib/arena-generative-ui/design-guidelines'
+import { ARENA_GENERATIVE_UI_COMPOSITION_PROMPT } from '@/lib/arena-generative-ui/design-guidelines'
 import { ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT } from '@/lib/arena-generative-ui/design-intent'
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import {
@@ -168,15 +165,11 @@ function wrapColumn(heading: string, sections: readonly string[]): string {
 }
 
 /**
- * Design composition is always relevant for a planned app — LAYOUT / CARDS /
- * typography are not "unrelated" packs. Unused catalog families and recipes
- * stay selectively injected elsewhere.
+ * LAYOUT / CARDS / PROFESSIONALISM stay on every generate, including planner
+ * fail-open. Unused catalog families and recipes stay selectively injected.
  */
-function compositionFor(options: BuildGeneratorSystemPromptOptions): string {
-  if (options.archetype || options.recipes || (options.pageArchetypes?.length ?? 0) > 0) {
-    return ARENA_GENERATIVE_UI_COMPOSITION_PROMPT
-  }
-  return ARENA_GENERATIVE_UI_HIERARCHY_PROMPT
+function compositionFor(): string {
+  return ARENA_GENERATIVE_UI_COMPOSITION_PROMPT
 }
 
 /**
@@ -249,7 +242,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     wrapColumn('DESIGN RULES / TOKENS', [
       ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
       ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
-      compositionFor(options),
+      compositionFor(),
     ]),
     wrapColumn('UX RULES / STATES', [
       constitution,

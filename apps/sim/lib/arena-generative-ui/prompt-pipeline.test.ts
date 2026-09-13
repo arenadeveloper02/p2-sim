@@ -151,7 +151,11 @@ describe('buildGeneratorSystemPrompt', () => {
       isScopedEdit: false,
     })
     expect(prompt).toContain('UNIVERSAL UI/UX CONSTITUTION')
+    expect(prompt).toContain('DESIGN GUIDELINES')
+    expect(prompt).toContain('LAYOUT')
+    expect(prompt).toContain('PROFESSIONALISM')
     expect(prompt).toContain('VISUAL HIERARCHY')
+    expect(prompt).toContain('Never let prose run the full 1280px')
     expect(prompt).toContain('ARCHETYPE RECIPE')
     expect(prompt).not.toContain('ARCHETYPE RECIPE:')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (task)')

@@ -95,7 +95,9 @@ describe('gold example', () => {
     expect(serialized).not.toContain('"type":"ProgressBar"')
     expect(serialized).not.toContain('"type":"Tabs"')
     expect(serialized).not.toContain('Watchtower')
-    expect(serialized).toContain('"align":"center"')
+    expect(serialized).toContain('"align":"start"')
+    expect(serialized).toContain('"width":"narrow"')
+    expect(serialized).not.toContain('"align":"center"')
     expect(serialized).toContain('"brandColor":"#1A73E8"')
   })
 
