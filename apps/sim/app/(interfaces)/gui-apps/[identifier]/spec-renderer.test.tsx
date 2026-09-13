@@ -1155,6 +1155,7 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec })
     const select = container.querySelector('select[name="status"]') as HTMLSelectElement
+    expect(select.querySelector('option[value=""]')?.textContent).toBe('Choose an option')
     act(() => {
       select.value = 'Completed'
       select.dispatchEvent(new Event('change', { bubbles: true }))
@@ -2291,6 +2292,9 @@ describe('SpecRenderer', () => {
     it('shows No results when the array is empty and nothing is pending', () => {
       const { container } = render({ spec: repeatSpec, pending: false, state: { articles: [] } })
       expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toBe('No results')
+      expect(container.querySelector('[data-testid="empty-state"]')?.className).not.toContain(
+        'border-dashed'
+      )
       expect(container.querySelector('h2')).toBeNull()
     })
 
@@ -3466,6 +3470,11 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec })
     expect(container.textContent).toContain('Watchtower')
+    const kicker = Array.from(container.querySelectorAll('p')).find(
+      (node) => node.textContent === 'Watchtower'
+    )
+    expect(kicker?.className).toContain('gui-text-muted')
+    expect(kicker?.className).not.toContain('uppercase')
     expect(container.querySelector('h1')?.className).toContain('gui-heading-size')
     expect(container.querySelector('h1')?.className).not.toContain('gui-display-size')
     const copy = container.querySelector('h1')?.parentElement
@@ -3966,6 +3975,24 @@ describe('SpecRenderer', () => {
     expect(footer?.textContent).toContain('Analyze')
   })
 
+  it('paints a default Card as a bordered surface without a drop shadow', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: 'Quiet' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const card = container.querySelector('[data-testid="card"]') as HTMLElement
+    expect(card.className).toContain('border-[var(--gui-border,#e2e3e5)]')
+    expect(card.className).not.toContain('shadow-[var(--gui-shadow-card')
+  })
+
   it('renders Card variant muted without a shadow and resolves padding tokens', () => {
     const spec: Spec = {
       root: 'page',
@@ -3982,6 +4009,7 @@ describe('SpecRenderer', () => {
     const card = container.querySelector('[data-testid="card"]') as HTMLElement
     expect(card.getAttribute('data-variant')).toBe('muted')
     expect(card.className).toContain('border-[var(--gui-border,#e2e3e5)]')
+    expect(card.className).toContain('gui-surface-muted')
     expect(card.className).not.toContain('shadow-[var(--gui-shadow-card')
     expect(card.style.padding).toBe('var(--gui-space-lg, 24px)')
   })
@@ -4148,10 +4176,10 @@ describe('SpecRenderer', () => {
     expect(submit?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
   })
 
-  it('stretches a form SubmitButton full width and tints inputs on focus', () => {
+  it('keeps a form SubmitButton inline and tints inputs on focus', () => {
     const { container } = render()
     const submit = container.querySelector('button[type="submit"]')
-    expect(submit?.className).toContain('w-full')
+    expect(submit?.className).not.toContain('w-full')
     const form = container.querySelector('form')
     expect(form?.className).toContain('w-full')
     expect(form?.className).not.toContain('max-w-[var(--gui-measure')

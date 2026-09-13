@@ -692,17 +692,20 @@ function deltaToneClass(value: unknown): string {
 }
 
 const SURFACE_CARD =
-  'rounded-[var(--gui-radius,12px)] bg-[var(--gui-surface,#ffffff)] p-6 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
 
 const SURFACE_CARD_MUTED =
-  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-6'
+  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface-muted,#f7f8f9)] p-[var(--gui-pad,16px)]'
 
 function cardSurfaceClass(variant: unknown): string {
   return asString(variant) === 'muted' ? SURFACE_CARD_MUTED : SURFACE_CARD
 }
 
 const SURFACE_STAT =
-  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-6'
+  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
+
+const BOUND_EMPTY_CLASS =
+  'col-span-full py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
 
 const HEADING_SIZE_CLASSES = {
   h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
@@ -1529,10 +1532,7 @@ const DEFAULT_EMPTY_TEXT = {
  */
 function EmptyState({ text }: { text: string }) {
   return (
-    <p
-      data-testid='empty-state'
-      className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
-    >
+    <p data-testid='empty-state' className={BOUND_EMPTY_CLASS}>
       {text}
     </p>
   )
@@ -1563,7 +1563,7 @@ function DataTextView({
   }
   return (
     <div aria-live='polite' aria-busy={pending || undefined}>
-      <MarkdownText className='font-medium' style={style} content={display} />
+      <MarkdownText style={style} content={display} />
     </div>
   )
 }
@@ -2585,7 +2585,7 @@ export function SpecRenderer({
           chrome.id && !chrome.nested ? childIds.filter((id) => id !== chrome.id) : childIds
         return (
           <div
-            className='relative min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
+            className='relative min-h-full bg-[var(--gui-canvas,#ffffff)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
             style={styleFromProps(props)}
           >
             {chromeNode}
@@ -2602,7 +2602,7 @@ export function SpecRenderer({
         return (
           <section
             className={cn(
-              'mx-auto flex w-full flex-col gap-[var(--gui-section-gap,24px)] px-6 py-8',
+              'mx-auto flex w-full flex-col gap-[var(--gui-section-gap,24px)] px-6 py-6',
               sectionWidthClass(props.width, sectionIsMeasureOnly(elements, childIds))
             )}
             style={styleFromProps(props)}
@@ -2926,7 +2926,7 @@ export function SpecRenderer({
             )}
           >
             {kicker ? (
-              <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-brand,#1a73e8)] uppercase tracking-[0.16em]'>
+              <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
                 {kicker}
               </p>
             ) : null}
@@ -3483,13 +3483,13 @@ export function SpecRenderer({
         return (
           <div
             data-testid='empty-state'
-            className='flex w-full flex-col items-center gap-3 rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#fff)] px-6 py-10 text-center'
+            className='flex w-full flex-col items-start gap-2 py-2'
             style={styleFromProps(props)}
           >
             {asString(props.icon) ? (
               <CatalogIcon name={asString(props.icon)} well='circle' />
             ) : null}
-            <p className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)]'>
+            <p className='font-semibold text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)]'>
               {asString(props.title)}
             </p>
             {asString(props.body) ? (
@@ -4108,7 +4108,7 @@ export function SpecRenderer({
             <div
               data-testid='search-field'
               className={cn(
-                'flex h-12 items-center gap-2 rounded-full border bg-[var(--gui-surface,#ffffff)] pr-1.5 pl-5 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
+                'flex h-12 items-center gap-2 rounded-full border bg-[var(--gui-surface,#ffffff)] pr-1.5 pl-5',
                 error ? 'border-[var(--gui-danger,#f31a1a)]' : 'border-[var(--gui-border,#e2e3e5)]'
               )}
             >
@@ -4248,7 +4248,7 @@ export function SpecRenderer({
                 onChange={(event) => setNamedValue(name, event.target.value)}
                 className={inputClass}
               >
-                <option value=''>Select</option>
+                <option value=''>Choose an option</option>
                 {options.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -4448,7 +4448,7 @@ export function SpecRenderer({
             type='submit'
             disabled={submitBusy}
             aria-busy={submitBusy || undefined}
-            className={cn(className, withinForm && 'w-full', submitBusy && 'gap-2')}
+            className={cn(className, submitBusy && 'gap-2')}
           >
             <ActionBusyMark show={submitBusy} />
             {label}

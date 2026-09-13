@@ -5,7 +5,8 @@ import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
 
 const HEADING = 'text-[var(--gui-text,#2c2d33)]'
-const BODY = 'text-[var(--gui-text-muted,#575a66)]'
+const BODY = 'text-[var(--gui-text,#2c2d33)]'
+const META = 'text-[var(--gui-text-muted,#575a66)]'
 
 function safeHref(href: string | undefined): string | undefined {
   if (!href) return undefined
@@ -17,28 +18,56 @@ function safeHref(href: string | undefined): string | undefined {
 
 const COMPONENTS = {
   p: ({ children }: HTMLAttributes<HTMLParagraphElement>) => (
-    <p className={`mb-2 text-sm leading-relaxed last:mb-0 ${BODY}`}>{children}</p>
+    <p
+      className={`mb-2 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] last:mb-0 ${BODY}`}
+    >
+      {children}
+    </p>
   ),
   h1: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h1 className={`mt-4 mb-2 font-bold text-xl first:mt-0 ${HEADING}`}>{children}</h1>
+    <h1
+      className={`mt-4 mb-2 font-semibold text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)] first:mt-0 ${HEADING}`}
+    >
+      {children}
+    </h1>
   ),
   h2: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h2 className={`mt-4 mb-2 font-bold text-lg first:mt-0 ${HEADING}`}>{children}</h2>
+    <h2
+      className={`mt-4 mb-2 font-semibold text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)] first:mt-0 ${HEADING}`}
+    >
+      {children}
+    </h2>
   ),
   h3: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h3 className={`mt-3 mb-2 font-semibold text-base first:mt-0 ${HEADING}`}>{children}</h3>
+    <h3
+      className={`mt-3 mb-2 font-semibold text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] first:mt-0 ${HEADING}`}
+    >
+      {children}
+    </h3>
   ),
   h4: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h4 className={`mt-2 mb-1 font-semibold text-sm first:mt-0 ${HEADING}`}>{children}</h4>
+    <h4
+      className={`mt-2 mb-1 font-semibold text-[length:var(--gui-label-size,12px)] leading-[var(--gui-label-leading,16px)] first:mt-0 ${HEADING}`}
+    >
+      {children}
+    </h4>
   ),
   ul: ({ children }: HTMLAttributes<HTMLUListElement>) => (
-    <ul className={`mb-3 list-disc space-y-2 pl-5 text-sm last:mb-0 ${BODY}`}>{children}</ul>
+    <ul
+      className={`mb-3 list-disc space-y-2 pl-5 text-[length:var(--gui-body-size,16px)] last:mb-0 ${META}`}
+    >
+      {children}
+    </ul>
   ),
   ol: ({ children }: HTMLAttributes<HTMLOListElement>) => (
-    <ol className={`mb-3 list-decimal space-y-2 pl-5 text-sm last:mb-0 ${BODY}`}>{children}</ol>
+    <ol
+      className={`mb-3 list-decimal space-y-2 pl-5 text-[length:var(--gui-body-size,16px)] last:mb-0 ${META}`}
+    >
+      {children}
+    </ol>
   ),
   li: ({ children }: HTMLAttributes<HTMLLIElement>) => (
-    <li className={`text-sm leading-relaxed ${BODY}`}>{children}</li>
+    <li className={`leading-[var(--gui-body-leading,24px)] ${META}`}>{children}</li>
   ),
   strong: ({ children }: HTMLAttributes<HTMLElement>) => (
     <strong className={`font-semibold ${HEADING}`}>{children}</strong>
@@ -62,7 +91,7 @@ const COMPONENTS = {
   },
   blockquote: ({ children }: HTMLAttributes<HTMLQuoteElement>) => (
     <blockquote
-      className={`my-2 border-[var(--color-ds-grey-300,#c5c6cc)] border-l-2 pl-3 text-sm italic ${BODY}`}
+      className={`my-2 border-[var(--color-ds-grey-300,#c5c6cc)] border-l-2 pl-3 text-[length:var(--gui-body-size,16px)] italic ${META}`}
     >
       {children}
     </blockquote>

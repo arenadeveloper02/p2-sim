@@ -445,7 +445,7 @@ function injectStatusSpinner(spec: Spec): Spec {
   const nextElements: Record<string, SpecElement> = { ...elements }
   nextElements[UX_COMPILER_STATUS_KEY] = {
     type: 'Spinner',
-    props: { label: 'Working…' },
+    props: { label: 'Working' },
     children: [],
   }
   nextElements[parentId] = {

@@ -55,10 +55,11 @@ describe('MarkdownText', () => {
     )
     const heading = container.querySelector('h2')
     const list = container.querySelector('ul')
-    expect(heading?.className).toContain('font-bold')
+    expect(heading?.className).toContain('font-semibold')
     expect(heading?.className).toContain('text-[var(--gui-text,#2c2d33)]')
     expect(list?.className).toContain('space-y-2')
     expect(list?.className).toContain('text-[var(--gui-text-muted,#575a66)]')
+    expect(list?.className).toContain('gui-body-size')
   })
 
   it('opens markdown links in a new tab and drops javascript hrefs', () => {

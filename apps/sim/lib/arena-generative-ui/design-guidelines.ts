@@ -53,7 +53,7 @@ export const ARENA_GENERATIVE_UI_COMPOSITION_PROMPT = [
   'SPACING',
   'Use a consistent spacing scale: gap "lg" between groups, density from manifest.theme (compact / comfortable / roomy). Tokens: none xs sm md lg xl 2xl on gap and padding. Use larger spacing between Sections than between elements inside a Section. Related elements group through proximity. Avoid both cramped layouts and excessive whitespace. Do not invent arbitrary px when a spacing token exists.',
   'CARDS',
-  'Use Card to group independent pieces of information or actions, or as a Repeat item. variant "default" is the raised host surface; "muted" is bordered with no shadow. Do not wrap every Section in a Card. Do not place every component inside a Card. Avoid deeply nested cards (no Card-in-Card). Prefer one surface containing related content over multiple small cards. Use elevation/borders sparingly — the host already paints the Card surface.',
+  'Use Card to group independent pieces of information or actions, or as a Repeat item. variant "default" is the bordered host surface; "muted" is a muted fill with the same border. Do not wrap every Section in a Card. Do not place every component inside a Card. Avoid deeply nested cards (no Card-in-Card). Prefer one surface containing related content over multiple small cards. Use elevation/borders sparingly — the host already paints the Card surface.',
   'BUTTONS',
   'Use action-oriented labels. One primary button per action group whenever possible. Secondary actions use variant "secondary" or "ghost". Destructive actions use variant "destructive". Avoid multiple visually competing primary buttons. Icon-only Button needs an accessible label and is only for universally recognizable actions.',
   'FORMS',

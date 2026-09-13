@@ -177,7 +177,7 @@ describe('compileGenerativeUx', () => {
     expect(compiled.uxPlan.fallbackLoading.home).toBe('status')
     expect(compiled.pages.home.spec.elements?.[UX_COMPILER_STATUS_KEY]).toEqual({
       type: 'Spinner',
-      props: { label: 'Working…' },
+      props: { label: 'Working' },
       children: [],
     })
     const section = compiled.pages.home.spec.elements?.section as { children?: string[] }

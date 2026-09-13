@@ -5,7 +5,7 @@
  * when `.deployed-chat` is not in the ancestor chain.
  */
 [data-gui-theme] {
-  --gui-canvas: var(--color-ds-surface-subtle, #f7f8f9);
+  --gui-canvas: var(--color-ds-surface-page, #ffffff);
   --gui-surface: var(--color-ds-surface-raised, #ffffff);
   --gui-surface-muted: var(--color-ds-surface-subtle, #f7f8f9);
   --gui-text: var(--color-ds-text-primary, #2c2d33);

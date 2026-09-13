@@ -22,6 +22,9 @@ import {
 const DAY_BUTTON_CLASS =
   'flex min-h-8 w-full flex-col items-center justify-center rounded-[var(--gui-radius-sm,8px)] text-[length:var(--gui-label-size,12px)] outline-none transition-[background-color,color] duration-100 focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
 
+const BOUND_EMPTY_CLASS =
+  'col-span-full py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+
 interface GuiHostMonthGridProps {
   year: number
   month: number
@@ -290,10 +293,7 @@ export function GuiHostCalendar({
 
   if (items.length === 0) {
     return (
-      <p
-        data-testid='empty-state'
-        className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
-      >
+      <p data-testid='empty-state' className={BOUND_EMPTY_CLASS}>
         {emptyText}
       </p>
     )

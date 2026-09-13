@@ -84,7 +84,7 @@ describe('ARENA_GENERATIVE_UI_COMPOSITION_PROMPT', () => {
       'Never generate a decorative Chart or Sparkline'
     )
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
-      'variant "default" is the raised host surface'
+      'variant "default" is the bordered host surface'
     )
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toContain('gap "lg"')
   })

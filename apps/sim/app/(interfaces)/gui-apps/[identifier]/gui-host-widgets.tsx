@@ -40,6 +40,9 @@ import {
 const SURFACE_CLASS =
   'flex w-full flex-col gap-3 rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-4'
 
+const BOUND_EMPTY_CLASS =
+  'col-span-full py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+
 interface GuiHostMapProps {
   items: readonly unknown[]
   latField?: string
@@ -77,7 +80,7 @@ export function GuiHostMap({
     return (
       <p
         data-testid='empty-state'
-        className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+        className={BOUND_EMPTY_CLASS}
       >
         {emptyText}
       </p>
@@ -114,7 +117,7 @@ export function GuiHostMap({
           referrerPolicy='no-referrer'
         />
       ) : (
-        <p className='rounded-[var(--gui-radius-sm,8px)] border border-[var(--gui-border,#e2e3e5)] border-dashed px-4 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>
+        <p className='py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>
           No coordinates to plot.
         </p>
       )}
@@ -245,7 +248,7 @@ export function GuiHostTree({
     return (
       <p
         data-testid='empty-state'
-        className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+        className={BOUND_EMPTY_CLASS}
       >
         {emptyText}
       </p>
@@ -344,7 +347,7 @@ export function GuiHostCarousel({
     return (
       <p
         data-testid='empty-state'
-        className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+        className={BOUND_EMPTY_CLASS}
       >
         {emptyText}
       </p>
@@ -453,7 +456,7 @@ export function GuiHostTimeline({
     return (
       <p
         data-testid='empty-state'
-        className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+        className={BOUND_EMPTY_CLASS}
       >
         {emptyText}
       </p>
