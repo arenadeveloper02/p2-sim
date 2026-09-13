@@ -314,13 +314,13 @@ Ask for `narrow` explicitly in Design Notes if you want the old focused single-c
 
 The generator is held to a few constraints you do not need to restate:
 
-- **Two surfaces only** — the page canvas and the card. Hierarchy comes from heading level, weight and whitespace, not coloured fills. Name a brand colour, density, typeface, or dark mode in Design Notes and the generator emits `manifest.theme` instead of painting `backgroundColor` on Page/Card.
+- **Two surfaces only** — the page canvas and the card. The host paints a white page, bordered cards (muted cards use a quiet fill), readable 16px body type, and plain empty copy — not dashed placeholders or full-bleed submit bars. Hierarchy comes from heading level, weight and whitespace, not coloured fills. Name a brand colour, density, typeface, or dark mode in Design Notes and the generator emits `manifest.theme` instead of painting `backgroundColor` on Page/Card.
 - **Readable measure** — dashboards and tables stay wide, but narrative prose drops into a `narrow` Section so a report body never runs the full 1280px.
 - **Sequential headings** — `PageHeader.title` is the page `h1` and `Card.title` renders an `h2`, so levels never skip or invert.
 - **Labeled, left-aligned fields** — short related fields pair up in a `Grid`, long free-text stays full width.
 - **Real spacing** — `gap` and `padding` take spacing tokens (`lg`, `md`) that the host maps to density-aware CSS variables. Raw CSS lengths still work.
 
-The system prompt also carries **one** validated gold-standard layout selected from the planned sitemap ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts)). Gold teaches catalog wiring, not page count. Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
+The system prompt also carries **one** validated gold-standard layout selected from the planned sitemap ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts)). Gold teaches catalog wiring and page chrome (`AppHeader` → `Section` → `PageHeader`), not page count. Table-first collections get a Table + Filter few-shot; card collections stay Repeat-in-Grid. Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
 
 ### Draft (Edit mode)
 

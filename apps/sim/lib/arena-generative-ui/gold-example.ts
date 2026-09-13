@@ -6,6 +6,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
@@ -44,7 +45,7 @@ const goldHomeSpec: Spec = {
       props: {
         title: 'Analyze a company',
         subtitle: 'Enter a name or domain and receive a structured report.',
-        kicker: 'Research',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -110,12 +111,22 @@ const goldReportSpec: Spec = {
     },
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['back', 'working', 'reply'],
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['back', 'header', 'working', 'reply'],
     },
     back: {
       type: 'NavLink',
       props: { label: 'Back', to: 'home' },
+      children: [],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Report',
+        subtitle: '{company}',
+        kicker: null,
+        align: 'start',
+      },
       children: [],
     },
     working: {
@@ -136,8 +147,8 @@ const goldReportSpec: Spec = {
     reply: {
       type: 'Card',
       props: {
-        title: 'Report',
-        subtitle: '{company}',
+        title: null,
+        subtitle: null,
         description: null,
         footerText: null,
         padding: 'lg',
@@ -197,7 +208,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (task)',
   GOLD_RENDER_CONTRACT,
-  'This sample uses two screens (left-aligned company input on a narrow Section, report destination) because a task page then a results page is the blueprint. AppHeader is sticky product chrome on Page; the home Section is width "narrow" with PageHeader align start, then SearchField with nested submit. WorkingCard then DataText bound by statePath live on results. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted. Do not author a centered SearchField hero on a 1280px Section.',
+  'This sample uses two screens (left-aligned company input on a narrow Section, report destination) because a task page then a results page is the blueprint. AppHeader is sticky product chrome on Page; both Sections are width "narrow" with PageHeader align start. Home is SearchField with nested submit. Results is Back, PageHeader, WorkingCard, then DataText bound by statePath — not a 1280px prose strip. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted. Do not author a centered SearchField hero on a 1280px Section.',
   `SearchField actionId is "${GOLD_EXAMPLE_API_KEY}" — do not paraphrase it as company_search. This sample has no apiKey: onSuccess.setState fills content then navigates. When a binding was declared, add that apiKey and omit the dummy content setState. Do not invent API keys. Do not drop manifest.actions.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')
@@ -216,6 +227,8 @@ export interface GoldExamplePickerOptions {
   needsCalendar?: boolean
   /** Dummy collection plotted on Timeline (representation timeline). */
   needsTimeline?: boolean
+  /** Collection body is Table (representation table). */
+  needsTables?: boolean
 }
 
 /**
@@ -255,6 +268,9 @@ export function goldExamplePromptForArchetype(
   }
   if (shapes.has('collection') && options?.needsTimeline) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE
+  }
+  if (shapes.has('collection') && options?.needsTables) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE
   }
   if (shapes.has('collection')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION

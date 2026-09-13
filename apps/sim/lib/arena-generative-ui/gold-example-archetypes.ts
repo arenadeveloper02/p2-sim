@@ -8,10 +8,30 @@ export const GOLD_RENDER_CONTRACT = [
   'Honour pages[], regions, and interaction from the blueprint.',
   "Do not copy this sample's sitemap, page count, shell, or subject.",
   'Do not invent pages or regions the blueprint omitted.',
+  'Page children are AppHeader then Section. Start the Section with PageHeader (align start, no decorative kicker).',
+  'User-facing copy only — do not put implementation notes in titles or subtitles.',
   'Note the default Arena theme and result components bound by statePath.',
   'gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted.',
   'Do not copy px, hex, or CSS variables.',
 ].join(' ')
+
+function goldAppHeader(title: string): Spec['elements'][string] {
+  return {
+    type: 'AppHeader',
+    props: { title, icon: 'spark' },
+    children: [],
+  }
+}
+
+const WIZARD_STEPPER_ITEMS = 'Company|home\nRole|role\nConfirm|confirm'
+
+function goldWizardStepper(activePath: string): Spec['elements'][string] {
+  return {
+    type: 'Stepper',
+    props: { items: WIZARD_STEPPER_ITEMS, activePath },
+    children: [],
+  }
+}
 
 function goldPrompt(
   archetype: string,
@@ -32,42 +52,40 @@ const dashboardHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Operations', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Operations'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['entity', 'filters', 'kpis', 'trend', 'activity'],
+      children: ['header', 'filters', 'kpis', 'trend', 'activity'],
     },
-    entity: {
-      type: 'EntityHeader',
+    header: {
+      type: 'PageHeader',
       props: {
-        title: 'Northwind',
-        description: 'Orders, fulfilment, and open exceptions for the current week.',
-        badge: 'Live',
-        badgeTone: 'success',
-        logoSrc: null,
-        initials: 'NW',
-        statePath: 'company.logo',
-        meta: 'Wholesale, Chicago',
+        title: 'Operations',
+        subtitle: 'Orders and open exceptions this week.',
+        kicker: null,
+        align: 'start',
       },
       children: [],
     },
     filters: {
       type: 'Filter',
       props: { justify: 'start', showWhen: null },
-      children: ['range'],
+      children: ['status'],
     },
-    range: {
-      type: 'DateInput',
+    status: {
+      type: 'Select',
       props: {
-        name: 'from',
-        label: 'From',
+        name: 'Status',
+        label: 'Status',
         required: false,
         defaultValue: null,
         statePath: null,
         errorText: null,
         showWhen: null,
+        options: 'All, Late, Hold',
       },
       children: [],
     },
@@ -85,7 +103,7 @@ const dashboardHomeSpec: Spec = {
         hint: null,
         delta: '+8%',
         deltaTone: 'positive',
-        size: 'display',
+        size: 'default',
         numberFormat: 'number',
       },
       children: [],
@@ -99,7 +117,7 @@ const dashboardHomeSpec: Spec = {
         hint: null,
         delta: null,
         deltaTone: null,
-        size: 'display',
+        size: 'default',
         numberFormat: 'percent-ratio',
       },
       children: [],
@@ -177,7 +195,7 @@ export const goldDashboardManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD = goldPrompt(
   'dashboard',
-  'Slots: Header, Filters, KPI/summary, primary visualization, supporting activity. Module count follows the bound hostKeys — this example uses two Stats, a Chart, and a Table, not a fixed four-Stat grid. onLoad setState seeds those hostKeys; every Stat, Chart, and Table bind by statePath. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. There is no search hero.',
+  'Slots: PageHeader, Filter named after a Table column, KPI/summary, primary visualization, supporting activity. The Status Filter Select matches the exceptions Status key so the host filters locally — do not emit a dead date field. Module count follows the bound hostKeys — this example uses two compact Stats, a Chart, and a Table, not a fixed four-Stat grid and not size display. onLoad setState seeds those hostKeys; every Stat, Chart, and Table bind by statePath. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. There is no search hero.',
   {
     title: 'Operations',
     content: 'Dashboard of weekly operations metrics on arrival.',
@@ -191,8 +209,9 @@ const listHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Orders', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Orders'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
@@ -203,7 +222,7 @@ const listHomeSpec: Spec = {
       props: {
         title: 'Open orders',
         subtitle: 'Select a row to open the record.',
-        kicker: 'Inbox',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -229,12 +248,7 @@ const listHomeSpec: Spec = {
         variant: 'default',
         backgroundColor: null,
       },
-      children: ['order_logo', 'open_order'],
-    },
-    order_logo: {
-      type: 'Avatar',
-      props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
-      children: [],
+      children: ['open_order'],
     },
     open_order: {
       type: 'Button',
@@ -261,11 +275,12 @@ const listDetailSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Order', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Orders'),
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['back', 'entity', 'details'],
     },
     back: {
@@ -371,8 +386,9 @@ const collectionHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Items', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Items'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
@@ -382,8 +398,8 @@ const collectionHomeSpec: Spec = {
       type: 'PageHeader',
       props: {
         title: 'Items',
-        subtitle: 'Create, edit, and complete stay on this page.',
-        kicker: 'List',
+        subtitle: 'Create and update items here.',
+        kicker: null,
         align: 'start',
       },
       children: ['new_item'],
@@ -426,12 +442,7 @@ const collectionHomeSpec: Spec = {
         variant: 'default',
         backgroundColor: null,
       },
-      children: ['item_logo', 'edit_item', 'complete_item'],
-    },
-    item_logo: {
-      type: 'Avatar',
-      props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
-      children: [],
+      children: ['edit_item', 'complete_item'],
     },
     edit_item: {
       type: 'Button',
@@ -665,21 +676,15 @@ const wizardStepOneSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Company', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Onboarding'),
     section: {
       type: 'Section',
       props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: ['stepper', 'header', 'form'],
     },
-    stepper: {
-      type: 'Stepper',
-      props: {
-        items: 'Company|home\nRole|role\nConfirm|confirm',
-        activePath: 'home',
-      },
-      children: [],
-    },
+    stepper: goldWizardStepper('home'),
     header: {
       type: 'PageHeader',
       props: {
@@ -751,13 +756,15 @@ const wizardStepTwoSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Role', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Onboarding'),
     section: {
       type: 'Section',
       props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'form'],
+      children: ['stepper', 'header', 'form'],
     },
+    stepper: goldWizardStepper('role'),
     header: {
       type: 'PageHeader',
       props: {
@@ -826,13 +833,15 @@ const wizardStepThreeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Confirm', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Onboarding'),
     section: {
       type: 'Section',
       props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'form'],
+      children: ['stepper', 'header', 'form'],
     },
+    stepper: goldWizardStepper('confirm'),
     header: {
       type: 'PageHeader',
       props: {
@@ -905,7 +914,7 @@ export const goldWizardManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD = goldPrompt(
   'workflow',
-  'Sequential stages with a Stepper for Progress. This example uses one page per named stage; two or three short stages may instead be one page of Sections. Early stages use Next Button.navigateTo; the last step is the only SubmitButton (submit_onboarding, no apiKey) — the host toasts. When a binding was declared, use that apiKey. Do not invent API keys. Steps after the first have a Back NavLink. Not Tabs. There is no search hero and no dashboard Stats.',
+  'Sequential stages with a Stepper for Progress on every step (activePath matches the page). This example uses one page per named stage; two or three short stages may instead be one page of Sections. Early stages use Next Button.navigateTo; the last step is the only SubmitButton (submit_onboarding, no apiKey) — the host toasts. When a binding was declared, use that apiKey. Do not invent API keys. Steps after the first have a Back NavLink. Not Tabs. There is no search hero and no dashboard Stats.',
   {
     title: 'Onboarding',
     content: 'Three-step onboarding that submits on the last page.',
@@ -919,8 +928,9 @@ const contentHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Brand guidelines', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Brand guidelines'),
     section: {
       type: 'Section',
       props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
@@ -931,7 +941,7 @@ const contentHomeSpec: Spec = {
       props: {
         title: 'Voice and tone',
         subtitle: 'How we write for customers and partners.',
-        kicker: 'Brand guidelines',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -1017,8 +1027,9 @@ const workspaceHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Projects', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Projects'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
@@ -1099,8 +1110,7 @@ const workspaceHomeSpec: Spec = {
       type: 'PageHeader',
       props: {
         title: 'Tasks',
-        subtitle:
-          'Rows include projectId matching the selected project. Create, edit, and complete stay here.',
+        subtitle: 'Tasks in the selected project.',
         kicker: null,
         align: 'start',
       },
@@ -1425,9 +1435,9 @@ const agentHomeSpec: Spec = {
     header: {
       type: 'PageHeader',
       props: {
-        title: 'Article Recommendation Agent',
+        title: 'New recommendation',
         subtitle: 'Turn a target keyword and client into writer-ready recommendations.',
-        kicker: 'Generator',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -1489,10 +1499,10 @@ const agentResultsSpec: Spec = {
     tabs: agentShellTabs('home'),
     section: {
       type: 'Section',
-      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
       children: [
         'back',
-        'context',
+        'header',
         'working',
         'views',
         'result_actions',
@@ -1505,12 +1515,13 @@ const agentResultsSpec: Spec = {
       props: { label: 'Back', to: 'home' },
       children: [],
     },
-    context: {
-      type: 'Text',
+    header: {
+      type: 'PageHeader',
       props: {
-        text: '{targetKeyword} · {clientBrand}',
-        color: null,
-        size: null,
+        title: 'Recommendations',
+        subtitle: '{targetKeyword}',
+        kicker: null,
+        align: 'start',
       },
       children: [],
     },
@@ -1684,8 +1695,8 @@ const agentHistorySpec: Spec = {
       type: 'PageHeader',
       props: {
         title: 'History',
-        subtitle: 'Reopen a past run on this page without refetching generate.',
-        kicker: 'Runs',
+        subtitle: 'Past runs.',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -1967,7 +1978,7 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL = goldPrompt(
     'On the results page, Tabs activePath stays home so Generator remains the selected peer (Results is not in items).',
     'Home has no wait chrome and no onLoad; SubmitButton runs generate_article; onSuccess navigates to results.',
     'Submitted fields are available as inputs.targetKeyword / "{targetKeyword}" on results.',
-    'Results has no onLoad of generate; WorkingCard for wait; Chip setValue view=enhanced|coverage above panels — not catalog Tabs for those labels. Copy Markdown / Download PDF are host buttons (copyContent / downloadPdf, no actionId) on the visible DataText.',
+    'Results has no onLoad of generate; Section is narrow; WorkingCard for wait; Chip setValue view=enhanced|coverage above panels — not catalog Tabs for those labels. Copy Markdown / Download PDF are host buttons (copyContent / downloadPdf, no actionId) on the visible DataText.',
     'History onLoad seeds short scalar cards in a 2-column Grid; Open is same-page selectItem true with no navigateTo — hide the list with showWhen "!selectedId", show Chip setValue views plus markdown with showWhen "selectedId", Back is clearItem true; host copies output/enhanced_article onto content and named keys. Bound {item.date} is formatted by the host. History detail also has Copy Markdown / Download PDF host buttons.',
     `Generate actionId is "${GOLD_AGENT_SHELL_GENERATE_KEY}"; history onLoad is "${GOLD_AGENT_SHELL_HISTORY_KEY}". When bindings were declared, use those apiKeys and omit dummy setState content. Do not invent API keys. Do not invent History unless the blueprint listed it.`,
   ].join(' '),
@@ -1984,8 +1995,9 @@ const calendarHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Schedule', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('Schedule'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
@@ -1996,7 +2008,7 @@ const calendarHomeSpec: Spec = {
       props: {
         title: 'Schedule',
         subtitle: 'Dated items on a month grid.',
-        kicker: 'Calendar',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -2058,8 +2070,9 @@ const timelineHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'History', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
     },
+    app_header: goldAppHeader('History'),
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
@@ -2070,7 +2083,7 @@ const timelineHomeSpec: Spec = {
       props: {
         title: 'History',
         subtitle: 'Dated items on a chronological spine.',
-        kicker: 'Timeline',
+        kicker: null,
         align: 'start',
       },
       children: [],
@@ -2122,5 +2135,98 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE = goldPrompt(
     title: 'History',
     content: 'Show dated items on a chronological spine.',
     manifest: goldTimelineManifest,
+  }
+)
+
+const tableHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Orders', backgroundColor: null },
+      children: ['app_header', 'section'],
+    },
+    app_header: goldAppHeader('Orders'),
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'filters', 'orders'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Orders',
+        subtitle: 'Compare open work.',
+        kicker: null,
+        align: 'start',
+      },
+      children: [],
+    },
+    filters: {
+      type: 'Filter',
+      props: { justify: 'start', showWhen: null },
+      children: ['status'],
+    },
+    status: {
+      type: 'Select',
+      props: {
+        name: 'status',
+        label: 'Status',
+        required: false,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        options: 'All, Open, Done',
+      },
+      children: [],
+    },
+    orders: {
+      type: 'Table',
+      props: {
+        statePath: 'orders',
+        columns: 'name, status, due',
+        rows: null,
+        emptyText: 'No orders yet.',
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldTableManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Orders',
+      spec: tableHomeSpec,
+      onLoad: ['load_orders'],
+    },
+  },
+  actions: {
+    load_orders: {
+      onSuccess: {
+        setState: {
+          orders: [
+            { id: 'o1', name: 'Acme renewal', status: 'Open', due: 'Friday' },
+            { id: 'o2', name: 'Northwind seats', status: 'Open', due: 'Monday' },
+            { id: 'o3', name: 'Contoso support', status: 'Done', due: 'Last week' },
+            { id: 'o4', name: 'Adventure pilot', status: 'Open', due: 'Next week' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE = goldPrompt(
+  'table',
+  'One collection page whose representation is table. AppHeader then Section width "wide", PageHeader, a Filter Select named after a Table column (status) so the host filters locally, then Table statePath with columns from those keys. onLoad setState seeds 4–8 comparable rows. Not Repeat of Cards, not Calendar, not a search hero. Match REPRESENTATION, not this body, when the brief picked cards or list. Do not invent API keys.',
+  {
+    title: 'Orders',
+    content: 'Compare orders in a table.',
+    manifest: goldTableManifest,
   }
 )

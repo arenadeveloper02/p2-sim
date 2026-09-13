@@ -186,6 +186,7 @@ describe('buildGeneratorSystemPrompt', () => {
     })
     expect(prompt).toContain('ARCHETYPE RECIPE: collection')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (table)')
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
     expect(prompt).not.toContain('SWOT')
@@ -195,6 +196,18 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('use navigation only')
     expect(prompt).toContain('Dummy/local actions omit apiKey')
     expect(prompt).toContain('dummy collection seed/onLoad')
+  })
+
+  it('selects table gold when a collection is table-first', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'collection',
+      needsTables: true,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (table)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (collection)\n')
   })
 
   it('includes the workspace recipe and sidebar-shell gold for a workspace prompt', () => {

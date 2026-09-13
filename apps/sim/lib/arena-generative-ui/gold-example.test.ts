@@ -16,6 +16,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
@@ -27,6 +28,7 @@ import {
   goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
+  goldTableManifest,
   goldTimelineManifest,
   goldWizardManifest,
   goldWorkspaceManifest,
@@ -97,6 +99,8 @@ describe('gold example', () => {
     expect(serialized).not.toContain('Watchtower')
     expect(serialized).toContain('"align":"start"')
     expect(serialized).toContain('"width":"narrow"')
+    expect(serialized).not.toContain('"width":"wide"')
+    expect(serialized).not.toContain('"kicker":"Research"')
     expect(serialized).not.toContain('"align":"center"')
     expect(serialized).toContain('"brandColor":"#1A73E8"')
   })
@@ -171,6 +175,12 @@ describe('per-archetype gold examples', () => {
     expect(goldExamplePromptForArchetype('collection', { needsTimeline: true })).toBe(
       ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE
     )
+    expect(goldExamplePromptForArchetype('collection', { needsTables: true })).toBe(
+      ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE
+    )
+    expect(
+      goldExamplePromptForArchetype('collection', { needsTables: true, needsCalendar: true })
+    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR)
     expect(goldExamplePromptForArchetype('collection')).not.toContain(
       'GOLD STANDARD REFERENCE LAYOUT (list-detail)'
     )
@@ -267,7 +277,11 @@ describe('per-archetype gold examples', () => {
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Chart"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Filter"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"name":"Status"')
+    expect(JSON.stringify(goldDashboardManifest)).not.toContain('"DateInput"')
+    expect(JSON.stringify(goldDashboardManifest)).not.toContain('"size":"display"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Table"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"AppHeader"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"gap":"md"')
     expect(JSON.stringify(goldDashboardManifest)).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
     expect(JSON.stringify(goldDashboardManifest.actions.load_dashboard)).not.toContain('apiKey')
@@ -349,6 +363,15 @@ describe('per-archetype gold examples', () => {
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldWizardManifest)).toContain('"Stepper"')
+    expect(JSON.stringify(goldWizardManifest.pages.home.spec.elements.stepper)).toContain(
+      '"activePath":"home"'
+    )
+    expect(JSON.stringify(goldWizardManifest.pages.role.spec.elements.stepper)).toContain(
+      '"activePath":"role"'
+    )
+    expect(JSON.stringify(goldWizardManifest.pages.confirm.spec.elements.stepper)).toContain(
+      '"activePath":"confirm"'
+    )
     expect(JSON.stringify(goldWizardManifest.actions.submit_onboarding)).not.toContain('apiKey')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD).toContain('Do not invent API keys')
   })
@@ -397,5 +420,49 @@ describe('per-archetype gold examples', () => {
       'save uses editing: false, not creating: false'
     )
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).not.toContain('not a page archetype')
+  })
+
+  it('validates the table collection gold', () => {
+    const result = validateArenaGenerativeManifest(goldTableManifest, {
+      apiBindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+    expect(JSON.stringify(goldTableManifest)).toContain('"Table"')
+    expect(JSON.stringify(goldTableManifest)).toContain('"Filter"')
+    expect(JSON.stringify(goldTableManifest)).toContain('"name":"status"')
+    expect(JSON.stringify(goldTableManifest)).toContain('"AppHeader"')
+    expect(JSON.stringify(goldTableManifest)).not.toContain('"Repeat"')
+    expect(JSON.stringify(goldTableManifest.actions.load_orders)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE).toContain('GOLD STANDARD REFERENCE LAYOUT (table)')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE).toContain('Do not invent API keys')
+  })
+
+  it('puts AppHeader on every gold page and drops decorative kickers', () => {
+    const manifests = [
+      goldExampleManifest,
+      goldDashboardManifest,
+      goldCollectionManifest,
+      goldListDetailManifest,
+      goldWizardManifest,
+      goldContentManifest,
+      goldWorkspaceManifest,
+      goldAgentShellManifest,
+      goldCalendarManifest,
+      goldTimelineManifest,
+      goldTableManifest,
+    ]
+    for (const manifest of manifests) {
+      const serialized = JSON.stringify(manifest)
+      expect(serialized).toContain('"AppHeader"')
+      expect(serialized).not.toContain('"kicker":"Inbox"')
+      expect(serialized).not.toContain('"kicker":"List"')
+      expect(serialized).not.toContain('"kicker":"Calendar"')
+      expect(serialized).not.toContain('"kicker":"Timeline"')
+      expect(serialized).not.toContain('"kicker":"Research"')
+      expect(serialized).not.toContain('Create, edit, and complete stay on this page')
+      expect(serialized).not.toContain('Rows include projectId matching')
+      expect(serialized).not.toContain('without refetching generate')
+    }
   })
 })

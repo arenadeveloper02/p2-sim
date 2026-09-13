@@ -9,6 +9,7 @@ import {
   goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
+  goldTableManifest,
   goldWizardManifest,
   goldWorkspaceManifest,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
@@ -74,6 +75,7 @@ describe('hostCriticManifest', () => {
     expect(hostCriticManifest(goldWizardManifest)).toBeUndefined()
     expect(hostCriticManifest(goldContentManifest)).toBeUndefined()
     expect(hostCriticManifest(goldWorkspaceManifest)).toBeUndefined()
+    expect(hostCriticManifest(goldTableManifest)).toBeUndefined()
     expect(hostCriticManifest(twoPageManifest)).toBeUndefined()
     expect(hostCriticManifest(multiPageManifest)).toBeUndefined()
   })

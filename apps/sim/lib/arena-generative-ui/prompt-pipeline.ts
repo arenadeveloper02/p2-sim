@@ -266,6 +266,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
         shell: options.shell,
         needsCalendar: options.needsCalendar,
         needsTimeline: options.needsTimeline,
+        needsTables: options.needsTables,
       }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
       catalogAndEnvelope,
