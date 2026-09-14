@@ -629,6 +629,72 @@ export function unwrapResponseBlockEnvelope(data: unknown, depth = 0): unknown {
 }
 
 /**
+ * True when every array on the record is a primitive column and there are at
+ * least two of them (Open-Meteo `hourly.time` + `hourly.temperature_2m`).
+ * Nested objects or arrays of objects are independent collections, not columns.
+ */
+export function isColumnarRecord(value: unknown): value is Record<string, unknown> {
+  if (!isPlainRecord(value)) return false
+  const columns: unknown[][] = []
+  for (const nested of Object.values(value)) {
+    if (Array.isArray(nested)) {
+      if (!isScalarArray(nested)) return false
+      columns.push(nested)
+      continue
+    }
+    if (nested != null && typeof nested === 'object') return false
+  }
+  return columns.length >= 2
+}
+
+/**
+ * Zips parallel scalar arrays into row objects (`{ time, temperature_2m }`).
+ * Returns undefined when the record is not columnar.
+ */
+export function rowsFromColumnarRecord(
+  record: Record<string, unknown>
+): Record<string, unknown>[] | undefined {
+  if (!isColumnarRecord(record)) return undefined
+  const columns: Array<[string, unknown[]]> = []
+  for (const [key, nested] of Object.entries(record)) {
+    if (!Array.isArray(nested)) continue
+    columns.push([key, nested])
+  }
+  const rowCount = Math.max(0, ...columns.map(([, values]) => values.length))
+  const rows: Record<string, unknown>[] = []
+  for (let index = 0; index < rowCount; index++) {
+    const row: Record<string, unknown> = {}
+    for (const [key, values] of columns) {
+      if (index < values.length) row[key] = values[index]
+    }
+    rows.push(row)
+  }
+  return rows
+}
+
+function isScalarArray(items: unknown[]): boolean {
+  for (const item of items) {
+    if (item == null) continue
+    if (typeof item === 'object') return false
+  }
+  return true
+}
+
+function zipColumnarTree(record: Record<string, unknown>, depth = 0): Record<string, unknown> {
+  if (depth > MAX_COLLECTION_LIFT_DEPTH) return record
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    if (!isPlainRecord(value)) {
+      next[key] = value
+      continue
+    }
+    const rows = rowsFromColumnarRecord(value)
+    next[key] = rows ?? zipColumnarTree(value, depth + 1)
+  }
+  return next
+}
+
+/**
  * Copies nested arrays (`run_data.history`) to top-level keys (`history`) so
  * Repeat/Table can bind the last segment. Existing top-level keys win.
  */
@@ -690,6 +756,8 @@ export function collectionFromBoundValue(value: unknown, depth = 0): unknown[] |
     return undefined
   }
   const record = omitActionTelemetry(value)
+  const columnar = rowsFromColumnarRecord(record)
+  if (columnar) return columnar
   for (const key of PREFERRED_COLLECTION_KEYS) {
     const nested = record[key]
     if (Array.isArray(nested)) {
@@ -774,7 +842,7 @@ function parsePreferredDisplayValue(value: unknown): unknown {
 export function actionStateFromData(data: unknown): Record<string, unknown> {
   const unwrapped = unwrapResponseBlockEnvelope(data)
   if (unwrapped && typeof unwrapped === 'object' && !Array.isArray(unwrapped)) {
-    const record = omitActionTelemetry(unwrapped as Record<string, unknown>)
+    const record = zipColumnarTree(omitActionTelemetry(unwrapped as Record<string, unknown>))
     return { ...liftNestedCollections(record), ...liftParsedDisplayFields(record), ...record }
   }
   return { result: unwrapped }

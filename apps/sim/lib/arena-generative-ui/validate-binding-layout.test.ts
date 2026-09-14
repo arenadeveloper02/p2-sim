@@ -3,8 +3,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { BindingLayoutPlan } from '@/lib/arena-generative-ui/binding-layout-plan'
-import { validateManifestBindingLayout } from '@/lib/arena-generative-ui/validate-binding-layout'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
+import { validateManifestBindingLayout } from '@/lib/arena-generative-ui/validate-binding-layout'
 
 function collectionPlan(itemFields: string[], proseFields: string[] = []): BindingLayoutPlan {
   return {
@@ -81,5 +81,119 @@ describe('validateManifestBindingLayout table columns', () => {
         collectionPlan(['title', 'body'], ['body']),
       ])
     ).toContain('prose')
+  })
+})
+
+describe('validateManifestBindingLayout required host keys', () => {
+  function weatherPlan(): BindingLayoutPlan {
+    return {
+      key: 'forecast',
+      kind: 'collection',
+      hostKeys: [
+        'hourly',
+        'daily',
+        'latitude',
+        'longitude',
+        'generationtime_ms',
+        'utc_offset_seconds',
+        'elevation',
+        'timezone',
+      ],
+      aliasKeys: [],
+      formFields: [],
+      hiddenInputFields: [],
+      collections: [
+        {
+          hostKey: 'hourly',
+          schemaPaths: ['hourly'],
+          wrapperKeys: [],
+          itemFields: ['time', 'temperature_2m'],
+          numericItemFields: ['temperature_2m'],
+          proseFields: [],
+          samePageSelect: false,
+        },
+        {
+          hostKey: 'daily',
+          schemaPaths: ['daily'],
+          wrapperKeys: [],
+          itemFields: ['time', 'temperature_2m_min'],
+          numericItemFields: ['temperature_2m_min'],
+          proseFields: [],
+          samePageSelect: false,
+        },
+      ],
+      metricPaths: [
+        'latitude',
+        'longitude',
+        'generationtime_ms',
+        'utc_offset_seconds',
+        'elevation',
+      ],
+      recordKeys: [],
+      scalarPaths: [],
+      prosePaths: [],
+      stringFieldNames: ['timezone'],
+      stream: false,
+    }
+  }
+
+  function forecastManifest(bound: 'none' | 'collections'): ArenaGenerativeAppManifest {
+    const collectionElements =
+      bound === 'collections'
+        ? {
+            hourly: {
+              type: 'Table',
+              props: { columns: 'time,temperature_2m', statePath: 'hourly', emptyText: 'None' },
+              children: [],
+            },
+            daily: {
+              type: 'Chart',
+              props: {
+                chartType: 'line',
+                statePath: 'daily',
+                categoryField: 'time',
+                series: 'temperature_2m_min',
+              },
+              children: [],
+            },
+          }
+        : {}
+    return {
+      entryPath: 'home',
+      pages: {
+        home: {
+          path: 'home',
+          title: 'Forecast',
+          spec: {
+            root: 'page',
+            elements: {
+              page: {
+                type: 'Page',
+                props: { title: 'Forecast' },
+                children: bound === 'collections' ? ['hourly', 'daily'] : ['title'],
+              },
+              title: { type: 'Heading', props: { text: 'Forecast', level: 'h1' }, children: [] },
+              ...collectionElements,
+            },
+          },
+          onLoad: ['load_forecast'],
+        },
+      },
+      actions: {
+        load_forecast: { apiKey: 'forecast' },
+      },
+    }
+  }
+
+  it('does not require every Open-Meteo metadata field once hourly and daily are bound', () => {
+    expect(
+      validateManifestBindingLayout(forecastManifest('collections'), [weatherPlan()])
+    ).toBeUndefined()
+  })
+
+  it('still requires the forecast collections themselves', () => {
+    expect(validateManifestBindingLayout(forecastManifest('none'), [weatherPlan()])).toContain(
+      'hourly'
+    )
   })
 })

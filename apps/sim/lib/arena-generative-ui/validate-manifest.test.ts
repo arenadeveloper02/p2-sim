@@ -1557,6 +1557,74 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.success).toBe(true)
     })
 
+    it('accepts a forecast that binds hourly and daily without metadata Stats', () => {
+      const forecastBinding = {
+        key: 'forecast',
+        label: 'Forecast',
+        kind: 'workflow' as const,
+        workflowId: 'wf-forecast',
+        outputSchema: [
+          { name: 'latitude', type: 'number' },
+          { name: 'longitude', type: 'number' },
+          { name: 'generationtime_ms', type: 'number' },
+          { name: 'utc_offset_seconds', type: 'number' },
+          { name: 'elevation', type: 'number' },
+          { name: 'timezone', type: 'string' },
+          { name: 'hourly', type: 'object' },
+          { name: 'hourly.time', type: 'array' },
+          { name: 'hourly.temperature_2m', type: 'array' },
+          { name: 'hourly.time[]', type: 'string' },
+          { name: 'hourly.temperature_2m[]', type: 'number' },
+          { name: 'daily', type: 'object' },
+          { name: 'daily.time', type: 'array' },
+          { name: 'daily.temperature_2m_min', type: 'array' },
+          { name: 'daily.time[]', type: 'string' },
+          { name: 'daily.temperature_2m_min[]', type: 'number' },
+        ],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Forecast', backgroundColor: null },
+            children: ['hourly', 'daily'],
+          },
+          hourly: {
+            type: 'Table',
+            props: {
+              columns: 'time,temperature_2m',
+              rows: null,
+              statePath: 'hourly',
+              emptyText: null,
+            },
+            children: [],
+          },
+          daily: {
+            type: 'Chart',
+            props: {
+              chartType: 'line',
+              statePath: 'daily',
+              categoryField: 'time',
+              series: 'temperature_2m_min',
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: { home: { title: 'Forecast', path: 'home', spec, onLoad: ['load_forecast'] } },
+          actions: { load_forecast: { apiKey: 'forecast' } },
+        },
+        { apiBindings: [forecastBinding], entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
     it('still sees hostKeys bound on a page a scoped edit did not author', () => {
       const result = validateArenaGenerativeManifest(scoredPages(resultsPlanSpec()), {
         apiBindings: [scoredBinding],

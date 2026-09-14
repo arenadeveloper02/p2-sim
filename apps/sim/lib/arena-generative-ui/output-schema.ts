@@ -1,5 +1,9 @@
 import { truncate } from '@sim/utils/string'
-import { isActionTelemetryRoot, parseJsonLiteral } from '@/lib/arena-generative-ui/types'
+import {
+  isActionTelemetryRoot,
+  isColumnarRecord,
+  parseJsonLiteral,
+} from '@/lib/arena-generative-ui/types'
 
 const MAX_DEPTH = 3
 /** Max flattened name/type rows kept from a sample or last-run body. */
@@ -199,7 +203,7 @@ export function deriveOutputSchema(data: unknown): {
   const isPlainObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed)
   const fields: ArenaGenerativeSchemaField[] = []
   const truncated = collectFields(parsed, isPlainObject ? '' : NON_OBJECT_ROOT_PATH, 0, fields)
-  return { fields: rewriteOutputEnvelopes(fields), truncated }
+  return { fields: rewriteColumnarSchemaFields(rewriteOutputEnvelopes(fields)), truncated }
 }
 
 /**
@@ -289,20 +293,24 @@ export function unwrapHttpEnvelopeSchemaFields(
     if (!dataType || dataType === 'string') {
       return []
     }
-    return rewriteOutputEnvelopes(
-      named
-        .filter(
-          (field) =>
-            field.name === 'data' || field.name.startsWith('data.') || field.name.startsWith('data[')
-        )
-        .map((field) => ({ ...field, name: renameDataEnvelopeRoot(field.name, dataType) }))
-        .filter((field) => field.name.length > 0)
+    return rewriteColumnarSchemaFields(
+      rewriteOutputEnvelopes(
+        named
+          .filter(
+            (field) =>
+              field.name === 'data' ||
+              field.name.startsWith('data.') ||
+              field.name.startsWith('data[')
+          )
+          .map((field) => ({ ...field, name: renameDataEnvelopeRoot(field.name, dataType) }))
+          .filter((field) => field.name.length > 0)
+      )
     )
   }
   if (named.length === 1 && named[0].name === 'result' && named[0].type === 'string') {
     return []
   }
-  return rewriteOutputEnvelopes(named)
+  return rewriteColumnarSchemaFields(rewriteOutputEnvelopes(named))
 }
 
 function isHttpEnvelopeOnlySchema(fields: Array<{ name: string }>): boolean {
@@ -384,6 +392,10 @@ function enqueueSchemaNode(
   }
 
   if (value && typeof value === 'object') {
+    if (isColumnarRecord(value)) {
+      enqueueColumnarRecord(value, path, fields)
+      return
+    }
     if (path && !path.endsWith('[]')) {
       fields.push({ name: path, type: 'object' })
     }
@@ -491,6 +503,120 @@ function isEmptySchemaValue(value: unknown): boolean {
   return false
 }
 
+function enqueueColumnarRecord(
+  record: Record<string, unknown>,
+  path: string,
+  fields: ArenaGenerativeSchemaField[]
+): void {
+  const collectionPath = path && !path.endsWith('[]') ? path : NON_OBJECT_ROOT_PATH
+  if (fields.length < MAX_OUTPUT_SCHEMA_FIELDS) {
+    fields.push({ name: collectionPath, type: 'array' })
+  }
+  for (const [key, nested] of Object.entries(record)) {
+    if (!Array.isArray(nested)) continue
+    const itemPath = `${collectionPath}[].${key}`
+    if (isActionTelemetryRoot(itemPath) || fields.length >= MAX_OUTPUT_SCHEMA_FIELDS) continue
+    const item = nested.length > 0 ? representativeArrayItem(nested) : undefined
+    fields.push({
+      name: itemPath,
+      type: item === undefined || typeof item === 'object' ? 'string' : schemaTypeFromValue(item),
+    })
+  }
+}
+
+/**
+ * Object-of-parallel-arrays (`hourly.time[]`, `hourly.temperature_2m[]`) is one
+ * row collection under the parent key, matching {@link isColumnarRecord}.
+ */
+function rewriteColumnarSchemaFields(
+  fields: ArenaGenerativeSchemaField[]
+): ArenaGenerativeSchemaField[] {
+  const named = namedSchemaFields(fields)
+  const parents = new Set(columnarParentPaths(named))
+  if (parents.size === 0) return named
+
+  const result: ArenaGenerativeSchemaField[] = []
+  const seen = new Set<string>()
+  const byName = new Map(named.map((field) => [field.name, field]))
+
+  const push = (name: string, type: string) => {
+    if (!name || seen.has(name)) return
+    seen.add(name)
+    result.push({ name, type })
+  }
+
+  for (const field of named) {
+    if (parents.has(field.name)) {
+      push(field.name, 'array')
+      continue
+    }
+    const parent = columnarParentOf(field.name, parents)
+    if (!parent) {
+      push(field.name, field.type)
+      continue
+    }
+    const suffix = field.name.slice(parent.length + 1)
+    if (suffix.includes('.')) continue
+    if (suffix.endsWith('[]')) {
+      push(`${parent}[].${suffix.slice(0, -2)}`, field.type)
+      continue
+    }
+    if (field.type === 'array') {
+      push(`${parent}[].${suffix}`, byName.get(`${field.name}[]`)?.type ?? 'string')
+    }
+  }
+  return result
+}
+
+function columnarParentPaths(fields: ArenaGenerativeSchemaField[]): string[] {
+  const fromObjects: string[] = []
+  for (const field of fields) {
+    if (field.type !== 'object' || field.name.includes('[]')) continue
+    if (isColumnarObjectSchema(field.name, fields)) fromObjects.push(field.name)
+  }
+  if (fromObjects.length > 0) return fromObjects
+
+  const grouped = new Map<string, ArenaGenerativeSchemaField[]>()
+  for (const field of fields) {
+    if (field.type !== 'array' || field.name.includes('[]') || !field.name.includes('.')) continue
+    const parent = field.name.slice(0, field.name.lastIndexOf('.'))
+    const group = grouped.get(parent) ?? []
+    group.push(field)
+    grouped.set(parent, group)
+  }
+  const inferred: string[] = []
+  for (const [parent, group] of grouped) {
+    if (group.length < 2) continue
+    if (group.every((child) => isScalarColumnSchema(child.name, fields))) inferred.push(parent)
+  }
+  return inferred
+}
+
+function isColumnarObjectSchema(parent: string, fields: ArenaGenerativeSchemaField[]): boolean {
+  const prefix = `${parent}.`
+  const direct = fields.filter((field) => {
+    if (!field.name.startsWith(prefix)) return false
+    const rest = field.name.slice(prefix.length)
+    return rest.length > 0 && !rest.includes('.') && !rest.includes('[')
+  })
+  return (
+    direct.length >= 2 &&
+    direct.every((field) => field.type === 'array' && isScalarColumnSchema(field.name, fields))
+  )
+}
+
+function isScalarColumnSchema(arrayPath: string, fields: ArenaGenerativeSchemaField[]): boolean {
+  const objectItemPrefix = `${arrayPath}[].`
+  return !fields.some((field) => field.name.startsWith(objectItemPrefix))
+}
+
+function columnarParentOf(name: string, parents: Set<string>): string | undefined {
+  for (const parent of parents) {
+    if (name !== parent && name.startsWith(`${parent}.`)) return parent
+  }
+  return undefined
+}
+
 function rewriteOutputEnvelopes(
   fields: ArenaGenerativeSchemaField[]
 ): ArenaGenerativeSchemaField[] {
@@ -517,7 +643,11 @@ function rewriteTopLevelOutputEnvelope(
   const kept: ArenaGenerativeSchemaField[] = []
   const seen = new Set<string>()
   for (const field of fields) {
-    if (field.name === 'output' || field.name.startsWith('output.') || field.name.startsWith('output[')) {
+    if (
+      field.name === 'output' ||
+      field.name.startsWith('output.') ||
+      field.name.startsWith('output[')
+    ) {
       continue
     }
     if (seen.has(field.name)) continue

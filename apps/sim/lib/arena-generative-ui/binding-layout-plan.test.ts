@@ -281,6 +281,44 @@ describe('layoutPlanForBinding', () => {
     expect(resultLayoutFromPlan(plan)).toContain('series "spend,impressions"')
   })
 
+  it('collapses Open-Meteo parallel arrays into hourly and daily collections', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        key: 'forecast',
+        outputSchema: [
+          { name: 'latitude', type: 'number' },
+          { name: 'generationtime_ms', type: 'number' },
+          { name: 'timezone', type: 'string' },
+          { name: 'hourly', type: 'object' },
+          { name: 'hourly.time', type: 'array' },
+          { name: 'hourly.temperature_2m', type: 'array' },
+          { name: 'hourly.precipitation', type: 'array' },
+          { name: 'hourly.time[]', type: 'string' },
+          { name: 'hourly.temperature_2m[]', type: 'number' },
+          { name: 'hourly.precipitation[]', type: 'number' },
+          { name: 'daily', type: 'object' },
+          { name: 'daily.time', type: 'array' },
+          { name: 'daily.temperature_2m_min', type: 'array' },
+          { name: 'daily.time[]', type: 'string' },
+          { name: 'daily.temperature_2m_min[]', type: 'number' },
+        ],
+      })
+    )
+
+    expect(plan.kind).toBe('collection')
+    expect(plan.collections.map((collection) => collection.hostKey)).toEqual(['hourly', 'daily'])
+    expect(plan.collections[0]?.itemFields).toEqual(
+      expect.arrayContaining(['time', 'temperature_2m', 'precipitation'])
+    )
+    expect(plan.collections[0]?.numericItemFields).toEqual(
+      expect.arrayContaining(['temperature_2m', 'precipitation'])
+    )
+    expect(plan.hostKeys).toEqual(expect.arrayContaining(['hourly', 'daily']))
+    expect(plan.hostKeys).not.toContain('temperature_2m')
+    expect(plan.hostKeys).not.toContain('precipitation')
+    expect(resultLayoutFromPlan(plan)).toContain('categoryField "time"')
+  })
+
   it('keeps a top-level markdown string as a DataText path, not field.content', () => {
     const plan = layoutPlanForBinding(
       workflowBinding({

@@ -5,14 +5,14 @@ import {
   HOST_RESERVED_STATE_ROOTS,
   planHasStructuredSchema,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
-import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
-import { isFormFieldType, parseShowWhen } from '@/lib/arena-generative-ui/form-fields'
-import { isCopyOrDownloadLabel } from '@/lib/arena-generative-ui/host-content-actions'
-import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import {
   isComputedTableColumnKey,
   parseBoundTableColumn,
 } from '@/lib/arena-generative-ui/bound-table-reshape'
+import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
+import { isFormFieldType, parseShowWhen } from '@/lib/arena-generative-ui/form-fields'
+import { isCopyOrDownloadLabel } from '@/lib/arena-generative-ui/host-content-actions'
+import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
@@ -54,6 +54,13 @@ const COLLECTION_TYPES = new Set([
 const ENVELOPE_ROOTS = new Set(['data', 'response'])
 
 const HOST_RESERVED_ROOTS = new Set<string>(HOST_RESERVED_STATE_ROOTS)
+
+/**
+ * Score + count next to a table stay required. Open-Meteo-style responses have
+ * many sibling metrics (`generationtime_ms`, `latitude`, …) that must not each
+ * force a Stat when `hourly` / `daily` are already bound.
+ */
+const MAX_REQUIRED_EXTRAS_WITH_COLLECTIONS = 3
 
 const ITEM_PROSE_TEMPLATE = /\{item\.(output|content|body|text|message|assistantContent)\}/i
 
@@ -558,7 +565,10 @@ function collectionForStatePath(
 
 /**
  * Generate/edit fail when a structured plan is in use but a required host key
- * never appears as statePath. Runtime outputSchema drift stays warn-only.
+ * never appears as statePath. Collections are always required. Metrics, record
+ * objects, and string fields stay required only when they are the whole result
+ * or a small extra set — not every metadata sibling on a wide API. Runtime
+ * outputSchema drift stays warn-only.
  */
 function unboundHostKeysError(
   manifest: ArenaGenerativeAppManifest,
@@ -643,6 +653,10 @@ function missingRequiredHostKeys(plan: BindingLayoutPlan, bound: Set<string>): s
     if (plan.aliasKeys.includes('items') && bound.has('items')) continue
     missing.push(collection.hostKey)
   }
+  const extraCount = plan.metricPaths.length + plan.recordKeys.length + plan.stringFieldNames.length
+  const requireExtras =
+    plan.collections.length === 0 || extraCount <= MAX_REQUIRED_EXTRAS_WITH_COLLECTIONS
+  if (!requireExtras) return missing
   for (const path of plan.metricPaths) {
     const root = path.split('.')[0] ?? path
     if (bound.has(path) || bound.has(root)) continue

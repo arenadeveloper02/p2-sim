@@ -402,6 +402,62 @@ describe('outputSchemaFromSample', () => {
     expect(JSON.stringify(fields)).not.toContain('confidential')
   })
 
+  it('treats Open-Meteo hourly/daily parallel arrays as row collections', () => {
+    const fields = outputSchemaFromSample(
+      JSON.stringify({
+        latitude: 52.52,
+        generationtime_ms: 0.25,
+        timezone: 'GMT',
+        hourly: {
+          time: ['2024-01-01T00:00', '2024-01-01T01:00'],
+          temperature_2m: [1.2, 0.8],
+          precipitation: [0, 0.1],
+        },
+        daily: {
+          time: ['2024-01-01'],
+          temperature_2m_min: [-2],
+          sunrise: ['2024-01-01T08:00'],
+        },
+      })
+    )
+    const names = fields.map((field) => field.name)
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'hourly',
+        'hourly[].time',
+        'hourly[].temperature_2m',
+        'hourly[].precipitation',
+        'daily',
+        'daily[].time',
+        'daily[].temperature_2m_min',
+        'daily[].sunrise',
+        'latitude',
+        'generationtime_ms',
+        'timezone',
+      ])
+    )
+    expect(fields.find((field) => field.name === 'hourly')?.type).toBe('array')
+    expect(fields.find((field) => field.name === 'daily')?.type).toBe('array')
+    expect(names).not.toContain('hourly.temperature_2m')
+    expect(names).not.toContain('temperature_2m')
+  })
+
+  it('rewrites a stored object-of-arrays schema so layout binds hourly', () => {
+    const names = unwrapHttpEnvelopeSchemaFields([
+      { name: 'hourly', type: 'object' },
+      { name: 'hourly.time', type: 'array' },
+      { name: 'hourly.temperature_2m', type: 'array' },
+      { name: 'hourly.time[]', type: 'string' },
+      { name: 'hourly.temperature_2m[]', type: 'number' },
+      { name: 'latitude', type: 'number' },
+    ]).map((field) => field.name)
+    expect(names).toEqual(
+      expect.arrayContaining(['hourly', 'hourly[].time', 'hourly[].temperature_2m', 'latitude'])
+    )
+    expect(names).not.toContain('hourly.time')
+    expect(names).not.toContain('hourly.temperature_2m')
+  })
+
   it('drops execution telemetry so the generator cannot bind Stats to it', () => {
     const names = outputSchemaFromSample(
       JSON.stringify({
@@ -559,13 +615,7 @@ describe('effectiveOutputSchema', () => {
           { name: 'input.article_url', type: 'string' },
         ],
       }).map((field) => field.name)
-    ).toEqual([
-      'input',
-      'email',
-      'input.article_url',
-      'coverage_report',
-      'coverage_report.summary',
-    ])
+    ).toEqual(['input', 'email', 'input.article_url', 'coverage_report', 'coverage_report.summary'])
   })
 })
 

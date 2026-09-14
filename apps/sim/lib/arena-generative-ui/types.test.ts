@@ -8,6 +8,7 @@ import {
   actionStateFromData,
   clearedSelectedIdHostState,
   clearedSelectedItemHostState,
+  collectionFromBoundValue,
   displayTextFromActionData,
   formatBoundDateDisplay,
   interpolateBindingTemplate,
@@ -26,6 +27,7 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  rowsFromColumnarRecord,
   scrollGenerativeAppToResults,
   scrollGenerativeAppToTop,
   selectedItemHostState,
@@ -203,6 +205,53 @@ describe('isActionTelemetryRoot', () => {
         { name: 'timeSegments', type: 'array' },
       ])
     ).toEqual([{ name: 'articles', type: 'array' }])
+  })
+})
+
+describe('columnar Open-Meteo records', () => {
+  const hourly = {
+    time: ['2024-01-01T00:00', '2024-01-01T01:00'],
+    temperature_2m: [1.2, 0.8],
+    precipitation: [0, 0.1],
+  }
+
+  it('zips parallel scalar arrays into row objects', () => {
+    expect(rowsFromColumnarRecord(hourly)).toEqual([
+      { time: '2024-01-01T00:00', temperature_2m: 1.2, precipitation: 0 },
+      { time: '2024-01-01T01:00', temperature_2m: 0.8, precipitation: 0.1 },
+    ])
+  })
+
+  it('does not zip two arrays of objects as columns', () => {
+    expect(
+      rowsFromColumnarRecord({
+        articles: [{ title: 'One' }],
+        related: [{ title: 'Two' }],
+      })
+    ).toBeUndefined()
+  })
+
+  it('lets Table bind hourly after a forecast payload', () => {
+    const state = actionStateFromData({
+      latitude: 52.52,
+      generationtime_ms: 0.25,
+      timezone: 'GMT',
+      hourly,
+      daily: {
+        time: ['2024-01-01'],
+        temperature_2m_min: [-2],
+        sunrise: ['2024-01-01T08:00'],
+      },
+    })
+    expect(collectionFromBoundValue(state.hourly)).toEqual([
+      { time: '2024-01-01T00:00', temperature_2m: 1.2, precipitation: 0 },
+      { time: '2024-01-01T01:00', temperature_2m: 0.8, precipitation: 0.1 },
+    ])
+    expect(collectionFromBoundValue(state.daily)).toEqual([
+      { time: '2024-01-01', temperature_2m_min: -2, sunrise: '2024-01-01T08:00' },
+    ])
+    expect(state.latitude).toBe(52.52)
+    expect(state).not.toHaveProperty('temperature_2m')
   })
 })
 
