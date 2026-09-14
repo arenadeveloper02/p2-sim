@@ -25,15 +25,20 @@ vi.mock('@/providers/utils', () => ({
 }))
 
 import {
-  PLANNER_CONTRACT_PROMPT,
   buildPlannerSystemPrompt,
+  PLANNER_CONTRACT_PROMPT,
 } from '@/lib/arena-generative-ui/planner-contract'
-import { buildGeneratorSystemPrompt, generatorPromptOptionsFromBrief } from '@/lib/arena-generative-ui/prompt-pipeline'
+import {
+  buildGeneratorSystemPrompt,
+  generatorPromptOptionsFromBrief,
+} from '@/lib/arena-generative-ui/prompt-pipeline'
 import {
   ARENA_GENERATIVE_ARCHETYPES,
   type ArenaGenerativeStructuredBrief,
   archetypeRecipe,
   archetypeRecipesForBrief,
+  briefMissingHistoryPage,
+  briefMissingWaitCapabilities,
   formatPageShapesForGenerator,
   formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
@@ -44,8 +49,6 @@ import {
   planArenaGenerativeStructuredBrief,
   recipesForBlueprint,
   uncoordinatedWorkspacePages,
-  briefMissingHistoryPage,
-  briefMissingWaitCapabilities,
 } from '@/lib/arena-generative-ui/structured-brief'
 
 const listDetailBrief: ArenaGenerativeStructuredBrief = {
@@ -137,11 +140,12 @@ describe('parseArenaGenerativeStructuredBrief', () => {
         pages: listDetailBrief.pages.map(({ archetype: _shape, ...page }) => page),
       },
       {
-      apiBindings: [
-        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
-        { key: 'get_order', label: 'Get', kind: 'workflow', workflowId: 'wf-2' },
-      ],
-    })
+        apiBindings: [
+          { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+          { key: 'get_order', label: 'Get', kind: 'workflow', workflowId: 'wf-2' },
+        ],
+      }
+    )
     expect(parsed?.archetype).toBe('collection')
     expect(parsed?.pages.map((page) => page.path)).toEqual(['home', 'detail'])
     expect(parsed?.pages.map((page) => page.archetype)).toEqual(['collection', 'detail'])
@@ -289,9 +293,7 @@ describe('parseArenaGenerativeStructuredBrief', () => {
         audience: 'Admins',
         archetype: 'wizard',
         entryPath: 'home',
-        pages: [
-          { path: 'home', title: 'Setup', purpose: 'Steps', data: 'static', actions: [] },
-        ],
+        pages: [{ path: 'home', title: 'Setup', purpose: 'Steps', data: 'static', actions: [] }],
         actions: [],
       },
       { apiBindings: [] }
@@ -934,7 +936,9 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('task')).toContain('WorkingCard.steps')
     expect(archetypeRecipe('task')).toContain('stack WorkingCard then bound results')
     expect(archetypeRecipe('results')).toContain('DataText "content"')
-    expect(archetypeRecipe('results')).toContain('Chip setValue in a horizontal row above those panels')
+    expect(archetypeRecipe('results')).toContain(
+      'Chip setValue in a horizontal row above those panels'
+    )
     expect(archetypeRecipe('results')).toContain('No onLoad of the CTA')
     expect(archetypeRecipe('results')).toContain('Do not invent SWOT')
     expect(archetypeRecipe('collection')).toContain('pages[].representation')
@@ -1186,6 +1190,23 @@ describe('planArenaGenerativeStructuredBrief', () => {
       'Create a history, results, or detail page when the request named that destination'
     )
     expect(userMessage).toContain('Order inbox with a detail page.')
+  })
+
+  it('injects compiledHonor before User request', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage(JSON.stringify(listDetailBrief)))
+
+    await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox with a detail page.',
+      apiBindings: [],
+      compiledHonor: 'COMPILED HONOR LIST\n- Job is a dashboard.',
+    })
+
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('COMPILED HONOR LIST')
+    expect(userMessage).toContain('Job is a dashboard')
+    expect(userMessage.indexOf('COMPILED HONOR LIST')).toBeLessThan(
+      userMessage.indexOf('User request:')
+    )
   })
 
   it('passes analyzed intent JSON to the planner payload', async () => {

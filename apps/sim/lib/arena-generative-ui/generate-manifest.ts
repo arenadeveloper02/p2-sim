@@ -5,6 +5,7 @@ import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import { resolveCapabilities } from '@/lib/arena-generative-ui/capabilities'
+import { compileProductBrief } from '@/lib/arena-generative-ui/compile-product-brief'
 import {
   type ArenaGenerativeCritique,
   critiqueArenaGenerativeManifest,
@@ -18,12 +19,20 @@ import {
 } from '@/lib/arena-generative-ui/edit-scope'
 import { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
 import {
-  collectAdoptedChanges,
-  collectGenerateWarnings,
   type ArenaGenerativeAdoptedChange,
   type ArenaGenerativeGenerateWarning,
+  collectAdoptedChanges,
+  collectGenerateWarnings,
 } from '@/lib/arena-generative-ui/generate-warnings'
 import { repairHostCriticExtras } from '@/lib/arena-generative-ui/host-critic-repair'
+import {
+  applyHostEditKnobs,
+  applySplitResultsBack,
+  formatLandCheckRepair,
+  hostEditLandMisses,
+  isPaintOnlyEdit,
+  parseHostEditKnobs,
+} from '@/lib/arena-generative-ui/host-edit-knobs'
 import {
   type ArenaGenerativeIntent,
   analyzeArenaGenerativeIntent,
@@ -46,14 +55,6 @@ import {
   pageHintsFromStructuredBrief,
   planArenaGenerativeStructuredBrief,
 } from '@/lib/arena-generative-ui/structured-brief'
-import {
-  applyHostEditKnobs,
-  applySplitResultsBack,
-  formatLandCheckRepair,
-  hostEditLandMisses,
-  isPaintOnlyEdit,
-  parseHostEditKnobs,
-} from '@/lib/arena-generative-ui/host-edit-knobs'
 import { applyThemeOnlyEdit, isThemeOnlyEdit } from '@/lib/arena-generative-ui/theme-from-edit'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import type {
@@ -62,19 +63,19 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
-import {
-  formatVisualBriefForGenerator,
-  formatVisualBriefStatus,
-  MATCH_SCREENSHOT_USER_INPUT,
-  type ArenaGenerativeVisualBrief,
-} from '@/lib/arena-generative-ui/visual-brief'
 import { hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
-import { applyWaitEstimateFromBrief } from '@/lib/arena-generative-ui/wait-estimate'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
   validateArenaGenerativeManifest,
 } from '@/lib/arena-generative-ui/validate-manifest'
+import {
+  type ArenaGenerativeVisualBrief,
+  formatVisualBriefForGenerator,
+  formatVisualBriefStatus,
+  MATCH_SCREENSHOT_USER_INPUT,
+} from '@/lib/arena-generative-ui/visual-brief'
+import { applyWaitEstimateFromBrief } from '@/lib/arena-generative-ui/wait-estimate'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { formatProviderNetworkError } from '@/lib/core/utils/opaque-fetch-error'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
@@ -298,10 +299,7 @@ function evaluateGeneratedCandidate(
     merged ? merged.candidate : candidate,
     sanitizeOptionsFromEvaluate(options)
   )
-  const validation = validateArenaGenerativeManifest(
-    sanitized.candidate,
-    options.validationOptions
-  )
+  const validation = validateArenaGenerativeManifest(sanitized.candidate, options.validationOptions)
   if (!validation.success || !validation.manifest) {
     return validation
   }
@@ -358,10 +356,7 @@ function remainingIssuesForUser(
     merged ? merged.candidate : candidate,
     sanitizeOptionsFromEvaluate(options)
   )
-  const validation = validateArenaGenerativeManifest(
-    sanitized.candidate,
-    options.validationOptions
-  )
+  const validation = validateArenaGenerativeManifest(sanitized.candidate, options.validationOptions)
   if (!validation.success || !validation.manifest) {
     return [validation.error ?? fallback]
   }
@@ -541,11 +536,7 @@ export async function generateArenaGenerativeManifest(
     const applied = applyHostEditKnobs(themed, parseHostEditKnobs(userInput), {
       userInput,
     })
-    const estimated = applyWaitEstimateFromBrief(
-      applied.manifest,
-      userInput,
-      params.existingBrief
-    )
+    const estimated = applyWaitEstimateFromBrief(applied.manifest, userInput, params.existingBrief)
     const pagesUnchanged =
       JSON.stringify(estimated.manifest.pages) === JSON.stringify(params.existingManifest.pages)
     return {
@@ -570,6 +561,9 @@ export async function generateArenaGenerativeManifest(
         existingBrief: params.existingBrief,
       })
     : userInput
+  const compiledBrief = isPreserveEdit
+    ? { honorPrompt: '', adoptedChanges: [] }
+    : compileProductBrief(plannerUserInput, params.apiBindings)
 
   let analyzedIntent: ArenaGenerativeIntent | null = isPreserveEdit
     ? (params.existingStructuredBrief?.intent ?? null)
@@ -603,6 +597,7 @@ export async function generateArenaGenerativeManifest(
         designNotes: params.designNotes,
         intent: analyzedIntent,
         visualBrief,
+        ...(compiledBrief.honorPrompt ? { compiledHonor: compiledBrief.honorPrompt } : {}),
       })
   const structuredBrief = planned.brief
   const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
@@ -689,7 +684,7 @@ export async function generateArenaGenerativeManifest(
   const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
-      : 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed collection rows with page onLoad setState (or Table.rows plus that Table\'s statePath). Use onSuccess.setState / navigate for mutations. Do not invent API keys. Do not drop actions the brief named.',
+      : "No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed collection rows with page onLoad setState (or Table.rows plus that Table's statePath). Use onSuccess.setState / navigate for mutations. Do not invent API keys. Do not drop actions the brief named.",
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     visualBrief ? formatVisualBriefForGenerator(visualBrief) : '',
     isPreserveEdit && params.existingBrief?.trim()
@@ -729,6 +724,7 @@ export async function generateArenaGenerativeManifest(
                 .filter((line) => line.length > 0)
                 .join('\n'),
           structuredBrief ? formatStructuredBriefForGenerator(structuredBrief) : '',
+          compiledBrief.honorPrompt,
           ...sharedSections,
           isPreserveEdit && params.existingManifest
             ? `Existing manifest:\n${JSON.stringify(params.existingManifest)}`
@@ -931,9 +927,7 @@ export async function generateArenaGenerativeManifest(
             })
           }
         }
-        misses = validation.manifest
-          ? hostEditLandMisses(validation.manifest, userInput)
-          : misses
+        misses = validation.manifest ? hostEditLandMisses(validation.manifest, userInput) : misses
       }
       if (validation.manifest && misses.length > 0) {
         const backed = applySplitResultsBack(validation.manifest, userInput)
@@ -982,7 +976,11 @@ export async function generateArenaGenerativeManifest(
     const adoptedChanges = collectAdoptedChanges({
       isPreserveEdit,
       existing: params.existingAdoptedChanges,
-      current: [...(validation.adoptedChanges ?? []), ...landAdopted],
+      current: [
+        ...compiledBrief.adoptedChanges,
+        ...(validation.adoptedChanges ?? []),
+        ...landAdopted,
+      ],
     })
     const statusLines = isReplan
       ? [

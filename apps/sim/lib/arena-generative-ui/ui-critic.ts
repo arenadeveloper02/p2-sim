@@ -41,7 +41,19 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
 /** Sibling Cards that are not Repeat items before the host flags density. */
 export const MAX_NON_REPEAT_CARDS_PER_PAGE = 8
 
-const INVENTED_REPRESENTATION_TYPES = new Set(['Kanban', 'List'])
+/** LLM-invented collection types with a catalog equivalent (Repeat / Chart). */
+export const INVENTED_REPRESENTATION_TYPES = new Set([
+  'Kanban',
+  'List',
+  'Filmstrip',
+  'HorizontalScroll',
+  'KanbanBoard',
+])
+
+export interface InventedRepresentation {
+  id: string
+  type: string
+}
 
 export interface HostCriticOptions {
   authoredPagePaths?: string[]
@@ -155,7 +167,7 @@ function ancestorHasType(
   return false
 }
 
-function pageHasReturnNav(spec: Spec, currentPath: string): boolean {
+export function pageHasReturnNav(spec: Spec, currentPath: string): boolean {
   const elements = elementsOf(spec)
   for (const element of Object.values(elements)) {
     const props = element.props ?? {}
@@ -176,7 +188,7 @@ function pageHasReturnNav(spec: Spec, currentPath: string): boolean {
   return false
 }
 
-function navigateSuccessTargets(manifest: ArenaGenerativeAppManifest): Set<string> {
+export function navigateSuccessTargets(manifest: ArenaGenerativeAppManifest): Set<string> {
   const targets = new Set<string>()
   for (const action of Object.values(manifest.actions)) {
     const navigate = asString(action.onSuccess?.navigate)
@@ -208,30 +220,41 @@ function duplicateOnLoadApiKeyErrors(
   return issues
 }
 
-function unboundDynamicErrors(pagePath: string, spec: Spec): string[] {
-  const issues: string[] = []
+/**
+ * Bound-app widgets that hard-code a metric or series instead of statePath.
+ */
+export function unboundLiteralWidgetIds(spec: Spec): string[] {
+  const ids: string[] = []
   const elements = elementsOf(spec)
   for (const [id, element] of Object.entries(elements)) {
     const props = element.props ?? {}
     if (asString(props.statePath)) continue
-    if (element.type === 'Stat' && isLiteralValue(props.value)) {
-      issues.push(
-        `Page "${pagePath}" Stat "${id}" hard-codes value and has no statePath. Bind the metric.`
-      )
-    }
-    if (element.type === 'Sparkline' && isLiteralValue(props.values)) {
-      issues.push(
-        `Page "${pagePath}" Sparkline "${id}" hard-codes values and has no statePath. Bind the series.`
-      )
-    }
+    if (element.type === 'Stat' && isLiteralValue(props.value)) ids.push(id)
+    if (element.type === 'Sparkline' && isLiteralValue(props.values)) ids.push(id)
     if (
       element.type === 'Chart' &&
       (isLiteralValue(props.values) || isLiteralValue(props.categories))
     ) {
-      issues.push(
-        `Page "${pagePath}" Chart "${id}" hard-codes values and has no statePath. Bind the series.`
-      )
+      ids.push(id)
     }
+  }
+  return ids
+}
+
+function unboundDynamicErrors(pagePath: string, spec: Spec): string[] {
+  const issues: string[] = []
+  const elements = elementsOf(spec)
+  for (const id of unboundLiteralWidgetIds(spec)) {
+    const type = elements[id]?.type ?? 'Stat'
+    if (type === 'Stat') {
+      issues.push(
+        `Page "${pagePath}" Stat "${id}" hard-codes value and has no statePath. Bind the metric.`
+      )
+      continue
+    }
+    issues.push(
+      `Page "${pagePath}" ${type} "${id}" hard-codes values and has no statePath. Bind the series.`
+    )
   }
   return issues
 }
@@ -335,12 +358,20 @@ function extraDisplayHeadingErrors(pagePath: string, spec: Spec): string[] {
   )
 }
 
-function tooManyCardsErrors(pagePath: string, spec: Spec): string[] {
+/**
+ * Cards that are not Repeat items. Host unwraps overflow beyond
+ * {@link MAX_NON_REPEAT_CARDS_PER_PAGE}.
+ */
+export function nonRepeatCardIds(spec: Spec): string[] {
   const elements = elementsOf(spec)
   const insideRepeat = idsInsideType(elements, 'Repeat')
-  const extra = Object.entries(elements)
+  return Object.entries(elements)
     .filter(([id, element]) => element.type === 'Card' && !insideRepeat.has(id))
     .map(([id]) => id)
+}
+
+function tooManyCardsErrors(pagePath: string, spec: Spec): string[] {
+  const extra = nonRepeatCardIds(spec)
   if (extra.length > MAX_NON_REPEAT_CARDS_PER_PAGE) {
     return [
       `Page "${pagePath}" has ${extra.length} Cards outside Repeat; at most ${MAX_NON_REPEAT_CARDS_PER_PAGE} are allowed. Put repeating items in Repeat.`,
@@ -349,42 +380,74 @@ function tooManyCardsErrors(pagePath: string, spec: Spec): string[] {
   return []
 }
 
-function inventedRepresentationTypeErrors(pagePath: string, spec: Spec): string[] {
-  const issues: string[] = []
-  const elements = elementsOf(spec)
-  for (const [id, element] of Object.entries(elements)) {
+/**
+ * Invented collection types the host rewrites to Repeat or Chart.
+ */
+export function inventedRepresentationEntries(spec: Spec): InventedRepresentation[] {
+  const entries: InventedRepresentation[] = []
+  for (const [id, element] of Object.entries(elementsOf(spec))) {
     const type = element.type
     if (!type || !INVENTED_REPRESENTATION_TYPES.has(type)) continue
-    issues.push(
-      `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent kanban with grouped Repeat or Table.`
-    )
+    entries.push({ id, type })
   }
-  return issues
+  return entries
+}
+
+function inventedRepresentationTypeErrors(pagePath: string, spec: Spec): string[] {
+  return inventedRepresentationEntries(spec).map(
+    ({ id, type }) =>
+      `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent it with Repeat, Table, or Chart.`
+  )
+}
+
+/**
+ * Workspace shells missing navigator+primary, or nesting Workspace / Tabs.
+ */
+export function workspaceShellIssueIds(spec: Spec): {
+  shortShells: string[]
+  nestedWorkspaces: string[]
+  tabRegions: string[]
+} {
+  const elements = elementsOf(spec)
+  const parent = parentByChildId(elements)
+  const shortShells: string[] = []
+  const nestedWorkspaces: string[] = []
+  const tabRegions: string[] = []
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Workspace') continue
+    if (ancestorHasType(id, 'Workspace', parent, elements)) {
+      nestedWorkspaces.push(id)
+      continue
+    }
+    const childIds = element.children ?? []
+    if (childIds.length < 2) shortShells.push(id)
+    for (const childId of childIds) {
+      if (elements[childId]?.type === 'Tabs') tabRegions.push(childId)
+    }
+  }
+  return { shortShells, nestedWorkspaces, tabRegions }
 }
 
 function workspaceShellErrors(pagePath: string, spec: Spec): string[] {
   const issues: string[] = []
-  const elements = elementsOf(spec)
-  for (const [id, element] of Object.entries(elements)) {
-    if (element.type !== 'Workspace') continue
-    const childIds = element.children ?? []
-    if (childIds.length < 2) {
-      issues.push(
-        `Page "${pagePath}" Workspace "${id}" needs navigator and primary children. Add both regions.`
-      )
-    }
-    for (const childId of childIds) {
-      if (elements[childId]?.type === 'Workspace') {
-        issues.push(
-          `Page "${pagePath}" Workspace "${id}" nests another Workspace. Regions use collection, detail, task, results, or content — not a second shell.`
-        )
-      }
-      if (elements[childId]?.type === 'Tabs') {
-        issues.push(
-          `Page "${pagePath}" Workspace "${id}" uses Tabs for a region. Keep navigator, primary, and inspector visible together.`
-        )
-      }
-    }
+  const { shortShells, nestedWorkspaces, tabRegions } = workspaceShellIssueIds(spec)
+  const parent = parentByChildId(elementsOf(spec))
+  for (const id of shortShells) {
+    issues.push(
+      `Page "${pagePath}" Workspace "${id}" needs navigator and primary children. Add both regions.`
+    )
+  }
+  for (const childId of nestedWorkspaces) {
+    const shellId = parent.get(childId) ?? childId
+    issues.push(
+      `Page "${pagePath}" Workspace "${shellId}" nests another Workspace. Regions use collection, detail, task, results, or content — not a second shell.`
+    )
+  }
+  for (const childId of tabRegions) {
+    const shellId = parent.get(childId) ?? childId
+    issues.push(
+      `Page "${pagePath}" Workspace "${shellId}" uses Tabs for a region. Keep navigator, primary, and inspector visible together.`
+    )
   }
   return issues
 }

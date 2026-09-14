@@ -158,4 +158,190 @@ describe('repairHostCriticExtras', () => {
     expect(result.manifest.pages.home.spec.elements?.spin).toBeUndefined()
     expect(result.adoptedChanges.some((change) => change.code === 'host-wait-chrome')).toBe(true)
   })
+
+  it('unwraps grouping Cards around Repeat item Cards', () => {
+    const spec = pageSpec(
+      {
+        locations_card: {
+          type: 'Card',
+          props: { title: 'Saved locations', variant: 'default' },
+          children: ['locations_repeat'],
+        },
+        locations_repeat: {
+          type: 'Repeat',
+          props: { statePath: 'locations', emptyText: 'None' },
+          children: ['location_item_card'],
+        },
+        location_item_card: {
+          type: 'Card',
+          props: { title: '{item.name}', variant: 'default' },
+          children: [],
+        },
+        daily_card: {
+          type: 'Card',
+          props: { title: '7-day forecast', variant: 'default' },
+          children: ['daily_repeat'],
+        },
+        daily_repeat: {
+          type: 'Repeat',
+          props: { statePath: 'daily', emptyText: 'None' },
+          children: ['daily_item_card'],
+        },
+        daily_item_card: {
+          type: 'Card',
+          props: { title: '{item.time}', variant: 'default' },
+          children: [],
+        },
+      },
+      ['locations_card', 'daily_card']
+    )
+    const manifest = manifestWithHome(spec)
+    expect(hostCriticManifest(manifest)).toContain('nested inside another Card')
+
+    const result = repairHostCriticExtras(manifest)
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.locations_card?.type).toBe('Stack')
+    expect(result.manifest.pages.home.spec.elements.daily_card?.type).toBe('Stack')
+    expect(result.manifest.pages.home.spec.elements.location_item_card?.type).toBe('Card')
+    expect(result.manifest.pages.home.spec.elements.daily_item_card?.type).toBe('Card')
+    expect(result.manifest.pages.home.spec.elements.locations_card_heading?.props).toMatchObject({
+      text: 'Saved locations',
+      level: 'h2',
+    })
+    expect(result.adoptedChanges.some((change) => change.code === 'nested-card')).toBe(true)
+  })
+
+  it('unwraps three nested Cards down to one item Card', () => {
+    const spec = pageSpec(
+      {
+        outer: { type: 'Card', props: { title: 'Outer' }, children: ['mid'] },
+        mid: { type: 'Card', props: { title: 'Mid' }, children: ['inner'] },
+        inner: { type: 'Card', props: { title: 'Inner' }, children: [] },
+      },
+      ['outer']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.outer?.type).toBe('Stack')
+    expect(result.manifest.pages.home.spec.elements.mid?.type).toBe('Stack')
+    expect(result.manifest.pages.home.spec.elements.inner?.type).toBe('Card')
+  })
+
+  it('drops hard-coded Stats when the app has bindings', () => {
+    const spec = pageSpec(
+      {
+        temp: {
+          type: 'Stat',
+          props: { label: 'Temp', value: '21', statePath: null },
+          children: [],
+        },
+      },
+      ['temp']
+    )
+    const manifest: ArenaGenerativeAppManifest = {
+      ...manifestWithHome(spec),
+      actions: { load: { apiKey: 'forecast' } },
+    }
+    expect(hostCriticManifest(manifest)).toContain('Bind the metric')
+
+    const result = repairHostCriticExtras(manifest)
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.temp).toBeUndefined()
+    expect(result.adoptedChanges.some((change) => change.code === 'unbound-metric')).toBe(true)
+  })
+
+  it('rewrites Kanban and Filmstrip to catalog types', () => {
+    const spec = pageSpec(
+      {
+        board: { type: 'Kanban', props: { statePath: 'projects' }, children: [] },
+        hours: {
+          type: 'Filmstrip',
+          props: { statePath: 'hourly', categoryField: 'time', series: 'temperature_2m' },
+          children: [],
+        },
+      },
+      ['board', 'hours']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.board?.type).toBe('Repeat')
+    expect(result.manifest.pages.home.spec.elements.hours?.type).toBe('Chart')
+    expect(result.adoptedChanges.some((change) => change.code === 'invented-type')).toBe(true)
+  })
+
+  it('unwraps overflow Cards outside Repeat', () => {
+    const cards: Spec['elements'] = {}
+    const ids: string[] = []
+    for (let index = 0; index < 9; index += 1) {
+      const id = `card_${index}`
+      ids.push(id)
+      cards[id] = { type: 'Card', props: { title: id }, children: [] }
+    }
+    const spec = pageSpec(
+      {
+        grid: { type: 'Grid', props: { columns: '3' }, children: ids },
+        ...cards,
+      },
+      ['grid']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.card_8?.type).toBe('Stack')
+    expect(result.adoptedChanges.some((change) => change.code === 'collection-cards')).toBe(true)
+  })
+
+  it('injects Back on an onSuccess.navigate target', () => {
+    const resultsSpec = pageSpec(
+      {
+        heading: {
+          type: 'Heading',
+          props: { text: 'Score', level: 'h2', color: null },
+          children: [],
+        },
+      },
+      ['heading']
+    )
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: twoPageManifest.pages.home,
+        results: { path: 'results', title: 'Score', spec: resultsSpec },
+      },
+      actions: {
+        submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+      },
+    }
+    expect(hostCriticManifest(manifest)).toContain('no NavLink')
+
+    const result = repairHostCriticExtras(manifest)
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.results.spec.elements.back?.props).toMatchObject({
+      navigateTo: 'home',
+      variant: 'ghost',
+    })
+    expect(result.adoptedChanges.some((change) => change.code === 'missing-back')).toBe(true)
+  })
+
+  it('unwraps nested Workspace and short shells to Stack', () => {
+    const spec = pageSpec(
+      {
+        shell: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: ['nav'],
+        },
+        nav: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: [],
+        },
+      },
+      ['shell']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.shell?.type).toBe('Stack')
+    expect(result.manifest.pages.home.spec.elements.nav?.type).toBe('Stack')
+    expect(result.adoptedChanges.some((change) => change.code === 'workspace-shell')).toBe(true)
+  })
 })

@@ -2,9 +2,11 @@
 
 How generate, compile, and runtime are split for the **Arena Generative UI** block. Authoring and publish flow: [arena-generative-ui.md](./arena-generative-ui.md). How to fill the block: [arena-generative-ui-user-guide.md](./arena-generative-ui-user-guide.md). Planner Contract (human-readable): [arena-generative-ui-planner-contract.md](./arena-generative-ui-planner-contract.md). Composition: [arena-generative-ui-composition-semantics.md](./arena-generative-ui-composition-semantics.md).
 
-Generate-time is Intent → Plan (Planner Contract) → selected recipes/design rules → semantic JSON → validate → critic. That is not one LLM per box. Intent Analyzer is a cheap Haiku call. The UI Planner (Sonnet) is the **only architecture layer** — it sees the Planner Contract and emits an App Blueprint. Recipes and design/UX modules are **prompt fragments selected from that blueprint** for the spec call. The spec LLM (**JSON GENERATOR**) never sees the Planner Contract. It emits semantic catalog JSON only (types, `statePath`, variants, spacing tokens). The host Design System paints `--gui-*` at **JSON RENDER**. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
+Generate-time is Intent → compile ChatGPT product asks → Plan (Planner Contract) → selected recipes/design rules → semantic JSON → validate → critic. That is not one LLM per box. Intent Analyzer is a cheap Haiku call. The product brief compiler is deterministic and does not overwrite User Input. The UI Planner (Sonnet) is the **architecture layer** — it sees the Planner Contract plus the compiled honor list and emits an App Blueprint. Recipes and design/UX modules are **prompt fragments selected from that blueprint** for the spec call. The spec LLM (**JSON GENERATOR**) never sees the Planner Contract. It emits semantic catalog JSON only (types, `statePath`, variants, spacing tokens). The host Design System paints `--gui-*` at **JSON RENDER**. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
 
 The LLM owns sitemap, copy, and wiring. The host owns loading, error, retry, confirm, color, type, and radius.
+
+A ChatGPT-style product spec is compiled **before** the planner (`compile-product-brief.ts`): honor / map / drop onto catalog+host behavior. User Input is not rewritten. Adopted changes list what was mapped or dropped.
 
 Off this diagram on purpose: `BindingLayoutPlan` is deterministic (from binding schemas). `compileGenerativeUx` runs at preview / page load, not as the UI Planner.
 
@@ -16,6 +18,12 @@ USER BRIEF
 │ INTENT ANALYZER                       │  LLM (cheap, Haiku)
 │    intent-analyzer.ts                 │  task, entities, data,
 │    fail-open → planner still runs     │  actions, complexity
+└──────────────────┬────────────────────┘
+                   ▼
+┌───────────────────────────────────────┐
+│ PRODUCT BRIEF COMPILER                │  Deterministic
+│    compile-product-brief.ts           │  ChatGPT product asks →
+│    does not overwrite User Input      │  honor / map / drop
 └──────────────────┬────────────────────┘
                    ▼
 ┌───────────────────────────────────────┐
@@ -65,6 +73,7 @@ USER BRIEF
 | Diagram box | Code |
 |---|---|
 | INTENT ANALYZER | `intent-analyzer.ts` |
+| PRODUCT BRIEF COMPILER | `compile-product-brief.ts` (honor/map/drop; does not overwrite User Input) |
 | UI PLANNER | `structured-brief.ts` (archetype, capabilities, informationHierarchy, interactionModel, designIntent) |
 | JSON GENERATOR | `generate-manifest.ts` spec LLM |
 | JSON VALIDATOR | `validate-manifest.ts` + host critic in the same generate loop |
@@ -141,7 +150,7 @@ Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, r
 
 ### 3. UI spec (JSON GENERATOR)
 
-Followed. The spec Claude call emits the stored manifest as **semantic catalog JSON** (component types, `statePath`, variants, spacing tokens) — not painted chrome. Validate against the catalog **and** the layout plan (form names, hostKeys, no Results `onLoad` of a navigate-first CTA). The **host critic** (`ui-critic.ts`) then walks the JSON for proveable quality gaps validation does not cover (duplicate onLoad apiKeys, unbound Stat/Sparkline, Card-in-Card, more than one primary per Section, too many non-Repeat Cards, missing Back on an `onSuccess.navigate` target). Those failures reuse the same three repair turns. After a spec that passes both, a one-shot Haiku critic (`critique-manifest.ts`) asks UX / visual / responsive / accessibility / data questions the host cannot prove. Only `must-fix` may trigger one extra spec repair; the critic is never called again, and a critic outage fails open. If repairs are spent, the block lists the remaining catalog and host-critic issues and what to change in User Input, Pages, or API Bindings. This is not a generate-time prompt layer. Compiled widgets are **not** written back to the draft.
+Followed. The spec Claude call emits the stored manifest as **semantic catalog JSON** (component types, `statePath`, variants, spacing tokens) — not painted chrome. Validate against the catalog **and** the layout plan (form names, hostKeys, no Results `onLoad` of a navigate-first CTA). The **host critic** (`ui-critic.ts`) then walks the JSON for proveable quality gaps validation does not cover (duplicate onLoad apiKeys, unbound Stat/Sparkline, Card-in-Card, more than one primary per Section, too many non-Repeat Cards, missing Back on an `onSuccess.navigate` target). Nested Cards, extra primaries, invented boards, unbound optional Stats, extra grouping Cards, missing Back, and illegal Workspace shells are flattened or rewritten in `host-critic-repair.ts` so generate can succeed; remaining failures reuse the same three repair turns. After a spec that passes both, a one-shot Haiku critic (`critique-manifest.ts`) asks UX / visual / responsive / accessibility / data questions the host cannot prove. Only `must-fix` may trigger one extra spec repair; the critic is never called again, and a critic outage fails open. If repairs are spent, the block lists remaining catalog issues (unknown API keys, omitted pages, unbindable host keys). Host-flattenable critic misses tell the author to rerun — not to simplify User Input. This is not a generate-time prompt layer. Compiled widgets are **not** written back to the draft.
 
 `DESIGN INTENT` (`design-intent.ts`) is the classification card the generator honours from the blueprint: density, tone, visualPriority, and interactionStyle. Product-type templates (collection → crm) are planner-owned, not generator-owned. These are not component props. Density maps to `manifest.theme.density` (`spacious` → `roomy`).
 
@@ -171,4 +180,4 @@ Followed. Preview and published both compile in memory, then `SpecRenderer` pain
 
 ## Summary
 
-**Intent → Plan → three columns → semantic JSON → validate → critic → host render** is the generate-then-runtime path. One spec generate. Critic is generate-time. JSON RENDER is preview/published host paint. `compileGenerativeUx` is preview, not the UI Planner. The LLM must not own production loading/error/retry behavior, and must not pick hex, fonts, or radius.
+**Intent → compile → Plan → three columns → semantic JSON → validate → critic → host render** is the generate-then-runtime path. One spec generate. Critic is generate-time. JSON RENDER is preview/published host paint. `compileGenerativeUx` is preview, not the UI Planner. The LLM must not own production loading/error/retry behavior, and must not pick hex, fonts, or radius. ChatGPT product pastes are compiled on generate; the User Input wand is optional authoring, not generate recovery.

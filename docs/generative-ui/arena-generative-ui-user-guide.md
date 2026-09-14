@@ -21,11 +21,13 @@ The model **cannot invent API keys**. If User Input names a key (“Submit calls
 
 Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) produce generic shells.
 
+Pasted ChatGPT product specs (React, geolocation, custom CSS, seven data-state screens) are **compiled on generate**. User Input is not rewritten. Generate notes list what Arena mapped or dropped (Chart for an hourly series, SearchField instead of geolocation, omitted weather icons). You do not need **Generate** / `fix this brief` for that.
+
 ---
 
 ## Generate wand (User Input)
 
-**Generate** on User Input writes the **brief**. It does not generate the app — run the block after the field looks right.
+**Generate** on User Input writes the **brief**. It does not generate the app — run the block after the field looks right. It is optional authoring. Generate already compiles ChatGPT pastes; do not use the wand as recovery after a failed run.
 
 Add APIs first when you have them. The wand sees those keys (and their form / output field names) and will not invent new ones. Leave Bindings empty for dummy/local apps so it describes CTAs in words.
 
@@ -318,7 +320,7 @@ the inspector.
 
 ## Short checklist
 
-- **Generate** on User Input expands a job or repairs a long brief (`fix this brief`). Add APIs first so it uses those keys. Then run the block.
+- **Generate** on User Input is optional authoring (expand a job or `fix this brief`). Generate already compiles ChatGPT pastes. Add APIs first so keys match. Then run the block.
 - Same API **key** in User Input and Add an API. Leave Bindings empty for dummy/local apps; do not invent a workflow key.
 - Dummy lists (todos, boards) should show sample rows on arrival. Create / edit / complete stay local, as dialogs on the same page. Ask for edit by name — it is not inferred.
 - Bound workflows are **deployed** before Preview / Launch.

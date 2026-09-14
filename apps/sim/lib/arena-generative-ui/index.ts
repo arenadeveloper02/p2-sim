@@ -18,6 +18,7 @@ export {
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
+export { compileProductBrief } from '@/lib/arena-generative-ui/compile-product-brief'
 export { critiqueArenaGenerativeManifest } from '@/lib/arena-generative-ui/critique-manifest'
 export {
   authorizeDeployedAppRequest,
@@ -33,6 +34,11 @@ export {
   planArenaGenerativeEditScope,
 } from '@/lib/arena-generative-ui/edit-scope'
 export { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
+export {
+  inputSchemaFromWorkflowFields,
+  workflowBindingFromSelection,
+} from '@/lib/arena-generative-ui/from-workflow'
+export { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 export type {
   ArenaGenerativeAdoptedChange,
   ArenaGenerativeGenerateWarning,
@@ -49,15 +55,6 @@ export {
   isPaintOnlyEdit,
   parseHostEditKnobs,
 } from '@/lib/arena-generative-ui/host-edit-knobs'
-export {
-  sanitizeHostOwnedManifest,
-  stripHostOwnedChrome,
-} from '@/lib/arena-generative-ui/strip-host-owned-chrome'
-export {
-  inputSchemaFromWorkflowFields,
-  workflowBindingFromSelection,
-} from '@/lib/arena-generative-ui/from-workflow'
-export { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 export {
   buildHttpAllowlist,
   inspectHttpBindingUrl,
@@ -95,6 +92,10 @@ export {
   runDeployedAppAction,
   runGenerativeAppAction,
 } from '@/lib/arena-generative-ui/run-action'
+export {
+  sanitizeHostOwnedManifest,
+  stripHostOwnedChrome,
+} from '@/lib/arena-generative-ui/strip-host-owned-chrome'
 export type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,

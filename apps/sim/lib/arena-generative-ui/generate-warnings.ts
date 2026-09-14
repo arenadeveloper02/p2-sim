@@ -22,6 +22,7 @@ export type ArenaGenerativeGenerateWarning = z.output<typeof arenaGenerativeGene
 
 export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = [
   'extra-primary',
+  'nested-card',
   'host-wait-chrome',
   'host-notify-chrome',
   'host-refresh',
@@ -37,6 +38,13 @@ export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = [
   'split-results-back',
   'task-measure',
   'wait-estimate',
+  'product-map',
+  'product-drop',
+  'unbound-metric',
+  'invented-type',
+  'collection-cards',
+  'missing-back',
+  'workspace-shell',
 ] as const
 
 export const arenaGenerativeAdoptedChangeSchema = z.object({
@@ -189,9 +197,7 @@ export function parseStoredGenerateWarnings(value: unknown): ArenaGenerativeGene
  */
 export function parseStoredAdoptedChanges(value: unknown): ArenaGenerativeAdoptedChange[] {
   if (!isRecord(value) || !Array.isArray(value[ADOPTED_CHANGES_KEY])) return []
-  const parsed = z
-    .array(arenaGenerativeAdoptedChangeSchema)
-    .safeParse(value[ADOPTED_CHANGES_KEY])
+  const parsed = z.array(arenaGenerativeAdoptedChangeSchema).safeParse(value[ADOPTED_CHANGES_KEY])
   return parsed.success ? parsed.data : []
 }
 

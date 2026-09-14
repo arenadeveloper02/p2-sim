@@ -106,6 +106,7 @@ vi.mock('@/lib/arena-generative-ui/critique-manifest', () => ({
       .join('\n'),
 }))
 
+import { CHATGPT_WEATHER_DASHBOARD_BRIEF } from '@/lib/arena-generative-ui/chatgpt-weather-brief.fixture'
 import {
   EDIT_PRESERVATION_INSTRUCTION,
   EDIT_RESULT_VIEWS_INSTRUCTION,
@@ -1683,55 +1684,37 @@ describe('generateArenaGenerativeManifest', () => {
       )
     })
 
-    function hostCriticExhaustionManifest() {
-      const missingBack = manifestMissingResultsBack()
-      const homeSpec = structuredClone(twoPageManifest.pages.home.spec)
-      const homeElements = homeSpec.elements as Record<
-        string,
-        { type?: string; props?: Record<string, unknown>; children?: string[] }
-      >
-      const cardProps = {
-        title: 'Group',
-        subtitle: null,
-        description: null,
-        footerText: null,
-        padding: null,
-        variant: 'default',
-        backgroundColor: null,
-        showWhen: null,
-      }
-      homeElements.outer = { type: 'Card', props: cardProps, children: ['inner'] }
-      homeElements.inner = {
-        type: 'Card',
-        props: { ...cardProps, title: 'Inner' },
-        children: [],
-      }
-      const homeSection = homeElements.section
-      if (homeSection) {
-        homeSection.children = [...(homeSection.children ?? []), 'outer']
-      }
-      return {
-        ...missingBack,
-        pages: {
-          ...missingBack.pages,
-          home: { ...twoPageManifest.pages.home, spec: homeSpec },
-        },
-      }
-    }
-
-    function manifestMissingResultsBack() {
-      const spec = structuredClone(twoPageResultsSpec)
-      const section = spec.elements.section as { children: string[] }
-      section.children = section.children.filter((id) => id !== 'back')
-      const { back: _back, ...elements } = spec.elements
+    function duplicateOnLoadManifest() {
       return {
         ...twoPageManifest,
         pages: {
           ...twoPageManifest.pages,
-          results: { ...twoPageManifest.pages.results, spec: { ...spec, elements } },
+          home: {
+            ...twoPageManifest.pages.home,
+            onLoad: ['load_a', 'load_b'],
+          },
+          results: {
+            ...twoPageManifest.pages.results,
+            onLoad: ['load_c', 'load_d'],
+          },
+        },
+        actions: {
+          ...twoPageManifest.actions,
+          load_a: { apiKey: 'list_places' },
+          load_b: { apiKey: 'list_places' },
+          load_c: { apiKey: 'list_places' },
+          load_d: { apiKey: 'list_places' },
         },
       }
     }
+
+    const twoPageBindings = [
+      { key: 'qualify_lead', label: 'Qualify', kind: 'workflow' as const, workflowId: 'wf-1' },
+    ]
+    const duplicateOnLoadBindings = [
+      ...twoPageBindings,
+      { key: 'list_places', label: 'Places', kind: 'http' as const },
+    ]
 
     it('lists every remaining host-critic issue after repair turns are spent', async () => {
       mockCreateAnthropicMessage.mockResolvedValue(
@@ -1739,25 +1722,22 @@ describe('generateArenaGenerativeManifest', () => {
           JSON.stringify({
             title: 'Lead qualifier',
             content: 'ok',
-            manifest: hostCriticExhaustionManifest(),
+            manifest: duplicateOnLoadManifest(),
           })
         )
       )
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: duplicateOnLoadBindings,
       })
 
       expect(result.success).toBe(false)
       expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
       expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
-      expect(result.error).toContain('nested inside another Card')
-      expect(result.error).toContain('onSuccess.navigate target')
+      expect(result.error).toContain('share API key')
       expect(result.error).toContain('What you can do:')
-      expect(result.error).toContain('one primary action')
+      expect(result.error).toContain('one actionId per API job')
     })
 
     it('repairs a host-critic defect through the existing validation loop', async () => {
@@ -1767,7 +1747,7 @@ describe('generateArenaGenerativeManifest', () => {
             JSON.stringify({
               title: 'Lead qualifier',
               content: 'ok',
-              manifest: manifestMissingResultsBack(),
+              manifest: duplicateOnLoadManifest(),
             })
           )
         )
@@ -1775,9 +1755,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: duplicateOnLoadBindings,
       })
 
       expect(result.success).toBe(true)
@@ -1790,7 +1768,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect(repairTurn.content).toContain('failed validation')
       expect(repairTurn.content).toContain('1. ')
       expect(repairTurn.content).toContain('Fix every numbered issue')
-      expect(repairTurn.content).toContain('onSuccess.navigate target')
+      expect(repairTurn.content).toContain('share API key')
       expect(result.content).toContain('UI critic: passed')
     })
 
@@ -1801,7 +1779,7 @@ describe('generateArenaGenerativeManifest', () => {
             JSON.stringify({
               title: 'Lead qualifier',
               content: 'ok',
-              manifest: hostCriticExhaustionManifest(),
+              manifest: duplicateOnLoadManifest(),
             })
           )
         )
@@ -1809,9 +1787,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: duplicateOnLoadBindings,
       })
 
       expect(result.success).toBe(true)
@@ -1822,8 +1798,7 @@ describe('generateArenaGenerativeManifest', () => {
       }
       expect(repairTurn.content).toContain('1. ')
       expect(repairTurn.content).toContain('2. ')
-      expect(repairTurn.content).toContain('nested inside another Card')
-      expect(repairTurn.content).toContain('onSuccess.navigate target')
+      expect(repairTurn.content).toContain('share API key')
       expect(repairTurn.content).toContain('Fix every numbered issue')
       expect(result.content).toContain('UI critic: passed')
     })
@@ -1847,9 +1822,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: twoPageBindings,
       })
 
       expect(result.success).toBe(true)
@@ -1898,9 +1871,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: duplicateOnLoadBindings,
       })
 
       expect(result.success).toBe(true)
@@ -1962,9 +1933,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: duplicateOnLoadBindings,
       })
 
       expect(result.success).toBe(true)
@@ -1984,15 +1953,84 @@ describe('generateArenaGenerativeManifest', () => {
       expect(go.props?.variant).toBe('secondary')
     })
 
+    it('host-flattens nested Repeat item Cards and still returns a valid manifest', async () => {
+      const nestedHome = structuredClone(twoPageManifest.pages.home.spec)
+      const elements = nestedHome.elements as Record<
+        string,
+        { type?: string; props?: Record<string, unknown>; children?: string[] }
+      >
+      const cardProps = {
+        title: 'Group',
+        subtitle: null,
+        description: null,
+        footerText: null,
+        padding: null,
+        variant: 'default',
+        backgroundColor: null,
+        showWhen: null,
+      }
+      elements.locations_card = {
+        type: 'Card',
+        props: { ...cardProps, title: 'Saved locations' },
+        children: ['locations_repeat'],
+      }
+      elements.locations_repeat = {
+        type: 'Repeat',
+        props: { statePath: 'locations', emptyText: 'None', showWhen: null, reorderable: null },
+        children: ['location_item_card'],
+      }
+      elements.location_item_card = {
+        type: 'Card',
+        props: { ...cardProps, title: '{item.name}' },
+        children: [],
+      }
+      const section = elements.section
+      if (section) {
+        section.children = [...(section.children ?? []), 'locations_card']
+      }
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'ok',
+            manifest: {
+              ...twoPageManifest,
+              pages: {
+                ...twoPageManifest.pages,
+                home: { ...twoPageManifest.pages.home, spec: nestedHome },
+              },
+            },
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: duplicateOnLoadBindings,
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(result.adoptedChanges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'nested-card',
+            asked: expect.stringContaining('nested Cards'),
+            adopted: expect.stringContaining('Stack'),
+          }),
+        ])
+      )
+      expect(result.manifest?.pages.home.spec.elements.locations_card?.type).toBe('Stack')
+      expect(result.manifest?.pages.home.spec.elements.location_item_card?.type).toBe('Card')
+    })
+
     it('still returns a valid manifest when the LLM critic throws', async () => {
       mockCreateAnthropicMessage.mockResolvedValue(textMessage(validReply))
       mockCritique.mockRejectedValue(new Error('haiku down'))
 
       const result = await generateArenaGenerativeManifest({
         userInput: 'Lead qualifier.',
-        apiBindings: [
-          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
-        ],
+        apiBindings: duplicateOnLoadBindings,
       })
 
       expect(result.success).toBe(true)
@@ -2037,5 +2075,67 @@ describe('generateArenaGenerativeManifest', () => {
         },
       ])
     })
+  })
+
+  it('compiles a ChatGPT weather paste into honor/map/drop notes without rewriting User Input', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(
+        JSON.stringify({
+          title: 'Weather',
+          content: 'ok',
+          manifest: twoPageManifest,
+        })
+      )
+    )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: CHATGPT_WEATHER_DASHBOARD_BRIEF,
+      apiBindings: [
+        { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+      ],
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockPlanBrief).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userInput: CHATGPT_WEATHER_DASHBOARD_BRIEF,
+        compiledHonor: expect.stringContaining('COMPILED HONOR LIST'),
+      })
+    )
+    const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(payload).toContain('COMPILED HONOR LIST')
+    expect(payload).toContain('Chart')
+    expect(payload).toContain('src/lib/weather.ts')
+    expect(payload.indexOf('COMPILED HONOR LIST')).toBeLessThan(payload.indexOf('User request:'))
+    expect(result.adoptedChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'product-map', adopted: expect.stringContaining('Chart') }),
+        expect.objectContaining({
+          code: 'product-map',
+          asked: expect.stringContaining('geolocation'),
+        }),
+        expect.objectContaining({
+          code: 'product-drop',
+          asked: expect.stringContaining('Weather icons'),
+        }),
+      ])
+    )
+  })
+
+  it('does not inject a compiled honor list for a short Arena job', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Simple todo app. One list. Add and complete items.',
+      apiBindings: [],
+    })
+
+    expect(mockPlanBrief).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        compiledHonor: expect.anything(),
+      })
+    )
+    const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(payload).not.toContain('COMPILED HONOR LIST')
   })
 })

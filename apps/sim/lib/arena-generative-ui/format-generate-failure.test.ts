@@ -15,6 +15,14 @@ describe('suggestionForGenerateFailure', () => {
     )
   })
 
+  it('maps duplicate onLoad API keys to using one actionId', () => {
+    expect(
+      suggestionForGenerateFailure(
+        'Page "home" onLoad runs "a" and "b" which share API key "forecast". One actionId per job.'
+      )
+    ).toContain('one actionId per API job')
+  })
+
   it('maps invented API keys to Add an API or User Input', () => {
     expect(
       suggestionForGenerateFailure('Action "qualify" references unknown API key "invented_key"')
@@ -51,12 +59,33 @@ describe('suggestionForGenerateFailure', () => {
     ).toContain('what each control does')
   })
 
-  it('maps host-critic defects to simplifying the page', () => {
+  it('maps host-flattenable critic defects to rerunning generate, not rewriting User Input', () => {
     expect(
       suggestionForGenerateFailure(
         'Page "home" Card "inner" is nested inside another Card. Do not wrap a Card in a Card.'
       )
-    ).toContain('one primary action')
+    ).toContain('host-flattened')
+    expect(
+      suggestionForGenerateFailure(
+        'Page "home" Card "inner" is nested inside another Card. Do not wrap a Card in a Card.'
+      )
+    ).not.toContain('Simplify that page in User Input')
+  })
+
+  it('maps Workspace critic defects to naming regions', () => {
+    expect(
+      suggestionForGenerateFailure(
+        'Page "home" Workspace "shell" needs navigator and primary children. Add both regions.'
+      )
+    ).toContain('navigator and primary')
+  })
+
+  it('maps unbound metrics to binding or dropping them', () => {
+    expect(
+      suggestionForGenerateFailure(
+        'Page "home" Stat "temp" hard-codes value and has no statePath. Bind the metric.'
+      )
+    ).toContain('Bind that Stat')
   })
 
   it('maps a required host key error to pasting a business sample', () => {
@@ -107,7 +136,8 @@ describe('formatGenerateFailureForUser', () => {
     expect(text).toContain('onSuccess.navigate target')
     expect(text).toContain('What you can do:')
     expect(text).toContain('Add an API')
-    expect(text).toContain('one primary action')
+    expect(text).toContain('host-flattened')
+    expect(text).not.toContain('Simplify that page in User Input')
   })
 
   it('uses a fallback issue when the list is empty', () => {

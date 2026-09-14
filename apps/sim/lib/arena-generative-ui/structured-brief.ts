@@ -12,11 +12,6 @@ import {
   plannedCapabilities,
 } from '@/lib/arena-generative-ui/capabilities'
 import {
-  buildPlannerSystemPrompt,
-  requestSignalsHistory,
-  requestSignalsWait,
-} from '@/lib/arena-generative-ui/planner-contract'
-import {
   type ArenaGenerativeDesignIntent,
   parseArenaGenerativeDesignIntent,
 } from '@/lib/arena-generative-ui/design-intent'
@@ -25,11 +20,16 @@ import {
   arenaGenerativeIntentSchema,
 } from '@/lib/arena-generative-ui/intent-analyzer'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
+import {
+  buildPlannerSystemPrompt,
+  requestSignalsHistory,
+  requestSignalsWait,
+} from '@/lib/arena-generative-ui/planner-contract'
 import { isProcessingPattern } from '@/lib/arena-generative-ui/processing-patterns'
 import {
   ARENA_GENERATIVE_REPRESENTATIONS,
-  type ArenaGenerativeRepresentation,
   ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT,
+  type ArenaGenerativeRepresentation,
   parseArenaGenerativeRepresentation,
 } from '@/lib/arena-generative-ui/representation'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
@@ -39,9 +39,9 @@ import {
   type ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
 import {
+  type ArenaGenerativeVisualBrief,
   formatVisualBriefForPlanner,
   MATCH_SCREENSHOT_USER_INPUT,
-  type ArenaGenerativeVisualBrief,
 } from '@/lib/arena-generative-ui/visual-brief'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
@@ -194,7 +194,9 @@ const pageInteractionSchema = z.object({
   editing: z.string().min(1).max(PAGE_INTERACTION_VALUE_MAX).optional(),
 })
 
-function canonicalizePageInteractionKey(raw: string): keyof ArenaGenerativePageInteraction | undefined {
+function canonicalizePageInteractionKey(
+  raw: string
+): keyof ArenaGenerativePageInteraction | undefined {
   switch (raw.trim().toLowerCase().replace(/_/g, '-')) {
     case 'selection':
       return 'selection'
@@ -646,7 +648,7 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
     next.interactionModel = next.interaction_model
   }
   const rawAppArchetype = next.archetype
-  let appArchetype = canonicalizeArchetype(rawAppArchetype)
+  const appArchetype = canonicalizeArchetype(rawAppArchetype)
   if (appArchetype) next.archetype = appArchetype
   const shell = liftShell(next.shell, false)
   let liftedPlan = shell ? { ...next, shell } : omit(next, ['shell'])
@@ -683,9 +685,7 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
           : omit(lifted, ['representation'])
         const regions = sanitizeRegions(page.regions)
         lifted = regions ? { ...lifted, regions } : omit(lifted, ['regions', 'secondary'])
-        const modules = regions
-          ? sanitizeModules(page.modules)
-          : modulesFromLegacyComposition(page)
+        const modules = regions ? sanitizeModules(page.modules) : modulesFromLegacyComposition(page)
         lifted = modules ? { ...lifted, modules } : omit(lifted, ['modules'])
         return omit(lifted, ['secondary'])
       }),
@@ -837,7 +837,7 @@ export function shellRecipe(shell?: ArenaGenerativeShell): string {
 
 export const ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT = [
   'DUMMY / LOCAL DATA',
-    'When a page data.mode is dummy or local, seed 4–8 realistic static collection rows. A Repeat or Table bound to a statePath must page.onLoad an action that onSuccess.setState that array (parent and child arrays together when Workspace filters). Table.rows plus that Table\'s statePath is enough — the host lifts those rows. The host does not invent Repeat items. A form page, and a results page filled only by a CTA, must not onLoad that CTA. When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id. Include Id and Project Id columns when Workspace selection filters the table. CTAs the blueprint named (create, complete, analyze, edit, …) stay in manifest.actions with no apiKey (or source dummy/local). Dummy edit is a row Button setValue editing=true (the host selects that row) and onSuccess.setState editing false with the changed fields — not creating false, or the host appends a new row. Use onSuccess.setState to append, toggle done, set deleted true, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.',
+  "When a page data.mode is dummy or local, seed 4–8 realistic static collection rows. A Repeat or Table bound to a statePath must page.onLoad an action that onSuccess.setState that array (parent and child arrays together when Workspace filters). Table.rows plus that Table's statePath is enough — the host lifts those rows. The host does not invent Repeat items. A form page, and a results page filled only by a CTA, must not onLoad that CTA. When Workspace selection filters another collection, give each parent row an id and each child row a foreign key (projectId) matching that id. Include Id and Project Id columns when Workspace selection filters the table. CTAs the blueprint named (create, complete, analyze, edit, …) stay in manifest.actions with no apiKey (or source dummy/local). Dummy edit is a row Button setValue editing=true (the host selects that row) and onSuccess.setState editing false with the changed fields — not creating false, or the host appends a new row. Use onSuccess.setState to append, toggle done, set deleted true, or seed report prose, and onSuccess.navigate when the blueprint named a destination. Do not invent API keys. Do not drop manifest.actions.",
 ].join('\n')
 
 export interface PlanStructuredBriefParams {
@@ -850,6 +850,11 @@ export interface PlanStructuredBriefParams {
   intent?: ArenaGenerativeIntent | null
   /** Screenshot interpretation. Visible structure and copy are explicit. */
   visualBrief?: ArenaGenerativeVisualBrief | null
+  /**
+   * Honor/map/drop list from the product brief compiler. Does not replace
+   * User Input. Omitted when the brief needed no ChatGPT mapping.
+   */
+  compiledHonor?: string
 }
 
 /**
@@ -1000,10 +1005,7 @@ export function formatStructuredBriefForEdit(brief: ArenaGenerativeStructuredBri
 /**
  * Legacy `processing` wait tags become `capabilities` so old drafts still edit.
  */
-function isLocalBriefAction(action: {
-  apiKey?: string
-  source?: string
-}): boolean {
+function isLocalBriefAction(action: { apiKey?: string; source?: string }): boolean {
   const source = action.source?.trim() ?? ''
   if (source === 'dummy' || source === 'local') return true
   if (source.startsWith('binding:')) return false
@@ -1300,8 +1302,7 @@ const GENERATE_WAIT_CAPABILITIES = new Set<ArenaGenerativeCapability>([
   'progress',
 ])
 
-const GENERATE_WAIT_NAME =
-  /\b(enhance|enhancer|generat|analy|research|recommend)\b/i
+const GENERATE_WAIT_NAME = /\b(enhance|enhancer|generat|analy|research|recommend)\b/i
 
 function briefLooksLikeGenerateWait(brief: ArenaGenerativeStructuredBrief): boolean {
   if (brief.capabilities.some((capability) => GENERATE_WAIT_CAPABILITIES.has(capability))) {
@@ -1309,7 +1310,9 @@ function briefLooksLikeGenerateWait(brief: ArenaGenerativeStructuredBrief): bool
   }
   if (
     brief.actions.some((action) =>
-      GENERATE_WAIT_NAME.test(`${action.id} ${action.purpose} ${action.apiKey ?? ''} ${action.source ?? ''}`)
+      GENERATE_WAIT_NAME.test(
+        `${action.id} ${action.purpose} ${action.apiKey ?? ''} ${action.source ?? ''}`
+      )
     )
   ) {
     return true
@@ -1472,6 +1475,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
       : 'No API bindings. Bindings are the remote data contract. When none are declared, data.mode may be dummy or local and actions are still required for requested mutations and for dummy collection seed (page onLoad) — use source dummy or local, never invent API keys.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
+    params.compiledHonor?.trim() ? params.compiledHonor.trim() : '',
     `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,
   ]
     .filter((section) => section.length > 0)
@@ -1530,11 +1534,13 @@ export async function planArenaGenerativeStructuredBrief(
       apiBindings: params.apiBindings,
     }
     const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
-    let usableWithIssues: (ParsedStructuredBrief & {
-      uncoordinatedPages: string[]
-      missingWaitCapabilities?: boolean
-      missingHistoryPage?: boolean
-    }) | null = null
+    let usableWithIssues:
+      | (ParsedStructuredBrief & {
+          uncoordinatedPages: string[]
+          missingWaitCapabilities?: boolean
+          missingHistoryPage?: boolean
+        })
+      | null = null
 
     for (let attempt = 0; attempt < MAX_BRIEF_ATTEMPTS; attempt += 1) {
       const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })

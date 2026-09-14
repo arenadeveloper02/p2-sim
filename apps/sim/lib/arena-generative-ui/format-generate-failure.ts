@@ -4,14 +4,23 @@ const DEFAULT_ISSUE = 'Generated manifest failed validation'
 
 const SUGGEST_API_KEY =
   'Add that key in Add an API (or change User Input to a key you already declared), then rerun.'
-const SUGGEST_PAGES = 'Pin a JSON sitemap in Pages that lists every path the brief names, then rerun.'
-const SUGGEST_NAV = 'Name every page in User Input and how you move between them (Submit → results, Back, Tabs).'
+const SUGGEST_PAGES =
+  'Pin a JSON sitemap in Pages that lists every path the brief names, then rerun.'
+const SUGGEST_NAV =
+  'Name every page in User Input and how you move between them (Submit → results, Back, Tabs).'
 const SUGGEST_PATHS = 'Fix Pages paths (kebab-case like home or results) so they match User Input.'
-const SUGGEST_CONTROLS = 'Say what each control does: submit an API key, navigate to a page, or Open a row.'
+const SUGGEST_CONTROLS =
+  'Say what each control does: submit an API key, navigate to a page, or Open a row.'
 const SUGGEST_RESULT_CHIPS =
   'Those are same-page result views (Enhanced Article, Coverage, …). In Requested Changes, ask for Chip setValue — not Tabs — and bind DataText to layoutPlan.hostKeys (enhanced_article), not output. or result[]. paths.'
-const SUGGEST_HOST_CRITIC =
-  'Simplify that page in User Input: one primary action, Back on secondary pages, Table or cards instead of invented types, and bind KPIs or drop them.'
+const SUGGEST_HOST_LAYOUT =
+  'Rerun generate. Nested Cards, extra primaries, invented boards, extra grouping Cards, and missing Back are host-flattened — do not rewrite User Input for those.'
+const SUGGEST_HOST_WORKSPACE =
+  'Name Workspace navigator and primary, keep regions visible together, and do not nest Workspace or use Tabs as a region.'
+const SUGGEST_DUPLICATE_LOAD =
+  'Use one actionId per API job on that page. Duplicate onLoad of the same key is rejected.'
+const SUGGEST_HOST_BIND =
+  'Bind that Stat, Chart, or Sparkline to a host key from Add an API, or drop the hard-coded value.'
 const SUGGEST_HOST_KEY =
   'Open Add an API and paste a Sample response that includes those fields (the list or object the table binds), not a Response envelope `{ data, status, headers }`. Then rerun.'
 const SUGGEST_CHAT =
@@ -31,6 +40,9 @@ const SUGGEST_FALLBACK =
 export function suggestionForGenerateFailure(error: string): string {
   if (error === GENERATOR_OMITTED_PAGES_ERROR || /omitted pages/i.test(error)) {
     return SUGGEST_PAGES
+  }
+  if (/share API key|One actionId per job/i.test(error)) {
+    return SUGGEST_DUPLICATE_LOAD
   }
   if (/unknown API key|references unknown API key|unknown action/i.test(error)) {
     return SUGGEST_API_KEY
@@ -71,11 +83,17 @@ export function suggestionForGenerateFailure(error: string): string {
     return SUGGEST_RESULT_CHIPS
   }
   if (
-    /nested inside another Card|more than one primary|Cards outside Repeat|onSuccess\.navigate target|not a catalog type|Bind the metric|Bind the series|Workspace/i.test(
+    /nested inside another Card|more than one primary|Cards outside Repeat|onSuccess\.navigate target|not a catalog type|Heading ".+" restates|wide measure/i.test(
       error
     )
   ) {
-    return SUGGEST_HOST_CRITIC
+    return SUGGEST_HOST_LAYOUT
+  }
+  if (/Workspace/i.test(error)) {
+    return SUGGEST_HOST_WORKSPACE
+  }
+  if (/Bind the metric|Bind the series/i.test(error)) {
+    return SUGGEST_HOST_BIND
   }
   return SUGGEST_FALLBACK
 }

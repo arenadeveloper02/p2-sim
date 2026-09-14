@@ -1,24 +1,55 @@
+'use client'
+
 import Cookies from 'js-cookie'
 import mixpanel from 'mixpanel-browser'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { getEnv } from '@/lib/core/config/env'
+
+const logger = createLogger('Mixpanel')
+
+let mixpanelInitialized = false
+let mixpanelInitFailed = false
 
 /**
  * Gets the Mixpanel token from environment variables
  * @returns Mixpanel token string or undefined
  */
 const getMixpanelToken = () => {
-  return getEnv('NEXT_PUBLIC_MIX_PANEL_TOKEN')
+  return getEnv('NEXT_PUBLIC_MIX_PANEL_TOKEN')?.trim() || undefined
 }
 
-// Initialize mixpanel only if we have a valid token and we're in the browser
-if (typeof window !== 'undefined' && mixpanel) {
+/**
+ * Mixpanel methods exist before `init()`, but calling them throws because
+ * persistence is unset. Init lazily so `window.__ENV` has the public token.
+ */
+const ensureMixpanelInitialized = (): boolean => {
+  if (mixpanelInitialized) {
+    return true
+  }
+
+  if (mixpanelInitFailed || typeof window === 'undefined' || !mixpanel) {
+    return false
+  }
+
+  const token = getMixpanelToken()
+  if (!token) {
+    return false
+  }
+
   try {
-    const token = getMixpanelToken()
-    if (token && typeof mixpanel.init === 'function') {
-      mixpanel.init(token)
+    if (typeof mixpanel.init !== 'function') {
+      mixpanelInitFailed = true
+      return false
     }
+
+    mixpanel.init(token)
+    mixpanelInitialized = true
+    return true
   } catch (error) {
-    console.warn('Failed to initialize Mixpanel:', error)
+    mixpanelInitFailed = true
+    logger.warn('Failed to initialize Mixpanel', { error: getErrorMessage(error) })
+    return false
   }
 }
 
@@ -34,32 +65,28 @@ const osIdentifier = () => {
 }
 
 export const identityMP = (name: string) => {
-  if (!mixpanel || typeof window === 'undefined') {
+  if (!ensureMixpanelInitialized()) {
     return
   }
 
   try {
-    if (typeof mixpanel.identify === 'function') {
-      mixpanel.identify(name)
-    }
+    mixpanel.identify(name)
   } catch (error) {
-    console.warn('Failed to identify user in Mixpanel:', error)
+    logger.warn('Failed to identify user in Mixpanel', { error: getErrorMessage(error) })
   }
 }
 
 export const registerMP = (instanceValue: string | null | number) => {
-  if (!mixpanel || typeof window === 'undefined') {
+  if (!ensureMixpanelInitialized()) {
     return
   }
 
   try {
-    if (typeof mixpanel.register === 'function') {
-      mixpanel.register({
-        instance: instanceValue,
-      })
-    }
+    mixpanel.register({
+      instance: instanceValue,
+    })
   } catch (error) {
-    console.warn('Failed to register properties in Mixpanel:', error)
+    logger.warn('Failed to register properties in Mixpanel', { error: getErrorMessage(error) })
   }
 }
 
@@ -83,14 +110,13 @@ export const setPeople = async ({
   userType: string
   department: string
 }) => {
-  if (!mixpanel || typeof window === 'undefined') {
+  if (!ensureMixpanelInitialized()) {
     return
   }
 
   const appUrl = getEnv('NEXT_PUBLIC_APP_URL') || ''
   const platformVersion = getPlatformVersion()
 
-  // Determine instance based on NEXT_PUBLIC_APP_URL
   const instanceMap: Record<string, string> = {
     'https://agent.thearena.ai': 'Prod',
     'https://sandbox-agent.thearena.ai': 'Sandbox',
@@ -125,12 +151,12 @@ export const setPeople = async ({
       identityMP('Guest User')
     }
   } catch (error) {
-    console.warn('Failed to set people properties in Mixpanel:', error)
+    logger.warn('Failed to set people properties in Mixpanel', { error: getErrorMessage(error) })
   }
 }
 
 export const trackMp = async (PageName?: string, eventName?: string, properties?: any) => {
-  if (!mixpanel || typeof window === 'undefined' || !eventName) {
+  if (!ensureMixpanelInitialized() || !eventName) {
     return
   }
 
@@ -138,25 +164,28 @@ export const trackMp = async (PageName?: string, eventName?: string, properties?
   identityMP(userEmail)
 
   try {
-    if (PageName && typeof mixpanel.register === 'function') {
+    if (PageName) {
       mixpanel.register({ 'Page Name': PageName })
     }
 
-    if (typeof mixpanel.track === 'function') {
-      const eventProperties = {
-        ...properties,
-        $os: osIdentifier(),
-        $referring_domain: window.location.hostname,
-      }
-      mixpanel.track(eventName, eventProperties)
+    const eventProperties = {
+      ...properties,
+      $os: osIdentifier(),
+      $referring_domain: window.location.hostname,
     }
+    mixpanel.track(eventName, eventProperties)
   } catch (error) {
-    console.warn('Failed to track event in Mixpanel:', error)
+    logger.warn('Failed to track event in Mixpanel', { error: getErrorMessage(error) })
   }
 }
 
 export const fetchUserProfileSetPeopleMP = async () => {
+  if (!ensureMixpanelInitialized()) {
+    return
+  }
+
   try {
+    // boundary-raw-fetch: Mixpanel identify payload is loaded from the session profile once at workspace entry
     const response = await fetch('/api/users/me/profile')
     const data = await response.json()
     const user = data?.user
@@ -173,6 +202,6 @@ export const fetchUserProfileSetPeopleMP = async () => {
       })
     }
   } catch (error) {
-    console.warn('Failed to fetch user profile for Mixpanel:', error)
+    logger.warn('Failed to fetch user profile for Mixpanel', { error: getErrorMessage(error) })
   }
 }
