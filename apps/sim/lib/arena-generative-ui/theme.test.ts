@@ -78,6 +78,8 @@ describe('arenaGenerativeThemeStyle', () => {
       '--gui-control-height': '44px',
       '--gui-display-size': '44px',
       '--gui-heading-size': '36px',
+      '--gui-section-size': '20px',
+      '--gui-section-leading': '28px',
     })
   })
 
@@ -100,6 +102,8 @@ describe('arenaGenerativeThemeStyle', () => {
       '--gui-control-height': '36px',
       '--gui-display-size': '32px',
       '--gui-heading-size': '28px',
+      '--gui-section-size': '16px',
+      '--gui-section-leading': '22px',
     })
   })
 
@@ -118,6 +122,13 @@ describe('arenaGenerativeThemeStyle', () => {
     expect(arenaGenerativeThemeStyle({ ink: 'strong' }, 'light')).toMatchObject({
       '--gui-text': '#1a1b1f',
       '--gui-text-muted': '#3d3f47',
+    })
+  })
+
+  it('writes comfortable section type tokens', () => {
+    expect(arenaGenerativeThemeStyle({ density: 'comfortable' })).toMatchObject({
+      '--gui-section-size': '18px',
+      '--gui-section-leading': '26px',
     })
   })
 

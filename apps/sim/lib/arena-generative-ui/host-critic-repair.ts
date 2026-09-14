@@ -166,10 +166,10 @@ function insertCopyElement(
   const nextId = unusedElementId(id, elements)
   elements[nextId] =
     type === 'Heading'
-      ? { type: 'Heading', props: { text, level: 'h2', color: null }, children: [] }
+      ? { type: 'Heading', props: { text, level: 'h2', tone: null, color: null }, children: [] }
       : {
           type: 'Text',
-          props: { text, color: null, size: null, dateFormat: null, numberFormat: null },
+          props: { text, tone: null, color: null, size: null, dateFormat: null, numberFormat: null },
           children: [],
         }
   return nextId

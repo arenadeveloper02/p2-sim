@@ -10,6 +10,13 @@ export const GUI_CHIP_TONE_CLASSES = {
   info: 'bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)] hover:bg-[var(--gui-info-border,#a3c7f6)]',
 } as const
 
+export const GUI_TEXT_TONE_CLASSES = {
+  default: 'text-[var(--gui-text,#2c2d33)]',
+  muted: 'text-[var(--gui-text-muted,#575a66)]',
+  tertiary: 'text-[var(--gui-text-tertiary,#8a8d99)]',
+  brand: 'text-[var(--gui-brand,#1a73e8)]',
+} as const
+
 export const GUI_TONE_CLASSES = {
   info: 'border border-[var(--gui-info-border,#a3c7f6)] bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)]',
   success:
@@ -90,6 +97,7 @@ export type GuiButtonVariant = keyof typeof GUI_BUTTON_VARIANT_CLASSES
 export type GuiButtonSize = keyof typeof GUI_BUTTON_SIZE_CLASSES
 export type GuiChipTone = keyof typeof GUI_CHIP_TONE_CLASSES
 export type GuiStatusTone = keyof typeof GUI_TONE_CLASSES
+export type GuiTextTone = keyof typeof GUI_TEXT_TONE_CLASSES
 
 export function guiFieldErrorClass(error: string | undefined): string {
   return error
@@ -107,4 +115,9 @@ export function guiToneClass(
 ): string {
   const tone = typeof value === 'string' ? value : fallback
   return GUI_TONE_CLASSES[tone as GuiStatusTone] ?? GUI_TONE_CLASSES[fallback]
+}
+
+export function guiTextToneClass(value: unknown, fallback: GuiTextTone = 'default'): string {
+  const tone = typeof value === 'string' ? value : fallback
+  return GUI_TEXT_TONE_CLASSES[tone as GuiTextTone] ?? GUI_TEXT_TONE_CLASSES[fallback]
 }

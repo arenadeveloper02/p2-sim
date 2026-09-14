@@ -33,7 +33,7 @@ const COMPONENTS = {
   ),
   h2: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
     <h2
-      className={`mt-4 mb-2 font-semibold text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)] first:mt-0 ${HEADING}`}
+      className={`mt-4 mb-2 font-semibold text-[length:var(--gui-section-size,18px)] leading-[var(--gui-section-leading,26px)] first:mt-0 ${HEADING}`}
     >
       {children}
     </h2>

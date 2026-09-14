@@ -83,6 +83,7 @@ import {
   guiButtonClass,
   guiCardSurfaceClass as cardSurfaceClass,
   guiFieldErrorClass as fieldErrorClass,
+  guiTextToneClass as textToneClass,
 } from '@/app/(interfaces)/gui-apps/gui-chrome'
 import { ConstrainedChart } from '@/components/charts/constrained-chart'
 import {
@@ -704,7 +705,7 @@ function deltaToneClass(value: unknown): string {
 const HEADING_SIZE_CLASSES = {
   h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
   h2: 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]',
-  h3: 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]',
+  h3: 'text-[length:var(--gui-section-size,18px)] leading-[var(--gui-section-leading,26px)]',
   h4: 'text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]',
 } as const
 
@@ -1791,26 +1792,30 @@ function specFormFields(elements: Record<string, SpecElement>): ArenaGenerativeF
   )
 }
 
-/** `size` is a CSS length on text components but a scale token on buttons. */
-function isCssLength(value: string): boolean {
-  return /\d/.test(value)
-}
-
 function styleFromProps(props: Record<string, unknown>): CSSProperties {
   const style: CSSProperties = {}
   const backgroundColor = asString(props.backgroundColor)
-  const color = asString(props.color)
   const padding = asString(props.padding)
   const maxWidth = asString(props.maxWidth)
   const gap = asString(props.gap)
-  const size = asString(props.size)
   if (backgroundColor) style.backgroundColor = backgroundColor
-  if (color) style.color = color
   if (padding) style.padding = resolveArenaGenerativeSpacing(padding)
   if (maxWidth) style.maxWidth = maxWidth
   if (gap) style.gap = resolveArenaGenerativeSpacing(gap)
-  if (size && isCssLength(size)) style.fontSize = size
   return style
+}
+
+function wrapTaskSurface(
+  node: ReactNode,
+  props: Record<string, unknown>,
+  withinCard: boolean
+): ReactNode {
+  if (withinCard || asString(props.surface) === 'none') return node
+  return (
+    <div data-testid='task-surface' className={cn('w-full min-w-0', SURFACE_CARD)}>
+      {node}
+    </div>
+  )
 }
 
 function WorkspaceView({
@@ -2457,12 +2462,14 @@ export function SpecRenderer({
    * `withinForm` tracks whether an ancestor is a `Form`. A `SubmitButton` outside one
    * submits nothing, so it needs its `actionId` wired to a click instead. `formActionId`
    * is the enclosing Form's action so submit and fields pending is per that CTA.
+   * `withinCard` skips the host task surface on Form/SearchField already on a Card.
    */
   const renderNode = (
     id: string,
     scope?: RepeatItemScope,
     withinForm = false,
-    formActionId = ''
+    formActionId = '',
+    withinCard = false
   ): ReactNode => {
     if (chromeSkipIds.has(id)) return null
     const element = elements[id]
@@ -2470,6 +2477,12 @@ export function SpecRenderer({
     const props = interpolateElementProps(element.props ?? {}, { state, scope, pending })
     const childIds = element.children ?? []
     const childWithinForm = withinForm || element.type === 'Form'
+    const childWithinCard =
+      withinCard ||
+      element.type === 'Card' ||
+      element.type === 'Stat' ||
+      element.type === 'WorkingCard' ||
+      element.type === 'EmptyState'
     const nextFormActionId =
       element.type === 'Form'
         ? asString(props.actionId) || submitButtonActionId(elements, childIds)
@@ -2484,7 +2497,7 @@ export function SpecRenderer({
     }
     const children = childIds.map((childId) => (
       <Fragment key={childId}>
-        {renderNode(childId, scope, childWithinForm, nextFormActionId)}
+        {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
       </Fragment>
     ))
     const hasChildren = childIds.length > 0
@@ -2525,7 +2538,7 @@ export function SpecRenderer({
     const renderChildNodes = (ids: string[]) =>
       ids.map((childId) => (
         <Fragment key={childId}>
-          {renderNode(childId, scope, childWithinForm, nextFormActionId)}
+          {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
         </Fragment>
       ))
 
@@ -2564,7 +2577,7 @@ export function SpecRenderer({
           chrome.id && !chrome.nested ? childIds.filter((id) => id !== chrome.id) : childIds
         return (
           <div
-            className='relative min-h-full bg-[var(--gui-canvas,#ffffff)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
+            className='relative min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
             style={styleFromProps(props)}
           >
             {chromeNode}
@@ -2807,13 +2820,17 @@ export function SpecRenderer({
                       <GripVertical className='size-[14px]' />
                     </span>
                     {childIds.map((childId) => (
-                      <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
+                      <Fragment key={childId}>
+                        {renderNode(childId, { item, index }, childWithinForm, nextFormActionId, childWithinCard)}
+                      </Fragment>
                     ))}
                   </div>
                 ) : (
                   <Fragment key={repeatItemKey(item, index)}>
                     {childIds.map((childId) => (
-                      <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
+                      <Fragment key={childId}>
+                        {renderNode(childId, { item, index }, childWithinForm, nextFormActionId, childWithinCard)}
+                      </Fragment>
                     ))}
                   </Fragment>
                 )
@@ -3523,7 +3540,7 @@ export function SpecRenderer({
               ) : null}
             </div>
             {asString(props.hint) ? (
-              <span className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+              <span className='text-[length:var(--gui-caption-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-caption-leading,20px)]'>
                 {asString(props.hint)}
               </span>
             ) : null}
@@ -3828,7 +3845,7 @@ export function SpecRenderer({
               <div className='pb-3 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[1.5]'>
                 {bodyIds.map((childId) => (
                   <Fragment key={childId}>
-                    {renderNode(childId, scope, childWithinForm, nextFormActionId)}
+                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
                   </Fragment>
                 ))}
               </div>
@@ -3885,7 +3902,7 @@ export function SpecRenderer({
                 <div className='flex flex-wrap items-center gap-2 pt-1'>
                   {metaIds.map((childId) => (
                     <Fragment key={childId}>
-                      {renderNode(childId, scope, childWithinForm)}
+                      {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
                     </Fragment>
                   ))}
                 </div>
@@ -3902,21 +3919,27 @@ export function SpecRenderer({
             {mediaBesideTitle ? (
               <div className='flex min-w-0 items-start gap-3'>
                 {mediaIds.map((childId) => (
-                  <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+                  <Fragment key={childId}>
+                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
+                  </Fragment>
                 ))}
                 {heading}
               </div>
             ) : (
               <>
                 {mediaIds.map((childId) => (
-                  <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+                  <Fragment key={childId}>
+                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
+                  </Fragment>
                 ))}
                 {heading}
               </>
             )}
             {renderViewSwitchRow(chromeIds, 'top')}
             {bodyIds.map((childId) => (
-              <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+              <Fragment key={childId}>
+                {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
+              </Fragment>
             ))}
             {footerText || footerIds.length > 0 ? (
               <div
@@ -3924,7 +3947,7 @@ export function SpecRenderer({
                 className='flex flex-wrap items-center justify-between gap-2 border-[var(--gui-border,#e2e3e5)] border-t pt-4'
               >
                 {footerText ? (
-                  <span className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+                  <span className='text-[length:var(--gui-caption-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-caption-leading,20px)]'>
                     {footerText}
                   </span>
                 ) : (
@@ -3932,7 +3955,9 @@ export function SpecRenderer({
                 )}
                 <div className='flex flex-wrap items-center gap-2'>
                   {footerIds.map((childId) => (
-                    <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+                    <Fragment key={childId}>
+                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
+                  </Fragment>
                   ))}
                 </div>
               </div>
@@ -3950,8 +3975,9 @@ export function SpecRenderer({
         return (
           <Tag
             className={cn(
-              'font-semibold text-[var(--gui-text,#2c2d33)] tracking-tight',
-              HEADING_SIZE_CLASSES[Tag]
+              'font-semibold tracking-tight',
+              HEADING_SIZE_CLASSES[Tag],
+              textToneClass(props.tone)
             )}
             style={styleFromProps(props)}
           >
@@ -3962,7 +3988,7 @@ export function SpecRenderer({
       case 'Text':
         return (
           <MarkdownText
-            className='text-[var(--gui-text,#2c2d33)]'
+            className={textToneClass(props.tone)}
             style={styleFromProps(props)}
             content={asString(props.text)}
           />
@@ -3977,7 +4003,7 @@ export function SpecRenderer({
         const dataTextPending = boundPending(path)
         const dataTextBusy = dataTextPending && !isEmptyStateValue(dataTextValue)
         return (
-          <div className={cn(dataTextBusy && 'opacity-70')}>
+          <div className={cn(dataTextBusy && 'opacity-70', textToneClass(props.tone))}>
             <RefetchBusyChrome busy={dataTextBusy} />
             <DataTextView
               value={dataTextValue}
@@ -4266,7 +4292,7 @@ export function SpecRenderer({
             void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
-        return (
+        return wrapTaskSurface(
           <form
             className={cn(
               'flex w-full min-w-0 flex-col gap-[var(--gui-gap,16px)]',
@@ -4276,7 +4302,9 @@ export function SpecRenderer({
             noValidate
           >
             {children}
-          </form>
+          </form>,
+          props,
+          withinCard
         )
       }
       case 'SearchField': {
@@ -4341,10 +4369,12 @@ export function SpecRenderer({
             void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
-        return (
+        return wrapTaskSurface(
           <form className='w-full' onSubmit={handleSearchSubmit} noValidate>
             {searchInput}
-          </form>
+          </form>,
+          props,
+          withinCard
         )
       }
       case 'CommandPalette': {

@@ -22,6 +22,8 @@ const DENSITY_TYPE = {
     headingLeading: '36px',
     titleSize: '20px',
     titleLeading: '28px',
+    sectionSize: '16px',
+    sectionLeading: '22px',
     statSize: '32px',
     statLeading: '40px',
     bodySize: '14px',
@@ -38,6 +40,8 @@ const DENSITY_TYPE = {
     headingLeading: '40px',
     titleSize: '24px',
     titleLeading: '32px',
+    sectionSize: '18px',
+    sectionLeading: '26px',
     statSize: '40px',
     statLeading: '48px',
     bodySize: '16px',
@@ -54,6 +58,8 @@ const DENSITY_TYPE = {
     headingLeading: '44px',
     titleSize: '28px',
     titleLeading: '36px',
+    sectionSize: '20px',
+    sectionLeading: '28px',
     statSize: '44px',
     statLeading: '52px',
     bodySize: '16px',
@@ -229,6 +235,8 @@ export function arenaGenerativeThemeStyle(
     style['--gui-heading-leading'] = type.headingLeading
     style['--gui-title-size'] = type.titleSize
     style['--gui-title-leading'] = type.titleLeading
+    style['--gui-section-size'] = type.sectionSize
+    style['--gui-section-leading'] = type.sectionLeading
     style['--gui-stat-size'] = type.statSize
     style['--gui-stat-leading'] = type.statLeading
     style['--gui-body-size'] = type.bodySize

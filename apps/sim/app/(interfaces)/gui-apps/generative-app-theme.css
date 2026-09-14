@@ -5,7 +5,7 @@
  * when `.deployed-chat` is not in the ancestor chain.
  */
 [data-gui-theme] {
-  --gui-canvas: var(--color-ds-surface-page, #ffffff);
+  --gui-canvas: var(--color-ds-surface-subtle, #f7f8f9);
   --gui-surface: var(--color-ds-surface-raised, #ffffff);
   --gui-surface-muted: var(--color-ds-surface-subtle, #f7f8f9);
   --gui-text: var(--color-ds-text-primary, #2c2d33);
@@ -66,6 +66,8 @@
   --gui-heading-leading: var(--leading-ds-heading-lg, 40px);
   --gui-title-size: var(--text-ds-heading-md, 24px);
   --gui-title-leading: var(--leading-ds-heading-md, 32px);
+  --gui-section-size: 18px;
+  --gui-section-leading: 26px;
   --gui-stat-size: var(--text-ds-heading-xlg, 40px);
   --gui-stat-leading: var(--leading-ds-heading-xlg, 48px);
   --gui-body-size: var(--text-ds-body-md, 16px);
@@ -103,7 +105,7 @@ html.dark [data-gui-theme],
 [data-gui-theme='dark'] {
   --gui-canvas: var(--color-ds-surface-subtle, #12141a);
   --gui-surface: var(--color-ds-surface-raised, #1c1f28);
-  --gui-surface-muted: var(--color-ds-surface-page, #12141a);
+  --gui-surface-muted: #181b24;
   --gui-text: var(--color-ds-text-primary, #e8eaed);
   --gui-text-muted: var(--color-ds-text-secondary, #b8bcc6);
   --gui-text-tertiary: var(--color-ds-text-tertiary, #9aa0a6);
@@ -152,7 +154,7 @@ html.dark [data-gui-theme],
   [data-gui-theme='system'] {
     --gui-canvas: var(--color-ds-surface-subtle, #12141a);
     --gui-surface: var(--color-ds-surface-raised, #1c1f28);
-    --gui-surface-muted: var(--color-ds-surface-page, #12141a);
+    --gui-surface-muted: #181b24;
     --gui-text: var(--color-ds-text-primary, #e8eaed);
     --gui-text-muted: var(--color-ds-text-secondary, #b8bcc6);
     --gui-text-tertiary: var(--color-ds-text-tertiary, #9aa0a6);

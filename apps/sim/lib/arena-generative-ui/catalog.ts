@@ -189,25 +189,29 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         text: z.string(),
         level: z.enum(['h1', 'h2', 'h3', 'h4']).nullable(),
+        tone: z.enum(['default', 'muted', 'tertiary', 'brand']).nullable(),
         color: z.string().nullable(),
       }),
-      description: 'Heading text',
+      description:
+        'Heading text. level maps to the host type scale (h1 heading, h2 title, h3 section, h4 body). tone is default, muted, tertiary, or brand — do not set color or fontSize.',
     },
     Text: {
       props: z.object({
         text: z.string(),
+        tone: z.enum(['default', 'muted', 'tertiary', 'brand']).nullable(),
         color: z.string().nullable(),
         size: z.string().nullable(),
         dateFormat: z.string().nullable(),
         numberFormat: z.string().nullable(),
       }),
       description:
-        'Paragraph text. Markdown is rendered (emphasis, lists, links). Bound ISO dates in text are formatted by the host; set dateFormat or `{item.date|DD/MM/YYYY}` / `{item.date|relative}` when the brief names a format (presets include relative, ago). Bound numbers: set numberFormat or `{item.price|currency}` / `{item.rate|percent}` (presets number, integer, currency, usd, eur, gbp, percent, compact).',
+        'Paragraph text. Markdown is rendered (emphasis, lists, links). tone is default, muted, tertiary, or brand — do not set color or fontSize. Bound ISO dates in text are formatted by the host; set dateFormat or `{item.date|DD/MM/YYYY}` / `{item.date|relative}` when the brief names a format (presets include relative, ago). Bound numbers: set numberFormat or `{item.price|currency}` / `{item.rate|percent}` (presets number, integer, currency, usd, eur, gbp, percent, compact).',
     },
     DataText: {
       props: z.object({
         statePath: z.string(),
         fallback: z.string().nullable(),
+        tone: z.enum(['default', 'muted', 'tertiary', 'brand']).nullable(),
         color: z.string().nullable(),
         size: z.string().nullable(),
         showWhen: z.string().nullable(),
@@ -488,9 +492,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         suggestions: z.string().nullable(),
         submitLabel: z.string().nullable(),
         live: z.boolean().nullable(),
+        surface: z.enum(['card', 'none']).nullable(),
       }),
       description:
-        'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a manifest.actions key (declared apiKey, or dummy/local with no apiKey) when this field is not inside a Form; inside a Form the parent submits. live true plus actionId runs that action as the user types (host debounce, min 2 characters) — use for geocode/typeahead. suggestions is a comma-separated list of chips that fill the field (static; live hits bind a Repeat/List on the page). Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
+        'One-line search with a nested primary submit inside a pill track. name is the query key. Put SearchField in a Card on a narrow Section; the host paints that surface if omitted. surface "none" only when the brief asks for flush / no container. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a manifest.actions key (declared apiKey, or dummy/local with no apiKey) when this field is not inside a Form; inside a Form the parent submits. live true plus actionId runs that action as the user types (host debounce, min 2 characters) — use for geocode/typeahead. suggestions is a comma-separated list of chips that fill the field (static; live hits bind a Repeat/List on the page). Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
     },
     CommandPalette: {
       props: z.object({
@@ -556,10 +561,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         actionId: z.string().nullable(),
         align: z.enum(['start', 'center', 'end', 'stretch']).nullable(),
+        surface: z.enum(['card', 'none']).nullable(),
       }),
       slots: ['default'],
       description:
-        'Form wrapper for multi-field forms. actionId must match a manifest.actions key (declared apiKey, or dummy/local with no apiKey). align controls cross-axis placement of its rows and defaults to stretch. The host stretches Form to fill its Card and narrows a form-only Section. A one-field search uses SearchField on its own instead of Form + TextInput.',
+        'Form wrapper for multi-field forms. actionId must match a manifest.actions key (declared apiKey, or dummy/local with no apiKey). align controls cross-axis placement of its rows and defaults to stretch. Put Form in a Card on a narrow Section; the host paints that surface if omitted and stretches Form to fill it. surface "none" only when the brief asks for flush / no container. A one-field search uses SearchField on its own instead of Form + TextInput.',
     },
     Chat: {
       props: z.object({
@@ -1096,7 +1102,7 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'color: background, surface, surfaceMuted, text, textMuted, border, primary, success, warning, danger — host CSS; not element props.',
   'spacing: none xs sm md lg xl 2xl — use on gap and padding only. Prefer gap "lg" between groups. Example: {"type":"Card","props":{"variant":"default","padding":"lg"}}.',
   'radius: sm md lg — manifest.theme.radius only.',
-  'typography: display h1 h2 h3 body bodySmall caption — host maps PageHeader and Heading.level; do not set fontSize.',
+  'typography: display h1 h2 h3 section body bodySmall caption — host maps PageHeader and Heading.level (h3 is section); do not set fontSize. Text/Heading/DataText tone is default, muted, tertiary, or brand.',
   'density: compact comfortable roomy — manifest.theme.density only. Tokens scale with density.',
   'Viewport: full page up to 1280px. Do not author a permanently narrow centre column. The host collapses Grid and Columns on a narrow viewport.',
   'Every generate reply includes the default theme. Page → AppHeader → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "lg". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; app identity is AppHeader, not Image.',

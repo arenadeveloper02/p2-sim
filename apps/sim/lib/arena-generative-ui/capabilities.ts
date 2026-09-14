@@ -71,7 +71,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   search: [
     'CAPABILITY: SEARCH',
-    'The primary task is finding or looking up. Home is a SearchField hero (placeholder, submitLabel, actionId), not a labelled Grid of one TextInput. When a declared binding owns the query, set actionId and bind the destination Repeat, Table, or DataText. When no search API exists, omit actionId — the host filters the on-page Table/Repeat as the user types. Do not add a second SearchField on results.',
+    'The primary task is finding or looking up. Home is a SearchField hero in a Card (placeholder, submitLabel, actionId), not a labelled Grid of one TextInput on the canvas. When a declared binding owns the query, set actionId and bind the destination Repeat, Table, or DataText. When no search API exists, omit actionId — the host filters the on-page Table/Repeat as the user types. Do not add a second SearchField on results.',
   ].join('\n'),
   filter: [
     'CAPABILITY: FILTER',

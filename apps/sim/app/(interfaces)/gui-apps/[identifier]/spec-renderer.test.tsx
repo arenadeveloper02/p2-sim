@@ -854,6 +854,87 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec })
     expect(container.querySelector('section')?.className).toContain('max-w-2xl')
     expect(container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
+    const surface = container.querySelector('[data-testid="task-surface"]')
+    expect(surface).toBeTruthy()
+    expect(surface?.className).toContain('gui-shadow-card')
+    expect(surface?.querySelector('[data-testid="search-field"]')).toBeTruthy()
+  })
+
+  it('does not wrap a SearchField already inside a Card', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: {}, children: ['card'] },
+        card: { type: 'Card', props: {}, children: ['search'] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'company', placeholder: 'Company name', actionId: 'analyze' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="task-surface"]')).toBeNull()
+    expect(container.querySelector('[data-testid="card"] [data-testid="search-field"]')).toBeTruthy()
+  })
+
+  it('keeps SearchField flush when surface is none', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: {}, children: ['search'] },
+        search: {
+          type: 'SearchField',
+          props: {
+            name: 'company',
+            placeholder: 'Company name',
+            actionId: 'analyze',
+            surface: 'none',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="task-surface"]')).toBeNull()
+    expect(container.querySelector('[data-testid="search-field"]')).toBeTruthy()
+  })
+
+  it('paints a task surface around a Form that is not in a Card', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: {}, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'save' }, children: ['name'] },
+        name: { type: 'TextInput', props: { name: 'name', label: 'Name' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const surface = container.querySelector('[data-testid="task-surface"]')
+    expect(surface).toBeTruthy()
+    expect(surface?.querySelector('form')).toBeTruthy()
+  })
+
+  it('maps Heading h3 to the section type size', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['heading'] },
+        heading: {
+          type: 'Heading',
+          props: { text: 'About', level: 'h3', tone: 'muted' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const heading = container.querySelector('h3')
+    expect(heading?.className).toContain('gui-section-size')
+    expect(heading?.className).not.toContain('gui-title-size')
+    expect(heading?.className).toContain('gui-text-muted')
   })
 
   it('narrows a form-only Section and stretches Form to fill its Card', () => {
@@ -882,6 +963,7 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
     expect(container.querySelector('form')?.className).not.toContain('max-w-[var(--gui-measure')
     expect(container.querySelector('form')?.className).toContain('w-full')
+    expect(container.querySelector('[data-testid="task-surface"]')).toBeNull()
     expect(container.querySelector('input[name="url"]')?.parentElement?.className).toContain(
       'w-full'
     )

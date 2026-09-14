@@ -18,15 +18,18 @@ export {
   GUI_SURFACE_CARD_MUTED,
   GUI_SURFACE_STAT,
   GUI_TABLE_HEADER_ROW_CLASS,
+  GUI_TEXT_TONE_CLASSES,
   GUI_TONE_CLASSES,
   GUI_WIDGET_SURFACE_CLASS,
   guiCardSurfaceClass,
   guiFieldErrorClass,
+  guiTextToneClass,
   guiToneClass,
   type GuiButtonSize,
   type GuiButtonVariant,
   type GuiChipTone,
   type GuiStatusTone,
+  type GuiTextTone,
 } from '@/app/(interfaces)/gui-apps/gui-chrome/gui-tokens'
 export { GuiButton, guiButtonClass } from '@/app/(interfaces)/gui-apps/gui-chrome/gui-button'
 export { GuiFieldShell, GuiRequiredMark } from '@/app/(interfaces)/gui-apps/gui-chrome/gui-field'
