@@ -6,6 +6,7 @@
 export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'ANTI-PATTERNS',
   'Never emit these. Catalog types only; the host rejects a Button with no verb.',
+  'honor — When COMPILED HONOR LIST is present, those mappings win. Emit bound Stats, SearchField, Filmstrip, or Pagination the honor list required; do not apply "do not fill a dashboard" to those items.',
   'data — Never hard-code dynamic data. Bind Stat, Table, Repeat, Chart, or DataText with statePath (or page onLoad). Do not put invented numbers in Stat or Chart. Never KeyValue an object that contains arrays as a JSON dump — bind those arrays as Repeat or Table.',
   'stats — Never create fake statistics. Stat only from layoutPlan / outputSchema hostKeys. Do not emit Stat to fill a dashboard.',
   'charts — Never create a decorative Sparkline or Chart. Sparkline needs values or statePath. Chart needs statePath (or dummy categories + values when data.mode is dummy/local). Do not emit either as chrome.',

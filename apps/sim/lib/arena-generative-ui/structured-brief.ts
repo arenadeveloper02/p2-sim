@@ -1518,6 +1518,7 @@ export async function planArenaGenerativeStructuredBrief(
       intent: params.intent,
       apiBindings: params.apiBindings,
       pages: params.pages,
+      compiledHonor: params.compiledHonor,
     })
     const messageOptions = {
       model: modelId,

@@ -1,5 +1,6 @@
 import { truncate } from '@sim/utils/string'
 import type { ArenaGenerativeAdoptedChange } from '@/lib/arena-generative-ui/generate-warnings'
+import { hasPositiveAsk } from '@/lib/arena-generative-ui/positive-ask'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 
 const ASKED_ADOPTED_MAX = 500
@@ -23,8 +24,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'dashboard',
     match: (text) =>
-      /\b(?:dashboard|kpi|kpis|metrics?\s+grid|weather\s+dashboard|forecast\s+dashboard)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:dashboard|kpi|kpis|metrics?\s+grid|weather\s+dashboard|forecast\s+dashboard)\b/i
       ),
     code: 'product-map',
     asked: 'A dashboard of KPIs and forecast series.',
@@ -36,8 +38,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'nested-cards',
     match: (text) =>
-      /\b(?:compact\s+cards|nested\s+cards?|card(?:s)?\s+for\s+(?:the\s+)?(?:daily|hourly|forecast|location)|grouping\s+card)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:compact\s+cards|nested\s+cards?|card(?:s)?\s+for\s+(?:the\s+)?(?:daily|hourly|forecast|location)|grouping\s+card)\b/i
       ),
     code: 'product-map',
     asked: 'Cards for locations or daily forecast, often nested in a grouping Card.',
@@ -48,8 +51,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'geolocation',
     match: (text) =>
-      /\b(?:geolocation|geo\s*location|navigator\.geolocation|use\s+my\s+location|current\s+location|browser\s+location)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:geolocation|geo\s*location|navigator\.geolocation|use\s+my\s+location|browser\s+location)\b/i
       ),
     code: 'product-map',
     asked: 'Browser geolocation / use my location.',
@@ -60,8 +64,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'autocomplete',
     match: (text) =>
-      /\b(?:autocomplete|auto-complete|typeahead|as-you-type|as\s+you\s+type|live\s+suggestions?)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:autocomplete|auto-complete|typeahead|as-you-type|as\s+you\s+type|live\s+suggestions?)\b/i
       ),
     code: 'product-map',
     asked: 'Live autocomplete / as-you-type suggestions.',
@@ -72,19 +77,24 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'filmstrip',
     match: (text) =>
-      /\b(?:filmstrip|horizontal\s+scroll|hourly\s+strip|this\s+hour|carousel\s+of\s+hours)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:filmstrip|horizontal\s+scroll|hourly\s+strip|carousel\s+of\s+hours)\b/i
       ),
     code: 'product-map',
     asked: 'Horizontal hourly filmstrip / this-hour highlight.',
-    adopted: 'Filmstrip bound to hourly (titleField time, subtitleField a numeric host key). Chart remains valid for a plotted series.',
+    adopted:
+      'Filmstrip bound to hourly (titleField time, subtitleField a numeric host key). Chart remains valid for a plotted series.',
     honor:
       'Hourly chips are Filmstrip (statePath hourly, titleField time, subtitleField a bound key such as temperature_2m). Use Chart when the job is a plotted series, not a scrolling strip.',
   },
   {
     id: 'weather-icons',
     match: (text) =>
-      /\b(?:weather\s+icons?|wmo|weather_code|condition\s+icons?|lucide\s+weather)\b/i.test(text),
+      hasPositiveAsk(
+        text,
+        /\b(?:weather\s+icons?|wmo|weather_code|condition\s+icons?|lucide\s+weather)\b/i
+      ),
     code: 'product-map',
     asked: 'Weather icons / WMO weather_code glyphs.',
     adopted: 'Catalog Icon. Bind statePath to weather_code (host maps WMO) or a catalog icon name.',
@@ -94,7 +104,7 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'command-palette',
     match: (text) =>
-      /\b(?:command\s+palette|cmdk|cmd\s*\+\s*k|⌘\s*k|spotlight\s+search)\b/i.test(text),
+      hasPositiveAsk(text, /\b(?:command\s+palette|cmdk|cmd\s*\+\s*k|⌘\s*k|spotlight\s+search)\b/i),
     code: 'product-map',
     asked: 'Command palette / spotlight / ⌘K overlay.',
     adopted: 'CommandPalette (items Label|path or Label|#actionId). Host opens on ⌘K.',
@@ -103,7 +113,7 @@ const COMPILE_RULES: readonly CompileRule[] = [
   },
   {
     id: 'breadcrumbs',
-    match: (text) => /\bbreadcrumbs?\b/i.test(text),
+    match: (text) => hasPositiveAsk(text, /\bbreadcrumbs?\b/i),
     code: 'product-map',
     asked: 'Breadcrumb trail.',
     adopted: 'Catalog Breadcrumb (Label|path crumbs). Not a row of NavLinks.',
@@ -113,7 +123,7 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'tooltip-popover',
     match: (text) =>
-      /\b(?:tooltips?|popovers?|hover\s+hints?|hover\s+cards?)\b/i.test(text),
+      hasPositiveAsk(text, /\b(?:tooltips?|popovers?|hover\s+hints?|hover\s+cards?)\b/i),
     code: 'product-map',
     asked: 'Tooltip or popover hints.',
     adopted: 'Tooltip for hover; Popover for click panels. Not Modal.',
@@ -123,7 +133,7 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'pagination-control',
     match: (text) =>
-      /\b(?:pagination\s+control|page\s+numbers?|pager|numbered\s+pages?)\b/i.test(text),
+      hasPositiveAsk(text, /\b(?:pagination\s+control|page\s+numbers?|pager|numbered\s+pages?)\b/i),
     code: 'product-map',
     asked: 'Numbered pagination / pager chrome.',
     adopted: 'Catalog Pagination below the collection. Local mode pages; API mode more.',
@@ -133,8 +143,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'persist',
     match: (text) =>
-      /\b(?:localstorage|local\s+storage|persist(?:ed|ence)?|remember\s+(?:last\s+)?(?:city|location|unit)|save\s+last\s+city)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:localstorage|local\s+storage|remember\s+(?:last\s+)?(?:city|location|unit)|save\s+last\s+city|persist(?:ed)?\s+(?:last\s+)?(?:city|location|unit))\b/i
       ),
     code: 'product-drop',
     asked: 'Persist last city / unit in localStorage.',
@@ -144,8 +155,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'units',
     match: (text) =>
-      /(?:°\s*[cf]\b|degrees?\s*(?:celsius|fahrenheit)|[cf]elsius|[cf]ahrenheit|unit\s+toggle|\bc\s*\/\s*f\b)/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /(?:unit\s+toggle|°\s*c\s*\/\s*°?\s*f|\bc\s*\/\s*f\b|convert(?:ing)?\s+(?:between\s+)?(?:°?\s*[cf]|celsius|fahrenheit))/i
       ),
     code: 'product-drop',
     asked: 'Client °C/°F conversion or unit toggle.',
@@ -155,8 +167,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'data-states',
     match: (text) =>
-      /\b(?:data[- ]states?|seven\s+(?:custom\s+)?(?:data[- ]?)?states?|skeleton\s+screens?|searching\s+locations|loading\s+weather)\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:data[- ]states?|seven\s+(?:custom\s+)?(?:data[- ]?)?states?|searching\s+locations|loading\s+weather)\b/i
       ),
     code: 'product-drop',
     asked: 'Custom skeleton / seven data-state screens.',
@@ -167,8 +180,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
   {
     id: 'visual-system',
     match: (text) =>
-      /\b(?:custom\s+visual|hex\s*#|brand\s+color|#(?:[0-9a-f]{3}|[0-9a-f]{6})\b|custom\s+logo|weather-influenced|motion\s+system|light\s*\/\s*dark\s+toggle|in-app\s+(?:light|dark|theme))\b/i.test(
-        text
+      hasPositiveAsk(
+        text,
+        /\b(?:custom\s+visual|custom\s+logo|hex\s*#|brand\s+color|weather-influenced|motion\s+system|light\s*\/\s*dark\s+toggle|in-app\s+(?:light|dark|theme))\b/i
       ),
     code: 'product-drop',
     asked: 'Custom hex, logo, motion, or in-app light/dark toggle.',
@@ -191,7 +205,8 @@ const COMPILE_RULES: readonly CompileRule[] = [
 ]
 
 const HONOR_HEADER = [
-  'COMPILED HONOR LIST (Arena catalog host — implement these mappings.',
+  'COMPILED HONOR LIST (Arena catalog host — these mappings are explicit requirements.',
+  'They win over SCOPE DISCIPLINE and ANTI-PATTERNS for the named items.',
   'User request still supplies names and copy.',
   'Do not treat React, CSS, geolocation, persistence, or custom data-state screens as product scope.)',
 ].join(' ')

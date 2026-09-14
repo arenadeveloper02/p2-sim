@@ -783,7 +783,7 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
         ...listDetailBrief,
-        representation: 'kanban_board',
+        representation: 'gantt',
         shell: { navigation: 'drawer', header: 'yes' },
         pages: [
           {
@@ -1201,6 +1201,10 @@ describe('planArenaGenerativeStructuredBrief', () => {
       compiledHonor: 'COMPILED HONOR LIST\n- Job is a dashboard.',
     })
 
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('HONOR LIST WINS')
+    expect(system).toContain('COMPILED HONOR LIST')
+    expect(system).toContain('Job is a dashboard')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('COMPILED HONOR LIST')
     expect(userMessage).toContain('Job is a dashboard')

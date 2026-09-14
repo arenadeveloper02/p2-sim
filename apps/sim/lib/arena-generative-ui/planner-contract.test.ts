@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  buildPlannerSystemPrompt,
   PLANNER_ARCHETYPE_PROMPT,
   PLANNER_COMPOSITION_EXAMPLES_AGENT,
   PLANNER_COMPOSITION_PROMPT,
@@ -10,7 +11,6 @@ import {
   PLANNER_CONTRACT_PROMPT,
   PLANNER_CORE_PROMPT,
   PLANNER_PACK_REMINDERS,
-  buildPlannerSystemPrompt,
   requestSignalsHistory,
   requestSignalsWait,
   resolvePlannerConstraintModules,
@@ -34,6 +34,7 @@ describe('buildPlannerSystemPrompt', () => {
     })
     expect(prompt).toContain('You are the application planner')
     expect(prompt).toContain('SCOPE DISCIPLINE')
+    expect(prompt).toContain('HONOR LIST WINS')
     expect(prompt).toContain('ARCHETYPE is the primary user job')
     expect(prompt).toContain('COMPOSITION SEMANTICS')
     expect(prompt).toContain('WHAT can be composed')
@@ -206,5 +207,33 @@ describe('resolvePlannerConstraintModules', () => {
   it('detects wait from summarize / draft synonyms', () => {
     expect(requestSignalsWait({ userInput: 'Rewrite this policy draft' })).toBe(true)
     expect(requestSignalsWait({ userInput: 'Classify support tickets' })).toBe(true)
+  })
+
+  it('does not select dashboard from a negation', () => {
+    const modules = resolvePlannerConstraintModules({
+      userInput: 'Simple todo app. Do not add a dashboard.',
+      intent: {
+        task: 'Todos',
+        audience: 'individuals',
+        entities: [{ name: 'todo', kind: 'collection' }],
+        dataRequirements: [],
+        actions: [],
+        workflowComplexity: 'short',
+      },
+    })
+    expect(modules.has('dashboard')).toBe(false)
+  })
+})
+
+describe('compiled honor in the planner system prompt', () => {
+  it('appends the honor list and selects the dashboard pack', () => {
+    const prompt = buildPlannerSystemPrompt({
+      userInput: 'Weather paste.',
+      compiledHonor: 'COMPILED HONOR LIST\n- Job is a dashboard.',
+    })
+    expect(prompt).toContain('HONOR LIST WINS')
+    expect(prompt).toContain('COMPILED HONOR LIST')
+    expect(prompt).toContain('Job is a dashboard')
+    expect(prompt).toContain('STATS AND DASHBOARDS')
   })
 })

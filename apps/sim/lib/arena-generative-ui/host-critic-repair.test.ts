@@ -341,7 +341,7 @@ describe('repairHostCriticExtras', () => {
     expect(result.adoptedChanges.some((change) => change.code === 'missing-back')).toBe(true)
   })
 
-  it('unwraps nested Workspace and short shells to Stack', () => {
+  it('unwraps nested Workspace to Stack and leaves a short shell for repair', () => {
     const spec = pageSpec(
       {
         shell: {
@@ -358,9 +358,77 @@ describe('repairHostCriticExtras', () => {
       ['shell']
     )
     const result = repairHostCriticExtras(manifestWithHome(spec))
-    expect(hostCriticManifest(result.manifest)).toBeUndefined()
-    expect(result.manifest.pages.home.spec.elements.shell?.type).toBe('Stack')
+    expect(result.manifest.pages.home.spec.elements.shell?.type).toBe('Workspace')
     expect(result.manifest.pages.home.spec.elements.nav?.type).toBe('Stack')
+    expect(hostCriticManifest(result.manifest)).toContain('needs navigator and primary')
     expect(result.adoptedChanges.some((change) => change.code === 'workspace-shell')).toBe(true)
+  })
+
+  it('does not flatten a short Workspace to Stack', () => {
+    const spec = pageSpec(
+      {
+        shell: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: ['only'],
+        },
+        only: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Empty', color: null, size: null },
+          children: [],
+        },
+      },
+      ['shell']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(result.manifest.pages.home.spec.elements.shell?.type).toBe('Workspace')
+    expect(hostCriticManifest(result.manifest)).toContain('needs navigator and primary')
+    expect(result.adoptedChanges.some((change) => change.code === 'workspace-shell')).toBe(false)
+  })
+
+  it('lifts Tabs out of Workspace and keeps Label|path items', () => {
+    const spec = pageSpec(
+      {
+        shell: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: ['tabs', 'nav', 'main'],
+        },
+        tabs: {
+          type: 'Tabs',
+          props: { items: 'Home|home\nHistory|history', activePath: 'home' },
+          children: [],
+        },
+        nav: {
+          type: 'Repeat',
+          props: { statePath: 'projects' },
+          children: [],
+        },
+        main: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Empty', color: null, size: null },
+          children: [],
+        },
+      },
+      ['shell']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toContain('uses Tabs for a region')
+
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    const elements = result.manifest.pages.home.spec.elements
+    expect(elements.tabs?.type).toBe('Tabs')
+    expect(elements.tabs?.props?.items).toContain('History|history')
+    expect(elements.shell?.type).toBe('Workspace')
+    expect(elements.shell?.children).toEqual(['nav', 'main'])
+    expect(elements.section?.children).toEqual(['tabs', 'shell'])
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.adoptedChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'workspace-shell',
+          adopted: expect.stringContaining('Lifted "tabs"'),
+        }),
+      ])
+    )
   })
 })

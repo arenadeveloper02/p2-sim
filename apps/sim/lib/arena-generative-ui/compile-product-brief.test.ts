@@ -78,6 +78,29 @@ describe('compileProductBrief', () => {
     )
   })
 
+  it('does not honor a negated dashboard or a result-field location', () => {
+    const compiled = compileProductBrief(
+      'Simple todo app. Do not add a dashboard. Show current location as a result field. Persist the selection. Temperatures in °C. Add skeleton screens.'
+    )
+    expect(compiled.honorPrompt).toBe('')
+    expect(compiled.adoptedChanges).toEqual([])
+  })
+
+  it('still honors a positive weather dashboard after a later negation', () => {
+    const compiled = compileProductBrief(
+      'Build a weather dashboard. Do not add extra pages. Use browser geolocation and persist last city in localStorage.'
+    )
+    expect(compiled.honorPrompt).toContain('Job is a dashboard')
+    expect(compiled.honorPrompt).toContain('They win over SCOPE DISCIPLINE')
+    expect(compiled.adoptedChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ asked: expect.stringContaining('dashboard') }),
+        expect.objectContaining({ asked: expect.stringContaining('geolocation') }),
+        expect.objectContaining({ asked: expect.stringContaining('localStorage') }),
+      ])
+    )
+  })
+
   it('maps command palette and breadcrumbs onto catalog types', () => {
     const compiled = compileProductBrief(
       'Add a command palette (⌘K) and breadcrumbs under the header.'
@@ -86,8 +109,14 @@ describe('compileProductBrief', () => {
     expect(compiled.honorPrompt).toContain('Breadcrumb')
     expect(compiled.adoptedChanges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'product-map', asked: expect.stringContaining('Command palette') }),
-        expect.objectContaining({ code: 'product-map', asked: expect.stringContaining('Breadcrumb') }),
+        expect.objectContaining({
+          code: 'product-map',
+          asked: expect.stringContaining('Command palette'),
+        }),
+        expect.objectContaining({
+          code: 'product-map',
+          asked: expect.stringContaining('Breadcrumb'),
+        }),
       ])
     )
   })

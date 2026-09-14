@@ -237,6 +237,37 @@ function asStack(element: FlatElement): void {
   }
 }
 
+/**
+ * Moves Tabs that were assigned as a Workspace slot to a sibling of that
+ * Workspace so Label|path items survive. Leaves Tabs in place when Workspace
+ * is the spec root (no parent to lift into).
+ */
+function liftTabsOutOfWorkspace(spec: Spec): string[] {
+  const elements = elementsOf(spec)
+  const parent = parentByChildId(elements)
+  const lifted: string[] = []
+  for (const tabId of workspaceShellIssueIds(spec).tabRegions) {
+    const workspaceId = parent.get(tabId)
+    if (!workspaceId) continue
+    const workspace = elements[workspaceId]
+    const workspaceParentId = parent.get(workspaceId)
+    if (!workspace || !workspaceParentId) continue
+    const workspaceParent = elements[workspaceParentId]
+    if (!workspaceParent) continue
+    const siblings = workspaceParent.children ?? []
+    const workspaceIndex = siblings.indexOf(workspaceId)
+    if (workspaceIndex < 0) continue
+    workspaceParent.children = [
+      ...siblings.slice(0, workspaceIndex).filter((id) => id !== tabId),
+      tabId,
+      ...siblings.slice(workspaceIndex).filter((id) => id !== tabId),
+    ]
+    workspace.children = (workspace.children ?? []).filter((id) => id !== tabId)
+    lifted.push(tabId)
+  }
+  return lifted
+}
+
 function rewriteInventedType(element: FlatElement, type: string): 'Chart' | 'Repeat' {
   const props = element.props ?? {}
   const seriesLike =
@@ -315,8 +346,10 @@ function insertBackButton(spec: Spec, pagePath: string, entryPath: string): stri
  * model emitted anyway. Nested Cards unwrap to Stack (Repeat item Cards stay).
  * Extra primary CTAs keep one (SubmitButton, then SearchField, then the first
  * primary Button) and demote the rest so generate can succeed. Invented boards,
- * unbound optional Stats, extra grouping Cards, missing Back, and illegal
- * Workspace shells are rewritten rather than rejected.
+ * unbound optional Stats, extra grouping Cards, and missing Back are rewritten.
+ * Nested Workspaces unwrap to Stack. Short shells stay Workspace so generate
+ * can add navigator and primary. Tabs used as a Workspace region lift to a
+ * sibling when a parent exists so Label|path items stay intact.
  */
 export function repairHostCriticExtras(
   manifest: ArenaGenerativeAppManifest,
@@ -355,7 +388,6 @@ export function repairHostCriticExtras(
       unboundIds.length === 0 &&
       overflowCards.length <= MAX_NON_REPEAT_CARDS_PER_PAGE &&
       !needsBack &&
-      shellIssues.shortShells.length === 0 &&
       shellIssues.nestedWorkspaces.length === 0 &&
       shellIssues.tabRegions.length === 0
     ) {
@@ -378,28 +410,12 @@ export function repairHostCriticExtras(
         adopted: `Unwrapped ${nestedWorkspaceIds.map((id) => `"${id}"`).join(', ')} from Workspace to Stack.`,
       })
     }
-    const tabRegionIds = workspaceShellIssueIds(spec).tabRegions
-    if (tabRegionIds.length > 0) {
-      for (const id of tabRegionIds) {
-        const element = elements[id]
-        if (element) asStack(element)
-      }
+    const liftedTabs = liftTabsOutOfWorkspace(spec)
+    if (liftedTabs.length > 0) {
       adoptedChanges.push({
         code: 'workspace-shell',
-        asked: `Page "${pagePath}" used Tabs as a Workspace region (${tabRegionIds.join(', ')}).`,
-        adopted: `Changed ${tabRegionIds.map((id) => `"${id}"`).join(', ')} from Tabs to Stack.`,
-      })
-    }
-    const shortShells = workspaceShellIssueIds(spec).shortShells
-    if (shortShells.length > 0) {
-      for (const id of shortShells) {
-        const element = elements[id]
-        if (element) asStack(element)
-      }
-      adoptedChanges.push({
-        code: 'workspace-shell',
-        asked: `Page "${pagePath}" Workspace (${shortShells.join(', ')}) was missing navigator and primary.`,
-        adopted: `Changed ${shortShells.map((id) => `"${id}"`).join(', ')} from Workspace to Stack.`,
+        asked: `Page "${pagePath}" used Tabs as a Workspace region (${liftedTabs.join(', ')}).`,
+        adopted: `Lifted ${liftedTabs.map((id) => `"${id}"`).join(', ')} next to Workspace so tab paths stay intact.`,
       })
     }
 

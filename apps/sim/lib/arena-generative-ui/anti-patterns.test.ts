@@ -7,6 +7,7 @@ import { ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT } from '@/lib/arena-generative
 describe('ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT', () => {
   it('names the anti-patterns layer', () => {
     expect(ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT).toContain('ANTI-PATTERNS')
+    expect(ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT).toContain('honor list required')
   })
 
   it('forbids hard-coded data, fake Stat, and decorative Sparkline', () => {

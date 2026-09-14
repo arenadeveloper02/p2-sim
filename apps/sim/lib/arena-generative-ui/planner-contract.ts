@@ -8,7 +8,11 @@
  */
 
 import type { ArenaGenerativeIntent } from '@/lib/arena-generative-ui/intent-analyzer'
-import type { ArenaGenerativeApiBinding, ArenaGenerativePageHint } from '@/lib/arena-generative-ui/types'
+import { hasPositiveAsk } from '@/lib/arena-generative-ui/positive-ask'
+import type {
+  ArenaGenerativeApiBinding,
+  ArenaGenerativePageHint,
+} from '@/lib/arena-generative-ui/types'
 
 /** Stable role, scope discipline, output schema — always injected. */
 export const PLANNER_CORE_PROMPT = [
@@ -16,9 +20,10 @@ export const PLANNER_CORE_PROMPT = [
   'Transform the user request into the smallest complete application blueprint that satisfies the request.',
   'You decide: application scope, sitemap, page archetypes, composition (compose vs navigate vs local), workspace regions, entity relationships, required capabilities, interaction model, data mode, representation, shell.',
   'You do not generate component-level JSON. You do not invent unnecessary product features. You do not treat conventional application patterns as mandatory requirements.',
-  'CORE PRINCIPLE: Build the minimum sufficient architecture. Prefer one page > multiple pages; one region > multiple regions; simple interaction > complex interaction; existing archetype > new archetype; existing capability > new capability. Increase complexity only when the user request requires it. A professional application has the right structure for the user\'s task, not the most features.',
+  "CORE PRINCIPLE: Build the minimum sufficient architecture. Prefer one page > multiple pages; one region > multiple regions; simple interaction > complex interaction; existing archetype > new archetype; existing capability > new capability. Increase complexity only when the user request requires it. A professional application has the right structure for the user's task, not the most features.",
   'REQUIREMENT PRIORITY: Explicit (directly requested — mandatory) > Inferred (strongly implied — only when necessary for coherence) > Default (safe UX — use sparingly). Never let defaults become product scope. If an inferred or default feature adds a new page, major workflow, or significant product capability, do not add it unless necessary.',
   'SCOPE DISCIPLINE: Do not add dashboards, statistics, history, filters, search, sorting, pagination, exports, sharing, notifications, activity feeds, secondary entities, detail pages, or multi-step workflows unless they are (1) explicitly requested, (2) strongly required by the requested behavior, or (3) necessary for basic usability at the requested complexity. Domain conventions alone are not sufficient. A "simple todo app" must not become dashboard + stats + history + filters + detail page.',
+  'HONOR LIST WINS: When COMPILED HONOR LIST is present, those mappings are explicit requirements. Implement them even when SCOPE DISCIPLINE would omit dashboards, stats, search, or pagination. Do not apply "do not add dashboards" to an item the honor list required.',
   'COMPLEXITY is independent of prompt length. Use micro | simple | moderate | complex. micro: one primary task or entity, usually 1 page, 1 primary archetype, minimal capabilities (example: simple todo app). simple: one main task with limited supporting behavior, usually 1–2 pages. moderate: multiple related entities, workflows, or coordinated views — may need multiple pages or a Workspace page. complex: multiple workflows, entities, roles, or simultaneous regions. Complexity is a bias, not a rigid limit.',
   'PAGE COUNT: Create a new page only when there is a meaningful navigation boundary. See COMPOSITION WHEN. Do not create separate pages merely because a capability exists. A named History tab, history API, or previous-runs list is a navigation boundary. Same-page result views are not a page. Named wait steps while one request runs are not pages.',
   'CAPABILITIES are user-level behavior, not implementation. Allowed: create, complete, edit, delete, search, filter, sort, select, inspect, analyze, generate, plus wait tags long-running, streaming, multi-step, cancellable, progress when the job waits. Only include capabilities justified by the request or necessary for the archetype. Do not infer every conventional CRUD capability. "view customers" does not imply create + edit + delete.',
@@ -59,10 +64,10 @@ export const PLANNER_ARCHETYPE_PROMPT = [
 
 /** Composition semantics (WHAT/WHERE/HOW/WHEN) — always injected. */
 export const PLANNER_COMPOSITION_PROMPT = [
-  'COMPOSITION SEMANTICS: Decide structure before inventing pages. Answer WHAT, WHERE, HOW, WHEN in that order. Workspace here is the generated app\'s multi-region page archetype — not a catalog component and not a product tenant.',
+  "COMPOSITION SEMANTICS: Decide structure before inventing pages. Answer WHAT, WHERE, HOW, WHEN in that order. Workspace here is the generated app's multi-region page archetype — not a catalog component and not a product tenant.",
   'WHAT can be composed: App → Shell → Pages → Regions → Archetypes → Capabilities → Representations. An archetype is purpose and behavior, not a page template; the same archetype may occupy a whole page or one region. Capabilities attach to an archetype instance. Presentation (dialog, drawer, inline) is not a composition unit. Shell (minimal, tabs, sidebar, workspace) is chrome, not an archetype. Do not invent archetypes. Domain modules (timeline, comments) are not peer archetypes.',
   'WHERE it can be composed: Application = many pages. Page = one archetype, or a Workspace page with 2–4 named regions. Region keys: navigator, primary, inspector, auxiliary — each independently uses collection, detail, task, results, dashboard, or workflow. Representation (list, table, cards) lives only inside a collection instance. Multi-archetype page = only a Workspace page. Never Collection+Detail as two peer page archetypes; that is a Workspace page (collection in primary, detail in inspector) or a navigation boundary — see WHEN.',
-  'HOW regions coordinate: Regions do not float independently. Name the flow in pages[].interaction (selection, inspect, execution) and each region\'s purpose. Selection: navigator or primary selection updates inspector or filters another collection (projects.selection drives the task collection). Filter: one region\'s query narrows another. Entity: primary entity drives inspector. Uncoordinated regions are invalid — prefer fewer regions or separate pages. Emit pages[].regions as a named object (navigator, primary, inspector, auxiliary), not an array, and not a relationship object.',
+  "HOW regions coordinate: Regions do not float independently. Name the flow in pages[].interaction (selection, inspect, execution) and each region's purpose. Selection: navigator or primary selection updates inspector or filters another collection (projects.selection drives the task collection). Filter: one region's query narrows another. Entity: primary entity drives inspector. Uncoordinated regions are invalid — prefer fewer regions or separate pages. Emit pages[].regions as a named object (navigator, primary, inspector, auxiliary), not an array, and not a relationship object.",
   'WHEN — compose vs navigate vs local: Ask whether the user must see both at once. Alongside / while keeping X visible / inspect without leaving / split view → compose on one Workspace page. Result replaces the current view (task submit then report) → navigate to another page. Result stacks below the form on the same Generator view (below, not beside, not replace) → one task page with wait then results; not Workspace and not a two-column form beside an empty results pane. Create/edit/confirm is temporary → local interaction (dialog, drawer, inline), not a page and not a region. Parent/child entities do not auto-create extra routes — default is one Workspace page unless the user asked to leave the current view. Inspect navigates to a Detail page unless the user asked to keep the collection visible. Do not create a Results page merely because an operation returns data if the result must stay on the task page; if the result replaces the task, two pages are correct. A named History tab or history API is a separate collection page even when Generator is one view.',
   'COMPOSITION DECISION ORDER (before sitemap): (1) user job (2) required composition units (3) must they remain visible together — compose, navigate, or local (4) if compose: which regions, which archetype per region, what coordination (5) only then page count, paths, shell.',
   'COMPOSITION INVARIANTS: Do not invent pages to satisfy an archetype. Do not invent regions to look like a Workspace page. Do not promote a capability into a page. Do not treat presentation as architecture. Renderer owns layout and chrome; planner owns structure and coordination. micro/simple almost never a Workspace page; moderate/complex may be.',
@@ -90,7 +95,7 @@ export const PLANNER_CONSTRAINT_WAIT = [
 
 /** Multi-region workspace detail. */
 export const PLANNER_CONSTRAINT_WORKSPACE = [
-  'WORKSPACE: A Workspace page is the generated app\'s composition primitive for simultaneous coordinated regions. Required only when COMPOSITION WHEN says compose. Do not select it merely because the application is complex. See COMPOSITION SEMANTICS.',
+  "WORKSPACE: A Workspace page is the generated app's composition primitive for simultaneous coordinated regions. Required only when COMPOSITION WHEN says compose. Do not select it merely because the application is complex. See COMPOSITION SEMANTICS.",
   'WORKSPACE REGIONS: navigator, primary, inspector, auxiliary. Each independently uses an existing archetype (collection, detail, …). Do not create a new archetype for a region.',
 ].join('\n')
 
@@ -124,6 +129,8 @@ export interface BuildPlannerSystemPromptOptions {
   intent?: ArenaGenerativeIntent | null
   apiBindings?: readonly ArenaGenerativeApiBinding[]
   pages?: readonly ArenaGenerativePageHint[]
+  /** Honor/map/drop list. Appended to the system prompt so it outranks SCOPE DISCIPLINE. */
+  compiledHonor?: string
   /** Force every optional module (tests / full contract snapshot). */
   includeAll?: boolean
 }
@@ -227,15 +234,15 @@ export function resolvePlannerConstraintModules(
     modules.add('workspace')
   }
 
-  if (
-    entityKinds.has('collection') ||
-    COLLECTION_OPS_SIGNAL.test(text) ||
-    pageHintCount >= 1
-  ) {
+  if (entityKinds.has('collection') || COLLECTION_OPS_SIGNAL.test(text) || pageHintCount >= 1) {
     modules.add('collection')
   }
 
-  if (entityKinds.has('metric') || DASHBOARD_SIGNAL.test(text)) {
+  if (
+    entityKinds.has('metric') ||
+    hasPositiveAsk(text, DASHBOARD_SIGNAL) ||
+    /\bJob is a dashboard\b/i.test(options.compiledHonor ?? '')
+  ) {
     modules.add('dashboard')
   }
 
@@ -274,6 +281,7 @@ export function buildPlannerSystemPrompt(options: BuildPlannerSystemPromptOption
     modules.has('collection') ? PLANNER_CONSTRAINT_COLLECTION : '',
     modules.has('dashboard') ? PLANNER_CONSTRAINT_DASHBOARD : '',
     modules.has('secondary') ? PLANNER_CONSTRAINT_SECONDARY : '',
+    options.compiledHonor?.trim() ?? '',
   ]
   return sections.filter((section) => section.length > 0).join('\n')
 }
