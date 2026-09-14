@@ -57,6 +57,7 @@ export interface BuildGeneratorSystemPromptOptions {
   needsTables?: boolean
   needsCalendar?: boolean
   needsTimeline?: boolean
+  needsKanban?: boolean
   needsWait?: boolean
   needsWorkspace?: boolean
   /** Planned page jobs for gold selection. Not region archetypes. */
@@ -91,6 +92,7 @@ export function generatorPromptOptionsFromBrief(
   | 'needsTables'
   | 'needsCalendar'
   | 'needsTimeline'
+  | 'needsKanban'
   | 'needsWait'
   | 'needsWorkspace'
   | 'pageArchetypes'
@@ -103,6 +105,7 @@ export function generatorPromptOptionsFromBrief(
       needsTables: false,
       needsCalendar: false,
       needsTimeline: false,
+      needsKanban: false,
       needsWait: false,
       needsWorkspace: false,
       pageArchetypes: [],
@@ -114,6 +117,7 @@ export function generatorPromptOptionsFromBrief(
   let needsTables = brief.representation === 'table' || brief.representation === 'calendar'
   let needsCalendar = brief.representation === 'calendar'
   let needsTimeline = brief.representation === 'timeline'
+  let needsKanban = brief.representation === 'kanban'
   let hasRegions = false
   let hasWorkspacePage = brief.archetype === 'workspace'
   for (const page of brief.pages ?? []) {
@@ -125,6 +129,7 @@ export function generatorPromptOptionsFromBrief(
     if (page.representation === 'table' || page.representation === 'calendar') needsTables = true
     if (page.representation === 'calendar') needsCalendar = true
     if (page.representation === 'timeline') needsTimeline = true
+    if (page.representation === 'kanban') needsKanban = true
     if (page.regions) {
       hasRegions = true
       for (const region of Object.values(page.regions)) {
@@ -134,6 +139,7 @@ export function generatorPromptOptionsFromBrief(
         }
         if (region?.representation === 'calendar') needsCalendar = true
         if (region?.representation === 'timeline') needsTimeline = true
+        if (region?.representation === 'kanban') needsKanban = true
       }
     }
   }
@@ -147,6 +153,7 @@ export function generatorPromptOptionsFromBrief(
     needsTables,
     needsCalendar,
     needsTimeline,
+    needsKanban,
     needsWait: capabilities.some((capability) => WAIT_CAPABILITIES.has(capability)),
     needsWorkspace: hasWorkspacePage || hasRegions,
     pageArchetypes,
@@ -266,6 +273,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
         shell: options.shell,
         needsCalendar: options.needsCalendar,
         needsTimeline: options.needsTimeline,
+        needsKanban: options.needsKanban,
         needsTables: options.needsTables,
       }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),

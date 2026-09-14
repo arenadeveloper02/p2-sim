@@ -31,7 +31,7 @@ const COMPILE_RULES: readonly CompileRule[] = [
     adopted:
       'Single-page dashboard. Bind current as Stats. Primary visualization is Chart when a bound collection is a numeric series (hourly/daily).',
     honor:
-      'Job is a dashboard. One page. Current conditions are bound Stats. Hourly and daily numeric series use Chart (categoryField time, series a bound host key such as temperature_2m) or Table — not a scrolling filmstrip.',
+      'Job is a dashboard. One page. Current conditions are bound Stats. Hourly chips use Filmstrip; a plotted numeric series uses Chart (categoryField time, series a bound host key such as temperature_2m) or Table.',
   },
   {
     id: 'nested-cards',
@@ -55,7 +55,7 @@ const COMPILE_RULES: readonly CompileRule[] = [
     asked: 'Browser geolocation / use my location.',
     adopted: 'SearchField plus Repeat of geocode hits. No navigator.geolocation.',
     honor:
-      'Location lookup is SearchField (actionId on the geocode binding) and Repeat of places. Do not plan browser geolocation.',
+      'Location lookup is SearchField (actionId on the geocode binding, live true when as-you-type) and Repeat or List of places. Do not plan browser geolocation.',
   },
   {
     id: 'autocomplete',
@@ -65,9 +65,9 @@ const COMPILE_RULES: readonly CompileRule[] = [
       ),
     code: 'product-map',
     asked: 'Live autocomplete / as-you-type suggestions.',
-    adopted: 'SearchField submit. Host has no live suggestion fetch.',
+    adopted: 'SearchField live plus actionId. Host debounces the declared search/geocode action.',
     honor:
-      'Search is SearchField submit (or host-local filter when there is no search API). Do not emit Combobox/SearchField.suggestions as a live geocode fetch.',
+      'Search is SearchField with live true and actionId on the geocode/search binding. Bind hits as Repeat or List. Do not emit Combobox as a live geocode fetch.',
   },
   {
     id: 'filmstrip',
@@ -77,19 +77,19 @@ const COMPILE_RULES: readonly CompileRule[] = [
       ),
     code: 'product-map',
     asked: 'Horizontal hourly filmstrip / this-hour highlight.',
-    adopted: 'Chart or Table bound to hourly. No horizontal scroll except Table.',
+    adopted: 'Filmstrip bound to hourly (titleField time, subtitleField a numeric host key). Chart remains valid for a plotted series.',
     honor:
-      'Hourly series is Chart or Table. Do not emit a horizontal filmstrip, carousel of hours, or this-hour highlight chrome.',
+      'Hourly chips are Filmstrip (statePath hourly, titleField time, subtitleField a bound key such as temperature_2m). Use Chart when the job is a plotted series, not a scrolling strip.',
   },
   {
     id: 'weather-icons',
     match: (text) =>
       /\b(?:weather\s+icons?|wmo|weather_code|condition\s+icons?|lucide\s+weather)\b/i.test(text),
-    code: 'product-drop',
+    code: 'product-map',
     asked: 'Weather icons / WMO weather_code glyphs.',
-    adopted: 'Omitted. Icon enum has no weather set. Show condition as bound text if present.',
+    adopted: 'Catalog Icon. Bind statePath to weather_code (host maps WMO) or a catalog icon name.',
     honor:
-      'Do not emit weather icons or a WMO weather_code map. Condition is bound Text if the schema has it.',
+      'Condition glyphs are catalog Icon (sun, cloud, cloud-sun, cloud-rain, cloud-snow, cloud-lightning, wind). Bind Icon.statePath to weather_code or a catalog name. Do not invent a custom WMO map component.',
   },
   {
     id: 'persist',

@@ -106,6 +106,8 @@ const TYPE_ALIASES: Record<string, string> = {
   ActivityFeed: 'Timeline',
   Chronology: 'Timeline',
   EventTimeline: 'Timeline',
+  KanbanBoard: 'Kanban',
+  HorizontalScroll: 'Filmstrip',
 }
 
 const SPACING_PROPS = ['gap', 'padding'] as const

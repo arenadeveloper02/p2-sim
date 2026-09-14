@@ -2115,7 +2115,7 @@ describe('generateArenaGenerativeManifest', () => {
           asked: expect.stringContaining('geolocation'),
         }),
         expect.objectContaining({
-          code: 'product-drop',
+          code: 'product-map',
           asked: expect.stringContaining('Weather icons'),
         }),
       ])

@@ -250,13 +250,13 @@ describe('repairHostCriticExtras', () => {
     expect(result.adoptedChanges.some((change) => change.code === 'unbound-metric')).toBe(true)
   })
 
-  it('rewrites Kanban and Filmstrip to catalog types', () => {
+  it('keeps Kanban and Filmstrip as catalog types', () => {
     const spec = pageSpec(
       {
         board: { type: 'Kanban', props: { statePath: 'projects' }, children: [] },
         hours: {
           type: 'Filmstrip',
-          props: { statePath: 'hourly', categoryField: 'time', series: 'temperature_2m' },
+          props: { statePath: 'hourly', titleField: 'time', subtitleField: 'temperature_2m' },
           children: [],
         },
       },
@@ -264,9 +264,9 @@ describe('repairHostCriticExtras', () => {
     )
     const result = repairHostCriticExtras(manifestWithHome(spec))
     expect(hostCriticManifest(result.manifest)).toBeUndefined()
-    expect(result.manifest.pages.home.spec.elements.board?.type).toBe('Repeat')
-    expect(result.manifest.pages.home.spec.elements.hours?.type).toBe('Chart')
-    expect(result.adoptedChanges.some((change) => change.code === 'invented-type')).toBe(true)
+    expect(result.manifest.pages.home.spec.elements.board?.type).toBe('Kanban')
+    expect(result.manifest.pages.home.spec.elements.hours?.type).toBe('Filmstrip')
+    expect(result.adoptedChanges.some((change) => change.code === 'invented-type')).toBe(false)
   })
 
   it('unwraps overflow Cards outside Repeat', () => {

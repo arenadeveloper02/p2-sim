@@ -156,10 +156,10 @@ describe('buildPreviewEditInstructions', () => {
   it('maps a screenshot catalog gap to a catalog type', () => {
     const text = buildPreviewEditInstructions({
       pagePath: 'home',
-      screenshotGaps: [{ observed: 'custom kanban board', closestCatalogType: 'Table' }],
+      screenshotGaps: [{ observed: 'custom kanban board', closestCatalogType: 'Kanban' }],
     })
     expect(text).toContain('do not add a custom "custom kanban board"')
-    expect(text).toContain('Represent it with Table')
+    expect(text).toContain('Represent it with Kanban')
   })
 
   it('asks for Chat when the planner named chat but the app has none', () => {

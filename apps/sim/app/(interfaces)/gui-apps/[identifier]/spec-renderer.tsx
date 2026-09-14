@@ -23,8 +23,14 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Cloud,
+  CloudLightning,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
   Copy,
   Download,
+  Droplets,
   FileText,
   Filter,
   Globe,
@@ -34,6 +40,7 @@ import {
   Loader2,
   type LucideIcon,
   MessageSquare,
+  Moon,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -42,10 +49,13 @@ import {
   Shield,
   Sparkles,
   Star,
+  Sun,
+  Thermometer,
   Trash2,
   TrendingUp,
   Upload,
   Users,
+  Wind,
 } from 'lucide-react'
 import Image from 'next/image'
 import {
@@ -80,6 +90,7 @@ import {
   type RunGenerativeAppActionMeta,
 } from '@/lib/arena-generative-ui/action-runtime'
 import { bindChartData } from '@/lib/arena-generative-ui/bind-chart-data'
+import { resolveCatalogIconName } from '@/lib/arena-generative-ui/catalog-icon'
 import {
   collectionUsesApiPagination,
   isActionControlPending,
@@ -182,8 +193,12 @@ import arenaLogo from '@/app/(interfaces)/chat/components/message/components/Are
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
 import { ChatTypingIndicator } from '@/app/(interfaces)/gui-apps/[identifier]/chat-typing-indicator'
 import { GuiHostCalendar, GuiHostDateInput } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
+import { GuiHostSearchField } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-search-field'
 import {
   GuiHostCarousel,
+  GuiHostCollectionList,
+  GuiHostFilmstrip,
+  GuiHostKanban,
   GuiHostMap,
   GuiHostTimeline,
   GuiHostTree,
@@ -288,6 +303,16 @@ const ICON_BY_NAME: Record<string, LucideIcon> = {
   upload: Upload,
   settings: Settings,
   more: MoreHorizontal,
+  sun: Sun,
+  moon: Moon,
+  cloud: Cloud,
+  'cloud-sun': CloudSun,
+  'cloud-rain': CloudRain,
+  'cloud-snow': CloudSnow,
+  'cloud-lightning': CloudLightning,
+  wind: Wind,
+  droplet: Droplets,
+  thermometer: Thermometer,
 }
 
 const CARD_MEDIA_TYPES = new Set(['Icon', 'Avatar'])
@@ -2274,7 +2299,10 @@ export function SpecRenderer({
         element.type === 'Timeline' ||
         element.type === 'Map' ||
         element.type === 'Tree' ||
-        element.type === 'Carousel'
+        element.type === 'Carousel' ||
+        element.type === 'Kanban' ||
+        element.type === 'Filmstrip' ||
+        (element.type === 'List' && Boolean(asString(element.props?.statePath)))
     )
     .map(([id, element]) => {
       const statePath =
@@ -2314,6 +2342,9 @@ export function SpecRenderer({
         element.type !== 'Map' &&
         element.type !== 'Tree' &&
         element.type !== 'Carousel' &&
+        element.type !== 'Kanban' &&
+        element.type !== 'Filmstrip' &&
+        !(element.type === 'List' && asString(element.props?.statePath)) &&
         element.type !== 'KeyValue'
       ) {
         continue
@@ -3317,6 +3348,79 @@ export function SpecRenderer({
           </GuiHostCarousel>
         )
       }
+      case 'Kanban': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostKanban
+            items={items}
+            groupField={asString(props.groupField) || undefined}
+            titleField={asString(props.titleField) || undefined}
+            columns={asString(props.columns) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            onSelectItem={onSelectItem}
+          />
+        )
+      }
+      case 'Filmstrip': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostFilmstrip
+            items={items}
+            titleField={asString(props.titleField) || undefined}
+            subtitleField={asString(props.subtitleField) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={Boolean(statePath && boundPending(statePath))}
+            onSelectItem={onSelectItem}
+          />
+        )
+      }
       case 'Stat': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
@@ -3554,10 +3658,17 @@ export function SpecRenderer({
           </button>
         )
       }
-      case 'Icon':
+      case 'Icon': {
+        const bound = asString(props.statePath)
+          ? readStatePath(state, asString(props.statePath), scope)
+          : undefined
         return (
-          <CatalogIcon name={asString(props.name, 'spark')} well={asString(props.well, 'circle')} />
+          <CatalogIcon
+            name={resolveCatalogIconName({ name: asString(props.name), bound })}
+            well={asString(props.well, 'circle')}
+          />
         )
+      }
       case 'Avatar':
         return <AvatarView {...avatarModel(props, state, scope)} />
       case 'EntityHeader': {
@@ -4105,76 +4216,33 @@ export function SpecRenderer({
         const actionId = asString(props.actionId)
         const required = asBoolean(props.required)
         const searchBusy = controlPending(actionId)
+        const live = asBoolean(props.live) && Boolean(actionId)
+        const dispatchLiveQuery = (query: string) => {
+          void dispatchAction(
+            actionId,
+            { ...actionValues, ...formValues, [name]: query },
+            confirmMeta(actionId)
+          )
+        }
         const searchInput = (
-          <div className='flex flex-col gap-3'>
-            {label ? (
-              <label
-                htmlFor={fieldId}
-                className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
-              >
-                {label}
-                <RequiredMark show={required} />
-              </label>
-            ) : (
-              <label htmlFor={fieldId} className='sr-only'>
-                {asString(props.placeholder, 'Search')}
-              </label>
-            )}
-            <div
-              data-testid='search-field'
-              className={cn(
-                'flex h-12 items-center gap-2 rounded-full border bg-[var(--gui-surface,#ffffff)] pr-1.5 pl-5',
-                error ? 'border-[var(--gui-danger,#f31a1a)]' : 'border-[var(--gui-border,#e2e3e5)]'
-              )}
-            >
-              <input
-                id={fieldId}
-                name={name}
-                required={required}
-                placeholder={asString(props.placeholder) || undefined}
-                value={asFieldString(value)}
-                onChange={(event) => setNamedValue(name, event.target.value)}
-                className='h-full min-w-0 flex-1 bg-transparent text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] outline-none placeholder:text-[var(--gui-text-tertiary,#8a8d99)]'
-              />
-              <button
-                type='submit'
-                disabled={searchBusy}
-                aria-busy={searchBusy || undefined}
-                className={cn(
-                  buttonClass({ variant: 'primary', shape: 'pill' }, 'primary'),
-                  searchBusy && 'gap-2'
-                )}
-              >
-                <ActionBusyMark show={searchBusy} />
-                {submitLabel}
-              </button>
-            </div>
-            {error ? (
-              <p
-                data-testid={`field-error-${name}`}
-                className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-danger,#f31a1a)]'
-              >
-                {error}
-              </p>
-            ) : null}
-            {suggestions.length > 0 ? (
-              <div className='flex flex-wrap justify-center gap-2'>
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type='button'
-                    className={cn(
-                      'inline-flex items-center rounded-[var(--gui-radius-pill)] px-3 py-1.5 font-medium text-sm',
-                      CHIP_TONE_CLASSES.muted
-                    )}
-                    onClick={() => setNamedValue(name, suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <GuiHostSearchField
+            fieldId={fieldId}
+            name={name}
+            label={label}
+            required={required}
+            error={error}
+            placeholder={asString(props.placeholder)}
+            value={value}
+            suggestions={suggestions}
+            submitLabel={submitLabel}
+            searchBusy={searchBusy}
+            live={live}
+            buttonClass={buttonClass}
+            busyMark={<ActionBusyMark show={searchBusy} />}
+            requiredMark={<RequiredMark show={required} />}
+            onValueChange={(next) => setNamedValue(name, next)}
+            onLiveQuery={dispatchLiveQuery}
+          />
         )
         if (withinForm) return searchInput
         const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -4610,8 +4678,44 @@ export function SpecRenderer({
       case 'Divider':
         return <hr className='border-[var(--gui-border,#e2e3e5)]' style={styleFromProps(props)} />
       case 'List': {
-        const Tag = asBoolean(props.ordered) ? 'ol' : 'ul'
-        return <Tag className='list-inside pl-1'>{children}</Tag>
+        const statePath = asString(props.statePath)
+        if (!statePath) {
+          const Tag = asBoolean(props.ordered) ? 'ol' : 'ul'
+          return <Tag className='list-inside pl-1'>{children}</Tag>
+        }
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const stateValue = readStatePath(state, statePath, scope)
+        const rawItems = collectionFromBoundValue(stateValue)
+        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        if (
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
+          return <SkeletonBlock variant='card' lines={DEFAULT_SKELETON_LINES.card} />
+        }
+        if (!rawItems || rawItems.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        return (
+          <GuiHostCollectionList
+            items={items}
+            titleField={asString(props.titleField) || undefined}
+            bodyField={asString(props.bodyField) || undefined}
+            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+            busy={boundPending(statePath)}
+            ordered={asBoolean(props.ordered)}
+            onSelectItem={onSelectItem}
+          />
+        )
       }
       case 'ListItem':
         return (

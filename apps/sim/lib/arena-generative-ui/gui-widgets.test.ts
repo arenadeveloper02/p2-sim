@@ -8,6 +8,12 @@ import {
   defaultCarouselTitleField,
 } from '@/lib/arena-generative-ui/gui-carousel'
 import {
+  defaultFilmstripSubtitleField,
+  defaultFilmstripTitleField,
+  filmstripSlidesFromCollection,
+} from '@/lib/arena-generative-ui/gui-filmstrip'
+import { kanbanColumnsForCollection } from '@/lib/arena-generative-ui/gui-kanban'
+import {
   defaultMapLatField,
   defaultMapLngField,
   defaultMapTitleField,
@@ -90,5 +96,32 @@ describe('gui-carousel', () => {
     expect(
       carouselSlidesFromCollection(['https://cdn.example/b.png'], 'src', 'title')[0]?.src
     ).toBe('https://cdn.example/b.png')
+  })
+})
+
+describe('gui-kanban', () => {
+  it('groups by status, honours column order, and parks empty status in Unassigned', () => {
+    const items = [
+      { title: 'Draft', status: 'Todo' },
+      { title: 'Ship', status: 'Done' },
+      { title: 'Backlog' },
+    ]
+    const lanes = kanbanColumnsForCollection(items, 'status', 'title', 'Todo,Doing,Done')
+    expect(lanes.map((lane) => lane.id)).toEqual(['Todo', 'Doing', 'Done', 'Unassigned'])
+    expect(lanes[0]?.cards.map((card) => card.title)).toEqual(['Draft'])
+    expect(lanes[2]?.cards.map((card) => card.title)).toEqual(['Ship'])
+    expect(lanes[3]?.cards.map((card) => card.title)).toEqual(['Backlog'])
+  })
+})
+
+describe('gui-filmstrip', () => {
+  it('uses time/title and a numeric subtitle when present', () => {
+    const items = [{ time: '09:00', temperature_2m: 21 }]
+    expect(defaultFilmstripTitleField(items)).toBe('time')
+    expect(defaultFilmstripSubtitleField(items, 'time')).toBe('temperature_2m')
+    expect(filmstripSlidesFromCollection(items, 'time', 'temperature_2m')[0]).toMatchObject({
+      title: '09:00',
+      subtitle: '21',
+    })
   })
 })

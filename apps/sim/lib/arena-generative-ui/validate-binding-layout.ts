@@ -30,6 +30,9 @@ const BOUND_RESULT_TYPES = new Set([
   'Map',
   'Tree',
   'Carousel',
+  'Kanban',
+  'Filmstrip',
+  'List',
   'Stat',
   'KeyValue',
   'DataText',
@@ -49,6 +52,9 @@ const COLLECTION_TYPES = new Set([
   'Map',
   'Tree',
   'Carousel',
+  'Kanban',
+  'Filmstrip',
+  'List',
 ])
 
 const ENVELOPE_ROOTS = new Set(['data', 'response'])
@@ -460,7 +466,7 @@ function boundPathError(
           return undefined
         }
         if (type === 'DataText' || type === 'KeyValue') {
-          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat, Table, Calendar, Timeline, Map, Tree, or Carousel.`
+          return `Page "${pagePath}" ${type} "${elementId}" binds statePath "${statePath}"; that field is a collection. Use Repeat, Table, Calendar, Timeline, Map, Tree, Carousel, Kanban, Filmstrip, or List.`
         }
       }
       if (collection.wrapperKeys.includes(statePath) && COLLECTION_TYPES.has(type)) {

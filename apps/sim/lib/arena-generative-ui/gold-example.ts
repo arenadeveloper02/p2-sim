@@ -5,6 +5,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
@@ -227,6 +228,8 @@ export interface GoldExamplePickerOptions {
   needsCalendar?: boolean
   /** Dummy collection plotted on Timeline (representation timeline). */
   needsTimeline?: boolean
+  /** Dummy collection plotted on Kanban (representation kanban). */
+  needsKanban?: boolean
   /** Collection body is Table (representation table). */
   needsTables?: boolean
 }
@@ -241,6 +244,7 @@ export type GoldExampleKey =
   | 'table'
   | 'calendar'
   | 'timeline'
+  | 'kanban'
   | 'dashboard'
   | 'workflow'
   | 'content'
@@ -256,6 +260,7 @@ const GOLD_PROMPT_BY_KEY: Record<GoldExampleKey, string> = {
   table: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
   calendar: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR,
   timeline: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
+  kanban: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN,
   dashboard: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   workflow: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   content: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
@@ -275,6 +280,7 @@ const LIST_DETAIL_COVERS = ['collection', 'detail'] as const
 function collectionBodyKey(options?: GoldExamplePickerOptions): GoldExampleKey {
   if (options?.needsCalendar) return 'calendar'
   if (options?.needsTimeline) return 'timeline'
+  if (options?.needsKanban) return 'kanban'
   if (options?.needsTables) return 'table'
   return 'collection'
 }

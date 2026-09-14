@@ -24,8 +24,8 @@ const VISUAL_SYSTEM_PROMPT = [
   'screens[] is one entry per distinct screen in the images (home, results, detail). inferredPath is kebab-case. archetype is collection | detail | task | results | dashboard | workflow | content | workspace. representation is list | table | cards. region is navigator | primary | inspector | auxiliary.',
   'visibleCopy is headings, labels, helper text, and empty-state copy you can read. fields[] are form controls. ctas[] are button labels.',
   'layout.shell is minimal | none | tabs | sidebar | workspace. density is compact | comfortable | roomy. colorScheme is light | dark | system. visualTone is professional | friendly | premium | technical | editorial. brandColor is a #RRGGBB accent, only when clearly visible.',
-  'catalogMapping maps observed widgets onto Arena catalog types (Page, Section, Stack, Grid, Columns, Workspace, AppHeader, PageHeader, Card, Table, Repeat, Stat, Form fields, Chat, Chart, …).',
-  'unrepresentable lists widgets Arena cannot reproduce (custom kanban, glassmorphism, illustrations, unique marketing layouts). closestCatalogType is the nearest catalog type when one exists.',
+  'catalogMapping maps observed widgets onto Arena catalog types (Page, Section, Stack, Grid, Columns, Workspace, AppHeader, PageHeader, Card, Table, Repeat, Stat, Kanban, Filmstrip, List, Form fields, Chat, Chart, …).',
+  'unrepresentable lists widgets Arena cannot reproduce (glassmorphism, illustrations, unique marketing layouts, Gantt). closestCatalogType is the nearest catalog type when one exists.',
   'Do not invent product features, pages, or API keys the screenshot does not show. Do not emit a sitemap beyond inferredPath, a manifest, or CSS.',
 ].join('\n')
 

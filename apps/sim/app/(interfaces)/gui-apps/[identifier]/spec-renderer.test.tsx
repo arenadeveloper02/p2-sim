@@ -5024,6 +5024,129 @@ describe('SpecRenderer', () => {
       expect(container.textContent).toContain('Two')
     })
 
+    it('renders Kanban columns and Filmstrip chips', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['board', 'hours'] },
+          board: {
+            type: 'Kanban',
+            props: {
+              statePath: 'tasks',
+              groupField: 'status',
+              titleField: 'title',
+              columns: 'Todo,Done',
+            },
+            children: [],
+          },
+          hours: {
+            type: 'Filmstrip',
+            props: {
+              statePath: 'hourly',
+              titleField: 'time',
+              subtitleField: 'temperature_2m',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          tasks: [
+            { id: '1', title: 'Draft', status: 'Todo' },
+            { id: '2', title: 'Ship', status: 'Done' },
+          ],
+          hourly: [{ time: '09:00', temperature_2m: 21 }],
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-kanban"]')).toBeTruthy()
+      expect(container.querySelector('[data-testid="gui-filmstrip"]')).toBeTruthy()
+      expect(container.textContent).toContain('Draft')
+      expect(container.textContent).toContain('09:00')
+      const chip = Array.from(container.querySelectorAll('[data-testid="gui-filmstrip"] button'))[0]
+      act(() => {
+        chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('renders a bound List and maps weather_code onto a catalog Icon', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['list', 'icon'] },
+          list: {
+            type: 'List',
+            props: { statePath: 'places', titleField: 'name', bodyField: 'region' },
+            children: [],
+          },
+          icon: {
+            type: 'Icon',
+            props: { name: null, statePath: 'weather_code', well: 'none' },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          places: [{ name: 'Austin', region: 'Texas' }],
+          weather_code: 61,
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-collection-list"]')).toBeTruthy()
+      expect(container.textContent).toContain('Austin')
+      const row = container.querySelector('[data-testid="gui-collection-list"] button')
+      act(() => {
+        row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('debounces a live SearchField into the declared action', () => {
+      vi.useFakeTimers()
+      try {
+        const spec: Spec = {
+          root: 'page',
+          elements: {
+            page: { type: 'Page', props: { title: 'Home' }, children: ['search'] },
+            search: {
+              type: 'SearchField',
+              props: {
+                name: 'query',
+                placeholder: 'City',
+                actionId: 'geocode',
+                live: true,
+                submitLabel: 'Search',
+              },
+              children: [],
+            },
+          },
+        }
+        const { container, onRunAction } = render({ spec })
+        const input = container.querySelector('input[name="query"]') as HTMLInputElement
+        const setValue = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value'
+        )?.set
+        act(() => {
+          setValue?.call(input, 'Austin')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+        expect(onRunAction).not.toHaveBeenCalled()
+        act(() => {
+          vi.advanceTimersByTime(280)
+        })
+        expect(onRunAction).toHaveBeenCalledWith(
+          'geocode',
+          expect.objectContaining({ query: 'Austin' })
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('splices reorderable table rows with Alt+Arrow', () => {
       const spec: Spec = {
         root: 'page',

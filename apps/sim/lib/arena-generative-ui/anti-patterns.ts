@@ -14,7 +14,7 @@ export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'tabs — Never use Tabs for unrelated actions. Tabs are two or more peer destinations (Label|path). Same-page result panels are Chip setValue — one Chip per view in a horizontal row above the panels (left vertical rail only when the brief asks), never after DataText or in a Card footer. Never duplicate brand and muted Chips for selected state; the host paints the active Chip.',
   'disclose — Never expand a Repeat row with selectItem. FAQ, criteria, and justification lists are Disclosure inside Repeat. Never emit two copies (open and closed) or Icon chevrons; the host paints expand chrome. Not Drawer and not History Open.',
   'cards — Never nest Cards unnecessarily. Card is one conceptual group or a Repeat item. Do not wrap every Section in a Card.',
-  'map-tree-carousel — Never fake a map with Image. Never unroll nested folders as Repeat of Repeat. Never Repeat Images for a named carousel. Never unroll a timeline as a dated Repeat.',
+  'map-tree-carousel — Never fake a map with Image. Never unroll nested folders as Repeat of Repeat. Never Repeat Images for a named carousel. Never unroll a timeline as a dated Repeat. Never unroll a kanban as grouped Repeat. Never unroll an hourly strip as a wrapping Grid — that is Filmstrip.',
   'calls — Never duplicate API calls. One actionId per job. A results page must not onLoad the same CTA that already navigated there.',
   'nav — Never create navigation without a destination. NavLink.to / Button.navigateTo must be a page path. Do not use href for an in-app page.',
   'loading — Never show loading indefinitely without recovery. Bind statePath; the host skeletons, Chat typing dots, Refresh, and Retry. Do not emit a Spinner or dancing-dots loader.',
@@ -24,5 +24,5 @@ export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'dead — Never generate dead buttons. Every Button needs actionId, navigateTo, href, selectItem, clearItem, setValue (to open a Modal/Drawer), copyContent, or downloadPdf. Labels Copy Markdown / Download PDF count. SubmitButton needs a Form or actionId.',
   'pages — Never create pagination without enough data. Load more only when the binding declares pagination, with showWhen "hasMore". Do not invent a second next-page action.',
   'filters — Never create a Filter that does not affect data. Name Filter children after collection columns (host filters locally) or query fields the collection onLoad / CTA actually sends.',
-  'search — Never create a SearchField that does not modify the collection. Omit actionId to filter the on-page Table/Repeat; with actionId, bind the destination Repeat, Table, or DataText to that declared action.',
+  'search — Never create a SearchField that does not modify the collection. Omit actionId to filter the on-page Table/Repeat; with actionId, bind the destination Repeat, Table, List, or DataText to that declared action. live true runs the same action as the user types.',
 ].join('\n')

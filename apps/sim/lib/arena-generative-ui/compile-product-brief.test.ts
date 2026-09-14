@@ -28,12 +28,13 @@ describe('compileProductBrief', () => {
 
     expect(compiled.honorPrompt).toContain('COMPILED HONOR LIST')
     expect(compiled.honorPrompt).toContain('Job is a dashboard')
-    expect(compiled.honorPrompt).toContain('Chart')
-    expect(compiled.honorPrompt).toContain('temperature_2m')
+    expect(compiled.honorPrompt).toContain('Filmstrip')
     expect(compiled.honorPrompt).toContain('SearchField')
+    expect(compiled.honorPrompt).toContain('live true')
     expect(compiled.honorPrompt).toContain('Do not emit a Card that wraps Repeat of Cards')
     expect(compiled.honorPrompt).toContain('Do not plan browser geolocation')
-    expect(compiled.honorPrompt).toContain('Do not emit weather icons')
+    expect(compiled.honorPrompt).toContain('catalog Icon')
+    expect(compiled.honorPrompt).toContain('weather_code')
     expect(compiled.honorPrompt).toContain('catalog json-render')
     expect(compiled.adoptedChanges.map((change) => change.code).sort()).toEqual(
       [
@@ -42,7 +43,7 @@ describe('compileProductBrief', () => {
         'product-drop',
         'product-drop',
         'product-drop',
-        'product-drop',
+        'product-map',
         'product-map',
         'product-map',
         'product-map',
@@ -62,7 +63,7 @@ describe('compileProductBrief', () => {
           adopted: expect.stringContaining('SearchField'),
         }),
         expect.objectContaining({
-          code: 'product-drop',
+          code: 'product-map',
           asked: expect.stringContaining('Weather icons'),
         }),
         expect.objectContaining({

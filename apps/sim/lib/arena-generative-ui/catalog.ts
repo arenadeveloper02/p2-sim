@@ -1,6 +1,9 @@
 import { defineCatalog } from '@json-render/core'
 import { schema as reactSchema } from '@json-render/react/schema'
 import { z } from 'zod'
+import { ARENA_GENERATIVE_CATALOG_ICON_NAMES } from '@/lib/arena-generative-ui/catalog-icon'
+
+const catalogIconEnum = z.enum(ARENA_GENERATIVE_CATALOG_ICON_NAMES)
 
 function formFieldProps<T extends z.ZodRawShape>(extra: T) {
   return z.object({
@@ -74,7 +77,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use Calendar when the brief asks for a month or week plot of dated rows. Use Timeline when chronological order is the body. Use Map for lat/lng pins, Tree for nested folders, Carousel for a cycling gallery. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use List when rows are primarily a title (optional body) with no Card chrome. Use Calendar when the brief asks for a month or week plot of dated rows. Use Timeline when chronological order is the body. Use Map for lat/lng pins, Tree for nested folders, Carousel for a cycling gallery, Kanban for status columns, Filmstrip for a horizontal hourly strip. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
     },
     Columns: {
       props: z.object({
@@ -106,34 +109,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     AppHeader: {
       props: z.object({
         title: z.string(),
-        icon: z
-          .enum([
-            'search',
-            'shield',
-            'file',
-            'chart',
-            'building',
-            'check',
-            'spark',
-            'users',
-            'globe',
-            'message',
-            'link',
-            'inbox',
-            'calendar',
-            'star',
-            'trend',
-            'plus',
-            'pencil',
-            'trash',
-            'download',
-            'copy',
-            'filter',
-            'upload',
-            'settings',
-            'more',
-          ])
-          .nullable(),
+        icon: catalogIconEnum.nullable(),
       }),
       slots: ['default'],
       description:
@@ -294,7 +270,28 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Cycles slides of a host-state array at statePath. srcField is the image URL key (default src/url/image); titleField is the caption. Optional children are static slides when there is no array — do not wrap Repeat. The host owns prev/next. Dummy/local: seed 3–6 {src, title} rows. Not autoplay, not a card grid (that is Repeat in Grid).',
+        'Cycles slides of a host-state array at statePath. srcField is the image URL key (default src/url/image); titleField is the caption. Optional children are static slides when there is no array — do not wrap Repeat. The host owns prev/next. Dummy/local: seed 3–6 {src, title} rows. Not autoplay, not a card grid (that is Repeat in Grid). Not a horizontal row of hourly chips (that is Filmstrip).',
+    },
+    Kanban: {
+      props: z.object({
+        statePath: z.string(),
+        groupField: z.string().nullable(),
+        titleField: z.string().nullable(),
+        columns: z.string().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Status-column board of a host-state array at statePath. groupField is the lane key (default status/column/stage). titleField is the card label (default name/title). columns is an optional comma-separated lane order; extra values become extra lanes; empty group is Unassigned. Clicking a card copies the row like Repeat selectItem. Dummy/local: seed 4–8 rows with a status. Not drag-and-drop, not WIP limits. Use when representation is kanban — do not degrade to grouped Repeat.',
+    },
+    Filmstrip: {
+      props: z.object({
+        statePath: z.string(),
+        titleField: z.string().nullable(),
+        subtitleField: z.string().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Horizontal scrolling row of compact chips from a host-state array at statePath. titleField is the chip label (default time/title/name); subtitleField is a second line (temperature, value). Clicking a chip copies the row like Repeat selectItem. Use for hourly/daily strips. Not Carousel (images), not Chart (axes), not a wrapping Grid of Cards. Dummy/local: seed 6–12 rows.',
     },
     Stat: {
       props: z.object({
@@ -341,34 +338,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         title: z.string(),
         body: z.string().nullable(),
-        icon: z
-          .enum([
-            'search',
-            'file',
-            'chart',
-            'shield',
-            'building',
-            'check',
-            'spark',
-            'users',
-            'globe',
-            'message',
-            'link',
-            'inbox',
-            'calendar',
-            'star',
-            'trend',
-            'plus',
-            'pencil',
-            'trash',
-            'download',
-            'copy',
-            'filter',
-            'upload',
-            'settings',
-            'more',
-          ])
-          .nullable(),
+        icon: catalogIconEnum.nullable(),
       }),
       slots: ['default'],
       description:
@@ -481,9 +451,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         actionId: z.string().nullable(),
         suggestions: z.string().nullable(),
         submitLabel: z.string().nullable(),
+        live: z.boolean().nullable(),
       }),
       description:
-        'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a manifest.actions key (declared apiKey, or dummy/local with no apiKey) when this field is not inside a Form; inside a Form the parent submits. suggestions is a comma-separated list of chips that fill the field. Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
+        'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a manifest.actions key (declared apiKey, or dummy/local with no apiKey) when this field is not inside a Form; inside a Form the parent submits. live true plus actionId runs that action as the user types (host debounce, min 2 characters) — use for geocode/typeahead. suggestions is a comma-separated list of chips that fill the field (static; live hits bind a Repeat/List on the page). Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
     },
     Chip: {
       props: z.object({
@@ -500,36 +471,12 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     },
     Icon: {
       props: z.object({
-        name: z.enum([
-          'search',
-          'file',
-          'chart',
-          'shield',
-          'building',
-          'check',
-          'spark',
-          'users',
-          'globe',
-          'message',
-          'link',
-          'inbox',
-          'calendar',
-          'star',
-          'trend',
-          'plus',
-          'pencil',
-          'trash',
-          'download',
-          'copy',
-          'filter',
-          'upload',
-          'settings',
-          'more',
-        ]),
+        name: catalogIconEnum.nullable(),
+        statePath: z.string().nullable(),
         well: z.enum(['circle', 'square', 'none']).nullable(),
       }),
       description:
-        'Catalog icon. well "circle" or "square" paints a 40px brand-tinted well with a 20px icon — the feature-card mark. well "none" is the bare glyph.',
+        'Catalog icon. name is a closed glyph (search, chart, sun, cloud-rain, …). statePath reads a host value: a catalog name string, or a numeric WMO weather_code the host maps to sun/cloud/cloud-rain/cloud-snow/cloud-lightning. well "circle" or "square" paints a 40px brand-tinted well with a 20px icon — the feature-card mark. well "none" is the bare glyph.',
     },
     Avatar: {
       props: z.object({
@@ -716,9 +663,14 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     List: {
       props: z.object({
         ordered: z.boolean().nullable(),
+        statePath: z.string().nullable(),
+        titleField: z.string().nullable(),
+        bodyField: z.string().nullable(),
+        emptyText: z.string().nullable(),
       }),
       slots: ['default'],
-      description: 'List container; children should be ListItem',
+      description:
+        'Entity list or static bullets. Bound: statePath on a host-state array, titleField for the row title, optional bodyField for a second line. Clicking a row copies it like Repeat selectItem. Use when representation is list and rows are primarily text — Repeat of Cards is cards, Repeat of Disclosure is FAQ. Static: omit statePath; children are ListItem. Dummy/local bound lists seed 4–8 rows.',
     },
     ListItem: {
       props: z.object({
@@ -856,6 +808,8 @@ export const ARENA_GENERATIVE_CATALOG_FAMILIES = {
     'Map',
     'Tree',
     'Carousel',
+    'Kanban',
+    'Filmstrip',
     'Filter',
     'Disclosure',
     'Avatar',

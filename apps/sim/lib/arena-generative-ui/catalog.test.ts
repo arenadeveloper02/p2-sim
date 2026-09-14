@@ -23,6 +23,8 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Map',
       'Tree',
       'Carousel',
+      'Kanban',
+      'Filmstrip',
       'SubmitButton',
       'Tabs',
       'PageHeader',
@@ -141,6 +143,8 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Map')).toBe(true)
     expect(isArenaGenerativeCatalogType('Tree')).toBe(true)
     expect(isArenaGenerativeCatalogType('Carousel')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Kanban')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Filmstrip')).toBe(true)
     expect(isArenaGenerativeCatalogType('Combobox')).toBe(true)
     expect(isArenaGenerativeCatalogType('FileInput')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
@@ -161,6 +165,8 @@ describe('resolveCatalogComponentNames', () => {
     expect(names.has('Map')).toBe(true)
     expect(names.has('Tree')).toBe(true)
     expect(names.has('Carousel')).toBe(true)
+    expect(names.has('Kanban')).toBe(true)
+    expect(names.has('Filmstrip')).toBe(true)
     expect(names.has('Form')).toBe(true)
     expect(names.has('WorkingCard')).toBe(false)
     expect(names.has('Workspace')).toBe(false)

@@ -17,6 +17,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
@@ -29,6 +30,7 @@ import {
   goldCollectionManifest,
   goldContentManifest,
   goldDashboardManifest,
+  goldKanbanManifest,
   goldListDetailManifest,
   goldTableManifest,
   goldTimelineManifest,
@@ -178,6 +180,9 @@ describe('per-archetype gold examples', () => {
     )
     expect(goldExamplePromptForArchetype('collection', { needsTimeline: true })).toBe(
       ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE
+    )
+    expect(goldExamplePromptForArchetype('collection', { needsKanban: true })).toBe(
+      ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN
     )
     expect(goldExamplePromptForArchetype('collection', { needsTables: true })).toBe(
       ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE
@@ -381,6 +386,17 @@ describe('per-archetype gold examples', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE).toContain('Do not invent API keys')
   })
 
+  it('validates the kanban collection gold', () => {
+    const result = validateArenaGenerativeManifest(goldKanbanManifest, {
+      apiBindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+    expect(JSON.stringify(goldKanbanManifest)).toContain('"Kanban"')
+    expect(JSON.stringify(goldKanbanManifest.actions.load_tasks)).not.toContain('apiKey')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN).toContain('Do not invent API keys')
+  })
+
   it('validates the list-detail gold', () => {
     const result = validateArenaGenerativeManifest(goldListDetailManifest, {
       apiBindings: [],
@@ -494,6 +510,7 @@ describe('per-archetype gold examples', () => {
       goldAgentShellManifest,
       goldCalendarManifest,
       goldTimelineManifest,
+      goldKanbanManifest,
       goldTableManifest,
     ]
     for (const manifest of manifests) {

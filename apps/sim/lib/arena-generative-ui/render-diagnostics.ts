@@ -12,6 +12,11 @@ const BOUND_TYPES = new Set([
   'ProgressBar',
   'Sparkline',
   'Chart',
+  'Calendar',
+  'Timeline',
+  'Kanban',
+  'Filmstrip',
+  'List',
 ])
 
 export interface RenderDiagnostic {

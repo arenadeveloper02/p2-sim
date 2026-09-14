@@ -36,6 +36,21 @@ import {
   type TreeNode,
 } from '@/lib/arena-generative-ui/gui-tree'
 import {
+  collectionListRowsFromCollection,
+  defaultCollectionListBodyField,
+  defaultCollectionListTitleField,
+} from '@/lib/arena-generative-ui/gui-collection-list'
+import {
+  defaultFilmstripSubtitleField,
+  defaultFilmstripTitleField,
+  filmstripSlidesFromCollection,
+} from '@/lib/arena-generative-ui/gui-filmstrip'
+import {
+  defaultKanbanGroupField,
+  defaultKanbanTitleField,
+  kanbanColumnsForCollection,
+} from '@/lib/arena-generative-ui/gui-kanban'
+import {
   defaultTimelineDateField,
   defaultTimelineTitleField,
   timelineItemsForCollection,
@@ -509,5 +524,203 @@ export function GuiHostTimeline({
         </div>
       ) : null}
     </div>
+  )
+}
+
+interface GuiHostKanbanProps {
+  items: readonly unknown[]
+  groupField?: string
+  titleField?: string
+  columns?: string
+  emptyText: string
+  busy?: boolean
+  onSelectItem?: (item: unknown, index: number) => void
+}
+
+export function GuiHostKanban({
+  items,
+  groupField,
+  titleField,
+  columns,
+  emptyText,
+  busy,
+  onSelectItem,
+}: GuiHostKanbanProps) {
+  const resolvedGroup = groupField || defaultKanbanGroupField(items)
+  const resolvedTitle = titleField || defaultKanbanTitleField(items, resolvedGroup)
+  const lanes = kanbanColumnsForCollection(items, resolvedGroup, resolvedTitle, columns)
+  const headingId = useId()
+
+  if (items.length === 0) {
+    return (
+      <p data-testid='empty-state' className={BOUND_EMPTY_CLASS}>
+        {emptyText}
+      </p>
+    )
+  }
+
+  return (
+    <div
+      data-testid='gui-kanban'
+      aria-busy={busy || undefined}
+      aria-labelledby={headingId}
+      className='flex w-full min-w-0 gap-3 overflow-x-auto pb-1'
+    >
+      <p id={headingId} className='sr-only'>
+        Kanban
+      </p>
+      {lanes.map((lane) => (
+        <section
+          key={lane.id}
+          data-testid='gui-kanban-column'
+          className={cn(SURFACE_CLASS, 'w-64 shrink-0')}
+        >
+          <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
+            {lane.title}
+            <span className='ml-1 font-normal'>({lane.cards.length})</span>
+          </p>
+          <ul className='flex flex-col gap-2'>
+            {lane.cards.map((card) => (
+              <li key={card.index}>
+                <button
+                  type='button'
+                  className='w-full rounded-[var(--gui-radius-sm,8px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-3 py-2 text-left text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]'
+                  onClick={() => onSelectItem?.(card.item, card.index)}
+                >
+                  {card.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+interface GuiHostFilmstripProps {
+  items: readonly unknown[]
+  titleField?: string
+  subtitleField?: string
+  emptyText: string
+  busy?: boolean
+  onSelectItem?: (item: unknown, index: number) => void
+}
+
+export function GuiHostFilmstrip({
+  items,
+  titleField,
+  subtitleField,
+  emptyText,
+  busy,
+  onSelectItem,
+}: GuiHostFilmstripProps) {
+  const resolvedTitle = titleField || defaultFilmstripTitleField(items)
+  const resolvedSubtitle =
+    subtitleField || defaultFilmstripSubtitleField(items, resolvedTitle)
+  const slides = filmstripSlidesFromCollection(items, resolvedTitle, resolvedSubtitle)
+  const headingId = useId()
+
+  if (items.length === 0) {
+    return (
+      <p data-testid='empty-state' className={BOUND_EMPTY_CLASS}>
+        {emptyText}
+      </p>
+    )
+  }
+
+  return (
+    <div
+      data-testid='gui-filmstrip'
+      aria-busy={busy || undefined}
+      aria-labelledby={headingId}
+      className='flex w-full min-w-0 gap-2 overflow-x-auto pb-1'
+    >
+      <p id={headingId} className='sr-only'>
+        Filmstrip
+      </p>
+      {slides.map((slide) => (
+        <button
+          key={slide.index}
+          type='button'
+          className='w-28 shrink-0 rounded-[var(--gui-radius-sm,8px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-3 py-2 text-left hover:bg-[var(--gui-canvas,#f7f8f9)]'
+          onClick={() => onSelectItem?.(slide.item, slide.index)}
+        >
+          <span className='block truncate font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+            {slide.title}
+          </span>
+          {slide.subtitle ? (
+            <span className='mt-1 block truncate text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)]'>
+              {slide.subtitle}
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+interface GuiHostCollectionListProps {
+  items: readonly unknown[]
+  titleField?: string
+  bodyField?: string
+  emptyText: string
+  busy?: boolean
+  ordered?: boolean
+  onSelectItem?: (item: unknown, index: number) => void
+}
+
+export function GuiHostCollectionList({
+  items,
+  titleField,
+  bodyField,
+  emptyText,
+  busy,
+  ordered,
+  onSelectItem,
+}: GuiHostCollectionListProps) {
+  const resolvedTitle = titleField || defaultCollectionListTitleField(items)
+  const resolvedBody = bodyField || defaultCollectionListBodyField(items, resolvedTitle)
+  const rows = collectionListRowsFromCollection(items, resolvedTitle, resolvedBody)
+  const headingId = useId()
+  const Tag = ordered ? 'ol' : 'ul'
+
+  if (items.length === 0) {
+    return (
+      <p data-testid='empty-state' className={BOUND_EMPTY_CLASS}>
+        {emptyText}
+      </p>
+    )
+  }
+
+  return (
+    <Tag
+      data-testid='gui-collection-list'
+      aria-busy={busy || undefined}
+      aria-labelledby={headingId}
+      className='flex w-full min-w-0 flex-col gap-1'
+    >
+      <span id={headingId} className='sr-only'>
+        List
+      </span>
+      {rows.map((row) => (
+        <li key={row.index}>
+          <button
+            type='button'
+            className='w-full rounded-[var(--gui-radius-sm,8px)] px-2 py-2 text-left hover:bg-[var(--gui-canvas,#f7f8f9)]'
+            onClick={() => onSelectItem?.(row.item, row.index)}
+          >
+            <span className='block truncate text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)]'>
+              {row.title}
+            </span>
+            {row.body ? (
+              <span className='mt-0.5 block truncate text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+                {row.body}
+              </span>
+            ) : null}
+          </button>
+        </li>
+      ))}
+    </Tag>
   )
 }

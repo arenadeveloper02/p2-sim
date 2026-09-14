@@ -2066,6 +2066,81 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR = goldPrompt(
   }
 )
 
+const kanbanHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Board', backgroundColor: null },
+      children: ['app_header', 'section'],
+    },
+    app_header: goldAppHeader('Board'),
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'board'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Work',
+        subtitle: 'Cards in status columns.',
+        kicker: null,
+        align: 'start',
+      },
+      children: [],
+    },
+    board: {
+      type: 'Kanban',
+      props: {
+        statePath: 'tasks',
+        groupField: 'status',
+        titleField: 'title',
+        columns: 'Todo,Doing,Done',
+        emptyText: 'No tasks.',
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldKanbanManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Board',
+      spec: kanbanHomeSpec,
+      onLoad: ['load_tasks'],
+    },
+  },
+  actions: {
+    load_tasks: {
+      onSuccess: {
+        setState: {
+          tasks: [
+            { id: 't1', title: 'Draft brief', status: 'Todo' },
+            { id: 't2', title: 'Review copy', status: 'Doing' },
+            { id: 't3', title: 'Ship', status: 'Done' },
+            { id: 't4', title: 'Backlog' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN = goldPrompt(
+  'kanban',
+  'One collection page whose representation is kanban. onLoad setState seeds 4 dummy tasks including one without status (Unassigned). Emit Kanban with groupField and titleField — not grouped Repeat. Clicking a card copies the row like Repeat selectItem. Match REPRESENTATION, not this body, when the brief picked table or cards. Do not invent API keys.',
+  {
+    title: 'Board',
+    content: 'Group work into status columns.',
+    manifest: goldKanbanManifest,
+  }
+)
+
 const timelineHomeSpec: Spec = {
   root: 'page',
   elements: {

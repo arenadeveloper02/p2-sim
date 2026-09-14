@@ -34,13 +34,13 @@ const validBrief = {
     brandColor: '#1a73e8',
   },
   catalogMapping: [{ observed: 'data grid', catalogType: 'Table' }],
-  unrepresentable: [
-    {
-      observed: 'custom kanban board',
-      closestCatalogType: 'Table',
-      reason: 'No kanban catalog type',
-    },
-  ],
+    unrepresentable: [
+      {
+        observed: 'glassmorphism hero',
+        closestCatalogType: 'Section',
+        reason: 'No custom CSS materials',
+      },
+    ],
 }
 
 describe('parseArenaGenerativeVisualBrief', () => {
@@ -56,10 +56,11 @@ describe('parseArenaGenerativeVisualBrief', () => {
       ...validBrief,
       catalogMapping: [
         { observed: 'grid', catalogType: 'Table' },
-        { observed: 'kanban', catalogType: 'KanbanBoard' },
+        { observed: 'kanban', catalogType: 'Kanban' },
+        { observed: 'widget', catalogType: 'UnknownWidget' },
       ],
     })
-    expect(parsed?.catalogMapping.map((item) => item.catalogType)).toEqual(['Table'])
+    expect(parsed?.catalogMapping.map((item) => item.catalogType)).toEqual(['Table', 'Kanban'])
   })
 
   it('rejects an empty screens list', () => {
@@ -111,7 +112,7 @@ describe('visual brief formatters', () => {
 
   it('formats catalog gaps for preview', () => {
     const parsed = parseArenaGenerativeVisualBrief(validBrief)
-    expect(formatVisualBriefMatchNotes(parsed!)).toContain('custom kanban board → Table')
+    expect(formatVisualBriefMatchNotes(parsed!)).toContain('glassmorphism hero → Section')
     expect(MATCH_SCREENSHOT_USER_INPUT).toContain('matches the uploaded screenshot')
   })
 })

@@ -42,13 +42,7 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
 export const MAX_NON_REPEAT_CARDS_PER_PAGE = 8
 
 /** LLM-invented collection types with a catalog equivalent (Repeat / Chart). */
-export const INVENTED_REPRESENTATION_TYPES = new Set([
-  'Kanban',
-  'List',
-  'Filmstrip',
-  'HorizontalScroll',
-  'KanbanBoard',
-])
+export const INVENTED_REPRESENTATION_TYPES = new Set<string>([])
 
 export interface InventedRepresentation {
   id: string
