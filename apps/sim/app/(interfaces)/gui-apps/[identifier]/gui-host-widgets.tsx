@@ -10,6 +10,10 @@ import {
 } from 'react'
 import { cn } from '@sim/emcn'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  GUI_BOUND_EMPTY_CLASS,
+  GUI_WIDGET_SURFACE_CLASS,
+} from '@/app/(interfaces)/gui-apps/gui-chrome'
 import { formatBoundDateDisplay } from '@/lib/arena-generative-ui/bound-date-format'
 import {
   carouselSlidesFromCollection,
@@ -37,11 +41,8 @@ import {
   timelineItemsForCollection,
 } from '@/lib/arena-generative-ui/gui-timeline'
 
-const SURFACE_CLASS =
-  'flex w-full flex-col gap-3 rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-4'
-
-const BOUND_EMPTY_CLASS =
-  'col-span-full py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+const SURFACE_CLASS = GUI_WIDGET_SURFACE_CLASS
+const BOUND_EMPTY_CLASS = GUI_BOUND_EMPTY_CLASS
 
 interface GuiHostMapProps {
   items: readonly unknown[]

@@ -3,6 +3,14 @@
 import { type KeyboardEvent, useEffect, useRef } from 'react'
 import { cn } from '@sim/emcn'
 import { Loader2 } from 'lucide-react'
+import {
+  GUI_BUTTON_BASE_CLASS,
+  GUI_BUTTON_FILLED_DANGER_CLASS,
+  GUI_BUTTON_SIZE_CLASSES,
+  GUI_OVERLAY_DIALOG_CLASS,
+  GUI_OVERLAY_SCRIM_CLASS,
+  GuiButton,
+} from '@/app/(interfaces)/gui-apps/gui-chrome'
 import { GENERATIVE_APP_SUCCESS_TOAST_MS } from '@/lib/arena-generative-ui/action-runtime'
 
 interface ActionSuccessToastProps {
@@ -81,17 +89,17 @@ export function DestructiveConfirmDialog({ onCancel, onConfirm }: DestructiveCon
   }
 
   return (
-    <div
-      className='fixed inset-0 z-30 flex items-center justify-center bg-[rgb(44_45_51_/_40%)] p-4'
-      data-testid='destructive-confirm-backdrop'
-    >
+    <div className={GUI_OVERLAY_SCRIM_CLASS} data-testid='destructive-confirm-backdrop'>
       <div
         ref={dialogRef}
         role='dialog'
         aria-modal='true'
         aria-labelledby='destructive-confirm-title'
         data-testid='destructive-confirm'
-        className='w-full max-w-sm rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-4 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+        className={cn(
+          GUI_OVERLAY_DIALOG_CLASS,
+          'w-full max-w-sm rounded-[var(--gui-radius,12px)] p-4'
+        )}
         onKeyDown={onKeyDown}
       >
         <h2
@@ -104,24 +112,17 @@ export function DestructiveConfirmDialog({ onCancel, onConfirm }: DestructiveCon
           Continue with this action?
         </p>
         <div className='mt-4 flex justify-end gap-2'>
-          <button
-            type='button'
-            data-testid='destructive-confirm-cancel'
-            onClick={onCancel}
-            className={cn(
-              'inline-flex h-10 items-center rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] px-4 font-medium text-[var(--gui-text,#2c2d33)]',
-              'hover:bg-[var(--gui-canvas,#f7f8f9)] focus-visible:outline-2 focus-visible:outline-[var(--gui-brand,#1a73e8)] focus-visible:outline-offset-2'
-            )}
-          >
+          <GuiButton data-testid='destructive-confirm-cancel' onClick={onCancel}>
             Cancel
-          </button>
+          </GuiButton>
           <button
             type='button'
             data-testid='destructive-confirm-accept'
             onClick={onConfirm}
             className={cn(
-              'inline-flex h-10 items-center rounded-[var(--gui-radius,12px)] bg-[var(--gui-danger,#f31a1a)] px-4 font-medium text-white',
-              'hover:bg-[var(--gui-danger-hover,#c21515)] focus-visible:outline-2 focus-visible:outline-[var(--gui-brand,#1a73e8)] focus-visible:outline-offset-2'
+              GUI_BUTTON_BASE_CLASS,
+              GUI_BUTTON_SIZE_CLASSES.md,
+              GUI_BUTTON_FILLED_DANGER_CLASS
             )}
           >
             Continue
@@ -144,19 +145,20 @@ interface ActionRefreshButtonProps {
 export function ActionRefreshButton({ onRefresh, pending = false }: ActionRefreshButtonProps) {
   return (
     <div className='flex justify-end px-6 py-2'>
-      <button
-        type='button'
+      <GuiButton
+        variant='ghost'
+        size='sm'
+        className='gap-1.5'
         data-testid='action-refresh'
         aria-busy={pending || undefined}
         disabled={pending}
         onClick={onRefresh}
-        className='inline-flex items-center gap-1.5 rounded-[var(--gui-radius,12px)] px-3 py-1 font-medium text-[var(--gui-text,#2c2d33)] text-sm hover:bg-[var(--gui-canvas,#f7f8f9)] focus-visible:outline-2 focus-visible:outline-[var(--gui-brand,#1a73e8)] focus-visible:outline-offset-2 disabled:opacity-60'
       >
         {pending ? (
           <Loader2 className='size-3 animate-spin text-[var(--gui-text-muted,#575a66)]' aria-hidden />
         ) : null}
         Refresh
-      </button>
+      </GuiButton>
     </div>
   )
 }

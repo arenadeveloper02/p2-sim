@@ -27,16 +27,37 @@ export interface ConstrainedChartTheme {
   muted: string
   border: string
   brand: string
+  series: string[]
+  axis: string
+  grid: string
+  label: string
+  tooltipBg: string
+  tooltipText: string
 }
+
+export const DEFAULT_CONSTRAINED_CHART_SERIES = [
+  '#1a73e8',
+  '#fb8145',
+  '#b364d7',
+  '#2abbf8',
+  '#ffcc02',
+  '#f8528f',
+  '#3bc884',
+  '#6d717f',
+] as const
 
 export const DEFAULT_CONSTRAINED_CHART_THEME: ConstrainedChartTheme = {
   text: '#2c2d33',
   muted: '#575a66',
   border: '#e2e3e5',
   brand: '#1a73e8',
+  series: [...DEFAULT_CONSTRAINED_CHART_SERIES],
+  axis: '#a7aab2',
+  grid: '#e2e3e5',
+  label: '#575a66',
+  tooltipBg: '#2c2d33',
+  tooltipText: '#ffffff',
 }
-
-const FALLBACK_PALETTE = ['#2ABBF8', '#00C48C', '#FFCC02', '#FA4EDF', '#FF7A45', '#5B8FF9', '#9E7FEA']
 
 export function isConstrainedChartType(value: unknown): value is ConstrainedChartType {
   return typeof value === 'string' && CONSTRAINED_CHART_TYPES.includes(value as ConstrainedChartType)
@@ -52,17 +73,24 @@ export function buildConstrainedEChartsOption(
 ): EChartsOptionLike | null {
   if (dsl.series.length === 0) return null
 
-  const palette = [theme.brand, ...FALLBACK_PALETTE]
+  const palette = theme.series.length > 0 ? theme.series : DEFAULT_CONSTRAINED_CHART_THEME.series
+  const axisColor = theme.axis || theme.border
+  const gridColor = theme.grid || theme.border
+  const labelColor = theme.label || theme.muted
   const axisCommon = {
-    axisLabel: { color: theme.muted, fontSize: 11 },
-    axisLine: { lineStyle: { color: theme.border } },
-    splitLine: { lineStyle: { color: theme.border } },
+    axisLabel: { color: labelColor, fontSize: 11 },
+    axisLine: { lineStyle: { color: axisColor } },
+    splitLine: { lineStyle: { color: gridColor } },
   }
   const showLegend = dsl.showLegend
   const base: Record<string, unknown> = {
     animation: false,
     color: palette,
-    tooltip: { trigger: dsl.chartType === 'pie' ? 'item' : 'axis' },
+    tooltip: {
+      trigger: dsl.chartType === 'pie' ? 'item' : 'axis',
+      backgroundColor: theme.tooltipBg,
+      textStyle: { color: theme.tooltipText, fontSize: 12 },
+    },
     ...(dsl.title
       ? {
           title: {
@@ -76,7 +104,7 @@ export function buildConstrainedEChartsOption(
       ? {
           legend: {
             top: dsl.title ? 28 : 0,
-            textStyle: { color: theme.muted, fontSize: 11 },
+            textStyle: { color: labelColor, fontSize: 11 },
           },
         }
       : { legend: { show: false } }),
@@ -93,7 +121,7 @@ export function buildConstrainedEChartsOption(
           name: dsl.series[0]?.name ?? 'Value',
           radius: ['38%', '68%'],
           center: ['50%', dsl.title ? '54%' : '50%'],
-          label: { color: theme.muted, fontSize: 11 },
+          label: { color: labelColor, fontSize: 11 },
           data: values.map((value, index) => ({
             name: dsl.categories[index] ?? `Item ${index + 1}`,
             value,

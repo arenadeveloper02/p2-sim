@@ -10,6 +10,12 @@ const theme = {
   muted: '#666',
   border: '#ddd',
   brand: '#1a73e8',
+  series: ['#1a73e8', '#fb8145', '#b364d7'],
+  axis: '#aaa',
+  grid: '#eee',
+  label: '#666',
+  tooltipBg: '#111',
+  tooltipText: '#fff',
 }
 
 describe('buildConstrainedEChartsOption', () => {
@@ -75,6 +81,7 @@ describe('buildConstrainedEChartsOption', () => {
       { name: 'TikTok', value: 17200 },
     ])
     expect(isEChartsOption(option)).toBe(true)
+    expect(option?.color).toEqual(theme.series)
   })
 
   it('returns null when there are no series', () => {

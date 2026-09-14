@@ -37,6 +37,7 @@ interface SpecElement {
 
 const FILTER_FIELD_TYPES = new Set([
   'Select',
+  'Combobox',
   'TextInput',
   'DateInput',
   'MultiSelect',

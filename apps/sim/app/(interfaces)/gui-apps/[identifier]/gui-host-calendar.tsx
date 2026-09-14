@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { cn } from '@sim/emcn'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { GUI_BOUND_EMPTY_CLASS } from '@/app/(interfaces)/gui-apps/gui-chrome'
 import {
   addCalendarDays,
   addCalendarMonths,
@@ -22,8 +23,7 @@ import {
 const DAY_BUTTON_CLASS =
   'flex min-h-8 w-full flex-col items-center justify-center rounded-[var(--gui-radius-sm,8px)] text-[length:var(--gui-label-size,12px)] outline-none transition-[background-color,color] duration-100 focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
 
-const BOUND_EMPTY_CLASS =
-  'col-span-full py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
+const BOUND_EMPTY_CLASS = GUI_BOUND_EMPTY_CLASS
 
 interface GuiHostMonthGridProps {
   year: number
@@ -233,7 +233,7 @@ export function GuiHostDateInput({
       {open ? (
         <div
           role='dialog'
-          className='absolute z-20 mt-1 w-[min(100%,20rem)] rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-3 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+          className='absolute z-20 mt-1 w-[min(100%,20rem)] rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-3 shadow-[var(--gui-shadow-lg,0px_4px_16px_rgba(44,45,51,0.12))]'
         >
           <GuiHostMonthGrid
             year={cursor.year}

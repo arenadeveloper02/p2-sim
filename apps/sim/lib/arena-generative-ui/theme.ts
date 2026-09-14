@@ -1,14 +1,66 @@
 import type { CSSProperties } from 'react'
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
-/** Arena DS radius: sm 8 · component 12 · lg 16. */
+/** Arena DS radius: sm 8 · component 12 · lg 16. Inner chrome steps one token down. */
 const RADIUS_PX = { sm: '8px', md: '12px', lg: '16px' } as const
+const RADIUS_SM_PX = { sm: '4px', md: '8px', lg: '12px' } as const
 
 /** Comfortable defaults; compact / roomy overlay `--gui-space-*` on the themed root. */
 const DENSITY_SPACE = {
-  compact: { md: '12px', lg: '16px', xl: '24px', '2xl': '32px' },
-  comfortable: { md: '16px', lg: '24px', xl: '32px', '2xl': '48px' },
-  roomy: { md: '24px', lg: '32px', xl: '40px', '2xl': '56px' },
+  compact: { xs: '2px', sm: '6px', md: '12px', lg: '16px', xl: '24px', '2xl': '32px' },
+  comfortable: { xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '32px', '2xl': '48px' },
+  roomy: { xs: '6px', sm: '12px', md: '24px', lg: '32px', xl: '40px', '2xl': '56px' },
+} as const
+
+const DENSITY_TYPE = {
+  compact: {
+    controlHeight: '36px',
+    controlPx: '12px',
+    displaySize: '32px',
+    displayLeading: '40px',
+    headingSize: '28px',
+    headingLeading: '36px',
+    titleSize: '20px',
+    titleLeading: '28px',
+    statSize: '32px',
+    statLeading: '40px',
+    bodySize: '14px',
+    bodyLeading: '20px',
+    labelSize: '11px',
+    labelLeading: '14px',
+  },
+  comfortable: {
+    controlHeight: '40px',
+    controlPx: '16px',
+    displaySize: '40px',
+    displayLeading: '48px',
+    headingSize: '32px',
+    headingLeading: '40px',
+    titleSize: '24px',
+    titleLeading: '32px',
+    statSize: '40px',
+    statLeading: '48px',
+    bodySize: '16px',
+    bodyLeading: '24px',
+    labelSize: '12px',
+    labelLeading: '16px',
+  },
+  roomy: {
+    controlHeight: '44px',
+    controlPx: '18px',
+    displaySize: '44px',
+    displayLeading: '52px',
+    headingSize: '36px',
+    headingLeading: '44px',
+    titleSize: '28px',
+    titleLeading: '36px',
+    statSize: '44px',
+    statLeading: '52px',
+    bodySize: '16px',
+    bodyLeading: '26px',
+    labelSize: '13px',
+    labelLeading: '18px',
+  },
 } as const
 
 export const ARENA_GENERATIVE_SPACING_TOKENS = [
@@ -143,17 +195,25 @@ export function arenaGenerativeThemeStyle(
       style['--gui-brand-hover'] = `color-mix(in srgb, ${brand} 82%, #fff)`
       style['--gui-brand-pressed'] = `color-mix(in srgb, ${brand} 68%, #fff)`
       style['--gui-brand-surface'] = `color-mix(in srgb, ${brand} 22%, #12141a)`
+      style['--gui-focus'] = `color-mix(in srgb, ${brand} 40%, transparent)`
+      style['--gui-text-on-brand'] = '#12141a'
     } else {
       style['--gui-brand-hover'] = `color-mix(in srgb, ${brand} 82%, #000)`
       style['--gui-brand-pressed'] = `color-mix(in srgb, ${brand} 68%, #000)`
       style['--gui-brand-surface'] = `color-mix(in srgb, ${brand} 10%, #fff)`
+      style['--gui-focus'] = `color-mix(in srgb, ${brand} 30%, transparent)`
+      style['--gui-text-on-brand'] = '#ffffff'
     }
   }
   if (theme.radius) {
     style['--gui-radius'] = RADIUS_PX[theme.radius]
+    style['--gui-radius-sm'] = RADIUS_SM_PX[theme.radius]
   }
   if (theme.density) {
     const space = DENSITY_SPACE[theme.density]
+    const type = DENSITY_TYPE[theme.density]
+    style['--gui-space-xs'] = space.xs
+    style['--gui-space-sm'] = space.sm
     style['--gui-space-md'] = space.md
     style['--gui-space-lg'] = space.lg
     style['--gui-space-xl'] = space.xl
@@ -161,6 +221,20 @@ export function arenaGenerativeThemeStyle(
     style['--gui-gap'] = space.md
     style['--gui-pad'] = space.md
     style['--gui-section-gap'] = space.lg
+    style['--gui-control-height'] = type.controlHeight
+    style['--gui-control-px'] = type.controlPx
+    style['--gui-display-size'] = type.displaySize
+    style['--gui-display-leading'] = type.displayLeading
+    style['--gui-heading-size'] = type.headingSize
+    style['--gui-heading-leading'] = type.headingLeading
+    style['--gui-title-size'] = type.titleSize
+    style['--gui-title-leading'] = type.titleLeading
+    style['--gui-stat-size'] = type.statSize
+    style['--gui-stat-leading'] = type.statLeading
+    style['--gui-body-size'] = type.bodySize
+    style['--gui-body-leading'] = type.bodyLeading
+    style['--gui-label-size'] = type.labelSize
+    style['--gui-label-leading'] = type.labelLeading
   }
   if (theme.font === 'serif') {
     style.fontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif'

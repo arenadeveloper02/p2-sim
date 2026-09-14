@@ -22,6 +22,15 @@ const CHAT_PROTOCOL_KEYS = ['input', 'conversationId', 'files'] as const
 
 const CONVERSATION_STORAGE_PREFIX = 'arena-gui-conversation:'
 
+function isFileShapedActionValue(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0 && value.every(isFileShapedActionValue)
+  }
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return record.type === 'file' && typeof record.data === 'string'
+}
+
 /**
  * Reserved Start names present on a workflow's inputFormat. HTTP/curl never
  * sets this — a JSON key named `input` stays a normal form field.
@@ -98,6 +107,7 @@ export function composeFormChatInput(
     if (!name || isReservedStartInputName(name)) continue
     const raw = values[name]
     if (raw === undefined || raw === null) continue
+    if (isFileShapedActionValue(raw)) continue
     const text = typeof raw === 'string' ? raw.trim() : String(raw)
     if (!text) continue
     parts.push(`${name}: ${text}`)

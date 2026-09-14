@@ -52,6 +52,10 @@ const TYPE_ALIASES: Record<string, string> = {
   ExpansionPanel: 'Disclosure',
   Dialog: 'Modal',
   Dropdown: 'Select',
+  ComboBox: 'Combobox',
+  SearchSelect: 'Combobox',
+  FileField: 'FileInput',
+  FileUpload: 'FileInput',
   FilterBar: 'Filter',
   ForEach: 'Repeat',
   GenerationStatus: 'WorkingCard',
@@ -434,6 +438,7 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
       }
       break
     case 'Select':
+    case 'Combobox':
     case 'RadioGroup':
     case 'MultiSelect':
       setProp(props, 'options', joinOptions(props.options))

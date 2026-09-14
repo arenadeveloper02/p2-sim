@@ -147,6 +147,8 @@ describe('per-archetype gold examples', () => {
     )
     expect(goldExamplePromptForArchetype('dashboard')).toContain('spacing tokens')
     expect(goldExamplePromptForArchetype('dashboard')).toContain('Card.variant')
+    expect(goldExamplePromptForArchetype('dashboard')).toContain('display size')
+    expect(goldExamplePromptForArchetype('dashboard')).toContain('Card rest shadow')
     expect(goldExamplePromptForArchetype('dashboard')).not.toContain('Watchtower')
     expect(goldExamplePromptForArchetype('collection')).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (collection)'
@@ -471,6 +473,7 @@ describe('per-archetype gold examples', () => {
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldTableManifest)).toContain('"Table"')
     expect(JSON.stringify(goldTableManifest)).toContain('"Filter"')
+    expect(JSON.stringify(goldTableManifest)).toContain('"Combobox"')
     expect(JSON.stringify(goldTableManifest)).toContain('"name":"status"')
     expect(JSON.stringify(goldTableManifest)).toContain('"AppHeader"')
     expect(JSON.stringify(goldTableManifest)).not.toContain('"Repeat"')

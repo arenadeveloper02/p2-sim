@@ -172,6 +172,17 @@ describe('collectVisibleFieldValues', () => {
       count: 4,
     })
   })
+
+  it('passes FileInput arrays through without stringifying them', () => {
+    const files = [{ type: 'file', name: 'resume.pdf', mime: 'application/pdf', data: 'data:x' }]
+    expect(
+      collectVisibleFieldValues(
+        [{ type: 'FileInput', props: { name: 'resume' } }],
+        { resume: files },
+        {}
+      )
+    ).toEqual({ resume: files })
+  })
 })
 
 describe('formValuesFromRecord', () => {

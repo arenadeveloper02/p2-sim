@@ -46,6 +46,8 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Workspace',
       'Stepper',
       'Chat',
+      'Combobox',
+      'FileInput',
     ]) {
       expect(prompt).toContain(`- ${component}: {`)
     }
@@ -139,6 +141,8 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Map')).toBe(true)
     expect(isArenaGenerativeCatalogType('Tree')).toBe(true)
     expect(isArenaGenerativeCatalogType('Carousel')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Combobox')).toBe(true)
+    expect(isArenaGenerativeCatalogType('FileInput')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
   })
 })

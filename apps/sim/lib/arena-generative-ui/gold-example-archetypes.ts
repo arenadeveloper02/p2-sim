@@ -13,6 +13,7 @@ export const GOLD_RENDER_CONTRACT = [
   'User-facing copy only — do not put implementation notes in titles or subtitles.',
   'Note the default Arena theme and result components bound by statePath.',
   'gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted.',
+  'The host paints PageHeader titles at display size and Card rest shadow. Do not wrap Card in Card.',
   'Do not copy px, hex, or CSS variables.',
 ].join(' ')
 
@@ -2169,7 +2170,7 @@ const tableHomeSpec: Spec = {
       children: ['status'],
     },
     status: {
-      type: 'Select',
+      type: 'Combobox',
       props: {
         name: 'status',
         label: 'Status',
@@ -2178,7 +2179,7 @@ const tableHomeSpec: Spec = {
         statePath: null,
         errorText: null,
         showWhen: null,
-        options: 'All, Open, Done',
+        options: 'All, Open, In progress, Blocked, Done, Cancelled',
       },
       children: [],
     },

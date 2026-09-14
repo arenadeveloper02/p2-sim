@@ -38,6 +38,9 @@ const CATALOG_TYPES = [
   'Sparkline',
   'Chip',
   'Disclosure',
+  'Select',
+  'Combobox',
+  'FileInput',
 ] as const
 
 describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {

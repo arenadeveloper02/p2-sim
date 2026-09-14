@@ -9,6 +9,7 @@ export const ARENA_GENERATIVE_FORM_FIELD_TYPES = [
   'TextInput',
   'TextArea',
   'Select',
+  'Combobox',
   'Checkbox',
   'RadioGroup',
   'NumberInput',
@@ -16,6 +17,7 @@ export const ARENA_GENERATIVE_FORM_FIELD_TYPES = [
   'MultiSelect',
   'Switch',
   'SearchField',
+  'FileInput',
 ] as const
 
 export type ArenaGenerativeFormFieldType = (typeof ARENA_GENERATIVE_FORM_FIELD_TYPES)[number]
@@ -237,8 +239,8 @@ export function resolveFieldValue(
   if (type === 'Checkbox' || type === 'Switch') {
     return parseDefaultChecked(props)
   }
-  if (type === 'MultiSelect') {
-    return parseDefaultList(props)
+  if (type === 'MultiSelect' || type === 'FileInput') {
+    return type === 'FileInput' ? [] : parseDefaultList(props)
   }
   return asString(props.defaultValue)
 }
@@ -308,7 +310,7 @@ export function isEmptyFieldValue(type: ArenaGenerativeFormFieldType, value: unk
   if (type === 'Checkbox' || type === 'Switch') {
     return !isTruthyFieldValue(value)
   }
-  if (type === 'MultiSelect') {
+  if (type === 'MultiSelect' || type === 'FileInput') {
     return !Array.isArray(value) || value.length === 0
   }
   if (value == null) return true
@@ -330,6 +332,9 @@ function coerceSubmitValue(type: ArenaGenerativeFormFieldType, value: unknown): 
   if (type === 'MultiSelect') {
     if (Array.isArray(value)) return value.map((item) => String(item))
     return parseOptionList(value)
+  }
+  if (type === 'FileInput') {
+    return Array.isArray(value) ? value : []
   }
   if (type === 'NumberInput') {
     const number = asFiniteNumber(value)

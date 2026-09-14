@@ -146,6 +146,20 @@ describe('applyChatProtocolToActionValues', () => {
       files: [{ type: 'file' }],
     })
   })
+
+  it('keeps non-reserved file-shaped fields on form submits', () => {
+    const resume = [{ type: 'file', name: 'cv.pdf', mime: 'application/pdf', data: 'data:x' }]
+    expect(
+      applyChatProtocolToActionValues(
+        { resume, files: resume, input: 'drop-me' },
+        binding,
+        'form'
+      )
+    ).toEqual({
+      resume,
+      input: 'Research ',
+    })
+  })
 })
 
 describe('chatActionValues', () => {

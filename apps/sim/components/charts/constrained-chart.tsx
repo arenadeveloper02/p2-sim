@@ -23,11 +23,28 @@ function readCssColor(style: CSSStyleDeclaration, property: string, fallback: st
 
 export function resolveGuiChartTheme(element: HTMLElement): ConstrainedChartTheme {
   const style = getComputedStyle(element)
+  const series = DEFAULT_CONSTRAINED_CHART_THEME.series.map((fallback, index) =>
+    readCssColor(style, `--gui-chart-series-${index + 1}`, fallback)
+  )
   return {
     text: readCssColor(style, '--gui-text', DEFAULT_CONSTRAINED_CHART_THEME.text),
     muted: readCssColor(style, '--gui-text-muted', DEFAULT_CONSTRAINED_CHART_THEME.muted),
     border: readCssColor(style, '--gui-border', DEFAULT_CONSTRAINED_CHART_THEME.border),
     brand: readCssColor(style, '--gui-brand', DEFAULT_CONSTRAINED_CHART_THEME.brand),
+    series,
+    axis: readCssColor(style, '--gui-chart-axis', DEFAULT_CONSTRAINED_CHART_THEME.axis),
+    grid: readCssColor(style, '--gui-chart-grid', DEFAULT_CONSTRAINED_CHART_THEME.grid),
+    label: readCssColor(style, '--gui-chart-label', DEFAULT_CONSTRAINED_CHART_THEME.label),
+    tooltipBg: readCssColor(
+      style,
+      '--gui-chart-tooltip-bg',
+      DEFAULT_CONSTRAINED_CHART_THEME.tooltipBg
+    ),
+    tooltipText: readCssColor(
+      style,
+      '--gui-chart-tooltip-text',
+      DEFAULT_CONSTRAINED_CHART_THEME.tooltipText
+    ),
   }
 }
 
@@ -47,7 +64,12 @@ export function ConstrainedChart({ dsl, height = 320, className }: ConstrainedCh
   }, [dsl])
 
   return (
-    <div ref={hostRef} className={className ?? 'w-full'} data-testid='chart'>
+    <div
+      ref={hostRef}
+      className={className ?? 'w-full'}
+      data-testid='chart'
+      data-chart-palette='colorblind-safe'
+    >
       {option ? (
         <EChartsOptionRenderer option={option} height={height} ariaLabel={label} />
       ) : (

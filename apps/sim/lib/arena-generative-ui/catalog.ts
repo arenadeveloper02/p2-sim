@@ -123,6 +123,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
             'calendar',
             'star',
             'trend',
+            'plus',
+            'pencil',
+            'trash',
+            'download',
+            'copy',
+            'filter',
+            'upload',
+            'settings',
+            'more',
           ])
           .nullable(),
       }),
@@ -155,7 +164,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Toolbar of controls that narrow a collection. Children are Select, TextInput, DateInput, or Chip. Place above Table or Repeat. Name fields after collection columns. When no filter API exists the host filters visible rows locally; otherwise fields submit with onLoad / CTA. Not a SearchField hero.',
+        'Toolbar of controls that narrow a collection. Children are Select, Combobox, TextInput, DateInput, or Chip. Place above Table or Repeat. Name fields after collection columns. When no filter API exists the host filters visible rows locally; otherwise fields submit with onLoad / CTA. Not a SearchField hero.',
     },
     Tabs: {
       props: z.object({
@@ -349,6 +358,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
             'calendar',
             'star',
             'trend',
+            'plus',
+            'pencil',
+            'trash',
+            'download',
+            'copy',
+            'filter',
+            'upload',
+            'settings',
+            'more',
           ])
           .nullable(),
       }),
@@ -498,6 +516,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
           'calendar',
           'star',
           'trend',
+          'plus',
+          'pencil',
+          'trash',
+          'download',
+          'copy',
+          'filter',
+          'upload',
+          'settings',
+          'more',
         ]),
         well: z.enum(['circle', 'square', 'none']).nullable(),
       }),
@@ -564,7 +591,14 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         options: z.string(),
       }),
       description:
-        'Dropdown; options is a comma-separated list of labels. Prefer this over RadioGroup when there are more than five choices.',
+        'Dropdown; options is a comma-separated list of labels. Prefer this over RadioGroup when there are more than five choices. Use Combobox when the list is long or the Filter is a searchable picker.',
+    },
+    Combobox: {
+      props: formFieldProps({
+        options: z.string(),
+      }),
+      description:
+        'Searchable exclusive list. Same props as Select. Use when options are long or a Filter should be a search-picker. Value is the selected label.',
     },
     RadioGroup: {
       props: formFieldProps({
@@ -611,6 +645,14 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       description:
         'On/off setting. Submits true when on. Use for preferences; use Checkbox for an acknowledgement the user must tick.',
+    },
+    FileInput: {
+      props: formFieldProps({
+        accept: z.string().nullable(),
+        multiple: z.boolean().nullable(),
+      }),
+      description:
+        'Attach files under a non-reserved name (resume, attachments). Submits an array of { type: "file", name, mime, data }. Never name this field files, input, or conversationId — Chat still owns those Start keys. accept is a native file accept string; multiple allows more than one file.',
     },
     SubmitButton: {
       props: z.object({
@@ -824,12 +866,14 @@ export const ARENA_GENERATIVE_CATALOG_FAMILIES = {
     'TextInput',
     'TextArea',
     'Select',
+    'Combobox',
     'RadioGroup',
     'MultiSelect',
     'NumberInput',
     'DateInput',
     'Checkbox',
     'Switch',
+    'FileInput',
     'SubmitButton',
     'SearchField',
   ],
@@ -1037,7 +1081,7 @@ export const ARENA_GENERATIVE_UI_THEME_RULE = [
  */
 export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'ARENA DESIGN SYSTEM',
-  'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, display titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS.',
+  'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, density-scaled controls and type, display PageHeader titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS. Combobox is the searchable Select. FileInput attaches files under a non-reserved name. Extra icons: plus, pencil, trash, download, copy, filter, upload, settings, more.',
   'DESIGN TOKENS (host-owned). Color, type, radius, and density are painted by the host. Do not set backgroundColor, color, fontFamily, or radius on elements. You may set gap and padding to a spacing token, and Card.variant to default or muted.',
   'color: background, surface, surfaceMuted, text, textMuted, border, primary, success, warning, danger — host CSS; not element props.',
   'spacing: none xs sm md lg xl 2xl — use on gap and padding only. Prefer gap "lg" between groups. Example: {"type":"Card","props":{"variant":"default","padding":"lg"}}.',

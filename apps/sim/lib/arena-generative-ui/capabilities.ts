@@ -75,7 +75,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   filter: [
     'CAPABILITY: FILTER',
-    'Narrowing an already-loaded or static collection. Put Filter children (Select, DateInput, Chip) above Table/Repeat. Name each field after a collection column (status, category). When a declared binding owns those params, they submit with onLoad / CTA. When no filter API exists, omit actionId — the host filters the visible rows locally. Workspace selection that drives another collection is not Filter chrome: give the child rows a foreign key (projectId) matching the selected row id; the host narrows that Repeat/Table. "All" / "All Categories" is unconstrained. Not a SearchField hero.',
+    'Narrowing an already-loaded or static collection. Put Filter children (Select, Combobox, DateInput, Chip) above Table/Repeat. Name each field after a collection column (status, category). When a declared binding owns those params, they submit with onLoad / CTA. When no filter API exists, omit actionId — the host filters the visible rows locally. Workspace selection that drives another collection is not Filter chrome: give the child rows a foreign key (projectId) matching the selected row id; the host narrows that Repeat/Table. "All" / "All Categories" is unconstrained. Not a SearchField hero.',
   ].join('\n'),
   sort: [
     'CAPABILITY: SORT',

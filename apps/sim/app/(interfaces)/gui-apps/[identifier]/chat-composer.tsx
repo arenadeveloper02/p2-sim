@@ -1,9 +1,9 @@
 'use client'
 
 import { type FormEvent, useRef, useState } from 'react'
-import { cn } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Paperclip, Send, X } from 'lucide-react'
+import { GuiButton } from '@/app/(interfaces)/gui-apps/gui-chrome'
 import {
   type ArenaGenerativeChatProtocol,
   chatActionValues,
@@ -140,7 +140,7 @@ export function ChatComposer({
               aria-label='Attach files'
               disabled={pending}
               onClick={() => fileInputRef.current?.click()}
-              className='rounded-md p-1.5 text-[var(--gui-text-muted,#575a66)] hover:bg-[var(--gui-border,#e2e3e5)]'
+              className='rounded-[var(--gui-radius-sm,8px)] p-1.5 text-[var(--gui-text-muted,#575a66)] hover:bg-[var(--gui-canvas,#f7f8f9)]'
             >
               <Paperclip className='size-[14px]' />
             </button>
@@ -148,17 +148,16 @@ export function ChatComposer({
         ) : (
           <span />
         )}
-        <button
+        <GuiButton
           type='submit'
+          variant='primary'
+          size='sm'
+          className='gap-1'
           disabled={pending || draft.trim().length === 0}
-          className={cn(
-            'inline-flex items-center gap-1 rounded-md bg-[var(--gui-brand,#1a73e8)] px-3 py-1.5 text-[13px] text-white',
-            (pending || draft.trim().length === 0) && 'opacity-50'
-          )}
         >
           <Send className='size-[14px]' />
           Send
-        </button>
+        </GuiButton>
       </div>
     </form>
   )

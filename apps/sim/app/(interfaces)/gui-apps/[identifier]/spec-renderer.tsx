@@ -23,7 +23,10 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
+  Download,
   FileText,
+  Filter,
   Globe,
   GripVertical,
   Inbox,
@@ -31,14 +34,46 @@ import {
   Loader2,
   type LucideIcon,
   MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
   Search,
+  Settings,
   Shield,
   Sparkles,
   Star,
+  Trash2,
   TrendingUp,
+  Upload,
   Users,
 } from 'lucide-react'
 import Image from 'next/image'
+import {
+  GUI_BOUND_EMPTY_CLASS as BOUND_EMPTY_CLASS,
+  GUI_BUTTON_BASE_CLASS as BUTTON_BASE_CLASS,
+  GUI_BUTTON_SIZE_CLASSES as BUTTON_SIZE_CLASSES,
+  GUI_BUTTON_VARIANT_CLASSES as BUTTON_VARIANT_CLASSES,
+  GUI_CHIP_CLASS,
+  GUI_CHIP_TONE_CLASSES as CHIP_TONE_CLASSES,
+  GUI_FIELD_INPUT_CLASS as FIELD_INPUT_CLASS,
+  GUI_FIELD_NATIVE_CONTROL_CLASS as FIELD_NATIVE_CONTROL_CLASS,
+  GUI_FIELD_TEXTAREA_CLASS as FIELD_TEXTAREA_CLASS,
+  GUI_OVERLAY_DIALOG_CLASS,
+  GUI_OVERLAY_SCRIM_CLASS,
+  GUI_SURFACE_CARD as SURFACE_CARD,
+  GUI_SURFACE_STAT as SURFACE_STAT,
+  GUI_TABLE_HEADER_ROW_CLASS,
+  GUI_TONE_CLASSES as TONE_CLASSES,
+  GuiFieldShell as FieldShell,
+  GuiFileInput,
+  GuiMultiSelect,
+  GuiRequiredMark as RequiredMark,
+  GuiSelect,
+  asGuiFormFiles,
+  guiButtonClass,
+  guiCardSurfaceClass as cardSurfaceClass,
+  guiFieldErrorClass as fieldErrorClass,
+} from '@/app/(interfaces)/gui-apps/gui-chrome'
 import { ConstrainedChart } from '@/components/charts/constrained-chart'
 import {
   GENERATIVE_APP_SUCCESS_TOAST_MS,
@@ -244,15 +279,16 @@ const ICON_BY_NAME: Record<string, LucideIcon> = {
   calendar: Calendar,
   star: Star,
   trend: TrendingUp,
+  plus: Plus,
+  pencil: Pencil,
+  trash: Trash2,
+  download: Download,
+  copy: Copy,
+  filter: Filter,
+  upload: Upload,
+  settings: Settings,
+  more: MoreHorizontal,
 }
-
-const CHIP_TONE_CLASSES = {
-  muted:
-    'bg-[var(--gui-canvas,#f7f8f9)] text-[var(--gui-text-muted,#575a66)] hover:bg-[var(--gui-border,#e2e3e5)]',
-  brand:
-    'bg-[var(--gui-brand-surface,#f3f8fe)] text-[var(--gui-brand,#1a73e8)] hover:bg-[var(--gui-info-border,#a3c7f6)]',
-  info: 'bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)] hover:bg-[var(--gui-info-border,#a3c7f6)]',
-} as const
 
 const CARD_MEDIA_TYPES = new Set(['Icon', 'Avatar'])
 const CARD_FOOTER_TYPES = new Set(['Button', 'Chip', 'NavLink', 'Link', 'Toolbar'])
@@ -578,40 +614,10 @@ const GRID_MIN_ITEM_WIDTHS: Record<string, string> = {
 const DEFAULT_GRID_MIN_ITEM_WIDTH = '280px'
 const DEFAULT_REPEAT_SKELETON_COUNT = 2
 
-const TONE_CLASSES = {
-  info: 'border border-[var(--gui-info-border,#a3c7f6)] bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)]',
-  success:
-    'border border-[var(--gui-success-border,#b1e9ce)] bg-[var(--gui-success-surface,#f5fcf9)] text-[var(--gui-success-text,#23784f)]',
-  warning:
-    'border border-[var(--gui-warning-border,#fdcdb5)] bg-[var(--gui-warning-surface,#fff9f5)] text-[var(--gui-warning-text,#974d29)]',
-  error:
-    'border border-[var(--gui-error-border,#faa3a3)] bg-[var(--gui-error-surface,#fff3f3)] text-[var(--gui-error-text,#921010)]',
-} as const
-
 function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info'): string {
   const tone = asString(value, fallback)
   return TONE_CLASSES[tone as keyof typeof TONE_CLASSES] ?? TONE_CLASSES[fallback]
 }
-
-const BUTTON_BASE_CLASS =
-  'inline-flex items-center justify-center rounded-[var(--gui-radius,12px)] font-medium transition-[background-color,color,border-color,transform,box-shadow] duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] disabled:cursor-not-allowed disabled:opacity-[0.38] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gui-brand,#1a73e8)]'
-
-const BUTTON_VARIANT_CLASSES = {
-  primary:
-    'bg-[var(--gui-brand,#1a73e8)] text-white hover:bg-[var(--gui-brand-hover,#155cba)] active:bg-[var(--gui-brand-pressed,#10458b)]',
-  secondary:
-    'border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
-  ghost: 'text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
-  outline:
-    'border border-[var(--gui-brand,#1a73e8)] bg-transparent text-[var(--gui-brand,#1a73e8)] hover:bg-[var(--gui-brand-surface,#f3f8fe)]',
-  destructive:
-    'border border-[var(--gui-danger,#f31a1a)] bg-transparent text-[var(--gui-danger,#f31a1a)] hover:bg-[var(--gui-error-surface,#fff3f3)]',
-} as const
-
-const BUTTON_SIZE_CLASSES = {
-  sm: 'h-8 px-3 text-sm',
-  md: 'h-10 px-4 text-base',
-} as const
 
 function collectionPageKey(elementId: string, scope?: RepeatItemScope): string {
   return scope ? `${elementId}:${scope.index}` : elementId
@@ -670,15 +676,7 @@ function buttonClass(
   props: Record<string, unknown>,
   fallbackVariant: keyof typeof BUTTON_VARIANT_CLASSES
 ): string {
-  const variant = asString(props.variant, fallbackVariant)
-  const size = asString(props.size, 'md')
-  return cn(
-    BUTTON_BASE_CLASS,
-    BUTTON_VARIANT_CLASSES[variant as keyof typeof BUTTON_VARIANT_CLASSES] ??
-      BUTTON_VARIANT_CLASSES[fallbackVariant],
-    BUTTON_SIZE_CLASSES[size as keyof typeof BUTTON_SIZE_CLASSES] ?? BUTTON_SIZE_CLASSES.md,
-    asString(props.shape) === 'pill' && 'rounded-[var(--gui-radius-pill)]'
-  )
+  return guiButtonClass(props, fallbackVariant)
 }
 
 const DELTA_TONE_CLASSES = {
@@ -692,21 +690,6 @@ function deltaToneClass(value: unknown): string {
   return DELTA_TONE_CLASSES[tone as keyof typeof DELTA_TONE_CLASSES] ?? DELTA_TONE_CLASSES.neutral
 }
 
-const SURFACE_CARD =
-  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
-
-const SURFACE_CARD_MUTED =
-  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface-muted,#f7f8f9)] p-[var(--gui-pad,16px)]'
-
-function cardSurfaceClass(variant: unknown): string {
-  return asString(variant) === 'muted' ? SURFACE_CARD_MUTED : SURFACE_CARD
-}
-
-const SURFACE_STAT =
-  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
-
-const BOUND_EMPTY_CLASS =
-  'col-span-full py-2 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
 
 const HEADING_SIZE_CLASSES = {
   h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
@@ -963,7 +946,7 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
               className={cn(
                 'inline-flex size-5 items-center justify-center rounded-full border text-xs',
                 done &&
-                  'border-[var(--gui-brand,#1a73e8)] bg-[var(--gui-brand,#1a73e8)] text-white',
+                  'border-[var(--gui-brand,#1a73e8)] bg-[var(--gui-brand,#1a73e8)] text-[var(--gui-text-on-brand,#ffffff)]',
                 current && 'border-[var(--gui-brand,#1a73e8)] text-[var(--gui-brand,#1a73e8)]',
                 !done && !current && 'border-[var(--gui-border,#e2e3e5)]'
               )}
@@ -1376,7 +1359,7 @@ function StateTable({
       <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
         {columnDefs.length > 0 ? (
           <thead>
-            <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
+            <tr className={GUI_TABLE_HEADER_ROW_CLASS}>
               {reorderable ? <th className={headerClass} aria-label='Reorder' /> : null}
               {columnDefs.map((column) => {
                 const label = boundTableColumnLabel(column)
@@ -1632,29 +1615,6 @@ function submitButtonActionId(elements: Record<string, SpecElement>, childIds: s
   return ''
 }
 
-const FIELD_INPUT_CLASS =
-  'h-10 w-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-4 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] text-[var(--gui-text,#2c2d33)] outline-none transition-[background-color,border-color,box-shadow] duration-100 placeholder:text-[var(--gui-text-tertiary,#8a8d99)] focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
-const FIELD_TEXTAREA_CLASS =
-  'min-h-[96px] w-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-4 py-2.5 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] text-[var(--gui-text,#2c2d33)] outline-none transition-[background-color,border-color,box-shadow] duration-100 placeholder:text-[var(--gui-text-tertiary,#8a8d99)] focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
-/** Native checkbox / radio — Arena brand accent + focus ring. */
-const FIELD_NATIVE_CONTROL_CLASS =
-  'size-4 shrink-0 rounded-[var(--gui-radius-sm,8px)] border border-[var(--gui-border-strong,#a7aab2)] accent-[var(--gui-brand,#1a73e8)] outline-none transition-[box-shadow,border-color] duration-100 focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
-
-function fieldErrorClass(error: string | undefined): string {
-  return error
-    ? 'border-[var(--gui-danger,#f31a1a)] focus-visible:border-[var(--gui-danger,#f31a1a)]'
-    : ''
-}
-
-function RequiredMark({ show }: { show: boolean }) {
-  if (!show) return null
-  return (
-    <span aria-hidden className='text-[var(--gui-danger,#f31a1a)]'>
-      {' *'}
-    </span>
-  )
-}
-
 function ActionBusyMark({ show }: { show: boolean }) {
   if (!show) return null
   return (
@@ -1663,56 +1623,6 @@ function ActionBusyMark({ show }: { show: boolean }) {
       aria-hidden
       className='inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent'
     />
-  )
-}
-
-function FieldShell({
-  name,
-  label,
-  htmlFor,
-  error,
-  required = false,
-  children,
-}: {
-  name: string
-  label: string
-  htmlFor?: string
-  error?: string
-  required?: boolean
-  children: ReactNode
-}) {
-  const title = label ? (
-    <>
-      {label}
-      <RequiredMark show={required} />
-    </>
-  ) : null
-  return (
-    <div className='flex w-full min-w-0 flex-col gap-1.5'>
-      {title ? (
-        htmlFor ? (
-          <label
-            htmlFor={htmlFor}
-            className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-label-leading,16px)] tracking-[0.25px]'
-          >
-            {title}
-          </label>
-        ) : (
-          <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-label-leading,16px)] tracking-[0.25px]'>
-            {title}
-          </span>
-        )
-      ) : null}
-      {children}
-      {error ? (
-        <p
-          data-testid={`field-error-${name}`}
-          className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-danger,#f31a1a)]'
-        >
-          {error}
-        </p>
-      ) : null}
-    </div>
   )
 }
 
@@ -2129,7 +2039,7 @@ function CatalogOverlayShell({
       className={
         isDrawer
           ? 'pointer-events-none fixed inset-0 z-30'
-          : 'fixed inset-0 z-30 flex items-center justify-center bg-[color-mix(in_srgb,var(--gui-text,#2c2d33)_40%,transparent)] p-4'
+          : GUI_OVERLAY_SCRIM_CLASS
       }
     >
       <button
@@ -2148,7 +2058,7 @@ function CatalogOverlayShell({
         aria-labelledby={titleId}
         data-testid={testId}
         className={cn(
-          'pointer-events-auto flex max-h-[min(90vh,720px)] flex-col overflow-hidden border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
+          GUI_OVERLAY_DIALOG_CLASS,
           isDrawer
             ? cn('absolute top-0 bottom-0 w-[min(100%,24rem)]', drawerSide)
             : 'relative z-10 w-full max-w-lg rounded-[var(--gui-radius,12px)]'
@@ -2963,7 +2873,7 @@ export function SpecRenderer({
           <h1
             className={cn(
               'font-semibold text-[var(--gui-text,#2c2d33)] tracking-tight',
-              'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]'
+              'text-[length:var(--gui-display-size,40px)] leading-[var(--gui-display-leading,48px)]'
             )}
           >
             {asString(props.title)}
@@ -2976,8 +2886,8 @@ export function SpecRenderer({
               isCenter && 'mx-auto items-center text-center'
             )}
           >
-            {kicker ? (
-              <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+              {kicker ? (
+              <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-brand,#1a73e8)]'>
                 {kicker}
               </p>
             ) : null}
@@ -3544,17 +3454,19 @@ export function SpecRenderer({
         return (
           <div
             data-testid='empty-state'
-            className='flex w-full flex-col items-start gap-2 py-2'
+            className='flex w-full max-w-[var(--gui-measure,40rem)] flex-col items-start gap-3 py-6'
             style={styleFromProps(props)}
           >
             {asString(props.icon) ? (
               <CatalogIcon name={asString(props.icon)} well='circle' />
-            ) : null}
-            <p className='font-semibold text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)]'>
+            ) : (
+              <CatalogIcon name='inbox' well='circle' />
+            )}
+            <p className='font-semibold text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)] text-[var(--gui-text,#2c2d33)]'>
               {asString(props.title)}
             </p>
             {asString(props.body) ? (
-              <p className='max-w-[var(--gui-measure,40rem)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>
+              <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>
                 {asString(props.body)}
               </p>
             ) : null}
@@ -3585,7 +3497,7 @@ export function SpecRenderer({
         const tone = viewTone ?? asString(props.tone, 'muted')
         const interactive = Boolean(actionId || navigateTo || setValue || hostExport)
         const className = cn(
-          'inline-flex items-center rounded-[var(--gui-radius-pill)] px-3 py-1.5 font-medium text-sm',
+          GUI_CHIP_CLASS,
           CHIP_TONE_CLASSES[tone as keyof typeof CHIP_TONE_CLASSES] ?? CHIP_TONE_CLASSES.muted
         )
         const runChip = () => {
@@ -4295,12 +4207,14 @@ export function SpecRenderer({
       case 'TextInput':
       case 'TextArea':
       case 'Select':
+      case 'Combobox':
       case 'RadioGroup':
       case 'MultiSelect':
       case 'NumberInput':
       case 'DateInput':
       case 'Checkbox':
-      case 'Switch': {
+      case 'Switch':
+      case 'FileInput': {
         if (!isFormFieldType(element.type)) return null
         if (!fieldIsVisible(props, fieldSnapshot)) return null
         const name = asString(props.name)
@@ -4333,7 +4247,7 @@ export function SpecRenderer({
             </FieldShell>
           )
         }
-        if (element.type === 'Select') {
+        if (element.type === 'Select' || element.type === 'Combobox') {
           const options = parseOptionList(props.options)
           return (
             <FieldShell
@@ -4343,21 +4257,16 @@ export function SpecRenderer({
               error={error}
               required={required}
             >
-              <select
+              <GuiSelect
                 id={fieldId}
                 name={name}
-                required={required}
                 value={asFieldString(value)}
-                onChange={(event) => setNamedValue(name, event.target.value)}
-                className={inputClass}
-              >
-                <option value=''>Choose an option</option>
-                {options.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+                options={options}
+                required={required}
+                error={error}
+                searchable={element.type === 'Combobox'}
+                onChange={(next) => setNamedValue(name, next)}
+              />
             </FieldShell>
           )
         }
@@ -4390,33 +4299,37 @@ export function SpecRenderer({
         }
         if (element.type === 'MultiSelect') {
           const options = parseOptionList(props.options)
-          const selected = new Set(asFieldStringList(value))
           return (
             <FieldShell name={name} label={label} error={error} required={required}>
-              <div className='flex flex-col gap-2'>
-                {options.map((option) => {
-                  const optionId = `${fieldId}-${option}`
-                  return (
-                    <label key={option} htmlFor={optionId} className='flex items-center gap-2'>
-                      <input
-                        id={optionId}
-                        type='checkbox'
-                        name={name}
-                        value={option}
-                        checked={selected.has(option)}
-                        onChange={() => {
-                          const next = selected.has(option)
-                            ? asFieldStringList(value).filter((item) => item !== option)
-                            : [...asFieldStringList(value), option]
-                          setNamedValue(name, next)
-                        }}
-                        className={FIELD_NATIVE_CONTROL_CLASS}
-                      />
-                      <span>{option}</span>
-                    </label>
-                  )
-                })}
-              </div>
+              <GuiMultiSelect
+                id={fieldId}
+                name={name}
+                options={options}
+                selected={asFieldStringList(value)}
+                onChange={(next) => setNamedValue(name, next)}
+              />
+            </FieldShell>
+          )
+        }
+        if (element.type === 'FileInput') {
+          return (
+            <FieldShell
+              name={name}
+              label={label}
+              htmlFor={fieldId}
+              error={error}
+              required={required}
+            >
+              <GuiFileInput
+                id={fieldId}
+                name={name}
+                accept={asString(props.accept) || undefined}
+                multiple={asBoolean(props.multiple)}
+                required={required}
+                error={error}
+                value={asGuiFormFiles(value)}
+                onChange={(next) => setNamedValue(name, next)}
+              />
             </FieldShell>
           )
         }

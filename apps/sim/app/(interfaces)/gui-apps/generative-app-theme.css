@@ -11,6 +11,8 @@
   --gui-text: var(--color-ds-text-primary, #2c2d33);
   --gui-text-muted: var(--color-ds-text-secondary, #575a66);
   --gui-text-tertiary: var(--color-ds-text-tertiary, #8a8d99);
+  --gui-text-placeholder: var(--color-ds-text-placeholder, #a7aab2);
+  --gui-text-on-brand: var(--color-ds-text-on-brand, #ffffff);
   --gui-border: var(--color-ds-border-default, #e2e3e5);
   --gui-border-strong: var(--color-ds-border-strong, #a7aab2);
   --gui-brand: var(--color-ds-brand-default, #1a73e8);
@@ -34,21 +36,30 @@
   --gui-info-surface: var(--color-ds-status-info-surface, #f3f8fe);
   --gui-info-text: var(--color-ds-status-info-text, #10458b);
   --gui-info-border: var(--color-ds-status-info-border, #a3c7f6);
+  --gui-overlay: var(--color-ds-surface-overlay, rgb(44 45 51 / 72%));
+  --gui-opacity-disabled: var(--opacity-ds-disabled, 0.38);
+  --gui-opacity-overlay: var(--opacity-ds-overlay, 0.72);
+  --gui-transition-hover: var(--transition-ds-hover, 100ms cubic-bezier(0.4, 0, 0.2, 1));
+  --gui-transition-enter: var(--transition-ds-enter, 300ms cubic-bezier(0, 0, 0.2, 1));
+  --gui-transition-exit: var(--transition-ds-exit, 200ms cubic-bezier(0.4, 0, 1, 1));
   --gui-radius: var(--radius-ds-lg, 12px);
   --gui-radius-sm: var(--radius-ds-md, 8px);
-  --gui-radius-pill: var(--radius-ds-pill, 9999px);
-  --gui-space-xs: 4px;
-  --gui-space-sm: 8px;
-  --gui-space-md: 16px;
-  --gui-space-lg: 24px;
-  --gui-space-xl: 32px;
-  --gui-space-2xl: 48px;
+  --gui-radius-pill: var(--radius-ds-full, 9999px);
+  --gui-space-xs: var(--spacing-ds-component-xs, 4px);
+  --gui-space-sm: var(--spacing-ds-component-sm, 8px);
+  --gui-space-md: var(--spacing-ds-component-lg, 16px);
+  --gui-space-lg: var(--spacing-ds-layout-md, 24px);
+  --gui-space-xl: var(--spacing-ds-layout-lg, 32px);
+  --gui-space-2xl: var(--spacing-ds-layout-xl, 48px);
   --gui-gap: var(--gui-space-md);
   --gui-pad: var(--gui-space-md);
   --gui-section-gap: var(--gui-space-lg);
   --gui-control-height: 40px;
   --gui-control-px: 16px;
+  --gui-shadow-sm: var(--shadow-ds-sm, 0px 1px 2px rgba(44, 45, 51, 0.08));
   --gui-shadow-card: var(--shadow-ds-md, 0px 2px 8px rgba(44, 45, 51, 0.1));
+  --gui-shadow-lg: var(--shadow-ds-lg, 0px 4px 16px rgba(44, 45, 51, 0.12));
+  --gui-shadow-xlg: var(--shadow-ds-xlg, 0px 8px 32px rgba(44, 45, 51, 0.16));
   --gui-display-size: var(--text-ds-heading-xlg, 40px);
   --gui-display-leading: var(--leading-ds-heading-xlg, 48px);
   --gui-heading-size: var(--text-ds-heading-lg, 32px);
@@ -61,6 +72,22 @@
   --gui-body-leading: var(--leading-ds-body-md, 24px);
   --gui-label-size: var(--text-ds-label-sm, 12px);
   --gui-label-leading: var(--leading-ds-label-sm, 16px);
+  --gui-caption-size: var(--text-ds-body-xsm, 12px);
+  --gui-caption-leading: var(--leading-ds-body-xsm, 20px);
+  --gui-chart-axis: var(--color-ds-chart-axis, #a7aab2);
+  --gui-chart-grid: var(--color-ds-chart-grid-line, #e2e3e5);
+  --gui-chart-label: var(--color-ds-chart-label, #575a66);
+  --gui-chart-background: var(--color-ds-chart-background, #ffffff);
+  --gui-chart-tooltip-bg: var(--color-ds-chart-tooltip-bg, #2c2d33);
+  --gui-chart-tooltip-text: var(--color-ds-chart-tooltip-text, #ffffff);
+  --gui-chart-series-1: var(--color-ds-chart-series-1, #1a73e8);
+  --gui-chart-series-2: var(--color-ds-chart-series-2, #fb8145);
+  --gui-chart-series-3: var(--color-ds-chart-series-3, #b364d7);
+  --gui-chart-series-4: var(--color-ds-chart-series-4, #2abbf8);
+  --gui-chart-series-5: var(--color-ds-chart-series-5, #ffcc02);
+  --gui-chart-series-6: var(--color-ds-chart-series-6, #f8528f);
+  --gui-chart-series-7: var(--color-ds-chart-series-7, #3bc884);
+  --gui-chart-series-8: var(--color-ds-chart-series-8, #6d717f);
   --gui-measure: 40rem;
   color: var(--gui-text);
   background-color: var(--gui-canvas);
@@ -80,6 +107,8 @@ html.dark [data-gui-theme],
   --gui-text: var(--color-ds-text-primary, #e8eaed);
   --gui-text-muted: var(--color-ds-text-secondary, #b8bcc6);
   --gui-text-tertiary: var(--color-ds-text-tertiary, #9aa0a6);
+  --gui-text-placeholder: var(--color-ds-text-placeholder, #4a5160);
+  --gui-text-on-brand: var(--color-ds-text-on-brand, #12141a);
   --gui-border: var(--color-ds-border-default, #2e3340);
   --gui-border-strong: var(--color-ds-border-strong, #4a5160);
   --gui-brand: var(--color-ds-brand-default, #6b9bff);
@@ -103,7 +132,17 @@ html.dark [data-gui-theme],
   --gui-info-surface: var(--color-ds-status-info-surface, #15263a);
   --gui-info-text: var(--color-ds-status-info-text, #a3c7f6);
   --gui-info-border: var(--color-ds-status-info-border, #10458b);
+  --gui-overlay: var(--color-ds-surface-overlay, rgb(18 20 26 / 72%));
+  --gui-shadow-sm: var(--shadow-ds-sm, 0px 1px 2px rgba(0, 0, 0, 0.28));
   --gui-shadow-card: var(--shadow-ds-md, 0px 2px 8px rgba(0, 0, 0, 0.35));
+  --gui-shadow-lg: var(--shadow-ds-lg, 0px 4px 16px rgba(0, 0, 0, 0.4));
+  --gui-shadow-xlg: var(--shadow-ds-xlg, 0px 8px 32px rgba(0, 0, 0, 0.45));
+  --gui-chart-axis: var(--color-ds-chart-axis, #4a5160);
+  --gui-chart-grid: var(--color-ds-chart-grid-line, #2e3340);
+  --gui-chart-label: var(--color-ds-chart-label, #b8bcc6);
+  --gui-chart-background: var(--color-ds-chart-background, #1c1f28);
+  --gui-chart-tooltip-bg: var(--color-ds-chart-tooltip-bg, #e8eaed);
+  --gui-chart-tooltip-text: var(--color-ds-chart-tooltip-text, #12141a);
 }
 
 /**
@@ -117,6 +156,8 @@ html.dark [data-gui-theme],
     --gui-text: var(--color-ds-text-primary, #e8eaed);
     --gui-text-muted: var(--color-ds-text-secondary, #b8bcc6);
     --gui-text-tertiary: var(--color-ds-text-tertiary, #9aa0a6);
+    --gui-text-placeholder: var(--color-ds-text-placeholder, #4a5160);
+    --gui-text-on-brand: var(--color-ds-text-on-brand, #12141a);
     --gui-border: var(--color-ds-border-default, #2e3340);
     --gui-border-strong: var(--color-ds-border-strong, #4a5160);
     --gui-brand: var(--color-ds-brand-default, #6b9bff);
@@ -140,6 +181,36 @@ html.dark [data-gui-theme],
     --gui-info-surface: var(--color-ds-status-info-surface, #15263a);
     --gui-info-text: var(--color-ds-status-info-text, #a3c7f6);
     --gui-info-border: var(--color-ds-status-info-border, #10458b);
+    --gui-overlay: var(--color-ds-surface-overlay, rgb(18 20 26 / 72%));
+    --gui-shadow-sm: var(--shadow-ds-sm, 0px 1px 2px rgba(0, 0, 0, 0.28));
     --gui-shadow-card: var(--shadow-ds-md, 0px 2px 8px rgba(0, 0, 0, 0.35));
+    --gui-shadow-lg: var(--shadow-ds-lg, 0px 4px 16px rgba(0, 0, 0, 0.4));
+    --gui-shadow-xlg: var(--shadow-ds-xlg, 0px 8px 32px rgba(0, 0, 0, 0.45));
+    --gui-chart-axis: var(--color-ds-chart-axis, #4a5160);
+    --gui-chart-grid: var(--color-ds-chart-grid-line, #2e3340);
+    --gui-chart-label: var(--color-ds-chart-label, #b8bcc6);
+    --gui-chart-background: var(--color-ds-chart-background, #1c1f28);
+    --gui-chart-tooltip-bg: var(--color-ds-chart-tooltip-bg, #e8eaed);
+    --gui-chart-tooltip-text: var(--color-ds-chart-tooltip-text, #12141a);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gui-theme] {
+    --gui-transition-hover: var(--duration-ds-instant, 0ms);
+    --gui-transition-enter: var(--duration-ds-instant, 0ms);
+    --gui-transition-exit: var(--duration-ds-instant, 0ms);
+  }
+
+  [data-gui-theme] *,
+  [data-gui-theme] *::before,
+  [data-gui-theme] *::after {
+    animation-duration: var(--duration-ds-instant, 0ms) !important;
+    transition-duration: var(--duration-ds-instant, 0ms) !important;
+  }
+}
+
+[data-gui-theme] [data-chart-palette='colorblind-safe'] {
+  --gui-chart-series-6: var(--color-ds-sea-blue-800, #10458b);
+  --gui-chart-series-7: var(--color-ds-warning-800, #974d29);
 }

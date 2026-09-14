@@ -64,12 +64,20 @@ describe('arenaGenerativeThemeStyle', () => {
       '--gui-brand-hover': 'color-mix(in srgb, #112233 82%, #000)',
       '--gui-brand-pressed': 'color-mix(in srgb, #112233 68%, #000)',
       '--gui-brand-surface': 'color-mix(in srgb, #112233 10%, #fff)',
+      '--gui-focus': 'color-mix(in srgb, #112233 30%, transparent)',
+      '--gui-text-on-brand': '#ffffff',
       '--gui-radius': '8px',
+      '--gui-radius-sm': '4px',
+      '--gui-space-xs': '6px',
+      '--gui-space-sm': '12px',
       '--gui-space-md': '24px',
       '--gui-space-lg': '32px',
       '--gui-gap': '24px',
       '--gui-pad': '24px',
       '--gui-section-gap': '32px',
+      '--gui-control-height': '44px',
+      '--gui-display-size': '44px',
+      '--gui-heading-size': '36px',
     })
   })
 
@@ -81,6 +89,18 @@ describe('arenaGenerativeThemeStyle', () => {
     expect(style['--gui-brand']).toBeUndefined()
     expect(style['--gui-brand-hover']).toBeUndefined()
     expect(style['--gui-radius']).toBe('12px')
+    expect(style['--gui-radius-sm']).toBe('8px')
+  })
+
+  it('scales type and control height with compact density', () => {
+    expect(arenaGenerativeThemeStyle({ density: 'compact' })).toMatchObject({
+      '--gui-space-xs': '2px',
+      '--gui-space-sm': '6px',
+      '--gui-space-md': '12px',
+      '--gui-control-height': '36px',
+      '--gui-display-size': '32px',
+      '--gui-heading-size': '28px',
+    })
   })
 
   it('uses lighten mixes for custom brand in dark scheme', () => {
@@ -89,6 +109,8 @@ describe('arenaGenerativeThemeStyle', () => {
       '--gui-brand-hover': 'color-mix(in srgb, #112233 82%, #fff)',
       '--gui-brand-pressed': 'color-mix(in srgb, #112233 68%, #fff)',
       '--gui-brand-surface': 'color-mix(in srgb, #112233 22%, #12141a)',
+      '--gui-focus': 'color-mix(in srgb, #112233 40%, transparent)',
+      '--gui-text-on-brand': '#12141a',
     })
   })
 

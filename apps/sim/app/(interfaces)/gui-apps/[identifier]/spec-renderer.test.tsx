@@ -178,6 +178,26 @@ describe('SpecRenderer', () => {
     }
   }
 
+  function chooseSelectOption(container: HTMLElement, name: string, option: string) {
+    const hidden = container.querySelector(
+      `input[type="hidden"][name="${name}"]`
+    ) as HTMLInputElement | null
+    const trigger = hidden?.parentElement?.querySelector(
+      'button[aria-haspopup="listbox"]'
+    ) as HTMLButtonElement
+    expect(trigger).toBeTruthy()
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const choice = Array.from(container.querySelectorAll('[role="option"]')).find(
+      (node) => node.textContent === option
+    )
+    expect(choice).toBeTruthy()
+    act(() => {
+      choice?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
   it('navigates when a NavLink is clicked', () => {
     const { container, onNavigate } = render()
     const link = Array.from(container.querySelectorAll('button')).find(
@@ -1216,12 +1236,14 @@ describe('SpecRenderer', () => {
       },
     }
     const { container } = render({ spec })
-    const select = container.querySelector('select[name="status"]') as HTMLSelectElement
-    expect(select.querySelector('option[value=""]')?.textContent).toBe('Choose an option')
-    act(() => {
-      select.value = 'Completed'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    const hidden = container.querySelector(
+      'input[type="hidden"][name="status"]'
+    ) as HTMLInputElement
+    expect(hidden).toBeTruthy()
+    expect(
+      container.querySelector('button[aria-haspopup="listbox"]')?.textContent
+    ).toBe('Choose an option')
+    chooseSelectOption(container, 'status', 'Completed')
     const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
       Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
     )
@@ -1341,11 +1363,7 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec, state: { items } })
     expect(container.querySelectorAll('tbody tr')).toHaveLength(20)
     expect(container.querySelector('[aria-label="Next page"]')).toBeTruthy()
-    const select = container.querySelector('select[name="status"]') as HTMLSelectElement
-    act(() => {
-      select.value = 'Completed'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    chooseSelectOption(container, 'status', 'Completed')
     const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
       Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
     )
@@ -2718,6 +2736,50 @@ describe('SpecRenderer', () => {
       'No orders yet'
     )
     expect(container.textContent).toContain('New orders will show up here.')
+    expect(container.querySelector('[data-testid="empty-state"]')?.className).toContain(
+      'gui-measure'
+    )
+  })
+
+  it('renders Combobox as a searchable listbox and FileInput under a non-reserved name', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'save' }, children: ['role', 'resume'] },
+        role: {
+          type: 'Combobox',
+          props: { name: 'role', label: 'Role', options: 'Analyst, Operator, Admin' },
+          children: [],
+        },
+        resume: {
+          type: 'FileInput',
+          props: { name: 'resume', label: 'Resume', accept: '.pdf' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('input[aria-label="Search options"]')).toBeNull()
+    const trigger = container.querySelector('button[aria-haspopup="listbox"]') as HTMLButtonElement
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('input[aria-label="Search options"]')).toBeTruthy()
+    expect(container.querySelector('input[type="file"][name="resume"]')).toBeTruthy()
+    expect(container.querySelector('input[type="file"][name="files"]')).toBeNull()
+  })
+
+  it('maps new catalog icons onto Lucide glyphs', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['icon'] },
+        icon: { type: 'Icon', props: { name: 'plus' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('svg')).toBeTruthy()
   })
 
   it('hides catalog EmptyState while the page is pending', () => {
@@ -3087,7 +3149,7 @@ describe('SpecRenderer', () => {
     it('renders the primary variant as a filled button', () => {
       const button = renderButton({ label: 'Run', actionId: 'run', variant: 'primary' })
       expect(button.className).toContain('bg-[var(--gui-brand,#1a73e8)]')
-      expect(button.className).toContain('text-white')
+      expect(button.className).toContain('gui-text-on-brand')
     })
 
     it('renders the destructive variant as outline danger, not a filled CTA', () => {
@@ -3570,10 +3632,10 @@ describe('SpecRenderer', () => {
     const kicker = Array.from(container.querySelectorAll('p')).find(
       (node) => node.textContent === 'Watchtower'
     )
-    expect(kicker?.className).toContain('gui-text-muted')
+    expect(kicker?.className).toContain('gui-brand')
     expect(kicker?.className).not.toContain('uppercase')
-    expect(container.querySelector('h1')?.className).toContain('gui-heading-size')
-    expect(container.querySelector('h1')?.className).not.toContain('gui-display-size')
+    expect(container.querySelector('h1')?.className).toContain('gui-display-size')
+    expect(container.querySelector('h1')?.className).not.toContain('gui-heading-size')
     const copy = container.querySelector('h1')?.parentElement
     expect(copy?.className).toContain('text-center')
     expect(container.textContent).toContain('View analysis history')
@@ -4072,7 +4134,7 @@ describe('SpecRenderer', () => {
     expect(footer?.textContent).toContain('Analyze')
   })
 
-  it('paints a default Card as a bordered surface without a drop shadow', () => {
+  it('paints a default Card as a bordered surface with rest shadow', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -4087,10 +4149,10 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec })
     const card = container.querySelector('[data-testid="card"]') as HTMLElement
     expect(card.className).toContain('border-[var(--gui-border,#e2e3e5)]')
-    expect(card.className).not.toContain('shadow-[var(--gui-shadow-card')
+    expect(card.className).toContain('shadow-[var(--gui-shadow-card')
   })
 
-  it('renders Card variant muted without a shadow and resolves padding tokens', () => {
+  it('renders Card variant muted with rest shadow and resolves padding tokens', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -4107,7 +4169,7 @@ describe('SpecRenderer', () => {
     expect(card.getAttribute('data-variant')).toBe('muted')
     expect(card.className).toContain('border-[var(--gui-border,#e2e3e5)]')
     expect(card.className).toContain('gui-surface-muted')
-    expect(card.className).not.toContain('shadow-[var(--gui-shadow-card')
+    expect(card.className).toContain('shadow-[var(--gui-shadow-card')
     expect(card.style.padding).toBe('var(--gui-space-lg, 24px)')
   })
 
