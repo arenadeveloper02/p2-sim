@@ -145,6 +145,7 @@ import {
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
+import { ChatTypingIndicator } from '@/app/(interfaces)/gui-apps/[identifier]/chat-typing-indicator'
 import { GuiHostCalendar, GuiHostDateInput } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
 import {
   GuiHostCarousel,
@@ -1565,6 +1566,15 @@ function DataTextView({
     <div aria-live='polite' aria-busy={pending || undefined}>
       <MarkdownText style={style} content={display} />
     </div>
+  )
+}
+
+function chatTurnBubbleClass(role: 'user' | 'assistant'): string {
+  return cn(
+    'max-w-[85%] rounded-[var(--gui-radius,12px)] px-3 py-2',
+    role === 'user'
+      ? 'self-end bg-[var(--gui-brand-surface,#f3f8fe)] text-[var(--gui-text,#2c2d33)]'
+      : 'self-start bg-[var(--gui-surface,#fff)] text-[var(--gui-text,#2c2d33)]'
   )
 }
 
@@ -3979,13 +3989,19 @@ export function SpecRenderer({
         const protocol = actionChatProtocol?.[actionId]
         const turns = chatTurnsFromState(state)
         const contentValue = state[ARENA_GENERATIVE_STREAM_CONTENT_KEY]
-        const contentPending = boundPending(ARENA_GENERATIVE_STREAM_CONTENT_KEY)
+        const chatWaiting = controlPending(actionId)
         const showTurnList = turns.length > 0
+        const lastTurn = showTurnList ? turns[turns.length - 1] : undefined
+        const lastAssistantWaiting =
+          chatWaiting && lastTurn?.role === 'assistant' && !lastTurn.content
+        const showTrailingTyping = chatWaiting && lastTurn?.role === 'user'
+        const showStandaloneTyping = chatWaiting && !showTurnList && isEmptyStateValue(contentValue)
         const showLegacyTranscript =
           !showTurnList &&
+          !showStandaloneTyping &&
           Boolean(protocol) &&
           !specHasDataTextContent(elements) &&
-          (contentPending || !isEmptyStateValue(contentValue))
+          !isEmptyStateValue(contentValue)
         const composer = (
           <ChatComposer
             actionId={actionId}
@@ -3993,47 +4009,58 @@ export function SpecRenderer({
             protocol={protocol}
             conversationStorageKey={conversationStorageKey}
             hostState={state}
-            pending={controlPending(actionId)}
+            pending={chatWaiting}
             onSubmit={(id, values) => dispatchAction(id, values, { surface: 'chat' })}
           />
         )
-        if (!showTurnList && !showLegacyTranscript) return composer
+        if (!showTurnList && !showStandaloneTyping && !showLegacyTranscript) {
+          return composer
+        }
         return (
           <div className='flex w-full flex-col gap-3'>
             <div data-testid='generative-chat-transcript' className='flex w-full flex-col gap-3'>
-              {showTurnList ? (
-                turns.map((turn, index) => (
-                  <div
-                    key={`${turn.role}-${index}`}
-                    data-testid='generative-chat-turn'
-                    data-role={turn.role}
-                    className={cn(
-                      'max-w-[85%] rounded-[var(--gui-radius,12px)] px-3 py-2',
-                      turn.role === 'user'
-                        ? 'self-end bg-[var(--gui-brand-surface,#f3f8fe)] text-[var(--gui-text,#2c2d33)]'
-                        : 'self-start bg-[var(--gui-surface,#fff)] text-[var(--gui-text,#2c2d33)]'
-                    )}
-                  >
-                    <DataTextView
-                      value={turn.content}
-                      fallback=''
-                      pending={
-                        turn.role === 'assistant' &&
-                        index === turns.length - 1 &&
-                        contentPending &&
-                        !turn.content
-                      }
-                    />
-                  </div>
-                ))
-              ) : (
+              {showTurnList
+                ? turns.map((turn, index) => (
+                    <div
+                      key={`${turn.role}-${index}`}
+                      data-testid='generative-chat-turn'
+                      data-role={turn.role}
+                      className={chatTurnBubbleClass(turn.role)}
+                    >
+                      {lastAssistantWaiting && index === turns.length - 1 ? (
+                        <ChatTypingIndicator />
+                      ) : (
+                        <DataTextView value={turn.content} fallback='' pending={false} />
+                      )}
+                    </div>
+                  ))
+                : null}
+              {showTrailingTyping ? (
+                <div
+                  data-testid='generative-chat-turn'
+                  data-role='assistant'
+                  className={chatTurnBubbleClass('assistant')}
+                >
+                  <ChatTypingIndicator />
+                </div>
+              ) : null}
+              {showStandaloneTyping ? (
+                <div
+                  data-testid='generative-chat-turn'
+                  data-role='assistant'
+                  className={chatTurnBubbleClass('assistant')}
+                >
+                  <ChatTypingIndicator />
+                </div>
+              ) : null}
+              {showLegacyTranscript ? (
                 <DataTextView
                   value={contentValue}
                   fallback=''
-                  pending={contentPending}
+                  pending={false}
                   style={styleFromProps(props)}
                 />
-              )}
+              ) : null}
             </div>
             {composer}
           </div>

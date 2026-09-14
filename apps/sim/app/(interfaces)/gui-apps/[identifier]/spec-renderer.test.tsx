@@ -484,7 +484,7 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('[data-testid="generative-chat"]')).toBeTruthy()
     })
 
-    it('shows the DataText skeleton above Chat while content is pending and empty', () => {
+    it('shows left-side typing dots while the Chat action is pending and empty', () => {
       const { container } = render({
         spec: chatSpec,
         state: {},
@@ -495,9 +495,52 @@ describe('SpecRenderer', () => {
       })
 
       const transcript = container.querySelector('[data-testid="generative-chat-transcript"]')
+      const typing = container.querySelector('[data-testid="generative-chat-typing"]')
+      const turn = container.querySelector('[data-testid="generative-chat-turn"]')
       expect(transcript).toBeTruthy()
-      expect(transcript?.querySelector('[data-testid="skeleton"]')).toBeTruthy()
-      expect(transcript?.querySelector('[aria-live="polite"][aria-busy="true"]')).toBeTruthy()
+      expect(typing).toBeTruthy()
+      expect(turn?.getAttribute('data-role')).toBe('assistant')
+      expect(turn?.className).toContain('self-start')
+      expect(transcript?.querySelector('[data-testid="skeleton"]')).toBeNull()
+    })
+
+    it('shows typing dots in the empty last assistant turn while a follow-up is in flight', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: {
+          chatTurns: [
+            { role: 'user', content: 'Hello' },
+            { role: 'assistant', content: '' },
+          ],
+        },
+        pending: true,
+        pendingActionIds: new Set(['submit_lead']),
+        actionChatProtocol: protocol,
+      })
+
+      const turns = container.querySelectorAll('[data-testid="generative-chat-turn"]')
+      expect(turns).toHaveLength(2)
+      expect(turns[1]?.getAttribute('data-role')).toBe('assistant')
+      expect(turns[1]?.querySelector('[data-testid="generative-chat-typing"]')).toBeTruthy()
+      expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
+    })
+
+    it('hides typing dots once assistant tokens have arrived', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: {
+          chatTurns: [
+            { role: 'user', content: 'Hello' },
+            { role: 'assistant', content: 'Partial' },
+          ],
+        },
+        pending: true,
+        pendingActionIds: new Set(['submit_lead']),
+        actionChatProtocol: protocol,
+      })
+
+      expect(container.querySelector('[data-testid="generative-chat-typing"]')).toBeNull()
+      expect(container.textContent).toContain('Partial')
     })
 
     it('does not duplicate content when DataText already binds statePath content', () => {

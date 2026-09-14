@@ -55,7 +55,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   streaming: [
     'CAPABILITY: STREAMING',
-    'Bind DataText statePath "content" (or layoutPlan hostKeys). The host streams chunks into that region. Chat on the same page also paints content when DataText is omitted. Do not invent Table columns from unstructured output. WorkingCard only when LONG-RUNNING or MULTI-STEP is also selected.',
+    'Bind DataText statePath "content" (or layoutPlan hostKeys). The host streams chunks into that region. Chat on the same page also paints content when DataText is omitted, and three bouncing dots on the left while that reply is empty. Do not invent Table columns from unstructured output. WorkingCard only when LONG-RUNNING or MULTI-STEP is also selected.',
   ].join('\n'),
   'multi-step': [
     'CAPABILITY: MULTI-STEP',
@@ -151,7 +151,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   chat: [
     'CAPABILITY: CHAT',
-    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation. Typically the results page (often the right column) when the blueprint has one. Workspace / execution that stays in a named region: Chat stays in that region — do not invent a Results page. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields other than the input prefix stay on the Form. The first form CTA composes input; Chat follow-ups send the composer text. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Streamed tokens land in host state content; Chat paints that when the page has no DataText statePath "content".',
+    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation. Typically the results page (often the right column) when the blueprint has one. Workspace / execution that stays in a named region: Chat stays in that region — do not invent a Results page. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields other than the input prefix stay on the Form. The first form CTA composes input; Chat follow-ups send the composer text. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Streamed tokens land in host state content; Chat paints that when the page has no DataText statePath "content". The host paints three bouncing dots on the left while the reply is empty and in flight — do not emit a loader.',
   ].join('\n'),
   review: [
     'CAPABILITY: REVIEW',

@@ -120,7 +120,7 @@ Planner disambiguation: scan modules on arrival → **Dashboard**; find/act on a
 
 Stored jsonb aliases (no DB migration; unknown **archetype** still fails Zod and `parseStoredStructuredBrief` returns `null`): `list-detail` → app `collection` with pages `collection` + `detail`; `form-result` → app `task` (destination path `results` → `results`); `wizard` → `workflow`. `workspace` is a first-class page archetype; old drafts that already folded regions into modules still parse.
 
-`generate-manifest.ts` injects `recipesForBlueprint` plus selected design/UX modules (`generatorPromptOptionsFromBrief`) so a mixed sitemap is not generated as if every page were the entry shape. Gold few-shots teach **wiring and page chrome** (AppHeader → Section → PageHeader), not sitemap: task (narrow task then results), one-page collection, table collection when representation is table, list-detail when the blueprint named collection and detail pages, dashboard (Filter named after a Table column), workflow (Stepper on every step), content, workspace / sidebar-shell (catalog `Workspace` when a page is `workspace` or `pages[].regions` exist). Sidebar chrome does not select workspace gold.
+`generate-manifest.ts` injects `recipesForBlueprint` plus selected design/UX modules (`generatorPromptOptionsFromBrief`) so a mixed sitemap is not generated as if every page were the entry shape. Gold few-shots teach **wiring and page chrome** (AppHeader → Section → PageHeader), not sitemap: generate may include up to three golds, one per uncovered page job. Composite samples cover their member jobs (agent-shell covers task + results + collection; task covers task + results; list-detail covers collection + detail). Table collection when representation is table, dashboard (Filter named after a Table column), workflow (Stepper on every step), content, workspace / sidebar-shell (catalog `Workspace` when a page is `workspace` or `pages[].regions` exist). Sidebar chrome does not select workspace gold.
 
 Edit does **not** re-plan the product by default. Theme-only Requested Changes still skip the LLM. Page and global edits skip analyzer and planner and reuse the generate-time structured brief stored on the draft. An explicit re-plan phrase (`re-plan`, `rebuild the app`, `start over`, `turn this into a dashboard`) runs analyzer and planner again, generates a new sitemap, and overwrites the stored structured brief.
 
@@ -128,12 +128,12 @@ Edit does **not** re-plan the product by default. Theme-only Requested Changes s
 
 Followed in spirit, implemented as compile, not a second planner. `compileGenerativeUx` relocates loaders, injects same-page Open chrome, fills pending status, and builds `uxPlan` (kind, confirm, retry). It is preview/runtime, not the UI Planner.
 
-The Universal UI/UX Constitution (`constitution.ts`) is the quality contract for every generated app. Generator-owned clauses (hierarchy, density, Back, empty copy, `statePath`) go to the spec prompt under **UX RULES / STATES**. Host-owned clauses (disable while pending, destructive confirm, banners, toasts, skeletons) stay with the compiler — the prompt says bind / do not emit a second copy.
+The Universal UI/UX Constitution (`constitution.ts`) is the quality contract for every generated app. Generator-owned clauses (hierarchy, density, Back, empty copy, `statePath`) go to the spec prompt under **UX RULES / STATES**. Host-owned clauses (disable while pending, destructive confirm, banners, toasts, skeletons, Chat typing dots) stay with the compiler — the prompt says bind / do not emit a second copy.
 
 | Ownership | Constitution | Who enforces it |
 |---|---|---|
 | Generator emits | Composition, one primary action, grouping, density, consistency, content, Back, labels, `statePath` / `emptyText`, WorkingCard when the brief names a long wait | Spec LLM + catalog rules |
-| Host compiles | Pending disable, double-submit guard, destructive confirm, field errors, API banner, save toast, skeletons, Grid/Columns collapse | `ux-compiler` + `ux-defaults` + renderer |
+| Host compiles | Pending disable, double-submit guard, destructive confirm, field errors, API banner, save toast, skeletons, Chat typing dots, Grid/Columns collapse | `ux-compiler` + `ux-defaults` + renderer |
 
 Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, retry…`). Principles and nevers are derived from the constitution. When the brief names a generate wait, the spec emits `WorkingCard` and the host ticks it.
 

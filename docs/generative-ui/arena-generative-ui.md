@@ -2,7 +2,7 @@
 
 How to generate a multi-page Arena app with the **Arena Generative UI** block, then publish it. Architecture: [arena-generative-ui-architecture.md](./arena-generative-ui-architecture.md). Planner Contract: [arena-generative-ui-planner-contract.md](./arena-generative-ui-planner-contract.md).
 
-This is not the older **Generative UI** block. That block still emits a static HTML/email Spec. Arena Generative UI creates an interactive draft (pages, navigation, forms, CTAs) and only becomes a public URL after you publish it from Deploy.
+Arena Generative UI creates an interactive draft (pages, navigation, forms, CTAs) and only becomes a public URL after you publish it from Deploy.
 
 ## What you get
 
@@ -320,7 +320,7 @@ The generator is held to a few constraints you do not need to restate:
 - **Labeled, left-aligned fields** — short related fields pair up in a `Grid`, long free-text stays full width.
 - **Real spacing** — `gap` and `padding` take spacing tokens (`lg`, `md`) that the host maps to density-aware CSS variables. Raw CSS lengths still work.
 
-The system prompt also carries **one** validated gold-standard layout selected from the planned sitemap ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts)). Gold teaches catalog wiring and page chrome (`AppHeader` → `Section` → `PageHeader`), not page count. Table-first collections get a Table + Filter few-shot; card collections stay Repeat-in-Grid. Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
+The system prompt also carries validated gold-standard layouts selected from the planned sitemap ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts)) — up to three, one per uncovered page job. Gold teaches catalog wiring and page chrome (`AppHeader` → `Section` → `PageHeader`), not page count. Table-first collections get a Table + Filter few-shot; card collections stay Repeat-in-Grid. Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
 
 ### Draft (Edit mode)
 
@@ -610,7 +610,7 @@ Every field needs `name` and `label`. Shared props:
 
 There is no file-upload field in this catalog.
 
-There are no charts in this catalog. The chart and dashboard sketches in `charts-overview.md` target the separate static-HTML `generative_ui` block, not this one.
+Use catalog `Chart` and `Sparkline` for series. Do not invent metrics when bound data is provided.
 
 ### Component aliases
 
@@ -645,7 +645,7 @@ The same pass repairs shape as well as names: a nested `children` tree of object
 
 Every region that fills from a CTA response gets a placeholder while the action is in flight:
 
-- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton while **the action that writes that path** is pending and the value is still empty. A list `onLoad` does not skeleton unrelated Stats on the same page. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing. A page that already has `WorkingCard` skips those bound skeletons so the wait card is the only pending surface.
+- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton while **the action that writes that path** is pending and the value is still empty. A list `onLoad` does not skeleton unrelated Stats on the same page. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing. A page that already has `WorkingCard` skips those bound skeletons so the wait card is the only pending surface. `Chat` is different: while its action is in flight and the assistant reply is still empty, the host paints three bouncing dots on the left of the transcript — not a text skeleton. The generator must not emit a second loader.
 - **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own. A `Stat` with a literal `value`, or a `Table` with literal `rows`, is not bound to anything and needs one.
 - **Named generate wait.** When the brief lists status lines, an estimate, or Cancel, emit `WorkingCard` on the destination (or below submit if the brief stays on the form). The host rotates one step every ~2.5s and fills the bar in lockstep. Cancel abandons the in-flight CTA and navigates to `cancelTo`. Do not also emit `ProgressSteps` or a filling `ProgressBar`. `ProgressBar` is only for a real 0–100 value from the API.
 - The host also compiles busy chrome on pending CTAs, an error banner with Retry, a same-page save toast, and a confirm step for destructive buttons.

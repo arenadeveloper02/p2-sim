@@ -35,6 +35,7 @@ export const UX_DEFAULTS = {
   Stat: { loadingState: 'skeleton' as const },
   KeyValue: { loadingState: 'skeleton' as const, emptyState: true },
   DataText: { loadingState: 'skeleton' as const },
+  Chat: { loadingState: 'typing' as const },
   SearchField: {
     disabledWhileLoading: true,
     preventDoubleSubmit: true,

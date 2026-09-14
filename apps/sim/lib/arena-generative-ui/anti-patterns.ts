@@ -17,7 +17,7 @@ export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'map-tree-carousel — Never fake a map with Image. Never unroll nested folders as Repeat of Repeat. Never Repeat Images for a named carousel. Never unroll a timeline as a dated Repeat.',
   'calls — Never duplicate API calls. One actionId per job. A results page must not onLoad the same CTA that already navigated there.',
   'nav — Never create navigation without a destination. NavLink.to / Button.navigateTo must be a page path. Do not use href for an in-app page.',
-  'loading — Never show loading indefinitely without recovery. Bind statePath; the host skeletons, Refresh, and Retry. Do not emit a Spinner with no way out.',
+  'loading — Never show loading indefinitely without recovery. Bind statePath; the host skeletons, Chat typing dots, Refresh, and Retry. Do not emit a Spinner or dancing-dots loader.',
   'errors — Never hide errors. The host shows a banner. Do not omit emptyText or emit a silent dead end.',
   'hover — Never use hover as the only way to discover actions. Put Button / Toolbar in the layout. Do not rely on hover-only chrome (the catalog has none).',
   'destructive — Never place a destructive Button beside the primary without distinction. variant "destructive" (host paints outline danger). Confirm is host.',

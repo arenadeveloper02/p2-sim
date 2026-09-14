@@ -204,7 +204,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'shared',
         text: 'Every data-driven region accounts for loading, success, empty, and error.',
         prompt:
-          'Bind every CTA or onLoad result region to a statePath. Set domain emptyText or EmptyState title/body; EmptyState’s child is the next useful action. The runtime skeletons pending regions and shows empty or error chrome — do not emit Spinner, Skeleton-as-the-page, or Alert for those host events.',
+          'Bind every CTA or onLoad result region to a statePath. Set domain emptyText or EmptyState title/body; EmptyState’s child is the next useful action. The runtime skeletons pending regions, paints Chat typing dots on the left, and shows empty or error chrome — do not emit Spinner, Skeleton-as-the-page, dancing dots, or Alert for those host events.',
       },
       {
         ownership: 'host',
