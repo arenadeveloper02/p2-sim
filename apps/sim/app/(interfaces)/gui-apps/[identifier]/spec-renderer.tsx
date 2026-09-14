@@ -1024,12 +1024,15 @@ function WorkingCardView({
     return () => clearInterval(timer)
   }, [pending])
 
-  if (!pending || steps.length === 0) {
+  if (!pending) {
     return null
   }
 
-  const currentIndex = Math.min(steps.length - 1, Math.floor(elapsedMs / intervalMs))
-  const percent = Math.round(((currentIndex + 1) / steps.length) * 100)
+  const hasSteps = steps.length > 0
+  const currentIndex = hasSteps
+    ? Math.min(steps.length - 1, Math.floor(elapsedMs / intervalMs))
+    : 0
+  const percent = hasSteps ? Math.round(((currentIndex + 1) / steps.length) * 100) : undefined
   const meta = [estimate, formatElapsed(elapsedMs)].filter(Boolean).join(' · ')
 
   return (
@@ -1037,7 +1040,7 @@ function WorkingCardView({
       <div className='flex flex-col gap-4 rounded-[var(--gui-radius,12px)] border border-[var(--gui-info-border,#a3c7f6)] bg-[var(--gui-info-surface,#f3f8fe)] p-5'>
         <div className='flex flex-wrap items-start justify-between gap-2'>
           <p className='font-semibold text-[var(--gui-brand,#1a73e8)]'>
-            {title || steps[currentIndex]?.label}
+            {title || steps[currentIndex]?.label || 'Working…'}
           </p>
           {meta ? (
             <p className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-info-text,#10458b)]'>
@@ -1054,10 +1057,16 @@ function WorkingCardView({
           aria-valuenow={percent}
         >
           <div
-            className='h-full rounded-full bg-[var(--gui-brand,#1a73e8)] transition-[width] duration-300'
-            style={{ width: `${percent}%` }}
+            className={cn(
+              'h-full rounded-full bg-[var(--gui-brand,#1a73e8)]',
+              percent === undefined
+                ? 'w-1/3 animate-pulse'
+                : 'transition-[width] duration-300'
+            )}
+            style={percent === undefined ? undefined : { width: `${percent}%` }}
           />
         </div>
+        {hasSteps ? (
         <ol className='flex flex-col gap-2.5'>
           {steps.map((step, index) => {
             const done = index < currentIndex
@@ -1090,6 +1099,7 @@ function WorkingCardView({
             )
           })}
         </ol>
+        ) : null}
         {tip || onCancel ? (
           <div className='flex flex-col gap-3 border-[var(--gui-info-border,#a3c7f6)] border-t pt-3'>
             {tip ? (
@@ -1160,6 +1170,19 @@ function CircularLoader() {
     >
       <Loader2 className='size-8 animate-spin text-[var(--gui-brand,#1a73e8)]' />
     </div>
+  )
+}
+
+function RefetchBusyChrome({ busy }: { busy: boolean }) {
+  if (!busy) return null
+  return (
+    <p
+      data-testid='refetch-busy'
+      className='flex items-center gap-1.5 text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
+    >
+      <Loader2 className='size-3 animate-spin' aria-hidden />
+      Updating
+    </p>
   )
 }
 
@@ -1343,9 +1366,13 @@ function StateTable({
   return (
     <div
       aria-busy={busy || undefined}
-      className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
+      className={cn(
+        'w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]',
+        busy && 'opacity-70'
+      )}
       style={style}
     >
+      <RefetchBusyChrome busy={Boolean(busy)} />
       <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
         {columnDefs.length > 0 ? (
           <thead>
@@ -1565,6 +1592,19 @@ function DataTextView({
   return (
     <div aria-live='polite' aria-busy={pending || undefined}>
       <MarkdownText style={style} content={display} />
+    </div>
+  )
+}
+
+function ChatTranscript({ pinKey, children }: { pinKey: string; children: ReactNode }) {
+  const endRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    endRef.current?.scrollIntoView?.({ block: 'end' })
+  }, [pinKey])
+  return (
+    <div data-testid='generative-chat-transcript' className='flex w-full flex-col gap-3'>
+      {children}
+      <div ref={endRef} data-testid='generative-chat-transcript-end' />
     </div>
   )
 }
@@ -2788,6 +2828,7 @@ export function SpecRenderer({
           !collectionUsesApiPagination(statePath, actionHostKeys)
         return (
           <>
+            <RefetchBusyChrome busy={refetching} />
             <div className='contents' aria-busy={refetching || undefined}>
               {visibleItems.map((item, index) =>
                 canReorder ? (
@@ -3400,9 +3441,10 @@ export function SpecRenderer({
         return (
           <div
             aria-busy={refetching || undefined}
-            className={cn('flex flex-col gap-2', SURFACE_STAT)}
+            className={cn('flex flex-col gap-2', SURFACE_STAT, refetching && 'opacity-70')}
             style={styleFromProps(props)}
           >
+            <RefetchBusyChrome busy={refetching} />
             <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
               {asString(props.label)}
             </span>
@@ -3439,12 +3481,15 @@ export function SpecRenderer({
         }
         const points = sparklinePoints(series)
         const label = asString(props.label)
+        const sparklineBusy = Boolean(statePath && boundPending(statePath) && series.length > 0)
         return (
           <div
-            className='flex w-full flex-col gap-2'
+            aria-busy={sparklineBusy || undefined}
+            className={cn('flex w-full flex-col gap-2', sparklineBusy && 'opacity-70')}
             data-testid='sparkline'
             style={styleFromProps(props)}
           >
+            <RefetchBusyChrome busy={sparklineBusy} />
             {label ? (
               <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
                 {label}
@@ -3482,8 +3527,14 @@ export function SpecRenderer({
         if (!bound.dsl) {
           return <EmptyState text={bound.emptyText} />
         }
+        const chartBusy = Boolean(statePath && boundPending(statePath))
         return (
-          <div className='w-full' style={styleFromProps(props)}>
+          <div
+            aria-busy={chartBusy || undefined}
+            className={cn('w-full', chartBusy && 'opacity-70')}
+            style={styleFromProps(props)}
+          >
+            <RefetchBusyChrome busy={chartBusy} />
             <ConstrainedChart dsl={bound.dsl} height={bound.height} />
           </div>
         )
@@ -3662,7 +3713,13 @@ export function SpecRenderer({
         if (pairs.length === 0 && statePath && !boundPending(statePath)) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.details)} />
         }
-        return <StateKeyValue pairs={pairs} busy={Boolean(statePath && boundPending(statePath))} />
+        const kvBusy = Boolean(statePath && boundPending(statePath) && pairs.length > 0)
+        return (
+          <div className={cn(kvBusy && 'opacity-70')}>
+            <RefetchBusyChrome busy={kvBusy} />
+            <StateKeyValue pairs={pairs} busy={Boolean(statePath && boundPending(statePath))} />
+          </div>
+        )
       }
       case 'Disclosure': {
         if (!fieldIsVisible(props, visibilityValues)) return null
@@ -3850,13 +3907,19 @@ export function SpecRenderer({
         if (path === ARENA_GENERATIVE_STREAM_CONTENT_KEY && chatTurnsFromState(state).length > 0) {
           return null
         }
+        const dataTextValue = readStatePath(state, path, scope)
+        const dataTextPending = boundPending(path)
+        const dataTextBusy = dataTextPending && !isEmptyStateValue(dataTextValue)
         return (
-          <DataTextView
-            value={readStatePath(state, path, scope)}
-            fallback={asString(props.fallback, '')}
-            pending={boundPending(path)}
-            style={styleFromProps(props)}
-          />
+          <div className={cn(dataTextBusy && 'opacity-70')}>
+            <RefetchBusyChrome busy={dataTextBusy} />
+            <DataTextView
+              value={dataTextValue}
+              fallback={asString(props.fallback, '')}
+              pending={dataTextPending}
+              style={styleFromProps(props)}
+            />
+          </div>
         )
       }
       case 'Alert':
@@ -3993,7 +4056,8 @@ export function SpecRenderer({
         const showTurnList = turns.length > 0
         const lastTurn = showTurnList ? turns[turns.length - 1] : undefined
         const lastAssistantWaiting =
-          chatWaiting && lastTurn?.role === 'assistant' && !lastTurn.content
+          chatWaiting && lastTurn?.role === 'assistant' && !lastTurn.content && !lastTurn.error
+        const transcriptPinKey = `${turns.length}:${lastTurn?.content ?? ''}:${lastTurn?.error ?? ''}:${chatWaiting}`
         const showTrailingTyping = chatWaiting && lastTurn?.role === 'user'
         const showStandaloneTyping = chatWaiting && !showTurnList && isEmptyStateValue(contentValue)
         const showLegacyTranscript =
@@ -4018,7 +4082,7 @@ export function SpecRenderer({
         }
         return (
           <div className='flex w-full flex-col gap-3'>
-            <div data-testid='generative-chat-transcript' className='flex w-full flex-col gap-3'>
+            <ChatTranscript pinKey={transcriptPinKey}>
               {showTurnList
                 ? turns.map((turn, index) => (
                     <div
@@ -4030,7 +4094,19 @@ export function SpecRenderer({
                       {lastAssistantWaiting && index === turns.length - 1 ? (
                         <ChatTypingIndicator />
                       ) : (
-                        <DataTextView value={turn.content} fallback='' pending={false} />
+                        <>
+                          {turn.content || !turn.error ? (
+                            <DataTextView value={turn.content} fallback='' pending={false} />
+                          ) : null}
+                          {turn.error ? (
+                            <p
+                              data-testid='generative-chat-turn-error'
+                              className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-danger,#c62828)]'
+                            >
+                              {turn.error}
+                            </p>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   ))
@@ -4061,7 +4137,7 @@ export function SpecRenderer({
                   style={styleFromProps(props)}
                 />
               ) : null}
-            </div>
+            </ChatTranscript>
             {composer}
           </div>
         )

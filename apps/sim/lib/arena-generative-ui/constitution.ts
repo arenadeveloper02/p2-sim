@@ -216,7 +216,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'host',
         text: 'Partial data stays on screen; incomplete regions are marked busy.',
         prompt:
-          'The runtime leaves regions that already have data visible and marks them busy — do not invent placeholder rows, fake metrics, or a second ProgressBar for partial data.',
+          'The runtime leaves regions that already have data visible and marks them busy with Updating — do not invent placeholder rows, fake metrics, or a second ProgressBar for partial data.',
         never: 'invent API data',
       },
       {

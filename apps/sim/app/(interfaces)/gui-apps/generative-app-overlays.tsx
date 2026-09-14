@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, useEffect, useRef } from 'react'
 import { cn } from '@sim/emcn'
+import { Loader2 } from 'lucide-react'
 import { GENERATIVE_APP_SUCCESS_TOAST_MS } from '@/lib/arena-generative-ui/action-runtime'
 
 interface ActionSuccessToastProps {
@@ -42,6 +43,21 @@ interface DestructiveConfirmDialogProps {
  */
 export function DestructiveConfirmDialog({ onCancel, onConfirm }: DestructiveConfirmDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const onCancelRef = useRef(onCancel)
+  onCancelRef.current = onCancel
+
+  useEffect(() => {
+    const focusable = dialogRef.current?.querySelector<HTMLElement>('button')
+    focusable?.focus()
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCancelRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
@@ -118,21 +134,27 @@ export function DestructiveConfirmDialog({ onCancel, onConfirm }: DestructiveCon
 
 interface ActionRefreshButtonProps {
   onRefresh: () => void
+  pending?: boolean
 }
 
 /**
  * Host refresh for a page that has already attempted onLoad. Does not blank
  * bound regions; SpecRenderer keeps existing data while pending.
  */
-export function ActionRefreshButton({ onRefresh }: ActionRefreshButtonProps) {
+export function ActionRefreshButton({ onRefresh, pending = false }: ActionRefreshButtonProps) {
   return (
     <div className='flex justify-end px-6 py-2'>
       <button
         type='button'
         data-testid='action-refresh'
+        aria-busy={pending || undefined}
+        disabled={pending}
         onClick={onRefresh}
-        className='rounded-[var(--gui-radius,12px)] px-3 py-1 font-medium text-[var(--gui-text,#2c2d33)] text-sm hover:bg-[var(--gui-canvas,#f7f8f9)] focus-visible:outline-2 focus-visible:outline-[var(--gui-brand,#1a73e8)] focus-visible:outline-offset-2'
+        className='inline-flex items-center gap-1.5 rounded-[var(--gui-radius,12px)] px-3 py-1 font-medium text-[var(--gui-text,#2c2d33)] text-sm hover:bg-[var(--gui-canvas,#f7f8f9)] focus-visible:outline-2 focus-visible:outline-[var(--gui-brand,#1a73e8)] focus-visible:outline-offset-2 disabled:opacity-60'
       >
+        {pending ? (
+          <Loader2 className='size-3 animate-spin text-[var(--gui-text-muted,#575a66)]' aria-hidden />
+        ) : null}
         Refresh
       </button>
     </div>

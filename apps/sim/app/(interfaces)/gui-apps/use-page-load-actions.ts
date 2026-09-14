@@ -31,6 +31,8 @@ export interface UsePageLoadActionsResult {
   reload: () => void
   /** True after this page's onLoad has been attempted (or skipped for a CTA). */
   canRefresh: boolean
+  /** True while a visitor-triggered Refresh is in flight. */
+  refreshing: boolean
 }
 
 /**
@@ -63,6 +65,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
   const startedKeyRef = useRef('')
   const generationRef = useRef(0)
   const [canRefresh, setCanRefresh] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const runLoads = useCallback(async (reset: boolean) => {
     const generation = (generationRef.current += 1)
@@ -70,6 +73,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
       optionsRef.current
     if (actionIds.length === 0) return
 
+    if (!reset) setRefreshing(true)
     if (reset) mergeState(pageLoadArrivalState(hostKeysForActions(actionIds, actionHostKeys)))
     else mergeState(clearedActionErrorState())
 
@@ -91,6 +95,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
       })
     )
     if (generation !== generationRef.current) return
+    setRefreshing(false)
 
     let failure = ''
     for (const [index, result] of results.entries()) {
@@ -112,6 +117,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
       startedKeyRef.current = ''
       generationRef.current += 1
       setCanRefresh(false)
+      setRefreshing(false)
       return
     }
     if (startedKeyRef.current === loadKey) {
@@ -121,6 +127,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
 
     const { actionIds, actionPending, setLoadPending } = optionsRef.current
     setCanRefresh(true)
+    setRefreshing(false)
 
     if (actionPending) {
       optionsRef.current.mergeState(clearedActionErrorState())
@@ -134,6 +141,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
     return () => {
       generationRef.current += 1
       startedKeyRef.current = ''
+      setRefreshing(false)
       for (const actionId of actionIds) {
         setLoadPending(actionId, false)
       }
@@ -145,7 +153,7 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageL
     void runLoads(false)
   }, [runLoads])
 
-  return { reload, canRefresh }
+  return { reload, canRefresh, refreshing }
 }
 
 function hostKeysForActions(

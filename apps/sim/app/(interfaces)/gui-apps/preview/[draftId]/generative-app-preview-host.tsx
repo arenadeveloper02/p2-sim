@@ -142,9 +142,10 @@ export function GenerativeAppPreviewHost({
     setActionPending,
     logger,
     uxPlan,
+    actionChatProtocol,
   })
 
-  const { reload, canRefresh } = usePageLoadActions({
+  const { reload, canRefresh, refreshing } = usePageLoadActions({
     pagePath,
     actionIds: manifest?.pages[pagePath]?.onLoad ?? [],
     values: pageParams,
@@ -240,7 +241,7 @@ export function GenerativeAppPreviewHost({
             onRetry={actionError && runtime.canRetry ? runtime.retry : undefined}
           />
         ) : null}
-        {canRefresh ? <ActionRefreshButton onRefresh={reload} /> : null}
+        {canRefresh ? <ActionRefreshButton onRefresh={reload} pending={refreshing} /> : null}
         <SpecRenderErrorBoundary
           key={renderKey}
           fallbackTitle='This page failed to render'

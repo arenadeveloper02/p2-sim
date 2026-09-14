@@ -270,4 +270,22 @@ describe('mergeHostState', () => {
       { role: 'assistant', content: 'Hel' },
     ])
   })
+
+  it('writes a visitor error onto the last assistant turn', () => {
+    const merged = mergeHostState(
+      {
+        chatTurns: [
+          { role: 'user', content: 'Hi' },
+          { role: 'assistant', content: '' },
+        ],
+      },
+      { error: 'Try again.', __chatLastAssistantError: 'Try again.' }
+    )
+    expect(merged.__chatLastAssistantError).toBeUndefined()
+    expect(merged.error).toBe('Try again.')
+    expect(merged.chatTurns).toEqual([
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: '', error: 'Try again.' },
+    ])
+  })
 })

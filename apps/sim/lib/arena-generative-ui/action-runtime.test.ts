@@ -66,6 +66,7 @@ describe('hostStatePatchFromResult', () => {
     })
     expect(applied.patch.content).toBeUndefined()
     expect(applied.patch.error).toBe('upstream')
+    expect(applied.patch.__chatLastAssistantError).toBe('upstream')
   })
 
   it('strips chatTurns from API setState', () => {

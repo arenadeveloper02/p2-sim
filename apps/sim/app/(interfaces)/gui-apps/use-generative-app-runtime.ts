@@ -12,7 +12,11 @@ import {
   shouldShowSaveToast,
   visitorFacingActionError,
 } from '@/lib/arena-generative-ui/action-runtime'
-import { chatTurnPair } from '@/lib/arena-generative-ui/chat-turns'
+import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
+import {
+  chatTurnsSeedFromCta,
+  lastAssistantErrorPatch,
+} from '@/lib/arena-generative-ui/chat-turns'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
@@ -51,6 +55,8 @@ interface UseGenerativeAppRuntimeOptions {
   }
   /** Compiler plan: confirm / retry / kind per action. Missing entry keeps prior defaults. */
   uxPlan?: ArenaGenerativeUxPlan
+  /** Chat-protocol actions seed a user bubble on Form CTAs as well as Chat. */
+  actionChatProtocol?: Record<string, ArenaGenerativeChatProtocol>
 }
 
 /**
@@ -122,14 +128,10 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
   )
 
   const applyResult = useCallback(
-    (
-      result: RunDeployedAppActionResult,
-      skipNavigate: boolean,
-      surface?: LastAction['surface']
-    ) => {
+    (result: RunDeployedAppActionResult, skipNavigate: boolean) => {
       const current = optionsRef.current
       const { patch: rawPatch, appendKeys } = hostStatePatchFromResult(result)
-      const patch = surface === 'chat' ? chatResultLastAssistantPatch(rawPatch) : rawPatch
+      const patch = chatResultLastAssistantPatch(rawPatch)
       if (Object.keys(patch).length > 0 || appendKeys?.length) {
         flushSync(() => {
           current.mergeState(patch, appendKeys)
@@ -159,16 +161,19 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       const streaming = current.isStreaming(actionId)
       flushSync(() => {
         current.setActionPending(actionId, true)
-        const chatInput = typeof values.input === 'string' ? values.input.trim() : ''
+        const seededTurns = chatTurnsSeedFromCta(
+          actionId,
+          values,
+          surface,
+          current.actionChatProtocol
+        )
         current.mergeState(
           {
             ...clearedActionErrorState(),
             ...submittedInputsState(values),
-            ...(surface === 'chat' && chatInput
-              ? { [ARENA_GENERATIVE_CHAT_TURNS_KEY]: chatTurnPair(chatInput) }
-              : {}),
+            ...(seededTurns ? { [ARENA_GENERATIVE_CHAT_TURNS_KEY]: seededTurns } : {}),
           },
-          surface === 'chat' && chatInput ? [ARENA_GENERATIVE_CHAT_TURNS_KEY] : undefined
+          seededTurns ? [ARENA_GENERATIVE_CHAT_TURNS_KEY] : undefined
         )
       })
       setToast(null)
@@ -176,7 +181,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
         if (navigateTo) current.navigate(navigateTo)
         const result = await execute(actionId, values, generation, surface)
         if (!clockRef.current.isCurrent(actionId, generation)) return
-        applyResult(result, Boolean(navigateTo), surface)
+        applyResult(result, Boolean(navigateTo))
         if (result.ok && surface !== 'chat') {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => scrollGenerativeAppToResults())
@@ -196,8 +201,10 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       } catch (error) {
         if (!clockRef.current.isCurrent(actionId, generation)) return
         current.logger.error('App action failed', { error: toError(error).message })
+        const message = visitorFacingActionError(toError(error).message || 'Action failed')
         current.mergeState({
-          error: visitorFacingActionError(toError(error).message || 'Action failed'),
+          error: message,
+          ...lastAssistantErrorPatch(message),
         })
       } finally {
         endFlight(actionId)

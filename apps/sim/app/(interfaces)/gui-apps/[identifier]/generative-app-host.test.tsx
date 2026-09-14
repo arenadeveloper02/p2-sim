@@ -634,6 +634,7 @@ describe('GenerativeAppHost destructive confirm', () => {
     })
     expect(mockMutateAsync).not.toHaveBeenCalled()
     expect(container.querySelector('[data-testid="destructive-confirm"]')).toBeTruthy()
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('destructive-confirm-cancel')
 
     await act(async () => {
       container

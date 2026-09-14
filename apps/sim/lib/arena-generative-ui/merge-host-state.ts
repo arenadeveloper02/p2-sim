@@ -1,4 +1,8 @@
-import { chatTurnsFromState, withLastAssistantContent } from '@/lib/arena-generative-ui/chat-turns'
+import {
+  chatTurnsFromState,
+  withLastAssistantContent,
+  withLastAssistantError,
+} from '@/lib/arena-generative-ui/chat-turns'
 import {
   applySelectedRowDelete,
   applySelectedRowFields,
@@ -7,6 +11,7 @@ import {
   stampSelectionForeignKeys,
 } from '@/lib/arena-generative-ui/local-discovery'
 import {
+  ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_ERROR_KEY,
   ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY,
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
   ARENA_GENERATIVE_SELECTED_ID_KEY,
@@ -23,7 +28,8 @@ export const MAX_APPENDED_ITEMS = 96
  * appended-length cap drops `hasMore` so Load more disappears.
  *
  * `chatTurns` concatenates (seeding from existing `content` on the first pair).
- * `__chatLastAssistant` patches the last assistant turn without replacing the list.
+ * `__chatLastAssistant` / `__chatLastAssistantError` patch the last assistant
+ * turn without replacing the list.
  */
 export function mergeHostState(
   current: Record<string, unknown>,
@@ -32,12 +38,24 @@ export function mergeHostState(
 ): Record<string, unknown> {
   const next: Record<string, unknown> = { ...current, ...patch }
   delete next[ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY]
+  delete next[ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_ERROR_KEY]
 
   const lastAssistant = patch[ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY]
   if (typeof lastAssistant === 'string') {
     const updated = withLastAssistantContent(
       current[ARENA_GENERATIVE_CHAT_TURNS_KEY],
       lastAssistant
+    )
+    if (updated) {
+      next[ARENA_GENERATIVE_CHAT_TURNS_KEY] = updated
+    }
+  }
+
+  const lastAssistantError = patch[ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_ERROR_KEY]
+  if (typeof lastAssistantError === 'string') {
+    const updated = withLastAssistantError(
+      next[ARENA_GENERATIVE_CHAT_TURNS_KEY] ?? current[ARENA_GENERATIVE_CHAT_TURNS_KEY],
+      lastAssistantError
     )
     if (updated) {
       next[ARENA_GENERATIVE_CHAT_TURNS_KEY] = updated

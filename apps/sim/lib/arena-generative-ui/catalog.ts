@@ -543,7 +543,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         placeholder: z.string().nullable(),
       }),
       description:
-        'Chat composer for a workflow Start that declares reserved input (and optional files / conversationId). actionId must be a manifest action whose binding has chatProtocol.input. Follow-up messages bind to input as typed. The first form CTA composes input from the Add-an-API prefix plus name: value for declared fields. The host stamps conversationId on form and Chat. When this page has no DataText bound to content, the host paints streamed state.content above the composer. While the reply is in flight and empty, the host paints three bouncing dots on the left — do not emit a loader. Never put reserved names on Form controls.',
+        'Chat composer for a workflow Start that declares reserved input (and optional files / conversationId). actionId must be a manifest action whose binding has chatProtocol.input. Follow-up messages bind to input as typed. The first form CTA composes input from the Add-an-API prefix plus name: value for declared fields. The host stamps conversationId on form and Chat, and paints that first ask as a right-side user bubble. When this page has no DataText bound to content, the host paints streamed state.content above the composer. While the reply is in flight and empty, the host paints three bouncing dots on the left — do not emit a loader. A failed reply writes the visitor error into that assistant bubble. Never put reserved names on Form controls.',
     },
     TextInput: {
       props: formFieldProps({

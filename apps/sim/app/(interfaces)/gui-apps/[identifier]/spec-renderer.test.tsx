@@ -525,6 +525,25 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
     })
 
+    it('shows a visitor error on the last assistant turn', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: {
+          chatTurns: [
+            { role: 'user', content: 'Hello' },
+            { role: 'assistant', content: '', error: 'This did not go through. Try again.' },
+          ],
+        },
+        actionChatProtocol: protocol,
+      })
+
+      expect(container.querySelector('[data-testid="generative-chat-typing"]')).toBeNull()
+      expect(container.querySelector('[data-testid="generative-chat-turn-error"]')?.textContent).toBe(
+        'This did not go through. Try again.'
+      )
+      expect(container.querySelector('[data-testid="generative-chat-transcript-end"]')).toBeTruthy()
+    })
+
     it('hides typing dots once assistant tokens have arrived', () => {
       const { container } = render({
         spec: chatSpec,
@@ -2839,6 +2858,9 @@ describe('SpecRenderer', () => {
       expect(skeletonCount(container)).toBe(0)
       expect(container.textContent).toContain('Kept row')
       expect(container.querySelector('[aria-busy="true"]')).toBeTruthy()
+      expect(container.querySelector('[data-testid="refetch-busy"]')?.textContent).toContain(
+        'Updating'
+      )
     })
 
     it('leaves an unbound Table alone while pending', () => {
@@ -3279,6 +3301,38 @@ describe('SpecRenderer', () => {
       pendingActionIds: new Set(['fetch_history']),
     })
     expect(container.querySelector('[data-testid="working-card"]')).toBeNull()
+  })
+
+  it('shows WorkingCard with estimate and Cancel when steps are omitted', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['working'] },
+        working: {
+          type: 'WorkingCard',
+          props: {
+            title: 'Scoring…',
+            estimate: 'About 20s',
+            actionId: 'generate',
+            cancelTo: 'home',
+            skeleton: false,
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      pending: true,
+      pendingActionIds: new Set(['generate']),
+    })
+    expect(container.querySelector('[data-testid="working-card"]')?.textContent).toContain(
+      'Scoring…'
+    )
+    expect(container.querySelector('[data-testid="working-card"]')?.textContent).toContain(
+      'About 20s'
+    )
+    expect(container.querySelector('[data-testid="working-card-cancel"]')).toBeTruthy()
   })
 
   it('hides WorkingCard when idle', () => {

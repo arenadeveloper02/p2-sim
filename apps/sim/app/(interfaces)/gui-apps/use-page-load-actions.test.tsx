@@ -33,7 +33,7 @@ function renderLoads(options?: {
   const runAction =
     options?.runAction ??
     vi.fn().mockResolvedValue({ ok: true, setState: { rows: [{ name: 'Ada' }] } })
-  let latest: UsePageLoadActionsResult = { reload: () => {}, canRefresh: false }
+  let latest: UsePageLoadActionsResult = { reload: () => {}, canRefresh: false, refreshing: false }
 
   function Probe() {
     const api = usePageLoadActions({

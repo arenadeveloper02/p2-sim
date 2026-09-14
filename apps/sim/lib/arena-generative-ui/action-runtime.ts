@@ -1,5 +1,5 @@
 import type { ArenaGenerativeActionSurface } from '@/lib/arena-generative-ui/chat-protocol'
-import { lastAssistantPatch } from '@/lib/arena-generative-ui/chat-turns'
+import { lastAssistantErrorPatch, lastAssistantPatch } from '@/lib/arena-generative-ui/chat-turns'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
   ARENA_GENERATIVE_CHAT_TURNS_KEY,
@@ -144,7 +144,9 @@ export function hostStatePatchFromResult(result: RunDeployedAppActionResult): {
   const patch: Record<string, unknown> = preserved ? { ...preserved } : {}
   delete patch[ARENA_GENERATIVE_CHAT_TURNS_KEY]
   if (!result.ok) {
-    patch[ARENA_GENERATIVE_ERROR_KEY] = visitorFacingActionError(result.error ?? 'Action failed')
+    const message = visitorFacingActionError(result.error ?? 'Action failed')
+    patch[ARENA_GENERATIVE_ERROR_KEY] = message
+    Object.assign(patch, lastAssistantErrorPatch(message))
   }
   return {
     patch,

@@ -244,6 +244,12 @@ export const ARENA_GENERATIVE_CHAT_TURNS_KEY = 'chatTurns'
  */
 export const ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY = '__chatLastAssistant'
 
+/**
+ * Patch-only sentinel: visitor-facing error on the last assistant turn.
+ * Never stored as a public host key.
+ */
+export const ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_ERROR_KEY = '__chatLastAssistantError'
+
 /** Host state key a failed CTA writes its message to. */
 export const ARENA_GENERATIVE_ERROR_KEY = 'error'
 
