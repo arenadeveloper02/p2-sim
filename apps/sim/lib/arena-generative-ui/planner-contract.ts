@@ -84,7 +84,7 @@ export const PLANNER_COMPOSITION_EXAMPLES_AGENT = [
 
 /** Wait / generate constraints. */
 export const PLANNER_CONSTRAINT_WAIT = [
-  'LONG-RUNNING: Use when the user asks to analyze, generate, research, process, import, export, calculate, or otherwise wait. Minimum flow: Input → Execute → Working → Result. Named wait steps the user listed (Analyzing gaps, Writing draft, …) are CAPABILITY multi-step / progress on that generate action. They are not workflow pages, not visitor-walked stages, and not a reason to pick archetype workflow. Do not invent elaborate progress steps the request did not name.',
+  'LONG-RUNNING: Use when the user asks to analyze, generate, research, process, import, export, calculate, or otherwise wait. Minimum flow: Input → Execute → Working → Result. Honour a named job duration (10 minutes, half an hour) — do not rewrite it as a short wait. Named wait steps the user listed (Analyzing gaps, Writing draft, …) are CAPABILITY multi-step / progress on that generate action. They are not workflow pages, not visitor-walked stages, and not a reason to pick archetype workflow. Do not invent elaborate progress steps the request did not name.',
   'RESULTS represent the output contract, not a fixed visual template. Prefer structured output + prose. Do not automatically add SWOT, metrics, competitor cards, recommendations, or charts unless required by the request or returned data.',
 ].join('\n')
 

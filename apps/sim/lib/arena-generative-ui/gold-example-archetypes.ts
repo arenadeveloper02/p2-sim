@@ -7,6 +7,7 @@ export const GOLD_RENDER_CONTRACT = [
   'Match tokens, catalog types, and wiring (statePath, actionId, selectItem / showWhen).',
   'Honour pages[], regions, and interaction from the blueprint.',
   "Do not copy this sample's sitemap, page count, shell, or subject.",
+  "Do not copy this sample's WorkingCard estimate; use the brief's named duration.",
   'Do not invent pages or regions the blueprint omitted.',
   'Page children are AppHeader then Section. Start the Section with PageHeader (align start, no decorative kicker).',
   'User-facing copy only — do not put implementation notes in titles or subtitles.',

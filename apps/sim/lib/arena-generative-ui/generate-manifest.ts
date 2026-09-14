@@ -69,6 +69,7 @@ import {
   type ArenaGenerativeVisualBrief,
 } from '@/lib/arena-generative-ui/visual-brief'
 import { hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
+import { applyWaitEstimateFromBrief } from '@/lib/arena-generative-ui/wait-estimate'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
@@ -255,6 +256,7 @@ interface EvaluateGeneratedCandidateOptions {
   scopedPaths: string[]
   isPreserveEdit?: boolean
   userInput?: string
+  existingBrief?: string
   validationOptions: {
     pageHints?: ArenaGenerativePageHint[]
     apiBindings: ArenaGenerativeApiBinding[]
@@ -315,13 +317,19 @@ function evaluateGeneratedCandidate(
     userInput: options.userInput,
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
+  const estimated = applyWaitEstimateFromBrief(
+    knobbed.manifest,
+    options.userInput,
+    options.existingBrief
+  )
   return {
     success: true,
-    manifest: knobbed.manifest,
+    manifest: estimated.manifest,
     adoptedChanges: [
       ...sanitized.adoptedChanges,
       ...repaired.adoptedChanges,
       ...knobbed.adoptedChanges,
+      ...estimated.adoptedChanges,
     ],
   }
 }
@@ -533,8 +541,13 @@ export async function generateArenaGenerativeManifest(
     const applied = applyHostEditKnobs(themed, parseHostEditKnobs(userInput), {
       userInput,
     })
+    const estimated = applyWaitEstimateFromBrief(
+      applied.manifest,
+      userInput,
+      params.existingBrief
+    )
     const pagesUnchanged =
-      JSON.stringify(applied.manifest.pages) === JSON.stringify(params.existingManifest.pages)
+      JSON.stringify(estimated.manifest.pages) === JSON.stringify(params.existingManifest.pages)
     return {
       success: true,
       title:
@@ -545,8 +558,8 @@ export async function generateArenaGenerativeManifest(
           : 'Applied host layout knobs without a spec rewrite.',
         formatEditScopeStatus(null, pagesUnchanged)
       ),
-      manifest: applied.manifest,
-      adoptedChanges: applied.adoptedChanges,
+      manifest: estimated.manifest,
+      adoptedChanges: [...applied.adoptedChanges, ...estimated.adoptedChanges],
       editScope: { mode: pagesUnchanged ? 'theme' : 'global', pages: [] },
     }
   }
@@ -768,6 +781,7 @@ export async function generateArenaGenerativeManifest(
       scopedPaths,
       isPreserveEdit,
       userInput,
+      existingBrief: params.existingBrief,
       validationOptions,
     }
 

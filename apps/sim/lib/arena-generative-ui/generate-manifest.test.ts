@@ -506,6 +506,50 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.manifest?.pages.results).toBeTruthy()
   })
 
+  it('stamps WorkingCard estimate from a 10-minute brief instead of gold 90–150s', async () => {
+    const resultsSpec = structuredClone(twoPageResultsSpec)
+    resultsSpec.elements.working = {
+      type: 'WorkingCard',
+      props: {
+        title: 'Working…',
+        steps: 'Scoring\nWriting',
+        estimate: 'Usually takes 90–150s',
+        cancelTo: 'home',
+      },
+      children: [],
+    }
+    const section = resultsSpec.elements.section
+    if (section) {
+      section.children = ['working', ...(section.children ?? [])]
+    }
+
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(
+        JSON.stringify({
+          title: 'Analyst',
+          content: 'ok',
+          manifest: { entryPath: 'home' },
+          pages: {
+            ...twoPageManifest.pages,
+            results: { ...twoPageManifest.pages.results, spec: resultsSpec },
+          },
+          actions: twoPageManifest.actions,
+        })
+      )
+    )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Analyze a company. This might take 10 minutes.',
+      apiBindings: [],
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.results.spec.elements.working?.props?.estimate).toBe(
+      'Usually takes about 10 minutes'
+    )
+    expect(result.adoptedChanges?.some((change) => change.code === 'wait-estimate')).toBe(true)
+  })
+
   it('recovers wrapper-level actions when nested manifest already has pages', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(
       textMessage(

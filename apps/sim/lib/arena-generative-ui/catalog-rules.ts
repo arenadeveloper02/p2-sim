@@ -44,7 +44,7 @@ export const ARENA_GENERATIVE_UI_COMPONENT_RULES = [
 ] as const
 
 export const ARENA_GENERATIVE_UI_INTERACTION_RULES = [
-  'WorkingCard: the host ticks steps and the bar. Use it when a CAPABILITY selected long-running, multi-step, or cancellable. Do not emit ProgressSteps, a filling ProgressBar, or Spinner as the wait. A Stat with a literal value or a Table with literal rows never shows a skeleton. For a static-children region you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}.',
+  'WorkingCard: the host ticks steps and the bar. Use it when a CAPABILITY selected long-running, multi-step, or cancellable. estimate is the brief\'s named duration, not gold 90–150s. Do not emit ProgressSteps, a filling ProgressBar, or Spinner as the wait. A Stat with a literal value or a Table with literal rows never shows a skeleton. For a static-children region you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}.',
   'Empty copy: bound Table, Repeat, Calendar, Timeline, Map, Tree, Carousel, and KeyValue use emptyText (defaults: "No results" for Table, Repeat, Calendar, Timeline, Map, Tree, and Carousel, "No details" for KeyValue). A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles"). Do not add a second Text or Alert for that.',
   'Result pages: when onSuccess.navigate is set, bind the destination Table/Repeat/Stat/Chart/KeyValue/DataText/Map/Tree/Carousel/Timeline. Same-page generate (no results page): bind those components below WorkingCard on the task page.',
 ] as const

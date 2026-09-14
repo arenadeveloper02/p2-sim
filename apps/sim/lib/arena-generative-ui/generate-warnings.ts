@@ -36,6 +36,7 @@ export const ARENA_GENERATIVE_ADOPTED_CHANGE_CODES = [
   'edit-missed',
   'split-results-back',
   'task-measure',
+  'wait-estimate',
 ] as const
 
 export const arenaGenerativeAdoptedChangeSchema = z.object({

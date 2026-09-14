@@ -36,6 +36,7 @@ import {
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
 import { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
+import { applyWaitEstimateFromBrief } from '@/lib/arena-generative-ui/wait-estimate'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
@@ -89,14 +90,16 @@ export function GenerativeAppPreviewHost({
 
   const manifest = draftQuery.data?.manifest
   const apiBindings = draftQuery.data?.apiBindings
+  const brief = draftQuery.data?.brief ?? ''
   const streamingIds = useMemo(
     () => new Set(manifest && apiBindings ? streamingActionIdsFrom(manifest, apiBindings) : []),
     [manifest, apiBindings]
   )
-  const compiled = useMemo(
-    () => (manifest ? compileGenerativeUx(manifest, apiBindings ?? []) : undefined),
-    [manifest, apiBindings]
-  )
+  const compiled = useMemo(() => {
+    if (!manifest) return undefined
+    const stamped = applyWaitEstimateFromBrief(manifest, brief)
+    return compileGenerativeUx(stamped.manifest, apiBindings ?? [])
+  }, [manifest, apiBindings, brief])
   const compiledPages = compiled?.pages
   const uxPlan = compiled?.uxPlan
 
