@@ -238,6 +238,34 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)\n')
   })
 
+  it('injects task and collection golds when those jobs are uncovered and tabs are not planned', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'task',
+      pageArchetypes: ['task', 'collection'],
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).toContain('Do not merge their sitemaps or subjects')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (agent-shell)')
+  })
+
+  it('keeps agent-shell gold when tabs cover task, results, and collection', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'task',
+      pageArchetypes: ['task', 'results', 'collection'],
+      shell: { navigation: 'tabs' },
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (agent-shell)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)\n')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (collection)\n')
+  })
+
   it('keeps full design guidelines and forms constitution for a collection app', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'collection',

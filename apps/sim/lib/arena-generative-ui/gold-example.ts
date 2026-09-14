@@ -231,53 +231,116 @@ export interface GoldExamplePickerOptions {
   needsTables?: boolean
 }
 
+/** Validated gold sample injected for an uncovered planned page job. */
+export type GoldExampleKey =
+  | 'task'
+  | 'agent-shell'
+  | 'list-detail'
+  | 'workspace'
+  | 'collection'
+  | 'table'
+  | 'calendar'
+  | 'timeline'
+  | 'dashboard'
+  | 'workflow'
+  | 'content'
+
+const MAX_GOLD_EXAMPLES = 3
+
+const GOLD_PROMPT_BY_KEY: Record<GoldExampleKey, string> = {
+  task: ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
+  'agent-shell': ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL,
+  'list-detail': ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  workspace: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
+  collection: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
+  table: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
+  calendar: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR,
+  timeline: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
+  dashboard: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
+  workflow: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
+  content: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
+}
+
 /**
- * Few-shot for the generator: wiring only. Selected from the planned sitemap.
- * Prefer agent product-shell gold only when shell.tabs + task + results
- * (avoids mis-picking Article Agent gold for unrelated task+results+collection).
+ * Multi-gold preface: each block is a wiring few-shot for one page job.
+ * Sitemap and subjects stay on `pages[]`.
+ */
+export const GOLD_MULTI_EXAMPLE_PREFACE =
+  'Each GOLD STANDARD block applies only to pages whose job matches its label. Do not merge their sitemaps or subjects. Honour `pages[]`.'
+
+const AGENT_SHELL_COVERS = ['task', 'results', 'collection'] as const
+const TASK_COVERS = ['task', 'results'] as const
+const LIST_DETAIL_COVERS = ['collection', 'detail'] as const
+
+function collectionBodyKey(options?: GoldExamplePickerOptions): GoldExampleKey {
+  if (options?.needsCalendar) return 'calendar'
+  if (options?.needsTimeline) return 'timeline'
+  if (options?.needsTables) return 'table'
+  return 'collection'
+}
+
+/**
+ * Unique gold keys for uncovered planned page jobs. Composite samples cover
+ * their member jobs; cap is three. Workspace / regions stay exclusive.
+ */
+export function selectGoldExampleKeys(
+  archetype?: ArenaGenerativeArchetype,
+  options?: GoldExamplePickerOptions
+): GoldExampleKey[] {
+  const jobs = new Set<ArenaGenerativeArchetype>(options?.pageArchetypes ?? [])
+  if (archetype) jobs.add(archetype)
+
+  if (options?.hasRegions || jobs.has('workspace')) {
+    return ['workspace']
+  }
+
+  const uncovered = new Set(jobs)
+  const keys: GoldExampleKey[] = []
+
+  const cover = (key: GoldExampleKey, covered: readonly ArenaGenerativeArchetype[]) => {
+    if (keys.length >= MAX_GOLD_EXAMPLES) return
+    keys.push(key)
+    for (const job of covered) uncovered.delete(job)
+  }
+
+  const tabsShell = options?.shell?.navigation === 'tabs'
+  if (uncovered.has('task') && uncovered.has('results') && tabsShell) {
+    cover('agent-shell', AGENT_SHELL_COVERS)
+  }
+
+  if (uncovered.has('collection') && uncovered.has('detail')) {
+    cover('list-detail', LIST_DETAIL_COVERS)
+  }
+
+  if (uncovered.has('task') || uncovered.has('results')) {
+    cover('task', TASK_COVERS)
+  }
+
+  if (uncovered.has('collection')) {
+    cover(collectionBodyKey(options), ['collection'])
+  }
+
+  if (uncovered.has('dashboard')) cover('dashboard', ['dashboard'])
+  if (uncovered.has('workflow')) cover('workflow', ['workflow'])
+  if (uncovered.has('content')) cover('content', ['content'])
+  if (uncovered.has('detail')) cover('list-detail', ['detail'])
+
+  return keys.length > 0 ? keys : ['task']
+}
+
+/**
+ * Few-shot for the generator: wiring only. Concatenates one gold per uncovered
+ * planned page job (max 3). Prefer agent product-shell gold only when
+ * shell.tabs + task + results (covers collection History in that sample).
  */
 export function goldExamplePromptForArchetype(
   archetype?: ArenaGenerativeArchetype,
   options?: GoldExamplePickerOptions
 ): string {
-  const shapes = new Set<ArenaGenerativeArchetype>(options?.pageArchetypes ?? [])
-  if (archetype) shapes.add(archetype)
-  const hasRegions = Boolean(options?.hasRegions)
-  const tabsShell = options?.shell?.navigation === 'tabs'
-  const taskResults = shapes.has('task') && shapes.has('results')
-
-  if (hasRegions || shapes.has('workspace')) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
+  const keys = selectGoldExampleKeys(archetype, options)
+  const blocks = keys.map((key) => GOLD_PROMPT_BY_KEY[key])
+  if (keys.length > 1) {
+    return [GOLD_MULTI_EXAMPLE_PREFACE, ...blocks].join('\n\n')
   }
-  // Require shell.tabs so lead-form → results + unrelated collection does not
-  // get Article Agent few-shot. Shell must be passed from the prompt pipeline.
-  if (taskResults && tabsShell) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL
-  }
-  if (taskResults) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
-  }
-  if (shapes.has('collection') && shapes.has('detail')) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
-  }
-  if (shapes.has('task')) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
-  }
-  if (shapes.has('collection') && options?.needsCalendar) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR
-  }
-  if (shapes.has('collection') && options?.needsTimeline) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE
-  }
-  if (shapes.has('collection') && options?.needsTables) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE
-  }
-  if (shapes.has('collection')) {
-    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION
-  }
-  if (shapes.has('dashboard')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD
-  if (shapes.has('workflow')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
-  if (shapes.has('content')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT
-  if (shapes.has('detail')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
-  return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+  return blocks[0] ?? ARENA_GENERATIVE_UI_GOLD_EXAMPLE
 }

@@ -882,28 +882,12 @@ describe.concurrent('Blocks Module', () => {
       expect(replacement?.hideFromToolbar).not.toBe(true)
     })
 
-    it('should keep the HTML Generative UI block registered but out of discovery', () => {
-      const legacy = getBlock('generative_ui')
-      const replacement = getBlock('arena_generative_ui')
-
-      expect(legacy).toBeDefined()
-      expect(legacy?.tools.access).toContain('generative_ui_generate_html')
-      expect(legacy?.hideFromToolbar).toBe(true)
-      expect(legacy?.sunset).toEqual({ status: 'legacy', replacedBy: 'arena_generative_ui' })
-      expect(replacement).toBeDefined()
-      expect(replacement?.hideFromToolbar).not.toBe(true)
-    })
-
-    it('should keep the HTML Generative UI block registered but out of discovery', () => {
-      const legacy = getBlock('generative_ui')
-      const replacement = getBlock('arena_generative_ui')
-
-      expect(legacy).toBeDefined()
-      expect(legacy?.tools.access).toContain('generative_ui_generate_html')
-      expect(legacy?.hideFromToolbar).toBe(true)
-      expect(legacy?.sunset).toEqual({ status: 'legacy', replacedBy: 'arena_generative_ui' })
-      expect(replacement).toBeDefined()
-      expect(replacement?.hideFromToolbar).not.toBe(true)
+    it('registers Arena Generative UI as the only generative UI block', () => {
+      expect(getBlock('generative_ui')).toBeUndefined()
+      const block = getBlock('arena_generative_ui')
+      expect(block).toBeDefined()
+      expect(block?.hideFromToolbar).not.toBe(true)
+      expect(block?.sunset).toBeUndefined()
     })
 
     /**

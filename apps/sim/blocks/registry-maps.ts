@@ -98,7 +98,6 @@ import {
 import { FlintBlock, FlintBlockMeta } from '@/blocks/blocks/flint'
 import { FunctionBlock } from '@/blocks/blocks/function'
 import { GammaBlock, GammaBlockMeta } from '@/blocks/blocks/gamma'
-import { GenerativeUiBlock } from '@/blocks/blocks/generative_ui'
 import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
 import {
   GitHubBlock,
@@ -491,7 +490,6 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   flint: FlintBlock,
   function: FunctionBlock,
   gamma: GammaBlock,
-  generative_ui: GenerativeUiBlock,
   generic_webhook: GenericWebhookBlock,
   github: GitHubBlock,
   github_v2: GitHubV2Block,

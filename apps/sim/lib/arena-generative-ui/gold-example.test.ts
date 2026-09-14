@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
   GOLD_EXAMPLE_API_KEY,
+  GOLD_MULTI_EXAMPLE_PREFACE,
   goldExampleManifest,
   goldExampleOutput,
   goldExamplePromptForArchetype,
+  selectGoldExampleKeys,
 } from '@/lib/arena-generative-ui/gold-example'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL,
@@ -191,13 +193,6 @@ describe('per-archetype gold examples', () => {
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
-    expect(goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'collection'] })).toBe(
-      ARENA_GENERATIVE_UI_GOLD_EXAMPLE
-    )
-    // task+results+collection without tabs must not steal Article Agent gold
-    expect(
-      goldExamplePromptForArchetype('task', { pageArchetypes: ['task', 'results', 'collection'] })
-    ).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(
       goldExamplePromptForArchetype('task', {
         pageArchetypes: ['task', 'results'],
@@ -214,6 +209,52 @@ describe('per-archetype gold examples', () => {
       ARENA_GENERATIVE_UI_GOLD_EXAMPLE
     )
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+  })
+
+  it('covers uncovered page jobs with unique golds (max 3)', () => {
+    expect(selectGoldExampleKeys('task', { pageArchetypes: ['task', 'collection'] })).toEqual([
+      'task',
+      'collection',
+    ])
+    expect(
+      selectGoldExampleKeys('task', { pageArchetypes: ['task', 'results', 'collection'] })
+    ).toEqual(['task', 'collection'])
+    expect(
+      selectGoldExampleKeys('task', {
+        pageArchetypes: ['task', 'results', 'collection'],
+        shell: { navigation: 'tabs' },
+      })
+    ).toEqual(['agent-shell'])
+    expect(
+      selectGoldExampleKeys('collection', { pageArchetypes: ['collection', 'detail'] })
+    ).toEqual(['list-detail'])
+    expect(selectGoldExampleKeys('collection', { needsTables: true })).toEqual(['table'])
+    expect(selectGoldExampleKeys('task')).toEqual(['task'])
+    expect(
+      selectGoldExampleKeys('task', {
+        pageArchetypes: ['task', 'collection', 'dashboard', 'workflow'],
+      })
+    ).toEqual(['task', 'collection', 'dashboard'])
+  })
+
+  it('concatenates task + collection golds and does not merge sitemaps', () => {
+    const prompt = goldExamplePromptForArchetype('task', {
+      pageArchetypes: ['task', 'collection'],
+    })
+    expect(prompt).toContain(GOLD_MULTI_EXAMPLE_PREFACE)
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (agent-shell)')
+    expect(prompt).not.toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+  })
+
+  it('keeps task+results+collection without tabs off agent-shell gold', () => {
+    const prompt = goldExamplePromptForArchetype('task', {
+      pageArchetypes: ['task', 'results', 'collection'],
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (agent-shell)')
   })
 
   it('validates the agent product-shell gold', () => {

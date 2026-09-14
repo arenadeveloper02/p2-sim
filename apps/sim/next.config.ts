@@ -273,10 +273,6 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
-    '/api/tools/generative_ui/*': [
-      './node_modules/@json-render/**/*',
-      './node_modules/@react-email/**/*',
-    ],
     '/api/tools/arena_generative_ui/*': ['./node_modules/@json-render/**/*'],
     // The seed, merge, and persist endpoints all lazily `require('jsdom')` (via the collab-doc
     // converter), which is invisible to the standalone file tracer, so force jsdom (and its transitive
