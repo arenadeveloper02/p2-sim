@@ -83,7 +83,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   pagination: [
     'CAPABILITY: PAGINATION',
-    'Load more only when the binding declares pagination. Button showWhen "hasMore" reuses the same actionId. Do not invent a second next-page action. Without binding.pagination the host pages Table and Repeat locally from the loaded rows.',
+    'Emit Pagination below Table, Repeat, or bound List. Load more (mode more, same actionId, showWhen hasMore) only when the binding declares pagination. Do not invent a second next-page action. Without binding.pagination, Pagination mode pages with statePath drives host-local Previous/Next — do not emit a Load more Button.',
   ].join('\n'),
   grouping: [
     'CAPABILITY: GROUPING',

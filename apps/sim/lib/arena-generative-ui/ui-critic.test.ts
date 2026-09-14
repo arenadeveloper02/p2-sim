@@ -260,6 +260,20 @@ describe('hostCriticManifest', () => {
     expect(error).toContain(`${MAX_NON_REPEAT_CARDS_PER_PAGE + 1} Cards outside Repeat`)
   })
 
+  it('allows catalog Pagination', () => {
+    const spec = pageSpec(
+      {
+        pager: {
+          type: 'Pagination',
+          props: { statePath: 'projects', mode: 'pages' },
+          children: [],
+        },
+      },
+      ['pager']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toBeUndefined()
+  })
+
   it('allows catalog Kanban', () => {
     const spec = pageSpec(
       {

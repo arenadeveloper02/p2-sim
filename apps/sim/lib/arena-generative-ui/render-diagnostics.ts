@@ -17,6 +17,8 @@ const BOUND_TYPES = new Set([
   'Kanban',
   'Filmstrip',
   'List',
+  'Pagination',
+  'CommandPalette',
 ])
 
 export interface RenderDiagnostic {

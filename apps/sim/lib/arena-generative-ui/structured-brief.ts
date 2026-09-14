@@ -824,7 +824,7 @@ export const SHELL_RECIPE = [
   'tabs: emit Tabs as Label|path for two or more peer top-level destinations (Generator|home and History|history). Not sequential steps (those are Stepper). Not task→results (that is navigate). Not same-page result panels (Chip setValue).',
   'AGENT PRODUCT SHELL: when shell.tabs with a Generator task page and results (History collection only when pages[] listed it), wire home form (no wait chrome), results via navigate-first generate (WorkingCard + Chip setValue views), and History as same-page Open — selectItem with no navigateTo; hide the list with !selectedId; Chip/DataText + clearItem Back. Tabs only for Generator|History. Do not invent History unless pages[] listed it.',
   'minimal / none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
-  'header: emit AppHeader (icon + product name) as a direct child of Page. breadcrumbs: NavLinks only when that flag is true. PageHeader remains the in-page title inside Section.',
+  'header: emit AppHeader (icon + product name) as a direct child of Page. breadcrumbs: emit Breadcrumb (items Label|path, last crumb current) when that flag is true — not a row of NavLinks. PageHeader remains the in-page title inside Section.',
 ].join('\n')
 
 const MINIMAL_SHELL = new Set<ArenaGenerativeShellNavigation>(['minimal', 'none'])

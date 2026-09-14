@@ -167,6 +167,19 @@ import {
   visibleMarkdownForElement,
 } from '@/lib/arena-generative-ui/host-content-actions'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
+import { parseBreadcrumbItems } from '@/lib/arena-generative-ui/gui-breadcrumb'
+import {
+  commandPaletteEntriesFromCollection,
+  defaultCommandPaletteActionField,
+  defaultCommandPalettePathField,
+  defaultCommandPaletteTitleField,
+  parseCommandPaletteItems,
+} from '@/lib/arena-generative-ui/gui-command-palette'
+import {
+  paginationPageKey,
+  parsePaginationMode,
+  specHasPaginationControl,
+} from '@/lib/arena-generative-ui/gui-pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
@@ -194,6 +207,13 @@ import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-comp
 import { ChatTypingIndicator } from '@/app/(interfaces)/gui-apps/[identifier]/chat-typing-indicator'
 import { GuiHostCalendar, GuiHostDateInput } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
 import { GuiHostSearchField } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-search-field'
+import {
+  GuiHostBreadcrumb,
+  GuiHostCommandPalette,
+  GuiHostPagination,
+  GuiHostPopover,
+  GuiHostTooltip,
+} from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-shell'
 import {
   GuiHostCarousel,
   GuiHostCollectionList,
@@ -644,8 +664,8 @@ function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info')
   return TONE_CLASSES[tone as keyof typeof TONE_CLASSES] ?? TONE_CLASSES[fallback]
 }
 
-function collectionPageKey(elementId: string, scope?: RepeatItemScope): string {
-  return scope ? `${elementId}:${scope.index}` : elementId
+function collectionPageKey(elementId: string, statePath: string, scope?: RepeatItemScope): string {
+  return paginationPageKey(elementId, statePath, scope?.index)
 }
 
 function CollectionPageChrome({
@@ -655,42 +675,7 @@ function CollectionPageChrome({
   paged: PaginatedCollection<unknown>
   onPageChange: (page: number) => void
 }) {
-  if (paged.total <= LOCAL_COLLECTION_PAGE_SIZE) return null
-  return (
-    <div className='col-span-full mt-3 flex w-full flex-wrap items-center justify-between gap-3'>
-      <p className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
-        Showing {paged.from}–{paged.to} of {paged.total}
-      </p>
-      <div className='flex gap-2'>
-        <button
-          type='button'
-          aria-label='Previous page'
-          disabled={paged.page <= 1}
-          className={cn(
-            BUTTON_BASE_CLASS,
-            BUTTON_VARIANT_CLASSES.secondary,
-            BUTTON_SIZE_CLASSES.sm
-          )}
-          onClick={() => onPageChange(paged.page - 1)}
-        >
-          Previous
-        </button>
-        <button
-          type='button'
-          aria-label='Next page'
-          disabled={paged.page >= paged.pageCount}
-          className={cn(
-            BUTTON_BASE_CLASS,
-            BUTTON_VARIANT_CLASSES.secondary,
-            BUTTON_SIZE_CLASSES.sm
-          )}
-          onClick={() => onPageChange(paged.page + 1)}
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  )
+  return <GuiHostPagination mode='pages' paged={paged} onPageChange={onPageChange} />
 }
 
 /**
@@ -2429,8 +2414,11 @@ export function SpecRenderer({
     if (apiOwned || items.length <= LOCAL_COLLECTION_PAGE_SIZE) {
       return { visible: items, chrome: null }
     }
-    const key = collectionPageKey(elementId, itemScope)
+    const key = collectionPageKey(elementId, statePath, itemScope)
     const paged = paginateCollection(items, localPages[key] ?? 1)
+    if (specHasPaginationControl(elements, statePath)) {
+      return { visible: paged.items, chrome: null }
+    }
     return {
       visible: paged.items,
       chrome: (
@@ -3015,6 +3003,17 @@ export function SpecRenderer({
           />
         )
       }
+      case 'Breadcrumb': {
+        const items = parseBreadcrumbItems(props.items)
+        if (items.length === 0) return null
+        return (
+          <GuiHostBreadcrumb
+            items={items}
+            currentPath={currentPath}
+            onNavigate={requestNavigate}
+          />
+        )
+      }
       case 'Table': {
         const statePath = asString(props.statePath) || implicitDummyTableStatePath(spec, id)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
@@ -3418,6 +3417,50 @@ export function SpecRenderer({
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
             onSelectItem={onSelectItem}
+          />
+        )
+      }
+      case 'Pagination': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const actionId = asString(props.actionId)
+        const statePath = asString(props.statePath)
+        const mode = parsePaginationMode(props.mode, actionId ? 'more' : 'pages')
+        if (actionId) {
+          return (
+            <GuiHostPagination
+              mode={mode === 'pages' ? 'more' : mode}
+              hasMore={isTruthyFieldValue(state.hasMore)}
+              pending={controlPending(actionId)}
+              onLoadMore={() =>
+                void dispatchAction(actionId, actionValues, confirmMeta(actionId))
+              }
+            />
+          )
+        }
+        if (!statePath) return null
+        const stateValue = readStatePath(state, statePath, scope)
+        const rawItems = collectionFromBoundValue(stateValue) ?? []
+        const discovered = filterCollectionItems(rawItems, localDiscovery)
+        const items =
+          specKeepsCollectionVisible(spec) && selectedIdSet
+            ? filterCollectionItemsBySelection(
+                discovered,
+                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+                state[ARENA_GENERATIVE_SELECTED_KEY]
+              )
+            : discovered
+        const key = collectionPageKey(id, statePath, scope)
+        const paged = paginateCollection(items, localPages[key] ?? 1)
+        return (
+          <GuiHostPagination
+            mode='pages'
+            paged={paged}
+            onPageChange={(page) =>
+              setLocalPages((current) => ({
+                ...current,
+                [key]: page,
+              }))
+            }
           />
         )
       }
@@ -3957,6 +4000,38 @@ export function SpecRenderer({
         if (!fieldIsVisible(props, visibilityValues)) return null
         return <CatalogToastView text={asString(props.text)} tone={props.tone} />
       }
+      case 'Tooltip': {
+        return (
+          <GuiHostTooltip text={asString(props.text)} label={asString(props.label) || undefined}>
+            {hasChildren ? children : undefined}
+          </GuiHostTooltip>
+        )
+      }
+      case 'Popover': {
+        const showWhen = asString(props.showWhen)
+        const controlled = Boolean(showWhen)
+        return (
+          <GuiHostPopover
+            title={asString(props.title) || undefined}
+            label={asString(props.label) || undefined}
+            open={controlled ? fieldIsVisible(props, visibilityValues) : undefined}
+            onOpenChange={
+              controlled
+                ? (next) => {
+                    if (next) {
+                      const patch = overlayOpenPatch(props.showWhen)
+                      if (patch) applyOverlayPatch(patch)
+                      return
+                    }
+                    applyOverlayPatch(overlayClosePatch(props.showWhen))
+                  }
+                : undefined
+            }
+          >
+            {children}
+          </GuiHostPopover>
+        )
+      }
       case 'Modal':
       case 'Drawer': {
         const side = asString(props.side, 'right')
@@ -4270,6 +4345,50 @@ export function SpecRenderer({
           <form className='w-full' onSubmit={handleSearchSubmit} noValidate>
             {searchInput}
           </form>
+        )
+      }
+      case 'CommandPalette': {
+        const statePath = asString(props.statePath)
+        const staticEntries = parseCommandPaletteItems(props.items)
+        const boundItems = statePath
+          ? (collectionFromBoundValue(readStatePath(state, statePath, scope)) ?? [])
+          : []
+        const titleField =
+          asString(props.titleField) || defaultCommandPaletteTitleField(boundItems)
+        const pathField =
+          asString(props.pathField) || defaultCommandPalettePathField(boundItems, titleField)
+        const actionField =
+          asString(props.actionField) || defaultCommandPaletteActionField(boundItems, titleField)
+        const boundEntries =
+          boundItems.length > 0
+            ? commandPaletteEntriesFromCollection(boundItems, titleField, pathField, actionField)
+            : []
+        const entries = boundEntries.length > 0 ? boundEntries : staticEntries
+        const showWhen = asString(props.showWhen)
+        const controlled = Boolean(showWhen)
+        return (
+          <GuiHostCommandPalette
+            placeholder={asString(props.placeholder) || undefined}
+            label={asString(props.label) || undefined}
+            entries={entries}
+            open={controlled ? fieldIsVisible(props, visibilityValues) : undefined}
+            onOpenChange={
+              controlled
+                ? (next) => {
+                    if (next) {
+                      const patch = overlayOpenPatch(props.showWhen)
+                      if (patch) applyOverlayPatch(patch)
+                      return
+                    }
+                    applyOverlayPatch(overlayClosePatch(props.showWhen))
+                  }
+                : undefined
+            }
+            onNavigate={requestNavigate}
+            onRunAction={(actionId) =>
+              void dispatchAction(actionId, actionValues, confirmMeta(actionId))
+            }
+          />
         )
       }
       case 'TextInput':
@@ -4705,16 +4824,20 @@ export function SpecRenderer({
         if (!rawItems || rawItems.length === 0) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
+        const { visible, chrome } = pageCollection(id, items, statePath, scope)
         return (
-          <GuiHostCollectionList
-            items={items}
-            titleField={asString(props.titleField) || undefined}
-            bodyField={asString(props.bodyField) || undefined}
-            emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
-            busy={boundPending(statePath)}
-            ordered={asBoolean(props.ordered)}
-            onSelectItem={onSelectItem}
-          />
+          <>
+            <GuiHostCollectionList
+              items={visible}
+              titleField={asString(props.titleField) || undefined}
+              bodyField={asString(props.bodyField) || undefined}
+              emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
+              busy={boundPending(statePath)}
+              ordered={asBoolean(props.ordered)}
+              onSelectItem={onSelectItem}
+            />
+            {chrome}
+          </>
         )
       }
       case 'ListItem':

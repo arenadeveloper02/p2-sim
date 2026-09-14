@@ -28,6 +28,17 @@ import {
   treeNodesFromCollection,
 } from '@/lib/arena-generative-ui/gui-tree'
 import { timelineItemsForCollection } from '@/lib/arena-generative-ui/gui-timeline'
+import { parseBreadcrumbItems } from '@/lib/arena-generative-ui/gui-breadcrumb'
+import {
+  commandPaletteEntriesFromCollection,
+  filterCommandPaletteEntries,
+  parseCommandPaletteItems,
+} from '@/lib/arena-generative-ui/gui-command-palette'
+import {
+  paginationPageKey,
+  parsePaginationMode,
+  specHasPaginationControl,
+} from '@/lib/arena-generative-ui/gui-pagination'
 
 describe('gui-map', () => {
   it('discovers lat/lng/title keys and keeps rows without coordinates', () => {
@@ -123,5 +134,55 @@ describe('gui-filmstrip', () => {
       title: '09:00',
       subtitle: '21',
     })
+  })
+})
+
+describe('gui-pagination', () => {
+  it('keys local pages by statePath and detects authored Pagination', () => {
+    expect(paginationPageKey('table', 'articles')).toBe('articles')
+    expect(paginationPageKey('table', '', 2)).toBe('table:2')
+    expect(parsePaginationMode(null, 'pages')).toBe('pages')
+    expect(parsePaginationMode('more', 'pages')).toBe('more')
+    expect(
+      specHasPaginationControl(
+        { pager: { type: 'Pagination', props: { statePath: 'articles' } } },
+        'articles'
+      )
+    ).toBe(true)
+    expect(
+      specHasPaginationControl(
+        { pager: { type: 'Pagination', props: { statePath: 'other' } } },
+        'articles'
+      )
+    ).toBe(false)
+  })
+})
+
+describe('gui-breadcrumb', () => {
+  it('allows a current crumb without a path', () => {
+    expect(parseBreadcrumbItems('Home|home\nOrders')).toEqual([
+      { label: 'Home', path: 'home' },
+      { label: 'Orders', path: null },
+    ])
+  })
+})
+
+describe('gui-command-palette', () => {
+  it('parses navigate and action targets and filters by query', () => {
+    const parsed = parseCommandPaletteItems('Home|home\nCreate|#create_task\nReload|action:refresh')
+    expect(parsed).toEqual([
+      { label: 'Home', kind: 'navigate', target: 'home' },
+      { label: 'Create', kind: 'action', target: 'create_task' },
+      { label: 'Reload', kind: 'action', target: 'refresh' },
+    ])
+    expect(filterCommandPaletteEntries(parsed, 'cre')).toEqual([parsed[1]])
+    expect(
+      commandPaletteEntriesFromCollection(
+        [{ title: 'Open', path: 'detail' }],
+        'title',
+        'path',
+        ''
+      )
+    ).toEqual([{ label: 'Open', kind: 'navigate', target: 'detail' }])
   })
 })

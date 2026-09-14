@@ -77,4 +77,18 @@ describe('compileProductBrief', () => {
       ])
     )
   })
+
+  it('maps command palette and breadcrumbs onto catalog types', () => {
+    const compiled = compileProductBrief(
+      'Add a command palette (⌘K) and breadcrumbs under the header.'
+    )
+    expect(compiled.honorPrompt).toContain('CommandPalette')
+    expect(compiled.honorPrompt).toContain('Breadcrumb')
+    expect(compiled.adoptedChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'product-map', asked: expect.stringContaining('Command palette') }),
+        expect.objectContaining({ code: 'product-map', asked: expect.stringContaining('Breadcrumb') }),
+      ])
+    )
+  })
 })

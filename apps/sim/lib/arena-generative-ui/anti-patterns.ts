@@ -19,10 +19,10 @@ export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'nav — Never create navigation without a destination. NavLink.to / Button.navigateTo must be a page path. Do not use href for an in-app page.',
   'loading — Never show loading indefinitely without recovery. Bind statePath; the host skeletons, Chat typing dots, Refresh, and Retry. Do not emit a Spinner or dancing-dots loader.',
   'errors — Never hide errors. The host shows a banner. Do not omit emptyText or emit a silent dead end.',
-  'hover — Never use hover as the only way to discover actions. Put Button / Toolbar in the layout. Do not rely on hover-only chrome (the catalog has none).',
+  'hover — Never use hover as the only way to discover actions. Put Button / Toolbar in the layout. Tooltip is supplementary hint, not the only control.',
   'destructive — Never place a destructive Button beside the primary without distinction. variant "destructive" (host paints outline danger). Confirm is host.',
   'dead — Never generate dead buttons. Every Button needs actionId, navigateTo, href, selectItem, clearItem, setValue (to open a Modal/Drawer), copyContent, or downloadPdf. Labels Copy Markdown / Download PDF count. SubmitButton needs a Form or actionId.',
-  'pages — Never create pagination without enough data. Load more only when the binding declares pagination, with showWhen "hasMore". Do not invent a second next-page action.',
+  'pages — Never create pagination without enough data. Use Pagination. mode more only when the binding declares pagination. Do not invent a second next-page action or a Load more Button.',
   'filters — Never create a Filter that does not affect data. Name Filter children after collection columns (host filters locally) or query fields the collection onLoad / CTA actually sends.',
   'search — Never create a SearchField that does not modify the collection. Omit actionId to filter the on-page Table/Repeat; with actionId, bind the destination Repeat, Table, List, or DataText to that declared action. live true runs the same action as the user types.',
 ].join('\n')

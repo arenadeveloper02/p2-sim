@@ -25,6 +25,11 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Carousel',
       'Kanban',
       'Filmstrip',
+      'Pagination',
+      'Breadcrumb',
+      'Tooltip',
+      'Popover',
+      'CommandPalette',
       'SubmitButton',
       'Tabs',
       'PageHeader',
@@ -116,7 +121,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
   it('tells the spec the host pages Table and Repeat when there is no pagination API', () => {
     expect(prompt).toContain('the host pages long tables locally')
     expect(prompt).toContain('the host pages long lists locally')
-    expect(prompt).toContain('do not emit a Load more Button')
+    expect(prompt).toContain('Do not emit a Load more Button')
   })
 
   it('teaches host-owned Disclosure expand chrome', () => {
@@ -145,6 +150,11 @@ describe('isArenaGenerativeCatalogType', () => {
     expect(isArenaGenerativeCatalogType('Carousel')).toBe(true)
     expect(isArenaGenerativeCatalogType('Kanban')).toBe(true)
     expect(isArenaGenerativeCatalogType('Filmstrip')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Pagination')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Breadcrumb')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Tooltip')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Popover')).toBe(true)
+    expect(isArenaGenerativeCatalogType('CommandPalette')).toBe(true)
     expect(isArenaGenerativeCatalogType('Combobox')).toBe(true)
     expect(isArenaGenerativeCatalogType('FileInput')).toBe(true)
     expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
@@ -167,6 +177,10 @@ describe('resolveCatalogComponentNames', () => {
     expect(names.has('Carousel')).toBe(true)
     expect(names.has('Kanban')).toBe(true)
     expect(names.has('Filmstrip')).toBe(true)
+    expect(names.has('Pagination')).toBe(true)
+    expect(names.has('Breadcrumb')).toBe(true)
+    expect(names.has('Tooltip')).toBe(true)
+    expect(names.has('CommandPalette')).toBe(true)
     expect(names.has('Form')).toBe(true)
     expect(names.has('WorkingCard')).toBe(false)
     expect(names.has('Workspace')).toBe(false)

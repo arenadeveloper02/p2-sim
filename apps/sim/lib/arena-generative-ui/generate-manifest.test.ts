@@ -398,7 +398,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('Cross-page History')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')
-    expect(system).toContain('host pages Table and Repeat locally')
+    expect(system).toContain('Pagination mode pages')
 
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('articles[].title')

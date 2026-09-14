@@ -35,10 +35,11 @@ describe('capabilityRecipePrompt', () => {
     )
   })
 
-  it('tells pagination recipes the host pages locally without binding.pagination', () => {
+  it('tells pagination recipes to emit Pagination instead of a Load more Button', () => {
     expect(capabilityRecipePrompt(['pagination'])).toContain(
-      'Without binding.pagination the host pages Table and Repeat locally'
+      'Without binding.pagination, Pagination mode pages'
     )
+    expect(capabilityRecipePrompt(['pagination'])).toContain('do not emit a Load more Button')
   })
 
   it('tells sort recipes that header click sorts loaded rows', () => {

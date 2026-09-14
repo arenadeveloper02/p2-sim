@@ -250,6 +250,25 @@ describe('repairHostCriticExtras', () => {
     expect(result.adoptedChanges.some((change) => change.code === 'unbound-metric')).toBe(true)
   })
 
+  it('keeps Pagination and CommandPalette as catalog types', () => {
+    const spec = pageSpec(
+      {
+        pager: { type: 'Pagination', props: { statePath: 'projects' }, children: [] },
+        palette: {
+          type: 'CommandPalette',
+          props: { items: 'Home|home' },
+          children: [],
+        },
+      },
+      ['pager', 'palette']
+    )
+    const result = repairHostCriticExtras(manifestWithHome(spec))
+    expect(hostCriticManifest(result.manifest)).toBeUndefined()
+    expect(result.manifest.pages.home.spec.elements.pager?.type).toBe('Pagination')
+    expect(result.manifest.pages.home.spec.elements.palette?.type).toBe('CommandPalette')
+    expect(result.adoptedChanges.some((change) => change.code === 'invented-type')).toBe(false)
+  })
+
   it('keeps Kanban and Filmstrip as catalog types', () => {
     const spec = pageSpec(
       {

@@ -5147,6 +5147,138 @@ describe('SpecRenderer', () => {
       }
     })
 
+    it('renders Pagination, Breadcrumb, Tooltip, Popover, and CommandPalette', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Home' },
+            children: ['trail', 'hint', 'pop', 'pager', 'palette'],
+          },
+          trail: {
+            type: 'Breadcrumb',
+            props: { items: 'Home|home\nOrders' },
+            children: [],
+          },
+          hint: {
+            type: 'Tooltip',
+            props: { text: 'More info', label: 'Hint' },
+            children: [],
+          },
+          pop: {
+            type: 'Popover',
+            props: { title: 'Help', label: 'Open help' },
+            children: ['pop-body'],
+          },
+          'pop-body': {
+            type: 'Text',
+            props: { text: 'Popover body' },
+            children: [],
+          },
+          pager: {
+            type: 'Pagination',
+            props: { statePath: 'rows', mode: 'pages' },
+            children: [],
+          },
+          palette: {
+            type: 'CommandPalette',
+            props: {
+              label: 'Commands',
+              items: 'Home|home\nCreate|#create_task',
+              placeholder: 'Search',
+            },
+            children: [],
+          },
+        },
+      }
+      const rows = Array.from({ length: 25 }, (_, index) => ({ id: String(index), name: `R${index}` }))
+      const { container, onNavigate, onRunAction } = render({
+        spec,
+        state: { rows },
+        currentPath: 'orders',
+      })
+      expect(container.querySelector('[data-testid="gui-breadcrumb"]')).toBeTruthy()
+      expect(container.textContent).toContain('Home')
+      expect(container.textContent).toContain('Orders')
+      expect(container.querySelector('[data-testid="gui-tooltip"]')).toBeTruthy()
+      expect(container.querySelector('[data-testid="gui-pagination"]')).toBeTruthy()
+      expect(container.textContent).toContain('Showing 1–20 of 25')
+      const next = container.querySelector('button[aria-label="Next page"]') as HTMLButtonElement
+      act(() => {
+        next.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.textContent).toContain('Showing 21–25 of 25')
+      const popTrigger = Array.from(container.querySelectorAll('button')).find(
+        (node) => node.textContent === 'Open help'
+      ) as HTMLButtonElement
+      act(() => {
+        popTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.textContent).toContain('Popover body')
+      const commandTrigger = Array.from(container.querySelectorAll('button')).find(
+        (node) => node.textContent === 'Commands'
+      ) as HTMLButtonElement
+      act(() => {
+        commandTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.querySelector('[aria-label="Command palette"]')).toBeTruthy()
+      const create = Array.from(container.querySelectorAll('button')).find(
+        (node) => node.textContent?.includes('Create')
+      ) as HTMLButtonElement
+      act(() => {
+        create.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith(
+        'create_task',
+        expect.any(Object)
+      )
+      const homeCrumb = Array.from(
+        container.querySelectorAll('[data-testid="gui-breadcrumb"] button')
+      )[0] as HTMLButtonElement
+      act(() => {
+        homeCrumb.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onNavigate).toHaveBeenCalledWith('home')
+    })
+
+    it('uses authored Pagination for API load more and skips a second auto chrome', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['table', 'pager'] },
+          table: {
+            type: 'Table',
+            props: { columns: 'name', statePath: 'articles' },
+            children: [],
+          },
+          pager: {
+            type: 'Pagination',
+            props: { actionId: 'load_list', mode: 'more' },
+            children: [],
+          },
+        },
+      }
+      const { container, onRunAction } = render({
+        spec,
+        state: {
+          articles: Array.from({ length: 25 }, (_, index) => ({ name: `A${index}` })),
+          hasMore: true,
+        },
+        actionHostKeys: { load_list: ['articles', 'hasMore', 'nextCursor'] },
+      })
+      expect(container.querySelectorAll('[data-testid="gui-pagination"]').length).toBe(1)
+      expect(container.textContent).toContain('Load more')
+      expect(container.textContent).not.toContain('Showing')
+      const more = Array.from(container.querySelectorAll('button')).find(
+        (node) => node.textContent === 'Load more'
+      ) as HTMLButtonElement
+      act(() => {
+        more.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith('load_list', expect.any(Object))
+    })
+
     it('splices reorderable table rows with Alt+Arrow', () => {
       const spec: Spec = {
         root: 'page',

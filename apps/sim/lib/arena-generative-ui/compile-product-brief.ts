@@ -92,6 +92,45 @@ const COMPILE_RULES: readonly CompileRule[] = [
       'Condition glyphs are catalog Icon (sun, cloud, cloud-sun, cloud-rain, cloud-snow, cloud-lightning, wind). Bind Icon.statePath to weather_code or a catalog name. Do not invent a custom WMO map component.',
   },
   {
+    id: 'command-palette',
+    match: (text) =>
+      /\b(?:command\s+palette|cmdk|cmd\s*\+\s*k|⌘\s*k|spotlight\s+search)\b/i.test(text),
+    code: 'product-map',
+    asked: 'Command palette / spotlight / ⌘K overlay.',
+    adopted: 'CommandPalette (items Label|path or Label|#actionId). Host opens on ⌘K.',
+    honor:
+      'Command search is CommandPalette, not a second SearchField hero. items are Label|path or Label|#actionId.',
+  },
+  {
+    id: 'breadcrumbs',
+    match: (text) => /\bbreadcrumbs?\b/i.test(text),
+    code: 'product-map',
+    asked: 'Breadcrumb trail.',
+    adopted: 'Catalog Breadcrumb (Label|path crumbs). Not a row of NavLinks.',
+    honor:
+      'A trail is Breadcrumb (items newline Label|path; last crumb current). Do not emit a row of NavLinks for breadcrumbs.',
+  },
+  {
+    id: 'tooltip-popover',
+    match: (text) =>
+      /\b(?:tooltips?|popovers?|hover\s+hints?|hover\s+cards?)\b/i.test(text),
+    code: 'product-map',
+    asked: 'Tooltip or popover hints.',
+    adopted: 'Tooltip for hover; Popover for click panels. Not Modal.',
+    honor:
+      'Hover hints are Tooltip. Click panels are Popover. Do not fake them with Modal or absolute Stacks.',
+  },
+  {
+    id: 'pagination-control',
+    match: (text) =>
+      /\b(?:pagination\s+control|page\s+numbers?|pager|numbered\s+pages?)\b/i.test(text),
+    code: 'product-map',
+    asked: 'Numbered pagination / pager chrome.',
+    adopted: 'Catalog Pagination below the collection. Local mode pages; API mode more.',
+    honor:
+      'Page chrome is Pagination below Table/Repeat/List. mode pages is local Previous/Next; mode more is Load more on a declared pagination binding. Do not emit a Load more Button.',
+  },
+  {
     id: 'persist',
     match: (text) =>
       /\b(?:localstorage|local\s+storage|persist(?:ed|ence)?|remember\s+(?:last\s+)?(?:city|location|unit)|save\s+last\s+city)\b/i.test(

@@ -218,17 +218,21 @@ describe('normalizeGeneratedSpec', () => {
     expect(elements(spec).chart.props.chartType).toBe('line')
   })
 
-  it('aliases KanbanBoard onto Kanban and HorizontalScroll onto Filmstrip', () => {
+  it('aliases KanbanBoard onto Kanban, HorizontalScroll onto Filmstrip, and chrome aliases', () => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
       elements: {
-        page: { type: 'Page', props: {}, children: ['board', 'hours'] },
+        page: { type: 'Page', props: {}, children: ['board', 'hours', 'pager', 'trail'] },
         board: { type: 'KanbanBoard', props: { statePath: 'tasks' }, children: [] },
         hours: { type: 'HorizontalScroll', props: { statePath: 'hourly' }, children: [] },
+        pager: { type: 'Pager', props: { statePath: 'tasks' }, children: [] },
+        trail: { type: 'Breadcrumbs', props: { items: 'Home|home' }, children: [] },
       },
     })
     expect(elements(spec).board.type).toBe('Kanban')
     expect(elements(spec).hours.type).toBe('Filmstrip')
+    expect(elements(spec).pager.type).toBe('Pagination')
+    expect(elements(spec).trail.type).toBe('Breadcrumb')
   })
 
   it('aliases BarChart onto Chart with chartType bar', () => {

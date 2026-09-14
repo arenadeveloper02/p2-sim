@@ -41,7 +41,7 @@ const BOUND_RESULT_TYPES = new Set([
   'ProgressBar',
 ])
 
-const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat'])
+const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat', 'Pagination', 'CommandPalette'])
 
 const COLLECTION_TYPES = new Set([
   'Table',

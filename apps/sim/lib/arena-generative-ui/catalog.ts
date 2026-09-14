@@ -77,7 +77,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use List when rows are primarily a title (optional body) with no Card chrome. Use Calendar when the brief asks for a month or week plot of dated rows. Use Timeline when chronological order is the body. Use Map for lat/lng pins, Tree for nested folders, Carousel for a cycling gallery, Kanban for status columns, Filmstrip for a horizontal hourly strip. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. When the binding has no pagination the host pages long lists locally; do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card, or Disclosure for FAQ/criteria). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) on Card or as always-visible Repeat copy — put that prose in a Disclosure body (DataText statePath "item.suggested_answer") so the title stays collapsed. Use Table instead when every item is the same scalar fields with no per-row action. Use List when rows are primarily a title (optional body) with no Card chrome. Use Calendar when the brief asks for a month or week plot of dated rows. Use Timeline when chronological order is the body. Use Map for lat/lng pins, Tree for nested folders, Carousel for a cycling gallery, Kanban for status columns, Filmstrip for a horizontal hourly strip. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that. showWhen "!selectedId" hides the list only for same-page History Open (no navigateTo, no Workspace or Drawer). Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. Cross-page History (selectItem + navigateTo, or a Chip that switches activeView) must leave the list visible. Put Pagination below the collection for page chrome. When the binding has no pagination the host pages long lists locally — Pagination mode pages, no actionId. When the binding declares pagination, Pagination mode more reuses that actionId. Do not emit a Load more Button. Set reorderable true only when the brief asked to reorder dummy/local rows — the host splices the loaded array; omit it for API-paginated or generate results.',
     },
     Columns: {
       props: z.object({
@@ -125,6 +125,13 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       slots: ['default'],
       description:
         'Page title with optional kicker (small brand-colored label above the title) and subtitle. align "center" stacks kicker/title/subtitle as a hero with a readable measure; children stay top-right (history, secondary). Default align is start. Use once at the top of a Section instead of a bare Heading. Not the sticky product bar — that is AppHeader.',
+    },
+    Breadcrumb: {
+      props: z.object({
+        items: z.string(),
+      }),
+      description:
+        'Trail of destinations. items is newline-separated "Label|path" like Tabs; a line with no "|" is the current crumb (not a link). Place under AppHeader or at the top of Section when shell.breadcrumbs is true or the brief named a trail. Last crumb is the current page. Do not fake this with a row of NavLinks.',
     },
     Toolbar: {
       props: z.object({
@@ -217,7 +224,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         reorderable: z.boolean().nullable(),
       }),
       description:
-        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Honour a named format or footer aggregate per column with pipes: `price|currency`, `date|relative`, `amount|sum` (sum, avg, min, max, count — the cell still shows the row value; the host paints a totals row). Invented index column `#` or `index` is 1-based on the visible rows. Do not invent API fields (sentiment, YoY) that are not on the row. Header click sorts the loaded rows locally unless a Toolbar/Filter sort field has a known actionId — only emit a sort Select when the binding actually sends that param. Emit Table on a prose string (markdown table, JSON object array, CSV) only when Requested Changes / the brief says to show that field as a table; otherwise DataText. Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. When the binding has no pagination the host pages long tables locally; do not emit a Load more Button. A bound table with no rows shows emptyText (default "No results"). Set reorderable true only when the brief asked to reorder dummy/local rows.',
+        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Honour a named format or footer aggregate per column with pipes: `price|currency`, `date|relative`, `amount|sum` (sum, avg, min, max, count — the cell still shows the row value; the host paints a totals row). Invented index column `#` or `index` is 1-based on the visible rows. Do not invent API fields (sentiment, YoY) that are not on the row. Header click sorts the loaded rows locally unless a Toolbar/Filter sort field has a known actionId — only emit a sort Select when the binding actually sends that param. Emit Table on a prose string (markdown table, JSON object array, CSV) only when Requested Changes / the brief says to show that field as a table; otherwise DataText. Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. Put Pagination below the table for page chrome. When the binding has no pagination the host pages long tables locally — Pagination mode pages, no actionId. When the binding declares pagination, Pagination mode more reuses that actionId. Do not emit a Load more Button. A bound table with no rows shows emptyText (default "No results"). Set reorderable true only when the brief asked to reorder dummy/local rows.',
     },
     Calendar: {
       props: z.object({
@@ -292,6 +299,16 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       description:
         'Horizontal scrolling row of compact chips from a host-state array at statePath. titleField is the chip label (default time/title/name); subtitleField is a second line (temperature, value). Clicking a chip copies the row like Repeat selectItem. Use for hourly/daily strips. Not Carousel (images), not Chart (axes), not a wrapping Grid of Cards. Dummy/local: seed 6–12 rows.',
+    },
+    Pagination: {
+      props: z.object({
+        mode: z.enum(['pages', 'more']).nullable(),
+        actionId: z.string().nullable(),
+        statePath: z.string().nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      description:
+        'Collection page chrome. Place below Table, Repeat, or bound List. mode pages (default without actionId) is Previous/Next for host-local paging of statePath — do not also invent a Load more Button. mode more plus actionId is Load more when the binding declares pagination: reuse that actionId, showWhen hasMore, host injects nextCursor/offset. Do not invent a second next-page action. Without binding.pagination omit actionId. Not a numbered page input.',
     },
     Stat: {
       props: z.object({
@@ -377,6 +394,25 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       description:
         'Transient in-content feedback the brief asked for. Auto-dismisses. showWhen uses the same clause syntax as form fields. Do not use for save success or API failure — the host shows those.',
     },
+    Tooltip: {
+      props: z.object({
+        text: z.string(),
+        label: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Hover/focus hint. text is the hint. Children are the trigger; if there are no children, label is the trigger text. Supplementary only — do not hide the only action inside a Tooltip. Not Popover (that is click) and not Modal.',
+    },
+    Popover: {
+      props: z.object({
+        title: z.string().nullable(),
+        label: z.string().nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Click-to-open panel. label is the trigger; children are the body. Omit showWhen and the host toggles on click. With showWhen, open like Modal (Button setValue). Not Tooltip (hover), not Drawer, and not a dropdown Select.',
+    },
     Modal: {
       props: z.object({
         title: z.string().nullable(),
@@ -455,6 +491,20 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       description:
         'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a manifest.actions key (declared apiKey, or dummy/local with no apiKey) when this field is not inside a Form; inside a Form the parent submits. live true plus actionId runs that action as the user types (host debounce, min 2 characters) — use for geocode/typeahead. suggestions is a comma-separated list of chips that fill the field (static; live hits bind a Repeat/List on the page). Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
+    },
+    CommandPalette: {
+      props: z.object({
+        placeholder: z.string().nullable(),
+        items: z.string().nullable(),
+        statePath: z.string().nullable(),
+        titleField: z.string().nullable(),
+        pathField: z.string().nullable(),
+        actionField: z.string().nullable(),
+        label: z.string().nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      description:
+        'Searchable command overlay. Emit only when the brief asked for a command palette, spotlight, or ⌘K. items is newline-separated "Label|path" (navigate) or "Label|#actionId" / "Label|action:id" (run that action). Bound: statePath on an array, titleField, optional pathField or actionField. label is an optional trigger; the host also opens on ⌘K / Ctrl+K. Omit showWhen and the host owns open state; with showWhen, open like Modal. Not a SearchField hero and not Tabs.',
     },
     Chip: {
       props: z.object({
@@ -627,7 +677,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         showWhen: z.string().nullable(),
       }),
       description:
-        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. setValue writes a host flag so a sibling Modal or Drawer showWhen can open: `creating=true` for New / Add, `editing=true` for a Repeat-row Edit (the host selects that row and prefills). Empty value (`creating=` / `editing=`) clears it — do not reuse creating for edit. Inside Repeat, selectItem true copies that row into host state (selected, selectedId, content from output/content) without calling an API — combine with navigateTo a results page that has no onLoad, or stay on the list page with no navigateTo. Same-page History then hides the list and shows sibling detail with showWhen "selectedId". Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. It does not restamp inputs; Results chips still use the form field names. clearItem true drops that copied row so Back can restore the list; it must not set selectItem or actionId. copyContent true copies the visible DataText markdown (Results or History Open) to the clipboard; downloadPdf true downloads it as a PDF. Labels "Copy Markdown" / "Download PDF" are enough when actionId is omitted — never bind those to the generate API. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more and "selectedId" for a same-page Back.',
+        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. setValue writes a host flag so a sibling Modal or Drawer showWhen can open: `creating=true` for New / Add, `editing=true` for a Repeat-row Edit (the host selects that row and prefills). Empty value (`creating=` / `editing=`) clears it — do not reuse creating for edit. Inside Repeat, selectItem true copies that row into host state (selected, selectedId, content from output/content) without calling an API — combine with navigateTo a results page that has no onLoad, or stay on the list page with no navigateTo. Same-page History then hides the list and shows sibling detail with showWhen "selectedId". Workspace and Drawer keep the collection visible — do not hide navigator or primary with `!selectedId`. It does not restamp inputs; Results chips still use the form field names. clearItem true drops that copied row so Back can restore the list; it must not set selectItem or actionId. copyContent true copies the visible DataText markdown (Results or History Open) to the clipboard; downloadPdf true downloads it as a PDF. Labels "Copy Markdown" / "Download PDF" are enough when actionId is omitted — never bind those to the generate API. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "selectedId" for a same-page Back. Collection paging is Pagination, not a Load more Button.',
     },
     NavLink: {
       props: z.object({
@@ -796,6 +846,10 @@ export const ARENA_GENERATIVE_CATALOG_CORE = [
   'Divider',
   'List',
   'ListItem',
+  'Breadcrumb',
+  'Tooltip',
+  'Popover',
+  'CommandPalette',
 ] as const
 
 /** Optional catalog families injected from the blueprint. */
@@ -810,6 +864,7 @@ export const ARENA_GENERATIVE_CATALOG_FAMILIES = {
     'Carousel',
     'Kanban',
     'Filmstrip',
+    'Pagination',
     'Filter',
     'Disclosure',
     'Avatar',
@@ -914,6 +969,7 @@ export function resolveCatalogComponentNames(
     addFamily('shell')
   }
   if (capabilities.has('chat') || shapes.has('content')) addFamily('chat')
+  if (capabilities.has('pagination')) names.add('Pagination')
 
   return [...names]
 }
@@ -1010,7 +1066,7 @@ export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
 
 /** Added to the generator prompt only when at least one API binding is declared. */
 export const ARENA_GENERATIVE_UI_PAGINATION_RULE = [
-  'Pagination: when a binding declares pagination, the host injects limit and cursor/offset, writes hasMore plus nextCursor (cursor mode) or offset (offset mode) into state, and appends the items array on page 2+ so Load more does not replace the list. Put a Button with the same actionId, showWhen "hasMore", and inputMapping that sends state nextCursor (cursor: "nextCursor") or offset (offset: "offset"). Do not invent a second action for the next page. When the binding has no pagination, the host pages Table and Repeat locally from the loaded rows — do not emit showWhen "hasMore" or a Load more actionId.',
+  'Pagination: emit catalog Pagination below Table, Repeat, or bound List — not a Load more Button. When a binding declares pagination, the host injects limit and cursor/offset, writes hasMore plus nextCursor (cursor mode) or offset (offset mode) into state, and appends the items array on page 2+. Pagination mode more reuses the same actionId (showWhen hasMore). Do not invent a second action for the next page. When the binding has no pagination, Pagination mode pages with statePath drives host-local Previous/Next — do not emit showWhen "hasMore" or a Load more actionId.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */

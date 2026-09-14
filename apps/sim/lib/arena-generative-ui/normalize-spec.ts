@@ -108,6 +108,18 @@ const TYPE_ALIASES: Record<string, string> = {
   EventTimeline: 'Timeline',
   KanbanBoard: 'Kanban',
   HorizontalScroll: 'Filmstrip',
+  PaginationBar: 'Pagination',
+  Pager: 'Pagination',
+  PageControl: 'Pagination',
+  Hint: 'Tooltip',
+  HoverTip: 'Tooltip',
+  HoverCard: 'Popover',
+  Flyout: 'Popover',
+  CommandMenu: 'CommandPalette',
+  Spotlight: 'CommandPalette',
+  CmdK: 'CommandPalette',
+  Breadcrumbs: 'Breadcrumb',
+  CrumbTrail: 'Breadcrumb',
 }
 
 const SPACING_PROPS = ['gap', 'padding'] as const
