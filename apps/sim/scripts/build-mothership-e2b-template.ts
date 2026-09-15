@@ -2,22 +2,23 @@
 
 /**
  * Builds (or rebuilds) the Mothership / Arena Copilot E2B shell template under a
- * stable alias so `MOTHERSHIP_E2B_TEMPLATE_ID` stays the same when you add PyPI
- * or apt packages.
+ * stable alias so `MOTHERSHIP_E2B_TEMPLATE_ID` stays the same when you add PyPI,
+ * apt, or npm packages (including `mmdc` / Mermaid CLI).
  *
- * Usage:
+ * Usage (updates the already-configured MOTHERSHIP_E2B_TEMPLATE_ID in place):
  *   E2B_API_KEY=... bun run apps/sim/scripts/build-mothership-e2b-template.ts \
- *     [--name sim-mothership] \
- *     [--base-template code-interpreter-v1] \
+ *     [--name <existing-alias>] \
+ *     [--base-template <existing-alias-or-code-interpreter-v1>] \
  *     [--pip 'package==1.2.3']... \
  *     [--no-cache] \
  *     [--no-write-env]
  *
- * After a successful build the script writes (by default):
- *   MOTHERSHIP_E2B_TEMPLATE_ID=<name>
- * into `apps/sim/.env` and the repo-root `.env` when those files exist.
- * `Sandbox.create` resolves by template name, so the alias always points at the
- * latest build — no env change required for package updates.
+ * Defaults:
+ *   --name          = current MOTHERSHIP_E2B_TEMPLATE_ID (same id, not a new one)
+ *   --base-template = that same id (layer packages onto the existing image)
+ *
+ * After a successful build the script rewrites the same alias into
+ * `apps/sim/.env` and the repo-root `.env` when those files exist.
  */
 
 import { defaultBuildLogger, Template, waitForTimeout } from '@e2b/code-interpreter'
@@ -33,6 +34,9 @@ import {
   mergeMothershipPipPackages,
   MOTHERSHIP_APT_PACKAGES,
   MOTHERSHIP_COMMANDS_ASSERT,
+  MOTHERSHIP_MERMAID_SETUP,
+  MOTHERSHIP_MERMAID_SMOKE_ASSERT,
+  MOTHERSHIP_NPM_CLI_PACKAGES,
   MOTHERSHIP_PYTHON_IMPORTS_ASSERT,
   MOTHERSHIP_SANDBOX_CPU_COUNT,
   MOTHERSHIP_SANDBOX_MEMORY_MB,
@@ -53,14 +57,18 @@ async function main(): Promise<void> {
     .fromTemplate(args.baseTemplate)
     .aptInstall([...MOTHERSHIP_APT_PACKAGES])
     .pipInstall(pipPackages)
+    .npmInstall([...MOTHERSHIP_NPM_CLI_PACKAGES], { g: true })
+    .runCmd(MOTHERSHIP_MERMAID_SETUP, { user: 'root' })
     .runCmd(MOTHERSHIP_COMMANDS_ASSERT, { user: 'root' })
     .runCmd(MOTHERSHIP_PYTHON_IMPORTS_ASSERT, { user: 'root' })
+    .runCmd(MOTHERSHIP_MERMAID_SMOKE_ASSERT, { user: 'root' })
     .setStartCmd(START_COMMAND, waitForTimeout(1_000))
 
   logger.info('Building Mothership E2B template', {
     templateName: args.templateName,
     baseTemplate: args.baseTemplate,
     pipPackageCount: pipPackages.length,
+    npmPackageCount: MOTHERSHIP_NPM_CLI_PACKAGES.length,
     cpuCount: MOTHERSHIP_SANDBOX_CPU_COUNT,
     memoryMB: MOTHERSHIP_SANDBOX_MEMORY_MB,
     skipCache: args.skipCache,

@@ -1,6 +1,5 @@
 import {
   isImmutableE2BTemplateRef,
-  isValidE2BTemplateName,
   isValidE2BTemplateReferenceName,
 } from '@sim/utils/sandbox-references'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -21,11 +20,43 @@ export interface MothershipBuildArgs {
   writeEnv: boolean
 }
 
+/**
+ * Prefers the already-configured mothership template id so rebuilds update that
+ * alias instead of minting `sim-mothership`.
+ *
+ * Pass `null` to force the fallback alias (ignores process env). Omit the arg
+ * to read `process.env.MOTHERSHIP_E2B_TEMPLATE_ID`.
+ */
+export function resolveDefaultMothershipTemplateName(
+  configured: string | null | undefined = process.env.MOTHERSHIP_E2B_TEMPLATE_ID
+): string {
+  const trimmed = configured?.trim()
+  if (trimmed && isValidE2BTemplateReferenceName(trimmed)) return trimmed
+  return MOTHERSHIP_E2B_DEFAULT_TEMPLATE_NAME
+}
+
+function assertMothershipTemplateName(value: string, flag: '--name' | 'MOTHERSHIP_E2B_TEMPLATE_ID'): string {
+  if (isImmutableE2BTemplateRef(value)) {
+    throw new Error(
+      `${flag} must be a mutable template alias, not an immutable <template>:<build-id>. Rebuilding updates the alias in place.`
+    )
+  }
+  if (!isValidE2BTemplateReferenceName(value)) {
+    throw new Error(
+      `${flag} must be an E2B template name or team/name reference (no :build-id). Rebuilding keeps this same id.`
+    )
+  }
+  return value
+}
+
 /** Parses CLI flags for the mothership E2B builder. */
-export function parseMothershipBuildArgs(argv: readonly string[]): MothershipBuildArgs {
+export function parseMothershipBuildArgs(
+  argv: readonly string[],
+  configuredTemplateId = process.env.MOTHERSHIP_E2B_TEMPLATE_ID
+): MothershipBuildArgs {
   const pipExtras: string[] = []
-  let templateName = MOTHERSHIP_E2B_DEFAULT_TEMPLATE_NAME
-  let baseTemplate = MOTHERSHIP_E2B_DEFAULT_BASE_TEMPLATE
+  let templateName = resolveDefaultMothershipTemplateName(configuredTemplateId)
+  let baseTemplate: string | undefined
   let skipCache = false
   let writeEnv = true
 
@@ -42,15 +73,7 @@ export function parseMothershipBuildArgs(argv: readonly string[]): MothershipBui
     if (arg === '--name') {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw new Error('--name requires a template name')
-      if (!isValidE2BTemplateName(value)) {
-        throw new Error('--name must be an untagged E2B template name (stable alias)')
-      }
-      if (value.startsWith('sim-sbx-')) {
-        throw new Error(
-          '--name must be a stable alias (e.g. sim-mothership), not a content-addressed sim-sbx-* image'
-        )
-      }
-      templateName = value
+      templateName = assertMothershipTemplateName(value, '--name')
       continue
     }
     if (arg === '--base-template') {
@@ -77,10 +100,27 @@ export function parseMothershipBuildArgs(argv: readonly string[]): MothershipBui
     throw new Error(`Unknown argument: ${arg}`)
   }
 
-  return { templateName, baseTemplate, pipExtras, skipCache, writeEnv }
+  // Default base = the same configured template so package updates layer onto the
+  // existing image. Fall back to code-interpreter only when no mothership id exists.
+  const resolvedBase =
+    baseTemplate ??
+    (configuredTemplateId?.trim() && isValidE2BTemplateReferenceName(configuredTemplateId.trim())
+      ? configuredTemplateId.trim()
+      : MOTHERSHIP_E2B_DEFAULT_BASE_TEMPLATE)
+
+  return {
+    templateName,
+    baseTemplate: resolvedBase,
+    pipExtras,
+    skipCache,
+    writeEnv,
+  }
 }
 
-/** Updates dotenv files so MOTHERSHIP_E2B_TEMPLATE_ID stays the stable alias. */
+/**
+ * Writes MOTHERSHIP_E2B_TEMPLATE_ID to the same alias used for the rebuild.
+ * Does not invent a new id when the value is already correct.
+ */
 export async function writeMothershipTemplateEnv(
   templateName: string,
   envPaths: readonly string[]
@@ -110,5 +150,11 @@ export async function writeMothershipTemplateEnv(
 
 /** Candidate dotenv paths when the builder runs from apps/sim or the repo root. */
 export function defaultMothershipEnvPaths(cwd = process.cwd()): string[] {
-  return [...new Set([path.resolve(cwd, '.env'), path.resolve(cwd, 'apps/sim/.env'), path.resolve(cwd, '../.env')])]
+  return [
+    ...new Set([
+      path.resolve(cwd, '.env'),
+      path.resolve(cwd, 'apps/sim/.env'),
+      path.resolve(cwd, '../.env'),
+    ]),
+  ]
 }

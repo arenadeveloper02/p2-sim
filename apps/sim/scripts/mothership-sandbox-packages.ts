@@ -17,23 +17,45 @@ export const MOTHERSHIP_E2B_DEFAULT_BASE_TEMPLATE = 'code-interpreter-v1'
 export const MOTHERSHIP_SANDBOX_CPU_COUNT = 2
 export const MOTHERSHIP_SANDBOX_MEMORY_MB = 4 * 1024
 
+/** Puppeteer launch config path baked into the image for headless `mmdc`. */
+export const MOTHERSHIP_MERMAID_PUPPETEER_CONFIG_PATH = '/usr/local/etc/mermaid-puppeteer.json'
+
 /**
- * Lean apt surface for shell pipelines. Keep this smaller than the Function
- * base — Mothership is not the custom-sandbox materializer foundation.
+ * Lean apt surface for shell pipelines plus Chromium runtime libs required by
+ * Puppeteer / `@mermaid-js/mermaid-cli`.
  */
 export const MOTHERSHIP_APT_PACKAGES = [
   'bash',
   'ca-certificates',
   'coreutils',
   'curl',
+  'fonts-liberation',
+  'fonts-noto-color-emoji',
   'git',
   'jq',
+  'libasound2',
+  'libatk-bridge2.0-0',
+  'libatk1.0-0',
+  'libcups2',
+  'libdbus-1-3',
+  'libdrm2',
+  'libgbm1',
+  'libgtk-3-0',
+  'libnspr4',
+  'libnss3',
+  'libx11-xcb1',
+  'libxcomposite1',
+  'libxdamage1',
+  'libxfixes3',
+  'libxkbcommon0',
+  'libxrandr2',
   'procps',
   'ripgrep',
   'sqlite3',
   'tar',
   'unzip',
   'wget',
+  'xdg-utils',
   'zip',
 ] as const
 
@@ -57,11 +79,26 @@ export const MOTHERSHIP_E2B_PYTHON_PACKAGES = MOTHERSHIP_E2B_PYTHON_PACKAGE_CONT
   ({ package: packageName, version }) => `${packageName}==${version}`
 )
 
+/**
+ * Global npm CLIs for Mothership shell/python agents.
+ * `@mermaid-js/mermaid-cli` provides `mmdc` (Puppeteer downloads Chromium).
+ */
+export const MOTHERSHIP_NPM_CLI_PACKAGE_CONTRACT = [
+  { package: '@mermaid-js/mermaid-cli', version: '11.12.0' },
+] as const
+
+export const MOTHERSHIP_NPM_CLI_PACKAGES = MOTHERSHIP_NPM_CLI_PACKAGE_CONTRACT.map(
+  ({ package: packageName, version }) => `${packageName}@${version}`
+)
+
 export const MOTHERSHIP_REQUIRED_COMMANDS = [
   'bash',
   'curl',
   'git',
   'jq',
+  'mmdc',
+  'node',
+  'npm',
   'python3',
   'rg',
   'sqlite3',
@@ -80,6 +117,27 @@ export const MOTHERSHIP_PYTHON_IMPORTS_ASSERT = `python3 -c 'import importlib, i
     version,
   }))
 )}; assert all(metadata.version(item["distribution"]) == item["version"] and importlib.import_module(item["importName"]) for item in packages)'`
+
+/**
+ * Writes the Puppeteer no-sandbox config and wraps `mmdc` so Copilot can call
+ * `mmdc` without remembering `--puppeteerConfigFile` (required in E2B).
+ */
+export const MOTHERSHIP_MERMAID_SETUP = [
+  `mkdir -p /usr/local/etc`,
+  `printf '%s\\n' '{"args":["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"]}' > ${MOTHERSHIP_MERMAID_PUPPETEER_CONFIG_PATH}`,
+  `MMDC_BIN="$(command -v mmdc)"`,
+  `test -n "$MMDC_BIN"`,
+  `mv "$MMDC_BIN" "\${MMDC_BIN}.real"`,
+  `printf '%s\\n' '#!/bin/bash' "exec \\"\${MMDC_BIN}.real\\" --puppeteerConfigFile ${MOTHERSHIP_MERMAID_PUPPETEER_CONFIG_PATH} \\"\\$@\\"" > "$MMDC_BIN"`,
+  `chmod +x "$MMDC_BIN"`,
+].join(' && ')
+
+/** Smoke-renders a tiny diagram so a broken Chromium install fails the build. */
+export const MOTHERSHIP_MERMAID_SMOKE_ASSERT = [
+  `printf '%s\\n' 'graph TD; A-->B;' > /tmp/sim-mothership-mermaid.mmd`,
+  `mmdc -i /tmp/sim-mothership-mermaid.mmd -o /tmp/sim-mothership-mermaid.png -b white`,
+  `test -s /tmp/sim-mothership-mermaid.png`,
+].join(' && ')
 
 /**
  * Merges contract pins with CLI `--pip` extras. Later entries win on the same
