@@ -34,6 +34,43 @@ export {
 
 const logger = createLogger('LocalCopilotMothershipDelegatedTools')
 
+/** Default when the model omits language — Mothership template is Python-based. */
+const LOCAL_COPILOT_DEFAULT_LANGUAGE = 'python' as const
+const LOCAL_COPILOT_FUNCTION_LANGUAGES = new Set(['python', 'shell'])
+const LOCAL_COPILOT_SANDBOX_LANGUAGES = new Set(['python'])
+
+function enforceLocalCopilotSandboxLanguages(
+  toolName: MothershipDelegatedToolName,
+  args: Record<string, unknown>
+): ToolExecutionResult | null {
+  if (toolName !== 'function_execute' && toolName !== 'manage_sandbox') return null
+
+  const allowed =
+    toolName === 'manage_sandbox'
+      ? LOCAL_COPILOT_SANDBOX_LANGUAGES
+      : LOCAL_COPILOT_FUNCTION_LANGUAGES
+  const raw = args.language
+  if (raw === undefined || raw === null || (typeof raw === 'string' && !raw.trim())) {
+    args.language = LOCAL_COPILOT_DEFAULT_LANGUAGE
+    return null
+  }
+
+  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (!allowed.has(normalized)) {
+    const allowedList = [...allowed].join('" or "')
+    const message = `Arena Copilot sandbox execution supports "${allowedList}" only (Mothership template is Python-oriented; javascript is not allowed).`
+    return {
+      toolName,
+      success: false,
+      error: message,
+      result: { success: false, message },
+    }
+  }
+
+  args.language = normalized
+  return null
+}
+
 let copilotServerToolNames: Set<string> | null = null
 let handlersRegistered = false
 
@@ -295,6 +332,9 @@ export async function executeMothershipDelegatedTool(
 
   const enrichedArgs = { ...args }
   let workflowId = resolveWorkflowIdForDelegatedTool(enrichedArgs, ctx)
+
+  const languageError = enforceLocalCopilotSandboxLanguages(toolName, enrichedArgs)
+  if (languageError) return languageError
 
   if (!workflowId && ctx.workspaceId) {
     workflowId = await resolveWorkflowIdFromDatabase(ctx.workspaceId, enrichedArgs)
