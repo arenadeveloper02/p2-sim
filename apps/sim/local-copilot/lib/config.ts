@@ -38,8 +38,8 @@ const DEFAULT_VERTEX_SPECIALIST_MODEL = 'gemini-3.5-flash-lite'
 const DEFAULT_BEDROCK_SPECIALIST_MODEL = 'anthropic.claude-haiku-4-5-20251001-v1:0'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 const DEFAULT_BEDROCK_REGION = 'us-east-1'
-/** Default Gemini/Vertex thinking level — `high` reliably returns thought text. */
-const DEFAULT_GEMINI_THINKING_LEVEL = 'high'
+/** Default Gemini/Vertex thinking level — `medium` balances CoT visibility vs TTFT. */
+const DEFAULT_GEMINI_THINKING_LEVEL = 'medium'
 /** Default Anthropic thinking effort — balances latency vs reasoning depth. */
 const DEFAULT_ANTHROPIC_THINKING_LEVEL = 'medium'
 
