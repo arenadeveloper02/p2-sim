@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   clearSpecialistCheckpoint,
@@ -25,7 +26,12 @@ import {
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { resolveLocalCopilotMaxOutputTokens } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
-import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
+import type {
+  AnthropicThinkingHistoryBlock,
+  ChatMessage,
+  GeminiHistoryPart,
+  LocalCopilotProvider,
+} from '@/local-copilot/lib/providers/types'
 import {
   prepareLocalToolConfirmation,
   waitForLocalToolConfirmation,
@@ -220,7 +226,7 @@ export async function executeSpecialistLoop(
       }
     }
 
-    await emitSpecialistEvent(events, { type: 'status', message: 'Working on it…' }, params.onEvent)
+    await emitSpecialistEvent(events, { type: 'status', message: 'Thinking…' }, params.onEvent)
 
     const messages: ChatMessage[] = [
       {
@@ -266,10 +272,18 @@ export async function executeSpecialistLoop(
     for (let round = 0; round < maxRounds; round++) {
       if (signal.aborted) break
 
-      const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
+      const pendingToolCalls: Array<{
+        id: string
+        name: string
+        arguments: string
+        thoughtSignature?: string
+      }> = []
       let assistantText = ''
       let roundInputTokens = 0
       let roundOutputTokens = 0
+      let roundGeminiModelParts: GeminiHistoryPart[] = []
+      let roundReasoningContent = ''
+      const roundAnthropicThinkingBlocks: AnthropicThinkingHistoryBlock[] = []
 
       try {
         for await (const chunk of params.provider.chatCompletionStream({
@@ -280,6 +294,22 @@ export async function executeSpecialistLoop(
           signal,
         })) {
           if (chunk.type === 'text' && chunk.content) assistantText += chunk.content
+          if (chunk.type === 'thinking' && chunk.content) {
+            roundReasoningContent += chunk.content
+          }
+          if (chunk.type === 'thinking_block' && chunk.thinkingBlock) {
+            roundAnthropicThinkingBlocks.push(chunk.thinkingBlock)
+            if (chunk.thinkingBlock.type === 'thinking') {
+              const suffix = unresolvedThinkingBlockText(
+                roundReasoningContent,
+                chunk.thinkingBlock.thinking
+              )
+              if (suffix) roundReasoningContent += suffix
+            }
+          }
+          if (chunk.type === 'gemini_model_parts' && chunk.geminiModelParts) {
+            roundGeminiModelParts = chunk.geminiModelParts
+          }
           if (chunk.type === 'tool_call' && chunk.toolCall) pendingToolCalls.push(chunk.toolCall)
           if (chunk.type === 'done' && chunk.usage) {
             roundInputTokens = chunk.usage.inputTokens
@@ -338,7 +368,18 @@ export async function executeSpecialistLoop(
 
       toolRoundCount += 1
       const ordered = sortToolCallsForExecution(pendingToolCalls)
-      messages.push({ role: 'assistant', content: assistantText, toolCalls: ordered })
+      messages.push({
+        role: 'assistant',
+        content: assistantText,
+        toolCalls: ordered,
+        ...(roundAnthropicThinkingBlocks.length > 0
+          ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
+          : {}),
+        ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
+        ...(roundReasoningContent.trim()
+          ? { reasoningContent: roundReasoningContent }
+          : {}),
+      })
 
       for (const call of ordered) {
         let parsedArgs: Record<string, unknown> = {}

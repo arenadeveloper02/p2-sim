@@ -67,7 +67,7 @@ export async function* runParentSpecialistToolCalls(
 
   for (const batch of batches) {
     if (batch.length > 1) {
-      yield { type: 'status', message: 'Working on it…' }
+      yield { type: 'status', message: 'Thinking…' }
     }
 
     logger.info('Arena Copilot specialist batch starting', {

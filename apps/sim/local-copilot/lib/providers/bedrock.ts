@@ -33,6 +33,54 @@ const logger = createLogger('LocalCopilotBedrockProvider')
 const BEDROCK_NOT_CONFIGURED =
   'Bedrock is not configured on this server. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or configure the AWS default credential chain).'
 
+/** Maps Local Copilot thinking levels to Bedrock Claude `budget_tokens`. */
+const BEDROCK_THINKING_BUDGET_TOKENS: Record<string, number> = {
+  low: 2048,
+  medium: 8192,
+  high: 16384,
+  max: 32768,
+}
+
+/**
+ * True when the Bedrock model id is Anthropic Claude (extended / adaptive thinking).
+ */
+export function isBedrockClaudeModel(model: string): boolean {
+  return /(?:^|[./])anthropic\.claude/i.test(model) || /^claude/i.test(model)
+}
+
+/**
+ * Builds `additionalModelRequestFields.thinking` for Claude on Bedrock.
+ * Non-Claude catalog models (GLM, Llama, …) return undefined.
+ */
+export function resolveBedrockThinkingAdditionalFields(
+  model: string,
+  thinkingLevel: string | undefined
+): Record<string, unknown> | undefined {
+  if (!thinkingLevel || thinkingLevel === 'none') return undefined
+  if (!isBedrockClaudeModel(model)) return undefined
+
+  const normalized = thinkingLevel.trim().toLowerCase()
+  // Adaptive-only Claude generations reject manual budget_tokens on Bedrock.
+  if (
+    /claude-(?:opus|sonnet)-5(?:$|[^0-9])/i.test(model) ||
+    /claude-opus-4(?:\.|-)(?:7|8)/i.test(model)
+  ) {
+    return {
+      thinking: { type: 'adaptive' },
+      output_config: { effort: normalized === 'max' ? 'high' : normalized },
+    }
+  }
+
+  const budgetTokens = BEDROCK_THINKING_BUDGET_TOKENS[normalized]
+  if (!budgetTokens) return undefined
+  return {
+    thinking: {
+      type: 'enabled',
+      budget_tokens: budgetTokens,
+    },
+  }
+}
+
 /** Ephemeral cache checkpoint — matches Anthropic Arena Copilot TTL. */
 export const BEDROCK_PROMPT_CACHE_POINT = { type: 'default' as const, ttl: '1h' as const }
 
@@ -464,24 +512,28 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
       maxTokens: request.maxTokens ?? 8192,
     })
 
+    const thinkingFields = resolveBedrockThinkingAdditionalFields(model, config.thinkingLevel)
+
     const baseInput = {
       modelId: bedrockModelId,
       messages,
       system: system.length > 0 ? system : undefined,
       inferenceConfig,
       toolConfig,
+      ...(thinkingFields ? { additionalModelRequestFields: thinkingFields } : {}),
     }
 
     const useStream = !(toolConfig && !bedrockSupportsStreamingWithTools(model))
     const promptCaching = bedrockModelSupportsPromptCaching(model)
 
     try {
-      if (toolConfig || promptCaching) {
+      if (toolConfig || promptCaching || thinkingFields) {
         logger.info('Bedrock request', {
           model: bedrockModelId,
           toolCount: mappedTools?.length ?? 0,
           streaming: useStream,
           promptCaching,
+          thinking: Boolean(thinkingFields),
         })
       }
 
@@ -494,6 +546,15 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
         let finishReason = mapBedrockStopReason(response.stopReason)
         let yieldedToolCall = false
         for (const block of response.output?.message?.content ?? []) {
+          if (
+            'reasoningContent' in block &&
+            block.reasoningContent &&
+            'reasoningText' in block.reasoningContent &&
+            typeof block.reasoningContent.reasoningText?.text === 'string' &&
+            block.reasoningContent.reasoningText.text
+          ) {
+            yield { type: 'thinking', content: block.reasoningContent.reasoningText.text }
+          }
           if ('text' in block && typeof block.text === 'string' && block.text) {
             yield { type: 'text', content: block.text }
           }
@@ -573,6 +634,16 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
         if (event.contentBlockDelta) {
           const index = event.contentBlockDelta.contentBlockIndex ?? 0
           const delta = event.contentBlockDelta.delta
+          if (
+            delta &&
+            'reasoningContent' in delta &&
+            delta.reasoningContent &&
+            'text' in delta.reasoningContent &&
+            typeof delta.reasoningContent.text === 'string' &&
+            delta.reasoningContent.text
+          ) {
+            yield { type: 'thinking', content: delta.reasoningContent.text }
+          }
           if (delta && 'text' in delta && typeof delta.text === 'string') {
             yield { type: 'text', content: delta.text }
           }

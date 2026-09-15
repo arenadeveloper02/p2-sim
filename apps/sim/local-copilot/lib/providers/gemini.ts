@@ -19,6 +19,7 @@ import type {
   ChatCompletionRequest,
   ChatMessage,
   ChatMessageContentPart,
+  GeminiHistoryPart,
   LocalCopilotProvider,
 } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
@@ -89,41 +90,143 @@ export interface GeminiCandidatePart {
   }
 }
 
+function optionalThoughtSignature(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+/** True when a Gemini/Vertex part is model reasoning (not answer prose). */
+function isGeminiThoughtPart(part: { thought?: unknown }): boolean {
+  return part.thought === true || part.thought === 'true'
+}
+
 /**
- * Maps Gemini candidate parts onto Local Copilot stream chunks.
- * Function calls are kept even when the API flags the part as thought — Gemini 3.x
- * often attaches `thought: true` (and a thought signature) to tool-call parts.
- * Thought text is not user-facing.
+ * Maps a stored history part back onto the GenAI `Part` shape for round-trip.
  */
-export function chunksFromGeminiParts(
-  parts: GeminiCandidatePart[],
+export function geminiHistoryPartToPart(part: GeminiHistoryPart): Part {
+  if ('functionCall' in part) {
+    return {
+      functionCall: {
+        id: part.functionCall.id,
+        name: part.functionCall.name,
+        args: part.functionCall.args,
+      },
+      ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
+    }
+  }
+  return {
+    text: part.text,
+    ...(part.thought ? { thought: true } : {}),
+    ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
+  }
+}
+
+/**
+ * Appends streamed Gemini parts into an assembled history buffer (merging
+ * contiguous thought/text deltas) and returns Local Copilot stream chunks.
+ * Generated tool-call ids are written into the history parts so tool results
+ * and model-turn echo stay aligned.
+ *
+ * Gemini 3 often sends the final `thoughtSignature` on an **empty-text** part
+ * while streaming — those must not be dropped or follow-up turns lose CoT.
+ */
+export function appendGeminiStreamParts(
+  historyParts: GeminiHistoryPart[],
+  incoming: GeminiCandidatePart[],
   generateCallId: () => string
 ): ChatCompletionChunk[] {
   const chunks: ChatCompletionChunk[] = []
 
-  for (const part of parts) {
+  for (const part of incoming) {
     if (part.functionCall?.name) {
-      const thoughtSignature =
-        typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0
-          ? part.thoughtSignature
-          : undefined
+      const thoughtSignature = optionalThoughtSignature(part.thoughtSignature)
+      const id = part.functionCall.id || generateCallId()
+      historyParts.push({
+        functionCall: {
+          id,
+          name: part.functionCall.name,
+          args: part.functionCall.args ?? {},
+        },
+        ...(thoughtSignature ? { thoughtSignature } : {}),
+      })
       chunks.push({
         type: 'tool_call',
         toolCall: {
-          id: part.functionCall.id || generateCallId(),
+          id,
           name: part.functionCall.name,
           arguments: JSON.stringify(part.functionCall.args ?? {}),
           ...(thoughtSignature ? { thoughtSignature } : {}),
         },
       })
+      continue
     }
 
-    if (part.text && part.thought !== true) {
-      chunks.push({ type: 'text', content: part.text })
+    const text = typeof part.text === 'string' ? part.text : ''
+    const thoughtSignature = optionalThoughtSignature(part.thoughtSignature)
+    const isThought = isGeminiThoughtPart(part)
+
+    // Signature-only / empty-text trailer — attach to the open text/thought part.
+    if (!text) {
+      if (!thoughtSignature) continue
+      const last = historyParts.at(-1)
+      if (last && 'text' in last && Boolean(last.thought) === isThought) {
+        last.thoughtSignature = thoughtSignature
+      } else {
+        historyParts.push({
+          text: '',
+          ...(isThought ? { thought: true } : {}),
+          thoughtSignature,
+        })
+      }
+      chunks.push({
+        type: isThought ? 'thinking' : 'text',
+        content: '',
+        thoughtSignature,
+      })
+      continue
     }
+
+    const last = historyParts.at(-1)
+    // Do not merge across signature boundaries (Gemini rejects / drops continuity).
+    const canMerge =
+      last &&
+      'text' in last &&
+      Boolean(last.thought) === isThought &&
+      !('functionCall' in last) &&
+      !last.thoughtSignature &&
+      !thoughtSignature
+
+    if (canMerge) {
+      last.text += text
+    } else {
+      historyParts.push({
+        text,
+        ...(isThought ? { thought: true } : {}),
+        ...(thoughtSignature ? { thoughtSignature } : {}),
+      })
+    }
+
+    chunks.push({
+      type: isThought ? 'thinking' : 'text',
+      content: text,
+      ...(thoughtSignature ? { thoughtSignature } : {}),
+    })
   }
 
   return chunks
+}
+
+/**
+ * Maps Gemini candidate parts onto Local Copilot stream chunks.
+ * Function calls are kept even when the API flags the part as thought — Gemini 3.x
+ * often attaches `thought: true` (and a thought signature) to tool-call parts.
+ * Thought text is emitted as `thinking` for the thinking channel (top-of-message
+ * chrome + persistence), not as assistant prose.
+ */
+export function chunksFromGeminiParts(
+  parts: GeminiCandidatePart[],
+  generateCallId: () => string
+): ChatCompletionChunk[] {
+  return appendGeminiStreamParts([], parts, generateCallId)
 }
 
 function parseToolArguments(raw: string): Record<string, unknown> {
@@ -146,6 +249,9 @@ function parseToolResponse(content: string | ChatMessageContentPart[]): Record<s
 /**
  * Converts internal chat messages to Gemini `contents` + `systemInstruction`.
  * Tool results are batched into a single user turn with functionResponse parts.
+ * When `geminiModelParts` is present on an assistant message, those parts
+ * are echoed verbatim (including thought text and signatures) so later rounds
+ * and follow-up user turns keep reasoning continuity.
  */
 export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversionResult {
   const systemParts: string[] = []
@@ -183,14 +289,28 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
       continue
     }
 
+    if (message.role === 'assistant' && message.geminiModelParts?.length) {
+      for (const call of message.toolCalls ?? []) {
+        toolNameById.set(call.id, call.name)
+      }
+      contents.push({
+        role: 'model',
+        parts: message.geminiModelParts.map(geminiHistoryPartToPart),
+      })
+      continue
+    }
+
     if (message.role === 'assistant' && message.toolCalls?.length) {
+      for (const call of message.toolCalls) {
+        toolNameById.set(call.id, call.name)
+      }
+
       const parts: Part[] = []
       const assistantText = getMessageContentText(message.content).trim()
       if (assistantText) {
         parts.push({ text: assistantText })
       }
       for (const call of message.toolCalls) {
-        toolNameById.set(call.id, call.name)
         const part: Part = {
           functionCall: {
             id: call.id,
@@ -248,16 +368,36 @@ export async function* streamGoogleGenAiChatCompletion(params: {
   const hasTools = Boolean(functionDeclarations?.length)
   const thinkingLevel = config.thinkingLevel?.trim().toLowerCase()
 
+  const historyThoughtParts = contents.reduce((sum, content) => {
+    if (content.role !== 'model') return sum
+    return (
+      sum +
+      (content.parts?.filter((part) => part.thought === true && Boolean(part.text)).length ?? 0)
+    )
+  }, 0)
+  const historySignatureParts = contents.reduce((sum, content) => {
+    if (content.role !== 'model') return sum
+    return sum + (content.parts?.filter((part) => Boolean(part.thoughtSignature)).length ?? 0)
+  }, 0)
+  if (historyThoughtParts > 0 || historySignatureParts > 0) {
+    logger.info(`${logLabel} history model parts for CoT continuity`, {
+      model,
+      historyThoughtParts,
+      historySignatureParts,
+      contentTurns: contents.length,
+    })
+  }
+
   const thinkingConfig: ThinkingConfig | undefined = (() => {
     if (!thinkingLevel || thinkingLevel === 'none') return undefined
     if (isGemini3Model(model)) {
       return {
-        includeThoughts: false,
+        includeThoughts: true,
         thinkingLevel: mapToThinkingLevel(thinkingLevel),
       }
     }
     return {
-      includeThoughts: false,
+      includeThoughts: true,
       thinkingBudget: mapToThinkingBudget(model, thinkingLevel),
     }
   })()
@@ -279,6 +419,14 @@ export async function* streamGoogleGenAiChatCompletion(params: {
   }
 
   try {
+    if (thinkingConfig) {
+      logger.info(`${logLabel} thinking enabled`, {
+        model,
+        thinkingLevel,
+        includeThoughts: true,
+      })
+    }
+
     if (hasTools) {
       logger.info(`${logLabel} tool-enabled request`, {
         model,
@@ -300,9 +448,12 @@ export async function* streamGoogleGenAiChatCompletion(params: {
     let inputTokens = 0
     let outputTokens = 0
     let cacheReadTokens = 0
+    let thoughtsTokenCount = 0
     let yieldedToolCall = false
+    let yieldedThinkingChars = 0
     let apiFinishReason: string | undefined
     let partCount = 0
+    const historyParts: GeminiHistoryPart[] = []
 
     for await (const chunk of stream) {
       if (request.signal?.aborted) {
@@ -314,6 +465,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
         outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
         // Gemini 2.5+ implicit context cache hits (subset of promptTokenCount).
         cacheReadTokens = chunk.usageMetadata.cachedContentTokenCount ?? cacheReadTokens
+        thoughtsTokenCount = chunk.usageMetadata.thoughtsTokenCount ?? thoughtsTokenCount
       }
 
       const candidate = chunk.candidates?.[0]
@@ -324,10 +476,43 @@ export async function* streamGoogleGenAiChatCompletion(params: {
       const parts = candidate?.content?.parts ?? []
       partCount += parts.length
 
-      for (const emitted of chunksFromGeminiParts(parts, generateShortId)) {
+      for (const emitted of appendGeminiStreamParts(historyParts, parts, generateShortId)) {
         if (emitted.type === 'tool_call') yieldedToolCall = true
+        if (emitted.type === 'thinking' && emitted.content) {
+          yieldedThinkingChars += emitted.content.length
+        }
         yield emitted
       }
+    }
+
+    if (historyParts.length > 0) {
+      const thoughtParts = historyParts.filter((part) => 'text' in part && part.thought)
+      const signatureParts = historyParts.filter((part) => Boolean(part.thoughtSignature))
+      logger.info(`${logLabel} model parts assembled`, {
+        model,
+        partCount: historyParts.length,
+        thoughtParts: thoughtParts.length,
+        thoughtChars: thoughtParts.reduce(
+          (sum, part) => sum + ('text' in part ? part.text.length : 0),
+          0
+        ),
+        yieldedThinkingChars,
+        thoughtsTokenCount,
+        signatureParts: signatureParts.length,
+      })
+      yield { type: 'gemini_model_parts', geminiModelParts: historyParts }
+    }
+
+    if (thinkingConfig && thoughtsTokenCount > 0 && yieldedThinkingChars === 0) {
+      logger.warn(
+        `${logLabel} thinking requested but no thought text streamed (API billed thoughts without includeThoughts text)`,
+        {
+          model,
+          thinkingLevel,
+          thoughtsTokenCount,
+          partCount,
+        }
+      )
     }
 
     if (apiFinishReason === 'MALFORMED_FUNCTION_CALL') {
