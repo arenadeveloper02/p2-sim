@@ -328,10 +328,7 @@ const MARKDOWN_COMPONENTS = {
   },
   ol({ children, start }: { children?: React.ReactNode; start?: number }) {
     return (
-      <ol
-        start={start}
-        className='my-4 list-decimal pl-5 marker:text-[var(--text-primary)]'
-      >
+      <ol start={start} className='my-4 list-decimal pl-5 marker:text-[var(--text-primary)]'>
         {children}
       </ol>
     )
