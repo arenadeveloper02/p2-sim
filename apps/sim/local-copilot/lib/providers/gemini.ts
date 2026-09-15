@@ -164,24 +164,29 @@ export function appendGeminiStreamParts(
     const thoughtSignature = optionalThoughtSignature(part.thoughtSignature)
     const isThought = isGeminiThoughtPart(part)
 
-    // Signature-only / empty-text trailer — attach to the open text/thought part.
+    // Signature-only / empty-text trailer — stamp the open text or functionCall
+    // part. Never create empty signed orphans: replaying those yields Vertex
+    // 400 "Corrupted thought signature." Match by position (last part), not
+    // thought flag — Gemini often sends the final signature after answer text
+    // with an inconsistent `thought` marker.
     if (!text) {
       if (!thoughtSignature) continue
       const last = historyParts.at(-1)
-      if (last && 'text' in last && Boolean(last.thought) === isThought) {
+      if (last && 'text' in last) {
         last.thoughtSignature = thoughtSignature
-      } else {
-        historyParts.push({
-          text: '',
-          ...(isThought ? { thought: true } : {}),
+        chunks.push({
+          type: last.thought ? 'thinking' : 'text',
+          content: '',
+          thoughtSignature,
+        })
+      } else if (last && 'functionCall' in last) {
+        if (!last.thoughtSignature) last.thoughtSignature = thoughtSignature
+        chunks.push({
+          type: 'text',
+          content: '',
           thoughtSignature,
         })
       }
-      chunks.push({
-        type: isThought ? 'thinking' : 'text',
-        content: '',
-        thoughtSignature,
-      })
       continue
     }
 

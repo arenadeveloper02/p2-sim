@@ -96,6 +96,23 @@ describe('appendGeminiStreamParts', () => {
       { text: 'Answer', thoughtSignature: 'sig-final' },
     ])
   })
+
+  it('attaches mismatched empty trailers to the last text part (no orphan signed parts)', () => {
+    const history: GeminiHistoryPart[] = []
+    appendGeminiStreamParts(history, [{ text: 'Plan A', thought: true }], () => 'id-1')
+    appendGeminiStreamParts(history, [{ text: 'Answer' }], () => 'id-2')
+    // Vertex sometimes sends the final signature after answer text with thought:true.
+    appendGeminiStreamParts(
+      history,
+      [{ text: '', thought: true, thoughtSignature: 'sig-final' }],
+      () => 'id-3'
+    )
+
+    expect(history).toEqual([
+      { text: 'Plan A', thought: true },
+      { text: 'Answer', thoughtSignature: 'sig-final' },
+    ])
+  })
 })
 
 describe('convertMessagesToGemini', () => {

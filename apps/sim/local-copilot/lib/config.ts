@@ -44,7 +44,7 @@ const DEFAULT_GEMINI_THINKING_LEVEL = 'medium'
 const DEFAULT_ANTHROPIC_THINKING_LEVEL = 'medium'
 
 const GEMINI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'none'])
-const ANTHROPIC_THINKING_LEVELS = new Set(['low', 'medium', 'high', 'max', 'none'])
+const ANTHROPIC_THINKING_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max', 'none'])
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value.trim() === '') return fallback

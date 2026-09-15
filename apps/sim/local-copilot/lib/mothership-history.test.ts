@@ -122,6 +122,7 @@ describe('assistantMessageToChatHistory', () => {
           type: MothershipStreamV1EventType.text,
           channel: MothershipStreamV1TextChannel.thinking,
           content: 'I should answer carefully.',
+          // Stamped UI signatures must not be replayed on reconstructed thought text.
           thoughtSignature: 'thought-sig',
         },
         {
@@ -141,7 +142,6 @@ describe('assistantMessageToChatHistory', () => {
           {
             text: 'I should answer carefully.',
             thought: true,
-            thoughtSignature: 'thought-sig',
           },
           {
             text: 'Here is the answer.',

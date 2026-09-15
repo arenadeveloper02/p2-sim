@@ -24,7 +24,8 @@ export interface ChatMessage {
   /**
    * Anthropic extended-thinking blocks that must be echoed unmodified on the
    * next tool-loop turn (including signatures / redacted payloads).
-   * Also used for Claude-via-OpenAI-compatible proxies as `thinking_blocks`.
+   * Also used for Claude-via-OpenAI-compatible proxies as `thinking_blocks`,
+   * and for Bedrock Claude as Converse `reasoningContent` round-trip.
    */
   anthropicThinkingBlocks?: AnthropicThinkingHistoryBlock[]
   /**

@@ -996,21 +996,19 @@ export async function* runLocalCopilotAgent(
         if (chunk.content) {
           roundReasoningContent += chunk.content
           applyModelChunkToThinkingStatus(thinkingStatus, chunk)
+          // Thought signatures stay on `gemini_model_parts` / text trailers only.
+          // Stamping them onto thinking UI blocks poisons history rebuild and
+          // triggers Vertex 400 "Corrupted thought signature."
           yield {
             type: 'thinking_delta',
             content: chunk.content,
-            ...(chunk.thoughtSignature ? { thoughtSignature: chunk.thoughtSignature } : {}),
           }
           // Short status only — full CoT belongs in Thinking chrome, not the
           // trailing live-status shimmer (which would duplicate it at the bottom).
           yield { type: 'status', message: 'Thinking…' }
-        } else if (chunk.thoughtSignature) {
-          yield {
-            type: 'thinking_delta',
-            content: '',
-            thoughtSignature: chunk.thoughtSignature,
-          }
         }
+        // Signature-only thought trailers are absorbed into gemini_model_parts;
+        // nothing to show in Thinking chrome.
         continue
       }
       applyModelChunkToThinkingStatus(thinkingStatus, chunk)
