@@ -8,8 +8,11 @@ import {
 } from '@/lib/billing/core/billing-attribution'
 import { resolveLocalCopilotSpendCap } from '@/local-copilot/lib/billing/resolve-spend-cap'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
-import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
+import {
+  applyModelChunkToThinkingStatus,
+  ThinkingLiveStatusAccumulator,
+} from '@/local-copilot/lib/agent/thinking-live-status'
 import {
   MAX_FORCED_FOLLOW_UP_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
@@ -51,7 +54,6 @@ import {
   assertLocalCopilotEnabled,
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
-  isLocalCopilotEngagementStatusEnabled,
 } from '@/local-copilot/lib/config'
 import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
@@ -134,7 +136,11 @@ import {
   createLocalCopilotProvider,
   getLocalCopilotProvider,
 } from '@/local-copilot/lib/providers/registry'
-import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import type {
+  AnthropicThinkingHistoryBlock,
+  ChatMessage,
+  GeminiHistoryPart,
+} from '@/local-copilot/lib/providers/types'
 import {
   prepareLocalToolConfirmation,
   waitForLocalToolConfirmation,
@@ -937,8 +943,10 @@ export async function* runLocalCopilotAgent(
       marks: timing.snapshot(),
     })
 
-    // Status heartbeats cover the immediate first line + rotation while the
-    // model stream is quiet (including pauses after the first token).
+    const thinkingStatus = new ThinkingLiveStatusAccumulator()
+    const roundAnthropicThinkingBlocks: AnthropicThinkingHistoryBlock[] = []
+    let roundGeminiModelParts: GeminiHistoryPart[] = []
+    let roundReasoningContent = ''
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -949,26 +957,67 @@ export async function* runLocalCopilotAgent(
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 0,
+      idleMs: 2500,
       intervalMs: 2500,
-      enrichMessages: isLocalCopilotEngagementStatusEnabled()
-        ? (abortSignal) =>
-            generateEngagementStatusMessages({
-              phase: 'model_wait',
-              userHint: params.message,
-              signal: abortSignal,
-            })
-        : undefined,
     })) {
       if (event.type === 'status') {
-        yield event
+        if (!thinkingStatus.isPublishing) yield event
         continue
       }
 
       const chunk = event.item
-      if (chunk.type === 'text' && chunk.content) {
+      if (chunk.type === 'thinking_block' && chunk.thinkingBlock) {
+        roundAnthropicThinkingBlocks.push(chunk.thinkingBlock)
+        continue
+      }
+      if (chunk.type === 'gemini_model_parts' && chunk.geminiModelParts) {
+        roundGeminiModelParts = chunk.geminiModelParts
+        continue
+      }
+      if (chunk.type === 'thinking' && (chunk.content || chunk.thoughtSignature)) {
+        if (chunk.content) {
+          roundReasoningContent += chunk.content
+          applyModelChunkToThinkingStatus(thinkingStatus, chunk)
+          yield {
+            type: 'thinking_delta',
+            content: chunk.content,
+            ...(chunk.thoughtSignature ? { thoughtSignature: chunk.thoughtSignature } : {}),
+          }
+          // Short status only — full CoT belongs in Thinking chrome, not the
+          // trailing live-status shimmer (which would duplicate it at the bottom).
+          yield { type: 'status', message: 'Thinking…' }
+        } else if (chunk.thoughtSignature) {
+          yield {
+            type: 'thinking_delta',
+            content: '',
+            thoughtSignature: chunk.thoughtSignature,
+          }
+        }
+        continue
+      }
+      applyModelChunkToThinkingStatus(thinkingStatus, chunk)
+      if (chunk.type === 'text' && (chunk.content || chunk.thoughtSignature)) {
+        if (!chunk.content) {
+          if (chunk.thoughtSignature) {
+            yield {
+              type: 'text_delta',
+              content: '',
+              thoughtSignature: chunk.thoughtSignature,
+            }
+          }
+          continue
+        }
         const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
-        if (!cleaned) continue
+        if (!cleaned) {
+          if (chunk.thoughtSignature) {
+            yield {
+              type: 'text_delta',
+              content: '',
+              thoughtSignature: chunk.thoughtSignature,
+            }
+          }
+          continue
+        }
         const delta = textStreamer.pushText(cleaned)
         if (delta) {
           if (firstModelOutputMs === null) {
@@ -986,7 +1035,17 @@ export async function* runLocalCopilotAgent(
             })
           }
           streamedUserFacingText += delta
-          yield { type: 'text_delta', content: delta }
+          yield {
+            type: 'text_delta',
+            content: delta,
+            ...(chunk.thoughtSignature ? { thoughtSignature: chunk.thoughtSignature } : {}),
+          }
+        } else if (chunk.thoughtSignature) {
+          yield {
+            type: 'text_delta',
+            content: '',
+            thoughtSignature: chunk.thoughtSignature,
+          }
         }
       }
       if (chunk.type === 'tool_call' && chunk.toolCall) {
@@ -1044,6 +1103,16 @@ export async function* runLocalCopilotAgent(
       toolCallCount: pendingToolCalls.length,
       toolNames: pendingToolCalls.map((call) => call.name),
       assistantChars: assistantText.length,
+      thinkingBlockCount: roundAnthropicThinkingBlocks.length,
+      thinkingChars: roundAnthropicThinkingBlocks.reduce(
+        (sum, block) => sum + (block.type === 'thinking' ? block.thinking.length : 0),
+        0
+      ),
+      reasoningChars: roundReasoningContent.length,
+      geminiModelPartCount: roundGeminiModelParts.length,
+      geminiThoughtSignatures: roundGeminiModelParts.filter((part) =>
+        Boolean(part.thoughtSignature)
+      ).length,
       inputTokens: roundInputTokens,
       outputTokens: roundOutputTokens,
       cacheReadTokens: roundCacheReadTokens,
@@ -1155,6 +1224,13 @@ export async function* runLocalCopilotAgent(
       role: 'assistant',
       content: assistantText,
       toolCalls: orderedToolCalls,
+      ...(roundAnthropicThinkingBlocks.length > 0
+        ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
+        : {}),
+      ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
+      ...(roundReasoningContent.trim()
+        ? { reasoningContent: roundReasoningContent }
+        : {}),
     })
     assistantText = ''
     const deferredSystemMessages: Array<{ role: 'system'; content: string }> = []
@@ -1374,6 +1450,9 @@ export async function* runLocalCopilotAgent(
               toolCallId: item.call.id,
               toolName: item.call.name,
               args: item.parsedArgs,
+              ...(item.call.thoughtSignature
+                ? { thoughtSignature: item.call.thoughtSignature }
+                : {}),
             }
           }
 
@@ -1577,6 +1656,7 @@ export async function* runLocalCopilotAgent(
         toolCallId: call.id,
         toolName: call.name,
         args: parsedArgs,
+        ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
       }
 
       const { executeLocalCopilotTool, refreshToolContext } = await getToolExecutor()
@@ -2104,6 +2184,7 @@ export async function* runLocalCopilotAgent(
     // — Bedrock requires toolConfig when history already has tool content.
     // If the model stays silent, surface the stop message directly.
     const priorAssistantChars = assistantText.length
+    const stagnationThinkingStatus = new ThinkingLiveStatusAccumulator()
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -2114,14 +2195,23 @@ export async function* runLocalCopilotAgent(
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 0,
+      idleMs: 2500,
       intervalMs: 2500,
     })) {
       if (event.type === 'status') {
-        yield event
+        if (!stagnationThinkingStatus.isPublishing) yield event
         continue
       }
       const chunk = event.item
+      if (chunk.type === 'thinking_block') continue
+      if (chunk.type === 'gemini_model_parts') continue
+      if (chunk.type === 'thinking' && chunk.content) {
+        applyModelChunkToThinkingStatus(stagnationThinkingStatus, chunk)
+        yield { type: 'thinking_delta', content: chunk.content }
+        yield { type: 'status', message: 'Thinking…' }
+        continue
+      }
+      applyModelChunkToThinkingStatus(stagnationThinkingStatus, chunk)
       if (chunk.type === 'text' && chunk.content) {
         const cleaned = stripIdsFromUserFacingText(
           stripLeakedToolMarkers(chunk.content, { trim: false })

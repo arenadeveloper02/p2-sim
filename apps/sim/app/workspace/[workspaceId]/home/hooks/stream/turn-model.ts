@@ -473,6 +473,9 @@ export function reduceEvent(model: TurnModel, envelope: PersistedStreamEventEnve
       ensureSubagentLane(model, spanId, scope, seq, tsMs)
       const phase = payload.phase
       if (phase === MothershipStreamV1ToolPhase.call) {
+        // Close open thinking/assistant text so a later model round can open a
+        // fresh thinking segment (Anthropic interleaved + Gemini multi-round).
+        breakLane(model, spanId, tsMs)
         // edit_content folds into its span's workspace_file row (the write
         // continues in the single "writing" row), reopening it for the edit.
         if (toolName === EDIT_CONTENT_TOOL) {

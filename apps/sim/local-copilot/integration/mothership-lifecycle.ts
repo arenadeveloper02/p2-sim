@@ -254,6 +254,7 @@ async function dispatchLocalCopilotEvent(
           executor: MothershipStreamV1ToolExecutor.go,
           mode: MothershipStreamV1ToolMode.sync,
           arguments: event.args,
+          ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
         },
         ...(nestedScope ? { scope: nestedScope } : {}),
       },
@@ -380,9 +381,9 @@ async function dispatchLocalCopilotEvent(
     return
   }
 
-  if (event.type === 'text_delta' && event.content) {
-    const safeText = stripIdsFromUserFacingText(event.content)
-    if (!safeText) return
+  if (event.type === 'text_delta' && (event.content || event.thoughtSignature)) {
+    const safeText = event.content ? stripIdsFromUserFacingText(event.content) : ''
+    if (!safeText && !event.thoughtSignature) return
     const nestedScope = specialistSpans.scopeForNested()
     await dispatchStreamEvent(
       {
@@ -390,6 +391,27 @@ async function dispatchLocalCopilotEvent(
         payload: {
           channel: MothershipStreamV1TextChannel.assistant,
           text: safeText,
+          ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
+        },
+        ...(nestedScope ? { scope: nestedScope } : {}),
+      },
+      context,
+      execContext,
+      options,
+      filePreview
+    )
+    return
+  }
+
+  if (event.type === 'thinking_delta' && (event.content || event.thoughtSignature)) {
+    const nestedScope = specialistSpans.scopeForNested()
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.text,
+        payload: {
+          channel: MothershipStreamV1TextChannel.thinking,
+          text: event.content ?? '',
+          ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
         },
         ...(nestedScope ? { scope: nestedScope } : {}),
       },

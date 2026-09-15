@@ -9,17 +9,33 @@ const { mockRecordLocalCopilotTurnUsage, mockChatCompletionStream } = vi.hoisted
   mockChatCompletionStream: vi.fn(),
 }))
 
+vi.mock('@/lib/billing/core/billing-attribution', () => ({
+  resolveBillingAttribution: vi.fn().mockResolvedValue({
+    actorUserId: 'user-1',
+    billedAccountUserId: 'user-1',
+    workspaceId: 'ws-1',
+  }),
+}))
+
 vi.mock('@/local-copilot/lib/billing/record-turn-usage', () => ({
   recordLocalCopilotTurnUsage: mockRecordLocalCopilotTurnUsage,
 }))
 
 vi.mock('@/local-copilot/lib/config', () => ({
+  assertLocalCopilotEnabled: () => undefined,
+  buildLocalCopilotConfigForCatalog: () => ({
+    enabled: true,
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    apiKey: 'test-key',
+  }),
   getLocalCopilotConfig: () => ({
     enabled: true,
     provider: 'anthropic',
     model: 'claude-sonnet-4-6',
     apiKey: 'test-key',
   }),
+  isLocalCopilotEngagementStatusEnabled: () => false,
 }))
 
 vi.mock('@/local-copilot/lib/providers/registry', () => ({
@@ -40,9 +56,14 @@ vi.mock('@/local-copilot/lib/context/build-context', () => ({
 vi.mock('@/local-copilot/lib/context/context-budget', () => ({
   compactChatHistory: (messages: unknown[]) => messages,
   estimateChatMessagesTokens: () => 100,
+  estimateToolDefinitionTokens: () => 0,
   fitPromptToTokenBudget: (messages: unknown[]) => messages,
+  LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET: 50_000,
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET: 100_000,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET: 50_000,
+  resolveLocalCopilotMaxOutputTokens: () => 4096,
+  resolveLocalCopilotPromptTokenBudget: () => ({ tokenBudget: 100_000 }),
+  resolveLocalCopilotTokenCountModel: (model: string) => model,
   resolveWorkflowContextDetail: () => 'summary',
 }))
 
@@ -64,6 +85,12 @@ vi.mock('@/local-copilot/lib/agent/specialists/classify', () => ({
 vi.mock('@/local-copilot/lib/agent/specialists/domains', () => ({
   domainSystemHint: () => '',
   filterToolsByNames: (tools: unknown[]) => tools,
+  resolveHybridParentTools: ({ allTools }: { allTools: unknown[] }) => ({
+    tools: allTools,
+    usedFullCatalog: true,
+    leafToolCount: allTools.length,
+    specialistEntryCount: 0,
+  }),
   toolNamesForIntent: () => null,
 }))
 
@@ -91,10 +118,6 @@ vi.mock('@/local-copilot/lib/user-turn-content', () => ({
 
 vi.mock('@/local-copilot/lib/diagnostics', () => ({
   getLocalCopilotMemorySnapshot: () => ({}),
-}))
-
-vi.mock('@/local-copilot/lib/agent/engagement-status', () => ({
-  generateEngagementStatusMessages: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/providers/utils', () => ({

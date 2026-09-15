@@ -217,12 +217,15 @@ export interface LocalCopilotToolCallRecord {
 }
 
 export type LocalCopilotStreamEvent =
-  | { type: 'text_delta'; content: string }
+  | { type: 'text_delta'; content: string; thoughtSignature?: string }
+  | { type: 'thinking_delta'; content: string; thoughtSignature?: string }
   | {
       type: 'tool_call_start'
       toolCallId: string
       toolName: string
       args?: Record<string, unknown>
+      /** Gemini 3+ thought signature — required for follow-up turn CoT. */
+      thoughtSignature?: string
     }
   | {
       type: 'tool_call_result'

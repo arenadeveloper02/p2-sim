@@ -38,6 +38,11 @@ export interface ToolCallState {
   startTime?: number
   endTime?: number
   /**
+   * Gemini 3+ opaque thought signature from the functionCall part. Persisted so
+   * follow-up user turns can echo it and keep thinking continuity.
+   */
+  thoughtSignature?: string
+  /**
    * For a subagent-scoped tool call, the invoking subagent's channel id (its
    * outer tool_use id, = event.scope.parentToolCallId). Captured at dispatch so
    * the executor can thread it into the server tool context and scope the
@@ -74,6 +79,11 @@ export interface ContentBlock {
   timestamp: number
   endedAt?: number
   parentToolCallId?: string
+  /**
+   * Gemini 3+ thought signature for this text/thinking part. Required to keep
+   * CoT on subsequent user turns when replaying model history.
+   */
+  thoughtSignature?: string
   /**
    * Subagent name for lane blocks (from the event scope's agentId). Persisted
    * so a reloaded transcript can rebuild the lane's group even when the
