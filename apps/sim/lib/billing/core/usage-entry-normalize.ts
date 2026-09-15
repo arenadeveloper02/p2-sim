@@ -125,6 +125,10 @@ export function normalizeUsageEntry(entry: UsageEntry): UsageEntry {
       ...normalized,
       description: canonicalTool,
       toolId: canonicalTool,
+      // Pass through for Usage By Tools only — pricing/idempotency keep using toolId.
+      ...(entry.toolName
+        ? { toolName: normalizeUsageToolId(entry.toolName) }
+        : {}),
       pricingSnapshot: entry.pricingSnapshot ?? buildToolPricingSnapshot(canonicalTool, multiplier),
     }
   }

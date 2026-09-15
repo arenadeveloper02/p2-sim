@@ -33,6 +33,7 @@ import {
   bySourceDisplayBucketExpr,
   bySourceDisplayLabelExpr,
   bySourceLedgerSourceExpr,
+  byToolBucketIdExpr,
   chargeTypeExpr,
   coerceToDate,
   densifyTimeSeries,
@@ -58,6 +59,7 @@ import {
   resolvedActorUserIdExpr,
   resolveExplicitPeriod,
   resolvePeriodFromDateCandidates,
+  shouldUseHourlyTimeBuckets,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
@@ -155,11 +157,12 @@ export async function getWorkspaceUsageAnalytics(
       eq(workflowExecutionLogs.workspaceId, workspaceId),
       period
     )
-    const useHourlyBuckets = !options.allTime && (options.period ?? '30d') === '1d'
+    const useHourlyBuckets = shouldUseHourlyTimeBuckets(options, period)
     const bucketExpr = timeBucketExpr(useHourlyBuckets)
     const executionBucket = executionBucketExpr(useHourlyBuckets)
 
     const chargeType = chargeTypeExpr()
+    const toolBucketId = byToolBucketIdExpr()
 
     const [
       bySourceRows,
@@ -404,12 +407,12 @@ export async function getWorkspaceUsageAnalytics(
 
       dbReplica
         .select({
-          toolId: usageLog.toolId,
+          toolId: toolBucketId,
           ...ledgerCostSelect(),
         })
         .from(usageLog)
         .where(and(...ledgerConditions, isNotNull(usageLog.toolId)))
-        .groupBy(usageLog.toolId),
+        .groupBy(toolBucketId),
 
       dbReplica
         .select({

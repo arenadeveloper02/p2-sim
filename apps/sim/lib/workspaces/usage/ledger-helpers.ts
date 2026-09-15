@@ -41,6 +41,31 @@ export const TOP_EXPENSIVE_WORKFLOWS = 25
 
 export const WORKFLOW_SOURCE: UsageLogSource = 'workflow'
 
+/**
+ * Synthetic By Tools bucket id for mothership / Copilot ledger tool rows
+ * (`query_logs`, etc.) so the Usage UI shows one "Copilot" line.
+ * Keep in sync with `COPILOT_USAGE_TOOL_BUCKET_ID` in usage `format.ts`.
+ */
+export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
+
+/**
+ * Groups tool spend for By Tools analytics.
+ * Prefers `usage_log.tool_name` (registry operation) when set, else `tool_id`
+ * (display label / legacy rows). Copilot / mothership sources collapse to
+ * {@link COPILOT_USAGE_TOOL_BUCKET_ID}.
+ *
+ * String literals are inlined (same pattern as {@link chargeTypeExpr}) so SELECT
+ * and GROUP BY stay identical — parameterized CASE fragments diverge under
+ * Drizzle and Postgres rejects the query.
+ */
+export function byToolBucketIdExpr() {
+  return sql<string>`case
+    when ${usageLog.source} in ('copilot', 'workspace-chat', 'mcp_copilot', 'mothership_block')
+      then 'copilot'
+    else coalesce(${usageLog.toolName}, ${usageLog.toolId})
+  end`
+}
+
 export const PERIOD_MS: Record<'1d' | '7d' | '30d' | '90d', number> = {
   '1d': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
@@ -410,6 +435,22 @@ export function executionBucketExpr(useHourly: boolean) {
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
+
+/**
+ * Hourly buckets for the 24h preset and short custom ranges (≤ ~25h).
+ * Longer windows stay daily so charts stay readable.
+ */
+export function shouldUseHourlyTimeBuckets(
+  options: { allTime?: boolean; period?: '1d' | '7d' | '30d' | '90d' },
+  period: ResolvedPeriod
+): boolean {
+  if (options.allTime) return false
+  if (options.period === '1d') return true
+
+  const startMs = ensurePeriodDate(period.start).getTime()
+  const endMs = ensurePeriodDate(period.end).getTime()
+  return endMs - startMs <= DAY_MS + HOUR_MS
+}
 
 /** Usage dashboard time-series point shared by workspace and org analytics. */
 export interface UsageTimeSeriesBucket {

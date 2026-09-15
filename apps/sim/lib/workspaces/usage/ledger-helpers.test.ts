@@ -6,6 +6,7 @@ import {
   densifyTimeSeries,
   EMPTY_USAGE_METRICS,
   mapBySourceBucketRow,
+  shouldUseHourlyTimeBuckets,
   truncateToBucketStart,
 } from '@/lib/workspaces/usage/ledger-helpers'
 import { normalizeBucketKey, parseIntMetric } from '@/lib/workspaces/usage/ledger-utils'
@@ -160,5 +161,52 @@ describe('densifyTimeSeries', () => {
     expect(truncateToBucketStart(new Date('2026-07-01T15:42:11.123Z'), true).toISOString()).toBe(
       '2026-07-01T15:00:00.000Z'
     )
+  })
+})
+
+describe('shouldUseHourlyTimeBuckets', () => {
+  it('uses hourly buckets for the 1d preset', () => {
+    expect(
+      shouldUseHourlyTimeBuckets(
+        { period: '1d' },
+        {
+          start: new Date('2026-07-01T00:00:00.000Z'),
+          end: new Date('2026-07-02T00:00:00.000Z'),
+        }
+      )
+    ).toBe(true)
+  })
+
+  it('uses hourly buckets for short custom ranges', () => {
+    expect(
+      shouldUseHourlyTimeBuckets(
+        {},
+        {
+          start: new Date('2026-07-01T00:00:00.000Z'),
+          end: new Date('2026-07-01T18:00:00.000Z'),
+        }
+      )
+    ).toBe(true)
+  })
+
+  it('keeps daily buckets for longer windows and all-time', () => {
+    expect(
+      shouldUseHourlyTimeBuckets(
+        { period: '7d' },
+        {
+          start: new Date('2026-07-01T00:00:00.000Z'),
+          end: new Date('2026-07-08T00:00:00.000Z'),
+        }
+      )
+    ).toBe(false)
+    expect(
+      shouldUseHourlyTimeBuckets(
+        { allTime: true, period: '1d' },
+        {
+          start: new Date('2026-01-01T00:00:00.000Z'),
+          end: new Date('2026-07-01T00:00:00.000Z'),
+        }
+      )
+    ).toBe(false)
   })
 })

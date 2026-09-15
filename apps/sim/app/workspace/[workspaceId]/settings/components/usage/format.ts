@@ -5,9 +5,33 @@ import type {
   WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
-import { formatEmbeddedToolLabel } from '@/lib/logs/embedded-tool-costs'
+import {
+  formatEmbeddedToolLabel,
+  isImageGenerationBillingKey,
+  UNATTRIBUTED_AGENT_TOOLS_ID,
+} from '@/lib/logs/embedded-tool-costs'
 import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 
+/**
+ * Multi-segment registry prefixes that must not roll up on the first `_` alone
+ * (e.g. `browser_use_run_task` → `browser_use`, not `browser`).
+ */
+const MULTI_SEGMENT_TOOL_FAMILIES = [
+  'azure_devops',
+  'browser_use',
+  'context_dev',
+  'google_books',
+  'google_maps',
+  'google_pagespeed',
+  'google_translate',
+  'openai_image',
+] as const
+
+/**
+ * Synthetic By Tools bucket for mothership / Copilot ledger tool rows.
+ * Must stay in sync with {@link byToolBucketIdExpr} in ledger-helpers.
+ */
+export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
 /** Human-readable labels for usage_log source values. */
 export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
   workflow: 'Workflow',
@@ -91,7 +115,88 @@ export function formatChargeTypeLabel(chargeType: UsageChargeTypeValue): string 
 
 /** Format a tool id for dashboard display (includes virtual embedded-tool ids). */
 export function formatToolLabel(toolId: string): string {
+  if (toolId === COPILOT_USAGE_TOOL_BUCKET_ID) return 'Copilot'
   return formatEmbeddedToolLabel(toolId)
+}
+
+/** True when `toolId` is already a registry-style snake_case operation id. */
+function isRegistryStyleToolId(toolId: string): boolean {
+  return /^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(toolId)
+}
+
+/**
+ * Rolls operation-level tool ids up to a service family for Usage ranking tables.
+ * Registry ids (`exa_search` / `exa_answer`) and Exa-prefixed display names
+ * ("Exa Search", "EXA Competitor Research") → `exa`.
+ * Other legacy canvas titles keep their full name so "Competitor Research"
+ * stays intact instead of truncating to "Competitor".
+ */
+export function resolveUsageToolFamilyId(toolId: string): string {
+  const trimmed = toolId.trim()
+  const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, '_')
+  if (!normalized) return toolId
+  if (normalized === COPILOT_USAGE_TOOL_BUCKET_ID) return COPILOT_USAGE_TOOL_BUCKET_ID
+  if (normalized === UNATTRIBUTED_AGENT_TOOLS_ID) return UNATTRIBUTED_AGENT_TOOLS_ID
+  if (isImageGenerationBillingKey(normalized)) return normalized
+
+  for (const family of MULTI_SEGMENT_TOOL_FAMILIES) {
+    if (normalized === family || normalized.startsWith(`${family}_`)) return family
+  }
+
+  // Display / legacy canvas titles: only collapse when they clearly name a known
+  // family (e.g. "Exa Search"). Otherwise keep the full slug as the bucket id.
+  if (!isRegistryStyleToolId(trimmed)) {
+    if (normalized === 'exa' || normalized.startsWith('exa_')) return 'exa'
+    return normalized
+  }
+
+  const separator = normalized.indexOf('_')
+  return separator === -1 ? normalized : normalized.slice(0, separator)
+}
+
+/** Display label for a service-family tool bucket (`exa` → `Exa`). */
+export function formatUsageToolFamilyLabel(familyId: string): string {
+  if (familyId === COPILOT_USAGE_TOOL_BUCKET_ID) return 'Copilot'
+  if (familyId === UNATTRIBUTED_AGENT_TOOLS_ID) return formatEmbeddedToolLabel(familyId)
+  if (isImageGenerationBillingKey(familyId)) return formatEmbeddedToolLabel(familyId)
+  return familyId.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+interface UsageToolBucketRow {
+  toolId: string
+  billableCost: number
+  count: number
+  rawCost?: number
+}
+
+/**
+ * Aggregates By Tools rows by service family so the dashboard shows Exa once,
+ * not Exa Search / Exa Answer separately.
+ */
+export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: T[]): T[] {
+  const merged = new Map<string, T>()
+
+  for (const row of rows) {
+    const familyId = resolveUsageToolFamilyId(row.toolId)
+    const existing = merged.get(familyId)
+    if (existing) {
+      existing.billableCost += row.billableCost
+      existing.count += row.count
+      if (typeof existing.rawCost === 'number' || typeof row.rawCost === 'number') {
+        existing.rawCost = (existing.rawCost ?? 0) + (row.rawCost ?? 0)
+      }
+    } else {
+      merged.set(familyId, {
+        ...row,
+        toolId: familyId,
+        billableCost: row.billableCost,
+        count: row.count,
+        ...(typeof row.rawCost === 'number' ? { rawCost: row.rawCost } : {}),
+      })
+    }
+  }
+
+  return [...merged.values()].sort((a, b) => b.billableCost - a.billableCost)
 }
 
 /** Format actor_type for display. */
@@ -130,6 +235,22 @@ export function formatPeriodLabel(period: UsagePeriod): string {
       return 'Past 30 days'
     case '90d':
       return 'Past 90 days'
+    default:
+      return period
+  }
+}
+
+/** Shorter period chip labels for the admin Usage screenshot layout. */
+export function formatAdminPeriodChipLabel(period: UsagePeriod): string {
+  switch (period) {
+    case '1d':
+      return '24 hours'
+    case '7d':
+      return '7 days'
+    case '30d':
+      return '30 days'
+    case '90d':
+      return '90 days'
     default:
       return period
   }

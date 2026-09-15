@@ -88,6 +88,56 @@ export function resolveEmbeddedToolCostKey(toolName: string, output?: unknown): 
   return extractToolOutputModel(output) ?? normalizedTool
 }
 
+/**
+ * Registry operation id from span input (`exa_search`), when present.
+ * Does not fall back to canvas display names — those stay on `tool_id`.
+ */
+export function resolveBillableToolOperationId(span: {
+  input?: unknown
+  output?: unknown
+}): string | undefined {
+  if (!span.input || typeof span.input !== 'object' || Array.isArray(span.input)) {
+    return undefined
+  }
+
+  const record = span.input as Record<string, unknown>
+  for (const field of ['operation', 'toolId', 'tool'] as const) {
+    const value = record[field]
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!trimmed) continue
+    return resolveEmbeddedToolCostKey(trimmed, span.output)
+  }
+
+  return undefined
+}
+
+/**
+ * Display / charge key for a billable tool span (canvas title or type).
+ * Prefer {@link resolveBillableToolOperationId} for the registry operation stored
+ * on `usage_log.tool_name`.
+ */
+export function resolveBillableToolChargeKey(span: {
+  type?: string
+  name?: string
+  input?: unknown
+  output?: unknown
+}): string {
+  const operationId = resolveBillableToolOperationId(span)
+  if (operationId) return operationId
+
+  const rawName = span.name?.trim() || span.type?.trim() || 'tool'
+  return resolveEmbeddedToolCostKey(rawName, span.output)
+}
+
+/** Canvas / block display label for ledger `tool_id` / `description`. */
+export function resolveBillableToolDisplayName(span: {
+  type?: string
+  name?: string
+}): string {
+  return span.name?.trim() || span.type?.trim() || 'tool'
+}
+
 export function hasLegacyAggregatedImageToolCosts(
   embeddedToolCosts: Record<string, number> | undefined
 ): boolean {
