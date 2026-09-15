@@ -326,8 +326,15 @@ const MARKDOWN_COMPONENTS = {
     }
     return <ul className='my-4 list-disc pl-5 marker:text-[var(--text-primary)]'>{children}</ul>
   },
-  ol({ children }: { children?: React.ReactNode }) {
-    return <ol className='my-4 list-decimal pl-5 marker:text-[var(--text-primary)]'>{children}</ol>
+  ol({ children, start }: { children?: React.ReactNode; start?: number }) {
+    return (
+      <ol
+        start={start}
+        className='my-4 list-decimal pl-5 marker:text-[var(--text-primary)]'
+      >
+        {children}
+      </ol>
+    )
   },
   li({ children, className }: { children?: React.ReactNode; className?: string }) {
     if (className?.includes('task-list-item')) {
