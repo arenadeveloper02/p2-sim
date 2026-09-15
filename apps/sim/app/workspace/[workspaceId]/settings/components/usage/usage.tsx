@@ -1190,7 +1190,7 @@ export function Usage() {
             <div className='flex flex-wrap items-start justify-between gap-3'>
               <div className='flex flex-col gap-1'>
                 <span className='font-medium text-[var(--brand-secondary)] text-caption uppercase tracking-wide'>
-                  For admins
+                  For admins & owners
                 </span>
                 <h1 className='font-medium text-[var(--text-primary)] text-lg'>Usage</h1>
                 <p className='text-[var(--text-muted)] text-small'>
@@ -1244,14 +1244,23 @@ export function Usage() {
   }
 
   if (isUserScope) {
+    const isOrgAdminOrOwner = canViewOrganizationUsage
+
     return (
       <div className='flex h-full flex-col bg-[var(--bg)]'>
         <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
           <div className='mx-auto flex max-w-[56rem] flex-col gap-6 pt-6 pb-8'>
             <div className='flex flex-wrap items-start justify-between gap-3'>
               <div className='flex flex-col gap-1'>
-                <span className='font-medium text-[var(--text-muted)] text-caption uppercase tracking-wide'>
-                  For users
+                <span
+                  className={cn(
+                    'font-medium text-caption uppercase tracking-wide',
+                    isOrgAdminOrOwner
+                      ? 'text-[var(--brand-secondary)]'
+                      : 'text-[var(--text-muted)]'
+                  )}
+                >
+                  {isOrgAdminOrOwner ? 'For admins & owners' : 'For users'}
                 </span>
                 <h1 className='font-medium text-[var(--text-primary)] text-lg'>Usage</h1>
                 <p className='text-[var(--text-muted)] text-small'>

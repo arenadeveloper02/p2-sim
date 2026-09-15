@@ -3,15 +3,15 @@
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
 import type { UserUsageAnalytics } from '@/lib/api/contracts/user-usage'
-import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
-import { formatCreditCount } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 import {
   UsageRankCreditsCell,
   UsageRankTable,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-rank-table'
+import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
   aggregateUsageToolsByFamily,
+  formatBillableWithCredits,
   formatUsageToolFamilyLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
@@ -24,8 +24,9 @@ interface UserMemberUsageContentProps {
 }
 
 /**
- * Member Usage activity detail matching the FOR USERS screenshot:
- * filters, status line, By Workflow / By Tools (no By User).
+ * Personal Usage activity detail — same Activity layout as org admin/owner
+ * (filters, status, By Workflow / By Tools, cost chart). Omits By User and
+ * active-users chart because this view is self-scoped.
  */
 export function UserMemberUsageContent({
   data,
@@ -81,8 +82,8 @@ export function UserMemberUsageContent({
             header: 'Avg credits/run',
             align: 'right',
             render: (row) =>
-              formatCreditCount(
-                dollarsToCredits(averageBillableCostPerRun(row.billableCost, row.executionCount))
+              formatBillableWithCredits(
+                averageBillableCostPerRun(row.billableCost, row.executionCount)
               ),
           },
           {
@@ -121,6 +122,14 @@ export function UserMemberUsageContent({
             render: (row) => <UsageRankCreditsCell billableCost={row.billableCost} />,
           },
         ]}
+      />
+
+      <UsageTimeSeriesChart
+        key={`${data.period.startTime}:${data.period.endTime}`}
+        timeSeries={data.timeSeries}
+        showActiveUsers={false}
+        showExecutionsOverlay={false}
+        costChartTitle='Cost & activity over time'
       />
     </div>
   )

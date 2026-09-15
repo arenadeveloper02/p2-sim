@@ -2,7 +2,6 @@ import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
 import {
   mergeEmbeddedToolCosts,
   resolveEmbeddedToolsForModel,
-  UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
 
 interface ModelMetadataRow {
@@ -202,18 +201,6 @@ export function computeEmbeddedToolVirtualSplit(
       toolEntry.raw += toolRaw
       toolEntry.count += 1
       byToolEmbedded.set(tool.name, toolEntry)
-    }
-
-    if (resolved.unattributed > 0) {
-      const toolEntry = byToolEmbedded.get(UNATTRIBUTED_AGENT_TOOLS_ID) ?? {
-        billable: 0,
-        raw: 0,
-        count: 0,
-      }
-      toolEntry.billable += resolved.unattributed
-      toolEntry.raw += resolved.unattributed * ratio
-      toolEntry.count += 1
-      byToolEmbedded.set(UNATTRIBUTED_AGENT_TOOLS_ID, toolEntry)
     }
   }
 

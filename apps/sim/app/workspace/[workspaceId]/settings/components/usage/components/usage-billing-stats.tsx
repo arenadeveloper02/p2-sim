@@ -111,7 +111,7 @@ function OrgMemberBillingStats({
     memberUsedCredits: data.summary.totalCredits,
   })
 
-  // FOR USERS screenshot: pool card only (subtitle lives in the page header).
+  // User scope: allocation first for remaining; Organization tab uses org pool only.
   return <BillingRemainingCreditsCard segments={segments} allocatedCredits={allocatedCredits} />
 }
 

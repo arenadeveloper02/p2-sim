@@ -56,7 +56,7 @@ describe('embedded-tool-virtual-split', () => {
     expect(providerTotal + toolTotal).toBeCloseTo(0.11, 8)
   })
 
-  it('maps legacy aggregate-only toolCost to unattributed agent tools', () => {
+  it('does not surface aggregate-only toolCost as a By Tools row', () => {
     const split = computeEmbeddedToolVirtualSplit([
       {
         executionId: 'exec-1',
@@ -72,15 +72,8 @@ describe('embedded-tool-virtual-split', () => {
       },
     ])
 
-    const byTool = mergeEmbeddedToolBucketRows([], split.byToolEmbedded)
-    expect(byTool).toEqual([
-      {
-        toolId: 'unattributed_agent_tools',
-        billableCost: 0.02,
-        rawCost: 0.02,
-        count: 1,
-      },
-    ])
+    expect(mergeEmbeddedToolBucketRows([], split.byToolEmbedded)).toEqual([])
+    expect(split.totalEmbeddedBillable).toBeCloseTo(0.02, 8)
   })
 
   it('surfaces Agent Exa spend from model metadata for Usage By Tools', () => {

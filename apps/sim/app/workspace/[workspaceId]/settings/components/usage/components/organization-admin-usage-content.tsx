@@ -26,7 +26,7 @@ interface OrganizationAdminUsageContentProps {
 }
 
 /**
- * Org-admin Usage activity detail matching the admin screenshot:
+ * Org admin/owner Usage activity detail:
  * filters, status line, By Workflow / By User / By Tools, then charts.
  */
 export function OrganizationAdminUsageContent({
@@ -154,6 +154,7 @@ export function OrganizationAdminUsageContent({
       />
 
       <UsageTimeSeriesChart
+        key={`${data.period.startTime}:${data.period.endTime}`}
         timeSeries={data.timeSeries}
         periodActiveUserCount={data.summary.activeUserCount}
         showActiveUsers

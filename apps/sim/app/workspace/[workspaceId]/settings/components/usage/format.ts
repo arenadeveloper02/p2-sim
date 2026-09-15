@@ -27,7 +27,11 @@ const MULTI_SEGMENT_TOOL_FAMILIES = [
   'openai_image',
 ] as const
 
-
+/**
+ * Synthetic By Tools bucket for mothership / Copilot ledger tool rows.
+ * Must stay in sync with {@link byToolBucketIdExpr} in ledger-helpers.
+ */
+export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
 /** Human-readable labels for usage_log source values. */
 export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
   workflow: 'Workflow',
@@ -111,21 +115,39 @@ export function formatChargeTypeLabel(chargeType: UsageChargeTypeValue): string 
 
 /** Format a tool id for dashboard display (includes virtual embedded-tool ids). */
 export function formatToolLabel(toolId: string): string {
+  if (toolId === COPILOT_USAGE_TOOL_BUCKET_ID) return 'Copilot'
   return formatEmbeddedToolLabel(toolId)
+}
+
+/** True when `toolId` is already a registry-style snake_case operation id. */
+function isRegistryStyleToolId(toolId: string): boolean {
+  return /^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(toolId)
 }
 
 /**
  * Rolls operation-level tool ids up to a service family for Usage ranking tables.
- * `exa_search` / `exa_answer` → `exa`; image model keys and unattributed stay as-is.
+ * Registry ids (`exa_search` / `exa_answer`) and Exa-prefixed display names
+ * ("Exa Search", "EXA Competitor Research") → `exa`.
+ * Other legacy canvas titles keep their full name so "Competitor Research"
+ * stays intact instead of truncating to "Competitor".
  */
 export function resolveUsageToolFamilyId(toolId: string): string {
-  const normalized = toolId.trim().toLowerCase()
+  const trimmed = toolId.trim()
+  const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, '_')
   if (!normalized) return toolId
+  if (normalized === COPILOT_USAGE_TOOL_BUCKET_ID) return COPILOT_USAGE_TOOL_BUCKET_ID
   if (normalized === UNATTRIBUTED_AGENT_TOOLS_ID) return UNATTRIBUTED_AGENT_TOOLS_ID
   if (isImageGenerationBillingKey(normalized)) return normalized
 
   for (const family of MULTI_SEGMENT_TOOL_FAMILIES) {
     if (normalized === family || normalized.startsWith(`${family}_`)) return family
+  }
+
+  // Display / legacy canvas titles: only collapse when they clearly name a known
+  // family (e.g. "Exa Search"). Otherwise keep the full slug as the bucket id.
+  if (!isRegistryStyleToolId(trimmed)) {
+    if (normalized === 'exa' || normalized.startsWith('exa_')) return 'exa'
+    return normalized
   }
 
   const separator = normalized.indexOf('_')
@@ -134,6 +156,7 @@ export function resolveUsageToolFamilyId(toolId: string): string {
 
 /** Display label for a service-family tool bucket (`exa` → `Exa`). */
 export function formatUsageToolFamilyLabel(familyId: string): string {
+  if (familyId === COPILOT_USAGE_TOOL_BUCKET_ID) return 'Copilot'
   if (familyId === UNATTRIBUTED_AGENT_TOOLS_ID) return formatEmbeddedToolLabel(familyId)
   if (isImageGenerationBillingKey(familyId)) return formatEmbeddedToolLabel(familyId)
   return familyId.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
