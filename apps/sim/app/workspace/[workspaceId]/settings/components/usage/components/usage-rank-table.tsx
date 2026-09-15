@@ -19,7 +19,7 @@ export interface UsageRankTableProps<T> {
   rows: T[]
   columns: UsageRankColumn<T>[]
   getRowKey: (row: T, index: number) => string
-  /** Billable USD used to size the background bar (relative to the max row). */
+  /** Billable USD used to rank rows when {@link getRankValue} is omitted. */
   getBillableCost: (row: T) => number
   /**
    * Optional rank/filter value. Defaults to billable cost.
@@ -30,8 +30,8 @@ export interface UsageRankTableProps<T> {
 }
 
 /**
- * Ranking table for admin Usage — first column header is the section name;
- * rows include a relative credit share bar (screenshot layout).
+ * Ranking table for Usage activity detail. First column header is the section
+ * name (By Workflow / By User / By Tools).
  */
 export function UsageRankTable<T>({
   rows,
@@ -46,12 +46,11 @@ export function UsageRankTable<T>({
     .filter((row) => resolveRank(row) > 0)
     .sort((a, b) => resolveRank(b) - resolveRank(a))
 
-  const maxRank = ranked[0] ? resolveRank(ranked[0]) : 0
   const scrollable = ranked.length > SCROLL_ROW_THRESHOLD
 
   return (
     <div className='overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)]'>
-      {ranked.length === 0 || maxRank <= 0 ? (
+      {ranked.length === 0 ? (
         <p className='px-4 py-8 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
       ) : (
         <div
@@ -78,32 +77,25 @@ export function UsageRankTable<T>({
               </tr>
             </thead>
             <tbody>
-              {ranked.map((row, index) => {
-                const widthPercent = Math.max((resolveRank(row) / maxRank) * 100, 2)
-
-                return (
-                  <tr
-                    key={getRowKey(row, index)}
-                    className='border-[var(--border)] border-b last:border-b-0'
-                    style={{
-                      backgroundImage: `linear-gradient(to right, color-mix(in srgb, var(--brand-secondary, #38bdf8) 14%, transparent) ${widthPercent}%, transparent ${widthPercent}%)`,
-                    }}
-                  >
-                    {columns.map((column) => (
-                      <td
-                        key={column.key}
-                        className={cn(
-                          'px-4 py-3 text-[var(--text-primary)]',
-                          column.align === 'right' ? 'text-right tabular-nums' : 'text-left',
-                          column.className
-                        )}
-                      >
-                        {column.render(row)}
-                      </td>
-                    ))}
-                  </tr>
-                )
-              })}
+              {ranked.map((row, index) => (
+                <tr
+                  key={getRowKey(row, index)}
+                  className='border-[var(--border)] border-b last:border-b-0'
+                >
+                  {columns.map((column) => (
+                    <td
+                      key={column.key}
+                      className={cn(
+                        'px-4 py-3 text-[var(--text-primary)]',
+                        column.align === 'right' ? 'text-right tabular-nums' : 'text-left',
+                        column.className
+                      )}
+                    >
+                      {column.render(row)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

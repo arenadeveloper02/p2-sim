@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
   ButtonGroup,
@@ -801,14 +801,21 @@ export function Usage() {
     return scopes
   }, [canViewOrganizationUsage])
 
-  // Org admins land on the admin Usage dashboard by default (screenshot layout).
+  const didAutoSelectOrganizationScope = useRef(false)
+
+  /**
+   * Org admins land on the Organization dashboard once. Do not re-run after the
+   * viewer picks User — `scope=user` is the nuqs default and is stripped from
+   * the URL, which would otherwise look like "no explicit choice".
+   */
   useEffect(() => {
+    if (didAutoSelectOrganizationScope.current) return
     if (permissionsLoading || workspaceSettingsLoading || adminOrganizationsLoading) return
     if (!canViewOrganizationUsage) return
     if (scope !== 'user') return
-    // Only auto-switch when the URL still has the default scope (no explicit choice).
     const params = new URLSearchParams(window.location.search)
     if (params.has('scope')) return
+    didAutoSelectOrganizationScope.current = true
     void setUsageParams({ scope: 'organization' })
   }, [
     adminOrganizationsLoading,
@@ -1211,7 +1218,7 @@ export function Usage() {
               </div>
             </div>
 
-            <UsageBillingStats />
+            <UsageBillingStats view='organization' viewerUserId={permissions?.viewer?.userId} />
 
             {error && (
               <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
@@ -1255,9 +1262,7 @@ export function Usage() {
                 <span
                   className={cn(
                     'font-medium text-caption uppercase tracking-wide',
-                    isOrgAdminOrOwner
-                      ? 'text-[var(--brand-secondary)]'
-                      : 'text-[var(--text-muted)]'
+                    isOrgAdminOrOwner ? 'text-[var(--brand-secondary)]' : 'text-[var(--text-muted)]'
                   )}
                 >
                   {isOrgAdminOrOwner ? 'For admins & owners' : 'For users'}
@@ -1281,7 +1286,7 @@ export function Usage() {
               </div>
             </div>
 
-            <UsageBillingStats />
+            <UsageBillingStats view='user' viewerUserId={permissions?.viewer?.userId} />
 
             {error && (
               <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
@@ -1333,7 +1338,7 @@ export function Usage() {
               </button>
             </div>
 
-            <UsageBillingStats />
+            <UsageBillingStats view='user' viewerUserId={permissions?.viewer?.userId} />
 
             <div className='flex flex-wrap items-center gap-3'>
               {scopeToggle}

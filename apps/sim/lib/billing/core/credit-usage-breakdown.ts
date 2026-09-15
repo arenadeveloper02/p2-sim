@@ -477,12 +477,18 @@ async function getOrganizationCreditUsageSummary(
 
 /**
  * Credit usage summary for the billing page: org admins see pooled org usage plus
- * per-member rows; everyone else sees only their own usage. Totals include
+ * per-member rows unless `personal` is set, in which case they receive their own
+ * usage plus the org pool. Everyone else sees only their own usage. Totals include
  * Mothership (copilot-family) and workflow-run consumption for the active period.
  */
 export async function getCreditUsageSummary(params: {
   userId: string
   workspaceId: string
+  /**
+   * When true, skip the org-admin pooled summary and return the caller's own
+   * usage (plus org pool) even if they are an admin or owner.
+   */
+  personal?: boolean
   executor?: DbClient
 }): Promise<CreditUsageSummaryResult | null> {
   const executor = params.executor ?? dbReplica
@@ -507,7 +513,7 @@ export async function getCreditUsageSummary(params: {
         return getPersonalCreditUsageSummary(params.userId, null, executor)
       }
 
-      if (isOrgAdminRole(membership.role)) {
+      if (isOrgAdminRole(membership.role) && !params.personal) {
         return getOrganizationCreditUsageSummary(organizationId, executor)
       }
 

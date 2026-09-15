@@ -6,6 +6,7 @@ import {
   formatSharePercent,
   resolveOrgMemberCreditDisplay,
   resolveOrgPoolBarSegments,
+  resolveUserTabUsedCredits,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 
 describe('resolveOrgMemberCreditDisplay', () => {
@@ -64,6 +65,44 @@ describe('resolveOrgMemberCreditDisplay', () => {
     expect(result.progressNumerator).toBe(10_000)
     expect(result.progressDenominator).toBe(50_000)
     expect(result.progressPercent).toBe(20)
+  })
+})
+
+describe('resolveUserTabUsedCredits', () => {
+  it('keeps the personal summary total for member payloads', () => {
+    expect(
+      resolveUserTabUsedCredits({
+        isOrganizationAdminPayload: false,
+        summaryTotalCredits: 12_000,
+        allocatedCredits: 20_000,
+        enforcementUsedCredits: 9_000,
+        selfMemberUsedCredits: 8_000,
+      })
+    ).toBe(12_000)
+  })
+
+  it('uses enforcement usage when an org-admin has an allocation', () => {
+    expect(
+      resolveUserTabUsedCredits({
+        isOrganizationAdminPayload: true,
+        summaryTotalCredits: 380_000,
+        allocatedCredits: 50_000,
+        enforcementUsedCredits: 10_000,
+        selfMemberUsedCredits: 11_000,
+      })
+    ).toBe(10_000)
+  })
+
+  it('uses the viewer member row when an org-admin has no allocation', () => {
+    expect(
+      resolveUserTabUsedCredits({
+        isOrganizationAdminPayload: true,
+        summaryTotalCredits: 380_000,
+        allocatedCredits: null,
+        enforcementUsedCredits: 0,
+        selfMemberUsedCredits: 11_000,
+      })
+    ).toBe(11_000)
   })
 })
 

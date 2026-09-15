@@ -14,6 +14,7 @@ import { BillingUsageSourceRow } from '@/app/workspace/[workspaceId]/settings/co
 import {
   formatCreditCount,
   resolveOrgPoolBarSegments,
+  resolveUserTabUsedCredits,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 import { useBillingCreditUsage } from '@/hooks/queries/billing-credit-usage'
 import { useMyMemberCredits } from '@/hooks/queries/organization'
@@ -22,18 +23,37 @@ import { useSubscriptionData } from '@/hooks/queries/subscription'
 const USAGE_BY_SOURCE_TOOLTIP =
   'Mothership includes copilot, workspace chat, and related AI usage. Workflow runs covers workflow execution costs.'
 
+interface UsageBillingStatsProps {
+  /**
+   * User tab remaining prefers a personal allocation when one is set, otherwise
+   * the shared organization pool, using the caller's own usage. Organization
+   * tab remaining is always the pool.
+   */
+  view: 'user' | 'organization'
+  /** Current viewer id — used to read personal usage from org member rows. */
+  viewerUserId?: string
+}
+
 /**
  * Billing pool / remaining-credits stats for the Usage settings page.
  * Does not include activity detail — that stays on the existing Usage analytics UI.
  */
-export function UsageBillingStats() {
+export function UsageBillingStats({ view, viewerUserId }: UsageBillingStatsProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data, isLoading } = useBillingCreditUsage(workspaceId)
+  const { data, isLoading } = useBillingCreditUsage(workspaceId, {
+    personal: view === 'user',
+  })
 
   if (isLoading || !data) return null
 
-  if (data.scope === 'organization') {
+  if (view === 'organization' && data.scope === 'organization') {
     return <OrgAdminBillingStats data={data} />
+  }
+
+  if (data.orgPool) {
+    return (
+      <OrgMemberBillingStats data={data} workspaceId={workspaceId} viewerUserId={viewerUserId} />
+    )
   }
 
   if (data.viewer === 'org_member') {
@@ -92,12 +112,18 @@ function UsageBySourceSection({
   )
 }
 
+/**
+ * User-tab remaining credits: personal allocation when set, otherwise the
+ * shared organization pool. Uses the caller's own usage for "Used by you".
+ */
 function OrgMemberBillingStats({
   data,
   workspaceId,
+  viewerUserId,
 }: {
   data: CreditUsageSummary
   workspaceId: string
+  viewerUserId?: string
 }) {
   const { data: memberCredits } = useMyMemberCredits(workspaceId)
   const orgPool = data.orgPool
@@ -106,12 +132,23 @@ function OrgMemberBillingStats({
   const allocatedCredits =
     memberCredits?.limitDollars != null ? dollarsToCredits(memberCredits.limitDollars) : null
 
-  const segments = resolveOrgPoolBarSegments({
-    orgPool,
-    memberUsedCredits: data.summary.totalCredits,
+  const selfMemberUsed = viewerUserId
+    ? data.members?.find((member) => member.userId === viewerUserId)?.totalCredits
+    : undefined
+
+  const memberUsedCredits = resolveUserTabUsedCredits({
+    isOrganizationAdminPayload: data.scope === 'organization',
+    summaryTotalCredits: data.summary.totalCredits,
+    allocatedCredits,
+    enforcementUsedCredits: dollarsToCredits(memberCredits?.usedDollars ?? 0),
+    selfMemberUsedCredits: selfMemberUsed,
   })
 
-  // User scope: allocation first for remaining; Organization tab uses org pool only.
+  const segments = resolveOrgPoolBarSegments({
+    orgPool,
+    memberUsedCredits,
+  })
+
   return <BillingRemainingCreditsCard segments={segments} allocatedCredits={allocatedCredits} />
 }
 
