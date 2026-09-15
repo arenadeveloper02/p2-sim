@@ -15,6 +15,7 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { recoverDeepSeekDsmlToolCallsIfNeeded } from '@/local-copilot/lib/providers/deepseek-dsml'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type {
+  AnthropicThinkingHistoryBlock,
   ChatCompletionChunk,
   ChatCompletionRequest,
   ChatMessage,
@@ -90,6 +91,39 @@ export interface BedrockConversionResult {
 }
 
 /**
+ * Maps stored Anthropic-shaped thinking blocks onto Bedrock `reasoningContent`
+ * parts for tool-loop / follow-up round-trip.
+ */
+export function anthropicThinkingBlocksToBedrockContent(
+  blocks: AnthropicThinkingHistoryBlock[] | undefined
+): ContentBlock[] {
+  if (!blocks?.length) return []
+  const out: ContentBlock[] = []
+  for (const block of blocks) {
+    if (block.type === 'thinking') {
+      if (!block.signature) continue
+      out.push({
+        reasoningContent: {
+          reasoningText: {
+            text: block.thinking,
+            signature: block.signature,
+          },
+        },
+      } as ContentBlock)
+      continue
+    }
+    if (block.type === 'redacted_thinking' && block.data) {
+      out.push({
+        reasoningContent: {
+          redactedContent: Buffer.from(block.data, 'base64'),
+        },
+      } as ContentBlock)
+    }
+  }
+  return out
+}
+
+/**
  * Bedrock (esp. Nova) only accepts top-level tool inputSchema fields:
  * `type`, `properties`, `required`. Extra keys like `additionalProperties`
  * cause the model to silently ignore tools.
@@ -150,6 +184,22 @@ function contentHasToolResult(content: ContentBlock[] | undefined): boolean {
   return Boolean(content?.some((block) => 'toolResult' in block && block.toolResult))
 }
 
+/**
+ * True when content has text/cache (or other non-tool, non-reasoning) blocks that
+ * Bedrock rejects alongside `toolUse`. Reasoning may mix with toolUse.
+ */
+function contentHasStrippableConversation(content: ContentBlock[] | undefined): boolean {
+  return Boolean(
+    content?.some((block) => {
+      if (('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse)) {
+        return false
+      }
+      if ('reasoningContent' in block && block.reasoningContent) return false
+      return true
+    })
+  )
+}
+
 function contentHasConversation(content: ContentBlock[] | undefined): boolean {
   return Boolean(
     content?.some(
@@ -159,8 +209,13 @@ function contentHasConversation(content: ContentBlock[] | undefined): boolean {
   )
 }
 
-function toolUseBlocksOnly(content: ContentBlock[] | undefined): ContentBlock[] {
-  return (content ?? []).filter((block) => 'toolUse' in block && block.toolUse)
+/** Keep signed reasoning + toolUse; drop narration text that can't mix with tools. */
+function toolUseAndReasoningBlocksOnly(content: ContentBlock[] | undefined): ContentBlock[] {
+  return (content ?? []).filter(
+    (block) =>
+      ('toolUse' in block && block.toolUse) ||
+      ('reasoningContent' in block && block.reasoningContent)
+  )
 }
 
 function conversationBlocksOnly(content: ContentBlock[] | undefined): ContentBlock[] {
@@ -278,26 +333,42 @@ export function convertMessagesToBedrock(messages: ChatMessage[]): BedrockConver
 
     if (message.role === 'assistant' && message.toolCalls?.length) {
       // Bedrock (Nova / Llama) rejects mixing conversation text with toolUse in
-      // the same assistant turn. Match the main Bedrock provider: toolUse only.
-      const content: ContentBlock[] = message.toolCalls.map((call) => {
-        const toolUse: ToolUseBlock = {
-          toolUseId: call.id || generateToolUseId(call.name),
-          name: call.name,
-          input: parseToolArguments(call.arguments),
-        }
-        // AWS SDK ContentBlock is an open Smithy union (`$UnknownMember`); assert the known variant.
-        return { toolUse } as ContentBlock
-      })
+      // the same assistant turn. Claude extended thinking requires signed
+      // `reasoningContent` before toolUse — keep those, drop narration text.
+      const content: ContentBlock[] = [
+        ...anthropicThinkingBlocksToBedrockContent(message.anthropicThinkingBlocks),
+        ...message.toolCalls.map((call) => {
+          const toolUse: ToolUseBlock = {
+            toolUseId: call.id || generateToolUseId(call.name),
+            name: call.name,
+            input: parseToolArguments(call.arguments),
+          }
+          // AWS SDK ContentBlock is an open Smithy union (`$UnknownMember`); assert the known variant.
+          return { toolUse } as ContentBlock
+        }),
+      ]
       bedrockMessages.push({ role: 'assistant' as ConversationRole, content })
       continue
     }
 
-    const role: ConversationRole = message.role === 'assistant' ? 'assistant' : 'user'
+    if (message.role === 'assistant') {
+      const reasoning = anthropicThinkingBlocksToBedrockContent(message.anthropicThinkingBlocks)
+      const text = getMessageContentText(message.content)
+      const content: ContentBlock[] = [
+        ...reasoning,
+        ...(text ? [{ text } as ContentBlock] : reasoning.length > 0 ? [] : [{ text: '' }]),
+      ]
+      bedrockMessages.push({ role: 'assistant' as ConversationRole, content })
+      continue
+    }
+
+    const role: ConversationRole = message.role === 'user' ? 'user' : 'assistant'
     const text = getMessageContentText(message.content)
     bedrockMessages.push({
       role,
       content: text ? [{ text }] : [{ text: '' }],
     })
+    continue
   }
 
   return {
@@ -307,9 +378,9 @@ export function convertMessagesToBedrock(messages: ChatMessage[]): BedrockConver
 }
 
 /**
- * Bedrock rejects turns that mix conversation blocks (text/cachePoint) with
- * toolUse, and rejects consecutive same-role assistants that would merge into
- * that shape. Collapse/split so every assistant tool turn is toolUse-only.
+ * Bedrock rejects turns that mix conversation text/cachePoint with toolUse,
+ * and rejects consecutive same-role assistants that would merge into that
+ * shape. Keep signed `reasoningContent` with toolUse (required for Claude CoT).
  */
 export function normalizeBedrockConversationTurns(messages: BedrockMessage[]): BedrockMessage[] {
   const separated = separateToolResultAndConversationTurns(messages)
@@ -319,12 +390,12 @@ export function normalizeBedrockConversationTurns(messages: BedrockMessage[]): B
     if (
       message.role === 'assistant' &&
       contentHasToolUse(message.content) &&
-      contentHasConversation(message.content)
+      contentHasStrippableConversation(message.content)
     ) {
-      // Keep toolUse only — narration is not required for the next toolResult turn.
+      // Keep toolUse + signed reasoning; drop narration text.
       out.push({
         role: 'assistant' as ConversationRole,
-        content: toolUseBlocksOnly(message.content),
+        content: toolUseAndReasoningBlocksOnly(message.content),
       })
       continue
     }
@@ -339,12 +410,15 @@ export function normalizeBedrockConversationTurns(messages: BedrockMessage[]): B
       if (contentHasToolUse(prev.content)) {
         out[out.length - 1] = {
           role: 'assistant' as ConversationRole,
-          content: [...toolUseBlocksOnly(prev.content), ...toolUseBlocksOnly(message.content)],
+          content: [
+            ...toolUseAndReasoningBlocksOnly(prev.content),
+            ...toolUseAndReasoningBlocksOnly(message.content),
+          ],
         }
       } else {
         out[out.length - 1] = {
           role: 'assistant' as ConversationRole,
-          content: toolUseBlocksOnly(message.content),
+          content: toolUseAndReasoningBlocksOnly(message.content),
         }
       }
       continue
@@ -546,14 +620,42 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
         let finishReason = mapBedrockStopReason(response.stopReason)
         let yieldedToolCall = false
         for (const block of response.output?.message?.content ?? []) {
-          if (
-            'reasoningContent' in block &&
-            block.reasoningContent &&
-            'reasoningText' in block.reasoningContent &&
-            typeof block.reasoningContent.reasoningText?.text === 'string' &&
-            block.reasoningContent.reasoningText.text
-          ) {
-            yield { type: 'thinking', content: block.reasoningContent.reasoningText.text }
+          if ('reasoningContent' in block && block.reasoningContent) {
+            const reasoning = block.reasoningContent
+            if (
+              'reasoningText' in reasoning &&
+              reasoning.reasoningText &&
+              typeof reasoning.reasoningText.text === 'string' &&
+              reasoning.reasoningText.text
+            ) {
+              yield { type: 'thinking', content: reasoning.reasoningText.text }
+              const signature =
+                typeof reasoning.reasoningText.signature === 'string'
+                  ? reasoning.reasoningText.signature
+                  : ''
+              if (signature) {
+                yield {
+                  type: 'thinking_block',
+                  thinkingBlock: {
+                    type: 'thinking',
+                    thinking: reasoning.reasoningText.text,
+                    signature,
+                  },
+                }
+              }
+            } else if (
+              'redactedContent' in reasoning &&
+              reasoning.redactedContent &&
+              reasoning.redactedContent.byteLength > 0
+            ) {
+              yield {
+                type: 'thinking_block',
+                thinkingBlock: {
+                  type: 'redacted_thinking',
+                  data: Buffer.from(reasoning.redactedContent).toString('base64'),
+                },
+              }
+            }
           }
           if ('text' in block && typeof block.text === 'string' && block.text) {
             yield { type: 'text', content: block.text }
@@ -609,6 +711,10 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
       }
 
       const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>()
+      const pendingReasoning = new Map<
+        number,
+        { text: string; signature: string; redactedBase64?: string }
+      >()
       let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
       let finishReason = 'stop'
 
@@ -634,15 +740,28 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
         if (event.contentBlockDelta) {
           const index = event.contentBlockDelta.contentBlockIndex ?? 0
           const delta = event.contentBlockDelta.delta
-          if (
-            delta &&
-            'reasoningContent' in delta &&
-            delta.reasoningContent &&
-            'text' in delta.reasoningContent &&
-            typeof delta.reasoningContent.text === 'string' &&
-            delta.reasoningContent.text
-          ) {
-            yield { type: 'thinking', content: delta.reasoningContent.text }
+          if (delta && 'reasoningContent' in delta && delta.reasoningContent) {
+            const reasoningDelta = delta.reasoningContent
+            const existing = pendingReasoning.get(index) ?? { text: '', signature: '' }
+            if ('text' in reasoningDelta && typeof reasoningDelta.text === 'string') {
+              existing.text += reasoningDelta.text
+              if (reasoningDelta.text) {
+                yield { type: 'thinking', content: reasoningDelta.text }
+              }
+            }
+            if ('signature' in reasoningDelta && typeof reasoningDelta.signature === 'string') {
+              existing.signature += reasoningDelta.signature
+            }
+            if (
+              'redactedContent' in reasoningDelta &&
+              reasoningDelta.redactedContent &&
+              reasoningDelta.redactedContent.byteLength > 0
+            ) {
+              existing.redactedBase64 = Buffer.from(reasoningDelta.redactedContent).toString(
+                'base64'
+              )
+            }
+            pendingReasoning.set(index, existing)
           }
           if (delta && 'text' in delta && typeof delta.text === 'string') {
             yield { type: 'text', content: delta.text }
@@ -658,6 +777,33 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
 
         if (event.contentBlockStop) {
           const index = event.contentBlockStop.contentBlockIndex ?? 0
+          const reasoning = pendingReasoning.get(index)
+          if (reasoning) {
+            if (reasoning.redactedBase64) {
+              yield {
+                type: 'thinking_block',
+                thinkingBlock: {
+                  type: 'redacted_thinking',
+                  data: reasoning.redactedBase64,
+                },
+              }
+            } else if (reasoning.signature) {
+              yield {
+                type: 'thinking_block',
+                thinkingBlock: {
+                  type: 'thinking',
+                  thinking: reasoning.text,
+                  signature: reasoning.signature,
+                },
+              }
+            } else if (reasoning.text) {
+              logger.warn(
+                'Bedrock reasoning finished without a signature; skipping history round-trip',
+                { thinkingChars: reasoning.text.length }
+              )
+            }
+            pendingReasoning.delete(index)
+          }
           const call = pendingToolCalls.get(index)
           if (call) {
             yield {

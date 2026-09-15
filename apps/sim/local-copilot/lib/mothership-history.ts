@@ -196,11 +196,13 @@ function buildGeminiModelPartsFromSegment(params: {
   for (const block of params.thinkingBlocks) {
     const text = block.content?.trim()
     if (!text) continue
-    const thoughtSignature = optionalThoughtSignature(block.thoughtSignature)
+    // Never attach UI-block thoughtSignatures to reconstructed thought text.
+    // Signatures are opaque and byte-bound to the exact part Gemini returned;
+    // trimmed/coalesced thinking chrome text + a stamped signature → 400
+    // "Corrupted thought signature." Exact parts live in geminiModelPartRounds.
     parts.push({
       text,
       thought: true,
-      ...(thoughtSignature ? { thoughtSignature } : {}),
     })
   }
 

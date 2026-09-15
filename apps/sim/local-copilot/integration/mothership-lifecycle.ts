@@ -405,14 +405,17 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'thinking_delta' && (event.content || event.thoughtSignature)) {
+    // UI Thinking chrome is content-only. Opaque thought signatures belong on
+    // gemini_model_parts / assistant text trailers — forwarding them here stamps
+    // them onto thinking blocks and corrupts Vertex follow-up turns.
+    if (!event.content) return
     const nestedScope = specialistSpans.scopeForNested()
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
         payload: {
           channel: MothershipStreamV1TextChannel.thinking,
-          text: event.content ?? '',
-          ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
+          text: event.content,
         },
         ...(nestedScope ? { scope: nestedScope } : {}),
       },
