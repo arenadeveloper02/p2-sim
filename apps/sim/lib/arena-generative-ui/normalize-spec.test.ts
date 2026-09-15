@@ -382,7 +382,7 @@ describe('normalizeGeneratedSpec', () => {
     expect('submitLabel' in elements(spec).form.props).toBe(false)
   })
 
-  it('joins Select options objects into a comma-separated string', () => {
+  it('joins Select options objects into newline Label|value', () => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
       elements: {
@@ -402,7 +402,7 @@ describe('normalizeGeneratedSpec', () => {
       },
     })
     expect(elements(spec).priority.props.options).toBe(
-      'Standard processing, High priority expedited'
+      'Standard processing|std\nHigh priority expedited|high'
     )
   })
 
@@ -424,7 +424,7 @@ describe('normalizeGeneratedSpec', () => {
       },
     })
     expect(elements(spec).channel.type).toBe('RadioGroup')
-    expect(elements(spec).channel.props.options).toBe('Email, SMS')
+    expect(elements(spec).channel.props.options).toBe('Email\nSMS')
     expect(elements(spec).tags.type).toBe('MultiSelect')
     expect(elements(spec).tags.props.options).toBe('alpha, beta')
   })

@@ -91,7 +91,10 @@ export interface ArenaGenerativeInputSchemaField {
    * (optional first-message prefix; empty is allowed).
    */
   source?: ArenaGenerativeInputSource
-  /** Used when `source` is `constant`. Optional for the chat `input` prefix. */
+  /**
+   * Used when `source` is `constant`. Also the first-load default for form
+   * fields parsed from GET query params.
+   */
   value?: string
 }
 

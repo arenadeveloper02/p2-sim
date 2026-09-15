@@ -58,46 +58,35 @@ import {
   Wind,
 } from 'lucide-react'
 import Image from 'next/image'
-import {
-  GUI_BOUND_EMPTY_CLASS as BOUND_EMPTY_CLASS,
-  GUI_BUTTON_BASE_CLASS as BUTTON_BASE_CLASS,
-  GUI_BUTTON_SIZE_CLASSES as BUTTON_SIZE_CLASSES,
-  GUI_BUTTON_VARIANT_CLASSES as BUTTON_VARIANT_CLASSES,
-  GUI_CHIP_CLASS,
-  GUI_CHIP_TONE_CLASSES as CHIP_TONE_CLASSES,
-  GUI_FIELD_INPUT_CLASS as FIELD_INPUT_CLASS,
-  GUI_FIELD_NATIVE_CONTROL_CLASS as FIELD_NATIVE_CONTROL_CLASS,
-  GUI_FIELD_TEXTAREA_CLASS as FIELD_TEXTAREA_CLASS,
-  GUI_OVERLAY_DIALOG_CLASS,
-  GUI_OVERLAY_SCRIM_CLASS,
-  GUI_SURFACE_CARD as SURFACE_CARD,
-  GUI_SURFACE_STAT as SURFACE_STAT,
-  GUI_TABLE_HEADER_ROW_CLASS,
-  GUI_TONE_CLASSES as TONE_CLASSES,
-  GuiFieldShell as FieldShell,
-  GuiFileInput,
-  GuiMultiSelect,
-  GuiRequiredMark as RequiredMark,
-  GuiSelect,
-  asGuiFormFiles,
-  guiButtonClass,
-  guiCardSurfaceClass as cardSurfaceClass,
-  guiFieldErrorClass as fieldErrorClass,
-  guiTextToneClass as textToneClass,
-} from '@/app/(interfaces)/gui-apps/gui-chrome'
 import { ConstrainedChart } from '@/components/charts/constrained-chart'
 import {
   GENERATIVE_APP_SUCCESS_TOAST_MS,
   type RunGenerativeAppActionMeta,
 } from '@/lib/arena-generative-ui/action-runtime'
 import { bindChartData } from '@/lib/arena-generative-ui/bind-chart-data'
-import { resolveCatalogIconName } from '@/lib/arena-generative-ui/catalog-icon'
 import {
   collectionUsesApiPagination,
   isActionControlPending,
   isBoundPathPending,
   withAliasedProseState,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
+import {
+  isBoundIsoDate,
+  isBoundRelativeDateFormat,
+} from '@/lib/arena-generative-ui/bound-date-format'
+import { formatBoundDisplay } from '@/lib/arena-generative-ui/bound-display'
+import { parseBoundNumber } from '@/lib/arena-generative-ui/bound-number-format'
+import {
+  aggregateStatCollection,
+  aggregateTableColumn,
+  type BoundTableColumn,
+  boundTableColumnLabel,
+  parseBoundTableColumns,
+  parseProseTable,
+  parseStatAggregate,
+  tableCellValue,
+} from '@/lib/arena-generative-ui/bound-table-reshape'
+import { resolveCatalogIconName } from '@/lib/arena-generative-ui/catalog-icon'
 import {
   type ArenaGenerativeChatProtocol,
   getGenerativeAppConversationId,
@@ -108,6 +97,7 @@ import {
   asFieldString,
   asFieldStringList,
   collectVisibleFieldValues,
+  expandValueFields,
   fieldIsVisible,
   formValuesFromRecord,
   isFormFieldType,
@@ -117,57 +107,15 @@ import {
   overlayClosePatch,
   overlayOpenPatch,
   overlayShowWhenUsesSelection,
+  parseLabeledOptions,
   parseOptionList,
   parseShowWhen,
   resolveFieldValue,
+  resolveLabeledOptionValue,
   snapshotFormValues,
   validateVisibleFields,
   valuesFromFormElement,
 } from '@/lib/arena-generative-ui/form-fields'
-import { sectionIsMeasureOnly } from '@/lib/arena-generative-ui/section-measure'
-import {
-  collectKnownActionIds,
-  collectLocalDiscoveryQuery,
-  collectionHasApiOwnedSort,
-  dummyCollectionSeedFromSpec,
-  filterCollectionItems,
-  filterCollectionItemsBySelection,
-  filterStaticTableRows,
-  filterStaticTableRowsBySelection,
-  hostStatePatchAtPath,
-  implicitDummyTableStatePath,
-  LOCAL_COLLECTION_PAGE_SIZE,
-  type CollectionSort,
-  type PaginatedCollection,
-  paginateCollection,
-  sortCollectionItems,
-  sortStaticTableRows,
-  spliceVisibleCollectionItems,
-  withDummyCollectionSeed,
-} from '@/lib/arena-generative-ui/local-discovery'
-import {
-  isBoundRelativeDateFormat,
-  isBoundIsoDate,
-} from '@/lib/arena-generative-ui/bound-date-format'
-import { formatBoundDisplay } from '@/lib/arena-generative-ui/bound-display'
-import { parseBoundNumber } from '@/lib/arena-generative-ui/bound-number-format'
-import {
-  aggregateStatCollection,
-  aggregateTableColumn,
-  boundTableColumnLabel,
-  parseBoundTableColumns,
-  parseProseTable,
-  parseStatAggregate,
-  tableCellValue,
-  type BoundTableColumn,
-} from '@/lib/arena-generative-ui/bound-table-reshape'
-import {
-  copyTextToClipboard,
-  downloadMarkdownPdf,
-  resolveHostContentAction,
-  visibleMarkdownForElement,
-} from '@/lib/arena-generative-ui/host-content-actions'
-import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { parseBreadcrumbItems } from '@/lib/arena-generative-ui/gui-breadcrumb'
 import {
   commandPaletteEntriesFromCollection,
@@ -181,6 +129,34 @@ import {
   parsePaginationMode,
   specHasPaginationControl,
 } from '@/lib/arena-generative-ui/gui-pagination'
+import {
+  copyTextToClipboard,
+  downloadMarkdownPdf,
+  resolveHostContentAction,
+  visibleMarkdownForElement,
+} from '@/lib/arena-generative-ui/host-content-actions'
+import {
+  type CollectionSort,
+  collectionHasApiOwnedSort,
+  collectKnownActionIds,
+  collectLocalDiscoveryQuery,
+  dummyCollectionSeedFromSpec,
+  filterCollectionItems,
+  filterCollectionItemsBySelection,
+  filterStaticTableRows,
+  filterStaticTableRowsBySelection,
+  hostStatePatchAtPath,
+  implicitDummyTableStatePath,
+  LOCAL_COLLECTION_PAGE_SIZE,
+  type PaginatedCollection,
+  paginateCollection,
+  sortCollectionItems,
+  sortStaticTableRows,
+  spliceVisibleCollectionItems,
+  withDummyCollectionSeed,
+} from '@/lib/arena-generative-ui/local-discovery'
+import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
+import { sectionIsMeasureOnly } from '@/lib/arena-generative-ui/section-measure'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
@@ -206,7 +182,10 @@ import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
 import { ChatTypingIndicator } from '@/app/(interfaces)/gui-apps/[identifier]/chat-typing-indicator'
-import { GuiHostCalendar, GuiHostDateInput } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
+import {
+  GuiHostCalendar,
+  GuiHostDateInput,
+} from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-calendar'
 import { GuiHostSearchField } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-search-field'
 import {
   GuiHostBreadcrumb,
@@ -226,6 +205,33 @@ import {
 } from '@/app/(interfaces)/gui-apps/[identifier]/gui-host-widgets'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import {
+  asGuiFormFiles,
+  GUI_BOUND_EMPTY_CLASS as BOUND_EMPTY_CLASS,
+  GUI_BUTTON_BASE_CLASS as BUTTON_BASE_CLASS,
+  GUI_BUTTON_SIZE_CLASSES as BUTTON_SIZE_CLASSES,
+  GUI_BUTTON_VARIANT_CLASSES as BUTTON_VARIANT_CLASSES,
+  GUI_CHIP_TONE_CLASSES as CHIP_TONE_CLASSES,
+  guiCardSurfaceClass as cardSurfaceClass,
+  GUI_FIELD_INPUT_CLASS as FIELD_INPUT_CLASS,
+  GUI_FIELD_NATIVE_CONTROL_CLASS as FIELD_NATIVE_CONTROL_CLASS,
+  GUI_FIELD_TEXTAREA_CLASS as FIELD_TEXTAREA_CLASS,
+  GuiFieldShell as FieldShell,
+  guiFieldErrorClass as fieldErrorClass,
+  GUI_CHIP_CLASS,
+  GUI_OVERLAY_DIALOG_CLASS,
+  GUI_OVERLAY_SCRIM_CLASS,
+  GUI_TABLE_HEADER_ROW_CLASS,
+  GuiFileInput,
+  GuiMultiSelect,
+  GuiSelect,
+  guiButtonClass,
+  GuiRequiredMark as RequiredMark,
+  GUI_SURFACE_CARD as SURFACE_CARD,
+  GUI_SURFACE_STAT as SURFACE_STAT,
+  GUI_TONE_CLASSES as TONE_CLASSES,
+  guiTextToneClass as textToneClass,
+} from '@/app/(interfaces)/gui-apps/gui-chrome'
 
 interface SpecElement {
   type?: string
@@ -557,8 +563,7 @@ function viewSwitchChipTone(
   const group = chipIdsForSetValueField(spec.elements, spec.root, parsed.name)
   if (group.length < 2) return null
   const current = values[parsed.name]
-  const currentText =
-    current === undefined || current === null ? '' : String(current).trim()
+  const currentText = current === undefined || current === null ? '' : String(current).trim()
   const selectedId =
     currentText.length === 0
       ? group[0]
@@ -701,7 +706,6 @@ function deltaToneClass(value: unknown): string {
   return DELTA_TONE_CLASSES[tone as keyof typeof DELTA_TONE_CLASSES] ?? DELTA_TONE_CLASSES.neutral
 }
 
-
 const HEADING_SIZE_CLASSES = {
   h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
   h2: 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]',
@@ -750,10 +754,7 @@ function gridColumnCount(props: Record<string, unknown>): string {
  * Skeleton count for a pending Repeat inside a Grid. Matches `columns` so
  * loading density matches the loaded card grid (not a hardcoded 3).
  */
-function repeatSkeletonCount(
-  elements: Record<string, SpecElement>,
-  repeatId: string
-): number {
+function repeatSkeletonCount(elements: Record<string, SpecElement>, repeatId: string): number {
   for (const element of Object.values(elements)) {
     if (element.type !== 'Grid') continue
     if (!(element.children ?? []).includes(repeatId)) continue
@@ -1023,9 +1024,7 @@ function WorkingCardView({
   }
 
   const hasSteps = steps.length > 0
-  const currentIndex = hasSteps
-    ? Math.min(steps.length - 1, Math.floor(elapsedMs / intervalMs))
-    : 0
+  const currentIndex = hasSteps ? Math.min(steps.length - 1, Math.floor(elapsedMs / intervalMs)) : 0
   const percent = hasSteps ? Math.round(((currentIndex + 1) / steps.length) * 100) : undefined
   const meta = [estimate, formatElapsed(elapsedMs)].filter(Boolean).join(' · ')
 
@@ -1053,46 +1052,44 @@ function WorkingCardView({
           <div
             className={cn(
               'h-full rounded-full bg-[var(--gui-brand,#1a73e8)]',
-              percent === undefined
-                ? 'w-1/3 animate-pulse'
-                : 'transition-[width] duration-300'
+              percent === undefined ? 'w-1/3 animate-pulse' : 'transition-[width] duration-300'
             )}
             style={percent === undefined ? undefined : { width: `${percent}%` }}
           />
         </div>
         {hasSteps ? (
-        <ol className='flex flex-col gap-2.5'>
-          {steps.map((step, index) => {
-            const done = index < currentIndex
-            const current = index === currentIndex
-            return (
-              <li
-                key={`${index}-${step.label}`}
-                className={cn(
-                  'flex items-center gap-2.5 text-sm',
-                  step.nested && 'pl-6',
-                  done && 'text-[var(--gui-info-text,#10458b)] line-through',
-                  current && 'font-semibold text-[var(--gui-brand-pressed,#10458b)]',
-                  !done && !current && 'text-[var(--gui-info-text,#10458b)]'
-                )}
-              >
-                {done ? (
-                  <span className='inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--gui-success-text,#23784f)] text-white'>
-                    <Check className='size-3' aria-hidden />
-                  </span>
-                ) : current ? (
-                  <Loader2
-                    className='size-5 shrink-0 animate-spin text-[var(--gui-brand,#1a73e8)]'
-                    aria-hidden
-                  />
-                ) : (
-                  <span className='size-5 shrink-0 rounded-full border border-[var(--gui-info-border,#a3c7f6)]' />
-                )}
-                <span aria-current={current ? 'step' : undefined}>{step.label}</span>
-              </li>
-            )
-          })}
-        </ol>
+          <ol className='flex flex-col gap-2.5'>
+            {steps.map((step, index) => {
+              const done = index < currentIndex
+              const current = index === currentIndex
+              return (
+                <li
+                  key={`${index}-${step.label}`}
+                  className={cn(
+                    'flex items-center gap-2.5 text-sm',
+                    step.nested && 'pl-6',
+                    done && 'text-[var(--gui-info-text,#10458b)] line-through',
+                    current && 'font-semibold text-[var(--gui-brand-pressed,#10458b)]',
+                    !done && !current && 'text-[var(--gui-info-text,#10458b)]'
+                  )}
+                >
+                  {done ? (
+                    <span className='inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--gui-success-text,#23784f)] text-white'>
+                      <Check className='size-3' aria-hidden />
+                    </span>
+                  ) : current ? (
+                    <Loader2
+                      className='size-5 shrink-0 animate-spin text-[var(--gui-brand,#1a73e8)]'
+                      aria-hidden
+                    />
+                  ) : (
+                    <span className='size-5 shrink-0 rounded-full border border-[var(--gui-info-border,#a3c7f6)]' />
+                  )}
+                  <span aria-current={current ? 'step' : undefined}>{step.label}</span>
+                </li>
+              )
+            })}
+          </ol>
         ) : null}
         {tip || onCancel ? (
           <div className='flex flex-col gap-3 border-[var(--gui-info-border,#a3c7f6)] border-t pt-3'>
@@ -2050,13 +2047,7 @@ function CatalogOverlayShell({
   const drawerSide = placement === 'drawer-left' ? 'left-0' : 'right-0'
 
   return (
-    <div
-      className={
-        isDrawer
-          ? 'pointer-events-none fixed inset-0 z-30'
-          : GUI_OVERLAY_SCRIM_CLASS
-      }
-    >
+    <div className={isDrawer ? 'pointer-events-none fixed inset-0 z-30' : GUI_OVERLAY_SCRIM_CLASS}>
       <button
         type='button'
         aria-label='Close'
@@ -2226,13 +2217,13 @@ export function SpecRenderer({
     host.fillMissingState(fill)
   }, [dummySeed, host.fillMissingState, rawState])
   const pageKey = currentPath ?? ''
-  const [formValues, setFormValuesState] = useState<Record<string, unknown>>(
-    () => (pageKey ? host.pageFormValues(pageKey) : {})
+  const [formValues, setFormValuesState] = useState<Record<string, unknown>>(() =>
+    pageKey ? host.pageFormValues(pageKey) : {}
   )
   const [overlayFlags, setOverlayFlags] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [localPages, setLocalPagesState] = useState<Record<string, number>>(
-    () => (pageKey ? host.pageLocalPages(pageKey) : {})
+  const [localPages, setLocalPagesState] = useState<Record<string, number>>(() =>
+    pageKey ? host.pageLocalPages(pageKey) : {}
   )
   const [disclosureOpen, setDisclosureOpen] = useState<Record<string, boolean>>({})
   const [tableSorts, setTableSorts] = useState<Record<string, CollectionSort>>({})
@@ -2244,7 +2235,9 @@ export function SpecRenderer({
     return () => clearInterval(timer)
   }, [usesRelativeDates])
   const setFormValues = (
-    update: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)
+    update:
+      | Record<string, unknown>
+      | ((current: Record<string, unknown>) => Record<string, unknown>)
   ) => {
     setFormValuesState((current) => {
       const next = typeof update === 'function' ? update(current) : update
@@ -2295,8 +2288,7 @@ export function SpecRenderer({
         (element.type === 'List' && Boolean(asString(element.props?.statePath)))
     )
     .map(([id, element]) => {
-      const statePath =
-        asString(element.props?.statePath) || implicitDummyTableStatePath(spec, id)
+      const statePath = asString(element.props?.statePath) || implicitDummyTableStatePath(spec, id)
       if (!statePath || statePath === 'item' || statePath.startsWith('item.')) {
         return `${id}:static`
       }
@@ -2642,7 +2634,10 @@ export function SpecRenderer({
         if (horizontal && partitioned.chromeIds.length > 0 && !leftRail) {
           return (
             <div
-              className={cn('flex w-full min-w-0 flex-col', alignItemsClass(props.align, 'stretch'))}
+              className={cn(
+                'flex w-full min-w-0 flex-col',
+                alignItemsClass(props.align, 'stretch')
+              )}
               style={gapStyle}
             >
               {renderChildNodes(partitioned.leadIds)}
@@ -2821,7 +2816,13 @@ export function SpecRenderer({
                     </span>
                     {childIds.map((childId) => (
                       <Fragment key={childId}>
-                        {renderNode(childId, { item, index }, childWithinForm, nextFormActionId, childWithinCard)}
+                        {renderNode(
+                          childId,
+                          { item, index },
+                          childWithinForm,
+                          nextFormActionId,
+                          childWithinCard
+                        )}
                       </Fragment>
                     ))}
                   </div>
@@ -2829,7 +2830,13 @@ export function SpecRenderer({
                   <Fragment key={repeatItemKey(item, index)}>
                     {childIds.map((childId) => (
                       <Fragment key={childId}>
-                        {renderNode(childId, { item, index }, childWithinForm, nextFormActionId, childWithinCard)}
+                        {renderNode(
+                          childId,
+                          { item, index },
+                          childWithinForm,
+                          nextFormActionId,
+                          childWithinCard
+                        )}
                       </Fragment>
                     ))}
                   </Fragment>
@@ -2922,7 +2929,7 @@ export function SpecRenderer({
               isCenter && 'mx-auto items-center text-center'
             )}
           >
-              {kicker ? (
+            {kicker ? (
               <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-brand,#1a73e8)]'>
                 {kicker}
               </p>
@@ -3024,11 +3031,7 @@ export function SpecRenderer({
         const items = parseBreadcrumbItems(props.items)
         if (items.length === 0) return null
         return (
-          <GuiHostBreadcrumb
-            items={items}
-            currentPath={currentPath}
-            onNavigate={requestNavigate}
-          />
+          <GuiHostBreadcrumb items={items} currentPath={currentPath} onNavigate={requestNavigate} />
         )
       }
       case 'Table': {
@@ -3066,7 +3069,8 @@ export function SpecRenderer({
           ? sortCollectionItems(filteredCollection, tableSort)
           : undefined
         const boundEmpty = Boolean(
-          statePath && (sourceCollection ? sourceCollection.length === 0 : isEmptyStateValue(stateValue))
+          statePath &&
+            (sourceCollection ? sourceCollection.length === 0 : isEmptyStateValue(stateValue))
         )
         if (statePath && boundPending(statePath) && boundEmpty) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
@@ -3078,7 +3082,12 @@ export function SpecRenderer({
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
           }
         }
-        if (sourceCollection && sourceCollection.length > 0 && collection && collection.length === 0) {
+        if (
+          sourceCollection &&
+          sourceCollection.length > 0 &&
+          collection &&
+          collection.length === 0
+        ) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
         const canReorder =
@@ -3195,7 +3204,12 @@ export function SpecRenderer({
                 state[ARENA_GENERATIVE_SELECTED_KEY]
               )
             : discovered
-        if (statePath && boundPending(statePath) && isEmptyStateValue(stateValue) && (!rawItems || rawItems.length === 0)) {
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          (!rawItems || rawItems.length === 0)
+        ) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
         }
         if (!rawItems || rawItems.length === 0) {
@@ -3448,9 +3462,7 @@ export function SpecRenderer({
               mode={mode === 'pages' ? 'more' : mode}
               hasMore={isTruthyFieldValue(state.hasMore)}
               pending={controlPending(actionId)}
-              onLoadMore={() =>
-                void dispatchAction(actionId, actionValues, confirmMeta(actionId))
-              }
+              onLoadMore={() => void dispatchAction(actionId, actionValues, confirmMeta(actionId))}
             />
           )
         }
@@ -3626,7 +3638,7 @@ export function SpecRenderer({
             ) : (
               <CatalogIcon name='inbox' well='circle' />
             )}
-            <p className='font-semibold text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)] text-[var(--gui-text,#2c2d33)]'>
+            <p className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
               {asString(props.title)}
             </p>
             {asString(props.body) ? (
@@ -3655,9 +3667,7 @@ export function SpecRenderer({
         const navigateTo = asString(props.navigateTo)
         const setValue = asString(props.setValue)
         const hostExport = resolveHostContentAction(props)
-        const viewTone = setValue
-          ? viewSwitchChipTone(id, setValue, visibilityValues, spec)
-          : null
+        const viewTone = setValue ? viewSwitchChipTone(id, setValue, visibilityValues, spec) : null
         const tone = viewTone ?? asString(props.tone, 'muted')
         const interactive = Boolean(actionId || navigateTo || setValue || hostExport)
         const className = cn(
@@ -3666,13 +3676,7 @@ export function SpecRenderer({
         )
         const runChip = () => {
           if (hostExport) {
-            const markdown = visibleMarkdownForElement(
-              elements,
-              id,
-              state,
-              visibilityValues,
-              scope
-            )
+            const markdown = visibleMarkdownForElement(elements, id, state, visibilityValues, scope)
             if (hostExport === 'copy') void copyTextToClipboard(markdown)
             else downloadMarkdownPdf(markdown)
             return
@@ -3884,7 +3888,7 @@ export function SpecRenderer({
           title || subtitle || description || metaIds.length > 0 ? (
             <div className='flex min-w-0 flex-col gap-1'>
               {title ? (
-                <h2 className='min-w-0 break-all font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)] line-clamp-2'>
+                <h2 className='line-clamp-2 min-w-0 break-all font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
                   {title}
                 </h2>
               ) : null}
@@ -3902,7 +3906,13 @@ export function SpecRenderer({
                 <div className='flex flex-wrap items-center gap-2 pt-1'>
                   {metaIds.map((childId) => (
                     <Fragment key={childId}>
-                      {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
+                      {renderNode(
+                        childId,
+                        scope,
+                        childWithinForm,
+                        nextFormActionId,
+                        childWithinCard
+                      )}
                     </Fragment>
                   ))}
                 </div>
@@ -3956,8 +3966,14 @@ export function SpecRenderer({
                 <div className='flex flex-wrap items-center gap-2'>
                   {footerIds.map((childId) => (
                     <Fragment key={childId}>
-                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
-                  </Fragment>
+                      {renderNode(
+                        childId,
+                        scope,
+                        childWithinForm,
+                        nextFormActionId,
+                        childWithinCard
+                      )}
+                    </Fragment>
                   ))}
                 </div>
               </div>
@@ -4383,8 +4399,7 @@ export function SpecRenderer({
         const boundItems = statePath
           ? (collectionFromBoundValue(readStatePath(state, statePath, scope)) ?? [])
           : []
-        const titleField =
-          asString(props.titleField) || defaultCommandPaletteTitleField(boundItems)
+        const titleField = asString(props.titleField) || defaultCommandPaletteTitleField(boundItems)
         const pathField =
           asString(props.pathField) || defaultCommandPalettePathField(boundItems, titleField)
         const actionField =
@@ -4465,7 +4480,23 @@ export function SpecRenderer({
           )
         }
         if (element.type === 'Select' || element.type === 'Combobox') {
-          const options = parseOptionList(props.options)
+          const options = parseLabeledOptions(props.options)
+          const selected = resolveLabeledOptionValue(asFieldString(value), options)
+          const commit = (next: string) => {
+            const resolved = resolveLabeledOptionValue(next, options)
+            const expanded = expandValueFields(resolved, props.valueFields)
+            setFormValues((current) => ({ ...current, [name]: resolved, ...expanded }))
+            setFieldErrors((current) => {
+              if (!current[name]) return current
+              const nextErrors = { ...current }
+              delete nextErrors[name]
+              return nextErrors
+            })
+            const actionId = asString(props.actionId)
+            if (actionId) {
+              void dispatchAction(actionId, { ...actionValues, [name]: resolved, ...expanded })
+            }
+          }
           return (
             <FieldShell
               name={name}
@@ -4477,36 +4508,49 @@ export function SpecRenderer({
               <GuiSelect
                 id={fieldId}
                 name={name}
-                value={asFieldString(value)}
+                value={selected}
                 options={options}
                 required={required}
                 error={error}
                 searchable={element.type === 'Combobox'}
-                onChange={(next) => setNamedValue(name, next)}
+                onChange={commit}
               />
             </FieldShell>
           )
         }
         if (element.type === 'RadioGroup') {
-          const options = parseOptionList(props.options)
-          const selected = asFieldString(value)
+          const options = parseLabeledOptions(props.options)
+          const selected = resolveLabeledOptionValue(asFieldString(value), options)
+          const commit = (next: string) => {
+            const resolved = resolveLabeledOptionValue(next, options)
+            const expanded = expandValueFields(resolved, props.valueFields)
+            setFormValues((current) => ({ ...current, [name]: resolved, ...expanded }))
+            const actionId = asString(props.actionId)
+            if (actionId) {
+              void dispatchAction(actionId, { ...actionValues, [name]: resolved, ...expanded })
+            }
+          }
           return (
             <FieldShell name={name} label={label} error={error} required={required}>
               <div role='radiogroup' aria-label={label || name} className='flex flex-col gap-2'>
                 {options.map((option) => {
-                  const optionId = `${fieldId}-${option}`
+                  const optionId = `${fieldId}-${option.value}`
                   return (
-                    <label key={option} htmlFor={optionId} className='flex items-center gap-2'>
+                    <label
+                      key={option.value}
+                      htmlFor={optionId}
+                      className='flex items-center gap-2'
+                    >
                       <input
                         id={optionId}
                         type='radio'
                         name={name}
-                        value={option}
-                        checked={selected === option}
-                        onChange={() => setNamedValue(name, option)}
+                        value={option.value}
+                        checked={selected === option.value}
+                        onChange={() => commit(option.value)}
                         className={cn(FIELD_NATIVE_CONTROL_CLASS, 'rounded-full')}
                       />
-                      <span>{option}</span>
+                      <span>{option.label}</span>
                     </label>
                   )
                 })}
@@ -4619,7 +4663,13 @@ export function SpecRenderer({
         }
         if (element.type === 'DateInput') {
           return (
-            <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
+            <FieldShell
+              name={name}
+              label={label}
+              htmlFor={fieldId}
+              error={error}
+              required={required}
+            >
               <GuiHostDateInput
                 id={fieldId}
                 name={name}
@@ -4785,7 +4835,8 @@ export function SpecRenderer({
                 applyOverlayPatch(overlayPatch)
                 return
               }
-              if (navigateTo) requestNavigate(navigateTo, { keepSelection: asBoolean(props.selectItem) })
+              if (navigateTo)
+                requestNavigate(navigateTo, { keepSelection: asBoolean(props.selectItem) })
               if (actionId) void dispatchAction(actionId, actionValues)
             }}
           >

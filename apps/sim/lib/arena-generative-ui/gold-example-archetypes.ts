@@ -205,6 +205,385 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD = goldPrompt(
   }
 )
 
+const performanceHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Campaign performance', backgroundColor: null },
+      children: ['app_header', 'section'],
+    },
+    app_header: goldAppHeader('Campaign performance'),
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'heroes', 'trend', 'exceptions'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Last 7 days',
+        subtitle: 'Spend, conversions, and the campaigns that need attention.',
+        kicker: null,
+        align: 'start',
+      },
+      children: [],
+    },
+    heroes: {
+      type: 'Grid',
+      props: { columns: '3', gap: 'lg', minItemWidth: null },
+      children: ['kpi_spend', 'kpi_conversions', 'kpi_ctr'],
+    },
+    kpi_spend: {
+      type: 'Stat',
+      props: {
+        label: 'Spend',
+        value: null,
+        statePath: 'spend',
+        hint: null,
+        delta: '+6%',
+        deltaTone: 'negative',
+        size: 'display',
+        numberFormat: 'usd',
+        aggregate: null,
+      },
+      children: [],
+    },
+    kpi_conversions: {
+      type: 'Stat',
+      props: {
+        label: 'Conversions',
+        value: null,
+        statePath: 'conversions',
+        hint: null,
+        delta: '+12%',
+        deltaTone: 'positive',
+        size: 'display',
+        numberFormat: 'integer',
+        aggregate: null,
+      },
+      children: [],
+    },
+    kpi_ctr: {
+      type: 'Stat',
+      props: {
+        label: 'CTR',
+        value: null,
+        statePath: 'ctr',
+        hint: null,
+        delta: null,
+        deltaTone: null,
+        size: 'display',
+        numberFormat: 'percent-ratio',
+        aggregate: null,
+      },
+      children: [],
+    },
+    trend: {
+      type: 'Card',
+      props: {
+        title: 'Daily conversions',
+        subtitle: 'Last 7 days',
+        description: null,
+        footerText: null,
+        padding: 'lg',
+        variant: 'muted',
+        backgroundColor: null,
+      },
+      children: ['spark'],
+    },
+    spark: {
+      type: 'Chart',
+      props: {
+        title: 'Conversions',
+        chartType: 'line',
+        statePath: 'daily',
+        categoryField: 'day',
+        series: 'conversions',
+        categories: null,
+        values: null,
+        height: '320',
+        showLegend: false,
+        stacked: false,
+        emptyText: 'No series yet.',
+      },
+      children: [],
+    },
+    exceptions: {
+      type: 'Table',
+      props: {
+        statePath: 'alerts',
+        columns: 'Campaign, Status, Spend',
+        rows: null,
+        emptyText: 'No campaigns need attention.',
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldPerformanceManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Campaign performance',
+      spec: performanceHomeSpec,
+      onLoad: ['load_performance'],
+    },
+  },
+  actions: {
+    load_performance: {
+      onSuccess: {
+        setState: {
+          spend: 18420,
+          conversions: 312,
+          ctr: 0.042,
+          daily: [
+            { day: 'Mon', conversions: 38 },
+            { day: 'Tue', conversions: 41 },
+            { day: 'Wed', conversions: 36 },
+            { day: 'Thu', conversions: 48 },
+            { day: 'Fri', conversions: 52 },
+            { day: 'Sat', conversions: 44 },
+            { day: 'Sun', conversions: 53 },
+          ],
+          alerts: [
+            { Campaign: 'Brand search', Status: 'Limited', Spend: '$4,200' },
+            { Campaign: 'Retargeting', Status: 'Paused', Spend: '$890' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_PERFORMANCE = goldPrompt(
+  'performance',
+  'Metrics dashboard: PageHeader, 2–3 Stat size "display", one Chart, one exception Table. No Filter unless a real binding input or collection column exists. No compact 4-up Stat grid. onLoad setState seeds those hostKeys; every Stat, Chart, and Table bind by statePath. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys. There is no search hero.',
+  {
+    title: 'Campaign performance',
+    content: 'Hero metrics and the campaigns that need attention.',
+    manifest: goldPerformanceManifest,
+  }
+)
+
+const briefingHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Prospect briefing', backgroundColor: null },
+      children: ['app_header', 'section'],
+    },
+    app_header: goldAppHeader('Prospect briefing'),
+    section: {
+      type: 'Section',
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'identity', 'views', 'summary_panel', 'findings_panel', 'sources_panel'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Briefing',
+        subtitle: '{company}',
+        kicker: null,
+        align: 'start',
+      },
+      children: [],
+    },
+    identity: {
+      type: 'EntityHeader',
+      props: {
+        title: '{company}',
+        description: '{tagline}',
+        badge: null,
+        badgeTone: null,
+        logoSrc: null,
+        initials: null,
+        statePath: null,
+        meta: '{industry}, {hq}',
+      },
+      children: [],
+    },
+    views: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['view_summary', 'view_sources', 'view_list'],
+    },
+    view_summary: {
+      type: 'Chip',
+      props: {
+        text: 'Summary',
+        tone: 'muted',
+        setValue: 'view=summary',
+        actionId: null,
+        navigateTo: null,
+      },
+      children: [],
+    },
+    view_sources: {
+      type: 'Chip',
+      props: {
+        text: 'Sources',
+        tone: 'muted',
+        setValue: 'view=sources',
+        actionId: null,
+        navigateTo: null,
+      },
+      children: [],
+    },
+    view_list: {
+      type: 'Chip',
+      props: {
+        text: 'List',
+        tone: 'muted',
+        setValue: 'view=list',
+        actionId: null,
+        navigateTo: null,
+      },
+      children: [],
+    },
+    summary_panel: {
+      type: 'Card',
+      props: {
+        title: null,
+        subtitle: null,
+        description: null,
+        footerText: null,
+        padding: 'lg',
+        variant: 'muted',
+        backgroundColor: null,
+        showWhen: 'view=summary',
+      },
+      children: ['summary_body'],
+    },
+    summary_body: {
+      type: 'DataText',
+      props: {
+        statePath: 'summary',
+        fallback: 'Run research to fill this briefing.',
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+    findings_panel: {
+      type: 'Repeat',
+      props: {
+        statePath: 'findings',
+        emptyText: 'No findings yet.',
+        showWhen: 'view=list',
+        reorderable: null,
+      },
+      children: ['finding'],
+    },
+    finding: {
+      type: 'Disclosure',
+      props: {
+        title: '{item.title}',
+        subtitle: null,
+        defaultOpen: false,
+        showWhen: null,
+      },
+      children: ['finding_body'],
+    },
+    finding_body: {
+      type: 'DataText',
+      props: {
+        statePath: 'item.detail',
+        fallback: null,
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+    sources_panel: {
+      type: 'Card',
+      props: {
+        title: 'Sources',
+        subtitle: null,
+        description: null,
+        footerText: null,
+        padding: 'lg',
+        variant: 'default',
+        backgroundColor: null,
+        showWhen: 'view=sources',
+      },
+      children: ['sources_list'],
+    },
+    sources_list: {
+      type: 'List',
+      props: {
+        ordered: false,
+        statePath: 'sources',
+        titleField: 'title',
+        bodyField: 'url',
+        emptyText: 'No sources yet.',
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldBriefingManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Prospect briefing',
+      spec: briefingHomeSpec,
+      onLoad: ['load_briefing'],
+    },
+  },
+  actions: {
+    load_briefing: {
+      onSuccess: {
+        setState: {
+          company: 'Acme',
+          tagline: 'Payments for platforms',
+          industry: 'Fintech',
+          hq: 'San Francisco',
+          summary:
+            'Acme sells payments infrastructure to platforms. The brief names pricing pressure from two incumbents and a recent hiring spike in sales.',
+          findings: [
+            {
+              title: 'Pricing is the objection',
+              detail: 'Buyers compare take-rate against two incumbents before a trial.',
+            },
+            {
+              title: 'Hiring spike in sales',
+              detail: 'Public roles cluster in mid-market AE and solutions engineering.',
+            },
+          ],
+          sources: [
+            { title: 'Company site', url: 'https://acme.example' },
+            { title: 'Series B note', url: 'https://news.example/acme' },
+          ],
+        },
+      },
+    },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_BRIEFING = goldPrompt(
+  'briefing',
+  'Research results: EntityHeader, DataText summary first, Chip views (Summary | Sources | List), Repeat of Disclosure findings, List of sources. No KPI row and no SWOT. onLoad setState seeds those hostKeys. When a binding was declared, use that apiKey instead of this setState. Do not invent API keys.',
+  {
+    title: 'Prospect briefing',
+    content: 'Highlights, findings, and sources — not a metrics grid.',
+    manifest: goldBriefingManifest,
+  }
+)
+
 const listHomeSpec: Spec = {
   root: 'page',
   elements: {

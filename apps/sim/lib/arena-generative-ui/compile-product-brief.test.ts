@@ -27,7 +27,7 @@ describe('compileProductBrief', () => {
     ])
 
     expect(compiled.honorPrompt).toContain('COMPILED HONOR LIST')
-    expect(compiled.honorPrompt).toContain('Job is a dashboard')
+    expect(compiled.honorPrompt).toContain('Job is a performance dashboard')
     expect(compiled.honorPrompt).toContain('Filmstrip')
     expect(compiled.honorPrompt).toContain('SearchField')
     expect(compiled.honorPrompt).toContain('live true')
@@ -90,7 +90,7 @@ describe('compileProductBrief', () => {
     const compiled = compileProductBrief(
       'Build a weather dashboard. Do not add extra pages. Use browser geolocation and persist last city in localStorage.'
     )
-    expect(compiled.honorPrompt).toContain('Job is a dashboard')
+    expect(compiled.honorPrompt).toContain('Job is a performance dashboard')
     expect(compiled.honorPrompt).toContain('They win over SCOPE DISCIPLINE')
     expect(compiled.adoptedChanges).toEqual(
       expect.arrayContaining([
@@ -119,5 +119,12 @@ describe('compileProductBrief', () => {
         }),
       ])
     )
+  })
+
+  it('maps Google Ads metrics onto a performance dashboard honor string', () => {
+    const compiled = compileProductBrief('Google Ads last 7 days dashboard with spend and CTR.')
+    expect(compiled.honorPrompt).toContain('performance dashboard')
+    expect(compiled.honorPrompt).toContain('Stat size "display"')
+    expect(compiled.honorPrompt).toContain('Do not emit an Operations Filter')
   })
 })

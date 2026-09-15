@@ -1496,7 +1496,6 @@ describe('target blueprint fixtures', () => {
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
     expect(prompt).not.toContain('SWOT')
-    expect(prompt).not.toContain('productType')
     expect(prompt).not.toContain('COMPOSITION SEMANTICS')
     expect(prompt).not.toContain('PLANNER_CONTRACT')
   })

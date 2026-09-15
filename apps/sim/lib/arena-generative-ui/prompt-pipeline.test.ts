@@ -190,7 +190,6 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
     expect(prompt).not.toContain('SWOT')
-    expect(prompt).not.toContain('productType')
     expect(prompt).not.toContain('Watchtower')
     expect(prompt).not.toContain('omit manifest.actions')
     expect(prompt).not.toContain('use navigation only')
@@ -307,5 +306,18 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).toContain('5. NAVIGATION')
     expect(prompt).toContain('- WorkingCard: {')
     expect(prompt).toContain('- Tabs: {')
+  })
+
+  it('includes the performance gold when brief.designIntent.productType is marketing', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'dashboard',
+      pageArchetypes: ['dashboard'],
+      productType: 'marketing',
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (performance)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)\n')
   })
 })

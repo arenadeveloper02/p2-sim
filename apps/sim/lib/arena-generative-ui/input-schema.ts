@@ -175,7 +175,10 @@ export function explicitInputSourceOverrides(
     const name = typeof record.name === 'string' ? record.name.trim() : ''
     if (!name) continue
     const source = record.source
-    if (typeof source !== 'string' || !EXPLICIT_INPUT_SOURCES.has(source as ArenaGenerativeInputSource)) {
+    if (
+      typeof source !== 'string' ||
+      !EXPLICIT_INPUT_SOURCES.has(source as ArenaGenerativeInputSource)
+    ) {
       continue
     }
     const override: ArenaGenerativeInputSourceOverride = {
@@ -259,7 +262,7 @@ export function compactInputSchemaField(
   if (source) {
     next.source = source
   }
-  if (source === 'constant' && field.value !== undefined) {
+  if (field.value !== undefined && field.value !== '') {
     next.value = field.value
   }
   return next

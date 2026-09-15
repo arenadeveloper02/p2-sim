@@ -85,10 +85,110 @@ export function listFormFields(
 }
 
 export function parseOptionList(raw: unknown): string[] {
-  return asString(raw)
+  return parseLabeledOptions(raw).map((option) => option.label)
+}
+
+export interface LabeledOption {
+  label: string
+  value: string
+}
+
+/**
+ * Select/Combobox/RadioGroup options. Newline-separated items when the string
+ * contains a newline; otherwise comma-separated (legacy). Each item may be
+ * `Label|value` — the value may contain commas when newline-separated.
+ */
+export function parseLabeledOptions(raw: unknown): LabeledOption[] {
+  const text = asString(raw)
+  if (!text.trim()) return []
+  const items = text.includes('\n') ? text.split('\n') : text.split(',')
+  const options: LabeledOption[] = []
+  for (const item of items) {
+    const trimmed = item.trim()
+    if (!trimmed) continue
+    const pipe = trimmed.indexOf('|')
+    if (pipe > 0) {
+      const label = trimmed.slice(0, pipe).trim()
+      const value = trimmed.slice(pipe + 1).trim()
+      if (!label) continue
+      options.push({ label, value: value || label })
+      continue
+    }
+    options.push({ label: trimmed, value: trimmed })
+  }
+  return options
+}
+
+export function resolveLabeledOptionValue(raw: string, options: readonly LabeledOption[]): string {
+  if (!raw) return raw
+  const byValue = options.find((option) => option.value === raw)
+  if (byValue) return byValue.value
+  const byLabel = options.find((option) => option.label === raw)
+  if (byLabel) return byLabel.value
+  return raw
+}
+
+/**
+ * Splits a Select value across `valueFields` (comma-separated names).
+ */
+export function expandValueFields(value: string, valueFields: unknown): Record<string, string> {
+  const names = asString(valueFields)
     .split(',')
-    .map((option) => option.trim())
+    .map((name) => name.trim())
     .filter(Boolean)
+  if (names.length === 0) return {}
+  const parts = value.split(',').map((part) => part.trim())
+  const next: Record<string, string> = {}
+  for (let index = 0; index < names.length; index += 1) {
+    next[names[index]] = parts[index] ?? ''
+  }
+  return next
+}
+
+const DISCRETE_LOAD_FIELD_TYPES = new Set<ArenaGenerativeFormFieldType>([
+  'Select',
+  'Combobox',
+  'RadioGroup',
+  'DateInput',
+])
+
+/**
+ * Defaults plus edits for Select/Combobox/RadioGroup/DateInput. Used as onLoad
+ * values so a city change re-runs GET bindings. Expands valueFields.
+ */
+export function collectDiscreteFormLoadValues(
+  elements: Record<string, SpecElement>,
+  formValues: Record<string, unknown>
+): Record<string, string> {
+  const values: Record<string, string> = {}
+  for (const element of Object.values(elements)) {
+    if (!isFormFieldType(element.type) || !DISCRETE_LOAD_FIELD_TYPES.has(element.type)) continue
+    const props = element.props ?? {}
+    const name = asString(props.name)
+    if (!name) continue
+    const resolved = resolveFieldValue(element.type, props, formValues, {})
+    const asText = resolved == null ? '' : String(resolved)
+    const labeled = parseLabeledOptions(props.options)
+    const selected = labeled.length > 0 ? resolveLabeledOptionValue(asText, labeled) : asText
+    if (selected) values[name] = selected
+    const expanded = expandValueFields(selected, props.valueFields)
+    for (const [key, value] of Object.entries(expanded)) {
+      if (value) values[key] = value
+    }
+  }
+  return values
+}
+
+/**
+ * Discrete form defaults/edits plus page query params. Query params win (deep links).
+ */
+export function mergePageLoadValues(
+  elements: Record<string, SpecElement> | undefined,
+  formValues: Record<string, unknown>,
+  pageParams: Record<string, string>
+): Record<string, string> {
+  const discrete = elements ? collectDiscreteFormLoadValues(elements, formValues) : {}
+  return { ...discrete, ...pageParams }
 }
 
 /**
@@ -260,7 +360,14 @@ export function snapshotFormValues(
   return snapshot
 }
 
-const FORM_PREFILL_SKIP = new Set(['creating', 'editing', 'index', 'hasMore', 'nextCursor', 'offset'])
+const FORM_PREFILL_SKIP = new Set([
+  'creating',
+  'editing',
+  'index',
+  'hasMore',
+  'nextCursor',
+  'offset',
+])
 
 /**
  * Copies matching record keys onto form field names so an edit overlay opens
@@ -281,9 +388,7 @@ export function formValuesFromRecord(
   for (const field of fields) {
     const name = asString(field.props.name)
     if (!name) continue
-    const value = Object.prototype.hasOwnProperty.call(source, name)
-      ? source[name]
-      : byLower.get(name.toLowerCase())
+    const value = Object.hasOwn(source, name) ? source[name] : byLower.get(name.toLowerCase())
     if (value === undefined) continue
     result[name] = value
   }

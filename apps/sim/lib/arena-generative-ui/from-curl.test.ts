@@ -98,9 +98,50 @@ describe('httpBindingFromCurl', () => {
     })
     expect(binding.http).toEqual({
       method: 'GET',
-      url: 'https://api.example.com/search?q=ada',
+      url: 'https://api.example.com/search',
     })
-    expect(binding.inputSchema).toBeUndefined()
+    expect(binding.inputSchema).toEqual([{ name: 'q', type: 'string', value: 'ada' }])
+  })
+
+  it('extracts Open-Meteo query params into form vs constant fields', () => {
+    const binding = httpBindingFromCurl({
+      key: 'forecast',
+      curl: 'curl -G "https://api.open-meteo.com/v1/forecast?latitude=12.9716&longitude=77.5946&current=temperature_2m,weather_code&daily=temperature_2m_max&timezone=auto&forecast_days=7"',
+    })
+    expect(binding.http?.method).toBe('GET')
+    expect(binding.http?.url).toContain('current=')
+    expect(binding.http?.url).toContain('daily=')
+    expect(binding.http?.url).toContain('timezone=auto')
+    expect(binding.http?.url).toContain('forecast_days=7')
+    expect(binding.http?.url).not.toContain('latitude=')
+    expect(binding.http?.url).not.toContain('longitude=')
+    expect(binding.inputSchema).toEqual(
+      expect.arrayContaining([
+        { name: 'latitude', type: 'number', value: '12.9716' },
+        { name: 'longitude', type: 'number', value: '77.5946' },
+        {
+          name: 'current',
+          type: 'string',
+          source: 'constant',
+          value: 'temperature_2m,weather_code',
+        },
+        { name: 'daily', type: 'string', source: 'constant', value: 'temperature_2m_max' },
+        { name: 'timezone', type: 'string', source: 'constant', value: 'auto' },
+        { name: 'forecast_days', type: 'string', source: 'constant', value: '7' },
+      ])
+    )
+  })
+
+  it('extracts ads-style accountId and dateFrom as form fields', () => {
+    const binding = httpBindingFromCurl({
+      key: 'ads',
+      curl: 'curl -G "https://api.example.com/ads?accountId=123&dateFrom=2026-01-01"',
+    })
+    expect(binding.http?.url).toBe('https://api.example.com/ads')
+    expect(binding.inputSchema).toEqual([
+      { name: 'accountId', type: 'number', value: '123' },
+      { name: 'dateFrom', type: 'string', value: '2026-01-01' },
+    ])
   })
 
   it('parses a quoted multiline JSON body', () => {

@@ -22,20 +22,24 @@ import {
   resolveCatalogComponentNames,
 } from '@/lib/arena-generative-ui/catalog'
 import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-generative-ui/component-decisions'
-import { ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT } from '@/lib/arena-generative-ui/representation'
 import {
   constitutionPromptFor,
   resolveConstitutionSections,
 } from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import { ARENA_GENERATIVE_UI_COMPOSITION_PROMPT } from '@/lib/arena-generative-ui/design-guidelines'
-import { ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT } from '@/lib/arena-generative-ui/design-intent'
-import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import {
+  ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
+  type ArenaGenerativeProductType,
+  type ArenaGenerativeVisualPriority,
+} from '@/lib/arena-generative-ui/design-intent'
+import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
+import { ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT } from '@/lib/arena-generative-ui/representation'
+import {
+  ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT,
   type ArenaGenerativeArchetype,
   type ArenaGenerativeShell,
   type ArenaGenerativeStructuredBrief,
-  ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT,
   archetypeRecipe,
   briefHasDummyOrLocalData,
   recipesForBlueprint,
@@ -64,6 +68,8 @@ export interface BuildGeneratorSystemPromptOptions {
   pageArchetypes?: readonly ArenaGenerativeArchetype[]
   /** True when any planned page declared named regions. */
   hasRegions?: boolean
+  productType?: ArenaGenerativeProductType
+  visualPriority?: ArenaGenerativeVisualPriority
 }
 
 const WAIT_CAPABILITIES = new Set<string>([
@@ -97,6 +103,8 @@ export function generatorPromptOptionsFromBrief(
   | 'needsWorkspace'
   | 'pageArchetypes'
   | 'hasRegions'
+  | 'productType'
+  | 'visualPriority'
 > {
   if (!brief) {
     return {
@@ -158,6 +166,8 @@ export function generatorPromptOptionsFromBrief(
     needsWorkspace: hasWorkspacePage || hasRegions,
     pageArchetypes,
     hasRegions,
+    productType: brief.designIntent?.productType,
+    visualPriority: brief.designIntent?.visualPriority,
   }
 }
 
@@ -275,6 +285,8 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
         needsTimeline: options.needsTimeline,
         needsKanban: options.needsKanban,
         needsTables: options.needsTables,
+        productType: options.productType,
+        visualPriority: options.visualPriority,
       }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
       catalogAndEnvelope,

@@ -197,3 +197,74 @@ describe('validateManifestBindingLayout required host keys', () => {
     )
   })
 })
+
+describe('validateManifestBindingLayout prose next to collections', () => {
+  it('rejects KeyValue on a summary string when collections exist', () => {
+    const plan: BindingLayoutPlan = {
+      ...collectionPlan(['title']),
+      stringFieldNames: ['summary'],
+      prosePaths: ['summary'],
+      hostKeys: ['items', 'summary'],
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: {
+          path: 'home',
+          title: 'Briefing',
+          spec: {
+            root: 'page',
+            elements: {
+              page: { type: 'Page', props: { title: 'Briefing' }, children: ['dump', 'list'] },
+              dump: {
+                type: 'KeyValue',
+                props: { statePath: 'summary', emptyText: 'None' },
+                children: [],
+              },
+              list: {
+                type: 'Table',
+                props: { columns: 'title', statePath: 'items', emptyText: 'None' },
+                children: [],
+              },
+            },
+          },
+          onLoad: ['load'],
+        },
+      },
+      actions: { load: { apiKey: 'load' } },
+    }
+    expect(validateManifestBindingLayout(manifest, [plan])).toContain('DataText')
+  })
+
+  it('requires DataText when a bound collection shares a summary host key', () => {
+    const plan: BindingLayoutPlan = {
+      ...collectionPlan(['title']),
+      stringFieldNames: ['summary'],
+      prosePaths: ['summary'],
+      hostKeys: ['items', 'summary'],
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: {
+          path: 'home',
+          title: 'Briefing',
+          spec: {
+            root: 'page',
+            elements: {
+              page: { type: 'Page', props: { title: 'Briefing' }, children: ['list'] },
+              list: {
+                type: 'Table',
+                props: { columns: 'title', statePath: 'items', emptyText: 'None' },
+                children: [],
+              },
+            },
+          },
+          onLoad: ['load'],
+        },
+      },
+      actions: { load: { apiKey: 'load' } },
+    }
+    expect(validateManifestBindingLayout(manifest, [plan])).toContain('DataText')
+  })
+})

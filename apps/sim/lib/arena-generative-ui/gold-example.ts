@@ -1,12 +1,18 @@
 import type { Spec } from '@json-render/core'
+import type {
+  ArenaGenerativeProductType,
+  ArenaGenerativeVisualPriority,
+} from '@/lib/arena-generative-ui/design-intent'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_AGENT_SHELL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_BRIEFING,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CALENDAR,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_PERFORMANCE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TABLE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
@@ -187,8 +193,7 @@ export const goldExampleManifest: ArenaGenerativeAppManifest = {
     analyze_company: {
       onSuccess: {
         setState: {
-          content:
-            '## Stripe\n\nPayments infrastructure. Strong brand, dense competitor set.',
+          content: '## Stripe\n\nPayments infrastructure. Strong brand, dense competitor set.',
         },
         navigate: 'results',
       },
@@ -234,6 +239,10 @@ export interface GoldExamplePickerOptions {
   needsKanban?: boolean
   /** Collection body is Table (representation table). */
   needsTables?: boolean
+  /** Structured-brief product type; picks performance / briefing golds. */
+  productType?: ArenaGenerativeProductType
+  /** Structured-brief visual priority; data → performance, content/discovery → briefing. */
+  visualPriority?: ArenaGenerativeVisualPriority
 }
 
 /** Validated gold sample injected for an uncovered planned page job. */
@@ -248,6 +257,8 @@ export type GoldExampleKey =
   | 'timeline'
   | 'kanban'
   | 'dashboard'
+  | 'performance'
+  | 'briefing'
   | 'workflow'
   | 'content'
 
@@ -264,6 +275,8 @@ const GOLD_PROMPT_BY_KEY: Record<GoldExampleKey, string> = {
   timeline: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_TIMELINE,
   kanban: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_KANBAN,
   dashboard: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
+  performance: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_PERFORMANCE,
+  briefing: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_BRIEFING,
   workflow: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   content: ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
 }
@@ -285,6 +298,23 @@ function collectionBodyKey(options?: GoldExamplePickerOptions): GoldExampleKey {
   if (options?.needsKanban) return 'kanban'
   if (options?.needsTables) return 'table'
   return 'collection'
+}
+
+function wantsPerformanceGold(options?: GoldExamplePickerOptions): boolean {
+  return (
+    options?.visualPriority === 'data' ||
+    options?.productType === 'marketing' ||
+    options?.productType === 'analytics'
+  )
+}
+
+function wantsBriefingGold(options?: GoldExamplePickerOptions): boolean {
+  return (
+    options?.visualPriority === 'content' ||
+    options?.visualPriority === 'discovery' ||
+    options?.productType === 'marketing' ||
+    options?.productType === 'content'
+  )
 }
 
 /**
@@ -320,6 +350,10 @@ export function selectGoldExampleKeys(
     cover('list-detail', LIST_DETAIL_COVERS)
   }
 
+  if (uncovered.has('results') && wantsBriefingGold(options)) {
+    cover('briefing', ['results'])
+  }
+
   if (uncovered.has('task') || uncovered.has('results')) {
     cover('task', TASK_COVERS)
   }
@@ -328,7 +362,9 @@ export function selectGoldExampleKeys(
     cover(collectionBodyKey(options), ['collection'])
   }
 
-  if (uncovered.has('dashboard')) cover('dashboard', ['dashboard'])
+  if (uncovered.has('dashboard')) {
+    cover(wantsPerformanceGold(options) ? 'performance' : 'dashboard', ['dashboard'])
+  }
   if (uncovered.has('workflow')) cover('workflow', ['workflow'])
   if (uncovered.has('content')) cover('content', ['content'])
   if (uncovered.has('detail')) cover('list-detail', ['detail'])

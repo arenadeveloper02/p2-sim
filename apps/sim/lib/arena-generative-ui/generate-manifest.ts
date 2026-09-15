@@ -13,6 +13,10 @@ import {
   mustFixCriticIssues,
 } from '@/lib/arena-generative-ui/critique-manifest'
 import {
+  type ArenaGenerativeDesignIntent,
+  stampThemeFromIntent,
+} from '@/lib/arena-generative-ui/design-intent'
+import {
   type ArenaGenerativeEditScope,
   planArenaGenerativeEditScope,
   unscopedPageIndex,
@@ -258,6 +262,8 @@ interface EvaluateGeneratedCandidateOptions {
   isPreserveEdit?: boolean
   userInput?: string
   existingBrief?: string
+  designIntent?: ArenaGenerativeDesignIntent
+  designNotes?: string
   validationOptions: {
     pageHints?: ArenaGenerativePageHint[]
     apiBindings: ArenaGenerativeApiBinding[]
@@ -315,11 +321,17 @@ function evaluateGeneratedCandidate(
     userInput: options.userInput,
     authoredPagePaths: options.validationOptions.authoredPagePaths,
   })
-  const estimated = applyWaitEstimateFromBrief(
-    knobbed.manifest,
-    options.userInput,
-    options.existingBrief
-  )
+  const themed = options.isPreserveEdit
+    ? knobbed.manifest
+    : {
+        ...knobbed.manifest,
+        theme: stampThemeFromIntent(
+          knobbed.manifest.theme,
+          options.designIntent,
+          options.designNotes
+        ),
+      }
+  const estimated = applyWaitEstimateFromBrief(themed, options.userInput, options.existingBrief)
   return {
     success: true,
     manifest: estimated.manifest,
@@ -778,6 +790,8 @@ export async function generateArenaGenerativeManifest(
       isPreserveEdit,
       userInput,
       existingBrief: params.existingBrief,
+      designIntent: intentBrief?.designIntent,
+      designNotes: params.designNotes,
       validationOptions,
     }
 

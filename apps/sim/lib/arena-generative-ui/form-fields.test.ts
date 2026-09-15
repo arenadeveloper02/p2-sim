@@ -3,7 +3,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  collectDiscreteFormLoadValues,
   collectVisibleFieldValues,
+  expandValueFields,
   fieldIsVisible,
   formValuesFromRecord,
   listFormFields,
@@ -11,10 +13,63 @@ import {
   overlayClosePatch,
   overlayOpenPatch,
   overlayShowWhenUsesSelection,
+  parseLabeledOptions,
+  parseOptionList,
   parseShowWhen,
   resolveFieldValue,
   validateVisibleFields,
 } from '@/lib/arena-generative-ui/form-fields'
+
+describe('parseOptionList', () => {
+  it('splits comma labels for legacy manifests', () => {
+    expect(parseOptionList('All, Late, Hold')).toEqual(['All', 'Late', 'Hold'])
+  })
+
+  it('splits newline Label|value and keeps commas in the value', () => {
+    expect(parseLabeledOptions('Bengaluru|12.9716,77.5946\nLondon|51.5074,-0.1278')).toEqual([
+      { label: 'Bengaluru', value: '12.9716,77.5946' },
+      { label: 'London', value: '51.5074,-0.1278' },
+    ])
+    expect(parseOptionList('Bengaluru|12.9716,77.5946\nLondon|51.5074,-0.1278')).toEqual([
+      'Bengaluru',
+      'London',
+    ])
+  })
+})
+
+describe('expandValueFields', () => {
+  it('splits a composite value onto named keys', () => {
+    expect(expandValueFields('12.9716,77.5946', 'latitude,longitude')).toEqual({
+      latitude: '12.9716',
+      longitude: '77.5946',
+    })
+  })
+})
+
+describe('collectDiscreteFormLoadValues', () => {
+  it('expands a city Select into latitude and longitude', () => {
+    expect(
+      collectDiscreteFormLoadValues(
+        {
+          city: {
+            type: 'Select',
+            props: {
+              name: 'city',
+              defaultValue: 'Bengaluru',
+              options: 'Bengaluru|12.9716,77.5946\nLondon|51.5074,-0.1278',
+              valueFields: 'latitude,longitude',
+            },
+          },
+        },
+        {}
+      )
+    ).toEqual({
+      city: '12.9716,77.5946',
+      latitude: '12.9716',
+      longitude: '77.5946',
+    })
+  })
+})
 
 describe('parseShowWhen', () => {
   it('treats a bare name as a truthy check', () => {
@@ -203,10 +258,9 @@ describe('formValuesFromRecord', () => {
 describe('omitFormFieldValues', () => {
   it('drops overlay field names and leaves other keys', () => {
     expect(
-      omitFormFieldValues(
-        { title: 'Ship', query: 'alpha' },
-        [{ type: 'TextInput', props: { name: 'title' } }]
-      )
+      omitFormFieldValues({ title: 'Ship', query: 'alpha' }, [
+        { type: 'TextInput', props: { name: 'title' } },
+      ])
     ).toEqual({ query: 'alpha' })
   })
 })

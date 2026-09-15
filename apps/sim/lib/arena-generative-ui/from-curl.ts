@@ -238,10 +238,16 @@ function parseCurl(raw: string): {
     throw new Error('Curl method is invalid')
   }
 
+  const isQueryMethod = method === 'GET' || method === 'DELETE'
+  const fromQuery = isQueryMethod ? inputSchemaFromSearchParams(inspected.url) : undefined
+  const fromBody = inputSchemaFromBody(inspected.body)
+  const inputSchema = mergeInputSchemas(fromQuery?.fields, fromBody)
+  const storedUrl = fromQuery?.url ?? inspected.url
+
   return {
     method: method as ArenaGenerativeHttpMethod,
-    url: inspected.url,
-    inputSchema: inputSchemaFromBody(inspected.body),
+    url: storedUrl,
+    inputSchema,
     authHeaderName: inspected.authHeaderName,
   }
 }
@@ -401,6 +407,106 @@ function inputSchemaFromBody(
       })
     )
   return fields.length > 0 ? fields : undefined
+}
+
+const GET_FORM_PARAM_NAMES = new Set([
+  'lat',
+  'lon',
+  'latitude',
+  'longitude',
+  'q',
+  'query',
+  'search',
+  'id',
+  'account',
+  'campaign',
+  'customer',
+  'city',
+  'datefrom',
+  'dateto',
+  'startdate',
+  'enddate',
+  'from',
+  'to',
+])
+
+function isGetFormParamName(name: string): boolean {
+  const lower = name.trim().toLowerCase()
+  if (!lower) return false
+  if (GET_FORM_PARAM_NAMES.has(lower)) return true
+  return lower.endsWith('id')
+}
+
+function inputSchemaFromSearchParams(url: string):
+  | {
+      url: string
+      fields?: ArenaGenerativeInputSchemaField[]
+    }
+  | undefined {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return undefined
+  }
+  if ([...parsed.searchParams.keys()].length === 0) {
+    return { url }
+  }
+
+  const fields: ArenaGenerativeInputSchemaField[] = []
+  const seen = new Set<string>()
+  const formNames: string[] = []
+  for (const [name, value] of parsed.searchParams.entries()) {
+    if (!name.trim() || seen.has(name)) continue
+    seen.add(name)
+    if (isGetFormParamName(name)) {
+      formNames.push(name)
+      fields.push(
+        compactInputSchemaField({
+          name,
+          type: schemaTypeFromValue(schemaValueFromQuery(value)),
+          source: 'form',
+          value: value || undefined,
+        })
+      )
+      continue
+    }
+    fields.push(
+      compactInputSchemaField({
+        name,
+        type: 'string',
+        source: 'constant',
+        value,
+      })
+    )
+  }
+  for (const name of formNames) {
+    parsed.searchParams.delete(name)
+  }
+
+  return {
+    url: parsed.toString(),
+    fields: fields.length > 0 ? fields : undefined,
+  }
+}
+
+function schemaValueFromQuery(value: string): unknown {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (value.trim() && Number.isFinite(Number(value)) && !value.includes(',')) {
+    return Number(value)
+  }
+  return value
+}
+
+function mergeInputSchemas(
+  fromQuery: ArenaGenerativeInputSchemaField[] | undefined,
+  fromBody: ArenaGenerativeInputSchemaField[] | undefined
+): ArenaGenerativeInputSchemaField[] | undefined {
+  if (!fromQuery?.length) return fromBody
+  if (!fromBody?.length) return fromQuery
+  const seen = new Set(fromQuery.map((field) => field.name))
+  return [...fromQuery, ...fromBody.filter((field) => !seen.has(field.name))]
 }
 
 function schemaTypeFromValue(value: unknown): string {

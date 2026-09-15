@@ -8,6 +8,8 @@ import {
   ARENA_GENERATIVE_VISUAL_TONES,
   normalizeDesignIntentDensity,
   parseArenaGenerativeDesignIntent,
+  stampThemeFromIntent,
+  themeAndRecipeHintsFromIntent,
 } from '@/lib/arena-generative-ui/design-intent'
 
 describe('ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT', () => {
@@ -17,7 +19,7 @@ describe('ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('tone')
     expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('visualPriority')
     expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('interactionStyle')
-    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).not.toContain('productType')
+    expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain('productType')
     for (const value of ARENA_GENERATIVE_INTENT_DENSITIES) {
       expect(ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT).toContain(value)
     }
@@ -88,5 +90,48 @@ describe('normalizeDesignIntentDensity', () => {
     expect(normalizeDesignIntentDensity('spacious')).toBe('roomy')
     expect(normalizeDesignIntentDensity('roomy')).toBe('roomy')
     expect(normalizeDesignIntentDensity('cozy')).toBeUndefined()
+  })
+})
+
+describe('themeAndRecipeHintsFromIntent', () => {
+  it('stamps roomy strong ink for marketing or editorial', () => {
+    expect(themeAndRecipeHintsFromIntent({ productType: 'marketing' }).theme).toEqual({
+      density: 'roomy',
+      ink: 'strong',
+    })
+    expect(themeAndRecipeHintsFromIntent({ tone: 'editorial' }).theme).toEqual({
+      density: 'roomy',
+      ink: 'strong',
+    })
+  })
+
+  it('prefers muted cards for premium and tables when scannable', () => {
+    const hints = themeAndRecipeHintsFromIntent({
+      tone: 'premium',
+      interactionStyle: 'scannable',
+      visualPriority: 'data',
+    })
+    expect(hints.preferMutedCards).toBe(true)
+    expect(hints.preferTableOverCards).toBe(true)
+    expect(hints.goldKind).toBe('performance')
+  })
+
+  it('picks briefing gold for content visualPriority', () => {
+    expect(themeAndRecipeHintsFromIntent({ visualPriority: 'content' }).goldKind).toBe('briefing')
+  })
+})
+
+describe('stampThemeFromIntent', () => {
+  it('applies marketing density and lets Design Notes win', () => {
+    expect(
+      stampThemeFromIntent({ density: 'comfortable' }, { productType: 'marketing' }).density
+    ).toBe('roomy')
+    expect(
+      stampThemeFromIntent(
+        { density: 'comfortable' },
+        { productType: 'marketing' },
+        'Use compact density'
+      ).density
+    ).toBe('compact')
   })
 })

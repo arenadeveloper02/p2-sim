@@ -41,7 +41,19 @@ const BOUND_RESULT_TYPES = new Set([
   'ProgressBar',
 ])
 
-const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat', 'Pagination', 'CommandPalette'])
+const ACTION_WIRE_TYPES = new Set([
+  'Form',
+  'SubmitButton',
+  'Button',
+  'SearchField',
+  'Select',
+  'Combobox',
+  'RadioGroup',
+  'Chip',
+  'Chat',
+  'Pagination',
+  'CommandPalette',
+])
 
 const COLLECTION_TYPES = new Set([
   'Table',
@@ -125,6 +137,9 @@ export function validateManifestBindingLayout(
 
     const showWhenError = showWhenDataTextMismatchError(path, elements, plans)
     if (showWhenError) return showWhenError
+
+    const proseError = proseCollectionDumpError(path, elements, plans)
+    if (proseError) return proseError
 
     for (const [id, element] of Object.entries(elements)) {
       const type = element.type ?? ''
@@ -254,6 +269,97 @@ function proseHostKeys(plans: BindingLayoutPlan[]): Set<string> {
     for (const path of plan.prosePaths) keys.add(path)
   }
   return keys
+}
+
+const HIGHLIGHT_HOST_KEY = /^(summary|brief|content|highlights|overview|briefing|body|report)$/i
+
+function pageBoundCollectionHostKeys(
+  elements: Record<string, SpecElement>,
+  plans: BindingLayoutPlan[]
+): Set<string> {
+  const keys = new Set<string>()
+  for (const element of Object.values(elements)) {
+    if (!COLLECTION_TYPES.has(element.type ?? '')) continue
+    const statePath = asString(element.props?.statePath)
+    if (!statePath) continue
+    for (const plan of plans) {
+      for (const collection of plan.collections) {
+        if (
+          statePath === collection.hostKey ||
+          collection.schemaPaths.includes(statePath) ||
+          collection.wrapperKeys.includes(statePath)
+        ) {
+          keys.add(collection.hostKey)
+        }
+      }
+    }
+  }
+  return keys
+}
+
+/**
+ * Research pages with collections must put prose on DataText, not KeyValue JSON.
+ * Only the page that binds a collection is checked, and only against that
+ * collection's own binding — a form home must not inherit History collections.
+ */
+function proseCollectionDumpError(
+  pagePath: string,
+  elements: Record<string, SpecElement>,
+  plans: BindingLayoutPlan[]
+): string | undefined {
+  const boundCollections = pageBoundCollectionHostKeys(elements, plans)
+  if (boundCollections.size === 0) return undefined
+
+  const relevantPlans = plans.filter((plan) =>
+    plan.collections.some((collection) => boundCollections.has(collection.hostKey))
+  )
+  if (relevantPlans.length === 0) return undefined
+
+  const highlightKeys = new Set<string>()
+  for (const plan of relevantPlans) {
+    for (const name of plan.stringFieldNames) {
+      if (HIGHLIGHT_HOST_KEY.test(name)) highlightKeys.add(name)
+    }
+    for (const path of plan.prosePaths) {
+      const contentIsSelectAlias =
+        path === 'content' &&
+        !plan.stringFieldNames.includes('content') &&
+        !plan.stream &&
+        plan.kind !== 'prose' &&
+        plan.kind !== 'stream' &&
+        plan.kind !== 'stream-plus-json'
+      if (contentIsSelectAlias) continue
+      const root = path.split('.')[0] ?? path
+      if (HIGHLIGHT_HOST_KEY.test(root) || HIGHLIGHT_HOST_KEY.test(path)) {
+        highlightKeys.add(path)
+        highlightKeys.add(root)
+      }
+    }
+  }
+  if (highlightKeys.size === 0) return undefined
+
+  const dataTextKeys = new Set<string>()
+  for (const element of Object.values(elements)) {
+    if (element.type !== 'DataText') continue
+    const statePath = asString(element.props?.statePath)
+    if (statePath) dataTextKeys.add(statePath)
+  }
+
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'KeyValue') continue
+    const statePath = asString(element.props?.statePath)
+    if (!highlightKeys.has(statePath)) continue
+    return `Page "${pagePath}" KeyValue "${id}" binds statePath "${statePath}"; that field is prose next to collections. Use DataText (or a Chip view) on "${statePath}".`
+  }
+
+  const hasDataText = [...highlightKeys].some(
+    (key) => dataTextKeys.has(key) || dataTextKeys.has(ARENA_GENERATIVE_STREAM_CONTENT_KEY)
+  )
+  if (!hasDataText) {
+    const key = [...highlightKeys][0]
+    return `Page "${pagePath}" has collections and a string host key "${key}". Bind DataText (or a Chip view) to "${key}" — not KeyValue.`
+  }
+  return undefined
 }
 
 function showWhenDataTextMismatchError(

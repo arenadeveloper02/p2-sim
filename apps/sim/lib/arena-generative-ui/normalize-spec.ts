@@ -454,6 +454,8 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
     case 'Select':
     case 'Combobox':
     case 'RadioGroup':
+      setProp(props, 'options', joinLabeledOptions(props.options))
+      break
     case 'MultiSelect':
       setProp(props, 'options', joinOptions(props.options))
       break
@@ -541,6 +543,24 @@ function normalizeGridColumns(props: Record<string, unknown>): void {
   }
   const widest = Math.max(...counts)
   setProp(props, 'columns', String(Math.min(4, Math.max(2, Math.round(widest)))))
+}
+
+function joinLabeledOptions(raw: unknown): unknown {
+  if (!Array.isArray(raw)) {
+    return raw
+  }
+  return raw
+    .map((option) => {
+      if (isRecord(option)) {
+        const label = asString(option.label) || asString(option.value)
+        const value = asString(option.value)
+        if (label && value && value !== label) return `${label}|${value}`
+        return label
+      }
+      return typeof option === 'string' ? option.trim() : String(option ?? '')
+    })
+    .filter(Boolean)
+    .join('\n')
 }
 
 function joinOptions(raw: unknown): unknown {

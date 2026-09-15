@@ -847,6 +847,52 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('overlays GET form latitude onto the URL and keeps constant current', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ temperature_2m: 22 })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        manifest: {
+          ...baseDeployment().manifest,
+          actions: {
+            load_forecast: { apiKey: 'forecast' },
+          },
+        },
+        apiBindings: [
+          {
+            key: 'forecast',
+            label: 'Forecast',
+            kind: 'http',
+            http: {
+              method: 'GET',
+              url: 'https://api.example.com/forecast?current=temperature_2m&timezone=auto',
+            },
+            inputSchema: [
+              { name: 'latitude', type: 'number' },
+              { name: 'longitude', type: 'number' },
+              { name: 'current', type: 'string', source: 'constant', value: 'temperature_2m' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'load_forecast',
+      values: { latitude: '12.9716', longitude: '77.5946' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    const requested = String(fetchMock.mock.calls[0]?.[0])
+    expect(requested).toContain('latitude=12.9716')
+    expect(requested).toContain('longitude=77.5946')
+    expect(requested).toContain('current=temperature_2m')
+    vi.unstubAllGlobals()
+  })
+
   it('does not retry POST on 503', async () => {
     mockEnv({})
     const fetchMock = vi.fn().mockResolvedValue({
@@ -2706,7 +2752,12 @@ describe('arenaEmailId forwarding', () => {
         kind: 'workflow',
         workflowId: 'wf-bound',
         inputSchema: [
-          { name: 'input', type: 'string', source: 'constant', value: 'Do a comprehensive research on ' },
+          {
+            name: 'input',
+            type: 'string',
+            source: 'constant',
+            value: 'Do a comprehensive research on ',
+          },
           { name: 'name', type: 'string' },
         ],
         chatProtocol: { input: true, conversationId: true, files: true },

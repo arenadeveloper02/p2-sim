@@ -26,14 +26,14 @@ const COMPILE_RULES: readonly CompileRule[] = [
     match: (text) =>
       hasPositiveAsk(
         text,
-        /\b(?:dashboard|kpi|kpis|metrics?\s+grid|weather\s+dashboard|forecast\s+dashboard)\b/i
+        /\b(?:dashboard|kpi|kpis|metrics?\s+grid|weather\s+dashboard|forecast\s+dashboard|google\s+ads|linkedin\s+ads)\b/i
       ),
     code: 'product-map',
     asked: 'A dashboard of KPIs and forecast series.',
     adopted:
-      'Single-page dashboard. Bind current as Stats. Primary visualization is Chart when a bound collection is a numeric series (hourly/daily).',
+      'Single-page performance dashboard. Display Stats for 1–3 current scalars. Daily/hourly rows are Repeat or Table; a plotted series is Chart.',
     honor:
-      'Job is a dashboard. One page. Current conditions are bound Stats. Hourly chips use Filmstrip; a plotted numeric series uses Chart (categoryField time, series a bound host key such as temperature_2m) or Table.',
+      'Job is a performance dashboard. One page. 1–3 current scalars are Stat size "display". Daily/hourly rows are Repeat or Table. A plotted numeric series uses Chart (categoryField time, series a bound host key such as temperature_2m). Do not emit an Operations Filter+compact KPI grid unless a binding input or collection column exists to filter.',
   },
   {
     id: 'nested-cards',

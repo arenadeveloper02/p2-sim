@@ -781,14 +781,14 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   results: [
     'ARCHETYPE RECIPE: results',
     'Purpose: Consume or analyze generated output.',
-    'Structure: Context → horizontal Chip setValue row when same-page result views exist → primary result → actions.',
-    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name). Same-page result views are Chip setValue in a horizontal row above those panels — not a left vertical rail unless the brief asks, not after DataText, and not Card footer. Structured hostKeys use Repeat, Table, Stat, or KeyValue only when the blueprint or layoutPlan named them. A layoutPlan collection is Repeat or Table, never KeyValue JSON. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
+    'Structure: When output has prose and collections: DataText / highlights first, then Chip views (Summary | Sources | List), then Table or Cards. Otherwise: Context → Chip setValue row when same-page result views exist → primary result → actions.',
+    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name) before any Table. Same-page result views are Chip setValue in a horizontal row above those panels — not a left vertical rail unless the brief asks, not after DataText, and not Card footer. Structured hostKeys use Repeat, Table, Stat, or KeyValue only when the blueprint or layoutPlan named them. A layoutPlan collection is Repeat or Table, never KeyValue JSON. Do not invent SWOT, metrics, or extra modules. emptyText lives here. Wait chrome is CAPABILITY.',
   ].join('\n'),
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',
     'Purpose: Monitor many important signals on arrival.',
-    'Structure: Header → Filters (only if selected) → KPI/summary → primary module → supporting.',
-    'Rules: Module count and types follow the blueprint and layoutPlan — never a fixed widget set. Bind every metric and collection. Primary visualization may be Chart when the bound collection is a numeric series; Sparkline only for compact under-Stat trends. A single collection with no other modules is collection, not dashboard.',
+    'Structure: Module count follows layoutPlan — not a fixed Header → Filters → KPI → Chart → Table template.',
+    'Rules: 1–3 numeric scalars are Stat size "display" (hero metrics). One time series is one Chart. Entity rows are Table or Repeat Cards. Do not emit a Filter unless a binding input or a collection column exists to filter. Do not emit a compact 4-up Stat grid unless the brief named four metrics. Bind every metric and collection. Sparkline only for compact under-Stat trends. A single collection with no other modules is collection, not dashboard.',
   ].join('\n'),
   workflow: [
     'ARCHETYPE RECIPE: workflow',

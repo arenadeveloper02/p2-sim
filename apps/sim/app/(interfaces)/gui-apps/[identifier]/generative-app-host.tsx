@@ -7,6 +7,7 @@ import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import { mergePageLoadValues } from '@/lib/arena-generative-ui/form-fields'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   actionErrorFrom,
@@ -69,6 +70,7 @@ export function GenerativeAppHost({
     setActionPending,
     setLoadPending,
     pendingActionIds,
+    pageFormValues,
   } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
@@ -79,6 +81,21 @@ export function GenerativeAppHost({
     [config?.streamingActionIds]
   )
   const pageSpec = pageQuery.data?.spec
+  const formValues = pageFormValues(pagePath)
+  const loadValues = useMemo(
+    () =>
+      mergePageLoadValues(
+        isJsonRenderSpec(pageSpec)
+          ? (pageSpec.elements as Record<
+              string,
+              { type?: string; props?: Record<string, unknown> }
+            >)
+          : undefined,
+        formValues,
+        pageParams
+      ),
+    [pageSpec, formValues, pageParams]
+  )
 
   const executeAction = async (actionId: string, values: Record<string, unknown>) =>
     streamingIds.has(actionId)
@@ -123,7 +140,7 @@ export function GenerativeAppHost({
   const { reload, canRefresh, refreshing } = usePageLoadActions({
     pagePath,
     actionIds: config?.pageOnLoad?.[pagePath] ?? [],
-    values: pageParams,
+    values: loadValues,
     actionPending,
     runAction: async (actionId, values) => {
       if (!actionPending) runtime.rememberLoad(actionId, values)
@@ -203,18 +220,18 @@ export function GenerativeAppHost({
           currentPath={pagePath}
           onNavigate={navigate}
           onRunAction={runtime.onRunAction}
-            onSelectItem={(item, index) => {
-              flushSync(() => {
-                mergeState(selectedItemHostState(item, index))
-              })
-              scrollGenerativeAppToResults({ fallbackToTop: true })
-            }}
-            onClearItem={() => {
-              flushSync(() => {
-                mergeState(clearedSelectedItemHostState())
-              })
-              scrollGenerativeAppToTop()
-            }}
+          onSelectItem={(item, index) => {
+            flushSync(() => {
+              mergeState(selectedItemHostState(item, index))
+            })
+            scrollGenerativeAppToResults({ fallbackToTop: true })
+          }}
+          onClearItem={() => {
+            flushSync(() => {
+              mergeState(clearedSelectedItemHostState())
+            })
+            scrollGenerativeAppToTop()
+          }}
           onClearSelection={() => {
             flushSync(() => {
               mergeState(clearedSelectedIdHostState())

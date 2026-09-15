@@ -13,12 +13,16 @@ import {
   proseAliasKeysFromPlans,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import { mergePageLoadValues } from '@/lib/arena-generative-ui/form-fields'
 import {
   buildPreviewEditInstructions,
   catalogTypesFromManifest,
   overlayFlagsFromManifest,
 } from '@/lib/arena-generative-ui/preview-edit-instructions'
-import { collectRenderDiagnostics, pageEditPrompt } from '@/lib/arena-generative-ui/render-diagnostics'
+import {
+  collectRenderDiagnostics,
+  pageEditPrompt,
+} from '@/lib/arena-generative-ui/render-diagnostics'
 import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
@@ -83,6 +87,7 @@ export function GenerativeAppPreviewHost({
     setActionPending,
     setLoadPending,
     pendingActionIds,
+    pageFormValues,
   } = useGenerativeAppHostState()
   const [throwByKey, setThrowByKey] = useState<Record<string, string>>({})
   const [themeOverride, setThemeOverride] = useState<ArenaGenerativeTheme | undefined>(undefined)
@@ -148,10 +153,27 @@ export function GenerativeAppPreviewHost({
     actionChatProtocol,
   })
 
+  const pageSpec = manifest?.pages[pagePath]?.spec
+  const formValues = pageFormValues(pagePath)
+  const loadValues = useMemo(
+    () =>
+      mergePageLoadValues(
+        isJsonRenderSpec(pageSpec)
+          ? (pageSpec.elements as Record<
+              string,
+              { type?: string; props?: Record<string, unknown> }
+            >)
+          : undefined,
+        formValues,
+        pageParams
+      ),
+    [pageSpec, formValues, pageParams]
+  )
+
   const { reload, canRefresh, refreshing } = usePageLoadActions({
     pagePath,
     actionIds: manifest?.pages[pagePath]?.onLoad ?? [],
-    values: pageParams,
+    values: loadValues,
     actionPending,
     runAction: async (actionId, values) => {
       if (!actionPending) runtime.rememberLoad(actionId, values)

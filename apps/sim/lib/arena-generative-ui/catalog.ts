@@ -147,7 +147,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Toolbar of controls that narrow a collection. Children are Select, Combobox, TextInput, DateInput, or Chip. Place above Table or Repeat. Name fields after collection columns. When no filter API exists the host filters visible rows locally; otherwise fields submit with onLoad / CTA. Not a SearchField hero.',
+        'Toolbar of controls that narrow a collection. Children are Select, Combobox, TextInput, DateInput, or Chip. Place above Table or Repeat. Name fields after collection columns or binding inputSchema keys (latitude, accountId). When no filter API exists the host filters visible rows locally; otherwise fields submit with onLoad / CTA. Not a SearchField hero.',
     },
     Tabs: {
       props: z.object({
@@ -592,23 +592,29 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     Select: {
       props: formFieldProps({
         options: z.string(),
+        actionId: z.string().nullable().optional(),
+        valueFields: z.string().nullable().optional(),
       }),
       description:
-        'Dropdown; options is a comma-separated list of labels. Prefer this over RadioGroup when there are more than five choices. Use Combobox when the list is long or the Filter is a searchable picker.',
+        'Dropdown. options is newline-separated "Label|value" (value may contain commas). Legacy comma-separated labels still work. Prefer this over RadioGroup when there are more than five choices. Use Combobox when the list is long or the Filter is a searchable picker. Name fields after binding inputSchema keys (latitude, accountId). Optional valueFields is comma-separated payload keys; the value after | splits on comma into those keys (city → latitude,longitude). Optional actionId runs that action on change.',
     },
     Combobox: {
       props: formFieldProps({
         options: z.string(),
+        actionId: z.string().nullable().optional(),
+        valueFields: z.string().nullable().optional(),
       }),
       description:
-        'Searchable exclusive list. Same props as Select. Use when options are long or a Filter should be a search-picker. Value is the selected label.',
+        'Searchable exclusive list. Same props as Select, including newline Label|value, valueFields, and actionId. Use when options are long or a Filter should be a search-picker.',
     },
     RadioGroup: {
       props: formFieldProps({
         options: z.string(),
+        actionId: z.string().nullable().optional(),
+        valueFields: z.string().nullable().optional(),
       }),
       description:
-        'Visible radio list for a short exclusive choice. options is comma-separated. Use Select when the list is long.',
+        'Visible radio list for a short exclusive choice. options is newline-separated "Label|value" or legacy comma-separated labels. Use Select when the list is long.',
     },
     MultiSelect: {
       props: formFieldProps({
@@ -1087,7 +1093,7 @@ export const ARENA_GENERATIVE_UI_ON_LOAD_RULE = [
  * is never left on a generic Tailwind palette.
  */
 export const ARENA_GENERATIVE_UI_THEME_RULE = [
-  'Theme: always emit manifest.theme { brandColor: "#1A73E8", radius: "md", density: "comfortable", font: "sans" }. Omit colorScheme — the runtime host follows the visitor Sim theme (localStorage sim-theme light|dark). Override brandColor, radius, or font only when Design Notes name them. Override density when Design Notes name it, or when DESIGN INTENT density is compact or roomy. Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables.',
+  'Theme: always emit manifest.theme { brandColor: "#1A73E8", radius: "md", density: "comfortable", font: "sans" }. Omit colorScheme — the runtime host follows the visitor Sim theme (localStorage sim-theme light|dark). Override brandColor, radius, or font only when Design Notes name them. Override density when Design Notes name it, when DESIGN INTENT density is compact or roomy, or when productType is marketing / tone is editorial (roomy + ink "strong"). Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables.',
 ].join(' ')
 
 /**

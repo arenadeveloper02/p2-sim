@@ -558,9 +558,9 @@ describe('SpecRenderer', () => {
       })
 
       expect(container.querySelector('[data-testid="generative-chat-typing"]')).toBeNull()
-      expect(container.querySelector('[data-testid="generative-chat-turn-error"]')?.textContent).toBe(
-        'This did not go through. Try again.'
-      )
+      expect(
+        container.querySelector('[data-testid="generative-chat-turn-error"]')?.textContent
+      ).toBe('This did not go through. Try again.')
       expect(container.querySelector('[data-testid="generative-chat-transcript-end"]')).toBeTruthy()
     })
 
@@ -876,7 +876,9 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec })
     expect(container.querySelector('[data-testid="task-surface"]')).toBeNull()
-    expect(container.querySelector('[data-testid="card"] [data-testid="search-field"]')).toBeTruthy()
+    expect(
+      container.querySelector('[data-testid="card"] [data-testid="search-field"]')
+    ).toBeTruthy()
   })
 
   it('keeps SearchField flush when surface is none', () => {
@@ -1322,14 +1324,49 @@ describe('SpecRenderer', () => {
       'input[type="hidden"][name="status"]'
     ) as HTMLInputElement
     expect(hidden).toBeTruthy()
-    expect(
-      container.querySelector('button[aria-haspopup="listbox"]')?.textContent
-    ).toBe('Choose an option')
+    expect(container.querySelector('button[aria-haspopup="listbox"]')?.textContent).toBe(
+      'Choose an option'
+    )
     chooseSelectOption(container, 'status', 'Completed')
     const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
       Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
     )
     expect(rows).toEqual([['Schedule team standup', 'Completed']])
+  })
+
+  it('shows Select labels and runs actionId with valueFields on change', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['city'] },
+        city: {
+          type: 'Select',
+          props: {
+            name: 'city',
+            label: 'City',
+            defaultValue: 'Bengaluru',
+            options: 'Bengaluru|12.9716,77.5946\nLondon|51.5074,-0.1278',
+            valueFields: 'latitude,longitude',
+            actionId: 'load_forecast',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container, onRunAction } = render({ spec })
+    expect(container.querySelector('button[aria-haspopup="listbox"]')?.textContent).toBe(
+      'Bengaluru'
+    )
+    expect(container.textContent).not.toContain('Bengaluru|12.9716')
+    chooseSelectOption(container, 'city', 'London')
+    expect(onRunAction).toHaveBeenCalledWith(
+      'load_forecast',
+      expect.objectContaining({
+        city: '51.5074,-0.1278',
+        latitude: '51.5074',
+        longitude: '-0.1278',
+      })
+    )
   })
 
   it('does not locally filter when SearchField actionId is a known host action', () => {
@@ -1631,7 +1668,9 @@ describe('SpecRenderer', () => {
         spec,
         state: { content: '# Dental implants\n\nWriter-ready copy.' },
       })
-      const button = container.querySelector('[data-testid="host-copy-markdown"]') as HTMLButtonElement
+      const button = container.querySelector(
+        '[data-testid="host-copy-markdown"]'
+      ) as HTMLButtonElement
       await act(async () => {
         button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
@@ -1642,7 +1681,9 @@ describe('SpecRenderer', () => {
       const createObjectURL = vi.fn().mockReturnValue('blob:pdf')
       const revokeObjectURL = vi.fn()
       Object.assign(URL, { createObjectURL, revokeObjectURL })
-      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
       const spec: Spec = {
         root: 'page',
         elements: {
@@ -4988,8 +5029,8 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('[data-testid="unscheduled"]')?.textContent).toContain(
         'Backlog'
       )
-      const backlog = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent?.includes('Backlog')
+      const backlog = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Backlog')
       )
       act(() => {
         backlog?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5027,8 +5068,8 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('[data-testid="gui-map"]')).toBeTruthy()
       expect(container.querySelector('iframe')?.getAttribute('src')).toContain('openstreetmap.org')
       expect(container.textContent).toContain('Remote')
-      const remote = Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent?.includes('Remote')
+      const remote = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Remote')
       )
       act(() => {
         remote?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5274,7 +5315,10 @@ describe('SpecRenderer', () => {
           },
         },
       }
-      const rows = Array.from({ length: 25 }, (_, index) => ({ id: String(index), name: `R${index}` }))
+      const rows = Array.from({ length: 25 }, (_, index) => ({
+        id: String(index),
+        name: `R${index}`,
+      }))
       const { container, onNavigate, onRunAction } = render({
         spec,
         state: { rows },
@@ -5305,16 +5349,13 @@ describe('SpecRenderer', () => {
         commandTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
       expect(container.querySelector('[aria-label="Command palette"]')).toBeTruthy()
-      const create = Array.from(container.querySelectorAll('button')).find(
-        (node) => node.textContent?.includes('Create')
+      const create = Array.from(container.querySelectorAll('button')).find((node) =>
+        node.textContent?.includes('Create')
       ) as HTMLButtonElement
       act(() => {
         create.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
-      expect(onRunAction).toHaveBeenCalledWith(
-        'create_task',
-        expect.any(Object)
-      )
+      expect(onRunAction).toHaveBeenCalledWith('create_task', expect.any(Object))
       const homeCrumb = Array.from(
         container.querySelectorAll('[data-testid="gui-breadcrumb"] button')
       )[0] as HTMLButtonElement
@@ -5375,7 +5416,12 @@ describe('SpecRenderer', () => {
       }
       const { container } = render({
         spec,
-        state: { items: [{ id: '1', name: 'A' }, { id: '2', name: 'B' }] },
+        state: {
+          items: [
+            { id: '1', name: 'A' },
+            { id: '2', name: 'B' },
+          ],
+        },
       })
       const row = container.querySelector('tbody tr') as HTMLTableRowElement
       act(() => {

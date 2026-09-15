@@ -171,4 +171,59 @@ describe('usePageLoadActions', () => {
     expect(harness.api().canRefresh).toBe(false)
     expect(harness.mergeState).not.toHaveBeenCalled()
   })
+
+  it('re-runs onLoad when Select form values change', async () => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root: Root = createRoot(container)
+    const mergeState = vi.fn()
+    const setLoadPending = vi.fn()
+    const runAction = vi.fn().mockResolvedValue({ ok: true, setState: { temperature: 22 } })
+
+    function Probe({ values }: { values: Record<string, string> }) {
+      usePageLoadActions({
+        pagePath: 'home',
+        actionIds: ['load_forecast'],
+        values,
+        actionPending: false,
+        runAction,
+        mergeState,
+        actionHostKeys: { load_forecast: ['temperature'] },
+        setLoadPending,
+      })
+      return null
+    }
+
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <Probe values={{ latitude: '12.9716', longitude: '77.5946' }} />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(runAction).toHaveBeenCalledTimes(1)
+    expect(runAction.mock.calls[0]?.[1]).toEqual({ latitude: '12.9716', longitude: '77.5946' })
+
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <Probe values={{ latitude: '51.5074', longitude: '-0.1278' }} />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(runAction).toHaveBeenCalledTimes(2)
+    expect(runAction.mock.calls[1]?.[1]).toEqual({ latitude: '51.5074', longitude: '-0.1278' })
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
 })
