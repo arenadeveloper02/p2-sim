@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { cn } from '@sim/emcn'
+import { AgentStreamThinkingChrome } from '@/components/agent-stream/agent-stream-chrome'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import { Read as ReadTool, WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
@@ -468,10 +469,10 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
 
-    // Thinking is intentionally absent from the transcript. Ignore both lanes
-    // so rollout-skewed or replayed streams cannot surface reasoning or affect
-    // layout differently from the persisted message, which strips it.
-    if (block.type === 'thinking' || block.type === 'subagent_thinking') continue
+    // Thinking is shown via AgentStreamThinkingChrome at the top of the message,
+    // not as transcript prose. Skip live (`thinking`) and persisted
+    // (`text` + channel thinking) shapes so they cannot leak into answer text.
+    if (isPersistedThinkingTextBlock(block)) continue
 
     if (block.type === 'subagent_text') {
       if (!block.content || !block.spanId) continue
@@ -710,9 +711,8 @@ function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
 
-    // See the span-tree parser: thinking is neither visible nor allowed to
-    // influence grouping because it is absent from persisted transcripts.
-    if (block.type === 'thinking' || block.type === 'subagent_thinking') continue
+    // Thinking is shown via AgentStreamThinkingChrome — skip live and persisted shapes.
+    if (isPersistedThinkingTextBlock(block)) continue
 
     if (block.type === 'subagent_text') {
       if (!block.content) continue
@@ -942,6 +942,48 @@ export function resolveThinkingLabel(blocks: ContentBlock[], liveStatus?: string
   return liveLabel || fromBlocks
 }
 
+/** Joins main-lane thinking for the top-of-message chrome (live + persisted shapes). */
+export function collectMainThinkingText(blocks: ContentBlock[]): string {
+  const parts: string[] = []
+  for (const block of blocks) {
+    if (block.type === 'thinking') {
+      if (block.content) parts.push(block.content)
+      continue
+    }
+    // After persist/reload, thinking is canonical `{ type: 'text', channel: 'thinking' }`.
+    const channel = (block as ContentBlock & { channel?: string; lane?: string }).channel
+    const lane = (block as ContentBlock & { channel?: string; lane?: string }).lane
+    if (block.type === 'text' && channel === 'thinking' && lane !== 'subagent' && block.content) {
+      parts.push(block.content)
+    }
+  }
+  return parts.join('\n\n')
+}
+
+/** True when a main-lane thinking segment is still open (no `endedAt`). */
+export function hasOpenMainThinking(blocks: ContentBlock[]): boolean {
+  for (const block of blocks) {
+    if (block.type === 'thinking' && block.endedAt === undefined) return true
+    const channel = (block as ContentBlock & { channel?: string; lane?: string }).channel
+    const lane = (block as ContentBlock & { channel?: string; lane?: string }).lane
+    if (
+      block.type === 'text' &&
+      channel === 'thinking' &&
+      lane !== 'subagent' &&
+      block.endedAt === undefined
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+function isPersistedThinkingTextBlock(block: ContentBlock): boolean {
+  if (block.type === 'thinking' || block.type === 'subagent_thinking') return true
+  const channel = (block as ContentBlock & { channel?: string }).channel
+  return block.type === 'text' && channel === 'thinking'
+}
+
 interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
@@ -1060,8 +1102,13 @@ function MessageContentInner({
   // closes, and collapsing under a still-growing reveal reads as the blob
   // winking out early while everything shifts.
   const thinkingExpanded = phase !== 'settled' && lastSegment?.type !== 'stopped'
+  const thinkingText = collectMainThinkingText(blocks)
+  // Keep chrome in the streaming state for the whole turn while thoughts exist.
+  // Gating only on an open (un-ended) segment collapses the panel on tool calls
+  // and makes follow-up thoughts look like they never arrived.
+  const isThinkingStreaming = isStreaming && thinkingText.length > 0
 
-  if (segments.length === 0 && !isLast) return null
+  if (segments.length === 0 && !isLast && !thinkingText) return null
 
   // A visible executing tool row already spins — the turn-level shimmer would
   // double it. (A null label means a just-opened lane's shimmer owns the state.)
@@ -1072,15 +1119,21 @@ function MessageContentInner({
   const liveLabel = liveStatus?.trim() ?? ''
   const thinkingLabel = resolveThinkingLabel(blocks, liveStatus)
   const hasExecutingTool = assistantMessageHasVisibleExecutingTool(blocks)
+  // Once CoT is in the top Thinking chrome, hide the trailing shimmer so the
+  // same text is not repeated under the answer / options.
   const showShimmer =
     thinkingExpanded &&
     thinkingLabel !== null &&
+    thinkingText.length === 0 &&
     (segments.length === 0 ||
       trailingPendingTag ||
       (!trailingStreamActivity && !hasExecutingTool && (Boolean(liveLabel) || isStreamIdle)))
 
   return (
     <div>
+      {thinkingText ? (
+        <AgentStreamThinkingChrome thinking={thinkingText} isStreaming={isThinkingStreaming} />
+      ) : null}
       <div className='space-y-[10px]'>
         {segments.map((segment, i) => {
           switch (segment.type) {

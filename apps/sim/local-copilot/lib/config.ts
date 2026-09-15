@@ -38,10 +38,13 @@ const DEFAULT_VERTEX_SPECIALIST_MODEL = 'gemini-3.5-flash-lite'
 const DEFAULT_BEDROCK_SPECIALIST_MODEL = 'anthropic.claude-haiku-4-5-20251001-v1:0'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 const DEFAULT_BEDROCK_REGION = 'us-east-1'
-/** Default Gemini/Vertex thinking level — `high` is much slower on Pro. */
-const DEFAULT_GEMINI_THINKING_LEVEL = 'medium'
+/** Default Gemini/Vertex thinking level — `high` reliably returns thought text. */
+const DEFAULT_GEMINI_THINKING_LEVEL = 'high'
+/** Default Anthropic thinking effort — balances latency vs reasoning depth. */
+const DEFAULT_ANTHROPIC_THINKING_LEVEL = 'medium'
 
 const GEMINI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'none'])
+const ANTHROPIC_THINKING_LEVELS = new Set(['low', 'medium', 'high', 'max', 'none'])
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value.trim() === '') return fallback
@@ -52,26 +55,47 @@ function usesGeminiThinking(provider: LocalCopilotProviderId): boolean {
   return provider === 'gemini' || provider === 'vertex'
 }
 
+/** Claude-via-proxy, native Anthropic, and Bedrock Claude share effort levels. */
+function usesClaudeStyleThinkingLevels(provider: LocalCopilotProviderId): boolean {
+  return (
+    provider === 'anthropic' ||
+    provider === 'openai-compatible' ||
+    provider === 'openai' ||
+    provider === 'bedrock'
+  )
+}
+
 /**
- * Resolves `COPILOT_THINKING_LEVEL` for Gemini / Vertex Local Copilot calls.
- * Defaults to `medium`; ignored for other providers.
+ * Resolves `COPILOT_THINKING_LEVEL` for Local Copilot providers that stream
+ * thinking (Gemini/Vertex, Anthropic, and OpenAI-compatible Claude proxies).
  */
 export function resolveLocalCopilotThinkingLevel(
   provider: LocalCopilotProviderId,
   override = process.env.COPILOT_THINKING_LEVEL?.trim()
 ): string | undefined {
-  if (!usesGeminiThinking(provider)) return undefined
-  if (!override) return DEFAULT_GEMINI_THINKING_LEVEL
-  const normalized = override.toLowerCase()
-  // Gemini 3.8 Flash rejects `minimal`; treat it as `low` for latency-sensitive configs.
-  if (normalized === 'minimal') return 'low'
-  return GEMINI_THINKING_LEVELS.has(normalized) ? normalized : DEFAULT_GEMINI_THINKING_LEVEL
+  if (usesGeminiThinking(provider)) {
+    if (!override) return DEFAULT_GEMINI_THINKING_LEVEL
+    const normalized = override.toLowerCase()
+    // Gemini 3.8 Flash rejects `minimal`; treat it as `low` for latency-sensitive configs.
+    if (normalized === 'minimal') return 'low'
+    return GEMINI_THINKING_LEVELS.has(normalized) ? normalized : DEFAULT_GEMINI_THINKING_LEVEL
+  }
+
+  if (usesClaudeStyleThinkingLevels(provider)) {
+    if (!override) return DEFAULT_ANTHROPIC_THINKING_LEVEL
+    const normalized = override.toLowerCase()
+    return ANTHROPIC_THINKING_LEVELS.has(normalized)
+      ? normalized
+      : DEFAULT_ANTHROPIC_THINKING_LEVEL
+  }
+
+  return undefined
 }
 
 /**
- * Live engagement status LLM (tool heartbeats / model-wait copy).
- * Off by default for lower latency — static status lines remain.
- * Set `COPILOT_ENGAGEMENT_STATUS=true` to re-enable.
+ * Live engagement status LLM (tool heartbeats only when enabled).
+ * Model-wait copy uses provider thinking summaries instead.
+ * Off by default — set `COPILOT_ENGAGEMENT_STATUS=true` to re-enable tool engagement.
  */
 export function isLocalCopilotEngagementStatusEnabled(
   override = process.env.COPILOT_ENGAGEMENT_STATUS

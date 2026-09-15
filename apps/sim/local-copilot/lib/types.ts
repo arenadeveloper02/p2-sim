@@ -8,6 +8,7 @@ import type {
   TurnCompletionStatus,
   VerificationRecord,
 } from '@/local-copilot/lib/verification/types'
+import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
@@ -217,12 +218,15 @@ export interface LocalCopilotToolCallRecord {
 }
 
 export type LocalCopilotStreamEvent =
-  | { type: 'text_delta'; content: string }
+  | { type: 'text_delta'; content: string; thoughtSignature?: string }
+  | { type: 'thinking_delta'; content: string; thoughtSignature?: string }
   | {
       type: 'tool_call_start'
       toolCallId: string
       toolName: string
       args?: Record<string, unknown>
+      /** Gemini 3+ thought signature — required for follow-up turn CoT. */
+      thoughtSignature?: string
     }
   | {
       type: 'tool_call_result'
@@ -275,6 +279,14 @@ export type LocalCopilotStreamEvent =
         inputTokens: number
         outputTokens: number
       }
+    }
+  | {
+      /**
+       * Exact Gemini/Vertex model parts for one tool-loop round. Persisted so
+       * the next user turn can echo signatures verbatim (required for CoT).
+       */
+      type: 'gemini_model_parts'
+      parts: GeminiHistoryPart[]
     }
 
 export interface LocalCopilotMessageContent {
