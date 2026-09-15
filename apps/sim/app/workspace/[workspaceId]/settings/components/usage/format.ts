@@ -5,8 +5,28 @@ import type {
   WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
-import { formatEmbeddedToolLabel } from '@/lib/logs/embedded-tool-costs'
+import {
+  formatEmbeddedToolLabel,
+  isImageGenerationBillingKey,
+  UNATTRIBUTED_AGENT_TOOLS_ID,
+} from '@/lib/logs/embedded-tool-costs'
 import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
+
+/**
+ * Multi-segment registry prefixes that must not roll up on the first `_` alone
+ * (e.g. `browser_use_run_task` → `browser_use`, not `browser`).
+ */
+const MULTI_SEGMENT_TOOL_FAMILIES = [
+  'azure_devops',
+  'browser_use',
+  'context_dev',
+  'google_books',
+  'google_maps',
+  'google_pagespeed',
+  'google_translate',
+  'openai_image',
+] as const
+
 
 /** Human-readable labels for usage_log source values. */
 export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
@@ -92,6 +112,68 @@ export function formatChargeTypeLabel(chargeType: UsageChargeTypeValue): string 
 /** Format a tool id for dashboard display (includes virtual embedded-tool ids). */
 export function formatToolLabel(toolId: string): string {
   return formatEmbeddedToolLabel(toolId)
+}
+
+/**
+ * Rolls operation-level tool ids up to a service family for Usage ranking tables.
+ * `exa_search` / `exa_answer` → `exa`; image model keys and unattributed stay as-is.
+ */
+export function resolveUsageToolFamilyId(toolId: string): string {
+  const normalized = toolId.trim().toLowerCase()
+  if (!normalized) return toolId
+  if (normalized === UNATTRIBUTED_AGENT_TOOLS_ID) return UNATTRIBUTED_AGENT_TOOLS_ID
+  if (isImageGenerationBillingKey(normalized)) return normalized
+
+  for (const family of MULTI_SEGMENT_TOOL_FAMILIES) {
+    if (normalized === family || normalized.startsWith(`${family}_`)) return family
+  }
+
+  const separator = normalized.indexOf('_')
+  return separator === -1 ? normalized : normalized.slice(0, separator)
+}
+
+/** Display label for a service-family tool bucket (`exa` → `Exa`). */
+export function formatUsageToolFamilyLabel(familyId: string): string {
+  if (familyId === UNATTRIBUTED_AGENT_TOOLS_ID) return formatEmbeddedToolLabel(familyId)
+  if (isImageGenerationBillingKey(familyId)) return formatEmbeddedToolLabel(familyId)
+  return familyId.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+interface UsageToolBucketRow {
+  toolId: string
+  billableCost: number
+  count: number
+  rawCost?: number
+}
+
+/**
+ * Aggregates By Tools rows by service family so the dashboard shows Exa once,
+ * not Exa Search / Exa Answer separately.
+ */
+export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: T[]): T[] {
+  const merged = new Map<string, T>()
+
+  for (const row of rows) {
+    const familyId = resolveUsageToolFamilyId(row.toolId)
+    const existing = merged.get(familyId)
+    if (existing) {
+      existing.billableCost += row.billableCost
+      existing.count += row.count
+      if (typeof existing.rawCost === 'number' || typeof row.rawCost === 'number') {
+        existing.rawCost = (existing.rawCost ?? 0) + (row.rawCost ?? 0)
+      }
+    } else {
+      merged.set(familyId, {
+        ...row,
+        toolId: familyId,
+        billableCost: row.billableCost,
+        count: row.count,
+        ...(typeof row.rawCost === 'number' ? { rawCost: row.rawCost } : {}),
+      })
+    }
+  }
+
+  return [...merged.values()].sort((a, b) => b.billableCost - a.billableCost)
 }
 
 /** Format actor_type for display. */

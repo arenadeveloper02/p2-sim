@@ -2,23 +2,21 @@
 
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
-import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
+import type { UserUsageAnalytics } from '@/lib/api/contracts/user-usage'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
+import { formatCreditCount } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 import {
   UsageRankCreditsCell,
   UsageRankTable,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-rank-table'
-import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
   aggregateUsageToolsByFamily,
-  formatBillableWithCredits,
   formatUsageToolFamilyLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
-interface OrganizationAdminUsageContentProps {
-  data: OrganizationUsageAnalytics
-  /** Prefer email (screenshot); fall back to name/id. */
-  userLabelById: Map<string, string>
+interface UserMemberUsageContentProps {
+  data: UserUsageAnalytics
   workspaceFilterLabel: string
   periodStatusLabel: string
   /** Period + workspace filter controls rendered under Activity detail. */
@@ -26,18 +24,16 @@ interface OrganizationAdminUsageContentProps {
 }
 
 /**
- * Org-admin Usage activity detail matching the admin screenshot:
- * filters, status line, By Workflow / By User / By Tools, then charts.
+ * Member Usage activity detail matching the FOR USERS screenshot:
+ * filters, status line, By Workflow / By Tools (no By User).
  */
-export function OrganizationAdminUsageContent({
+export function UserMemberUsageContent({
   data,
-  userLabelById,
   workspaceFilterLabel,
   periodStatusLabel,
   filters,
-}: OrganizationAdminUsageContentProps) {
+}: UserMemberUsageContentProps) {
   const workflowRows = useMemo(() => data.workflow.byWorkflow, [data.workflow.byWorkflow])
-  const userRows = useMemo(() => data.byUser, [data.byUser])
   const toolRows = useMemo(() => aggregateUsageToolsByFamily(data.byTool), [data.byTool])
 
   return (
@@ -59,7 +55,9 @@ export function OrganizationAdminUsageContent({
 
       <UsageRankTable
         rows={workflowRows}
-        getRowKey={(row, index) => row.workflowId ?? `workflow-${index}`}
+        getRowKey={(row, index) =>
+          `${row.workspaceId}:${row.workflowId ?? `workflow-${index}`}`
+        }
         getBillableCost={(row) => row.billableCost}
         emptyMessage='No workflow usage in this period.'
         columns={[
@@ -83,37 +81,9 @@ export function OrganizationAdminUsageContent({
             header: 'Avg credits/run',
             align: 'right',
             render: (row) =>
-              formatBillableWithCredits(
-                averageBillableCostPerRun(row.billableCost, row.executionCount)
+              formatCreditCount(
+                dollarsToCredits(averageBillableCostPerRun(row.billableCost, row.executionCount))
               ),
-          },
-          {
-            key: 'credits',
-            header: 'Credits',
-            align: 'right',
-            render: (row) => <UsageRankCreditsCell billableCost={row.billableCost} />,
-          },
-        ]}
-      />
-
-      <UsageRankTable
-        rows={userRows}
-        getRowKey={(row) => row.userId}
-        getBillableCost={(row) => row.billableCost}
-        emptyMessage='No user usage in this period.'
-        columns={[
-          {
-            key: 'user',
-            header: 'By User',
-            render: (row) => (
-              <span className='font-medium'>{userLabelById.get(row.userId) ?? row.userId}</span>
-            ),
-          },
-          {
-            key: 'runs',
-            header: 'Runs',
-            align: 'right',
-            render: (row) => row.count.toLocaleString(),
           },
           {
             key: 'credits',
@@ -151,14 +121,6 @@ export function OrganizationAdminUsageContent({
             render: (row) => <UsageRankCreditsCell billableCost={row.billableCost} />,
           },
         ]}
-      />
-
-      <UsageTimeSeriesChart
-        timeSeries={data.timeSeries}
-        periodActiveUserCount={data.summary.activeUserCount}
-        showActiveUsers
-        showExecutionsOverlay={false}
-        costChartTitle='Cost & activity over time'
       />
     </div>
   )

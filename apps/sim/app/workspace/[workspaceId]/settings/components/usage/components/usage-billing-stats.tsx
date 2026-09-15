@@ -111,19 +111,8 @@ function OrgMemberBillingStats({
     memberUsedCredits: data.summary.totalCredits,
   })
 
-  return (
-    <div className='flex flex-col gap-6'>
-      <p className='text-[var(--text-muted)] text-small'>
-        Near real-time. Credits reset with your organization&apos;s billing cycle.
-      </p>
-      <BillingRemainingCreditsCard segments={segments} allocatedCredits={allocatedCredits} />
-      <UsageBySourceSection
-        mothershipCredits={data.summary.mothershipCredits}
-        workflowCredits={data.summary.workflowCredits}
-        totalCredits={segments.usedByYouCredits}
-      />
-    </div>
-  )
+  // FOR USERS screenshot: pool card only (subtitle lives in the page header).
+  return <BillingRemainingCreditsCard segments={segments} allocatedCredits={allocatedCredits} />
 }
 
 function resolvePersonalAllowance(

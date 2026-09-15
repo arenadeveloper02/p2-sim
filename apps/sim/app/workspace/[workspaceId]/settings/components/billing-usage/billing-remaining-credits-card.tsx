@@ -92,13 +92,13 @@ export function BillingRemainingCreditsCard({
           <div className='flex h-2 overflow-hidden rounded-full bg-[var(--surface-3)]'>
             {youPercent > 0 ? (
               <div
-                className='h-full bg-violet-500 transition-[width]'
+                className='h-full bg-blue-600 transition-[width]'
                 style={{ width: `${youPercent}%` }}
               />
             ) : null}
             {othersPercent > 0 ? (
               <div
-                className='h-full bg-sky-400 transition-[width]'
+                className='h-full bg-emerald-500 transition-[width]'
                 style={{ width: `${othersPercent}%` }}
               />
             ) : null}
@@ -106,11 +106,11 @@ export function BillingRemainingCreditsCard({
           <div className='flex items-center justify-between gap-3 text-caption'>
             <div className='flex items-center gap-3 text-[var(--text-muted)]'>
               <span className='inline-flex items-center gap-1.5'>
-                <span className='size-1.5 rounded-full bg-violet-500' />
+                <span className='size-1.5 rounded-full bg-blue-600' />
                 You
               </span>
               <span className='inline-flex items-center gap-1.5'>
-                <span className='size-1.5 rounded-full bg-sky-400' />
+                <span className='size-1.5 rounded-full bg-emerald-500' />
                 Organization
               </span>
             </div>

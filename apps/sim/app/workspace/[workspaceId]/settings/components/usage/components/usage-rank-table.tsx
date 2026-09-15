@@ -21,6 +21,11 @@ export interface UsageRankTableProps<T> {
   getRowKey: (row: T, index: number) => string
   /** Billable USD used to size the background bar (relative to the max row). */
   getBillableCost: (row: T) => number
+  /**
+   * Optional rank/filter value. Defaults to billable cost.
+   * Use for tools so ledger rows with count but $0 still appear.
+   */
+  getRankValue?: (row: T) => number
   emptyMessage?: string
 }
 
@@ -33,18 +38,20 @@ export function UsageRankTable<T>({
   columns,
   getRowKey,
   getBillableCost,
+  getRankValue,
   emptyMessage = 'No usage recorded for this period.',
 }: UsageRankTableProps<T>) {
+  const resolveRank = getRankValue ?? getBillableCost
   const ranked = [...rows]
-    .filter((row) => getBillableCost(row) > 0)
-    .sort((a, b) => getBillableCost(b) - getBillableCost(a))
+    .filter((row) => resolveRank(row) > 0)
+    .sort((a, b) => resolveRank(b) - resolveRank(a))
 
-  const maxCost = ranked[0] ? getBillableCost(ranked[0]) : 0
+  const maxRank = ranked[0] ? resolveRank(ranked[0]) : 0
   const scrollable = ranked.length > SCROLL_ROW_THRESHOLD
 
   return (
     <div className='overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)]'>
-      {ranked.length === 0 || maxCost <= 0 ? (
+      {ranked.length === 0 || maxRank <= 0 ? (
         <p className='px-4 py-8 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
       ) : (
         <div
@@ -72,7 +79,7 @@ export function UsageRankTable<T>({
             </thead>
             <tbody>
               {ranked.map((row, index) => {
-                const widthPercent = Math.max((getBillableCost(row) / maxCost) * 100, 2)
+                const widthPercent = Math.max((resolveRank(row) / maxRank) * 100, 2)
 
                 return (
                   <tr

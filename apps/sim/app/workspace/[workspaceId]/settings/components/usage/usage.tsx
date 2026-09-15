@@ -39,7 +39,7 @@ import {
   useUsageCollapsibleGroups,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-collapsible-group'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
-import { UserUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-usage-content'
+import { UserMemberUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-member-usage-content'
 import {
   formatAdminPeriodChipLabel,
   formatBillableWithCredits,
@@ -795,11 +795,11 @@ export function Usage() {
   )
 
   const availableScopes = useMemo(() => {
+    // Screenshots only cover User + Organization dashboards (no Workspace / source tabs).
     const scopes: UsageScope[] = ['user']
-    if (isWorkspaceAdmin) scopes.push('workspace')
     if (canViewOrganizationUsage) scopes.push('organization')
     return scopes
-  }, [canViewOrganizationUsage, isWorkspaceAdmin])
+  }, [canViewOrganizationUsage])
 
   // Org admins land on the admin Usage dashboard by default (screenshot layout).
   useEffect(() => {
@@ -836,12 +836,12 @@ export function Usage() {
         ? { startTime, endTime }
         : { period: period as UsagePeriod }
 
-    // Org admin Activity detail always includes all billable sources.
-    if (isOrganizationScope) return base
+    // Simplified dashboards (admin + member) always include all billable sources.
+    if (isOrganizationScope || isUserScope) return base
     if (tab === 'workflow') return { ...base, sources: 'workflow' }
     if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
     return base
-  }, [allTime, endTime, isCustomRange, isOrganizationScope, period, startTime, tab])
+  }, [allTime, endTime, isCustomRange, isOrganizationScope, isUserScope, period, startTime, tab])
 
   const handlePeriodChange = (value: string) => {
     if (value === 'custom') {
@@ -1007,6 +1007,17 @@ export function Usage() {
     )
   }, [orgWorkspaceId, organizationData?.workspaces])
 
+  const userWorkspaceFilterLabel = useMemo(() => {
+    if (userWorkspaceId === USER_WORKSPACE_FILTER_ALL) return 'all workspaces'
+    if (userWorkspaceId) {
+      return (
+        userData?.workspaces.find((workspace) => workspace.id === userWorkspaceId)?.name ??
+        'selected workspace'
+      )
+    }
+    return 'current workspace'
+  }, [userData?.workspaces, userWorkspaceId])
+
   const handleSelectRoot = (nextRootExecutionId: string) => {
     void setUsageParams({ rootExecutionId: nextRootExecutionId, tab: 'workflow' })
   }
@@ -1095,6 +1106,82 @@ export function Usage() {
     </>
   )
 
+  const userPeriodFilters = (
+    <>
+      <div className='relative flex flex-wrap items-center gap-2'>
+        <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
+          {USAGE_PERIODS.map((periodId) => (
+            <ButtonGroupItem key={periodId} value={periodId}>
+              {formatAdminPeriodChipLabel(periodId)}
+            </ButtonGroupItem>
+          ))}
+          <ButtonGroupItem value='all'>All time</ButtonGroupItem>
+          <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
+        </ButtonGroup>
+        <Popover
+          open={datePickerOpen}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) handleDatePickerCancel()
+          }}
+        >
+          <PopoverAnchor className='pointer-events-none absolute inset-0' />
+          <PopoverContent align='end' sideOffset={4} className='w-auto p-0'>
+            <Calendar
+              mode='range'
+              showTime
+              startDate={startTime ?? undefined}
+              endDate={endTime ?? undefined}
+              onRangeChange={handleDateRangeApply}
+              onCancel={handleDatePickerCancel}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+      <ChipSelect
+        align='end'
+        value={userWorkspaceSelectValue}
+        onChange={(value) => {
+          const nextFilter =
+            value === USER_WORKSPACE_FILTER_CURRENT
+              ? null
+              : value === USER_WORKSPACE_FILTER_ALL
+                ? USER_WORKSPACE_FILTER_ALL
+                : value
+          void setUsageParams({
+            userWorkspaceId: nextFilter,
+            rootExecutionId: nextFilter === USER_WORKSPACE_FILTER_ALL ? null : rootExecutionId,
+          })
+        }}
+        options={userWorkspaceFilterOptions}
+      />
+    </>
+  )
+
+  const scopeToggle = showScopeToggle ? (
+    <ButtonGroup
+      value={effectiveScope}
+      onValueChange={(value) => {
+        const nextScope = value as UsageScope
+        void setUsageParams({
+          scope: nextScope,
+          rootExecutionId:
+            nextScope === 'organization' ||
+            (nextScope === 'user' && userWorkspaceId === USER_WORKSPACE_FILTER_ALL)
+              ? null
+              : rootExecutionId,
+          orgWorkspaceId: nextScope === 'organization' ? orgWorkspaceId : null,
+          userWorkspaceId: nextScope === 'user' ? userWorkspaceId : null,
+        })
+      }}
+    >
+      {availableScopes.map((scopeId) => (
+        <ButtonGroupItem key={scopeId} value={scopeId}>
+          {SCOPE_LABELS[scopeId]}
+        </ButtonGroupItem>
+      ))}
+    </ButtonGroup>
+  ) : null
+
   if (isOrganizationScope) {
     return (
       <div className='flex h-full flex-col bg-[var(--bg)]'>
@@ -1111,26 +1198,7 @@ export function Usage() {
                 </p>
               </div>
               <div className='flex flex-wrap items-center gap-2'>
-                {showScopeToggle && (
-                  <ButtonGroup
-                    value={effectiveScope}
-                    onValueChange={(value) => {
-                      const nextScope = value as UsageScope
-                      void setUsageParams({
-                        scope: nextScope,
-                        rootExecutionId: null,
-                        orgWorkspaceId: nextScope === 'organization' ? orgWorkspaceId : null,
-                        userWorkspaceId: nextScope === 'user' ? userWorkspaceId : null,
-                      })
-                    }}
-                  >
-                    {availableScopes.map((scopeId) => (
-                      <ButtonGroupItem key={scopeId} value={scopeId}>
-                        {SCOPE_LABELS[scopeId]}
-                      </ButtonGroupItem>
-                    ))}
-                  </ButtonGroup>
-                )}
+                {scopeToggle}
                 <button
                   type='button'
                   onClick={() => void refetch()}
@@ -1175,6 +1243,66 @@ export function Usage() {
     )
   }
 
+  if (isUserScope) {
+    return (
+      <div className='flex h-full flex-col bg-[var(--bg)]'>
+        <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
+          <div className='mx-auto flex max-w-[56rem] flex-col gap-6 pt-6 pb-8'>
+            <div className='flex flex-wrap items-start justify-between gap-3'>
+              <div className='flex flex-col gap-1'>
+                <span className='font-medium text-[var(--text-muted)] text-caption uppercase tracking-wide'>
+                  For users
+                </span>
+                <h1 className='font-medium text-[var(--text-primary)] text-lg'>Usage</h1>
+                <p className='text-[var(--text-muted)] text-small'>
+                  Near real-time. Credits reset with your organization&apos;s billing cycle.
+                </p>
+              </div>
+              <div className='flex flex-wrap items-center gap-2'>
+                {scopeToggle}
+                <button
+                  type='button'
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                  className='flex items-center gap-1.5 rounded-md px-2 py-1 text-[var(--text-secondary)] text-small transition-colors hover-hover:bg-[var(--surface-2)] hover-hover:text-[var(--text-primary)] disabled:opacity-50'
+                >
+                  <RefreshCw className={cn('size-[14px]', isFetching && 'animate-spin')} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <UsageBillingStats />
+
+            {error && (
+              <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
+                <p className='text-[var(--text-primary)] text-small'>
+                  Failed to load usage analytics.
+                </p>
+                <p className='mt-1 text-[var(--text-muted)] text-small'>{error.message}</p>
+              </div>
+            )}
+
+            {isLoading && !data && (
+              <div className='flex items-center justify-center py-12'>
+                <Loader className='size-5 text-[var(--text-muted)]' />
+              </div>
+            )}
+
+            {data && userData && (
+              <UserMemberUsageContent
+                data={userData}
+                workspaceFilterLabel={userWorkspaceFilterLabel}
+                periodStatusLabel={periodStatusLabel}
+                filters={userPeriodFilters}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
       <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
@@ -1199,38 +1327,14 @@ export function Usage() {
             <UsageBillingStats />
 
             <div className='flex flex-wrap items-center gap-3'>
-              {showScopeToggle && (
-                <ButtonGroup
-                  value={effectiveScope}
-                  onValueChange={(value) => {
-                    const nextScope = value as UsageScope
-                    void setUsageParams({
-                      scope: nextScope,
-                      rootExecutionId:
-                        nextScope === 'organization' ||
-                        (nextScope === 'user' && userWorkspaceId === USER_WORKSPACE_FILTER_ALL)
-                          ? null
-                          : rootExecutionId,
-                      orgWorkspaceId: nextScope === 'organization' ? orgWorkspaceId : null,
-                      userWorkspaceId: nextScope === 'user' ? userWorkspaceId : null,
-                    })
-                  }}
-                >
-                  {availableScopes.map((scopeId) => (
-                    <ButtonGroupItem key={scopeId} value={scopeId}>
-                      {SCOPE_LABELS[scopeId]}
-                    </ButtonGroupItem>
-                  ))}
-                </ButtonGroup>
-              )}
+              {scopeToggle}
 
               <ButtonGroup
                 value={tab}
                 onValueChange={(value) =>
                   void setUsageParams({
                     tab: value as UsageTab,
-                    rootExecutionId:
-                      value === 'mothership' || isUserAllWorkspaces ? null : rootExecutionId,
+                    rootExecutionId: value === 'mothership' ? null : rootExecutionId,
                   })
                 }
               >
@@ -1240,27 +1344,6 @@ export function Usage() {
                   </ButtonGroupItem>
                 ))}
               </ButtonGroup>
-
-              {isUserScope && (
-                <ChipSelect
-                  align='start'
-                  value={userWorkspaceSelectValue}
-                  onChange={(value) => {
-                    const nextFilter =
-                      value === USER_WORKSPACE_FILTER_CURRENT
-                        ? null
-                        : value === USER_WORKSPACE_FILTER_ALL
-                          ? USER_WORKSPACE_FILTER_ALL
-                          : value
-                    void setUsageParams({
-                      userWorkspaceId: nextFilter,
-                      rootExecutionId:
-                        nextFilter === USER_WORKSPACE_FILTER_ALL ? null : rootExecutionId,
-                    })
-                  }}
-                  options={userWorkspaceFilterOptions}
-                />
-              )}
 
               <div className='relative flex flex-wrap items-center gap-2'>
                 <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
@@ -1352,18 +1435,6 @@ export function Usage() {
             <div className='flex items-center justify-center py-12'>
               <Loader className='size-5 text-[var(--text-muted)]' />
             </div>
-          )}
-
-          {data && isUserScope && userData && (
-            <UserUsageContent
-              data={userData}
-              tab={tab}
-              showByWorkspace={isUserAllWorkspaces}
-              lineageWorkspaceId={userLineageWorkspaceId}
-              rootExecutionId={rootExecutionId}
-              onSelectRoot={handleSelectRoot}
-              onClearDrillDown={handleClearDrillDown}
-            />
           )}
 
           {data && isWorkspaceScope && workspaceData && (
