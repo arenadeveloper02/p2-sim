@@ -958,8 +958,8 @@ export async function* runLocalCopilotAgent(
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 2500,
-      intervalMs: 2500,
+      idleMs: 100,
+      intervalMs: 100,
     })) {
       if (event.type === 'status') {
         if (!thinkingStatus.isPublishing) yield event
@@ -2217,8 +2217,8 @@ export async function* runLocalCopilotAgent(
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 2500,
-      intervalMs: 2500,
+      idleMs: 100,
+      intervalMs: 100,
     })) {
       if (event.type === 'status') {
         if (!stagnationThinkingStatus.isPublishing) yield event
