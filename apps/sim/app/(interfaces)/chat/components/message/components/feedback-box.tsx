@@ -137,7 +137,7 @@ export function FeedbackBox({
       </div>
 
       <div
-        className='space-y-4 rounded-xl border bg-white p-4'
+        className='space-y-4 rounded-xl border bg-[var(--color-ds-surface-raised)] p-4'
         style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
       >
         {!isLikeFeedback && (

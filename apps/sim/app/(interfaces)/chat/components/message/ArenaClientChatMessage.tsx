@@ -70,8 +70,9 @@ const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 const DEPLOYED_MARKDOWN_PROPS = {
   fontClassName: 'font-poppins font-normal',
-  bodyTextClassName: 'text-[14px] leading-[1.6] text-[#2C2D33]',
-  headingTextClassName: 'font-poppins font-normal text-[14px] leading-[1.6] text-[#2C2D33]',
+  bodyTextClassName: 'text-[14px] leading-[1.6] text-[var(--color-ds-text-primary)]',
+  headingTextClassName:
+    'font-poppins font-normal text-[14px] leading-[1.6] text-[var(--color-ds-text-primary)]',
 } as const
 
 export interface ChatMessage {
@@ -558,7 +559,7 @@ export const ArenaClientChatMessage = memo(
       } catch (error) {
         arenaChatMessageLogger.error('Error rendering message content', { error })
         return (
-          <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
+          <div className='rounded-lg border border-[var(--color-ds-status-error-border)] bg-[var(--color-ds-status-error-surface)] p-3 text-[var(--color-ds-status-error-text)]'>
             <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
           </div>
         )
@@ -920,8 +921,8 @@ export const ArenaClientChatMessage = memo(
                               src={attachment.dataUrl}
                               wrapperClassName={
                                 isSelected
-                                  ? 'h-32 w-32 overflow-hidden rounded-lg border border-[var(--selection)] bg-[var(--surface-5)] ring-1 ring-[var(--selection)] transition-[border-color,box-shadow]'
-                                  : 'h-32 w-32 overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)] transition-[border-color,box-shadow]'
+                                  ? 'h-32 w-32 overflow-hidden rounded-lg border border-[var(--color-ds-brand-default)] bg-[var(--color-ds-surface-subtle)] ring-1 ring-[var(--color-ds-brand-default)] transition-[border-color,box-shadow]'
+                                  : 'h-32 w-32 overflow-hidden rounded-lg border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-subtle)] transition-[border-color,box-shadow]'
                               }
                               onDownload={() => handleUserAttachmentDownload(attachment)}
                               onSelect={
@@ -962,11 +963,8 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[min(80%,560px)]'>
-                  <div className='rounded-[var(--radius-ds-md,8px)] bg-white px-4 py-3'>
-                    <div
-                      className='whitespace-pre-wrap break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                      style={{ color: '#2C2D33' }}
-                    >
+                  <div className='rounded-[var(--radius-ds-md,8px)] bg-[var(--color-ds-indication)] px-4 py-3'>
+                    <div className='whitespace-pre-wrap break-words font-normal font-poppins text-[14px] text-[var(--color-ds-text-primary)] leading-[1.6]'>
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
                       ) : (
@@ -1006,10 +1004,7 @@ export const ArenaClientChatMessage = memo(
             )}
             {(hasRenderableText || isJsonObject || containsBase64Images || hasImageUrl) && (
               <div className='py-1'>
-                <div
-                  className='break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                  style={{ color: '#2C2D33' }}
-                >
+                <div className='break-words font-normal font-poppins text-[14px] text-[var(--color-ds-text-primary)] leading-[1.6]'>
                   {renderContent(cleanTextContent)}
                 </div>
               </div>
@@ -1017,7 +1012,7 @@ export const ArenaClientChatMessage = memo(
             {showStreamPlaceholder && <DeployedInlineLoader label='Working…' />}
             {showReferencesSection && (
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
-                <span className='text-gray-500 dark:text-gray-400'>References:</span>
+                <span className='text-[var(--color-ds-text-tertiary)]'>References:</span>
                 {refsGroupedByDocument.map((group, groupIndex) => {
                   const docChunks = group.chunks.flatMap((r) => r.chunks ?? [])
                   const hasModalChunks = docChunks.length > 0
@@ -1027,12 +1022,12 @@ export const ArenaClientChatMessage = memo(
                       className='inline-flex flex-wrap items-center gap-x-0.5 gap-y-0.5'
                     >
                       {groupIndex > 0 && (
-                        <span className='text-gray-400 dark:text-gray-500'>,</span>
+                        <span className='text-[var(--color-ds-text-disabled)]'>,</span>
                       )}
                       {hasModalChunks ? (
                         <button
                           type='button'
-                          className='cursor-pointer rounded px-1 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                          className='cursor-pointer rounded px-1 py-0.5 text-[var(--color-ds-text-link)] underline decoration-[var(--color-ds-text-link)]/50 underline-offset-2 transition-colors hover:bg-[var(--color-ds-brand-surface)] hover:text-[var(--color-ds-text-link-hover)] hover:decoration-[var(--color-ds-text-link-hover)]'
                           onClick={() =>
                             openKnowledgeModal(
                               group.documentName,
@@ -1044,7 +1039,7 @@ export const ArenaClientChatMessage = memo(
                           {group.documentName}
                         </button>
                       ) : (
-                        <span className='rounded px-1 py-0.5 text-[var(--text-primary)]'>
+                        <span className='rounded px-1 py-0.5 text-[var(--color-ds-text-primary)]'>
                           {group.documentName}
                         </span>
                       )}
@@ -1055,7 +1050,7 @@ export const ArenaClientChatMessage = memo(
                             href={ref.linkUrl}
                             target='_blank'
                             rel='noopener noreferrer'
-                            className='cursor-pointer rounded px-1 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                            className='cursor-pointer rounded px-1 py-0.5 text-[var(--color-ds-text-link)] underline decoration-[var(--color-ds-text-link)]/50 underline-offset-2 transition-colors hover:bg-[var(--color-ds-brand-surface)] hover:text-[var(--color-ds-text-link-hover)] hover:decoration-[var(--color-ds-text-link-hover)]'
                             aria-label={`Open chunk ${ref.chunkIndex} of ${group.documentName} in Knowledge Base`}
                           >
                             #{ref.chunkIndex}
@@ -1086,11 +1081,11 @@ export const ArenaClientChatMessage = memo(
                 hasImageUrl ||
                 (message.generatedImages?.length ?? 0) > 0) && (
                 <div className='flex flex-col gap-1'>
-                  <p className='text-[var(--text-muted)] text-xs'>{timestampLabel}</p>
+                  <p className='text-[var(--color-ds-text-tertiary)] text-xs'>{timestampLabel}</p>
                   {isErrorResponse && onRegenerateMessage && (
                     <button
                       type='button'
-                      className='flex w-fit items-center gap-1 rounded-md border border-[var(--border-1)] px-2 py-1 text-[var(--text-body)] text-sm hover:bg-[var(--surface-2)]'
+                      className='flex w-fit items-center gap-1 rounded-md border border-[var(--color-ds-border-default)] px-2 py-1 text-[var(--color-ds-text-primary)] text-sm hover:bg-[var(--color-ds-brand-surface)]'
                       onClick={onRegenerateMessage}
                     >
                       <RefreshCw className='size-3.5' />

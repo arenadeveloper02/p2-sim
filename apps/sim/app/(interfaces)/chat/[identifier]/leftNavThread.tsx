@@ -74,7 +74,9 @@ type SidebarActionIcon = React.ComponentType<{ className?: string }>
 function sidebarRowClass(isActive: boolean, disabled = false) {
   return cn(
     'group flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
-    isActive ? 'bg-white shadow-none' : 'bg-transparent hover:bg-white',
+    isActive
+      ? 'bg-[var(--color-ds-indication)] shadow-none'
+      : 'bg-transparent hover:bg-[var(--color-ds-indication)]',
     disabled && 'cursor-not-allowed opacity-50'
   )
 }
@@ -144,7 +146,7 @@ interface SidebarToggleButtonProps {
 function sidebarSoftIconClass() {
   return cn(
     'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[var(--color-ds-brand-surface,#F3F8FE)] text-[var(--color-ds-icon-default,#575A66)] transition-colors',
-    'group-hover:bg-white group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+    'group-hover:bg-[var(--color-ds-surface-raised)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
   )
 }
 
@@ -284,7 +286,7 @@ function SidebarActionButton({
 function ThreadSkeleton() {
   return (
     <div className='flex min-h-8 animate-pulse items-center gap-2 rounded-lg px-2 py-1'>
-      <div className='h-3 flex-1 rounded bg-[var(--surface-3)]' />
+      <div className='h-3 flex-1 rounded bg-[var(--color-ds-grey-200)]' />
     </div>
   )
 }
@@ -347,7 +349,7 @@ function ThreadRow({
 
   if (isRenaming) {
     return (
-      <div className='flex min-h-8 items-center gap-1 rounded-lg bg-white px-2 py-1'>
+      <div className='flex min-h-8 items-center gap-1 rounded-lg bg-[var(--color-ds-surface-raised)] px-2 py-1'>
         <ChipInput
           ref={renameInputRef}
           value={renameValue}
@@ -364,7 +366,7 @@ function ThreadRow({
           }}
           onBlur={handleRenameBlur}
           autoFocus
-          className='h-7 min-w-0 flex-1 border-[var(--color-ds-blue-200,#D1E3FA)] bg-white'
+          className='h-7 min-w-0 flex-1 border-[var(--color-ds-blue-200,#D1E3FA)] bg-[var(--color-ds-surface-raised)]'
         />
       </div>
     )
@@ -405,7 +407,9 @@ function ThreadRow({
         </Tooltip.Provider>
       </div>
 
-      {isPinned && <Pin className='size-3 shrink-0 text-[var(--text-icon)]' aria-label='Pinned' />}
+      {isPinned && (
+        <Pin className='size-3 shrink-0 text-[var(--color-ds-icon-default)]' aria-label='Pinned' />
+      )}
 
       <div
         className={cn(
@@ -419,7 +423,7 @@ function ThreadRow({
           <DropdownMenuTrigger asChild>
             <button
               type='button'
-              className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
+              className='flex size-6 items-center justify-center rounded text-[var(--color-ds-icon-default)] hover:bg-[var(--color-ds-surface-raised)]'
               aria-label='Thread options'
               disabled={isStreaming}
             >
@@ -429,7 +433,7 @@ function ThreadRow({
           <DropdownMenuContent
             align='start'
             side='right'
-            className='min-w-[132px] rounded-lg border-[var(--color-ds-blue-200,#D1E3FA)] bg-white p-1.5 shadow-md'
+            className='min-w-[132px] rounded-lg border-[var(--color-ds-blue-200,#D1E3FA)] bg-[var(--color-ds-surface-raised)] p-1.5 shadow-md'
           >
             <DropdownMenuItem onClick={onStartRename} className={THREAD_MENU_ITEM_CLASS}>
               <RenameMenuIcon />
@@ -620,7 +624,7 @@ const LeftNavThread = ({
       <button
         type='button'
         className={cn(
-          'group flex cursor-pointer items-center gap-1.5 rounded-lg transition-colors hover:bg-white',
+          'group flex cursor-pointer items-center gap-1.5 rounded-lg transition-colors hover:bg-[var(--color-ds-surface-raised)]',
           collapsed ? 'size-6 justify-center p-0' : 'w-full px-2 py-1'
         )}
         onClick={handleExitAgent}
@@ -678,7 +682,7 @@ const LeftNavThread = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder='Search chats...'
             icon={Search}
-            className='h-8 rounded-lg border-none bg-white shadow-sm'
+            className='h-8 rounded-lg border-none bg-[var(--color-ds-surface-raised)] shadow-sm'
             aria-label='Search chats'
           />
         </div>
@@ -732,7 +736,7 @@ const LeftNavThread = ({
             </div>
           ) : (
             <div className='flex flex-col items-center justify-center gap-2 py-8 text-center'>
-              <p className='text-[var(--text-muted)] text-sm'>
+              <p className='text-[var(--color-ds-text-secondary)] text-sm'>
                 {searchQuery ? 'No matching conversations' : 'No conversations yet'}
               </p>
               {!searchQuery && (
@@ -789,7 +793,7 @@ const LeftNavThread = ({
             <div className={cn(isMobileOpen && 'shadow-xl')}>{sidebarContent}</div>
             <button
               type='button'
-              className='m-2 flex size-8 items-center justify-center rounded-full bg-[var(--surface-1)] shadow'
+              className='m-2 flex size-8 items-center justify-center rounded-full bg-[var(--color-ds-surface-raised)] shadow'
               onClick={onCloseMobile}
               aria-label='Close sidebar'
             >

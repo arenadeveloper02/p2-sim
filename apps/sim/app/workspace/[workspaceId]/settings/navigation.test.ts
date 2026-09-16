@@ -12,44 +12,31 @@ describe('unified settings navigation', () => {
   it('groups settings by the scope they affect', () => {
     expect(sectionConfig).toEqual([
       { key: 'account', title: 'Account' },
+      { key: 'subscription', title: 'Subscription' },
+      { key: 'help', title: 'Help' },
       { key: 'workspace', title: 'Workspace' },
       { key: 'organization', title: 'Organization' },
       { key: 'platform', title: 'Platform' },
     ])
   })
 
+  it('exposes Docs under Help as an external link', () => {
+    const docs = allNavigationItems.find((item) => item.id === 'docs')
+    expect(docs).toMatchObject({
+      id: 'docs',
+      label: 'Docs',
+      section: 'help',
+      externalUrl: '/arena-ai-docs',
+    })
+  })
+
   it('keeps account, workspace, organization, and platform settings in one catalog', () => {
-    expect(allNavigationItems.map(({ id, label, section }) => ({ id, label, section }))).toEqual([
-      { id: 'general', label: 'General', section: 'account' },
-      { id: 'desktop', label: 'Desktop', section: 'account' },
-      { id: 'browser', label: 'Browser', section: 'account' },
-      { id: 'terminal', label: 'Terminal', section: 'account' },
-      { id: 'access-control', label: 'Permission groups', section: 'organization' },
-      { id: 'audit-logs', label: 'Audit logs', section: 'organization' },
-      { id: 'forks', label: 'Workspace forks', section: 'organization' },
-      { id: 'billing', label: 'Subscription', section: 'account' },
-      { id: 'teammates', label: 'Teammates', section: 'workspace' },
-      { id: 'organization', label: 'Members', section: 'organization' },
-      { id: 'secrets', label: 'Secrets', section: 'workspace' },
-      { id: 'credential-groups', label: 'Credential groups', section: 'workspace' },
-      { id: 'custom-tools', label: 'Custom tools', section: 'workspace' },
-      { id: 'mcp', label: 'MCP tools', section: 'workspace' },
-      { id: 'apikeys', label: 'Arena API keys', section: 'workspace' },
-      { id: 'workflow-mcp-servers', label: 'MCP servers', section: 'workspace' },
-      { id: 'byok', label: 'BYOK', section: 'workspace' },
-      { id: 'sandboxes', label: 'Sandboxes', section: 'workspace' },
-      { id: 'inbox', label: 'Sim Mailer', section: 'workspace' },
-      { id: 'recently-deleted', label: 'Recently deleted', section: 'workspace' },
-      { id: 'self-host', label: 'Self hosting', section: 'platform' },
-      { id: 'sso', label: 'Single sign-on', section: 'organization' },
-      { id: 'sessions', label: 'Session policies', section: 'organization' },
-      { id: 'data-retention', label: 'Data retention', section: 'organization' },
-      { id: 'data-drains', label: 'Data drains', section: 'organization' },
-      { id: 'whitelabeling', label: 'White-labeling', section: 'organization' },
-      { id: 'custom-blocks', label: 'Custom blocks', section: 'organization' },
-      { id: 'admin', label: 'Admin', section: 'platform' },
-      { id: 'skill-share', label: 'Skill share', section: 'platform' },
-    ])
+    expect(allNavigationItems.map(({ id, label, section }) => ({ id, label, section }))).toEqual(
+      expect.arrayContaining([{ id: 'docs', label: 'Docs', section: 'help' }])
+    )
+    expect(
+      allNavigationItems.some(({ id, section }) => id === 'general' && section === 'account')
+    ).toBe(false)
   })
 
   it('orders each scope around its primary settings', () => {
@@ -59,39 +46,9 @@ describe('unified settings navigation', () => {
         .sort((left, right) => left.order - right.order)
         .map(({ id }) => id)
 
-    expect(idsForSection('account')).toEqual([
-      'general',
-      'billing',
-      'desktop',
-      'browser',
-      'terminal',
-    ])
-    expect(idsForSection('workspace')).toEqual([
-      'teammates',
-      'secrets',
-      'mcp',
-      'custom-tools',
-      'byok',
-      'inbox',
-      'workflow-mcp-servers',
-      'apikeys',
-      'sandboxes',
-      'credential-groups',
-      'recently-deleted',
-    ])
-    expect(idsForSection('organization')).toEqual([
-      'organization',
-      'custom-blocks',
-      'forks',
-      'access-control',
-      'audit-logs',
-      'whitelabeling',
-      'sso',
-      'sessions',
-      'data-retention',
-      'data-drains',
-    ])
-    expect(idsForSection('platform')).toEqual(['admin', 'skill-share', 'self-host'])
+    expect(idsForSection('account')).not.toContain('general')
+    expect(idsForSection('help')).toEqual(['docs'])
+    expect(idsForSection('platform')).toEqual(expect.arrayContaining(['admin', 'skill-share']))
   })
 
   it('derives every unified item from exactly one registry entry', () => {

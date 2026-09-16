@@ -20,10 +20,8 @@ import {
   Upload,
 } from '@sim/emcn'
 import {
-  BookOpen,
   Database,
   Files,
-  HelpCircle,
   Integration,
   MoreHorizontal,
   PanelLeft,
@@ -38,7 +36,6 @@ import { createLogger } from '@sim/logger'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
-import { SlackIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { focusVisibleBrowserOmnibox } from '@/lib/browser-agent/renderer-shortcuts'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
@@ -1426,7 +1423,7 @@ export const Sidebar = memo(function Sidebar({
               brandLogoUrl={brand?.logoUrl || brand?.logoUrlBlacktext}
               brandWordmarkUrl={brand?.wordmarkUrl}
               brandName={brand?.name}
-              arenaHubAgentsUrl={arenaHubAgentsUrl}
+              arenaHubAgentsUrl={isOnSettingsPage ? null : arenaHubAgentsUrl}
             />
             {/* The peek card already sits below the lane; reserving it again doubles the offset. */}
             {!isPeeking && (
@@ -1865,6 +1862,7 @@ export const Sidebar = memo(function Sidebar({
                   </div>
                 </div>
 
+                {/* Help popover (Docs, Contact support, Terms, Privacy, Slack, Report an issue)
                 <div
                   className={cn(
                     SIDEBAR_ITEM_GAP_CLASS,
@@ -1923,6 +1921,7 @@ export const Sidebar = memo(function Sidebar({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                */}
                 <SidebarFooter
                   workspaceId={workspaceId}
                   isCollapsed={isCollapsed}

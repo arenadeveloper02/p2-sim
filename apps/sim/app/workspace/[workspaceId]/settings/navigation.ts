@@ -1,5 +1,6 @@
 import {
   buildUnifiedSettingsNavigation,
+  getSettingsSectionMeta as getPlaneSettingsSectionMeta,
   isPlatformAdminSettingsSection,
   SETTINGS_NAVIGATION_BILLING_ENABLED,
   type UnifiedNavigationSection,
@@ -20,6 +21,7 @@ export const isBillingEnabled = SETTINGS_NAVIGATION_BILLING_ENABLED
 export const sectionConfig: { key: NavigationSection; title: string }[] = [
   { key: 'account', title: 'Account' },
   { key: 'subscription', title: 'Subscription' },
+  { key: 'help', title: 'Help' },
   { key: 'workspace', title: 'Workspace' },
   { key: 'organization', title: 'Organization' },
   { key: 'platform', title: 'Platform' },
@@ -36,5 +38,8 @@ export function getSettingsSectionMeta(
   section: SettingsSection
 ): { label: string; description: string; docsLink?: string } | null {
   const item = allNavigationItems.find((navItem) => navItem.id === section)
-  return item ? { label: item.label, description: item.description, docsLink: item.docsLink } : null
+  if (item) {
+    return { label: item.label, description: item.description, docsLink: item.docsLink }
+  }
+  return getPlaneSettingsSectionMeta('account', section)
 }

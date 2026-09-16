@@ -1,35 +1,39 @@
 'use client'
 
-import { type ComponentType, useEffect, useState } from 'react'
-import type { DesktopUpdateState } from '@sim/desktop-bridge'
+import type { ComponentType, SVGProps } from 'react'
 import {
-  Chip,
   chipContentLabelClass,
-  chipPrimaryFillTokens,
   chipVariants,
   cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Skeleton,
+  // Skeleton,
 } from '@sim/emcn'
-import { BookOpen, Credit, Download, HelpCircle, Settings, Trash, Users } from '@sim/emcn/icons'
-import { SlackIcon } from '@/components/icons'
+import { Credit, Settings, Trash, Users } from '@sim/emcn/icons'
+// Help menu (commented out — Docs lives under Settings → Help):
+// import { BookOpen, Download, HelpCircle } from '@sim/emcn/icons'
+// import { Chip, chipPrimaryFillTokens, DropdownMenuSeparator } from '@sim/emcn'
+// import type { DesktopUpdateState } from '@sim/desktop-bridge'
+// import { SlackIcon } from '@/components/icons'
+// import { getDesktopUpdates } from '@/lib/desktop'
 import { useSession } from '@/lib/auth/auth-client'
 import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
-import { getDesktopUpdates } from '@/lib/desktop'
-import { getUserColor } from '@/lib/workspaces/colors'
+// import { getUserColor } from '@/lib/workspaces/colors'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
-  SIDEBAR_ITEM_GAP_CLASS,
+  firstAccessibleSettingsSection,
+  useVisibleSettingsNavigation,
+} from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/use-visible-settings-navigation'
+import {
+  // SIDEBAR_ITEM_GAP_CLASS,
   SIDEBAR_RAIL_CHIP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
-import { useUserProfile } from '@/hooks/queries/user-profile'
+// import { useUserProfile } from '@/hooks/queries/user-profile'
 import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
 
 /**
@@ -52,33 +56,58 @@ const PROFILE_MENU_ITEMS: readonly {
   { section: 'recently-deleted', label: 'Recently deleted', icon: Trash },
 ]
 
-function hasAvailableDesktopUpdate(state: DesktopUpdateState): boolean {
-  return state.status === 'available' || state.status === 'downloading' || state.status === 'ready'
-}
+// function hasAvailableDesktopUpdate(state: DesktopUpdateState): boolean {
+//   return state.status === 'available' || state.status === 'downloading' || state.status === 'ready'
+// }
+//
+// function desktopUpdateActionLabel(state: DesktopUpdateState): string {
+//   if (state.status === 'downloading') {
+//     return state.percent === undefined
+//       ? 'Downloading update…'
+//       : `Downloading update ${state.percent}%`
+//   }
+//   return 'Update'
+// }
+//
+// /** Compact primary update circle using the same footprint as the surrounding sidebar icons. */
+// function DesktopUpdateIcon({ className }: { className?: string }) {
+//   return (
+//     <span
+//       className={cn(
+//         className,
+//         'flex size-[17px] flex-shrink-0 items-center justify-center rounded-full',
+//         chipPrimaryFillTokens
+//       )}
+//     >
+//       <Download className='size-[11px]' viewBox='-1.75 -1.75 24 24' />
+//     </span>
+//   )
+// }
 
-function desktopUpdateActionLabel(state: DesktopUpdateState): string {
-  if (state.status === 'downloading') {
-    return state.percent === undefined
-      ? 'Downloading update…'
-      : `Downloading update ${state.percent}%`
-  }
-  return 'Update'
-}
-
-/** Compact primary update circle using the same footprint as the surrounding sidebar icons. */
-function DesktopUpdateIcon({ className }: { className?: string }) {
+/**
+ * Circle with three horizontal dots — matches HelpCircle stroke geometry so it
+ * sits flush with the other sidebar rail icons.
+ */
+function MoreCircle(props: SVGProps<SVGSVGElement>) {
   return (
-    <span
-      className={cn(
-        className,
-        'flex size-[17px] flex-shrink-0 items-center justify-center rounded-full',
-        chipPrimaryFillTokens
-      )}
+    <svg
+      width='24'
+      height='24'
+      viewBox='-1 -2 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.55'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      xmlns='http://www.w3.org/2000/svg'
+      aria-hidden='true'
+      {...props}
     >
-      {/* Download's default viewBox is asymmetric around its paths. Center the
-          artwork itself, not merely its SVG box, inside the avatar-sized circle. */}
-      <Download className='size-[11px]' viewBox='-1.75 -1.75 24 24' />
-    </span>
+      <circle cx='10.25' cy='9.75' r='9' />
+      <circle cx='6.25' cy='9.75' r='0.75' />
+      <circle cx='10.25' cy='9.75' r='0.75' />
+      <circle cx='14.25' cy='9.75' r='0.75' />
+    </svg>
   )
 }
 
@@ -87,78 +116,62 @@ interface SidebarFooterProps {
   isCollapsed: boolean
   showCollapsedTooltips: boolean
   onOpenSettings: (section: SettingsSection) => void
+  /** @deprecated Help moved to Settings → Help; kept for call-site compatibility. */
   onOpenDocs: () => void
+  /** @deprecated Help moved to Settings → Help; kept for call-site compatibility. */
   onJoinSlack: () => void
+  /** @deprecated Help moved to Settings → Help; kept for call-site compatibility. */
   onContactSupport: () => void
 }
 
 /**
- * Pinned bottom bar of the workspace sidebar: the viewer's avatar and name, which
- * open a menu of their settings destinations, plus a help menu.
- *
- * Expanded, the two share one row — the profile claims the free width so the help
- * button lands hard right, mirroring the collapse control in the workspace header.
- * Collapsed, the rail is too narrow for a row, so they stack as icon chips with
- * help on top and the profile resting at the foot of the rail.
- *
- * Both layouts are the same two elements — only the container's direction and the
- * children's classes change — because `isCollapsed` flips in one frame while the
- * rail takes 200ms to widen, so the row spends that window laid out at a width it
- * does not fit in. Neither element may give ground there: the profile stops at its
- * avatar (no `min-w-0`) and the help button never shrinks, so the row overflows the
- * narrow rail and the aside's `overflow-hidden` clips it. The avatar keeps the exact
- * position it holds collapsed, and the `?` rides in on the opening edge — paced by
- * the rail itself rather than by a duration of its own.
- *
- * Collapsed reverses the flex direction instead of reordering the DOM, which is what
- * keeps both elements (and the help menu's trigger) alive across a toggle. The cost
- * is bottom-up focus order there, a smaller price for one pair of adjacent controls
- * than remounting a trigger mid-animation.
+ * Pinned bottom bar of the workspace sidebar: the More menu for settings
+ * destinations. The help control previously sat beside it and is commented out —
+ * Docs now lives under Settings → Help.
  */
 export function SidebarFooter({
   workspaceId,
   isCollapsed,
   showCollapsedTooltips,
   onOpenSettings,
-  onOpenDocs,
-  onJoinSlack,
-  onContactSupport,
 }: SidebarFooterProps) {
-  const { data: profile } = useUserProfile()
+  // const { data: profile } = useUserProfile()
   const { data: session } = useSession()
   const hostContext = useWorkspaceHostContext()
   const { isInvitationsDisabled } = useWorkspaceInvitePolicy(workspaceId)
-  const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
-
-  useEffect(() => {
-    const updates = getDesktopUpdates()
-    if (!updates) return
-
-    let stateEventReceived = false
-    const unsubscribe = updates.onState((state) => {
-      stateEventReceived = true
-      setUpdateState(state)
-    })
-    void updates
-      .getState()
-      .then((state) => {
-        if (!stateEventReceived) setUpdateState(state)
-      })
-      .catch(() => {})
-    return unsubscribe
-  }, [])
-
-  const name = profile ? profile.name?.trim() || profile.email : ''
-  const updateAvailable = hasAvailableDesktopUpdate(updateState)
-
-  const handleUpdateSelect = () => {
-    const updates = getDesktopUpdates()
-    if (updateState.status === 'ready') {
-      updates?.install()
-    } else if (updateState.status === 'available') {
-      updates?.check()
-    }
-  }
+  const visibleSettings = useVisibleSettingsNavigation(workspaceId)
+  const firstSettingsSection = firstAccessibleSettingsSection(visibleSettings)
+  // const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
+  //
+  // useEffect(() => {
+  //   const updates = getDesktopUpdates()
+  //   if (!updates) return
+  //
+  //   let stateEventReceived = false
+  //   const unsubscribe = updates.onState((state) => {
+  //     stateEventReceived = true
+  //     setUpdateState(state)
+  //   })
+  //   void updates
+  //     .getState()
+  //     .then((state) => {
+  //       if (!stateEventReceived) setUpdateState(state)
+  //     })
+  //     .catch(() => {})
+  //   return unsubscribe
+  // }, [])
+  //
+  // const name = profile ? profile.name?.trim() || profile.email : ''
+  // const updateAvailable = hasAvailableDesktopUpdate(updateState)
+  //
+  // const handleUpdateSelect = () => {
+  //   const updates = getDesktopUpdates()
+  //   if (updateState.status === 'ready') {
+  //     updates?.install()
+  //   } else if (updateState.status === 'available') {
+  //     updates?.check()
+  //   }
+  // }
 
   /**
    * Subscription is dropped for viewers the Billing page would turn away — a
@@ -180,6 +193,10 @@ export function SidebarFooter({
    * took the section over.
    */
   const handleSelectSection = (section: SettingsSection) => {
+    if (section === 'general') {
+      if (firstSettingsSection) onOpenSettings(firstSettingsSection)
+      return
+    }
     if (section === 'teammates' && isInvitationsDisabled) {
       if (isBillingEnabled) onOpenSettings('billing')
       return
@@ -193,49 +210,27 @@ export function SidebarFooter({
    * `opacity: 0`, which blanked the avatar exactly where it is the only thing
    * left to see. The workspace header's logo sidesteps the same rule the same way.
    */
-  const avatar = !profile ? (
-    <Skeleton className='size-[16px] flex-shrink-0 rounded-full' />
-  ) : profile.image ? (
-    <img
-      src={profile.image}
-      alt=''
-      referrerPolicy='no-referrer'
-      className='size-[16px] flex-shrink-0 rounded-full object-cover'
-    />
-  ) : (
-    <div
-      className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-full text-[9px] text-white leading-none'
-      style={{ backgroundColor: getUserColor(profile.id) }}
-    >
-      {name.charAt(0).toUpperCase()}
-    </div>
-  )
+  // const avatar = !profile ? (
+  //   <Skeleton className='size-[16px] flex-shrink-0 rounded-full' />
+  // ) : profile.image ? (
+  //   <img
+  //     src={profile.image}
+  //     alt=''
+  //     referrerPolicy='no-referrer'
+  //     className='size-[16px] flex-shrink-0 rounded-full object-cover'
+  //   />
+  // ) : (
+  //   <div
+  //     className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-full text-[9px] text-white leading-none'
+  //     style={{ backgroundColor: getUserColor(profile.id) }}
+  //   >
+  //     {name.charAt(0).toUpperCase()}
+  //   </div>
+  // )
 
-  /**
-   * Expanded, the chip hugs its content (`max-w-full` so a long name truncates
-   * rather than overflowing) and the free width belongs to the wrapper it sits in,
-   * so hover highlights only the avatar and name. Collapsed, `fullWidth` fills the
-   * narrow rail instead. Both mirror the workspace header's chip exactly.
-   *
-   * No `min-w-0` expanded: the label already truncates on its own, and letting the
-   * chip shrink past its avatar is what let the help button ride onto the photo
-   * while the rail was still narrow (see {@link SidebarFooter}).
-   *
-   * Collapsed it takes `min-w-0`, because the label stays in the layout there — the
-   * rail hides it with `opacity`, not `display`, so the fade survives a toggle. Its
-   * empty box still contributes the content row's gap, putting the chip's automatic
-   * minimum at 38px against a 35px rail: the chip overflowed, the aside clipped its
-   * right edge, and the hover fill read as a full-width row bleeding off the rail
-   * instead of the padded pill every other collapsed chip draws. Floored at zero it
-   * fills exactly the rail, and the avatar keeps the same 8px offset as the help
-   * glyph above it.
-   *
-   * The name is the button's accessible name — no `aria-label`, which would
-   * override the visible text. Radix contributes the menu role and expanded state.
-   */
   const profileMenu = (
     <DropdownMenu>
-      <SidebarTooltip label={name} enabled={showCollapsedTooltips && Boolean(name)}>
+      <SidebarTooltip label='More' enabled={showCollapsedTooltips}>
         <DropdownMenuTrigger asChild>
           <button
             type='button'
@@ -246,13 +241,14 @@ export function SidebarFooter({
               SIDEBAR_RAIL_CHIP_CLASS
             )}
           >
-            {avatar}
-            {profile ? (
+            {/* {avatar} */}
+            {/* {profile ? (
               <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>{name}</span>
             ) : (
-              /* Fixed width — the chip hugs its content, so a flexible bar would collapse to nothing. */
               <Skeleton className='sidebar-collapse-hide h-[14px] w-[96px] rounded-sm' />
-            )}
+            )} */}
+            <MoreCircle className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
+            <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>More</span>
           </button>
         </DropdownMenuTrigger>
       </SidebarTooltip>
@@ -267,82 +263,53 @@ export function SidebarFooter({
     </DropdownMenu>
   )
 
-  /**
-   * The same `Chip` the workspace header uses for Search and Collapse, so the two
-   * ends of the rail carry identical chrome — box, radius, hover fill, and glyph
-   * size all come from the component rather than a local class string.
-   *
-   * One node across both states; only `fullWidth` changes (collapsed it fills the
-   * rail, expanded it hugs its icon). Toggling a prop rather than rendering two
-   * buttons keeps the same DOM node — and the same Radix menu — alive through the
-   * transition instead of tearing one trigger down and mounting another mid-animation.
-   *
-   * Icon-only in both: the collapsed rail hides labels anyway. The tooltip names it
-   * while the rail is collapsed.
-   */
-  const helpMenu = (
-    <DropdownMenu>
-      <SidebarTooltip
-        label={updateAvailable ? 'Help — update available' : 'Help'}
-        enabled={showCollapsedTooltips}
-      >
-        <DropdownMenuTrigger asChild>
-          <Chip
-            data-item-id='help'
-            aria-label={updateAvailable ? 'Help, update available' : 'Help'}
-            leftIcon={updateAvailable ? DesktopUpdateIcon : HelpCircle}
-            fullWidth={isCollapsed}
-            /* Never shrinks: while the rail animates open the row is briefly wider
-               than the rail, and a shrinking chip would be squeezed onto the avatar.
-               Holding its size pushes it past the edge, where the aside's clip hides
-               it until there is room. */
-            className={cn('flex-shrink-0', SIDEBAR_RAIL_CHIP_CLASS)}
-          />
-        </DropdownMenuTrigger>
-      </SidebarTooltip>
-      {/* Anchored to whichever edge the trigger sits on, so the menu never overhangs the rail. */}
-      <DropdownMenuContent align={isCollapsed ? 'start' : 'end'} side='top' sideOffset={4}>
-        {updateAvailable && (
-          <>
-            <DropdownMenuItem
-              onSelect={handleUpdateSelect}
-              disabled={updateState.status === 'downloading'}
-            >
-              <img src='/favicon/favicon-32x32.png' alt='' className='size-[14px] rounded-[3px]' />
-              {desktopUpdateActionLabel(updateState)}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
-        <DropdownMenuItem onSelect={onOpenDocs}>
-          <BookOpen className='size-[14px]' />
-          Docs
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onJoinSlack}>
-          <SlackIcon className='size-[14px]' />
-          Join Slack
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onContactSupport}>
-          <HelpCircle className='size-[14px]' />
-          Contact support
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+  // const helpMenu = (
+  //   <DropdownMenu>
+  //     <SidebarTooltip
+  //       label={updateAvailable ? 'Help — update available' : 'Help'}
+  //       enabled={showCollapsedTooltips}
+  //     >
+  //       <DropdownMenuTrigger asChild>
+  //         <Chip
+  //           data-item-id='help'
+  //           aria-label={updateAvailable ? 'Help, update available' : 'Help'}
+  //           leftIcon={updateAvailable ? DesktopUpdateIcon : HelpCircle}
+  //           fullWidth={isCollapsed}
+  //           className={cn('flex-shrink-0', SIDEBAR_RAIL_CHIP_CLASS)}
+  //         />
+  //       </DropdownMenuTrigger>
+  //     </SidebarTooltip>
+  //     <DropdownMenuContent align={isCollapsed ? 'start' : 'end'} side='top' sideOffset={4}>
+  //       {updateAvailable && (
+  //         <>
+  //           <DropdownMenuItem
+  //             onSelect={handleUpdateSelect}
+  //             disabled={updateState.status === 'downloading'}
+  //           >
+  //             <img src='/favicon/favicon-32x32.png' alt='' className='size-[14px] rounded-[3px]' />
+  //             {desktopUpdateActionLabel(updateState)}
+  //           </DropdownMenuItem>
+  //           <DropdownMenuSeparator />
+  //         </>
+  //       )}
+  //       <DropdownMenuItem onSelect={onOpenDocs}>
+  //         <BookOpen className='size-[14px]' />
+  //         Docs
+  //       </DropdownMenuItem>
+  //       <DropdownMenuItem onSelect={onJoinSlack}>
+  //         <SlackIcon className='size-[14px]' />
+  //         Join Slack
+  //       </DropdownMenuItem>
+  //       <DropdownMenuItem onSelect={onContactSupport}>
+  //         <HelpCircle className='size-[14px]' />
+  //         Contact support
+  //       </DropdownMenuItem>
+  //     </DropdownMenuContent>
+  //   </DropdownMenu>
+  // )
 
   return (
-    <div
-      className={cn(
-        'flex flex-shrink-0 border-t px-2 pt-[9px] pb-2',
-        isCollapsed ? cn(SIDEBAR_ITEM_GAP_CLASS, 'flex-col-reverse') : 'items-center'
-      )}
-    >
-      {/* Expanded, claims the row's free width so the help button lands hard right —
-          the same wrapper the workspace header puts around its chip. `flex` makes the
-          inline-flex chip a flex item rather than an inline one, so the wrapper is
-          exactly the chip's 30px instead of a line box padded by the strut's
-          half-leading, which would deepen the bar below the chip. Collapsed, it
-          stretches to the rail on its own and the chip fills it. */}
+    <div className={cn('flex flex-shrink-0 border-t px-2 pt-[9px] pb-2', 'items-center')}>
       <div className={cn('flex', !isCollapsed && 'flex-1')}>{profileMenu}</div>
       {/* {helpMenu} */}
     </div>

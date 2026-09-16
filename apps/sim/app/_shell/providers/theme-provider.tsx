@@ -19,7 +19,6 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
     pathname.startsWith('/invite') ||
     pathname.startsWith('/verify') ||
     pathname.startsWith('/changelog') ||
-    pathname.startsWith('/chat') ||
     pathname.startsWith('/blog') ||
     pathname.startsWith('/resume') ||
     pathname.startsWith('/oauth') ||
