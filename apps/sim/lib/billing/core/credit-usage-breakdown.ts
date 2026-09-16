@@ -2,11 +2,10 @@ import { dbReplica } from '@sim/db'
 import { member, usageLog, user, userStats, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
-import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, lt, type SQL, sql } from 'drizzle-orm'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
-import { getOrgMemberLedgerByUser } from '@/lib/billing/core/organization'
 import {
   getHighestPrioritySubscription,
   resolveBillingInterval,
@@ -15,7 +14,6 @@ import { getOrgUsageLimit, getUserUsageData } from '@/lib/billing/core/usage'
 import {
   COPILOT_USAGE_SOURCES,
   getBillingPeriodUsageCost,
-  getBillingPeriodUsageCostByUser,
   type UsageLogSource,
 } from '@/lib/billing/core/usage-log'
 import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
@@ -69,8 +67,26 @@ interface DollarBreakdown {
 }
 
 /**
- * Sums `usage_log` cost for a user inside an organization's workspaces within a
- * wall-clock window, optionally filtered by source.
+ * Wall-clock ledger timestamp used by Usage analytics and remaining-credits.
+ * Prefer `occurred_at` when present (matches activity detail).
+ */
+function ledgerOccurredAtExpr() {
+  return sql`coalesce(${usageLog.occurredAt}, ${usageLog.createdAt})`
+}
+
+function appendSourceFilter(conditions: SQL[], sources?: UsageLogSource | UsageLogSource[]) {
+  if (!sources) return
+  conditions.push(
+    Array.isArray(sources) ? inArray(usageLog.source, sources) : eq(usageLog.source, sources)
+  )
+}
+
+/**
+ * Sums billable `usage_log` cost for a user inside an organization's workspaces
+ * within a wall-clock window (subscription period), optionally filtered by source.
+ *
+ * Uses occurred_at/created_at — not billing_period_* column equality — so runs that
+ * appear in Activity detail also reduce Remaining credits even when period stamps drift.
  */
 async function sumOrgWorkspaceUsageBySource(
   organizationId: string,
@@ -79,18 +95,15 @@ async function sumOrgWorkspaceUsageBySource(
   sources?: UsageLogSource | UsageLogSource[],
   executor: DbClient = dbReplica
 ): Promise<number> {
+  const occurredAt = ledgerOccurredAtExpr()
   const conditions = [
     eq(usageLog.userId, userId),
     eq(workspace.organizationId, organizationId),
-    gte(usageLog.createdAt, window.start),
-    lt(usageLog.createdAt, window.end),
+    eq(usageLog.billable, true),
+    gte(occurredAt, window.start),
+    lt(occurredAt, window.end),
   ]
-
-  if (sources) {
-    conditions.push(
-      Array.isArray(sources) ? inArray(usageLog.source, sources) : eq(usageLog.source, sources)
-    )
-  }
+  appendSourceFilter(conditions, sources)
 
   const [row] = await executor
     .select({ cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)` })
@@ -99,6 +112,64 @@ async function sumOrgWorkspaceUsageBySource(
     .where(and(...conditions))
 
   return Number.parseFloat(row?.cost ?? '0')
+}
+
+/**
+ * Org-wide billable ledger sum for remaining-credits / admin Usage (all members).
+ */
+async function sumOrganizationWorkspaceUsageBySource(
+  organizationId: string,
+  window: { start: Date; end: Date },
+  sources?: UsageLogSource | UsageLogSource[],
+  executor: DbClient = dbReplica
+): Promise<number> {
+  const occurredAt = ledgerOccurredAtExpr()
+  const conditions = [
+    eq(workspace.organizationId, organizationId),
+    eq(usageLog.billable, true),
+    gte(occurredAt, window.start),
+    lt(occurredAt, window.end),
+  ]
+  appendSourceFilter(conditions, sources)
+
+  const [row] = await executor
+    .select({ cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)` })
+    .from(usageLog)
+    .innerJoin(workspace, eq(workspace.id, usageLog.workspaceId))
+    .where(and(...conditions))
+
+  return Number.parseFloat(row?.cost ?? '0')
+}
+
+/**
+ * Per-user billable ledger sums inside an org's workspaces for a wall-clock window.
+ */
+async function sumOrganizationWorkspaceUsageByUser(
+  organizationId: string,
+  window: { start: Date; end: Date },
+  sources?: UsageLogSource | UsageLogSource[],
+  executor: DbClient = dbReplica
+): Promise<Map<string, number>> {
+  const occurredAt = ledgerOccurredAtExpr()
+  const conditions = [
+    eq(workspace.organizationId, organizationId),
+    eq(usageLog.billable, true),
+    gte(occurredAt, window.start),
+    lt(occurredAt, window.end),
+  ]
+  appendSourceFilter(conditions, sources)
+
+  const rows = await executor
+    .select({
+      userId: usageLog.userId,
+      cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
+    })
+    .from(usageLog)
+    .innerJoin(workspace, eq(workspace.id, usageLog.workspaceId))
+    .where(and(...conditions))
+    .groupBy(usageLog.userId)
+
+  return new Map(rows.map((row) => [row.userId, Number.parseFloat(row.cost ?? '0')]))
 }
 
 function buildDollarBreakdown(params: {
@@ -368,37 +439,22 @@ async function getOrganizationCreditUsageSummary(
     orgMothershipLedger,
     orgWorkflowLedger,
   ] = await Promise.all([
-    getOrgMemberLedgerByUser(organizationId, billingPeriod, executor),
-    getBillingPeriodUsageCostByUser(
-      { type: 'organization', id: organizationId },
+    sumOrganizationWorkspaceUsageByUser(organizationId, billingPeriod, undefined, executor),
+    sumOrganizationWorkspaceUsageByUser(
+      organizationId,
       billingPeriod,
       COPILOT_USAGE_SOURCES,
       executor
     ),
-    getBillingPeriodUsageCostByUser(
-      { type: 'organization', id: organizationId },
-      billingPeriod,
-      'workflow',
-      executor
-    ),
-    getBillingPeriodUsageCost(
-      { type: 'organization', id: organizationId },
-      billingPeriod,
-      undefined,
-      executor
-    ),
-    getBillingPeriodUsageCost(
-      { type: 'organization', id: organizationId },
+    sumOrganizationWorkspaceUsageByUser(organizationId, billingPeriod, 'workflow', executor),
+    sumOrganizationWorkspaceUsageBySource(organizationId, billingPeriod, undefined, executor),
+    sumOrganizationWorkspaceUsageBySource(
+      organizationId,
       billingPeriod,
       COPILOT_USAGE_SOURCES,
       executor
     ),
-    getBillingPeriodUsageCost(
-      { type: 'organization', id: organizationId },
-      billingPeriod,
-      'workflow',
-      executor
-    ),
+    sumOrganizationWorkspaceUsageBySource(organizationId, billingPeriod, 'workflow', executor),
   ])
 
   let totalBaseline = 0

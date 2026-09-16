@@ -18,6 +18,7 @@ import {
   Skeleton,
 } from '@sim/emcn'
 import { useParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { useQueryStates } from 'nuqs'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import { formatDateShort } from '@/lib/core/utils/date-display'
@@ -69,7 +70,12 @@ import {
   buildWorkflowAverageCostChartRows,
   buildWorkflowTotalCostChartRows,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
-import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
+import { billingCreditUsageKeys } from '@/hooks/queries/billing-credit-usage'
+import {
+  organizationKeys,
+  useAdminOrganizations,
+  useOrganizationRoster,
+} from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
 import { useUserUsageAnalytics } from '@/hooks/queries/user-usage'
 import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
@@ -757,6 +763,7 @@ function UsageDashboardContent({
 
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const queryClient = useQueryClient()
   const [
     {
       scope,
@@ -981,11 +988,21 @@ export function Usage() {
       ? organizationFetching
       : workspaceFetching
   const error = isUserScope ? userError : isOrganizationScope ? organizationError : workspaceError
-  const refetch = isUserScope
+  const refetchAnalytics = isUserScope
     ? refetchUser
     : isOrganizationScope
       ? refetchOrganization
       : refetchWorkspace
+
+  const refetch = () => {
+    void refetchAnalytics()
+    // Remaining credits live in a separate React Query cache — activity refresh
+    // alone left the hero number stuck until a full remount.
+    void queryClient.invalidateQueries({ queryKey: billingCreditUsageKeys.all })
+    void queryClient.invalidateQueries({
+      queryKey: organizationKeys.myMemberCredits(workspaceId),
+    })
+  }
 
   const workspaceUserNameById = useMemo(() => {
     const map = new Map<string, string>()

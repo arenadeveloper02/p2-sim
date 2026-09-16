@@ -6,15 +6,12 @@ import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usag
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { useSession } from '@/lib/auth/auth-client'
-import {
-  BillingPersonalRemainingCreditsCard,
-  BillingRemainingCreditsCard,
-} from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-remaining-credits-card'
+import { BillingPersonalRemainingCreditsCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-remaining-credits-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import { BillingUsageSourceRow } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-source-row'
 import {
   formatCreditCount,
-  resolveOrgPoolBarSegments,
+  resolveOrgMemberCreditDisplay,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 import { useBillingCreditUsage } from '@/hooks/queries/billing-credit-usage'
 import { useMyMemberCredits } from '@/hooks/queries/organization'
@@ -26,8 +23,8 @@ const USAGE_BY_SOURCE_TOOLTIP =
 interface UsageBillingStatsProps {
   /**
    * Organization tab always shows org-pool remaining.
-   * User tab shows personal allocation when set, otherwise the shared org pool
-   * (same card for members and for admin/owner User tab).
+   * User tab shows a simple remaining card: personal allocation when set,
+   * otherwise the shared org pool (no org breakdown columns).
    */
   view: 'user' | 'organization'
 }
@@ -38,7 +35,12 @@ interface UsageBillingStatsProps {
  */
 export function UsageBillingStats({ view }: UsageBillingStatsProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data, isLoading } = useBillingCreditUsage(workspaceId)
+  const { data, isLoading } = useBillingCreditUsage(workspaceId, {
+    // Remaining credits should move after runs without waiting on a manual refresh.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: 15 * 1000,
+  })
 
   if (isLoading || !data) return null
 
@@ -54,8 +56,8 @@ export function UsageBillingStats({ view }: UsageBillingStatsProps) {
 }
 
 /**
- * User-scope remaining credits (members + admin/owner User tab).
- * Prefers a personal allocation when one is set; otherwise the shared org pool.
+ * User-tab remaining credits only — no "Used by org" / "Allocated to you" breakdown.
+ * Allocation when set; otherwise shared org-pool remaining.
  */
 function UserRemainingCredits({
   data,
@@ -88,12 +90,31 @@ function UserRemainingCredits({
     }
   }
 
-  const segments = resolveOrgPoolBarSegments({
+  if (allocatedCredits == null) {
+    return <OrgPoolRemainingCredits data={data} />
+  }
+
+  const display = resolveOrgMemberCreditDisplay({
     orgPool,
+    allocatedCredits,
     memberUsedCredits,
   })
 
-  return <BillingRemainingCreditsCard segments={segments} allocatedCredits={allocatedCredits} />
+  const totalCredits = display.totalCredits === 'unlimited' ? null : display.totalCredits
+  const remainingCredits =
+    display.remainingCredits === 'unlimited' ? null : display.remainingCredits
+
+  return (
+    <BillingPersonalRemainingCreditsCard
+      totalCredits={totalCredits}
+      usedCredits={memberUsedCredits}
+      remainingCredits={remainingCredits}
+      isUnlimited={false}
+      hint='allocated to you'
+      hideUsedStats
+      barColorClassName='bg-emerald-500'
+    />
+  )
 }
 
 function OrgPoolRemainingCredits({ data }: { data: CreditUsageSummary }) {
