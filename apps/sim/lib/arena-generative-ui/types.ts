@@ -411,6 +411,29 @@ export function selectedItemHostState(item: unknown, index: number): Record<stri
 }
 
 /**
+ * False when a bound collection is a field of the current `selected` record
+ * (History detail nested lists) or `item.*`. Clicking those rows must not
+ * replace the parent selection — that wipes lifted result keys and `content`.
+ */
+export function collectionClickPromotesSelection(
+  state: Record<string, unknown>,
+  statePath: string
+): boolean {
+  const path = statePath.trim()
+  if (!path || path === 'item' || path.startsWith('item.')) return false
+  if (
+    path === ARENA_GENERATIVE_SELECTED_KEY ||
+    path.startsWith(`${ARENA_GENERATIVE_SELECTED_KEY}.`)
+  ) {
+    return false
+  }
+  const selected = state[ARENA_GENERATIVE_SELECTED_KEY]
+  if (!isPlainRecord(selected)) return true
+  const nested = readHostStatePath(selected, path)
+  return !Array.isArray(nested)
+}
+
+/**
  * Host state patch that leaves the list collection in place and drops the
  * copied row so an in-page History detail can return to the list.
  */

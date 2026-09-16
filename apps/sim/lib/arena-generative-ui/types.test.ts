@@ -31,6 +31,7 @@ import {
   scrollGenerativeAppToResults,
   scrollGenerativeAppToTop,
   selectedItemHostState,
+  collectionClickPromotesSelection,
   specHasSamePageSelectItem,
   splitNavTarget,
   submittedInputsState,
@@ -500,6 +501,25 @@ describe('Repeat item scope', () => {
       content: '# Article',
     })
     expect(selectedItemHostState(row, 0)).not.toHaveProperty('output')
+  })
+
+  it('does not promote nested arrays on the current selected record', () => {
+    const strengths = ['Item 1', 'Item 2']
+    const row = {
+      id: 'run_1',
+      enhanced_article: '# Article',
+      competitor_strengths: strengths,
+    }
+    expect(
+      collectionClickPromotesSelection(
+        { ...selectedItemHostState(row, 0), competitor_strengths: strengths },
+        'competitor_strengths'
+      )
+    ).toBe(false)
+    expect(collectionClickPromotesSelection({ places: [{ name: 'Austin' }] }, 'places')).toBe(true)
+    expect(
+      collectionClickPromotesSelection({ selected: { id: 'p1', name: 'Alpha' } }, 'tasks')
+    ).toBe(true)
   })
 
   it('clears selected, selectedId, and copied content without touching collections', () => {

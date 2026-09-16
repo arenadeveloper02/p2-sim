@@ -732,7 +732,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Entity list or static bullets. Bound: statePath on a host-state array, titleField for the row title, optional bodyField for a second line. Clicking a row copies it like Repeat selectItem. Use when representation is list and rows are primarily text — Repeat of Cards is cards, Repeat of Disclosure is FAQ. Static: omit statePath; children are ListItem. Dummy/local bound lists seed 4–8 rows.',
+        'Entity list or static bullets. Bound: statePath on a host-state array, titleField for the row title, optional bodyField for a second line. Clicking a page-level collection row copies it like Repeat selectItem. Nested arrays on the current selected record (History detail competitor strengths) stay display-only — do not copy them into selected. Use when representation is list and rows are primarily text — Repeat of Cards is cards, Repeat of Disclosure is FAQ. Static: omit statePath; children are ListItem. Dummy/local bound lists seed 4–8 rows.',
     },
     ListItem: {
       props: z.object({

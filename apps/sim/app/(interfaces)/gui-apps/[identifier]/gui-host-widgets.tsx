@@ -703,13 +703,9 @@ export function GuiHostCollectionList({
       <span id={headingId} className='sr-only'>
         List
       </span>
-      {rows.map((row) => (
-        <li key={row.index}>
-          <button
-            type='button'
-            className='w-full rounded-[var(--gui-radius-sm,8px)] px-2 py-2 text-left hover:bg-[var(--gui-canvas,#f7f8f9)]'
-            onClick={() => onSelectItem?.(row.item, row.index)}
-          >
+      {rows.map((row) => {
+        const body = (
+          <>
             <span className='block truncate text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)]'>
               {row.title}
             </span>
@@ -718,9 +714,24 @@ export function GuiHostCollectionList({
                 {row.body}
               </span>
             ) : null}
-          </button>
-        </li>
-      ))}
+          </>
+        )
+        return (
+          <li key={row.index}>
+            {onSelectItem ? (
+              <button
+                type='button'
+                className='w-full rounded-[var(--gui-radius-sm,8px)] px-2 py-2 text-left hover:bg-[var(--gui-canvas,#f7f8f9)]'
+                onClick={() => onSelectItem(row.item, row.index)}
+              >
+                {body}
+              </button>
+            ) : (
+              <div className='w-full px-2 py-2'>{body}</div>
+            )}
+          </li>
+        )
+      })}
     </Tag>
   )
 }

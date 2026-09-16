@@ -162,6 +162,7 @@ import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
   ARENA_GENERATIVE_SELECTED_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  collectionClickPromotesSelection,
   collectionFromBoundValue,
   displayTextFromActionData,
   GENERATIVE_APP_VIEW_SWITCH_TEST_ID,
@@ -712,6 +713,11 @@ const HEADING_SIZE_CLASSES = {
   h3: 'text-[length:var(--gui-section-size,18px)] leading-[var(--gui-section-leading,26px)]',
   h4: 'text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]',
 } as const
+
+const CARD_TITLE_FEATURED_CLASS =
+  'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]'
+const CARD_TITLE_ITEM_CLASS =
+  'text-[length:var(--gui-section-size,18px)] leading-[var(--gui-section-leading,26px)]'
 
 function sectionWidthClass(value: unknown, measureOnly = false): string {
   if (measureOnly && asString(value) !== 'full') return SECTION_WIDTHS.narrow
@@ -2305,6 +2311,8 @@ export function SpecRenderer({
     selectedIdSet &&
     specHasSamePageSelectItem(spec, currentPath) &&
     !specKeepsCollectionVisible(spec)
+  const collectionOnSelect = (statePath: string) =>
+    collectionClickPromotesSelection(state, statePath) ? onSelectItem : undefined
 
   const boundPending = (statePath: string) => {
     if (suppressBoundSkeleton) return false
@@ -3226,7 +3234,7 @@ export function SpecRenderer({
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
             allowViewToggle={!view}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           />
         )
       }
@@ -3262,7 +3270,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           />
         )
       }
@@ -3299,7 +3307,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           />
         )
       }
@@ -3335,7 +3343,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           />
         )
       }
@@ -3372,7 +3380,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           >
             {boundItems.length === 0 ? children : null}
           </GuiHostCarousel>
@@ -3411,7 +3419,7 @@ export function SpecRenderer({
             columns={asString(props.columns) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           />
         )
       }
@@ -3447,7 +3455,7 @@ export function SpecRenderer({
             subtitleField={asString(props.subtitleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={onSelectItem}
+            onSelectItem={collectionOnSelect(statePath)}
           />
         )
       }
@@ -3888,7 +3896,12 @@ export function SpecRenderer({
           title || subtitle || description || metaIds.length > 0 ? (
             <div className='flex min-w-0 flex-col gap-1'>
               {title ? (
-                <h2 className='line-clamp-2 min-w-0 break-all font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+                <h2
+                  className={cn(
+                    'line-clamp-2 min-w-0 break-all font-semibold text-[var(--gui-text,#2c2d33)]',
+                    scope ? CARD_TITLE_ITEM_CLASS : CARD_TITLE_FEATURED_CLASS
+                  )}
+                >
                   {title}
                 </h2>
               ) : null}
@@ -4915,7 +4928,7 @@ export function SpecRenderer({
               emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
               busy={boundPending(statePath)}
               ordered={asBoolean(props.ordered)}
-              onSelectItem={onSelectItem}
+              onSelectItem={collectionOnSelect(statePath)}
             />
             {chrome}
           </>

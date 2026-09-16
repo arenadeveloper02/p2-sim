@@ -31,6 +31,7 @@ vi.mock('@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg', (
 }))
 
 import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
+import { selectedItemHostState } from '@/lib/arena-generative-ui/types'
 import {
   type ArenaGenerativeUxPlan,
   injectSamePageSelectChrome,
@@ -918,6 +919,41 @@ describe('SpecRenderer', () => {
     const surface = container.querySelector('[data-testid="task-surface"]')
     expect(surface).toBeTruthy()
     expect(surface?.querySelector('form')).toBeTruthy()
+  })
+
+  it('keeps a featured Card title at the title type size', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: { type: 'Card', props: { title: 'Enhance an article' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const title = container.querySelector('[data-testid="card"] h2')
+    expect(title?.className).toContain('gui-title-size')
+    expect(title?.className).not.toContain('gui-section-size')
+  })
+
+  it('maps Repeat item Card titles to the section type size', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list'] },
+        list: { type: 'Repeat', props: { statePath: 'history' }, children: ['card'] },
+        card: { type: 'Card', props: { title: '{item.url}' }, children: [] },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: {
+        history: [{ url: 'https://news.example.com/long-article-slug' }],
+      },
+    })
+    const title = container.querySelector('[data-testid="card"] h2')
+    expect(title?.textContent).toBe('https://news.example.com/long-article-slug')
+    expect(title?.className).toContain('gui-section-size')
+    expect(title?.className).not.toContain('gui-title-size')
   })
 
   it('maps Heading h3 to the section type size', () => {
@@ -5225,6 +5261,45 @@ describe('SpecRenderer', () => {
         row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
       expect(onSelectItem).toHaveBeenCalled()
+    })
+
+    it('does not copy a nested History-detail List into selected', () => {
+      const strengths = ['Item 1', 'Item 2', 'Item 6']
+      const run = {
+        id: 'run_1',
+        enhanced_article: '# Article',
+        competitor_strengths: strengths,
+        coverage_gaps: [{ gap: 'Memory pricing' }],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Results' }, children: ['list'] },
+          list: {
+            type: 'List',
+            props: {
+              statePath: 'competitor_strengths',
+              emptyText: 'No competitor strengths identified.',
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onSelectItem } = render({
+        spec,
+        state: {
+          ...selectedItemHostState(run, 0),
+          competitor_strengths: strengths,
+          coverage_gaps: run.coverage_gaps,
+        },
+      })
+      expect(container.querySelector('[data-testid="gui-collection-list"] button')).toBeNull()
+      expect(container.textContent).toContain('Item 3')
+      const row = container.querySelector('[data-testid="gui-collection-list"] li:last-child')
+      act(() => {
+        row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).not.toHaveBeenCalled()
     })
 
     it('debounces a live SearchField into the declared action', () => {
