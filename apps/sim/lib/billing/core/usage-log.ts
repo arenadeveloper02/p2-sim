@@ -266,6 +266,8 @@ export interface UsageEntry {
   vendor?: string
   provider?: string
   toolId?: string
+  /** Registry operation id (e.g. exa_search). Written for Usage By Tools only. */
+  toolName?: string
   chatId?: string
   runId?: string
   quantity?: number
@@ -578,6 +580,7 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
           vendor: entry.vendor ?? null,
           provider: entry.provider ?? null,
           toolId: entry.toolId ?? null,
+          toolName: entry.toolName ?? null,
           chatId: entry.chatId ?? chatId ?? null,
           runId: entry.runId ?? runId ?? null,
           quantity: entry.quantity != null ? entry.quantity.toString() : null,

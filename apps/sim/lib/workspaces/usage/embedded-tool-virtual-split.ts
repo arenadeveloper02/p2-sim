@@ -2,7 +2,6 @@ import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
 import {
   mergeEmbeddedToolCosts,
   resolveEmbeddedToolsForModel,
-  UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
 
 interface ModelMetadataRow {
@@ -14,23 +13,107 @@ interface ModelMetadataRow {
   metadata: unknown
 }
 
+interface EmbeddedCostBucket {
+  billable: number
+  raw: number
+}
+
+interface EmbeddedToolCostBucket extends EmbeddedCostBucket {
+  /** Distinct execution×model attributions that contributed this tool spend. */
+  count: number
+}
+
 function parseLedgerAmount(value: string | null | undefined): number {
   if (!value) return 0
   const parsed = Number.parseFloat(value)
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function coerceFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number.parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function normalizeEmbeddedCostMap(value: unknown): Record<string, number> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries: Array<[string, number]> = []
+  for (const [toolId, cost] of Object.entries(value as Record<string, unknown>)) {
+    const amount = coerceFiniteNumber(cost)
+    if (!toolId || amount == null || amount <= 0) continue
+    entries.push([toolId, amount])
+  }
+  return entries.length > 0 ? Object.fromEntries(entries) : null
+}
+
+/**
+ * Reads model ledger metadata for embedded-tool splits.
+ * Tolerates stringified JSON and corrupted keys that stringified the whole
+ * metadata blob (seen in some historical rows).
+ */
+export function parseModelUsageMetadata(raw: unknown): ModelUsageMetadata {
+  let obj: Record<string, unknown> = {}
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        obj = parsed as Record<string, unknown>
+      }
+    } catch {
+      return { inputTokens: 0, outputTokens: 0 }
+    }
+  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    obj = raw as Record<string, unknown>
+  } else {
+    return { inputTokens: 0, outputTokens: 0 }
+  }
+
+  const toolCost = coerceFiniteNumber(obj.toolCost)
+  let embeddedToolCosts = normalizeEmbeddedCostMap(obj.embeddedToolCosts)
+
+  if (!embeddedToolCosts) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (
+        key === 'toolCost' ||
+        key === 'inputTokens' ||
+        key === 'outputTokens' ||
+        key === 'embeddedToolCosts'
+      ) {
+        continue
+      }
+      // Corrupted writes used the stringified metadata object as a map key.
+      if (!(key.includes('embeddedToolCosts') || key.startsWith('{'))) continue
+      const recovered = normalizeEmbeddedCostMap(value)
+      if (recovered) {
+        embeddedToolCosts = recovered
+        break
+      }
+    }
+  }
+
+  return {
+    inputTokens: coerceFiniteNumber(obj.inputTokens) ?? 0,
+    outputTokens: coerceFiniteNumber(obj.outputTokens) ?? 0,
+    ...(toolCost != null && toolCost > 0 ? { toolCost } : {}),
+    ...(embeddedToolCosts ? { embeddedToolCosts } : {}),
+  }
+}
+
 export interface EmbeddedToolVirtualSplit {
-  byModelEmbedded: Map<string, { billable: number; raw: number }>
-  byProviderEmbedded: Map<string, { billable: number; raw: number }>
-  byToolEmbedded: Map<string, { billable: number; raw: number }>
+  byModelEmbedded: Map<string, EmbeddedCostBucket>
+  byProviderEmbedded: Map<string, EmbeddedCostBucket>
+  byToolEmbedded: Map<string, EmbeddedToolCostBucket>
   totalEmbeddedBillable: number
   totalEmbeddedRaw: number
 }
 
 /**
- * Derives virtual embedded-tool splits from cumulative model metadata without
- * changing authoritative ledger totals.
+ * Derives virtual embedded-tool splits from model `usage_log.metadata`
+ * (`toolCost` / `embeddedToolCosts`) without changing authoritative ledger totals.
+ * Powers Usage dashboard By Tools for Agent-embedded hosted tools.
  */
 export function computeEmbeddedToolVirtualSplit(
   rows: ModelMetadataRow[]
@@ -50,7 +133,7 @@ export function computeEmbeddedToolVirtualSplit(
   for (const row of rows) {
     if (!row.executionId) continue
     const key = `${row.executionId}::${row.description}`
-    const metadata = (row.metadata ?? {}) as ModelUsageMetadata
+    const metadata = parseModelUsageMetadata(row.metadata)
     const billable = parseLedgerAmount(row.cost)
     const raw = parseLedgerAmount(row.rawCost ?? row.cost)
 
@@ -76,9 +159,9 @@ export function computeEmbeddedToolVirtualSplit(
     executionModelState.set(key, existing)
   }
 
-  const byModelEmbedded = new Map<string, { billable: number; raw: number }>()
-  const byProviderEmbedded = new Map<string, { billable: number; raw: number }>()
-  const byToolEmbedded = new Map<string, { billable: number; raw: number }>()
+  const byModelEmbedded = new Map<string, EmbeddedCostBucket>()
+  const byProviderEmbedded = new Map<string, EmbeddedCostBucket>()
+  const byToolEmbedded = new Map<string, EmbeddedToolCostBucket>()
   let totalEmbeddedBillable = 0
   let totalEmbeddedRaw = 0
 
@@ -113,20 +196,11 @@ export function computeEmbeddedToolVirtualSplit(
     for (const tool of resolved.tools) {
       const toolBillable = tool.cost
       const toolRaw = tool.cost * ratio
-      const toolEntry = byToolEmbedded.get(tool.name) ?? { billable: 0, raw: 0 }
+      const toolEntry = byToolEmbedded.get(tool.name) ?? { billable: 0, raw: 0, count: 0 }
       toolEntry.billable += toolBillable
       toolEntry.raw += toolRaw
+      toolEntry.count += 1
       byToolEmbedded.set(tool.name, toolEntry)
-    }
-
-    if (resolved.unattributed > 0) {
-      const toolEntry = byToolEmbedded.get(UNATTRIBUTED_AGENT_TOOLS_ID) ?? {
-        billable: 0,
-        raw: 0,
-      }
-      toolEntry.billable += resolved.unattributed
-      toolEntry.raw += resolved.unattributed * ratio
-      byToolEmbedded.set(UNATTRIBUTED_AGENT_TOOLS_ID, toolEntry)
     }
   }
 
@@ -173,7 +247,7 @@ export function subtractEmbeddedFromBucketRows<
 >(
   rows: T[],
   getKey: (row: T) => string,
-  embedded: Map<string, { billable: number; raw: number }>
+  embedded: Map<string, EmbeddedCostBucket>
 ): T[] {
   if (embedded.size === 0) return rows
 
@@ -190,22 +264,24 @@ export function subtractEmbeddedFromBucketRows<
 
 export function mergeEmbeddedToolBucketRows<
   T extends { toolId: string; billableCost: number; rawCost: number; count: number },
->(rows: T[], embedded: Map<string, { billable: number; raw: number }>): T[] {
+>(rows: T[], embedded: Map<string, EmbeddedToolCostBucket | EmbeddedCostBucket>): T[] {
   if (embedded.size === 0) return rows
 
   const merged = new Map(rows.map((row) => [row.toolId, { ...row }]))
 
   for (const [toolId, costs] of embedded) {
+    const embeddedCount = 'count' in costs ? costs.count : 0
     const existing = merged.get(toolId)
     if (existing) {
       existing.billableCost += costs.billable
       existing.rawCost += costs.raw
+      existing.count += embeddedCount
     } else {
       merged.set(toolId, {
         toolId,
         billableCost: costs.billable,
         rawCost: costs.raw,
-        count: 0,
+        count: embeddedCount,
       } as T)
     }
   }

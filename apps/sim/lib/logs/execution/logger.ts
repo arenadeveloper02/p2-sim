@@ -1741,6 +1741,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         description: string
         target: number
         metadata?: ModelUsageMetadata | ExternalUsageMetadata | null
+        toolName?: string
         vendor?: string
         quantity?: number
         unit?: string
@@ -1799,10 +1800,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
       if (costSummary.charges) {
         for (const [description, charge] of Object.entries(costSummary.charges)) {
           if (charge.total > 0) {
+            const toolName = charge.toolName
+              ? normalizeUsageToolId(charge.toolName)
+              : undefined
             targets.push({
               category: 'tool',
               description: normalizeUsageToolId(description),
               target: charge.total,
+              ...(toolName ? { toolName } : {}),
             })
           }
         }
@@ -1859,6 +1864,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           eventKey: string
           metadata?: ModelUsageMetadata | ExternalUsageMetadata | null
           toolId?: string
+          toolName?: string
           vendor?: string
           quantity?: number
           unit?: string
@@ -1882,7 +1888,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
                   billedBefore: '0',
                 }),
                 ...(line.metadata !== undefined ? { metadata: line.metadata } : {}),
-                ...(line.toolId ? { toolId: line.toolId } : {}),
+                ...(line.toolName ? { toolName: line.toolName } : {}),
                 ...(line.vendor ? { vendor: line.vendor } : {}),
                 ...(line.quantity != null ? { quantity: line.quantity } : {}),
                 ...(line.unit ? { unit: line.unit } : {}),
@@ -1903,6 +1909,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
             }),
             ...(line.metadata !== undefined ? { metadata: line.metadata } : {}),
             ...(line.category === 'tool' ? { toolId: line.description } : {}),
+            ...(line.category === 'tool' && line.toolName ? { toolName: line.toolName } : {}),
             ...(line.category === 'external' && line.vendor ? { vendor: line.vendor } : {}),
             ...(line.category === 'external' && line.quantity != null
               ? { quantity: line.quantity }

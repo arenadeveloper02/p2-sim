@@ -7,6 +7,7 @@ import {
   applyEmbeddedToolChargeTypeSplit,
   computeEmbeddedToolVirtualSplit,
   mergeEmbeddedToolBucketRows,
+  parseModelUsageMetadata,
 } from '@/lib/workspaces/usage/embedded-tool-virtual-split'
 
 describe('embedded-tool-virtual-split', () => {
@@ -55,7 +56,7 @@ describe('embedded-tool-virtual-split', () => {
     expect(providerTotal + toolTotal).toBeCloseTo(0.11, 8)
   })
 
-  it('maps legacy aggregate-only toolCost to unattributed agent tools', () => {
+  it('does not surface aggregate-only toolCost as a By Tools row', () => {
     const split = computeEmbeddedToolVirtualSplit([
       {
         executionId: 'exec-1',
@@ -71,14 +72,72 @@ describe('embedded-tool-virtual-split', () => {
       },
     ])
 
+    expect(mergeEmbeddedToolBucketRows([], split.byToolEmbedded)).toEqual([])
+    expect(split.totalEmbeddedBillable).toBeCloseTo(0.02, 8)
+  })
+
+  it('surfaces Agent Exa spend from model metadata for Usage By Tools', () => {
+    const split = computeEmbeddedToolVirtualSplit([
+      {
+        executionId: 'exec-lenovo',
+        description: 'gpt-4o-mini',
+        provider: 'openai',
+        cost: '0.0991008',
+        rawCost: '0.0991008',
+        metadata: {
+          toolCost: 0.09599999999999999,
+          inputTokens: 16168,
+          outputTokens: 1126,
+          embeddedToolCosts: { exa_search: 0.09599999999999999 },
+        },
+      },
+    ])
+
     const byTool = mergeEmbeddedToolBucketRows([], split.byToolEmbedded)
     expect(byTool).toEqual([
       {
-        toolId: 'unattributed_agent_tools',
-        billableCost: 0.02,
-        rawCost: 0.02,
-        count: 0,
+        toolId: 'exa_search',
+        billableCost: 0.09599999999999999,
+        rawCost: 0.09599999999999999,
+        count: 1,
       },
     ])
+  })
+
+  it('recovers embeddedToolCosts from corrupted metadata keys', () => {
+    const corruptedKey =
+      '{"toolCost": 0.09599999999999999, "inputTokens": 16168, "outputTokens": 1126, "embeddedToolCosts": {"exa_search": 0.09599999999999999}}'
+
+    expect(
+      parseModelUsageMetadata({
+        toolCost: 0.09599999999999999,
+        inputTokens: 16168,
+        outputTokens: 1126,
+        [corruptedKey]: { exa_search: 0.09599999999999999 },
+      })
+    ).toEqual({
+      inputTokens: 16168,
+      outputTokens: 1126,
+      toolCost: 0.09599999999999999,
+      embeddedToolCosts: { exa_search: 0.09599999999999999 },
+    })
+
+    const split = computeEmbeddedToolVirtualSplit([
+      {
+        executionId: 'exec-corrupt',
+        description: 'gpt-4o-mini',
+        provider: 'openai',
+        cost: '0.099',
+        rawCost: '0.099',
+        metadata: {
+          toolCost: 0.09599999999999999,
+          inputTokens: 16168,
+          outputTokens: 1126,
+          [corruptedKey]: { exa_search: 0.09599999999999999 },
+        },
+      },
+    ])
+
+    expect([...split.byToolEmbedded.keys()]).toEqual(['exa_search'])
   })
 })

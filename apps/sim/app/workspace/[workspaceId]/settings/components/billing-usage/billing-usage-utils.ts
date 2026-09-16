@@ -25,9 +25,11 @@ export interface OrgMemberCreditDisplay {
 }
 
 /**
- * Derive org-member billing card values: org pool total/remaining plus optional
- * per-member allocation. Remaining matches enforcement — capped members cannot
- * exceed their allocation or the shared org pool, whichever is tighter.
+ * Derive User-scope remaining-credits values for org members.
+ * Allocation wins when set (hero = allocation remaining of allocation total);
+ * otherwise falls back to the shared organization pool. Organization-tab
+ * remaining should keep using the org pool directly and ignore allocation.
+ * Remaining still matches enforcement — capped by allocation and org pool.
  */
 export function resolveOrgMemberCreditDisplay(params: {
   orgPool: { totalCredits: number; usedCredits: number; isUnlimited: boolean }
@@ -36,9 +38,12 @@ export function resolveOrgMemberCreditDisplay(params: {
 }): OrgMemberCreditDisplay {
   const { orgPool, allocatedCredits, memberUsedCredits } = params
 
-  const totalCredits: number | 'unlimited' = orgPool.isUnlimited
-    ? 'unlimited'
-    : orgPool.totalCredits
+  const totalCredits: number | 'unlimited' =
+    allocatedCredits != null
+      ? allocatedCredits
+      : orgPool.isUnlimited
+        ? 'unlimited'
+        : orgPool.totalCredits
 
   const orgRemaining = orgPool.isUnlimited
     ? Number.POSITIVE_INFINITY
@@ -128,7 +133,23 @@ export function resolveOrgPoolBarSegments(params: {
   }
 }
 
-/** Format a credit count for display. */
+/**
+ * Personal used credits for the User-tab remaining card.
+ * Org-admin credit-usage payloads are org-wide; allocation remaining uses
+ * enforcement usage, otherwise the viewer's member row. Members keep the
+ * personal summary total.
+ */
+export function resolveUserTabUsedCredits(params: {
+  isOrganizationAdminPayload: boolean
+  summaryTotalCredits: number
+  allocatedCredits: number | null
+  enforcementUsedCredits: number
+  selfMemberUsedCredits: number | undefined
+}): number {
+  if (!params.isOrganizationAdminPayload) return params.summaryTotalCredits
+  if (params.allocatedCredits != null) return params.enforcementUsedCredits
+  return params.selfMemberUsedCredits ?? 0
+}
 export function formatCreditCount(credits: number): string {
   return credits.toLocaleString()
 }

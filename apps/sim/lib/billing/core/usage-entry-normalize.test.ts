@@ -53,6 +53,22 @@ describe('normalizeUsageEntry', () => {
     expect(entry.pricingSnapshot?.pricingSource).toBe('hosted-key')
   })
 
+  it('passes toolName through without using it for pricing or toolId', () => {
+    const entry = normalizeUsageEntry({
+      category: 'tool',
+      source: 'workflow',
+      description: 'EXA Competitor Research',
+      toolId: 'EXA Competitor Research',
+      toolName: 'exa_search',
+      cost: 0.01,
+    })
+
+    expect(entry.description).toBe('EXA Competitor Research')
+    expect(entry.toolId).toBe('EXA Competitor Research')
+    expect(entry.toolName).toBe('exa_search')
+    expect(entry.pricingSnapshot?.tool).toBe('EXA Competitor Research')
+  })
+
   it('adds external pricing snapshot with passthrough multiplier', () => {
     const entry = normalizeUsageEntry({
       category: 'external',
