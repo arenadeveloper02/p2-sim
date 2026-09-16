@@ -208,16 +208,10 @@ function buildGeminiModelPartsFromSegment(params: {
 
   const prose = stripLeakedToolMarkers(params.proseText).trim()
   if (prose) {
-    // Prefer the last prose block's signature (Gemini 3 puts it on the final part).
-    let thoughtSignature: string | undefined
-    for (let i = params.proseBlocks.length - 1; i >= 0; i--) {
-      thoughtSignature = optionalThoughtSignature(params.proseBlocks[i]?.thoughtSignature)
-      if (thoughtSignature) break
-    }
-    parts.push({
-      text: prose,
-      ...(thoughtSignature ? { thoughtSignature } : {}),
-    })
+    // Never attach UI-block thoughtSignatures to reconstructed answer text —
+    // trimmed/coalesced prose + a stamped signature → 400 Invalid thought
+    // signature. Exact parts live in geminiModelPartRounds.
+    parts.push({ text: prose })
   }
 
   for (const block of params.toolBatch) {

@@ -99,8 +99,12 @@ function isGeminiThoughtPart(part: { thought?: unknown }): boolean {
   return part.thought === true || part.thought === 'true'
 }
 
+const SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator'
+
 /**
  * Maps a stored history part back onto the GenAI `Part` shape for round-trip.
+ * Prefer {@link prepareGeminiModelPartsForApi} for request echo — raw text-part
+ * signatures often 400 after streaming merge / UI rebuild.
  */
 export function geminiHistoryPartToPart(part: GeminiHistoryPart): Part {
   if ('functionCall' in part) {
@@ -118,6 +122,67 @@ export function geminiHistoryPartToPart(part: GeminiHistoryPart): Part {
     ...(part.thought ? { thought: true } : {}),
     ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
   }
+}
+
+/**
+ * Prepares streamed/persisted Gemini model parts for the next generateContent
+ * request. Thought summaries stay in the UI; echoing them with mismatched
+ * `thoughtSignature` values causes Vertex/Gemini 400 "Invalid thought
+ * signature." Function-call signatures are kept (or recovered from a thought
+ * part / skip validator) so tool loops still validate.
+ */
+export function prepareGeminiModelPartsForApi(parts: GeminiHistoryPart[]): Part[] {
+  let signatureFromThought: string | undefined
+  const retained: GeminiHistoryPart[] = []
+
+  for (const part of parts) {
+    if ('functionCall' in part) {
+      retained.push(part)
+      continue
+    }
+
+    const sig = optionalThoughtSignature(part.thoughtSignature)
+    if (part.thought) {
+      if (sig && !signatureFromThought) signatureFromThought = sig
+      continue
+    }
+
+    // Empty signature-only trailers must not be echoed as orphan parts.
+    if (!part.text) {
+      if (sig && !signatureFromThought) signatureFromThought = sig
+      continue
+    }
+
+    retained.push({ text: part.text })
+  }
+
+  let firstFunctionCall = true
+  const out: Part[] = []
+
+  for (const part of retained) {
+    if ('functionCall' in part) {
+      let thoughtSignature = optionalThoughtSignature(part.thoughtSignature)
+      if (firstFunctionCall) {
+        firstFunctionCall = false
+        if (!thoughtSignature) {
+          thoughtSignature = signatureFromThought ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR
+        }
+      }
+      out.push({
+        functionCall: {
+          id: part.functionCall.id,
+          name: part.functionCall.name,
+          args: part.functionCall.args,
+        },
+        ...(thoughtSignature ? { thoughtSignature } : {}),
+      })
+      continue
+    }
+
+    out.push({ text: part.text })
+  }
+
+  return out
 }
 
 /**
@@ -300,7 +365,7 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
       }
       contents.push({
         role: 'model',
-        parts: message.geminiModelParts.map(geminiHistoryPartToPart),
+        parts: prepareGeminiModelPartsForApi(message.geminiModelParts),
       })
       continue
     }
@@ -315,6 +380,7 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
       if (assistantText) {
         parts.push({ text: assistantText })
       }
+      let firstFunctionCall = true
       for (const call of message.toolCalls) {
         const part: Part = {
           functionCall: {
@@ -323,11 +389,14 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
             args: parseToolArguments(call.arguments),
           },
         }
-        // Gemini 3+ requires the opaque thought signature from the original
-        // functionCall part to be echoed on subsequent turns.
-        if (call.thoughtSignature) {
-          part.thoughtSignature = call.thoughtSignature
+        // Gemini 3+ requires a thought signature on the first functionCall of
+        // each step. Prefer the exact stream signature; otherwise skip validator.
+        let thoughtSignature = optionalThoughtSignature(call.thoughtSignature)
+        if (firstFunctionCall) {
+          firstFunctionCall = false
+          if (!thoughtSignature) thoughtSignature = SKIP_THOUGHT_SIGNATURE_VALIDATOR
         }
+        if (thoughtSignature) part.thoughtSignature = thoughtSignature
         parts.push(part)
       }
       contents.push({ role: 'model', parts })

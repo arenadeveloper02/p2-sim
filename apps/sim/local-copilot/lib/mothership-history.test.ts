@@ -111,7 +111,7 @@ describe('assistantMessageToChatHistory', () => {
     expect(history[1]).toMatchObject({ role: 'tool', toolCallId: 't1' })
   })
 
-  it('rebuilds geminiModelParts with thought signatures for follow-up user turns', () => {
+  it('does not rebuild signed geminiModelParts from UI blocks (avoids Invalid thought signature)', () => {
     const message: PersistedMessage = {
       id: 'a4',
       role: 'assistant',
@@ -122,7 +122,6 @@ describe('assistantMessageToChatHistory', () => {
           type: MothershipStreamV1EventType.text,
           channel: MothershipStreamV1TextChannel.thinking,
           content: 'I should answer carefully.',
-          // Stamped UI signatures must not be replayed on reconstructed thought text.
           thoughtSignature: 'thought-sig',
         },
         {
@@ -138,21 +137,11 @@ describe('assistantMessageToChatHistory', () => {
       {
         role: 'assistant',
         content: 'Here is the answer.',
-        geminiModelParts: [
-          {
-            text: 'I should answer carefully.',
-            thought: true,
-          },
-          {
-            text: 'Here is the answer.',
-            thoughtSignature: 'final-sig',
-          },
-        ],
       },
     ])
   })
 
-  it('echoes thought summary plus signed prose (exact Gemini response shape)', () => {
+  it('collapses unsigned thought + prose rebuilds to assistant text only', () => {
     const message: PersistedMessage = {
       id: 'a5',
       role: 'assistant',
@@ -177,16 +166,6 @@ describe('assistantMessageToChatHistory', () => {
       {
         role: 'assistant',
         content: 'Here is the answer.',
-        geminiModelParts: [
-          {
-            text: 'Prior chain of thought.',
-            thought: true,
-          },
-          {
-            text: 'Here is the answer.',
-            thoughtSignature: 'final-sig',
-          },
-        ],
       },
     ])
   })

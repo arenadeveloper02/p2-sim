@@ -6,7 +6,6 @@ import {
   appendGeminiStreamParts,
   chunksFromGeminiParts,
   convertMessagesToGemini,
-  geminiHistoryPartToPart,
 } from '@/local-copilot/lib/providers/gemini'
 import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 
@@ -116,7 +115,7 @@ describe('appendGeminiStreamParts', () => {
 })
 
 describe('convertMessagesToGemini', () => {
-  it('echoes geminiModelParts verbatim including thought text and signatures', () => {
+  it('echoes functionCall signatures and strips thought-part signatures', () => {
     const { contents } = convertMessagesToGemini([
       { role: 'user', content: 'inspect the workflow' },
       {
@@ -144,15 +143,10 @@ describe('convertMessagesToGemini', () => {
     expect(contents[1]).toEqual({
       role: 'model',
       parts: [
-        geminiHistoryPartToPart({
-          text: 'I should grep first.',
-          thought: true,
-          thoughtSignature: 't-sig',
-        }),
-        geminiHistoryPartToPart({
+        {
           functionCall: { id: 'c1', name: 'grep', args: { query: 'x' } },
           thoughtSignature: 'fc-sig',
-        }),
+        },
       ],
     })
     expect(contents[2]).toMatchObject({
@@ -161,7 +155,33 @@ describe('convertMessagesToGemini', () => {
     })
   })
 
-  it('echoes geminiModelParts on text-only assistant turns for follow-up CoT', () => {
+  it('moves thought-part signature onto the first functionCall when FC is unsigned', () => {
+    const { contents } = convertMessagesToGemini([
+      { role: 'user', content: 'inspect' },
+      {
+        role: 'assistant',
+        content: '',
+        geminiModelParts: [
+          { text: 'Plan.', thought: true, thoughtSignature: 'thought-only-sig' },
+          { functionCall: { id: 'c1', name: 'grep', args: { query: 'x' } } },
+        ],
+        toolCalls: [{ id: 'c1', name: 'grep', arguments: '{"query":"x"}' }],
+      },
+      { role: 'tool', toolCallId: 'c1', content: '{}' },
+    ])
+
+    expect(contents[1]).toEqual({
+      role: 'model',
+      parts: [
+        {
+          functionCall: { id: 'c1', name: 'grep', args: { query: 'x' } },
+          thoughtSignature: 'thought-only-sig',
+        },
+      ],
+    })
+  })
+
+  it('echoes answer text without thought signatures on follow-up turns', () => {
     const { contents } = convertMessagesToGemini([
       { role: 'user', content: 'hi' },
       {
@@ -177,17 +197,7 @@ describe('convertMessagesToGemini', () => {
 
     expect(contents[1]).toEqual({
       role: 'model',
-      parts: [
-        geminiHistoryPartToPart({
-          text: 'Greeting.',
-          thought: true,
-          thoughtSignature: 't-sig',
-        }),
-        geminiHistoryPartToPart({
-          text: 'Hello',
-          thoughtSignature: 'final-sig',
-        }),
-      ],
+      parts: [{ text: 'Hello' }],
     })
     expect(contents[2]).toEqual({ role: 'user', parts: [{ text: 'follow up' }] })
   })
