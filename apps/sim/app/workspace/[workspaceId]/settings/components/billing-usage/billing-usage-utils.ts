@@ -133,23 +133,7 @@ export function resolveOrgPoolBarSegments(params: {
   }
 }
 
-/**
- * Personal used credits for the User-tab remaining card.
- * Org-admin credit-usage payloads are org-wide; allocation remaining uses
- * enforcement usage, otherwise the viewer's member row. Members keep the
- * personal summary total.
- */
-export function resolveUserTabUsedCredits(params: {
-  isOrganizationAdminPayload: boolean
-  summaryTotalCredits: number
-  allocatedCredits: number | null
-  enforcementUsedCredits: number
-  selfMemberUsedCredits: number | undefined
-}): number {
-  if (!params.isOrganizationAdminPayload) return params.summaryTotalCredits
-  if (params.allocatedCredits != null) return params.enforcementUsedCredits
-  return params.selfMemberUsedCredits ?? 0
-}
+/** Format a credit count for display. */
 export function formatCreditCount(credits: number): string {
   return credits.toLocaleString()
 }

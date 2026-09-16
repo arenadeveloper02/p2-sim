@@ -657,24 +657,6 @@ describe('calculateCostSummary', () => {
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
-  test('standalone renamed tool blocks keep display name and attach registry operation', () => {
-    const result = calculateCostSummary([
-      {
-        id: 'exa',
-        name: 'EXA Competitor Research',
-        type: 'exa',
-        input: { operation: 'exa_search' },
-        cost: { input: 0, output: 0, total: 0.01 },
-      },
-    ])
-
-    expect(result.charges['EXA Competitor Research']).toEqual({
-      total: 0.01,
-      toolName: 'exa_search',
-    })
-    expect(result.charges.exa_search).toBeUndefined()
-  })
-
   test('BYOK tool (no cost generated upstream) produces no charge row', () => {
     const traceSpans = [
       {

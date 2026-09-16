@@ -11,9 +11,6 @@ import {
   mergeEmbeddedToolCosts,
   normalizeEmbeddedToolCosts,
   resolveEmbeddedToolCostKey,
-  resolveBillableToolChargeKey,
-  resolveBillableToolDisplayName,
-  resolveBillableToolOperationId,
   resolveEmbeddedToolsForModel,
   UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
@@ -40,33 +37,6 @@ describe('embedded-tool-costs', () => {
       'image_generate'
     )
     expect(resolveEmbeddedToolCostKey('exa_search', { model: 'gpt-image-1.5' })).toBe('exa_search')
-  })
-
-  it('splits display name from registry operation id', () => {
-    expect(
-      resolveBillableToolOperationId({
-        input: { operation: 'exa_search' },
-      })
-    ).toBe('exa_search')
-    expect(
-      resolveBillableToolDisplayName({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-      })
-    ).toBe('EXA Competitor Research')
-    expect(
-      resolveBillableToolChargeKey({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-        input: { operation: 'exa_search' },
-      })
-    ).toBe('exa_search')
-    expect(
-      resolveBillableToolChargeKey({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-      })
-    ).toBe('EXA Competitor Research')
   })
 
   it('normalizes per-tool costs to the parent toolCost subtotal', () => {

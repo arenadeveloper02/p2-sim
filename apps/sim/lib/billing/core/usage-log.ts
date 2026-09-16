@@ -201,6 +201,12 @@ export interface ModelUsageMetadata {
   outputTokens: number
   toolCost?: number
   embeddedToolCosts?: Record<string, number>
+  /**
+   * Optional map from `embeddedToolCosts` key → Usage By Tools bucket id.
+   * New writes populate this so readers do not rely on key heuristics.
+   * Absent on legacy rows — readers fall back to {@link normalizeUsageToolBucketId}.
+   */
+  embeddedToolIds?: Record<string, string>
 }
 
 /**

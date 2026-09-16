@@ -150,6 +150,15 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
         model: z.string(),
       })
     ),
+    /**
+     * Sum of mothership + Copilot *model* ledger spend (category=model).
+     * Tool spend for those sources is under By Tools as "Copilot tools".
+     */
+    modelSpend: z.object({
+      billableCost: z.number(),
+      rawCost: z.number(),
+      count: z.number().int().nonnegative(),
+    }),
     triggeredWorkflows: z.object({
       executionCount: z.number().int().nonnegative(),
       billableCost: z.number(),
