@@ -26,10 +26,10 @@ const WS_B = { id: 'ws-b', name: 'Beta' }
 /**
  * Query terminals for getUserUsageAnalytics with a fixed period
  * (membership mocked; no all-time bounds probes):
- * 0–27 Promise.all aggregations
- * 28 model metadata (embedded tool split)
+ * 0–28 Promise.all aggregations
+ * 29 model metadata (embedded tool split)
  */
-const USER_ANALYTICS_QUERY_COUNT = 29
+const USER_ANALYTICS_QUERY_COUNT = 30
 
 const EMPTY_USAGE = {
   inputTokens: 0,

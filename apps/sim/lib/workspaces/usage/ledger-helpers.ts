@@ -42,8 +42,8 @@ export const TOP_EXPENSIVE_WORKFLOWS = 25
 export const WORKFLOW_SOURCE: UsageLogSource = 'workflow'
 
 /**
- * Synthetic By Tools bucket id for mothership / Copilot ledger tool rows
- * (`query_logs`, etc.) so the Usage UI shows one "Copilot" line.
+ * Synthetic By Tools bucket id for mothership / Copilot ledger *tool* rows
+ * so the Usage UI shows one "Copilot tools" line.
  * Keep in sync with `COPILOT_USAGE_TOOL_BUCKET_ID` in usage `format.ts`.
  */
 export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
@@ -51,8 +51,9 @@ export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
 /**
  * Groups tool spend for By Tools analytics.
  * Prefers `usage_log.tool_name` (registry operation) when set, else `tool_id`
- * (display label / legacy rows). Copilot / mothership sources collapse to
- * {@link COPILOT_USAGE_TOOL_BUCKET_ID}.
+ * (display label / legacy rows). Copilot / mothership *tool* sources collapse to
+ * {@link COPILOT_USAGE_TOOL_BUCKET_ID} ("Copilot tools"). Model spend for those
+ * sources is reported separately.
  *
  * String literals are inlined (same pattern as {@link chargeTypeExpr}) so SELECT
  * and GROUP BY stay identical — parameterized CASE fragments diverge under

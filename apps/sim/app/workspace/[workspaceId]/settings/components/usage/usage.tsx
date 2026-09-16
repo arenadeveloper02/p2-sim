@@ -1218,7 +1218,7 @@ export function Usage() {
               </div>
             </div>
 
-            <UsageBillingStats view='organization' viewerUserId={permissions?.viewer?.userId} />
+            <UsageBillingStats view='organization' />
 
             {error && (
               <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
@@ -1286,7 +1286,7 @@ export function Usage() {
               </div>
             </div>
 
-            <UsageBillingStats view='user' viewerUserId={permissions?.viewer?.userId} />
+            <UsageBillingStats view='user' />
 
             {error && (
               <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
@@ -1338,7 +1338,7 @@ export function Usage() {
               </button>
             </div>
 
-            <UsageBillingStats view='user' viewerUserId={permissions?.viewer?.userId} />
+            <UsageBillingStats view='user' />
 
             <div className='flex flex-wrap items-center gap-3'>
               {scopeToggle}

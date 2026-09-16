@@ -94,6 +94,35 @@ describe('embedded-tool-costs', () => {
     })
   })
 
+  it('prefers explicit embeddedToolIds over cost-key heuristics', () => {
+    const resolved = resolveEmbeddedToolsForModel({
+      model: 'gpt-4o',
+      toolCost: 0.046334,
+      embeddedToolCosts: { google_ads_v1_query: 0.046334 },
+      embeddedToolIds: { google_ads_v1_query: 'google_ads' },
+    })
+    expect(resolved.tools).toEqual([{ name: 'google_ads', cost: 0.046334 }])
+  })
+
+  it('falls back to cost-key normalization when embeddedToolIds is absent', () => {
+    const resolved = resolveEmbeddedToolsForModel({
+      model: 'gpt-4o',
+      toolCost: 0.046334,
+      embeddedToolCosts: { google_ads_v1_query: 0.046334 },
+    })
+    expect(resolved.tools).toEqual([{ name: 'google_ads', cost: 0.046334 }])
+  })
+
+  it('uses an explicit bucket id that heuristics would not invent', () => {
+    const resolved = resolveEmbeddedToolsForModel({
+      model: 'gpt-4o',
+      toolCost: 0.01,
+      embeddedToolCosts: { some_runtime_key: 0.01 },
+      embeddedToolIds: { some_runtime_key: 'custom_ads' },
+    })
+    expect(resolved.tools).toEqual([{ name: 'custom_ads', cost: 0.01 }])
+  })
+
   it('extracts embedded tool costs keyed by image model', () => {
     const costs = extractEmbeddedToolCostsFromSpan({
       type: 'agent',

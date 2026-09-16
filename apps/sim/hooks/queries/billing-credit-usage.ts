@@ -7,20 +7,16 @@ import {
 
 export const billingCreditUsageKeys = {
   all: ['billing-credit-usage'] as const,
-  summaries: () => [...billingCreditUsageKeys.all, 'summary'] as const,
-  workspace: (workspaceId?: string) =>
-    [...billingCreditUsageKeys.summaries(), workspaceId ?? ''] as const,
-  summary: (workspaceId?: string, personal = false) =>
-    [...billingCreditUsageKeys.workspace(workspaceId), personal ? 'personal' : 'pooled'] as const,
+  summary: (workspaceId?: string) =>
+    [...billingCreditUsageKeys.all, 'summary', workspaceId ?? ''] as const,
 }
 
 async function fetchCreditUsageSummary(
   workspaceId: string,
-  personal: boolean,
   signal?: AbortSignal
 ): Promise<CreditUsageSummary> {
   const response = await requestJson(getCreditUsageSummaryContract, {
-    query: personal ? { workspaceId, personal: true } : { workspaceId },
+    query: { workspaceId },
     signal,
   })
   return response.data
@@ -28,14 +24,13 @@ async function fetchCreditUsageSummary(
 
 /**
  * Credit usage for the billing page (Mothership + workflow runs). Org admins
- * receive organization totals and per-member rows unless `personal` is set,
- * which returns the caller's own usage plus the org pool.
+ * receive organization totals and per-member rows; standard users see personal
+ * usage only.
  */
-export function useBillingCreditUsage(workspaceId?: string, options?: { personal?: boolean }) {
-  const personal = options?.personal === true
+export function useBillingCreditUsage(workspaceId?: string) {
   return useQuery({
-    queryKey: billingCreditUsageKeys.summary(workspaceId, personal),
-    queryFn: ({ signal }) => fetchCreditUsageSummary(workspaceId as string, personal, signal),
+    queryKey: billingCreditUsageKeys.summary(workspaceId),
+    queryFn: ({ signal }) => fetchCreditUsageSummary(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,

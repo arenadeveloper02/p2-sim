@@ -122,7 +122,7 @@ export function BillingPersonalUsageView({ data }: BillingPersonalUsageViewProps
       <BillingActivityDetail
         onRefresh={() => {
           void queryClient.invalidateQueries({
-            queryKey: billingCreditUsageKeys.workspace(workspaceId),
+            queryKey: billingCreditUsageKeys.summary(workspaceId),
           })
         }}
       />

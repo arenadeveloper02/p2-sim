@@ -91,7 +91,7 @@ export function BillingOrgMemberUsageView({ data }: BillingOrgMemberUsageViewPro
       <BillingActivityDetail
         onRefresh={() => {
           void queryClient.invalidateQueries({
-            queryKey: billingCreditUsageKeys.workspace(workspaceId),
+            queryKey: billingCreditUsageKeys.summary(workspaceId),
           })
         }}
       />

@@ -27,7 +27,7 @@ interface OrganizationAdminUsageContentProps {
 
 /**
  * Org admin/owner Usage activity detail:
- * filters, status line, By Workflow / By User / By Tools, then charts.
+ * filters, status line, By Workflow / By User / By Tools / models, then charts.
  */
 export function OrganizationAdminUsageContent({
   data,
@@ -39,6 +39,9 @@ export function OrganizationAdminUsageContent({
   const workflowRows = useMemo(() => data.workflow.byWorkflow, [data.workflow.byWorkflow])
   const userRows = useMemo(() => data.byUser, [data.byUser])
   const toolRows = useMemo(() => aggregateUsageToolsByFamily(data.byTool), [data.byTool])
+  const modelSpend = data.copilot.modelSpend
+  const mothershipCopilotModelRows =
+    modelSpend.billableCost > 0 || modelSpend.count > 0 ? [modelSpend] : []
 
   return (
     <div className='flex flex-col gap-6'>
@@ -137,6 +140,32 @@ export function OrganizationAdminUsageContent({
             render: (row) => (
               <span className='font-medium'>{formatUsageToolFamilyLabel(row.toolId)}</span>
             ),
+          },
+          {
+            key: 'runs',
+            header: 'Runs',
+            align: 'right',
+            render: (row) => row.count.toLocaleString(),
+          },
+          {
+            key: 'credits',
+            header: 'Credits',
+            align: 'right',
+            render: (row) => <UsageRankCreditsCell billableCost={row.billableCost} />,
+          },
+        ]}
+      />
+
+      <UsageRankTable
+        rows={mothershipCopilotModelRows}
+        getRowKey={() => 'mothership_copilot_models'}
+        getBillableCost={(row) => row.billableCost}
+        emptyMessage='No mothership or Copilot usage in this period.'
+        columns={[
+          {
+            key: 'name',
+            header: 'By Resources',
+            render: () => <span className='font-medium'>Mothership & Copilot</span>,
           },
           {
             key: 'runs',

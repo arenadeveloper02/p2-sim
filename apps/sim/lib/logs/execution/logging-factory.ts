@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import {
   accumulateEmbeddedToolCosts,
+  buildEmbeddedToolIds,
   extractEmbeddedToolCostsFromSpan,
   normalizeEmbeddedToolCosts,
   resolveBillableToolDisplayName,
@@ -105,6 +106,8 @@ export interface CostSummaryModel {
   toolCost?: number
   /** Per-tool embedded costs normalized to `toolCost`; merged with max across boundaries. */
   embeddedToolCosts?: Record<string, number>
+  /** Cost-key → Usage By Tools bucket id for {@link embeddedToolCosts} keys. */
+  embeddedToolIds?: Record<string, string>
   tokens: { input: number; output: number; total: number }
 }
 
@@ -346,6 +349,10 @@ export function calculateCostSummary(
       target[model].embeddedToolCosts = accumulateEmbeddedToolCosts(
         target[model].embeddedToolCosts,
         normalized
+      )
+      target[model].embeddedToolIds = buildEmbeddedToolIds(
+        target[model].embeddedToolCosts,
+        target[model].embeddedToolIds
       )
     }
   }

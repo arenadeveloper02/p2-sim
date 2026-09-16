@@ -625,6 +625,10 @@ describe('calculateCostSummary', () => {
       'gpt-image-1.5': 0.02,
       exa_search: 0.01,
     })
+    expect(result.models['gpt-4o'].embeddedToolIds).toEqual({
+      'gpt-image-1.5': 'gpt-image-1.5',
+      exa_search: 'exa_search',
+    })
   })
 
   test('mixed model + standalone tool run reconciles to total', () => {

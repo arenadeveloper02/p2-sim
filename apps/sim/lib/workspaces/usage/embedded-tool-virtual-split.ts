@@ -1,6 +1,7 @@
 import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
 import {
   mergeEmbeddedToolCosts,
+  mergeEmbeddedToolIds,
   resolveEmbeddedToolsForModel,
 } from '@/lib/logs/embedded-tool-costs'
 
@@ -49,6 +50,18 @@ function normalizeEmbeddedCostMap(value: unknown): Record<string, number> | null
   return entries.length > 0 ? Object.fromEntries(entries) : null
 }
 
+function normalizeEmbeddedIdMap(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries: Array<[string, string]> = []
+  for (const [costKey, bucketId] of Object.entries(value as Record<string, unknown>)) {
+    if (!costKey || typeof bucketId !== 'string') continue
+    const trimmed = bucketId.trim()
+    if (!trimmed) continue
+    entries.push([costKey, trimmed])
+  }
+  return entries.length > 0 ? Object.fromEntries(entries) : null
+}
+
 /**
  * Reads model ledger metadata for embedded-tool splits.
  * Tolerates stringified JSON and corrupted keys that stringified the whole
@@ -73,6 +86,7 @@ export function parseModelUsageMetadata(raw: unknown): ModelUsageMetadata {
 
   const toolCost = coerceFiniteNumber(obj.toolCost)
   let embeddedToolCosts = normalizeEmbeddedCostMap(obj.embeddedToolCosts)
+  const embeddedToolIds = normalizeEmbeddedIdMap(obj.embeddedToolIds)
 
   if (!embeddedToolCosts) {
     for (const [key, value] of Object.entries(obj)) {
@@ -80,7 +94,8 @@ export function parseModelUsageMetadata(raw: unknown): ModelUsageMetadata {
         key === 'toolCost' ||
         key === 'inputTokens' ||
         key === 'outputTokens' ||
-        key === 'embeddedToolCosts'
+        key === 'embeddedToolCosts' ||
+        key === 'embeddedToolIds'
       ) {
         continue
       }
@@ -99,6 +114,7 @@ export function parseModelUsageMetadata(raw: unknown): ModelUsageMetadata {
     outputTokens: coerceFiniteNumber(obj.outputTokens) ?? 0,
     ...(toolCost != null && toolCost > 0 ? { toolCost } : {}),
     ...(embeddedToolCosts ? { embeddedToolCosts } : {}),
+    ...(embeddedToolIds ? { embeddedToolIds } : {}),
   }
 }
 
@@ -123,6 +139,7 @@ export function computeEmbeddedToolVirtualSplit(
     {
       toolCost: number
       embeddedToolCosts: Record<string, number>
+      embeddedToolIds?: Record<string, string>
       billable: number
       raw: number
       provider: string | null
@@ -155,6 +172,10 @@ export function computeEmbeddedToolVirtualSplit(
         metadata.embeddedToolCosts
       )
     }
+    existing.embeddedToolIds = mergeEmbeddedToolIds(
+      existing.embeddedToolIds,
+      metadata.embeddedToolIds
+    )
     if (row.provider) existing.provider = row.provider
     executionModelState.set(key, existing)
   }
@@ -191,16 +212,18 @@ export function computeEmbeddedToolVirtualSplit(
       toolCost: state.toolCost,
       embeddedToolCosts:
         Object.keys(state.embeddedToolCosts).length > 0 ? state.embeddedToolCosts : undefined,
+      embeddedToolIds: state.embeddedToolIds,
     })
 
     for (const tool of resolved.tools) {
+      const toolId = tool.name
       const toolBillable = tool.cost
       const toolRaw = tool.cost * ratio
-      const toolEntry = byToolEmbedded.get(tool.name) ?? { billable: 0, raw: 0, count: 0 }
+      const toolEntry = byToolEmbedded.get(toolId) ?? { billable: 0, raw: 0, count: 0 }
       toolEntry.billable += toolBillable
       toolEntry.raw += toolRaw
       toolEntry.count += 1
-      byToolEmbedded.set(tool.name, toolEntry)
+      byToolEmbedded.set(toolId, toolEntry)
     }
   }
 
