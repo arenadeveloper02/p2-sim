@@ -160,7 +160,7 @@ export function OrganizationAdminUsageContent({
         rows={mothershipCopilotModelRows}
         getRowKey={() => 'mothership_copilot_models'}
         getBillableCost={(row) => row.billableCost}
-        emptyMessage='No mothership or Copilot usage in this period.'
+        emptyMessage='No Copilot usage in this period.'
         columns={[
           {
             key: 'name',
