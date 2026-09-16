@@ -64,6 +64,7 @@ describe('usage tool id normalization', () => {
       },
       { toolId: 'google_ads_v1_query', billableCost: 0.1, count: 3 },
       { toolId: 'google_ads_v1_mutate', billableCost: 0.05, count: 1 },
+      { toolId: 'zero_cost_tool', billableCost: 0, count: 12 },
     ])
 
     expect(merged).toEqual(
@@ -75,5 +76,6 @@ describe('usage tool id normalization', () => {
       ])
     )
     expect(merged).toHaveLength(4)
+    expect(merged.some((row) => row.toolId === 'zero_cost_tool')).toBe(false)
   })
 })

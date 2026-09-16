@@ -179,6 +179,7 @@ interface UsageToolBucketRow {
 
 /**
  * Aggregates By Tools rows after {@link resolveUsageToolFamilyId} normalization.
+ * Drops buckets with no billable credits.
  */
 export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: T[]): T[] {
   const merged = new Map<string, T>()
@@ -203,7 +204,9 @@ export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: 
     }
   }
 
-  return [...merged.values()].sort((a, b) => b.billableCost - a.billableCost)
+  return [...merged.values()]
+    .filter((row) => row.billableCost > 0)
+    .sort((a, b) => b.billableCost - a.billableCost)
 }
 
 /** Format actor_type for display. */
