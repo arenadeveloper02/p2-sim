@@ -58,6 +58,7 @@ export function UsageBillingStats({ view }: UsageBillingStatsProps) {
 /**
  * User-tab remaining credits only — no "Used by org" / "Allocated to you" breakdown.
  * Allocation when set; otherwise shared org-pool remaining.
+ * Always renders the remaining card (never blank while member credits load).
  */
 function UserRemainingCredits({
   data,
@@ -66,20 +67,16 @@ function UserRemainingCredits({
   data: CreditUsageSummary
   workspaceId: string
 }) {
-  const { data: session, isPending: sessionPending } = useSession()
-  const { data: memberCredits, isPending: memberCreditsPending } = useMyMemberCredits(workspaceId)
+  const { data: session } = useSession()
+  const { data: memberCredits } = useMyMemberCredits(workspaceId)
   const orgPool = data.orgPool
   if (!orgPool) return null
-  if (memberCreditsPending) return null
 
   const allocatedCredits =
     memberCredits?.limitDollars != null ? dollarsToCredits(memberCredits.limitDollars) : null
 
-  const isAdminOrgPayload = data.scope === 'organization'
-  if (isAdminOrgPayload && allocatedCredits == null && sessionPending) return null
-
   let memberUsedCredits = data.summary.totalCredits
-  if (isAdminOrgPayload) {
+  if (data.scope === 'organization') {
     if (allocatedCredits != null) {
       memberUsedCredits = dollarsToCredits(memberCredits?.usedDollars ?? 0)
     } else {

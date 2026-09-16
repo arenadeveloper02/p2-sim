@@ -165,7 +165,7 @@ export function OrganizationAdminUsageContent({
           {
             key: 'name',
             header: 'By Resources',
-            render: () => <span className='font-medium'>Mothership & Copilot</span>,
+            render: () => <span className='font-medium'>Copilot</span>,
           },
           {
             key: 'runs',
