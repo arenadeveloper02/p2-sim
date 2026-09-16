@@ -12,7 +12,10 @@ import { cn, Textarea } from '@sim/emcn'
 import { ChevronsUpDown, Wand } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { Button } from '@/components/ui/button'
-import { formatBindingsForUserInputWand } from '@/lib/arena-generative-ui/user-input-wand-prompt'
+import {
+  formatBindingsForUserInputWand,
+  formatCompiledHonorForUserInputWand,
+} from '@/lib/arena-generative-ui/user-input-wand-prompt'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import {
   maskSecretText,
@@ -114,17 +117,33 @@ export function LongInput({
   const [apiBindingsRaw] = useSubBlockValue(blockId, 'apiBindings', false)
   const wandConfig = useMemo(() => {
     const configWand = config.wandConfig
-    if (!configWand?.prompt.includes('{bindings}')) {
+    if (!configWand) {
       return configWand
+    }
+    const prompt = configWand.prompt
+    const hasBindings = prompt.includes('{bindings}')
+    const hasCompiled = prompt.includes('{compiled}')
+    if (!hasBindings && !hasCompiled) {
+      return configWand
+    }
+    let nextPrompt = prompt
+    if (hasBindings) {
+      nextPrompt = nextPrompt.replaceAll(
+        '{bindings}',
+        formatBindingsForUserInputWand(apiBindingsRaw)
+      )
+    }
+    if (hasCompiled) {
+      nextPrompt = nextPrompt.replaceAll(
+        '{compiled}',
+        formatCompiledHonorForUserInputWand(localContent, apiBindingsRaw)
+      )
     }
     return {
       ...configWand,
-      prompt: configWand.prompt.replaceAll(
-        '{bindings}',
-        formatBindingsForUserInputWand(apiBindingsRaw)
-      ),
+      prompt: nextPrompt,
     }
-  }, [apiBindingsRaw, config.wandConfig])
+  }, [apiBindingsRaw, config.wandConfig, localContent])
 
   const wandHook = useWand({
     wandConfig,

@@ -2,15 +2,18 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { CHATGPT_WEATHER_DASHBOARD_BRIEF } from '@/lib/arena-generative-ui/chatgpt-weather-brief.fixture'
 import {
   ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT,
   formatBindingsForUserInputWand,
+  formatCompiledHonorForUserInputWand,
 } from '@/lib/arena-generative-ui/user-input-wand-prompt'
 
 describe('ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT', () => {
-  it('injects current brief and binding slots and teaches expand vs repair', () => {
+  it('injects current brief, binding, and compiled slots and teaches expand vs repair', () => {
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('{context}')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('{bindings}')
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('{compiled}')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('EXPAND')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('REPAIR')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('Do not invent API keys')
@@ -22,6 +25,13 @@ describe('ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain(
       'A History tab or history API the user wrote is a page'
     )
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('closest declared key')
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('nearest catalog behavior')
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('Original intent')
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain(
+      'keep the one that better serves original intent'
+    )
+    expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).toContain('Gantt → Timeline')
     expect(ARENA_GENERATIVE_UI_USER_INPUT_WAND_PROMPT).not.toContain('AVAILABLE COMPONENTS')
   })
 })
@@ -59,5 +69,37 @@ describe('formatBindingsForUserInputWand', () => {
 
   it('does not throw on invalid JSON', () => {
     expect(formatBindingsForUserInputWand('{not-json')).toContain('unparsed')
+  })
+})
+
+describe('formatCompiledHonorForUserInputWand', () => {
+  it('returns none when the brief needs no ChatGPT mapping', () => {
+    expect(
+      formatCompiledHonorForUserInputWand('Simple todo app. One list. Add and complete items.', [])
+    ).toContain('none')
+  })
+
+  it('lists asked → adopted mappings without URLs', () => {
+    const summary = formatCompiledHonorForUserInputWand(CHATGPT_WEATHER_DASHBOARD_BRIEF, [
+      {
+        key: 'forecast',
+        kind: 'http',
+        http: { method: 'GET', url: 'https://example.internal/forecast' },
+        outputSchema: [
+          { name: 'hourly', type: 'array' },
+          { name: 'temperature_2m', type: 'number' },
+        ],
+      },
+    ])
+
+    expect(summary).toContain('geolocation')
+    expect(summary).toContain('SearchField')
+    expect(summary).toContain('Filmstrip')
+    expect(summary).toContain('localStorage')
+    expect(summary).not.toContain('example.internal')
+  })
+
+  it('does not throw on invalid JSON bindings', () => {
+    expect(formatCompiledHonorForUserInputWand('Simple todo app.', '{not-json')).toContain('none')
   })
 })
