@@ -236,9 +236,10 @@ export function SidebarFooter({
             type='button'
             data-item-id='profile'
             className={cn(
-              chipVariants({ fullWidth: isCollapsed }),
-              isCollapsed ? 'min-w-0' : 'max-w-full',
-              SIDEBAR_RAIL_CHIP_CLASS
+              chipVariants({ fullWidth: true }),
+              isCollapsed ? 'min-w-0' : 'w-full',
+              SIDEBAR_RAIL_CHIP_CLASS,
+              'data-[state=open]:bg-[var(--surface-active)] data-[state=open]:hover-hover:bg-[var(--surface-active)]'
             )}
           >
             {/* {avatar} */}
@@ -309,8 +310,8 @@ export function SidebarFooter({
   // )
 
   return (
-    <div className={cn('flex flex-shrink-0 border-t px-2 pt-[9px] pb-2', 'items-center')}>
-      <div className={cn('flex', !isCollapsed && 'flex-1')}>{profileMenu}</div>
+    <div className='flex flex-shrink-0 border-t px-2 pt-[9px] pb-2'>
+      <div className={cn('flex min-w-0', !isCollapsed && 'w-full flex-1')}>{profileMenu}</div>
       {/* {helpMenu} */}
     </div>
   )

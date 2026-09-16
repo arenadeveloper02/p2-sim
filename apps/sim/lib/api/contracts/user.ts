@@ -180,6 +180,45 @@ export const updateArenaUserSettingsContract = defineRouteContract({
   },
 })
 
+const arenaTimezoneInputSchema = z.string().trim().min(1).max(100)
+
+export const updateArenaTimezoneBodySchema = z
+  .object({
+    /** Arena `time_zone` value. Wins over `country` when both are sent. */
+    timeZone: arenaTimezoneInputSchema.optional(),
+    /** Arena catalog element name. Accepted as an alias of `timeZone`. */
+    time_zone: arenaTimezoneInputSchema.optional(),
+    /** Repo settings field name. Accepted as an alias of `timeZone`. */
+    timezone: arenaTimezoneInputSchema.optional(),
+    /** Arena `country` value. Used only when no timezone is sent. */
+    country: arenaTimezoneInputSchema.optional(),
+    /** Required when the caller authenticates with `CRON_SECRET` instead of a session. */
+    emailId: z.string().email('Please provide a valid email address').optional(),
+  })
+  .refine(
+    (body) =>
+      Boolean((body.timeZone ?? body.time_zone ?? body.timezone)?.length || body.country?.length),
+    {
+      message: 'timeZone or country is required',
+      path: ['timeZone'],
+    }
+  )
+
+export type UpdateArenaTimezoneBody = z.input<typeof updateArenaTimezoneBodySchema>
+
+export const updateArenaTimezoneContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/users/me/settings/arena/timezone',
+  body: updateArenaTimezoneBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      timezone: ianaTimezoneSchema,
+    }),
+  },
+})
+
 export const forgetPasswordBodySchema = z.object({
   email: z.string({ error: 'Email is required' }).email('Please provide a valid email address'),
   redirectTo: z
