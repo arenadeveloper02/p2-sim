@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
-import { useSession } from '@/lib/auth/auth-client'
 import { BillingPersonalRemainingCreditsCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-remaining-credits-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import { BillingUsageSourceRow } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-source-row'
@@ -36,6 +35,8 @@ interface UsageBillingStatsProps {
 export function UsageBillingStats({ view }: UsageBillingStatsProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data, isLoading } = useBillingCreditUsage(workspaceId, {
+    // User tab must load the caller's own usage (+ org pool), not org-wide totals.
+    personal: view === 'user',
     // Remaining credits should move after runs without waiting on a manual refresh.
     staleTime: 0,
     refetchOnMount: 'always',
@@ -44,7 +45,7 @@ export function UsageBillingStats({ view }: UsageBillingStatsProps) {
 
   if (isLoading || !data) return null
 
-  if (data.scope === 'organization' && view === 'organization') {
+  if (view === 'organization' && data.scope === 'organization') {
     return <OrgPoolRemainingCredits data={data} />
   }
 
@@ -58,7 +59,7 @@ export function UsageBillingStats({ view }: UsageBillingStatsProps) {
 /**
  * User-tab remaining credits only — no "Used by org" / "Allocated to you" breakdown.
  * Allocation when set; otherwise shared org-pool remaining.
- * Always renders the remaining card (never blank while member credits load).
+ * Waits for member credits so a pending allocation does not flash the org pool.
  */
 function UserRemainingCredits({
   data,
@@ -67,29 +68,22 @@ function UserRemainingCredits({
   data: CreditUsageSummary
   workspaceId: string
 }) {
-  const { data: session } = useSession()
-  const { data: memberCredits } = useMyMemberCredits(workspaceId)
+  const { data: memberCredits, isPending: memberCreditsPending } = useMyMemberCredits(workspaceId)
   const orgPool = data.orgPool
   if (!orgPool) return null
+  if (memberCreditsPending) return null
 
   const allocatedCredits =
     memberCredits?.limitDollars != null ? dollarsToCredits(memberCredits.limitDollars) : null
 
-  let memberUsedCredits = data.summary.totalCredits
-  if (data.scope === 'organization') {
-    if (allocatedCredits != null) {
-      memberUsedCredits = dollarsToCredits(memberCredits?.usedDollars ?? 0)
-    } else {
-      const viewerId = session?.user?.id
-      memberUsedCredits = viewerId
-        ? (data.members?.find((member) => member.userId === viewerId)?.totalCredits ?? 0)
-        : 0
-    }
-  }
-
   if (allocatedCredits == null) {
     return <OrgPoolRemainingCredits data={data} />
   }
+
+  const memberUsedCredits =
+    memberCredits?.usedDollars != null
+      ? dollarsToCredits(memberCredits.usedDollars)
+      : data.summary.totalCredits
 
   const display = resolveOrgMemberCreditDisplay({
     orgPool,

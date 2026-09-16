@@ -2,7 +2,7 @@ import { dbReplica } from '@sim/db'
 import { member, usageLog, user, userStats, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
-import { and, eq, gte, inArray, lt, type SQL, sql } from 'drizzle-orm'
+import { and, eq, inArray, type SQL, sql } from 'drizzle-orm'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
@@ -24,6 +24,7 @@ import {
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import type { DbClient } from '@/lib/db/types'
+import { ledgerOccurredAt } from '@/lib/workspaces/usage/ledger-helpers'
 
 const logger = createLogger('CreditUsageBreakdown')
 
@@ -67,11 +68,18 @@ interface DollarBreakdown {
 }
 
 /**
- * Wall-clock ledger timestamp used by Usage analytics and remaining-credits.
- * Prefer `occurred_at` when present (matches activity detail).
+ * Wall-clock window bounds on the coalesced ledger clock.
+ * Use ISO strings — raw `Date` against a `sql` coalesce expr fails with ERR_INVALID_ARG_TYPE.
+ * End is exclusive (`[start, end)`), matching subscription billing periods.
  */
-function ledgerOccurredAtExpr() {
-  return sql`coalesce(${usageLog.occurredAt}, ${usageLog.createdAt})`
+function ledgerWindowBounds(window: { start: Date; end: Date }): [SQL, SQL] {
+  const occurredAt = ledgerOccurredAt()
+  const startIso = window.start.toISOString()
+  const endIso = window.end.toISOString()
+  return [
+    sql`${occurredAt} >= ${startIso}::timestamptz`,
+    sql`${occurredAt} < ${endIso}::timestamptz`,
+  ]
 }
 
 function appendSourceFilter(conditions: SQL[], sources?: UsageLogSource | UsageLogSource[]) {
@@ -95,13 +103,11 @@ async function sumOrgWorkspaceUsageBySource(
   sources?: UsageLogSource | UsageLogSource[],
   executor: DbClient = dbReplica
 ): Promise<number> {
-  const occurredAt = ledgerOccurredAtExpr()
   const conditions = [
     eq(usageLog.userId, userId),
     eq(workspace.organizationId, organizationId),
     eq(usageLog.billable, true),
-    gte(occurredAt, window.start),
-    lt(occurredAt, window.end),
+    ...ledgerWindowBounds(window),
   ]
   appendSourceFilter(conditions, sources)
 
@@ -123,12 +129,10 @@ async function sumOrganizationWorkspaceUsageBySource(
   sources?: UsageLogSource | UsageLogSource[],
   executor: DbClient = dbReplica
 ): Promise<number> {
-  const occurredAt = ledgerOccurredAtExpr()
   const conditions = [
     eq(workspace.organizationId, organizationId),
     eq(usageLog.billable, true),
-    gte(occurredAt, window.start),
-    lt(occurredAt, window.end),
+    ...ledgerWindowBounds(window),
   ]
   appendSourceFilter(conditions, sources)
 
@@ -150,12 +154,10 @@ async function sumOrganizationWorkspaceUsageByUser(
   sources?: UsageLogSource | UsageLogSource[],
   executor: DbClient = dbReplica
 ): Promise<Map<string, number>> {
-  const occurredAt = ledgerOccurredAtExpr()
   const conditions = [
     eq(workspace.organizationId, organizationId),
     eq(usageLog.billable, true),
-    gte(occurredAt, window.start),
-    lt(occurredAt, window.end),
+    ...ledgerWindowBounds(window),
   ]
   appendSourceFilter(conditions, sources)
 
@@ -533,12 +535,18 @@ async function getOrganizationCreditUsageSummary(
 
 /**
  * Credit usage summary for the billing page: org admins see pooled org usage plus
- * per-member rows; everyone else sees only their own usage. Totals include
+ * per-member rows unless `personal` is set, in which case they receive their own
+ * usage plus the org pool. Everyone else sees only their own usage. Totals include
  * Mothership (copilot-family) and workflow-run consumption for the active period.
  */
 export async function getCreditUsageSummary(params: {
   userId: string
   workspaceId: string
+  /**
+   * When true, skip the org-admin pooled summary and return the caller's own
+   * usage (plus org pool) even if they are an admin or owner.
+   */
+  personal?: boolean
   executor?: DbClient
 }): Promise<CreditUsageSummaryResult | null> {
   const executor = params.executor ?? dbReplica
@@ -563,7 +571,7 @@ export async function getCreditUsageSummary(params: {
         return getPersonalCreditUsageSummary(params.userId, null, executor)
       }
 
-      if (isOrgAdminRole(membership.role)) {
+      if (isOrgAdminRole(membership.role) && !params.personal) {
         return getOrganizationCreditUsageSummary(organizationId, executor)
       }
 
