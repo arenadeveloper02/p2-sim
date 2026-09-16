@@ -22,8 +22,7 @@ const USAGE_BY_SOURCE_TOOLTIP =
 interface UsageBillingStatsProps {
   /**
    * Organization tab always shows org-pool remaining.
-   * User tab shows a simple remaining card: personal allocation when set,
-   * otherwise the shared org pool (no org breakdown columns).
+   * User tab: personal allocation when set, otherwise the shared org pool.
    */
   view: 'user' | 'organization'
 }
@@ -35,7 +34,7 @@ interface UsageBillingStatsProps {
 export function UsageBillingStats({ view }: UsageBillingStatsProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data, isLoading } = useBillingCreditUsage(workspaceId, {
-    // User tab must load the caller's own usage (+ org pool), not org-wide totals.
+    // User tab: admins/owners get their own usage + org pool (same as members).
     personal: view === 'user',
     // Remaining credits should move after runs without waiting on a manual refresh.
     staleTime: 0,
@@ -49,7 +48,7 @@ export function UsageBillingStats({ view }: UsageBillingStatsProps) {
     return <OrgPoolRemainingCredits data={data} />
   }
 
-  if (data.orgPool && (data.viewer === 'org_member' || data.scope === 'organization')) {
+  if (data.orgPool) {
     return <UserRemainingCredits data={data} workspaceId={workspaceId} />
   }
 
@@ -57,9 +56,9 @@ export function UsageBillingStats({ view }: UsageBillingStatsProps) {
 }
 
 /**
- * User-tab remaining credits only — no "Used by org" / "Allocated to you" breakdown.
- * Allocation when set; otherwise shared org-pool remaining.
- * Waits for member credits so a pending allocation does not flash the org pool.
+ * User-tab remaining credits:
+ * - allocation when a personal cap is set
+ * - otherwise the shared organization pool
  */
 function UserRemainingCredits({
   data,
@@ -71,6 +70,7 @@ function UserRemainingCredits({
   const { data: memberCredits, isPending: memberCreditsPending } = useMyMemberCredits(workspaceId)
   const orgPool = data.orgPool
   if (!orgPool) return null
+  // Wait so a pending allocation does not flash the org pool first.
   if (memberCreditsPending) return null
 
   const allocatedCredits =
