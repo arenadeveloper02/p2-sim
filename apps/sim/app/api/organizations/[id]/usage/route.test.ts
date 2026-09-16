@@ -104,7 +104,6 @@ const ANALYTICS = {
     byChatType: [],
     byChat: [],
     byModel: [],
-    modelSpend: { billableCost: 0, rawCost: 0, count: 0 },
     triggeredWorkflows: {
       executionCount: 0,
       billableCost: 0,

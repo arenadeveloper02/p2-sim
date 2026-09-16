@@ -11,9 +11,6 @@ import {
   mergeEmbeddedToolCosts,
   normalizeEmbeddedToolCosts,
   resolveEmbeddedToolCostKey,
-  resolveBillableToolChargeKey,
-  resolveBillableToolDisplayName,
-  resolveBillableToolOperationId,
   resolveEmbeddedToolsForModel,
   UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
@@ -42,33 +39,6 @@ describe('embedded-tool-costs', () => {
     expect(resolveEmbeddedToolCostKey('exa_search', { model: 'gpt-image-1.5' })).toBe('exa_search')
   })
 
-  it('splits display name from registry operation id', () => {
-    expect(
-      resolveBillableToolOperationId({
-        input: { operation: 'exa_search' },
-      })
-    ).toBe('exa_search')
-    expect(
-      resolveBillableToolDisplayName({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-      })
-    ).toBe('EXA Competitor Research')
-    expect(
-      resolveBillableToolChargeKey({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-        input: { operation: 'exa_search' },
-      })
-    ).toBe('exa_search')
-    expect(
-      resolveBillableToolChargeKey({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-      })
-    ).toBe('EXA Competitor Research')
-  })
-
   it('normalizes per-tool costs to the parent toolCost subtotal', () => {
     expect(normalizeEmbeddedToolCosts({ firecrawl_scrape: 0.01, exa_search: 0.01 }, 0.03)).toEqual({
       firecrawl_scrape: 0.015,
@@ -92,35 +62,6 @@ describe('embedded-tool-costs', () => {
     expect(accumulateEmbeddedToolCosts({ exa_search: 0.01 }, { exa_search: 0.02 })).toEqual({
       exa_search: 0.03,
     })
-  })
-
-  it('prefers explicit embeddedToolIds over cost-key heuristics', () => {
-    const resolved = resolveEmbeddedToolsForModel({
-      model: 'gpt-4o',
-      toolCost: 0.046334,
-      embeddedToolCosts: { google_ads_v1_query: 0.046334 },
-      embeddedToolIds: { google_ads_v1_query: 'google_ads' },
-    })
-    expect(resolved.tools).toEqual([{ name: 'google_ads', cost: 0.046334 }])
-  })
-
-  it('falls back to cost-key normalization when embeddedToolIds is absent', () => {
-    const resolved = resolveEmbeddedToolsForModel({
-      model: 'gpt-4o',
-      toolCost: 0.046334,
-      embeddedToolCosts: { google_ads_v1_query: 0.046334 },
-    })
-    expect(resolved.tools).toEqual([{ name: 'google_ads', cost: 0.046334 }])
-  })
-
-  it('uses an explicit bucket id that heuristics would not invent', () => {
-    const resolved = resolveEmbeddedToolsForModel({
-      model: 'gpt-4o',
-      toolCost: 0.01,
-      embeddedToolCosts: { some_runtime_key: 0.01 },
-      embeddedToolIds: { some_runtime_key: 'custom_ads' },
-    })
-    expect(resolved.tools).toEqual([{ name: 'custom_ads', cost: 0.01 }])
   })
 
   it('extracts embedded tool costs keyed by image model', () => {

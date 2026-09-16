@@ -19,10 +19,10 @@ const WS_B = { id: 'ws-b', name: 'Beta' }
  * Query terminals consumed by getOrganizationUsageAnalytics with a fixed period
  * (no all-time bounds probes):
  * 0 workspaces list (orderBy)
- * 1–29 Promise.all aggregations
- * 30 model metadata (embedded tool split)
+ * 1–28 Promise.all aggregations
+ * 29 model metadata (embedded tool split)
  */
-const ORG_ANALYTICS_QUERY_COUNT = 31
+const ORG_ANALYTICS_QUERY_COUNT = 30
 
 const EMPTY_USAGE = {
   inputTokens: 0,

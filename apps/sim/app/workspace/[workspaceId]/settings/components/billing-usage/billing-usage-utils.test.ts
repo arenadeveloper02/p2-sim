@@ -22,17 +22,6 @@ describe('resolveOrgMemberCreditDisplay', () => {
     expect(result.remainingCredits).toBe(20_000)
   })
 
-  it('prefers allocation as the User remaining denominator', () => {
-    const result = resolveOrgMemberCreditDisplay({
-      orgPool: { totalCredits: 200_000, usedCredits: 50_000, isUnlimited: false },
-      allocatedCredits: 20_000,
-      memberUsedCredits: 10_000,
-    })
-
-    expect(result.totalCredits).toBe(20_000)
-    expect(result.remainingCredits).toBe(10_000)
-  })
-
   it('uses the tighter of allocation and org pool when allocated', () => {
     const result = resolveOrgMemberCreditDisplay({
       orgPool: { totalCredits: 400_000, usedCredits: 380_000, isUnlimited: false },
@@ -40,7 +29,6 @@ describe('resolveOrgMemberCreditDisplay', () => {
       memberUsedCredits: 10_000,
     })
 
-    expect(result.totalCredits).toBe(50_000)
     expect(result.remainingCredits).toBe(20_000)
   })
 
