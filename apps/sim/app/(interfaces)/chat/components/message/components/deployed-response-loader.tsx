@@ -22,6 +22,8 @@ interface DeployedResponseLoaderProps {
 
 /**
  * Loading indicator shown in deployed chat while waiting for an assistant response.
+ * Multiply keeps the animation on the light canvas. Dark mode uses the
+ * animation's own colors so it stays visible on the dark canvas.
  */
 export function DeployedResponseLoader({
   size = 48,
@@ -40,7 +42,7 @@ export function DeployedResponseLoader({
           width={size}
           height={size}
           unoptimized
-          className='mix-blend-multiply'
+          className='mix-blend-multiply dark:mix-blend-normal'
         />
         {showLabel ? (
           <span className='font-medium text-sm' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
@@ -68,7 +70,7 @@ export function DeployedInlineLoader({ label }: { label: string }) {
         height={24}
         unoptimized
         aria-hidden
-        className='mix-blend-multiply'
+        className='mix-blend-multiply dark:mix-blend-normal'
       />
       <span className='font-medium'>{label}</span>
     </div>
