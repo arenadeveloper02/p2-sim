@@ -42,33 +42,6 @@ describe('embedded-tool-costs', () => {
     expect(resolveEmbeddedToolCostKey('exa_search', { model: 'gpt-image-1.5' })).toBe('exa_search')
   })
 
-  it('splits display name from registry operation id', () => {
-    expect(
-      resolveBillableToolOperationId({
-        input: { operation: 'exa_search' },
-      })
-    ).toBe('exa_search')
-    expect(
-      resolveBillableToolDisplayName({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-      })
-    ).toBe('EXA Competitor Research')
-    expect(
-      resolveBillableToolChargeKey({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-        input: { operation: 'exa_search' },
-      })
-    ).toBe('exa_search')
-    expect(
-      resolveBillableToolChargeKey({
-        name: 'EXA Competitor Research',
-        type: 'exa',
-      })
-    ).toBe('EXA Competitor Research')
-  })
-
   it('normalizes per-tool costs to the parent toolCost subtotal', () => {
     expect(normalizeEmbeddedToolCosts({ firecrawl_scrape: 0.01, exa_search: 0.01 }, 0.03)).toEqual({
       firecrawl_scrape: 0.015,

@@ -198,6 +198,7 @@ function emptyUserAnalytics(
       byChatType: [],
       byChat: [],
       byModel: [],
+      modelSpend: { billableCost: 0, rawCost: 0, count: 0 },
       triggeredWorkflows: {
         executionCount: 0,
         billableCost: 0,
@@ -320,6 +321,7 @@ export async function getUserUsageAnalytics(
       byModelRows,
       byProviderRows,
       byToolRows,
+      copilotModelSpendRows,
       byVendorRows,
       timeSeriesLedgerRows,
       timeSeriesExecutionRows,
@@ -556,8 +558,26 @@ export async function getUserUsageAnalytics(
         })
         .from(usageLog)
         .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
-        .where(and(...scopedLedgerConditions, isNotNull(usageLog.toolId)))
+        .where(
+          and(
+            ...scopedLedgerConditions,
+            eq(usageLog.category, 'tool'),
+            isNotNull(usageLog.toolId)
+          )
+        )
         .groupBy(toolBucketId),
+
+      dbReplica
+        .select(ledgerCostSelect())
+        .from(usageLog)
+        .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
+        .where(
+          and(
+            ...scopedLedgerConditions,
+            eq(usageLog.category, 'model'),
+            inArray(usageLog.source, COPILOT_USAGE_SOURCES)
+          )
+        ),
 
       dbReplica
         .select({
@@ -1111,6 +1131,11 @@ export async function getUserUsageAnalytics(
             count: parseIntMetric(row.count),
           }))
         ),
+        modelSpend: {
+          billableCost: parseDecimal(copilotModelSpendRows[0]?.billableCost),
+          rawCost: parseDecimal(copilotModelSpendRows[0]?.rawCost),
+          count: parseIntMetric(copilotModelSpendRows[0]?.count),
+        },
         triggeredWorkflows: {
           executionCount: triggeredWorkflowTotal.executionCount,
           billableCost: triggeredWorkflowTotal.billableCost,

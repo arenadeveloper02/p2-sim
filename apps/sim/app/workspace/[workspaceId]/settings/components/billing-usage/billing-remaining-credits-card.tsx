@@ -17,9 +17,10 @@ interface BillingRemainingCreditsCardProps {
 }
 
 /**
- * Hero remaining-credits card for org members (User scope).
- * Prefers the member allocation when set (`10,000 of 20,000`); otherwise the
- * shared organization pool. Organization-tab remaining stays on the org pool.
+ * Hero remaining-credits card for User scope (members + admin User tab).
+ * Prefers the member allocation when set (`10,000 of 10,000 allocated to you`);
+ * otherwise the shared organization pool. Organization-tab remaining stays on
+ * the org pool card.
  */
 export function BillingRemainingCreditsCard({
   segments,
@@ -54,7 +55,7 @@ export function BillingRemainingCreditsCard({
       : formatCreditCount(display.remainingCredits)
 
   const ofLine = hasAllocation
-    ? `of ${formatCreditCount(allocatedCredits)} in the organization pool`
+    ? `of ${formatCreditCount(allocatedCredits)} allocated to you`
     : poolIsUnlimited
       ? 'Unlimited organization pool'
       : `of ${formatCreditCount(poolTotalCredits)} in the organization pool`

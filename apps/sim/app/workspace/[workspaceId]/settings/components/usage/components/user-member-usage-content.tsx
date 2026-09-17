@@ -25,7 +25,7 @@ interface UserMemberUsageContentProps {
 
 /**
  * Personal Usage activity detail — same Activity layout as org admin/owner
- * (filters, status, By Workflow / By Tools, cost chart). Omits By User and
+ * (filters, status, By Workflow / By Tools / models, cost chart). Omits By User and
  * active-users chart because this view is self-scoped.
  */
 export function UserMemberUsageContent({
@@ -36,6 +36,9 @@ export function UserMemberUsageContent({
 }: UserMemberUsageContentProps) {
   const workflowRows = useMemo(() => data.workflow.byWorkflow, [data.workflow.byWorkflow])
   const toolRows = useMemo(() => aggregateUsageToolsByFamily(data.byTool), [data.byTool])
+  const modelSpend = data.copilot.modelSpend
+  const mothershipCopilotModelRows =
+    modelSpend.billableCost > 0 || modelSpend.count > 0 ? [modelSpend] : []
 
   return (
     <div className='flex flex-col gap-6'>
@@ -106,6 +109,32 @@ export function UserMemberUsageContent({
             render: (row) => (
               <span className='font-medium'>{formatUsageToolFamilyLabel(row.toolId)}</span>
             ),
+          },
+          {
+            key: 'runs',
+            header: 'Runs',
+            align: 'right',
+            render: (row) => row.count.toLocaleString(),
+          },
+          {
+            key: 'credits',
+            header: 'Credits',
+            align: 'right',
+            render: (row) => <UsageRankCreditsCell billableCost={row.billableCost} />,
+          },
+        ]}
+      />
+
+      <UsageRankTable
+        rows={mothershipCopilotModelRows}
+        getRowKey={() => 'mothership_copilot_models'}
+        getBillableCost={(row) => row.billableCost}
+        emptyMessage='No Copilot usage in this period.'
+        columns={[
+          {
+            key: 'name',
+            header: 'By Resources',
+            render: () => <span className='font-medium'>Copilot</span>,
           },
           {
             key: 'runs',

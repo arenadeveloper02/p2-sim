@@ -5,16 +5,12 @@ import { useParams } from 'next/navigation'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
-import {
-  BillingPersonalRemainingCreditsCard,
-  BillingRemainingCreditsCard,
-} from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-remaining-credits-card'
+import { BillingPersonalRemainingCreditsCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-remaining-credits-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import { BillingUsageSourceRow } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-source-row'
 import {
   formatCreditCount,
-  resolveOrgPoolBarSegments,
-  resolveUserTabUsedCredits,
+  resolveOrgMemberCreditDisplay,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 import { useBillingCreditUsage } from '@/hooks/queries/billing-credit-usage'
 import { useMyMemberCredits } from '@/hooks/queries/organization'
@@ -25,42 +21,112 @@ const USAGE_BY_SOURCE_TOOLTIP =
 
 interface UsageBillingStatsProps {
   /**
-   * User tab remaining prefers a personal allocation when one is set, otherwise
-   * the shared organization pool, using the caller's own usage. Organization
-   * tab remaining is always the pool.
+   * Organization tab always shows org-pool remaining.
+   * User tab: personal allocation when set, otherwise the shared org pool.
    */
   view: 'user' | 'organization'
-  /** Current viewer id — used to read personal usage from org member rows. */
-  viewerUserId?: string
 }
 
 /**
  * Billing pool / remaining-credits stats for the Usage settings page.
  * Does not include activity detail — that stays on the existing Usage analytics UI.
  */
-export function UsageBillingStats({ view, viewerUserId }: UsageBillingStatsProps) {
+export function UsageBillingStats({ view }: UsageBillingStatsProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data, isLoading } = useBillingCreditUsage(workspaceId, {
+    // User tab: admins/owners get their own usage + org pool (same as members).
     personal: view === 'user',
+    // Remaining credits should move after runs without waiting on a manual refresh.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: 15 * 1000,
   })
 
   if (isLoading || !data) return null
 
   if (view === 'organization' && data.scope === 'organization') {
-    return <OrgAdminBillingStats data={data} />
+    return <OrgPoolRemainingCredits data={data} />
   }
 
   if (data.orgPool) {
-    return (
-      <OrgMemberBillingStats data={data} workspaceId={workspaceId} viewerUserId={viewerUserId} />
-    )
-  }
-
-  if (data.viewer === 'org_member') {
-    return <OrgMemberBillingStats data={data} workspaceId={workspaceId} />
+    return <UserRemainingCredits data={data} workspaceId={workspaceId} />
   }
 
   return <PersonalBillingStats data={data} workspaceId={workspaceId} />
+}
+
+/**
+ * User-tab remaining credits:
+ * - allocation when a personal cap is set
+ * - otherwise the shared organization pool
+ */
+function UserRemainingCredits({
+  data,
+  workspaceId,
+}: {
+  data: CreditUsageSummary
+  workspaceId: string
+}) {
+  const { data: memberCredits, isPending: memberCreditsPending } = useMyMemberCredits(workspaceId)
+  const orgPool = data.orgPool
+  if (!orgPool) return null
+  // Wait so a pending allocation does not flash the org pool first.
+  if (memberCreditsPending) return null
+
+  const allocatedCredits =
+    memberCredits?.limitDollars != null ? dollarsToCredits(memberCredits.limitDollars) : null
+
+  if (allocatedCredits == null) {
+    return <OrgPoolRemainingCredits data={data} />
+  }
+
+  const memberUsedCredits =
+    memberCredits?.usedDollars != null
+      ? dollarsToCredits(memberCredits.usedDollars)
+      : data.summary.totalCredits
+
+  const display = resolveOrgMemberCreditDisplay({
+    orgPool,
+    allocatedCredits,
+    memberUsedCredits,
+  })
+
+  const totalCredits = display.totalCredits === 'unlimited' ? null : display.totalCredits
+  const remainingCredits =
+    display.remainingCredits === 'unlimited' ? null : display.remainingCredits
+
+  return (
+    <BillingPersonalRemainingCreditsCard
+      totalCredits={totalCredits}
+      usedCredits={memberUsedCredits}
+      remainingCredits={remainingCredits}
+      isUnlimited={false}
+      hint='allocated to you'
+      hideUsedStats
+      barColorClassName='bg-emerald-500'
+    />
+  )
+}
+
+function OrgPoolRemainingCredits({ data }: { data: CreditUsageSummary }) {
+  const orgPool = data.orgPool
+  const isUnlimited = orgPool?.isUnlimited ?? false
+  const totalCredits = orgPool && !orgPool.isUnlimited ? orgPool.totalCredits : null
+  const usedCredits = orgPool?.usedCredits ?? data.summary.totalCredits
+  const remainingCredits =
+    isUnlimited || totalCredits == null ? null : Math.max(0, totalCredits - usedCredits)
+
+  return (
+    <BillingPersonalRemainingCreditsCard
+      totalCredits={totalCredits}
+      usedCredits={usedCredits}
+      remainingCredits={remainingCredits}
+      isUnlimited={isUnlimited}
+      hint='in the organization pool'
+      hideUsedStats
+      barColorClassName='bg-emerald-500'
+    />
+  )
 }
 
 function UsageBySourceSection({
@@ -110,46 +176,6 @@ function UsageBySourceSection({
       </div>
     </BillingUsageSection>
   )
-}
-
-/**
- * User-tab remaining credits: personal allocation when set, otherwise the
- * shared organization pool. Uses the caller's own usage for "Used by you".
- */
-function OrgMemberBillingStats({
-  data,
-  workspaceId,
-  viewerUserId,
-}: {
-  data: CreditUsageSummary
-  workspaceId: string
-  viewerUserId?: string
-}) {
-  const { data: memberCredits } = useMyMemberCredits(workspaceId)
-  const orgPool = data.orgPool
-  if (!orgPool) return null
-
-  const allocatedCredits =
-    memberCredits?.limitDollars != null ? dollarsToCredits(memberCredits.limitDollars) : null
-
-  const selfMemberUsed = viewerUserId
-    ? data.members?.find((member) => member.userId === viewerUserId)?.totalCredits
-    : undefined
-
-  const memberUsedCredits = resolveUserTabUsedCredits({
-    isOrganizationAdminPayload: data.scope === 'organization',
-    summaryTotalCredits: data.summary.totalCredits,
-    allocatedCredits,
-    enforcementUsedCredits: dollarsToCredits(memberCredits?.usedDollars ?? 0),
-    selfMemberUsedCredits: selfMemberUsed,
-  })
-
-  const segments = resolveOrgPoolBarSegments({
-    orgPool,
-    memberUsedCredits,
-  })
-
-  return <BillingRemainingCreditsCard segments={segments} allocatedCredits={allocatedCredits} />
 }
 
 function resolvePersonalAllowance(
@@ -215,26 +241,5 @@ function PersonalBillingStats({
         totalCredits={consumed}
       />
     </div>
-  )
-}
-
-function OrgAdminBillingStats({ data }: { data: CreditUsageSummary }) {
-  const orgPool = data.orgPool
-  const isUnlimited = orgPool?.isUnlimited ?? false
-  const totalCredits = orgPool && !orgPool.isUnlimited ? orgPool.totalCredits : null
-  const usedCredits = orgPool?.usedCredits ?? data.summary.totalCredits
-  const remainingCredits =
-    isUnlimited || totalCredits == null ? null : Math.max(0, totalCredits - usedCredits)
-
-  return (
-    <BillingPersonalRemainingCreditsCard
-      totalCredits={totalCredits}
-      usedCredits={usedCredits}
-      remainingCredits={remainingCredits}
-      isUnlimited={isUnlimited}
-      hint='in the organization pool'
-      hideUsedStats
-      barColorClassName='bg-emerald-500'
-    />
   )
 }
