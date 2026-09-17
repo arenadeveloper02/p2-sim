@@ -1551,7 +1551,7 @@ async function validateAndRepairUntilBuildPasses(
       })
 
       const nextCacheDir = joinGeneratedAppFsPath(outputDir, '.next')
-      if (existsSync(nextCacheDir)) {
+      if (existsSync(/* turbopackIgnore: true */ nextCacheDir)) {
         await rm(nextCacheDir, { recursive: true, force: true })
       }
       continue
@@ -1595,7 +1595,7 @@ async function validateAndRepairUntilBuildPasses(
     })
 
     const nextCacheDir = joinGeneratedAppFsPath(outputDir, '.next')
-    if (existsSync(nextCacheDir)) {
+    if (existsSync(/* turbopackIgnore: true */ nextCacheDir)) {
       await rm(nextCacheDir, { recursive: true, force: true })
     }
   }

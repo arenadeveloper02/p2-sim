@@ -1,5 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
+import {
+  generatedAppNextConfigRelPath,
+  isGeneratedAppNextConfigFileName,
+} from '@/lib/development/generated-apps-paths'
 
 const logger = createLogger('NormalizeGeneratedApp')
 
@@ -84,7 +88,7 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
 - NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
-next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
+${generatedAppNextConfigRelPath()} MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
 export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structure (zero errors required):
 - Use strict TypeScript: strict true in tsconfig.json, no @ts-ignore, no implicit any, no unused variables
@@ -207,7 +211,7 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - A lib module (lib/auth.ts, lib/crypto.ts, lib/utils.ts, etc.) MUST export EVERY symbol another file imports from it, in the SAME response
    - If you add a route/page/component that imports \`{ foo }\` from @/lib/bar, add \`export ... foo\` to lib/bar.ts in the same JSON response
 5. Config / server files stay simple:
-   - next.config.ts, tailwind.config.ts, lib/prisma.ts: minimal imports then const/export — no split import blocks
+   - ${generatedAppNextConfigRelPath()}, tailwind.config.ts, lib/prisma.ts: minimal imports then const/export — no split import blocks
    - lib/prisma.ts: only \`import { PrismaClient } from '@prisma/client'\` plus singleton export
 6. Prisma schema drift (TS2353 / TS2339 / TS2551 in lib/actions.ts):
    - Read prisma/schema.prisma FIRST — use the exact relation and scalar field names defined there
@@ -1944,7 +1948,7 @@ export function normalizeGeneratedAppFiles(
       return { ...file, content: patchPackageJsonContent(file.content, options) }
     }
 
-    if (path === 'next.config.ts' || path === 'next.config.mjs' || path === 'next.config.js') {
+    if (isGeneratedAppNextConfigFileName(path)) {
       return { ...file, content: patchNextConfigContent(file.content) }
     }
 

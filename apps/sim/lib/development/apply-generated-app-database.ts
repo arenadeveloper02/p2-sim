@@ -70,7 +70,10 @@ async function runNpmInDir(
 
 function packageJsonHasPrismaSeed(outputDir: string): boolean {
   try {
-    const raw = readFileSync(joinGeneratedAppFsPath(outputDir, 'package.json'), 'utf-8')
+    const raw = readFileSync(
+      /* turbopackIgnore: true */ joinGeneratedAppFsPath(outputDir, 'package.json'),
+      'utf-8'
+    )
     const pkg = JSON.parse(raw) as { prisma?: { seed?: string } }
     return Boolean(pkg.prisma?.seed?.trim())
   } catch {
@@ -142,11 +145,11 @@ export async function applyGeneratedAppDatabase(
   const databaseUrl = input.databaseUrl.trim()
   const schemaPath = joinGeneratedAppFsPath(outputDir, 'prisma/schema.prisma')
 
-  if (!existsSync(joinGeneratedAppFsPath(outputDir, 'package.json'))) {
+  if (!existsSync(/* turbopackIgnore: true */ joinGeneratedAppFsPath(outputDir, 'package.json'))) {
     return { success: false, output: '', error: 'package.json is missing from the generated app' }
   }
 
-  if (!existsSync(schemaPath)) {
+  if (!existsSync(/* turbopackIgnore: true */ schemaPath)) {
     return {
       success: false,
       output: '',
@@ -160,7 +163,7 @@ export async function applyGeneratedAppDatabase(
   try {
     logger.info('Applying generated app database schema to Neon', { outputDir })
 
-    if (!existsSync(joinGeneratedAppFsPath(outputDir, 'node_modules'))) {
+    if (!existsSync(/* turbopackIgnore: true */ joinGeneratedAppFsPath(outputDir, 'node_modules'))) {
       logs.push('=== npm install ===')
       logs.push(
         await runNpmInDir(
@@ -181,7 +184,7 @@ export async function applyGeneratedAppDatabase(
     logs.push(await runNpmInDir(outputDir, ['exec', 'prisma', 'db', 'push'], databaseEnv))
 
     const seedSqlPath = joinGeneratedAppFsPath(outputDir, 'db/seed.sql')
-    if (existsSync(seedSqlPath)) {
+    if (existsSync(/* turbopackIgnore: true */ seedSqlPath)) {
       logs.push('=== prisma db execute (db/seed.sql) ===')
       logs.push(
         await runNpmInDir(
@@ -201,7 +204,9 @@ export async function applyGeneratedAppDatabase(
       )
     }
 
-    const hasSeedTs = existsSync(joinGeneratedAppFsPath(outputDir, 'prisma/seed.ts'))
+    const hasSeedTs = existsSync(
+      /* turbopackIgnore: true */ joinGeneratedAppFsPath(outputDir, 'prisma/seed.ts')
+    )
     if (hasSeedTs || packageJsonHasPrismaSeed(outputDir)) {
       logs.push('=== prisma db seed ===')
       try {

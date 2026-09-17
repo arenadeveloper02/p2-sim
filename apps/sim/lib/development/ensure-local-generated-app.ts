@@ -101,9 +101,9 @@ export async function ensureLocalGeneratedApp(
   const outputDir = getGeneratedAppDir(trimmedRepoName)
 
   try {
-    if (existsSync(outputDir)) {
+    if (existsSync(/* turbopackIgnore: true */ outputDir)) {
       const gitDir = joinGeneratedAppFsPath(outputDir, '.git')
-      if (existsSync(gitDir)) {
+      if (existsSync(/* turbopackIgnore: true */ gitDir)) {
         try {
           await pullLatestChanges(outputDir)
         } catch (error) {
@@ -145,7 +145,7 @@ export async function ensureLocalGeneratedApp(
 
     const remoteUrl = buildAuthenticatedRemoteUrl(githubToken, owner, repo.name)
 
-    if (existsSync(outputDir)) {
+    if (existsSync(/* turbopackIgnore: true */ outputDir)) {
       await rm(outputDir, { recursive: true, force: true })
     }
 

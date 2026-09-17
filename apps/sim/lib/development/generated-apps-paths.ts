@@ -50,3 +50,16 @@ export function joinGeneratedAppFsPath(rootDir: string, relativePath: string): s
 export function generatedAppNextConfigRelPath(): string {
   return Buffer.from('bmV4dC5jb25maWcudHM=', 'base64').toString('utf8')
 }
+
+/**
+ * True when `relativePath` is a generated app's Next config filename.
+ * Built from {@link generatedAppNextConfigRelPath} so NFT never sees the
+ * literals `next.config.ts` / `.mjs` / `.js`.
+ */
+export function isGeneratedAppNextConfigFileName(relativePath: string): boolean {
+  const nextConfigTs = generatedAppNextConfigRelPath()
+  const stem = nextConfigTs.slice(0, nextConfigTs.lastIndexOf('.') + 1)
+  return (
+    relativePath === nextConfigTs || relativePath === `${stem}mjs` || relativePath === `${stem}js`
+  )
+}

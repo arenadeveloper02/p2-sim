@@ -61,11 +61,13 @@ async function resolveGitHubOwner(token: string, ownerHint?: string): Promise<st
 async function listLocalGeneratedRepos(): Promise<DevelopmentRepoOption[]> {
   const generatedAppsDir = getGeneratedAppsDir()
 
-  if (!existsSync(generatedAppsDir)) {
+  if (!existsSync(/* turbopackIgnore: true */ generatedAppsDir)) {
     return []
   }
 
-  const entries = await readdir(generatedAppsDir, { withFileTypes: true })
+  const entries = await readdir(/* turbopackIgnore: true */ generatedAppsDir, {
+    withFileTypes: true,
+  })
   return entries
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
     .map((entry) => ({

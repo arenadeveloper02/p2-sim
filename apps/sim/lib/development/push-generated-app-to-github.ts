@@ -149,7 +149,7 @@ async function ensureGitRemote(
   defaultBranch: string
 ): Promise<void> {
   const gitDir = joinGeneratedAppFsPath(outputDir, '.git')
-  if (!existsSync(gitDir)) {
+  if (!existsSync(/* turbopackIgnore: true */ gitDir)) {
     await runGit(outputDir, ['init'])
     await runGit(outputDir, ['branch', '-M', defaultBranch])
   }
@@ -180,12 +180,12 @@ async function initCommitAndPush(
   remoteUrl: string,
   defaultBranch: string
 ): Promise<void> {
-  if (!existsSync(outputDir)) {
+  if (!existsSync(/* turbopackIgnore: true */ outputDir)) {
     throw new Error(`Output directory does not exist: ${outputDir}`)
   }
 
   const gitDir = joinGeneratedAppFsPath(outputDir, '.git')
-  if (!existsSync(gitDir)) {
+  if (!existsSync(/* turbopackIgnore: true */ gitDir)) {
     await runGit(outputDir, ['init'])
   }
 
@@ -298,7 +298,7 @@ export async function pushRepoChangesToGitHub(
     return { success: false, error: 'Repository name is required' }
   }
 
-  if (!existsSync(input.outputDir)) {
+  if (!existsSync(/* turbopackIgnore: true */ input.outputDir)) {
     return { success: false, error: `Output directory does not exist: ${input.outputDir}` }
   }
 
