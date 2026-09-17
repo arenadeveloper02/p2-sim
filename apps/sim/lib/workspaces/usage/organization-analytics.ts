@@ -236,12 +236,7 @@ export async function getOrganizationUsageAnalytics(
 
     if (allWorkspaces.length === 0) {
       const period = resolveExplicitPeriod(options)
-      return emptyOrganizationAnalytics(
-        [],
-        [],
-        period,
-        shouldUseHourlyTimeBuckets(options, period)
-      )
+      return emptyOrganizationAnalytics([], [], period, shouldUseHourlyTimeBuckets(options, period))
     }
 
     let scopedWorkspaces = allWorkspaces

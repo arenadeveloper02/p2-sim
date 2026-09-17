@@ -19,6 +19,7 @@ vi.mock('@/lib/auth/internal', () => ({
   verifyCronAuth: mockVerifyCronAuth,
 }))
 
+import { mapArenaTimezone } from '@/lib/users/arena-timezone'
 import { PATCH } from '@/app/api/users/me/settings/arena/timezone/route'
 
 const TIMEZONE_URL = 'http://localhost:3000/api/users/me/settings/arena/timezone'
@@ -54,7 +55,10 @@ describe('PATCH /api/users/me/settings/arena/timezone', () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(body).toEqual({ success: true, timezone: 'America/New_York' })
+    expect(body).toEqual({
+      success: true,
+      ...mapArenaTimezone({ timeZone: 'US/Eastern' }),
+    })
     expect(mockVerifyCronAuth).not.toHaveBeenCalled()
     expect(dbChainMockFns.values).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user-session', timezone: 'America/New_York' })
@@ -100,10 +104,12 @@ describe('PATCH /api/users/me/settings/arena/timezone', () => {
       )
     )
 
+    const mapped = mapArenaTimezone({ timeZone: 'Asia/Kolkata' })
+
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ success: true, timezone: 'Asia/Kolkata' })
+    expect(await response.json()).toEqual({ success: true, ...mapped })
     expect(dbChainMockFns.values).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-cron', timezone: 'Asia/Kolkata' })
+      expect.objectContaining({ userId: 'user-cron', timezone: mapped?.timezone })
     )
   })
 

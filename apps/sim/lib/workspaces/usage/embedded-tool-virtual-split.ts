@@ -244,11 +244,7 @@ export function applyEmbeddedToolChargeTypeSplit<
 
 export function subtractEmbeddedFromBucketRows<
   T extends { billableCost: number; rawCost: number; count: number },
->(
-  rows: T[],
-  getKey: (row: T) => string,
-  embedded: Map<string, EmbeddedCostBucket>
-): T[] {
+>(rows: T[], getKey: (row: T) => string, embedded: Map<string, EmbeddedCostBucket>): T[] {
   if (embedded.size === 0) return rows
 
   return rows.map((row) => {

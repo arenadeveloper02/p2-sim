@@ -214,7 +214,10 @@ export const updateArenaTimezoneContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       success: z.literal(true),
+      /** IANA id from this runtime's timezone list. This is what `settings.timezone` stores. */
       timezone: ianaTimezoneSchema,
+      /** Picker label for `timezone`, such as `Calcutta (GMT+05:30)`. Not stored. */
+      label: z.string(),
     }),
   },
 })

@@ -1,7 +1,12 @@
+import type { TimezoneOption } from '@/lib/core/utils/timezone'
+import { getTimezoneOptions } from '@/lib/core/utils/timezone'
+
 /**
  * Maps Arena timezone and country selections onto the IANA timezone stored on
  * user settings. A timezone always wins. Country is used only when no timezone
- * is sent, and only for countries that have a single zone.
+ * is sent, and only for countries that have a single zone. The stored id is the
+ * matching entry from this runtime's timezone list, so `Asia/Kolkata` persists
+ * as `Asia/Calcutta` where that is the list value behind `Calcutta (GMT+05:30)`.
  */
 
 /** Arena `US/*` links and catalog ids, keyed by a trimmed lowercase value. */
@@ -34,13 +39,10 @@ export interface ArenaTimezoneSelection {
   country?: string | null
 }
 
-function isValidIanaTimezone(timeZone: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone })
-    return true
-  } catch {
-    return false
-  }
+/** The settings timezone id, plus the label shown for that id in the repo picker. */
+export interface MappedArenaTimezone {
+  timezone: string
+  label: string
 }
 
 function normalizeKey(value: string): string {
@@ -48,18 +50,40 @@ function normalizeKey(value: string): string {
 }
 
 /**
- * Resolves an Arena selection to a canonical IANA timezone, or `null` when it
- * cannot be mapped. A non-empty timezone is never replaced by country.
+ * Resolves a zone to the entry in this runtime's timezone list. `Asia/Kolkata`
+ * becomes `Asia/Calcutta` when that is the id the picker uses.
  */
-export function mapArenaTimezone({ timeZone, country }: ArenaTimezoneSelection): string | null {
+function toRepoTimezone(timeZone: string): MappedArenaTimezone | null {
+  let resolved: string
+  try {
+    resolved = new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone
+  } catch {
+    return null
+  }
+
+  const option: TimezoneOption | undefined = getTimezoneOptions().find(
+    (item) => item.value === resolved
+  )
+  if (!option) return null
+  return { timezone: option.value, label: option.label }
+}
+
+/**
+ * Resolves an Arena selection to a timezone from this repo's list, or `null`
+ * when it cannot be mapped. A non-empty timezone is never replaced by country.
+ * The display label is not stored; callers persist `timezone`.
+ */
+export function mapArenaTimezone({
+  timeZone,
+  country,
+}: ArenaTimezoneSelection): MappedArenaTimezone | null {
   const zone = timeZone?.trim()
   if (zone) {
-    const aliased = ARENA_TIMEZONE_ALIASES[normalizeKey(zone)]
-    if (aliased) return aliased
-    return isValidIanaTimezone(zone) ? zone : null
+    return toRepoTimezone(ARENA_TIMEZONE_ALIASES[normalizeKey(zone)] ?? zone)
   }
 
   const countryName = country ? normalizeKey(country) : ''
   if (!countryName) return null
-  return ARENA_COUNTRY_TIMEZONES[countryName] ?? null
+  const countryZone = ARENA_COUNTRY_TIMEZONES[countryName]
+  return countryZone ? toRepoTimezone(countryZone) : null
 }

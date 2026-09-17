@@ -70,18 +70,20 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
       country,
       emailId,
     } = parsed.data.body
-    const timezone = mapArenaTimezone({
+    const mapped = mapArenaTimezone({
       timeZone: timeZone ?? timeZoneElement ?? timezoneField,
       country,
     })
 
-    if (!timezone) {
+    if (!mapped) {
       logger.warn(`[${requestId}] Arena timezone could not be mapped`)
       return NextResponse.json(
         { error: 'Timezone could not be mapped to a supported IANA timezone' },
         { status: 400 }
       )
     }
+
+    const { timezone, label } = mapped
 
     let userId = sessionUserId
     if (!userId) {
@@ -119,7 +121,7 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
       auth: sessionUserId ? 'session' : 'cron',
       timezone,
     })
-    return NextResponse.json({ success: true, timezone }, { status: 200 })
+    return NextResponse.json({ success: true, timezone, label }, { status: 200 })
   } catch (error: unknown) {
     logger.error(`[${requestId}] Arena timezone update error`, error)
     return NextResponse.json(

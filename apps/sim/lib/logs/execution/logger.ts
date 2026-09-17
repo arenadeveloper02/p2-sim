@@ -1800,9 +1800,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       if (costSummary.charges) {
         for (const [description, charge] of Object.entries(costSummary.charges)) {
           if (charge.total > 0) {
-            const toolName = charge.toolName
-              ? normalizeUsageToolId(charge.toolName)
-              : undefined
+            const toolName = charge.toolName ? normalizeUsageToolId(charge.toolName) : undefined
             targets.push({
               category: 'tool',
               description: normalizeUsageToolId(description),

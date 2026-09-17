@@ -2,30 +2,39 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { getTimezoneOptions } from '@/lib/core/utils/timezone'
 import { mapArenaTimezone } from '@/lib/users/arena-timezone'
 
+function resolvedTimezone(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone
+}
+
 describe('mapArenaTimezone', () => {
-  it('keeps catalog timezones that are already canonical IANA ids', () => {
-    expect(mapArenaTimezone({ timeZone: 'Asia/Kolkata', country: 'India' })).toBe('Asia/Kolkata')
-    expect(mapArenaTimezone({ timeZone: 'Europe/Paris' })).toBe('Europe/Paris')
-    expect(mapArenaTimezone({ timeZone: 'Pacific/Auckland' })).toBe('Pacific/Auckland')
+  it('matches Asia/Kolkata to the repo timezone list entry', () => {
+    const mapped = mapArenaTimezone({ timeZone: 'Asia/Kolkata', country: 'India' })
+    const listValue = resolvedTimezone('Asia/Kolkata')
+    const option = getTimezoneOptions().find((item) => item.value === listValue)
+
+    expect(mapped).toEqual({ timezone: listValue, label: option?.label })
+    expect(mapped?.label).toMatch(/^(Kolkata|Calcutta) \(GMT\+05:30\)$/)
+    expect(mapped?.timezone).not.toBe(mapped?.label)
   })
 
   it('canonicalizes Arena US links so the settings picker can select them', () => {
-    expect(mapArenaTimezone({ timeZone: 'US/Eastern', country: 'United States' })).toBe(
+    expect(mapArenaTimezone({ timeZone: 'US/Eastern', country: 'United States' })?.timezone).toBe(
       'America/New_York'
     )
-    expect(mapArenaTimezone({ timeZone: 'us/central' })).toBe('America/Chicago')
-    expect(mapArenaTimezone({ timeZone: 'US/Mountain' })).toBe('America/Denver')
-    expect(mapArenaTimezone({ timeZone: 'US/Pacific' })).toBe('America/Los_Angeles')
-    expect(mapArenaTimezone({ timeZone: 'US/Alaska' })).toBe('America/Anchorage')
-    expect(mapArenaTimezone({ timeZone: 'US/Hawaii' })).toBe('Pacific/Honolulu')
+    expect(mapArenaTimezone({ timeZone: 'us/central' })?.timezone).toBe('America/Chicago')
+    expect(mapArenaTimezone({ timeZone: 'US/Mountain' })?.timezone).toBe('America/Denver')
+    expect(mapArenaTimezone({ timeZone: 'US/Pacific' })?.timezone).toBe('America/Los_Angeles')
+    expect(mapArenaTimezone({ timeZone: 'US/Alaska' })?.timezone).toBe('America/Anchorage')
+    expect(mapArenaTimezone({ timeZone: 'US/Hawaii' })?.timezone).toBe('Pacific/Honolulu')
   })
 
   it('uses country only when timezone is missing, and never invents a US default', () => {
-    expect(mapArenaTimezone({ country: 'India ' })).toBe('Asia/Kolkata')
-    expect(mapArenaTimezone({ country: 'United Arab Emirates' })).toBe('Asia/Dubai')
-    expect(mapArenaTimezone({ country: 'United Kingdom' })).toBe('Europe/London')
+    expect(mapArenaTimezone({ country: 'India ' })?.timezone).toBe(resolvedTimezone('Asia/Kolkata'))
+    expect(mapArenaTimezone({ country: 'United Arab Emirates' })?.timezone).toBe('Asia/Dubai')
+    expect(mapArenaTimezone({ country: 'United Kingdom' })?.timezone).toBe('Europe/London')
     expect(mapArenaTimezone({ country: 'United States' })).toBeNull()
   })
 

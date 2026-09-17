@@ -93,10 +93,7 @@ export function BillingRemainingCreditsCard({
               {formatCreditCount(usedByYouCredits)}
             </span>
             <span className='text-[var(--text-muted)] text-caption tabular-nums'>
-              {formatSharePercent(
-                usedByYouCredits,
-                hasAllocation ? allocatedCredits : poolWhole
-              )}
+              {formatSharePercent(usedByYouCredits, hasAllocation ? allocatedCredits : poolWhole)}
             </span>
           </div>
           <div className='flex flex-col gap-0.5'>
