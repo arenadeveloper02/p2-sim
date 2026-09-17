@@ -15,7 +15,7 @@ Every command below also accepts the [global options](/cli/commands#global-optio
 sim workflows activate create <workflowId> <version> [options]
 ```
 
-Activate Workflow Version (personal API key required)
+Activate Workflow Version (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -44,7 +44,7 @@ Activate Workflow Version (personal API key required)
 sim workflows operations apply <workflowId> [options]
 ```
 
-Apply Workflow Operations (personal API key required)
+Apply Workflow Operations (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -177,6 +177,7 @@ sim workflows runs list [options]
 | `--start-date <value>` | No | Only include runs started at or after this UTC ISO 8601 timestamp, e.g. `2026-08-06T00:00:00Z`. A date without a time, or a timestamp carrying a UTC offset instead of `Z`, is rejected, as is year `0000`, which names no storable instant. |
 | `--end-date <value>` | No | Only include runs started at or before this UTC ISO 8601 timestamp, e.g. `2026-08-06T00:00:00Z`. A date without a time, or a timestamp carrying a UTC offset instead of `Z`, is rejected, as is year `0000`, which names no storable instant. |
 | `--limit <n>` | No | Maximum items to return (0 for everything). Defaults to `100`. |
+| `--cursor <value>` | No | Continue from nextCursor returned by a previous result. |
 | `--order <value>` | No | Sort direction by run start time. This list is sortable only by run start time, so it takes `order` in place of `sortBy`/`sortOrder`, which it rejects. Accepted values: `asc`, `desc`. |
 
 </CommandTable>
@@ -371,7 +372,7 @@ sim workflows delete <workflowId> [options]
 sim workflows chat unpublish <workflowId> [options]
 ```
 
-Take a workflow’s chat deployment offline (personal API key required)
+Take a workflow’s chat deployment offline (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -399,7 +400,7 @@ Take a workflow’s chat deployment offline (personal API key required)
 sim workflows chat status <workflowId>
 ```
 
-Show a workflow’s chat deployment (personal API key required)
+Show a workflow’s chat deployment (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -417,7 +418,7 @@ Show a workflow’s chat deployment (personal API key required)
 sim workflows chat publish <workflowId> [options]
 ```
 
-Publish or replace a workflow’s chat deployment (personal API key required)
+Publish or replace a workflow’s chat deployment (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -457,7 +458,7 @@ Publish or replace a workflow’s chat deployment (personal API key required)
 sim workflows deploy <workflowId> [options]
 ```
 
-Deploy Workflow (personal API key required)
+Deploy Workflow (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -531,7 +532,7 @@ sim workflows run <workflowId> [options]
 | --- | --- | --- |
 | `--input <json\|@file>` | No | Trigger input as JSON (JSON, or @path / @- to read a file or stdin). |
 | `--async` | No | Queue the run and return immediately. |
-| `--execution-timeout-seconds <value>` | No | Requested server-side timeout for an asynchronous run, in seconds. An upper bound, not the effective timeout: the run uses the smaller of this value and the plan's execution timeout, so requesting more than the plan allows silently yields the plan timeout. Rejected with `400` unless `async` is true. |
+| `--execution-timeout-seconds <value>` | No | Maximum duration of an asynchronous run, in seconds, capped by the plan's execution timeout. Requires `async: true`; otherwise returns `400`. |
 | `--select-output <value...>` | No | Return streamed outputs as blockName.path or childWorkflowId.blockName.path; selecting a child workflow applies to every invocation, requires --follow (space-separated, or @path / @- with one value per line; @@value for a literal leading @). |
 | `--include-file-base64` | No | Inline eligible output files as base64 content. Rejected when `async` is true. |
 | `--no-include-file-base64` | No | Send --include-file-base64 as false. |
@@ -551,7 +552,7 @@ sim workflows run <workflowId> [options]
 ## Print a workflow as a portable JSON document
 
 ```bash
-sim workflows export <workflowId>
+sim workflows export <workflowId> [options]
 ```
 
 **Arguments**
@@ -561,6 +562,16 @@ sim workflows export <workflowId>
 | Argument | Required | Description |
 | --- | --- | --- |
 | `workflowId` | Yes | Unique workflow identifier. |
+
+</CommandTable>
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `--include-references` | No | Include non-secret resource identities for mapped import. |
 
 </CommandTable>
 
@@ -602,7 +613,7 @@ sim workflows deployment status <workflowId>
 sim workflows deployment update <workflowId> [options]
 ```
 
-Update Workflow Public API Access (personal API key required)
+Update Workflow Public API Access (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -646,7 +657,7 @@ sim workflows state get <workflowId>
 sim workflows state replace <workflowId> [options]
 ```
 
-Replace Workflow State (personal API key required)
+Replace Workflow State (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -715,6 +726,7 @@ sim workflows versions list <workflowId> [options]
 | Option | Required | Description |
 | --- | --- | --- |
 | `--limit <n>` | No | Maximum items to return (0 for everything). Defaults to `100`. |
+| `--cursor <value>` | No | Continue from nextCursor returned by a previous result. |
 
 </CommandTable>
 
@@ -762,6 +774,13 @@ sim workflows import [options]
 | `--folder <value>` | No | Folder path as shown in the app; the leading / is optional. |
 | `--name <value>` | No | Override for the imported workflow name. |
 | `--description <value>` | No | Override for the imported workflow description. |
+| `--mappings <json\|@file>` | No | Mappings keyed by resource type and source identifier. (JSON, or @path / @- to read a file or stdin). |
+| `--bindings <json\|@file>` | No | Resolved and unresolved source occurrences with their destination selections. (JSON, or @path / @- to read a file or stdin). |
+| `--dependent-values <json\|@file>` | No | Destination-dependent choices keyed by source workflow, block, and field identities. (JSON, or @path / @- to read a file or stdin). |
+| `--request-id <value>` | No | Stable client request ID for reconciliation and identical retries. |
+| `--preview-fingerprint <value>` | No | Fingerprint of the reviewed preview and its choices. |
+| `--wait` | No | Wait for the committed operation to finish; missing configuration and failure exit nonzero. |
+| `--wait-timeout <seconds>` | No | Maximum operation wait in seconds (default 3600; 0 waits indefinitely). |
 
 </CommandTable>
 
@@ -781,7 +800,7 @@ sim workflows list [options]
 | `--folder <value>` | No | Folder path as shown in the app; the leading / is optional. |
 | `--deployed-only` | No | Return only workflows with an active deployment when true. |
 | `--no-deployed-only` | No | Send --deployed-only as false. |
-| `--limit <n>` | No | Maximum items to return (0 for everything). Defaults to `100`. |
+| `--limit <n>` | No | Maximum items to return (0 for everything). Defaults to `0`. |
 | `--search <value>` | No | Case-insensitive substring match against the resource name. |
 | `--sort-by <value>` | No | Field used to sort the result. Sorting by `name` is case-sensitive and follows the storage collation, so do not rely on a case-insensitive order. Accepted values: `position`, `name`, `createdAt`, `updatedAt`, `runCount`. |
 | `--sort-order <value>` | No | Sort direction. Accepted values: `asc`, `desc`. |
@@ -802,6 +821,28 @@ sim workflows move [options]
 | --- | --- | --- |
 | `--workflow <value...>` | Yes | Workflows to move. Duplicates are collapsed. (space-separated, or @path / @- with one value per line; @@value for a literal leading @). |
 | `--to <value>` | Yes | Destination folder path; / moves the workflows to the workspace root. |
+
+</CommandTable>
+
+## Preview workflow import
+
+```bash
+sim workflows import-preview [options]
+```
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `--workflow <json\|@file>` | Yes | Workflow export object, bare workflow state, or JSON string containing either form. (JSON, or @path / @- to read a file or stdin). |
+| `--folder <value>` | No | Folder path as shown in the app; the leading / is optional. |
+| `--name <value>` | No | Override for the imported workflow name. |
+| `--description <value>` | No | Override for the imported workflow description. |
+| `--mappings <json\|@file>` | No | Mappings keyed by resource type and source identifier. (JSON, or @path / @- to read a file or stdin). |
+| `--bindings <json\|@file>` | No | Resolved and unresolved source occurrences with their destination selections. (JSON, or @path / @- to read a file or stdin). |
+| `--dependent-values <json\|@file>` | No | Destination-dependent choices keyed by source workflow, block, and field identities. (JSON, or @path / @- to read a file or stdin). |
 
 </CommandTable>
 
@@ -827,7 +868,7 @@ sim workflows restore <workflowId>
 sim workflows revert create <workflowId> <version> [options]
 ```
 
-Revert Workflow To Version (personal API key required)
+Revert Workflow To Version (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -856,7 +897,7 @@ Revert Workflow To Version (personal API key required)
 sim workflows rollback <workflowId> [options]
 ```
 
-Rollback Workflow (personal API key required)
+Rollback Workflow (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -885,7 +926,7 @@ Rollback Workflow (personal API key required)
 sim workflows undeploy <workflowId> [options]
 ```
 
-Take a workflow out of deployment (personal API key required)
+Take a workflow out of deployment (OAuth login or personal API key required)
 
 **Arguments**
 
@@ -975,7 +1016,7 @@ sim workflows ls [path] [options]
 | Option | Required | Description |
 | --- | --- | --- |
 | `--search <text>` | No | Filter folders and resources by name. |
-| `--limit <n>` | No | Maximum combined items to return (0 for everything). Defaults to `100`. |
+| `--limit <n>` | No | Maximum combined items to return (0 for everything). Defaults to `0`. |
 
 </CommandTable>
 

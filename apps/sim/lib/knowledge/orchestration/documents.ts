@@ -14,7 +14,6 @@ import {
   getDocumentByUploadId,
   markDocumentAsFailedTimeout,
   type ProcessingOptions,
-  processDocumentAsync,
   retryDocumentProcessing,
   updateDocument,
 } from '@/lib/knowledge/documents/service'
@@ -248,26 +247,13 @@ export async function performUploadKnowledgeDocument(
     mimeType: document.mimeType,
   }
 
-  if (startProcessing === 'queue') {
+  if (startProcessing === 'queue' || startProcessing === 'async') {
     void dispatchDocumentProcessing({
       documents: [documentData],
       knowledgeBaseId: knowledgeBase.id,
       processingOptions: processingOptions ?? {},
       requestId,
       billingAttribution,
-    })
-  } else if (startProcessing === 'async') {
-    processDocumentAsync(
-      knowledgeBase.id,
-      created.id,
-      document,
-      processingOptions ?? {},
-      billingAttribution
-    ).catch((error: unknown) => {
-      logger.error(`[${requestId}] Background document processing failed`, {
-        documentId: created.id,
-        error: toError(error).message,
-      })
     })
   }
 
@@ -560,6 +546,8 @@ export interface PerformRetryKnowledgeDocumentParams {
     fileSize: number
     mimeType: string
     processingStatus: string
+    connectorId?: string | null
+    contentHash?: string | null
   }
   billingAttribution?: BillingAttributionSnapshot
   requestId?: string
@@ -571,6 +559,13 @@ export async function performRetryKnowledgeDocumentProcessing(
 ): Promise<PerformKnowledgeDocumentProcessingResult> {
   const { knowledgeBaseId, document, billingAttribution } = params
   const requestId = params.requestId ?? generateRequestId()
+
+  if (document.connectorId && document.contentHash === null) {
+    return fail(
+      'Source content could not be downloaded. Sync the connector to retry.',
+      'validation'
+    )
+  }
 
   /**
    * `pending` is admitted alongside `failed`, and the decision is left to the

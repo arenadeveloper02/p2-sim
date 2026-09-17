@@ -101,8 +101,9 @@ interface ThemeProviderProps {
 }
 
 /**
- * Applies the document theme, forcing light on landing and auth surfaces so
- * portaled chrome matches those pages.
+ * Applies the document theme from the account-synced `sim-theme` store
+ * (written by user settings / the database via {@link syncThemeToNextThemes}).
+ * Landing and auth surfaces force light so portaled chrome matches those pages.
  *
  * Do not use `next-themes`'s `<ThemeProvider>` here. It injects an inline
  * `<script>` as a sibling of `children`; React 19 / Next then places

@@ -4,6 +4,7 @@
 
 import { resetEnvFlagsMock, resetEnvironmentUtilsMock, setEnvFlags } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { scopeProviderToolCallId } from '@/lib/copilot/request/go/tool-call-identity'
 import type { ExecutionContext, StreamingContext } from '@/lib/copilot/request/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
@@ -213,6 +214,33 @@ describe('runCopilotLifecycle', () => {
     expect(executionContext).not.toHaveProperty('resolvedSecretTraceRegistry')
   })
 
+  it('pins Assistant mode and Search scope over a supplied execution context', async () => {
+    let captured: ExecutionContext | undefined
+    mockRunStreamLoop.mockImplementationOnce(async (_url, _request, _state, context) => {
+      captured = context
+    })
+    const scope = { source: 'slack', documentIds: ['doc-1'] }
+    await runCopilotLifecycle(
+      { message: 'Summarize', mode: 'assistant', assistantSearch: scope },
+      {
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        executionContext: {
+          userId: 'user-1',
+          workspaceId: 'ws-1',
+          workflowId: '',
+          requestMode: 'agent',
+          secretActorUserId: 'billing-owner',
+        },
+      }
+    )
+    expect(captured).toMatchObject({
+      requestMode: 'assistant',
+      assistantSearch: scope,
+      secretActorUserId: null,
+    })
+  })
+
   it.each([
     { interactive: true, expected: 'interactive' as const },
     { interactive: false, expected: 'headless' as const },
@@ -356,7 +384,9 @@ describe('runCopilotLifecycle', () => {
       }
     )
 
-    expect(mockPrepareCopilotEnvironmentContext).toHaveBeenCalledWith('user-1', 'ws-1')
+    expect(mockPrepareCopilotEnvironmentContext).toHaveBeenCalledWith('user-1', 'ws-1', {
+      includeSecrets: true,
+    })
     expect(JSON.parse(capturedRequestBody)).toMatchObject({
       message: 'Use runtime-secret',
     })
@@ -1023,6 +1053,108 @@ describe('runCopilotLifecycle', () => {
     expect(mockRunStreamLoop).toHaveBeenCalledOnce()
   })
 
+  it('isolates independent headless starts that reuse a client-supplied message ID', async () => {
+    const namespaces: string[] = []
+    const canonicalIds: string[] = []
+    mockRunStreamLoop.mockImplementation(
+      async (_url: string, _options: RequestInit, context: StreamingContext) => {
+        if (!context.providerToolCallIdentity) throw new Error('Identity map not initialized')
+        namespaces.push(context.providerToolCallIdentity.namespace)
+        canonicalIds.push(
+          scopeProviderToolCallId('shared-provider-id', context.providerToolCallIdentity)
+        )
+      }
+    )
+
+    for (const userId of ['first-user', 'second-user']) {
+      const result = await runCopilotLifecycle(
+        { message: 'find files', messageId: 'reused-client-message-id' },
+        {
+          userId,
+          executionContext: { userId, workflowId: '' },
+          interactive: false,
+        }
+      )
+      expect(result.success).toBe(true)
+    }
+
+    expect(namespaces).toHaveLength(2)
+    expect(namespaces[0]).not.toBe(namespaces[1])
+    expect(namespaces).not.toContain('reused-client-message-id')
+    expect(canonicalIds[0]).not.toBe(canonicalIds[1])
+  })
+
+  it('returns the original provider call ID at the shared Go resume boundary', async () => {
+    let canonicalId = ''
+    mockRunStreamLoop.mockImplementationOnce(
+      async (_url: string, _options: RequestInit, context: StreamingContext) => {
+        expect(context.providerToolCallIdentity).toBeDefined()
+        if (!context.providerToolCallIdentity) throw new Error('Identity map not initialized')
+        canonicalId = scopeProviderToolCallId(
+          'provider-shared-call',
+          context.providerToolCallIdentity
+        )
+        context.toolCalls.set(canonicalId, {
+          id: canonicalId,
+          name: 'glob',
+          status: 'success',
+          result: { success: true, output: { files: [] } },
+        })
+        context.awaitingAsyncContinuation = {
+          checkpointId: 'identity-checkpoint',
+          pendingToolCallIds: [canonicalId],
+        }
+      }
+    )
+    mockRunStreamLoop.mockImplementationOnce(async () => {})
+
+    const result = await runCopilotLifecycle(
+      { message: 'find files', messageId: 'identity-stream' },
+      {
+        userId: 'user-1',
+        runId: 'identity-run',
+        executionContext: { userId: 'user-1', workflowId: '' },
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(canonicalId).not.toBe('provider-shared-call')
+    const resumeBody = JSON.parse(String(mockRunStreamLoop.mock.calls[1]?.[1].body))
+    expect(resumeBody.results).toEqual([
+      { callId: 'provider-shared-call', name: 'glob', data: { files: [] }, success: true },
+    ])
+  })
+
+  it('does not resume Go with a canonical ID after its reverse mapping is lost', async () => {
+    mockRunStreamLoop.mockImplementationOnce(
+      async (_url: string, _options: RequestInit, context: StreamingContext) => {
+        if (!context.providerToolCallIdentity) throw new Error('Identity map not initialized')
+        const canonicalId = scopeProviderToolCallId('call-lost', context.providerToolCallIdentity)
+        context.providerToolCallIdentity.providerIds.clear()
+        context.toolCalls.set(canonicalId, {
+          id: canonicalId,
+          name: 'glob',
+          status: 'success',
+          result: { success: true, output: { files: [] } },
+        })
+        context.awaitingAsyncContinuation = {
+          checkpointId: 'lost-identity-checkpoint',
+          pendingToolCallIds: [canonicalId],
+        }
+      }
+    )
+    const result = await runCopilotLifecycle(
+      { message: 'find files', messageId: 'lost-identity-stream' },
+      {
+        userId: 'user-1',
+        runId: 'lost-identity-run',
+        executionContext: { userId: 'user-1', workflowId: '' },
+      }
+    )
+    expect(result.success).toBe(false)
+    expect(mockRunStreamLoop).toHaveBeenCalledOnce()
+  })
+
   describe('tool permission feature flag', () => {
     const runMothershipTurn = () =>
       runCopilotLifecycle(
@@ -1413,10 +1545,13 @@ describe('runCopilotLifecycle', () => {
     expect(capturedExecContext?.userPermission).toBe('read')
   })
 
-  it('uses one server billing identity and immutable attribution on initial and resume legs', async () => {
+  it.each([
+    { workspaceId: 'ws-1', organizationId: undefined },
+    { workspaceId: undefined, organizationId: 'org-1' },
+  ])('uses immutable attribution on initial and resume legs for %j', async (owner) => {
     const billingAttribution = {
       actorUserId: 'user-1',
-      workspaceId: 'ws-1',
+      workspaceId: owner.workspaceId ?? null,
       billedAccountUserId: 'owner-1',
       organizationId: 'org-1',
       billingEntity: { type: 'organization' as const, id: 'org-1' },
@@ -1451,12 +1586,13 @@ describe('runCopilotLifecycle', () => {
     await runCopilotLifecycle(
       {
         message: 'hello',
+        ...(owner.organizationId ? { mode: 'assistant' } : {}),
         messageId: 'message-1',
         billingRequestId: 'caller-controlled',
       },
       {
         userId: 'user-1',
-        workspaceId: 'ws-1',
+        ...owner,
         chatId: 'chat-1',
         executionId: 'execution-1',
         runId: 'run-1',
@@ -1474,6 +1610,13 @@ describe('runCopilotLifecycle', () => {
 
     expect(mockRunStreamLoop).toHaveBeenCalledTimes(2)
     for (const call of mockRunStreamLoop.mock.calls) {
+      const body = JSON.parse(String(call[1].body))
+      expect(body).toMatchObject(
+        owner.organizationId
+          ? { organizationId: owner.organizationId }
+          : { workspaceId: owner.workspaceId }
+      )
+      if (owner.organizationId) expect(body).not.toHaveProperty('workspaceId')
       const headers = call[1].headers as Record<string, string>
       expect(headers).toMatchObject({
         'x-api-key': 'sim-agent-key',
@@ -2033,13 +2176,13 @@ describe('runCopilotLifecycle', () => {
       // Mirror the real helper: settle the tool call into a terminal error
       // state so the resume loop can serialize an error result for it.
       mockForceFailHungToolCall.mockImplementation(
-        async (toolCallId: string, context: StreamingContext, message: string) => {
+        async (toolCallId: string, context: StreamingContext) => {
           const tool = context.toolCalls.get(toolCallId)
           if (!tool) return
           tool.status = MothershipStreamV1ToolOutcome.error
           tool.endTime = Date.now()
           tool.result = { success: false }
-          tool.error = message
+          tool.error = 'Tool execution hung'
         }
       )
 
@@ -2098,7 +2241,7 @@ describe('runCopilotLifecycle', () => {
       expect(mockForceFailHungToolCall).toHaveBeenCalledWith(
         'tool-hung',
         expect.anything(),
-        expect.stringContaining('hung')
+        expect.objectContaining({ userId: 'user-1' })
       )
       expect(fetchUrls[1]).toBe('http://mothership.test/api/tools/resume')
       expect(bodies[1].results).toEqual([
@@ -2199,13 +2342,13 @@ describe('runCopilotLifecycle', () => {
         toolCall?.status === 'awaiting_approval' ? 3_600_000 : 60_000
       )
       mockForceFailHungToolCall.mockImplementation(
-        async (toolCallId: string, context: StreamingContext, message: string) => {
+        async (toolCallId: string, context: StreamingContext) => {
           const tool = context.toolCalls.get(toolCallId)
           if (!tool) return
           tool.status = MothershipStreamV1ToolOutcome.error
           tool.endTime = Date.now()
           tool.result = { success: false }
-          tool.error = message
+          tool.error = 'Tool execution hung'
         }
       )
 
@@ -2271,7 +2414,7 @@ describe('runCopilotLifecycle', () => {
       expect(mockForceFailHungToolCall).toHaveBeenCalledWith(
         'tool-hung',
         expect.anything(),
-        expect.stringContaining('hung')
+        expect.objectContaining({ userId: 'user-1' })
       )
       expect(lifecycleSettled).toBe(false)
       expect(fetchUrls).toEqual(['http://mothership.test/api/copilot'])
@@ -2391,13 +2534,13 @@ describe('runCopilotLifecycle', () => {
         toolCall?.status === 'awaiting_approval' ? 3_600_000 : 60_000
       )
       mockForceFailHungToolCall.mockImplementation(
-        async (toolCallId: string, context: StreamingContext, message: string) => {
+        async (toolCallId: string, context: StreamingContext) => {
           const tool = context.toolCalls.get(toolCallId)
           if (!tool) return
           tool.status = MothershipStreamV1ToolOutcome.error
           tool.endTime = Date.now()
           tool.result = { success: false }
-          tool.error = message
+          tool.error = 'Tool execution hung'
         }
       )
 
@@ -2472,7 +2615,7 @@ describe('runCopilotLifecycle', () => {
       expect(mockForceFailHungToolCall).toHaveBeenCalledWith(
         'tool-replaced',
         expect.anything(),
-        expect.stringContaining('hung')
+        expect.objectContaining({ userId: 'user-1' })
       )
       expect(lifecycleSettled).toBe(false)
       expect(fetchUrls).toEqual(['http://mothership.test/api/copilot'])

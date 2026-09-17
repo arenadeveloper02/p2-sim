@@ -1,6 +1,5 @@
 {
   "pages": [
-    "index",
     "a2a",
     "affinity",
     "agentmail",
@@ -193,7 +192,6 @@
     "okta",
     "onedrive",
     "onepassword",
-    "openai",
     "outlook",
     "p2_docs",
     "pagerduty",

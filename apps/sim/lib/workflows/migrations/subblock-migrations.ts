@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { isPlainRecord } from '@sim/utils/object'
 import { DEFAULT_SUBBLOCK_TYPE } from '@sim/workflow-persistence/subblocks'
+import { migrateMcpOperationControls } from '@/lib/workflows/migrations/mcp-operation-controls'
 import { sanitizeMalformedSubBlocks } from '@/lib/workflows/sanitization/subblocks'
 import {
   buildCanonicalIndex,
@@ -114,11 +115,26 @@ function isFieldProjection(value: unknown): boolean {
 export const SUBBLOCK_ID_MIGRATIONS: Record<string, readonly SubblockIdMigration[]> = {
   facebook_ads: [{ from: 'account', to: 'accountSelector' }],
   google_ads_v1: [{ from: 'accounts', to: 'accountsSelector' }],
+  /** MCP normalization selects the active replacement before this rename pass. */
+  mcp: [
+    { from: 'server', to: 'serverSelector' },
+    { from: 'tool', to: 'toolSelector' },
+    { from: 'connection', to: '_removed_connection' },
+    { from: 'operationPolicy', to: '_removed_operationPolicy' },
+  ],
+  /** List Channels now returns one page and a cursor; automatic page limits are retired. */
+  slack: [{ from: 'channelMaxPages', to: '_removed_channelMaxPages' }],
+  slack_v2: [{ from: 'channelMaxPages', to: '_removed_channelMaxPages' }],
   instagram: [{ from: 'metrics', to: 'insightMetrics' }],
   knowledge: [{ from: 'knowledgeBaseId', to: 'knowledgeBaseSelector' }],
   zoom: [
     { from: 'credentialAdmin', to: 'credential' },
     { from: 'manualCredentialAdmin', to: 'manualCredential' },
+  ],
+  /** Connected accounts resolve from the workspace; group selectors have no replacement. */
+  credential_group: [
+    { from: 'credentialGroup', to: '_removed_credentialGroup' },
+    { from: 'manualCredentialGroup', to: '_removed_manualCredentialGroup' },
   ],
   algolia: [
     { from: 'listPage', to: 'page' },
@@ -336,6 +352,8 @@ export const SUBBLOCK_OPERATION_VALUE_MIGRATIONS: Record<string, Record<string, 
    * time. Dropped rather than renamed — there is no field for the value to move to.
    */
   vanta: [{ from: 'uploadMimeType', to: '_removed_uploadMimeType' }],
+  /** Parallel's V1 Extract always returns excerpts; the opt-out toggle has no replacement. */
+  parallel_ai: [{ from: 'excerpts', to: '_removed_excerpts' }],
   /**
    * Three unrelated QuickBooks changes land here.
    *
@@ -614,16 +632,19 @@ export function migrateSubblockIds(blocks: Record<string, BlockState>): {
       continue
     }
 
-    const operationRewritten = migrateBlockOperationValue(block.type, block.subBlocks)
-    const migrations = SUBBLOCK_ID_MIGRATIONS[block.type]
+    const normalized = migrateMcpOperationControls(block)
+    const operationRewritten = migrateBlockOperationValue(normalized.type, normalized.subBlocks)
+    const migrations = SUBBLOCK_ID_MIGRATIONS[normalized.type]
     const renamed = migrations
-      ? migrateBlockSubblockIds(block.type, operationRewritten.subBlocks, migrations)
+      ? migrateBlockSubblockIds(normalized.type, operationRewritten.subBlocks, migrations)
       : { subBlocks: operationRewritten.subBlocks, migrated: false }
     const purged = dropParkedSubblocks(renamed.subBlocks)
     const changedSubBlocks = operationRewritten.migrated || renamed.migrated || purged.dropped
-    const renamedBlock = changedSubBlocks ? { ...block, subBlocks: purged.subBlocks } : block
+    const renamedBlock = changedSubBlocks
+      ? { ...normalized, subBlocks: purged.subBlocks }
+      : normalized
     const sanitized = sanitizeMalformedSubBlocks(renamedBlock)
-    const blockMigrated = changedSubBlocks || sanitized.changed
+    const blockMigrated = changedSubBlocks || sanitized.changed || normalized !== block
 
     if (blockMigrated) {
       if (purged.dropped) {

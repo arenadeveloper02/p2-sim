@@ -6,12 +6,10 @@ import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 
 /**
- * The canonical light, logo-only page frame - an Arena mark linking home, no
- * marketing menus, on the platform's light tokens (the `light` class pins
- * light mode regardless of visitor theme). It is the shared base for every
- * surface that wants minimal chrome: the global 404, fatal error, and the
- * `(interfaces)` group (which adds a support footer). The `(auth)` group uses
- * its own `AuthShell` with the same look.
+ * The canonical light, logo-only page frame — an Arena mark linking home, no
+ * marketing menus. The Arena mark has no dark/light variants, so the header
+ * always renders that one asset. Status pages can inherit the active theme
+ * via `theme="inherit"`; public interfaces stay on light tokens.
  *
  * Children decide their own layout: pass `center` for a single centered column
  * (404 message, simple gates); omit it for full-width content (the live chat
@@ -30,6 +28,8 @@ interface LogoShellProps {
   logoHref?: string
   /** Accessible label for the header logo link. Defaults to `Arena home`. */
   logoLabel?: string
+  /** Status pages follow the active theme; public interfaces retain their light appearance. */
+  theme?: 'light' | 'inherit'
 }
 
 export function LogoShell({
@@ -39,9 +39,15 @@ export function LogoShell({
   logo,
   logoHref = '/',
   logoLabel = 'Arena home',
+  theme = 'light',
 }: LogoShellProps) {
   return (
-    <div className='light desktop-title-bar-page relative flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
+    <div
+      className={cn(
+        'desktop-title-bar-page relative flex flex-col bg-[var(--bg)] text-[var(--text-primary)]',
+        theme === 'light' && 'light'
+      )}
+    >
       <DesktopTitleBarLane />
       <header>
         <nav className='mx-auto flex w-full max-w-[1460px] items-center px-20 py-4 max-sm:px-5 max-lg:px-8'>

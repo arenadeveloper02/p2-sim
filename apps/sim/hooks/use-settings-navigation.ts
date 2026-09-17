@@ -6,6 +6,7 @@ import type { WorkspaceHostContext } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
 import { isArenaBilling } from '@/lib/billing/arena/env'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
+import { APP_ENTRY_PATH } from '@/lib/navigation/paths'
 import { openSettingsPageEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useOptionalWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -39,10 +40,8 @@ export function resolveSettingsHref({
   hostContext,
   viewerUserId,
 }: ResolveSettingsHrefParams): string {
-  if (!workspaceId) return '/workspace'
+  if (!workspaceId) return APP_ENTRY_PATH
   let section = options?.section || 'general'
-  // Arena's Subscription nav entry is `arena-billing`; callers still pass
-  // `billing` for usage-limit / upgrade CTAs (e.g. Test when credits are exhausted).
   if (section === 'billing' && isArenaBilling()) {
     section = 'arena-billing'
   }

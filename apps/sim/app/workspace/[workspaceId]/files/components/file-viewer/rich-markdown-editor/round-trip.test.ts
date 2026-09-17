@@ -97,13 +97,11 @@ describe('markdown-fidelity utils', () => {
   })
 
   it('restores escaped callout markers', () => {
-    expect(postProcessSerializedMarkdown('> \\[!NOTE\\]\n> hi')).toBe('> [!NOTE]\n> hi')
+    expect(roundTrip('> [!NOTE]\n> hi').trim()).toBe('> [!NOTE]\n> hi')
   })
 
   it('restores escaped callout markers in nested blockquotes', () => {
-    expect(postProcessSerializedMarkdown('> > \\[!WARNING\\]\n> > hi')).toBe(
-      '> > [!WARNING]\n> > hi'
-    )
+    expect(roundTrip('> > [!WARNING]\n> > hi').trim()).toBe('> > [!WARNING]\n> > hi')
   })
 
   it('normalizes link hrefs', () => {
@@ -299,6 +297,52 @@ describe('editor markdown round-trip', () => {
     expect(sized).toContain('<img src="https://e.com/i.png" alt="d" width="320">')
     expect(roundTrip(sized)).toBe(sized)
     expect(roundTrip('![a](https://e.com/i.png)')).toContain('![a](https://e.com/i.png)')
+  })
+
+  it('round-trips every sized linked-image attribute without dropping dimensions', () => {
+    const source =
+      '[<img src="https://e.com/i.png" alt="" title="Diagram" width="320" height="180">](https://e.com "Details")'
+    const out = roundTrip(source)
+
+    expect(out).toContain('alt=""')
+    expect(out).toContain('width="320" height="180"')
+    expect(out).toContain('](https://e.com "Details")')
+    expect(roundTrip(out)).toBe(out)
+  })
+
+  it('uses empty alt text when a linked HTML image has no alt attribute', () => {
+    const source = '[<img src="https://e.com/i.png" width="320">](https://e.com)'
+    const out = roundTrip(source)
+
+    expect(out).toContain('alt=""')
+    expect(out).not.toContain('alt="&lt;img')
+    expect(roundTrip(out)).toBe(out)
+  })
+
+  it('round-trips linked images with escaped alt text and angle-bracket destinations', () => {
+    const source = '[![a\\]b](<https://e.com/image (1).png>)](<https://e.com/view (1)> "Details")'
+    const out = roundTrip(source)
+
+    expect(out).toContain('a\\]b')
+    expect(out).toContain('<https://e.com/image (1).png>')
+    expect(out).toContain('<https://e.com/view (1)>')
+    expect(roundTrip(out)).toBe(out)
+  })
+
+  it('parses a paragraph of adjacent links and linked images without recursive suffix scans', () => {
+    const links = Array.from(
+      { length: 80 },
+      (_, index) => `[Link ${index}](https://e.com/${index})`
+    )
+    const images = Array.from(
+      { length: 40 },
+      (_, index) => `[![Image ${index}](https://e.com/${index}.png)](https://e.com/${index})`
+    )
+    const out = roundTrip([...links, ...images].join(' '))
+
+    for (const link of links) expect(out).toContain(link)
+    for (const image of images) expect(out).toContain(image)
+    expect(roundTrip(out)).toBe(out)
   })
 
   it('preserves a sized base64 image and escapes quotes in attributes', () => {
@@ -565,19 +609,23 @@ describe('highlight ==mark==', () => {
 })
 
 describe('autolink / bare-URL preservation', () => {
-  it('keeps a bare URL bare instead of rewriting it to [url](url)', () => {
-    expect(roundTrip('visit https://sim.ai today').trim()).toBe('visit https://sim.ai today')
+  it('uses the native link serializer without changing link text or destinations', () => {
+    expect(roundTrip('visit https://sim.ai today').trim()).toBe(
+      'visit [https://sim.ai](https://sim.ai) today'
+    )
     expect(roundTrip('both https://a.com and https://b.com').trim()).toBe(
-      'both https://a.com and https://b.com'
+      'both [https://a.com](https://a.com) and [https://b.com](https://b.com)'
     )
   })
 
-  it('collapses an angle autolink and a bare email to their bare form', () => {
-    expect(roundTrip('see <https://sim.ai> here').trim()).toBe('see https://sim.ai here')
-    expect(roundTrip('mail <a@b.com> now').trim()).toBe('mail a@b.com now')
+  it('preserves autolink and email destinations using explicit Markdown links', () => {
+    expect(roundTrip('see <https://sim.ai> here').trim()).toBe(
+      'see [https://sim.ai](https://sim.ai) here'
+    )
+    expect(roundTrip('mail <a@b.com> now').trim()).toBe('mail [a@b.com](mailto:a@b.com) now')
   })
 
-  it('preserves explicit and titled links (only bare autolinks collapse)', () => {
+  it('preserves explicit and titled links', () => {
     expect(roundTrip('[Sim](https://sim.ai)').trim()).toBe('[Sim](https://sim.ai)')
     expect(roundTrip('[https://a.com](https://b.com)').trim()).toBe(
       '[https://a.com](https://b.com)'

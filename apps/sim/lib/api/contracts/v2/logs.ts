@@ -164,7 +164,7 @@ const v2LogWorkflowStateSchema = z
   )
   .nullable()
   .describe(
-    'Workflow graph snapshot captured for the run, or null when none is retained. Credential-bearing values are redacted to null: `oauth-input`, `password: true`, table sub-block values, sensitive nested tool parameters, and any parameter without authoritative codec metadata. `{{VAR}}` references in non-opaque fields are preserved.'
+    'Workflow graph captured for the run, or null if unavailable. Sensitive values are redacted to null; environment-variable references may be preserved.'
   )
 
 const v2LogWorkflowSummarySchema = z.object({
@@ -542,7 +542,7 @@ export const v2ListLogsQuerySchema = v1ListLogsQuerySchema
      */
     triggers: v2CommaListSchema(
       'triggers',
-      'Comma-separated trigger types to include. An empty entry is rejected. Values are matched exactly and are case-sensitive — every recorded trigger is lowercase, so `API` matches nothing while `api` matches. The vocabulary is open: it covers the core trigger types (`manual`, `api`, `schedule`, `chat`, `webhook`, `mcp`, `copilot`, `workflow`, `custom_block`) and the provider id of any webhook trigger (`slack`, `gmail`, `github`, …), so an unrecognized member is not rejected — it selects no runs. The literal value `all` is a sentinel that disables this filter entirely, so a list containing it returns runs of every trigger type; no real trigger type is named `all`.',
+      'Comma-separated, lowercase trigger types or webhook provider IDs. Matching is exact and case-sensitive; unknown values select no runs. An empty entry is rejected. The sentinel `all` disables this filter, even when listed with other values.',
       V2_LOG_TRIGGERS_MAX
     ).optional(),
     level: z.enum(['info', 'error']).describe('Severity level to include.').optional(),
@@ -550,7 +550,7 @@ export const v2ListLogsQuerySchema = v1ListLogsQuerySchema
     workflowName: v2WorkflowNameFilterSchema.optional(),
     includeJobRuns: booleanQueryFlagSchema
       .describe(
-        'Whether Chat and Sim-agent job runs join the sequence alongside workflow runs. Job runs report `kind: "job"`, carry no `workflow` summary, and never carry a cost ledger. They are dropped entirely — not partially matched — whenever a filter they cannot answer is set: by workflow, workflow name, folder, model, or status. A filter therefore never means two different things across the union. Accepted only when sorting by `startedAt`: job runs record cost as a document and no comparable status, so they cannot participate in the other orderings.'
+        'Include Chat and Sim-agent jobs alongside workflow runs. Jobs use `kind: "job"` and have no workflow or cost ledger. Workflow, folder, model, or status filters exclude jobs. This option is valid only when sorting by `startedAt`.'
       )
       .optional()
       .default(false),
@@ -594,12 +594,12 @@ export const v2ListLogsQuerySchema = v1ListLogsQuerySchema
      * local to this resource.
      */
     sortBy: v2LogSortFieldSchemas.sortBy.describe(
-      'Field used to sort the result. `durationMs` and `cost` are null until a run settles; those runs order as though the value were below every recorded one, so they trail an ascending page and lead a descending one. Only `startedAt` can order Chat and Sim-agent job runs, so any other value is rejected when job runs are included.'
+      'Field used to sort the result. `durationMs` and `cost` are null until a run settles; those runs sort before recorded values in ascending order and after them in descending order. Only `startedAt` can order Chat and Sim-agent job runs, so any other value is rejected when job runs are included.'
     ),
     folderPaths: z
       .string()
       .describe(
-        `Comma-separated workflow folder paths to include. At most ${V2_LOG_FOLDER_PATHS_MAX} entries. A path covers its whole subtree, so \`/prod\` also selects runs in \`/prod/nested\`. ${V2_FOLDER_FILTER_MISS}`
+        `Comma-separated workflow folder paths, including descendants. Up to ${V2_LOG_FOLDER_PATHS_MAX} paths. ${V2_FOLDER_FILTER_MISS}`
       )
       .optional()
       .transform((value, ctx) => {

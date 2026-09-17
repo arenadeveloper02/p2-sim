@@ -1,15 +1,30 @@
 /**
  * @vitest-environment node
  */
-import { resetEnvMock, setEnv } from '@sim/testing'
+import { resetEnvMock } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockParseWebhookBody, mockFindWebhooksByRoutingKey, mockDispatchResolvedWebhookTarget } =
-  vi.hoisted(() => ({
-    mockParseWebhookBody: vi.fn(),
-    mockFindWebhooksByRoutingKey: vi.fn(),
-    mockDispatchResolvedWebhookTarget: vi.fn(),
-  }))
+const {
+  mockLoadApp,
+  mockResolveInstallation,
+  mockSearch,
+  mockCustomDispatch,
+  mockParseWebhookBody,
+  mockFindWebhooksByRoutingKey,
+  mockDispatchResolvedWebhookTarget,
+  mockHandleSlackChallenge,
+  mockVerifySlackRequestSignature,
+} = vi.hoisted(() => ({
+  mockLoadApp: vi.fn(),
+  mockResolveInstallation: vi.fn(),
+  mockSearch: vi.fn(),
+  mockCustomDispatch: vi.fn(),
+  mockParseWebhookBody: vi.fn(),
+  mockFindWebhooksByRoutingKey: vi.fn(),
+  mockDispatchResolvedWebhookTarget: vi.fn(),
+  mockHandleSlackChallenge: vi.fn(),
+  mockVerifySlackRequestSignature: vi.fn(),
+}))
 
 vi.mock('@/lib/core/admission/gate', () => ({
   tryAdmit: () => ({ release: vi.fn() }),
@@ -23,9 +38,19 @@ vi.mock('@/lib/webhooks/processor', () => ({
 }))
 
 vi.mock('@/lib/webhooks/providers/slack', () => ({
-  handleSlackChallenge: () => null,
-  verifySlackRequestSignature: () => null,
+  handleSlackChallenge: mockHandleSlackChallenge,
+  verifySlackRequestSignature: mockVerifySlackRequestSignature,
   resolveSlackEventKey: () => null,
+}))
+
+vi.mock('@/lib/slack-search/app-configuration', () => ({ loadSlackAppConfiguration: mockLoadApp }))
+vi.mock('@/lib/knowledge/application/slack-search/ingress', () => ({
+  resolveSlackAppInstallation: { execute: mockResolveInstallation },
+}))
+vi.mock('@/lib/slack-search/dispatcher', () => ({ dispatchSlackSearch: mockSearch }))
+vi.mock('@/lib/webhooks/slack-custom-ingress', () => ({
+  dispatchSlackCustomBotCredential: mockCustomDispatch,
+  handleSlackAgentSessionStopped: vi.fn(),
 }))
 
 import { POST } from '@/app/api/webhooks/slack/route'
@@ -59,7 +84,13 @@ describe('Slack app webhook route', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    setEnv({ SLACK_SIGNING_SECRET: 'test-secret' })
+    mockLoadApp.mockResolvedValue({
+      app: { id: 'A1', kind: 'shared', revision: 'r1' },
+      signingSecret: 'test-secret',
+    })
+    mockResolveInstallation.mockResolvedValue(null)
+    mockHandleSlackChallenge.mockReturnValue(null)
+    mockVerifySlackRequestSignature.mockReturnValue(null)
     mockFindWebhooksByRoutingKey.mockResolvedValue([webhook('wh1')])
     mockDispatchResolvedWebhookTarget.mockResolvedValue({
       outcome: 'queued',
@@ -70,7 +101,62 @@ describe('Slack app webhook route', () => {
 
   it('dispatches each webhook resolved for the event team', async () => {
     await run(messageBody)
+    expect(mockVerifySlackRequestSignature).toHaveBeenCalledWith(
+      'test-secret',
+      expect.anything(),
+      JSON.stringify(messageBody),
+      expect.any(String)
+    )
     expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers a bounded challenge without app registration or dispatch', async () => {
+    mockHandleSlackChallenge.mockReturnValue(new Response('challenge', { status: 200 }))
+    const response = await run({ type: 'url_verification', challenge: 'challenge' })
+    expect(response.status).toBe(200)
+    expect(mockLoadApp).not.toHaveBeenCalled()
+    expect(mockSearch).not.toHaveBeenCalled()
+    expect(mockFindWebhooksByRoutingKey).not.toHaveBeenCalled()
+  })
+  it('rejects unknown apps without trying a default signing secret', async () => {
+    mockLoadApp.mockResolvedValueOnce(null)
+    expect((await run(messageBody)).status).toBe(401)
+    expect(mockVerifySlackRequestSignature).not.toHaveBeenCalled()
+    expect(mockResolveInstallation).not.toHaveBeenCalled()
+  })
+  it('rejects invalid signatures before resolving organization or workflow bindings', async () => {
+    mockVerifySlackRequestSignature.mockReturnValueOnce(new Response(null, { status: 401 }))
+    expect((await run(messageBody)).status).toBe(401)
+    expect(mockResolveInstallation).not.toHaveBeenCalled()
+    expect(mockFindWebhooksByRoutingKey).not.toHaveBeenCalled()
+  })
+  it('routes a custom app only through its verified app/workspace installation', async () => {
+    mockLoadApp.mockResolvedValueOnce({
+      app: { id: 'A1', kind: 'custom', revision: 'revision' },
+      signingSecret: 'custom-secret',
+    })
+    mockResolveInstallation.mockResolvedValueOnce({
+      credentialId: 'custom1',
+      credentialVersion: 'v1',
+    })
+    mockCustomDispatch.mockResolvedValueOnce([])
+    expect((await run(messageBody)).status).toBe(200)
+    expect(mockResolveInstallation).toHaveBeenCalledWith({
+      principal: expect.objectContaining({
+        kind: 'slack_app',
+        appId: 'A1',
+        appRevision: 'revision',
+      }),
+      input: { teamId: 'T1' },
+    })
+    expect(mockSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialId: 'custom1',
+        credentialVersion: 'v1',
+        body: messageBody,
+      })
+    )
+    expect(mockFindWebhooksByRoutingKey).not.toHaveBeenCalled()
   })
 
   it('continues cleanly when the dispatcher filters the event', async () => {

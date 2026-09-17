@@ -178,7 +178,7 @@ export class GenericBlockHandler implements BlockHandler {
       tool: block.config?.tool,
       workflowId: ctx.workflowId,
     })
-
+    ctx.mcpBlockId = block.id
     const isMcp = block.config.tool ? isMcpTool(block.config.tool) : false
     let tool = null
 

@@ -9,6 +9,7 @@ import {
   type BillingAttributionSnapshot,
   createAttributedBillingRequestEnvelope,
   resolveBillingAttribution,
+  resolveOrganizationBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
 import { createRunSegment } from '@/lib/copilot/async-runs/repository'
 import { chatPubSub } from '@/lib/copilot/chat-status'
@@ -76,6 +77,7 @@ export interface StreamingOrchestrationParams {
   titleProvider?: string
   requestId: string
   workspaceId?: string
+  organizationId?: string
   orchestrateOptions: Omit<CopilotLifecycleOptions, 'onEvent'>
   /**
    * Pre-started root; child spans bind to it and `finish()` fires on
@@ -100,6 +102,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
     titleProvider,
     requestId,
     workspaceId,
+    organizationId,
     orchestrateOptions,
     otelRoot,
   } = params
@@ -121,7 +124,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
   const abortController = new AbortController()
   registerActiveStream(streamId, abortController)
 
-  const publisher = new StreamWriter({ streamId, chatId, requestId })
+  const publisher = new StreamWriter({ streamId, chatId, requestId, userId })
 
   // Declared at function scope (same rationale as `cancelReason` below) so the
   // leak backstop in the orchestration's outer finally can always reach them:
@@ -259,6 +262,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
             titleModel,
             titleProvider,
             workspaceId,
+            organizationId,
             billingAttribution: orchestrateOptions.billingAttribution,
             requestId,
             publisher,
@@ -466,6 +470,7 @@ function fireTitleGeneration(params: {
   titleModel: string
   titleProvider?: string
   workspaceId?: string
+  organizationId?: string
   billingAttribution?: BillingAttributionSnapshot
   requestId: string
   publisher: StreamWriter
@@ -482,6 +487,7 @@ function fireTitleGeneration(params: {
     titleModel,
     titleProvider,
     workspaceId,
+    organizationId,
     billingAttribution,
     requestId,
     publisher,
@@ -490,6 +496,7 @@ function fireTitleGeneration(params: {
   if (!chatId || currentChat?.title || !isNewChat) return
 
   requestChatTitle({
+    chatId,
     message,
     model: titleModel,
     provider: titleProvider,
@@ -497,6 +504,7 @@ function fireTitleGeneration(params: {
     userEmail,
     copilotBackend,
     workspaceId,
+    organizationId,
     billingAttribution,
     otelContext,
   })
@@ -530,9 +538,9 @@ function fireTitleGeneration(params: {
     })
 }
 
-// Chat title helper
-
+/** Requests a title through the shared Assistant backend and its attributed billing protocol. */
 export async function requestChatTitle(params: {
+  chatId?: string
   message: string
   model: string
   provider?: string
@@ -540,10 +548,13 @@ export async function requestChatTitle(params: {
   userEmail?: string
   copilotBackend?: CopilotBackendPreference
   workspaceId?: string
+  organizationId?: string
   billingAttribution?: BillingAttributionSnapshot
   otelContext?: Context
+  signal?: AbortSignal
 }): Promise<string | null> {
   const {
+    chatId,
     message,
     model,
     provider,
@@ -553,6 +564,8 @@ export async function requestChatTitle(params: {
     otelContext,
     userEmail,
     copilotBackend,
+    organizationId,
+    signal,
   } = params
   if (!message || !model) return null
 
@@ -569,14 +582,23 @@ export async function requestChatTitle(params: {
   Object.assign(headers, getMothershipSourceEnvHeaders())
 
   try {
+    if (organizationId && (!chatId || workspaceId)) {
+      throw new Error('Organization titles require a private chat without a workspace')
+    }
     if (isHosted) {
-      if (!userId || !workspaceId) {
+      if (!userId || (!workspaceId && !organizationId)) {
         throw new Error('Title generation requires a billing actor and workspace')
       }
       const attribution = billingAttribution
         ? assertBillingAttributionSnapshot(billingAttribution)
-        : await resolveBillingAttribution({ actorUserId: userId, workspaceId })
-      if (attribution.actorUserId !== userId || attribution.workspaceId !== workspaceId) {
+        : organizationId
+          ? await resolveOrganizationBillingAttribution({ actorUserId: userId, organizationId })
+          : await resolveBillingAttribution({ actorUserId: userId, workspaceId: workspaceId! })
+      if (
+        attribution.actorUserId !== userId ||
+        attribution.workspaceId !== (workspaceId ?? null) ||
+        (organizationId && attribution.organizationId !== organizationId)
+      ) {
         throw new Error('Title billing attribution does not match its actor and workspace')
       }
 
@@ -588,12 +610,14 @@ export async function requestChatTitle(params: {
     const mothershipBaseURL = await getMothershipBaseURL({ userId })
     const response = await fetchGo(`${mothershipBaseURL}/api/generate-chat-title`, {
       method: 'POST',
+      signal,
       headers,
       body: JSON.stringify({
         message,
         model,
         ...(provider ? { provider } : {}),
         ...(workspaceId ? { workspaceId } : {}),
+        ...(organizationId ? { organizationId, chatId } : {}),
         ...(userId ? { userId } : {}),
       }),
       otelContext,

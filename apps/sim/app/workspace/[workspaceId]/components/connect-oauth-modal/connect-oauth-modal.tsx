@@ -16,6 +16,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
+import { resourceScopeFields, resourceScopeFromOwner } from '@/lib/core/resource-scope'
 import type { OAuthReturnContext } from '@/lib/credentials/client-state'
 import {
   ADD_CONNECTOR_SEARCH_PARAM,
@@ -37,7 +38,7 @@ import {
   useMicrosoftDataverseEnvironmentForm,
 } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal/microsoft-dataverse-environment'
 import { withBrandIcon } from '@/blocks/brand-icon'
-import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import { useCreateCredentialDraft } from '@/hooks/queries/credentials'
 import {
   assertMicrosoftDataverseWebOAuthAvailable,
   useConnectMicrosoftDataverseOAuthService,
@@ -45,6 +46,7 @@ import {
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOrganization } from '@/hooks/queries/organization'
 import { useOrganizationOAuthApps } from '@/hooks/queries/organization-oauth-apps'
+import { useScopedCredentials } from '@/hooks/queries/scoped-credentials'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const logger = createLogger('ConnectOAuthModal')
@@ -110,6 +112,7 @@ interface ConnectOAuthModalBaseProps {
    */
   serviceName?: string
   serviceIcon?: ServiceIcon
+  docsUrl?: string
   /** Used to resolve display metadata and the provider id when not supplied directly. */
   provider?: OAuthProvider
   serviceId?: string
@@ -126,14 +129,17 @@ interface ConnectOAuthModalBaseProps {
  */
 type ConnectOAuthModalConnectProps = ConnectOAuthModalBaseProps & {
   mode: 'connect'
-  workspaceId: string
+  workspaceId?: string
+  organizationId?: string
   requiredScopes: readonly string[]
 } & (
-    | { origin: 'workflow'; workflowId: string }
+    | { origin: 'workflow'; workflowId: string; workspaceId: string; organizationId?: never }
     | {
         origin: 'kb-connectors'
         knowledgeBaseId: string
         connectorType?: string
+        connectorId?: string
+        sourceAccess?: 'members'
       }
     | { origin: 'integrations' }
   )
@@ -149,10 +155,15 @@ interface ConnectOAuthModalReauthorizeProps extends ConnectOAuthModalBaseProps {
   requiredScopes?: readonly string[]
   newScopes?: readonly string[]
   reconnectTarget?: {
-    workspaceId: string
+    workspaceId?: string
+    organizationId?: string
     credentialId: string
     displayName: string
   }
+  returnContext?: Pick<
+    Extract<OAuthReturnContext, { origin: 'kb-connectors' }>,
+    'origin' | 'knowledgeBaseId' | 'connectorType' | 'connectorId'
+  >
   onConnect?: () => Promise<void> | void
 }
 
@@ -168,7 +179,7 @@ export type ConnectOAuthModalProps =
  * context written here.
  */
 export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
-  const { open, onOpenChange, mode } = props
+  const { open, onOpenChange, mode, docsUrl } = props
   const isConnect = mode === 'connect'
 
   const declaredProviderId = useMemo(
@@ -221,9 +232,9 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
     return resolveService(provider, props.serviceId ?? providerId)
   }, [props.serviceName, props.serviceIcon, props.provider, props.serviceId, providerId])
 
-  const workspaceId = isConnect ? props.workspaceId : (props.reconnectTarget?.workspaceId ?? '')
+  const workspaceId = isConnect ? props.workspaceId : props.reconnectTarget?.workspaceId
+  const organizationId = isConnect ? props.organizationId : props.reconnectTarget?.organizationId
   const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
-  const organizationId = workspaceSettings?.settings?.workspace?.organizationId ?? undefined
 
   const { data: activeOrganization } = useActiveOrganization()
   const { data: organization } = useOrganization(activeOrganization?.id || '')
@@ -247,9 +258,10 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
     clientConfiguration?.redirectPath && typeof window !== 'undefined'
       ? new URL(clientConfiguration.redirectPath, window.location.origin).toString()
       : null
-  const { data: credentials = [], isPending: credentialsLoading } = useWorkspaceCredentials({
+  const { data: credentials = [], isPending: credentialsLoading } = useScopedCredentials({
     workspaceId,
-    enabled: Boolean(workspaceId) && open,
+    organizationId,
+    enabled: Boolean(workspaceId || organizationId) && open,
   })
   const createDraft = useCreateCredentialDraft()
   const connectOAuthService = useConnectOAuthService()
@@ -371,7 +383,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
         }
 
         const draft = await createDraft.mutateAsync({
-          workspaceId,
+          ...resourceScopeFields(resourceScopeFromOwner({ workspaceId, organizationId })),
           providerId,
           displayName: trimmed,
           description: description.trim() || undefined,
@@ -396,23 +408,27 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
               accountId: credential.accountId,
               updatedAt: credential.updatedAt,
             })),
-          workspaceId,
+          ...resourceScopeFields(resourceScopeFromOwner({ workspaceId, organizationId })),
           requestedAt: Date.now(),
         }
 
         let returnContext: OAuthReturnContext
         if (props.origin === 'kb-connectors') {
-          connectorType = props.connectorType
+          connectorType = props.connectorId ? undefined : props.connectorType
           returnContext = {
             ...baseContext,
             origin: 'kb-connectors',
             knowledgeBaseId: props.knowledgeBaseId,
             connectorType: props.connectorType,
+            connectorId: props.connectorId,
+            sourceAccess: props.sourceAccess,
           }
         } else if (props.origin === 'workflow') {
           returnContext = {
             ...baseContext,
             origin: 'workflow',
+            workspaceId: props.workspaceId,
+            organizationId: undefined,
             workflowId: props.workflowId,
           }
         } else {
@@ -428,7 +444,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
       } else {
         if (props.reconnectTarget) {
           const draft = await createDraft.mutateAsync({
-            workspaceId: props.reconnectTarget.workspaceId,
+            ...resourceScopeFields(resourceScopeFromOwner(props.reconnectTarget)),
             providerId,
             credentialId: props.reconnectTarget.credentialId,
             displayName: props.reconnectTarget.displayName,
@@ -440,7 +456,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
             (credential) => credential.type === 'oauth' && credential.providerId === providerId
           )
           writeOAuthReturnContext({
-            origin: 'integrations',
+            ...(props.returnContext ?? { origin: 'integrations' as const }),
             displayName: props.reconnectTarget.displayName,
             providerId,
             preCount: providerCredentials.length,
@@ -449,7 +465,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
               accountId: credential.accountId,
               updatedAt: credential.updatedAt,
             })),
-            workspaceId: props.reconnectTarget.workspaceId,
+            ...resourceScopeFields(resourceScopeFromOwner(props.reconnectTarget)),
             reconnect: true,
             requestedAt: Date.now(),
           })
@@ -681,6 +697,16 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
       <ChipModalFooter
         onCancel={handleClose}
         cancelDisabled={isPending}
+        secondaryActions={
+          docsUrl
+            ? [
+                {
+                  label: 'Setup guide',
+                  onClick: () => window.open(docsUrl, '_blank', 'noopener,noreferrer'),
+                },
+              ]
+            : undefined
+        }
         primaryAction={{
           label: isPending ? 'Connecting...' : 'Connect',
           onClick: handleConnect,

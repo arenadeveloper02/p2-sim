@@ -10,6 +10,7 @@ import {
   setEnvFlags,
 } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 
 const {
   mockCheckInternalApiKey,
@@ -27,6 +28,7 @@ const {
   mockSerializeBillingAttributionHeader,
   mockGetUserEntityPermissions,
   mockGetWorkspaceBillingSettings,
+  mockAuthorizeOrganizationChat,
 } = vi.hoisted(() => ({
   mockCheckInternalApiKey: vi.fn(),
   mockCheckAttributedUsageLimits: vi.fn(),
@@ -43,6 +45,7 @@ const {
   mockSerializeBillingAttributionHeader: vi.fn(),
   mockGetUserEntityPermissions: vi.fn(),
   mockGetWorkspaceBillingSettings: vi.fn(),
+  mockAuthorizeOrganizationChat: vi.fn(),
 }))
 
 const ATTRIBUTION = {
@@ -118,6 +121,10 @@ vi.mock('@/lib/billing/core/subscription', () => ({
 
 vi.mock('@/lib/billing/core/usage-log', () => ({
   deriveBillingContext: mockDeriveBillingContext,
+}))
+
+vi.mock('@/lib/copilot/chat/organization-chats', () => ({
+  authorizeOrganizationChatDelegation: { execute: mockAuthorizeOrganizationChat },
 }))
 
 vi.mock('@/lib/copilot/request/http', () => ({
@@ -275,7 +282,8 @@ describe('POST /api/copilot/api-keys/validate billing protocols', () => {
     const res = await POST(request(SELF_HOSTED_WORKSPACELESS_VALIDATE_BODY))
 
     expect(res.status).toBe(200)
-    expect(mockCheckServerSideUsageLimits).toHaveBeenCalledWith('user-1')
+    expect(mockCheckSelfHostedMothershipUsageLimits).toHaveBeenCalledWith('user-1')
+    expect(mockCheckServerSideUsageLimits).not.toHaveBeenCalled()
     expect(mockResolveLegacyV0BillingAttribution).not.toHaveBeenCalled()
     expect(mockCheckAttributedUsageLimits).not.toHaveBeenCalled()
   })
@@ -285,7 +293,8 @@ describe('POST /api/copilot/api-keys/validate billing protocols', () => {
     const res = await POST(request(SELF_HOSTED_OPAQUE_WORKSPACE_VALIDATE_BODY))
 
     expect(res.status).toBe(200)
-    expect(mockCheckServerSideUsageLimits).toHaveBeenCalledWith('user-1')
+    expect(mockCheckSelfHostedMothershipUsageLimits).toHaveBeenCalledWith('user-1')
+    expect(mockCheckServerSideUsageLimits).not.toHaveBeenCalled()
     expect(mockCheckAttributedUsageLimits).not.toHaveBeenCalled()
   })
 
@@ -318,6 +327,73 @@ describe('POST /api/copilot/api-keys/validate billing protocols', () => {
 
     expect(res.status).toBe(400)
     expect(mockCheckServerSideUsageLimits).not.toHaveBeenCalled()
+  })
+
+  it('requires the current actor and canonical private chat for organization admission', async () => {
+    const orgAttribution = { ...ATTRIBUTION, workspaceId: null }
+    mockRequireBillingAttributionHeader.mockReturnValueOnce(orgAttribution)
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        { userId: 'user-1', organizationId: 'org-1', chatId: 'chat-1' },
+        {
+          'x-api-key': 'internal',
+          'x-sim-billing-protocol': 'attribution-v1',
+          'x-sim-billing-request-id': '00000000-0000-4000-8000-000000000001',
+          'x-sim-billing-attribution': 'serialized-attribution',
+        }
+      )
+    )
+    expect(response.status).toBe(200)
+    expect(mockAuthorizeOrganizationChat).toHaveBeenCalledWith({
+      principal: expect.objectContaining({
+        kind: 'organization_delegated',
+        subjectUserId: 'user-1',
+        organizationId: 'org-1',
+        resourceScope: { chatId: 'chat-1' },
+      }),
+    })
+    expect(mockRequireBillingAttributionHeader).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: 'user-1',
+      organizationId: 'org-1',
+    })
+    expect(mockCheckAttributedUsageLimits).toHaveBeenCalledWith(orgAttribution)
+  })
+
+  it('denies removed members before billing admission', async () => {
+    mockAuthorizeOrganizationChat.mockRejectedValueOnce(
+      new OrchestrationError('not_found', 'Conversation not found')
+    )
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        { userId: 'user-1', organizationId: 'org-1', chatId: 'chat-1' },
+        { 'x-api-key': 'internal', 'x-sim-billing-protocol': 'attribution-v1' }
+      )
+    )
+    expect(response.status).toBe(403)
+    expect(mockCheckAttributedUsageLimits).not.toHaveBeenCalled()
+  })
+
+  it('rejects markerless organization admission rather than settling it as a personal account', async () => {
+    const response = await POST(
+      request({ userId: 'user-1', organizationId: 'org-1', chatId: 'chat-1' })
+    )
+    expect(response.status).toBe(400)
+    expect(mockAuthorizeOrganizationChat).not.toHaveBeenCalled()
+    expect(mockCheckServerSideUsageLimits).not.toHaveBeenCalled()
+  })
+
+  it('rejects an organization request missing its private chat', async () => {
+    const response = await POST(
+      createMockRequest(
+        'POST',
+        { userId: 'user-1', organizationId: 'org-1' },
+        { 'x-api-key': 'internal', 'x-sim-billing-protocol': 'attribution-v1' }
+      )
+    )
+    expect(response.status).toBe(400)
+    expect(mockCheckAttributedUsageLimits).not.toHaveBeenCalled()
   })
 
   it('uses the exact frozen attribution for attributed-v1 admission', async () => {
@@ -518,7 +594,7 @@ describe('POST /api/copilot/api-keys/validate self-hosted mothership', () => {
   })
 
   it('meters mothership cost only and skips hosted attributed limits', async () => {
-    const res = await POST(request(OLD_GO_WORKSPACELESS_VALIDATE_BODY))
+    const res = await POST(request(SELF_HOSTED_WORKSPACELESS_VALIDATE_BODY))
 
     expect(res.status).toBe(200)
     expect(mockCheckSelfHostedMothershipUsageLimits).toHaveBeenCalledWith('user-1')
@@ -533,7 +609,7 @@ describe('POST /api/copilot/api-keys/validate self-hosted mothership', () => {
       limit: 100,
     })
 
-    const res = await POST(request(OLD_GO_WORKSPACELESS_VALIDATE_BODY))
+    const res = await POST(request(SELF_HOSTED_WORKSPACELESS_VALIDATE_BODY))
 
     expect(res.status).toBe(402)
     expect(mockCheckSelfHostedMothershipUsageLimits).toHaveBeenCalledWith('user-1')

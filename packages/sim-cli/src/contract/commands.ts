@@ -133,7 +133,7 @@ export const CLI_CONTRACT: CliContract = {
     // fields otherwise render as an unexplained em-dash for exactly the key
     // most people run the CLI with.
     describe:
-      'Show billing status and current-period credit usage (credits and storage require a personal API key)',
+      'Show billing status and current-period credit usage (credits and storage require an OAuth login or personal API key)',
     fields: [
       { header: 'plan' },
       { header: 'status' },
@@ -153,19 +153,19 @@ export const CLI_CONTRACT: CliContract = {
   listBillingLogs: {
     command: 'billing logs',
     allWorkspaces: true,
-    // Which ledger answered depends on the key, and the counts otherwise read
+    // Which ledger answered depends on the credential, and the counts otherwise read
     // as a bug next to `billing status`. Said in the describe for the reason
     // `billing status` says its own caveat. The trailing parenthetical is what
     // keeps the generated docs heading unchanged.
     describe:
-      "List credit usage events (a personal API key reports only your own events; a workspace API key reports every member's in aggregate, unattributed)",
+      "List credit usage events (an OAuth login or personal API key reports only your events; a workspace API key reports every member's in aggregate, unattributed)",
     flags: {
       source: { describe: 'Filter by usage source; sim-chat combines Copilot and workspace chat' },
       period: { describe: 'Billing period' },
       startDate: { describe: 'Custom period start (ISO 8601)' },
       endDate: { describe: 'Custom period end (ISO 8601)' },
     },
-    // Which ledger answered: a personal key reports only the calling user's
+    // Which ledger answered: a user credential reports only the calling user's
     // events, a workspace key the whole workspace. The difference was silent —
     // same workspace, same window, same flags, a strictly smaller result.
     pageNote: { path: 'scope', label: 'scope' },
@@ -694,7 +694,64 @@ export const CLI_CONTRACT: CliContract = {
     variants: [moveResource('workflows mv', 'workflow')],
     flags: { folderPath: FOLDER_PATH_FLAG },
   },
-  importWorkflow: { flags: { folderPath: FOLDER_PATH_FLAG } },
+  importWorkflow: { workspaceOperation: true, flags: { folderPath: FOLDER_PATH_FLAG } },
+  previewWorkflowImport: {
+    command: 'workflows import-preview',
+    flags: { folderPath: FOLDER_PATH_FLAG },
+  },
+  previewWorkspaceFork: { command: 'workspaces fork-preview', profileWorkspacePath: true },
+  forkWorkspace: {
+    command: 'workspaces fork',
+    profileWorkspacePath: true,
+    workspaceOperation: true,
+  },
+  previewWorkspacePush: { command: 'workspaces push-preview', profileWorkspacePath: true },
+  pushWorkspace: {
+    command: 'workspaces push',
+    profileWorkspacePath: true,
+    workspaceOperation: true,
+    confirm: 'This replaces target workflows and may archive targets whose sources were deleted.',
+    flags: { confirm: { omit: true } },
+  },
+  previewWorkspacePull: { command: 'workspaces pull-preview', profileWorkspacePath: true },
+  pullWorkspace: {
+    command: 'workspaces pull',
+    profileWorkspacePath: true,
+    workspaceOperation: true,
+    confirm: 'This replaces target workflows and may archive targets whose sources were deleted.',
+    flags: { confirm: { omit: true } },
+  },
+  getWorkspaceForkAvailability: {
+    command: 'workspaces fork-availability',
+    profileWorkspacePath: true,
+  },
+  getWorkspaceForkLineage: { command: 'workspaces lineage', profileWorkspacePath: true },
+  listWorkspaceForkChildren: { command: 'workspaces children', profileWorkspacePath: true },
+  listWorkspaceForkResources: { command: 'workspaces fork-resources', profileWorkspacePath: true },
+  getWorkspaceForkMappings: { command: 'workspaces mappings get', profileWorkspacePath: true },
+  updateWorkspaceForkMappings: {
+    command: 'workspaces mappings update',
+    profileWorkspacePath: true,
+  },
+  rollbackWorkspaceFork: {
+    command: 'workspaces fork-rollback',
+    profileWorkspacePath: true,
+    confirm: 'This restores the latest sync using its prior deployed versions.',
+  },
+  unlinkWorkspaceFork: {
+    command: 'workspaces unlink',
+    profileWorkspacePath: true,
+    confirm: 'This removes the fork relationship and its persisted mappings.',
+  },
+  updateWorkspaceForkExclusions: {
+    command: 'workspaces sync-exclusions',
+    profileWorkspacePath: true,
+    flags: { workflowIds: { name: 'workflow', list: true } },
+  },
+  getWorkspaceOperation: { command: 'workspaces operations get', profileWorkspacePath: true },
+  listWorkspaceOperations: { command: 'workspaces operations list', profileWorkspacePath: true },
+  listSelector: { command: 'selectors list' },
+  getSelector: { command: 'selectors get' },
   createCustomTool: { flags: { schema: { json: true, describe: CUSTOM_TOOL_SCHEMA_HELP } } },
   updateCustomTool: { flags: { schema: { json: true, describe: CUSTOM_TOOL_SCHEMA_HELP } } },
   // A dependency set is typed one specifier at a time or pasted from a
@@ -981,7 +1038,7 @@ export const CLI_CONTRACT: CliContract = {
       organizationId: {
         name: 'organization',
         describe:
-          'Organization ID; defaults to your only organization, and is required when your account belongs to more than one (personal API key required)',
+          'Organization ID; defaults to your only organization, and is required when your account belongs to more than one (OAuth login or personal API key required)',
       },
     },
     columns: [
@@ -1000,7 +1057,7 @@ export const CLI_CONTRACT: CliContract = {
       organizationId: {
         name: 'organization',
         describe:
-          'Organization ID; defaults to your only organization, and is required when your account belongs to more than one (personal API key required)',
+          'Organization ID; defaults to your only organization, and is required when your account belongs to more than one (OAuth login or personal API key required)',
       },
     },
   },
@@ -1473,6 +1530,12 @@ export const CLI_CONTRACT: CliContract = {
   // produce something `sim workflows import` accepts back.
   exportWorkflow: {
     describe: 'Print a workflow as a portable JSON document',
+    flags: {
+      includeReferences: {
+        boolean: true,
+        describe: 'Include non-secret resource identities for mapped import',
+      },
+    },
     document: true,
   },
 

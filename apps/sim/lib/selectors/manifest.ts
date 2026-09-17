@@ -34,7 +34,7 @@ function providerSelector(
       ...(options.sensitive ? { sensitive: options.sensitive } : {}),
       ...(options.sourceFields ? { sourceFields: options.sourceFields } : {}),
     },
-    scopeKinds: SERVER_SCOPE_KINDS,
+    scopeKinds: [...SERVER_SCOPE_KINDS, 'organization'],
     listMode: options.listMode ?? 'flat',
     supportsSearch: options.search ?? false,
     supportsDetail: options.detail ?? false,
@@ -298,6 +298,12 @@ export const selectorManifest = {
     search: true,
     detail: true,
   }),
+  'jira.projectKeys': providerSelector(['domain'], {
+    readiness: { all: ['oauthCredential', 'domain'] },
+    listMode: 'paginated',
+    search: true,
+    detail: true,
+  }),
   'linear.projects': providerSelector(['teamId'], {
     readiness: { all: ['oauthCredential', 'teamId'] },
     listMode: 'paginated',
@@ -346,6 +352,14 @@ export const selectorManifest = {
     readiness: { all: ['host', 'username', 'password'] },
     sensitive: ['username', 'password'],
   }),
+  'mcp.tools': rawProviderSelector(['mcpServerId'], {
+    readiness: { all: ['mcpServerId'] },
+    sourceFields: { mcpServerId: ['serverId', 'server'] },
+    listMode: 'paginated',
+    search: true,
+    detail: true,
+    staleTime: 0,
+  }),
   'managedAgent.agents': providerSelector(),
   'managedAgent.environments': providerSelector(['environmentType']),
   'managedAgent.vaults': providerSelector(),
@@ -368,8 +382,8 @@ export const selectorManifest = {
     staleTime: 0,
   }),
   'workspace.credentialProviders': internalSelector([], { detail: true }),
-  'workspace.credentialGroups': internalSelector([], { detail: true }),
-  'workspace.credentialGroupProviders': internalSelector(['credentialGroupId'], {
+  'workspace.organizationMcpProviders': internalSelector([], { detail: true }),
+  'workspace.credentialGroupProviders': internalSelector([], {
     detail: true,
   }),
   'workspace.secretNames': internalSelector(),

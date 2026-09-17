@@ -16,8 +16,11 @@ import {
   Loader,
   OverflowText,
   Skeleton,
+  scrollFadeAttributes,
+  scrollFadeClass,
   Tooltip,
   Upload,
+  useScrollEdges,
 } from '@sim/emcn'
 import {
   Database,
@@ -43,6 +46,7 @@ import { isMacPlatform } from '@/lib/core/utils/platform'
 import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPathNames } from '@/lib/folders/tree'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { useSidebarChrome } from '@/app/workspace/[workspaceId]/components/workspace-chrome'
 import { CONNECT_MODE } from '@/app/workspace/[workspaceId]/integrations/connect-route'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -57,6 +61,7 @@ import {
   CollapsedWorkflowFlyoutItem,
   FilesRailFlyout,
   HelpModal,
+  isNavItemActive,
   NavItemContextMenu,
   SearchModal,
   SettingsSidebar,
@@ -65,6 +70,7 @@ import {
   SidebarNavChip,
   type SidebarNavItemData,
   SidebarSection,
+  SidebarTooltip,
   StatusNotice,
   TablesRailFlyout,
   WorkflowList,
@@ -165,30 +171,6 @@ const SEARCH_MODAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
 })
-
-export function SidebarTooltip({
-  children,
-  label,
-  enabled,
-  side = 'right',
-  shortcut,
-}: {
-  children: React.ReactElement
-  label: string
-  enabled: boolean
-  side?: 'right' | 'bottom'
-  shortcut?: string
-}) {
-  if (!enabled) return children
-  return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
-      <Tooltip.Content side={side}>
-        {shortcut ? <Tooltip.Shortcut keys={shortcut}>{label}</Tooltip.Shortcut> : <p>{label}</p>}
-      </Tooltip.Content>
-    </Tooltip.Root>
-  )
-}
 
 /** Stands in for a chip row while a list loads, so it carries no margin either. */
 function SidebarItemSkeleton() {
@@ -325,17 +307,6 @@ const SidebarChatItem = memo(function SidebarChatItem({
   )
 })
 
-/**
- * Returns true when the current pathname matches `item.href` or any
- * `additionalActivePaths` at a segment boundary (avoids `/foo` matching `/foo-bar`).
- */
-function isNavItemActive(item: SidebarNavItemData, pathname: string | null): boolean {
-  if (!pathname) return false
-  const matches = (p: string) => pathname === p || pathname.startsWith(`${p}/`)
-  if (item.href && matches(item.href)) return true
-  return item.additionalActivePaths?.some(matches) ?? false
-}
-
 const SidebarNavItem = memo(function SidebarNavItem({
   item,
   active,
@@ -384,30 +355,14 @@ const DRAG_EXEMPT_CLASS = '[-webkit-app-region:no-drag]'
  *
  * This ensures server and client render identical HTML, preventing hydration errors.
  *
+ * Collapse and peek state come from the hosting chrome through
+ * {@link useSidebarChrome}; the peek card always renders the expanded layout,
+ * whatever the rail's state.
+ *
  * @returns Sidebar with workflows panel
  */
-interface SidebarProps {
-  /**
-   * Authoritative collapse state, derived once in {@link WorkspaceChrome} from the
-   * `sidebar_collapsed` cookie (server prop → store after hydration) and passed in
-   * so the rail's structure, labels, and width all read a single source.
-   */
-  isCollapsed: boolean
-  /**
-   * True while the sidebar is rendered as the desktop hover-peek card. The card shows
-   * the expanded layout even though the rail is collapsed, so this overrides
-   * {@link SidebarProps.isCollapsed} below — and separately suppresses the chrome the
-   * card already provides: it sits below the traffic-light lane, and drag-resize would
-   * fight the card's width.
-   */
-  isPeeking?: boolean
-}
-
-export const Sidebar = memo(function Sidebar({
-  isCollapsed: isCollapsedProp,
-  isPeeking = false,
-}: SidebarProps) {
-  /** The peek card always renders the expanded layout, whatever the rail's state. */
+export const Sidebar = memo(function Sidebar() {
+  const { isCollapsed: isCollapsedProp, isPeeking } = useSidebarChrome()
   const isCollapsed = isCollapsedProp && !isPeeking
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -783,7 +738,6 @@ export const Sidebar = memo(function Sidebar({
         href: `/workspace/${workspace.id}/w`,
         isCurrent: workspace.id === workspaceId,
         logoUrl: workspace.logoUrl,
-        color: workspace.color,
       })),
     [workspaces, workspaceId]
   )
@@ -1039,29 +993,10 @@ export const Sidebar = memo(function Sidebar({
     [workflowFlyoutRename, workflowsHover]
   )
 
-  const [hasOverflowTop, setHasOverflowTop] = useState(false)
-
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    const updateScrollState = () => {
-      setHasOverflowTop(container.scrollTop > 1)
-    }
-
-    updateScrollState()
-    container.addEventListener('scroll', updateScrollState, { passive: true })
-    const observer = new ResizeObserver(updateScrollState)
-    observer.observe(container)
-    if (scrollContentRef.current) {
-      observer.observe(scrollContentRef.current)
-    }
-
-    return () => {
-      container.removeEventListener('scroll', updateScrollState)
-      observer.disconnect()
-    }
-  }, [])
+  const scrollEdges = useScrollEdges(scrollContainerRef, {
+    contentRef: scrollContentRef,
+    enabled: !isCollapsed,
+  })
 
   const isOnSettingsPage = pathname?.startsWith(`/workspace/${workspaceId}/settings`) ?? false
 
@@ -1385,7 +1320,7 @@ export const Sidebar = memo(function Sidebar({
             )}
             <div
               className={cn(
-                'relative flex shrink-0 items-center px-2 pt-3',
+                'relative flex shrink-0 items-center px-2 pt-2',
                 !isPeeking &&
                   '[[data-sim-desktop-title-bar=inset]_&]:pt-[var(--desktop-title-bar-height)]'
               )}
@@ -1416,8 +1351,7 @@ export const Sidebar = memo(function Sidebar({
               {/*
                * The trailing chips collapse as one cluster rather than individually: a
                * chip's own `px-2` still renders under border-box, so `w-0` on the chip
-               * would leave a 16px stub — the width animation has to sit on an unpadded
-               * wrapper.
+               * would leave a 16px stub — the width has to sit on an unpadded wrapper.
                *
                * Chips carry no outer margin, so the gap here is the whole distance
                * between them. `gap-[1px]` rather than `gap-px`: the `px` spacing key
@@ -1425,19 +1359,15 @@ export const Sidebar = memo(function Sidebar({
                * hairline rules stay hairlines.
                *
                * The expanded width is EXPLICIT (2 icon chips × 32px + the 1px gap;
-               * 32px when the desktop inset title bar hides the collapse chip), never
-               * `auto`: `w-0 → auto` cannot interpolate, so on expand the cluster
-               * snapped to full width while the rail was still 51px wide — and since
-               * the cluster refuses to flex-shrink (min-width: auto) while the
-               * workspace chip's wrapper is `min-w-0 flex-1`, the workspace chip
-               * crushed to zero and the hover-filled Search chip landed exactly under
-               * the cursor on the workspace icon: a visible flash on every expand.
-               * With both endpoints explicit, the width tweens in step with the rail
-               * and the workspace chip keeps its space throughout.
+               * 32px when the desktop inset title bar hides the collapse chip) so the
+               * cluster never claims more than its chips: it refuses to flex-shrink
+               * (min-width: auto) while the workspace chip's wrapper is `min-w-0
+               * flex-1`, so an `auto` width would crush the workspace chip instead.
                */}
               <div
+                inert={isCollapsed}
                 className={cn(
-                  'flex h-[30px] items-center gap-[1px] overflow-hidden transition-all duration-200 [transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]',
+                  'flex h-[30px] items-center gap-[1px] overflow-hidden',
                   isCollapsed
                     ? 'w-0 opacity-0'
                     : 'w-[65px] [[data-sim-desktop-title-bar=inset]_&]:w-[32px]'
@@ -1486,12 +1416,16 @@ export const Sidebar = memo(function Sidebar({
               />
             ) : (
               <>
+                {/* The divider is the pinned block's bottom rule, not the scroll region's top one:
+                    the region's edge fade masks its own first pixels, which would erase a rule
+                    drawn there exactly when it should show. Same construction as the footer. */}
                 <div
                   className={cn(
                     SIDEBAR_SECTION_GAP_CLASS,
                     SIDEBAR_ITEM_GAP_CLASS,
                     SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
-                    'flex shrink-0 flex-col px-2'
+                    'flex shrink-0 flex-col border-b px-2 transition-colors duration-150',
+                    !scrollEdges.top && 'border-transparent'
                   )}
                 >
                   {topNavItems.map((item) => (
@@ -1509,9 +1443,11 @@ export const Sidebar = memo(function Sidebar({
                   ref={isCollapsed ? undefined : scrollContainerRef}
                   className={cn(
                     SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
-                    'flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden border-t transition-colors duration-150',
-                    !hasOverflowTop && 'border-transparent'
+                    SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
+                    scrollFadeClass,
+                    'flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden'
                   )}
+                  {...scrollFadeAttributes(scrollEdges)}
                 >
                   <div ref={scrollContentRef} className='flex flex-col'>
                     {chatEnabled && (
@@ -1526,6 +1462,7 @@ export const Sidebar = memo(function Sidebar({
                               icon={chatsCollapsedIcon}
                               hover={chatsHover}
                               ariaLabel='Chats'
+                              isEditing={!!chatFlyoutRename.editingId}
                             >
                               {chatsLoading ? (
                                 <DropdownMenuItem disabled>
@@ -1757,6 +1694,7 @@ export const Sidebar = memo(function Sidebar({
                             icon={workflowsCollapsedIcon}
                             hover={workflowsHover}
                             ariaLabel='Workflows'
+                            isEditing={!!workflowFlyoutRename.editingId}
                             primaryAction={workflowsPrimaryAction}
                           >
                             {workflowsLoading && regularWorkflows.length === 0 ? (
@@ -1838,13 +1776,12 @@ export const Sidebar = memo(function Sidebar({
                 </div>
 
                 {(hosted || isStatusNoticePreviewEnabled) && !isCollapsed ? (
-                  <div className='shrink-0 px-2 py-2'>
-                    <StatusNotice preview={isStatusNoticePreviewEnabled} />
-                  </div>
+                  <StatusNotice preview={isStatusNoticePreviewEnabled} />
                 ) : null}
 
                 <SidebarFooter
                   workspaceId={workspaceId}
+                  showDivider={scrollEdges.bottom}
                   isCollapsed={isCollapsed}
                   showCollapsedTooltips={showCollapsedTooltips}
                   getSettingsHref={(section) => getSettingsHref({ section })}

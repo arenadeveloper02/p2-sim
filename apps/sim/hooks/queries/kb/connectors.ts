@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   keepPreviousData,
   type QueryClient,
@@ -19,9 +20,11 @@ import {
   getKnowledgeConnectorContract,
   listKnowledgeConnectorDocumentsContract,
   listKnowledgeConnectorsContract,
+  listSearchSourcesContract,
   listWorkspaceMemberConnectorsContract,
   type MemberSyncLogData,
   patchKnowledgeConnectorDocumentsContract,
+  type SearchSourceSummary,
   type StartKnowledgeConnectorMemberEnrollmentData,
   type SyncLogData,
   startKnowledgeConnectorMemberEnrollmentContract,
@@ -32,10 +35,37 @@ import {
   type ViewerConnectorMembership,
   type WorkspaceMemberConnector,
 } from '@/lib/api/contracts/knowledge'
-import { MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE } from '@/lib/knowledge/constants'
+import {
+  type ConnectorAccessMode,
+  type ConnectorDocumentsQuery,
+  type PrepareSearchSourceBody,
+  prepareSearchSourceContract,
+  readOrganizationSearchOverviewContract,
+  readSearchIndexContract,
+  readSearchSourceOverviewContract,
+  readSearchSourceProgressContract,
+  type SearchConnectionOAuthQuery,
+  type SearchSourcePage,
+  type SearchSourceProgress,
+} from '@/lib/api/contracts/knowledge/connectors'
+import {
+  type ResourceScope,
+  resourceScopeFields,
+  resourceScopeFromOwner,
+  resourceScopeKey,
+} from '@/lib/core/resource-scope'
+import {
+  MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE,
+  MAX_SEARCH_SOURCE_PROGRESS_ITEMS,
+} from '@/lib/knowledge/constants'
+import { organizationAccountsKeys } from '@/hooks/queries/organization-accounts'
+import { credentialGroupKeys } from '@/hooks/queries/utils/credential-group-queries'
 import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
+import { searchIntegrationKeys } from '@/hooks/queries/utils/search-integration-keys'
+import { searchSourceKeys } from '@/hooks/queries/utils/search-source-keys'
 
 export type {
+  SearchSourceSummary,
   ViewerConnectorMembership,
   WorkspaceMemberConnector,
   ConnectorData,
@@ -61,6 +91,13 @@ export const connectorKeys = {
   details: (knowledgeBaseId?: string) => [...connectorKeys.all(knowledgeBaseId), 'detail'] as const,
   detail: (knowledgeBaseId?: string, connectorId?: string) =>
     [...connectorKeys.details(knowledgeBaseId), connectorId ?? ''] as const,
+  progress: (knowledgeBaseId?: string, connectorId?: string, scope?: ResourceScope) =>
+    [
+      ...connectorKeys.progresses(knowledgeBaseId, connectorId),
+      scope ? resourceScopeKey(scope) : '',
+    ] as const,
+  progresses: (knowledgeBaseId?: string, connectorId?: string) =>
+    [...connectorKeys.detail(knowledgeBaseId, connectorId), 'progress'] as const,
 }
 
 async function fetchConnectors(
@@ -116,7 +153,6 @@ export function useConnectorList(knowledgeBaseId?: string) {
     queryFn: ({ signal }) => fetchConnectors(knowledgeBaseId as string, signal),
     enabled: Boolean(knowledgeBaseId),
     staleTime: CONNECTOR_LIST_STALE_TIME,
-    placeholderData: keepPreviousData,
     refetchInterval: (query) => {
       const connectors = query.state.data
       if (!connectors?.length) return false
@@ -156,6 +192,25 @@ export function useConnectorDetail(knowledgeBaseId?: string, connectorId?: strin
  */
 type ConnectorStatusPatch = Pick<ConnectorData, 'status'> | Pick<ConnectorData, 'memberSyncStatus'>
 
+function getCachedConnector(
+  queryClient: QueryClient,
+  knowledgeBaseId: string,
+  connectorId: string
+): ConnectorData | undefined {
+  const listed = queryClient
+    .getQueryData<ConnectorData[]>(connectorKeys.lists(knowledgeBaseId))
+    ?.find(
+      (connector) => connector.id === connectorId && connector.knowledgeBaseId === knowledgeBaseId
+    )
+  if (listed) return listed
+  const detail = queryClient.getQueryData<ConnectorDetailData>(
+    connectorKeys.detail(knowledgeBaseId, connectorId)
+  )
+  return detail?.id === connectorId && detail.knowledgeBaseId === knowledgeBaseId
+    ? detail
+    : undefined
+}
+
 function setCachedConnectorStatus(
   queryClient: QueryClient,
   knowledgeBaseId: string,
@@ -164,12 +219,17 @@ function setCachedConnectorStatus(
 ) {
   queryClient.setQueryData<ConnectorData[]>(connectorKeys.lists(knowledgeBaseId), (connectors) =>
     connectors?.map((connector) =>
-      connector.id === connectorId ? { ...connector, ...patch } : connector
+      connector.id === connectorId && connector.knowledgeBaseId === knowledgeBaseId
+        ? { ...connector, ...patch }
+        : connector
     )
   )
   queryClient.setQueryData<ConnectorDetailData>(
     connectorKeys.detail(knowledgeBaseId, connectorId),
-    (detail) => (detail ? { ...detail, ...patch } : detail)
+    (detail) =>
+      detail?.id === connectorId && detail.knowledgeBaseId === knowledgeBaseId
+        ? { ...detail, ...patch }
+        : detail
   )
 }
 
@@ -193,9 +253,7 @@ function optimisticallySetConnectorStatus(
   connectorId: string,
   status: ConnectorData['status']
 ) {
-  const previousStatus = queryClient
-    .getQueryData<ConnectorData[]>(connectorKeys.lists(knowledgeBaseId))
-    ?.find((connector) => connector.id === connectorId)?.status
+  const previousStatus = getCachedConnector(queryClient, knowledgeBaseId, connectorId)?.status
 
   setCachedConnectorStatus(queryClient, knowledgeBaseId, connectorId, { status })
 
@@ -215,9 +273,7 @@ function optimisticallyQueueSync(
   knowledgeBaseId: string,
   connectorId: string
 ): ConnectorStatusPatch | undefined {
-  const cached = queryClient
-    .getQueryData<ConnectorData[]>(connectorKeys.lists(knowledgeBaseId))
-    ?.find((connector) => connector.id === connectorId)
+  const cached = getCachedConnector(queryClient, knowledgeBaseId, connectorId)
   if (!cached) return undefined
   if (cached.accessMode === 'members') {
     setCachedConnectorStatus(queryClient, knowledgeBaseId, connectorId, {
@@ -245,7 +301,7 @@ interface CreateConnectorParams {
   apiKey?: string
   sourceConfig: Record<string, unknown>
   syncIntervalMinutes?: number
-  accessMode?: 'workspace' | 'members'
+  accessMode?: ConnectorAccessMode
   credentialGroupId?: string
   credentialGroupOptionId?: string
 }
@@ -262,6 +318,14 @@ async function createConnector({
   return result.data
 }
 
+function invalidateConnectorAccounts(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: credentialGroupKeys.workspaces() }),
+    queryClient.invalidateQueries({ queryKey: credentialGroupKeys.details() }),
+    queryClient.invalidateQueries({ queryKey: organizationAccountsKeys.details() }),
+  ])
+}
+
 export function useCreateConnector() {
   const queryClient = useQueryClient()
 
@@ -276,6 +340,9 @@ export function useCreateConnector() {
       queryClient.invalidateQueries({ queryKey: connectorKeys.all(knowledgeBaseId) })
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.lists() })
       queryClient.invalidateQueries({ queryKey: memberConnectorKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() })
+      void invalidateConnectorAccounts(queryClient)
     },
   })
 }
@@ -327,6 +394,8 @@ export function useUpdateConnector() {
     },
     onSettled: (_data, _error, { knowledgeBaseId }) => {
       queryClient.invalidateQueries({ queryKey: connectorKeys.all(knowledgeBaseId) })
+      queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() })
     },
   })
 }
@@ -350,7 +419,7 @@ async function updateConnectorAccess({
   return result.data
 }
 
-interface StartConnectorMemberEnrollmentParams {
+interface StartConnectorMemberEnrollmentParams extends SearchConnectionOAuthQuery {
   knowledgeBaseId: string
   connectorId: string
 }
@@ -358,11 +427,182 @@ interface StartConnectorMemberEnrollmentParams {
 async function startConnectorMemberEnrollment({
   knowledgeBaseId,
   connectorId,
+  oauthCompletionId,
 }: StartConnectorMemberEnrollmentParams): Promise<StartKnowledgeConnectorMemberEnrollmentData> {
   const response = await requestJson(startKnowledgeConnectorMemberEnrollmentContract, {
     params: { id: knowledgeBaseId, connectorId },
+    query: { oauthCompletionId },
   })
   return response.data
+}
+
+export const searchIndexKeys = {
+  all: ['search-index'] as const,
+  details: () => [...searchIndexKeys.all, 'detail'] as const,
+  detail: (scope: ResourceScope) =>
+    [...searchIndexKeys.details(), resourceScopeKey(scope)] as const,
+}
+
+export function useSearchIndex(scope: ResourceScope, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: searchIndexKeys.detail(scope),
+    queryFn: async ({ signal }) =>
+      (await requestJson(readSearchIndexContract, { query: resourceScopeFields(scope), signal }))
+        .data,
+    enabled: options?.enabled ?? true,
+    staleTime: CONNECTOR_LIST_STALE_TIME,
+  })
+}
+
+/** Full viewer counts update less often than bounded progress probes. */
+const SEARCH_SOURCE_SUMMARY_POLL_MS = 30_000
+
+export function useSearchSourceOverview(scope: ResourceScope, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: searchSourceKeys.overview(scope),
+    queryFn: async ({ signal }) =>
+      (
+        await requestJson(readSearchSourceOverviewContract, {
+          query: resourceScopeFields(scope),
+          signal,
+        })
+      ).data,
+    enabled: options?.enabled ?? true,
+    staleTime: CONNECTOR_LIST_STALE_TIME,
+    refetchInterval: (query) =>
+      query.state.data?.providers.some((provider) => provider.isSyncing)
+        ? SEARCH_SOURCE_SUMMARY_POLL_MS
+        : false,
+  })
+}
+
+/** Administrative health is independent of the viewer's account and document permissions. */
+export function useOrganizationSearchOverview(
+  organizationId: string,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: searchSourceKeys.organizationOverview(organizationId),
+    queryFn: async ({ signal }) =>
+      (
+        await requestJson(readOrganizationSearchOverviewContract, {
+          query: { organizationId },
+          signal,
+        })
+      ).data,
+    enabled: Boolean(organizationId) && (options?.enabled ?? true),
+    staleTime: CONNECTOR_LIST_STALE_TIME,
+    refetchInterval: (query) =>
+      query.state.data?.providers.some((provider) => provider.isSyncing)
+        ? SEARCH_SOURCE_SUMMARY_POLL_MS
+        : false,
+  })
+}
+
+export function useSearchSources(
+  owner?: string | ResourceScope,
+  options?: { enabled?: boolean; search?: string; mine?: boolean; connectorType?: string }
+) {
+  const queryClient = useQueryClient()
+  const scope =
+    typeof owner === 'string'
+      ? owner
+        ? { kind: 'workspace' as const, workspaceId: owner }
+        : undefined
+      : owner
+  const workspaceId = scope?.kind === 'workspace' ? scope.workspaceId : undefined
+  const organizationId = scope?.kind === 'organization' ? scope.organizationId : undefined
+  const enabled = Boolean(scope) && (options?.enabled ?? true)
+  const filters = {
+    search: options?.search?.trim().toLowerCase() ?? '',
+    mine: options?.mine ?? false,
+    ...(options?.connectorType?.trim() ? { connectorType: options.connectorType.trim() } : {}),
+  }
+  const summary = useInfiniteQuery({
+    queryKey: searchSourceKeys.pages(scope, filters),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page: SearchSourcePage) => page.nextCursor,
+    select: (data) => data.pages.flatMap((page) => page.sources),
+    queryFn: async ({ signal, pageParam }): Promise<SearchSourcePage> =>
+      (
+        await requestJson(listSearchSourcesContract, {
+          query: {
+            ...(scope ? resourceScopeFields(scope) : {}),
+            ...filters,
+            ...(pageParam ? { cursor: pageParam } : {}),
+          },
+          signal,
+        })
+      ).data,
+    enabled,
+    staleTime: CONNECTOR_LIST_STALE_TIME,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) => page.sources.some((source) => source.isSyncing))
+        ? SEARCH_SOURCE_SUMMARY_POLL_MS
+        : false,
+  })
+  const activeIds = (summary.data ?? [])
+    .filter((source) => source.isSyncing)
+    .map((source) => source.connectorId)
+    .sort()
+  const progress = useQuery({
+    queryKey: searchSourceKeys.progress(scope, activeIds),
+    queryFn: async ({ signal }) => {
+      if (!scope) throw new Error('A Search source scope is required')
+      const sources: SearchSourceProgress[] = []
+      for (let offset = 0; offset < activeIds.length; offset += MAX_SEARCH_SOURCE_PROGRESS_ITEMS) {
+        const response = await requestJson(readSearchSourceProgressContract, {
+          body: {
+            ...resourceScopeFields(scope),
+            connectorIds: activeIds.slice(offset, offset + MAX_SEARCH_SOURCE_PROGRESS_ITEMS),
+          },
+          signal,
+        })
+        sources.push(...response.data)
+      }
+      return sources
+    },
+    enabled: enabled && activeIds.length > 0,
+    staleTime: CONNECTOR_SYNC_POLL_INTERVAL_MS,
+    refetchInterval: (query) =>
+      query.state.dataUpdateCount < 20 ? CONNECTOR_SYNC_POLL_INTERVAL_MS : 15_000,
+  })
+
+  /** Reconcile exact viewer counts when the cheaper probe observes a state transition. */
+  useEffect(() => {
+    if (!enabled || !progress.data || progress.dataUpdatedAt <= summary.dataUpdatedAt) return
+    const states = new Map(progress.data.map((source) => [source.connectorId, source]))
+    const changed = summary.data?.some((source) => {
+      if (!source.isSyncing) return false
+      const state = states.get(source.connectorId)
+      return (
+        !state ||
+        state.isSyncing !== source.isSyncing ||
+        state.hasSyncError !== source.hasSyncError ||
+        state.hasIndexingError !== source.viewerFailedDocumentCount > 0
+      )
+    })
+    if (changed) {
+      const owner = organizationId
+        ? { kind: 'organization' as const, organizationId }
+        : { kind: 'workspace' as const, workspaceId: workspaceId! }
+      queryClient.invalidateQueries(
+        { queryKey: searchSourceKeys.list(owner) },
+        { cancelRefetch: false }
+      )
+    }
+  }, [
+    enabled,
+    progress.data,
+    progress.dataUpdatedAt,
+    summary.data,
+    summary.dataUpdatedAt,
+    queryClient,
+    workspaceId,
+    organizationId,
+  ])
+
+  return summary
 }
 
 export const memberConnectorKeys = {
@@ -386,7 +626,7 @@ async function fetchWorkspaceMemberConnectors(
   return response.data
 }
 
-/** Every per-member connector in the workspace and where the viewer stands with each. */
+/** Workspace sources that let the viewer connect their own account. */
 export function useWorkspaceMemberConnectors(
   workspaceId?: string,
   options?: { enabled?: boolean }
@@ -410,7 +650,16 @@ export function useWorkspaceMemberConnectors(
 
 /** Mints the viewer's enrollment link for a per-member connector; the caller navigates to it. */
 export function useStartConnectorMemberEnrollment() {
-  return useMutation({ mutationFn: startConnectorMemberEnrollment })
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: startConnectorMemberEnrollment,
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: credentialGroupKeys.details() }),
+        queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() }),
+      ]),
+  })
 }
 
 /**
@@ -436,6 +685,10 @@ export function useUpdateConnectorAccess() {
       /** The base list says whether any connector syncs per member, and the Search tab lists them. */
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.lists() })
       queryClient.invalidateQueries({ queryKey: memberConnectorKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: knowledgeKeys.searches() })
+      void invalidateConnectorAccounts(queryClient)
     },
   })
 }
@@ -471,6 +724,8 @@ export function useDeleteConnector() {
     onSettled: (_data, _error, { knowledgeBaseId, deleteDocuments }) => {
       queryClient.invalidateQueries({ queryKey: connectorKeys.all(knowledgeBaseId) })
       queryClient.invalidateQueries({ queryKey: memberConnectorKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() })
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.documentLists(knowledgeBaseId) })
       queryClient.invalidateQueries({
         queryKey: knowledgeKeys.detail(knowledgeBaseId),
@@ -486,6 +741,7 @@ export function useDeleteConnector() {
         queryClient.invalidateQueries({ queryKey: knowledgeKeys.documentDetails(knowledgeBaseId) })
       }
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: knowledgeKeys.searches() })
     },
   })
 }
@@ -531,6 +787,7 @@ export function useTriggerSync() {
      * refused sync does not leave the row spinning.
      */
     onError: (_error, { knowledgeBaseId, connectorId }, previous) => {
+      queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() })
       if (previous) {
         setCachedConnectorStatus(queryClient, knowledgeBaseId, connectorId, previous)
       }
@@ -545,37 +802,50 @@ export function useTriggerSync() {
         queryClient.invalidateQueries({ queryKey: connectorKeys.all(knowledgeBaseId) })
       }
     },
-    /**
-     * Deliberately no invalidation on success. The route answers without
-     * awaiting the dispatch that writes `pending`, so an immediate refetch can
-     * still read `active`, discard the optimistic write, and stop the poll
-     * before it ever started — leaving the UI claiming idle for a sync that is
-     * running. The optimistic `pending` starts the poll instead, and the poll
-     * reconciles against whatever the server actually settles on.
-     */
+    onSuccess: (_data, { knowledgeBaseId, connectorId }) => {
+      queryClient.invalidateQueries({
+        queryKey: connectorKeys.progresses(knowledgeBaseId, connectorId),
+      })
+    },
+    /** An early poll can read idle before dispatch marks pending; reconcile after the request settles. */
+    onSettled: (_data, error, { knowledgeBaseId, connectorId }) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() }),
+        queryClient.invalidateQueries({
+          queryKey: connectorKeys.detail(knowledgeBaseId, connectorId),
+          exact: true,
+        }),
+        ...(!error
+          ? [queryClient.invalidateQueries({ queryKey: connectorKeys.lists(knowledgeBaseId) })]
+          : []),
+      ]),
   })
 }
+
+type ConnectorDocumentListOptions = Partial<
+  Pick<ConnectorDocumentsQuery, 'includeExcluded' | 'failedOnly' | 'filter' | 'search'>
+>
 
 export const connectorDocumentKeys = {
   all: (knowledgeBaseId?: string, connectorId?: string) =>
     [...connectorKeys.detail(knowledgeBaseId, connectorId), 'documents'] as const,
   lists: (knowledgeBaseId?: string, connectorId?: string) =>
     [...connectorDocumentKeys.all(knowledgeBaseId, connectorId), 'list'] as const,
-  list: (knowledgeBaseId?: string, connectorId?: string, includeExcluded = false) =>
-    [...connectorDocumentKeys.lists(knowledgeBaseId, connectorId), includeExcluded] as const,
+  list: (knowledgeBaseId?: string, connectorId?: string, options?: ConnectorDocumentListOptions) =>
+    [...connectorDocumentKeys.lists(knowledgeBaseId, connectorId), options] as const,
 }
 
 async function fetchConnectorDocuments(
   knowledgeBaseId: string,
   connectorId: string,
-  includeExcluded: boolean,
+  options: ConnectorDocumentListOptions,
   offset: number,
   signal?: AbortSignal
 ): Promise<ConnectorDocumentsData> {
   const result = await requestJson(listKnowledgeConnectorDocumentsContract, {
     params: { id: knowledgeBaseId, connectorId },
     query: {
-      includeExcluded,
+      ...options,
       limit: MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE,
       offset,
     },
@@ -588,30 +858,86 @@ async function fetchConnectorDocuments(
 export function useConnectorDocuments(
   knowledgeBaseId?: string,
   connectorId?: string,
-  options?: { includeExcluded?: boolean }
+  options?: ConnectorDocumentListOptions & { progressScope?: ResourceScope; syncing?: boolean }
 ) {
-  const includeExcluded = options?.includeExcluded ?? false
-  return useInfiniteQuery({
-    queryKey: connectorDocumentKeys.list(knowledgeBaseId, connectorId, includeExcluded),
+  const queryClient = useQueryClient()
+  const query = {
+    includeExcluded: options?.filter ? undefined : (options?.includeExcluded ?? false),
+    failedOnly: options?.filter ? undefined : (options?.failedOnly ?? false),
+    filter: options?.filter,
+    search: options?.search?.trim() || undefined,
+  }
+  const documents = useInfiniteQuery({
+    queryKey: connectorDocumentKeys.list(knowledgeBaseId, connectorId, query),
     queryFn: ({ signal, pageParam }) =>
       fetchConnectorDocuments(
         knowledgeBaseId as string,
         connectorId as string,
-        includeExcluded,
+        query,
         pageParam,
         signal
       ),
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) => {
       const loadedCount = pages.reduce((total, page) => total + page.documents.length, 0)
-      const totalCount = lastPage.counts.active + (includeExcluded ? lastPage.counts.excluded : 0)
-      if (lastPage.documents.length === 0 || loadedCount >= totalCount) return undefined
+      const hasMore =
+        lastPage.hasMore ?? lastPage.documents.length === MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE
+      if (!hasMore || lastPage.documents.length === 0) return undefined
       return loadedCount
     },
     enabled: Boolean(knowledgeBaseId && connectorId),
     staleTime: CONNECTOR_DOCUMENT_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
+  const scope = options?.progressScope
+  const hasProgressScope = Boolean(scope)
+  const syncing = options?.syncing ?? false
+  const progress = useQuery({
+    queryKey: connectorKeys.progress(knowledgeBaseId, connectorId, scope),
+    queryFn: async ({ signal }) => {
+      if (!scope || !connectorId)
+        throw new Error('A Search source scope and connector are required')
+      return (
+        await requestJson(readSearchSourceProgressContract, {
+          body: { ...resourceScopeFields(scope), connectorIds: [connectorId] },
+          signal,
+        })
+      ).data
+    },
+    enabled: Boolean(scope && knowledgeBaseId && connectorId),
+    staleTime: CONNECTOR_SYNC_POLL_INTERVAL_MS,
+    refetchInterval: (query) =>
+      syncing || query.state.data?.some((source) => source.isSyncing)
+        ? query.state.dataUpdateCount < 20
+          ? CONNECTOR_SYNC_POLL_INTERVAL_MS
+          : 15_000
+        : false,
+  })
+
+  /** Refresh document pages once indexing settles, rather than polling every loaded page. */
+  useEffect(() => {
+    if (
+      !hasProgressScope ||
+      syncing ||
+      !progress.data ||
+      progress.data.some((source) => source.isSyncing) ||
+      progress.dataUpdatedAt <= documents.dataUpdatedAt
+    )
+      return
+    void queryClient.invalidateQueries({
+      queryKey: connectorDocumentKeys.lists(knowledgeBaseId, connectorId),
+    })
+  }, [
+    hasProgressScope,
+    syncing,
+    progress.data,
+    progress.dataUpdatedAt,
+    documents.dataUpdatedAt,
+    queryClient,
+    knowledgeBaseId,
+    connectorId,
+  ])
+  return documents
 }
 
 interface ConnectorDocumentMutationParams {
@@ -637,6 +963,7 @@ function invalidateConnectorDocumentChange(
   })
   queryClient.invalidateQueries({ queryKey: knowledgeKeys.documentLists(knowledgeBaseId) })
   queryClient.invalidateQueries({ queryKey: knowledgeKeys.detail(knowledgeBaseId), exact: true })
+  queryClient.invalidateQueries({ queryKey: knowledgeKeys.searches() })
 
   /**
    * One pass over the cache rather than one per id — `documentIds` reaches
@@ -651,6 +978,7 @@ function invalidateConnectorDocumentChange(
     queryKey: documentDetailsPrefix,
     predicate: (query) => affected.has(query.queryKey[documentDetailsPrefix.length] as string),
   })
+  queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() })
 }
 
 async function excludeConnectorDocuments({
@@ -718,8 +1046,31 @@ export function useConnectSimSearchConnector() {
       queryClient.invalidateQueries({ queryKey: connectorKeys.all(data.knowledgeBaseId) })
     },
     onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: searchIndexKeys.details() })
       queryClient.invalidateQueries({ queryKey: memberConnectorKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchSourceKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: searchIntegrationKeys.lists() })
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.lists() })
+      void invalidateConnectorAccounts(queryClient)
     },
+  })
+}
+
+export function usePrepareSearchSource() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: PrepareSearchSourceBody) =>
+      (await requestJson(prepareSearchSourceContract, { body })).data,
+    onSuccess: (_data, body) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: knowledgeKeys.lists() }),
+        queryClient.invalidateQueries({
+          queryKey: searchIndexKeys.detail(resourceScopeFromOwner(body)),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: searchSourceKeys.list(resourceScopeFromOwner(body)),
+        }),
+        invalidateConnectorAccounts(queryClient),
+      ]),
   })
 }

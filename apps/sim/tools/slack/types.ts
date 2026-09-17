@@ -719,7 +719,6 @@ interface SlackBaseParams {
   authMethod: 'oauth' | 'bot_token'
   accessToken: string
   botToken: string
-  credentialType?: 'oauth' | 'managed_oauth' | 'service_account'
 }
 
 export type SlackAgentSessionStatus = 'active' | 'processing' | 'suspended' | 'closed'
@@ -815,6 +814,8 @@ export interface SlackListChannelsParams extends SlackBaseParams {
   includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
+  /** Credential type supplied by authorized token resolution. */
+  credentialType?: string
   /** Pagination cursor from a prior `conversations.list` response (`response_metadata.next_cursor`). */
   cursor?: string
 }
@@ -1262,8 +1263,8 @@ export interface SlackListChannelsResponse extends ToolResponse {
     ids: string[]
     names: string[]
     count: number
-    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
-    cursor: string | null
+    hasMore: boolean
+    nextCursor: string | null
   }
 }
 
@@ -1275,6 +1276,7 @@ export interface SlackGetUserChannelsResponse extends ToolResponse {
     count: number
     /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
     cursor: string | null
+    hasMore: boolean
     nextCursor: string | null
   }
 }

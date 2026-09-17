@@ -438,6 +438,10 @@ const extractUserFileTextContent = async (
   if (extension && isSupportedFileType(extension)) {
     try {
       const result = await parseBuffer(buffer, extension)
+      if (result.metadata?.degraded === true) {
+        /** Scraped or placeholder output is a failure, not the file's content. */
+        throw new Error(result.metadata.warning ?? 'Parser returned degraded output')
+      }
       return { text: result.content ?? '', truncated: result.metadata?.truncated === true }
     } catch (error) {
       logger.warn('Falling back to raw text after parser failure', {
@@ -1750,7 +1754,11 @@ export async function executeFileManageOperation(
         // Mirror the workspace folder layout, dropping the ancestor chain the whole
         // selection shares so archiving one folder does not nest it under its parents.
         const entryPaths = buildZipEntryPaths(
-          archiveEntries.map((entry) => ({ name: entry.file.name, folderPath: entry.folderPath })),
+          archiveEntries.map((entry) => ({
+            name: entry.file.name,
+            folderPath: entry.folderPath,
+            contentType: entry.file.type,
+          })),
           { rebaseOnCommonFolder: true }
         )
 

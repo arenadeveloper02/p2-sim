@@ -1000,14 +1000,18 @@ function assertCumulativeUsageLedgerBinding(
 }
 
 /**
- * Bounds the wait for the per-event-key advisory lock (and any row/index lock
- * waits inside the critical section). The Go mothership gives each UpdateCost
- * POST a 5s deadline, retries 3x with backoff, then dead-letters the charge
- * keyed on the same idempotency key — so a stuck lock holder must surface as
- * a fast, retryable failure (SQLSTATE 55P03) within that budget rather than
- * an unbounded wait that pins pooled connections.
+ * PostgreSQL 17+ bounds the entire transaction below the callback's five-second
+ * deadline. Older supported servers instead bound each idle interval between
+ * statements, alongside the per-statement budget. Both policies release an idle
+ * lock holder without waiting for its application process to resume; only the
+ * newer policy also limits total elapsed transaction time.
  */
+const CUMULATIVE_FLUSH_TRANSACTION_TIMEOUT_MS = 4_000
+const CUMULATIVE_FLUSH_STATEMENT_TIMEOUT_MS = 3_500
 const CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS = 3_000
+const CUMULATIVE_FLUSH_SLOW_MS = 1_000
+
+type CumulativeUsageStage = 'pool' | 'configure' | 'lock' | 'read' | 'write' | 'commit'
 
 /**
  * Record a request's CUMULATIVE cost idempotently with monotonic top-up.
@@ -1020,8 +1024,9 @@ const CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS = 3_000
  * An existing row must match the incoming actor, workspace, payer, and billing
  * period before either a duplicate no-op or a top-up is accepted.
  * The billing context is resolved BEFORE the transaction and the lock wait is
- * bounded by `lock_timeout`, keeping the critical section to one SELECT plus
- * one INSERT/UPDATE on a single pooled connection.
+ * bounded by `lock_timeout`. A server-enforced transaction deadline, or idle
+ * transaction deadline on older PostgreSQL, releases a stalled holder. The
+ * critical section uses one SELECT plus one INSERT/UPDATE on a single connection.
  *
  * Because every leg flushes its cumulative and this converges to the max,
  * there is no under-billing if the request recovers after a partial flush, no
@@ -1063,23 +1068,51 @@ export async function recordCumulativeUsage(
 
   const billingContext = await resolveBillingContext(userId, billingEntity, billingPeriod)
 
+  const startedAt = Date.now()
+  let stage: CumulativeUsageStage = 'pool'
+  let stageStartedAt = startedAt
+  const stageDurationsMs: Partial<Record<CumulativeUsageStage, number>> = {}
+  let succeeded = false
+  let pgCode: string | undefined
+  const enterStage = (nextStage: CumulativeUsageStage) => {
+    const now = Date.now()
+    stageDurationsMs[stage] = now - stageStartedAt
+    stage = nextStage
+    stageStartedAt = now
+  }
+
   try {
-    return await db.transaction(async (tx) => {
-      // Serialize all flushes for this request (lock auto-releases at tx end),
-      // with a bounded wait so a pathological holder fails this flush fast and
-      // lets the caller retry instead of hanging the connection.
-      await tx.execute(
-        sql`select set_config('lock_timeout', ${`${CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS}ms`}, true)`
-      )
+    const result = await db.transaction(async (tx) => {
+      enterStage('configure')
+      await tx.execute(sql`
+        select
+          set_config(
+            case when current_setting('transaction_timeout', true) is null
+              then 'idle_in_transaction_session_timeout'
+              else 'transaction_timeout'
+            end,
+            ${`${CUMULATIVE_FLUSH_TRANSACTION_TIMEOUT_MS}ms`},
+            true
+          ),
+          set_config('statement_timeout', ${`${CUMULATIVE_FLUSH_STATEMENT_TIMEOUT_MS}ms`}, true),
+          set_config('lock_timeout', ${`${CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS}ms`}, true)
+      `)
+      enterStage('lock')
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${eventKey}, 0))`)
 
+      enterStage('read')
       const [existing] = await tx
         .select({
           id: usageLog.id,
           cost: usageLog.cost,
           rawCost: usageLog.rawCost,
           pricingSnapshot: usageLog.pricingSnapshot,
+          userId: usageLog.userId,
           workspaceId: usageLog.workspaceId,
+          billingEntityType: usageLog.billingEntityType,
+          billingEntityId: usageLog.billingEntityId,
+          billingPeriodStart: usageLog.billingPeriodStart,
+          billingPeriodEnd: usageLog.billingPeriodEnd,
           chatId: usageLog.chatId,
           runId: usageLog.runId,
           actorUserId: usageLog.actorUserId,
@@ -1106,9 +1139,6 @@ export async function recordCumulativeUsage(
       const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
 
       if (!shouldBill) {
-        // Duplicate / non-increasing flush: never change cost, but self-heal
-        // missing attribution so a Cloud-first write without chatId can be
-        // repaired by a later Sim retry that carries chat/run/actor.
         if (existing) {
           const nullFill = buildNullOnlyAttributionFill(existing, {
             workspaceId,
@@ -1124,6 +1154,7 @@ export async function recordCumulativeUsage(
             await tx.update(usageLog).set(nullFill).where(eq(usageLog.id, existing.id))
           }
         }
+        enterStage('commit')
         return { billed: false, delta: 0, total: recordedRaw }
       }
 
@@ -1150,8 +1181,8 @@ export async function recordCumulativeUsage(
         ...(triggeringRunId ? { triggeringRunId } : {}),
       }
 
+      enterStage('write')
       if (existing) {
-        // Top up using the multiplier captured on first flush — never the current env.
         await tx
           .update(usageLog)
           .set({
@@ -1163,8 +1194,6 @@ export async function recordCumulativeUsage(
           })
           .where(eq(usageLog.id, existing.id))
       } else {
-        // First flush for this request: insert the canonical row with the
-        // pre-resolved billing context. Runs in the same tx + advisory lock.
         await recordUsage({
           userId,
           workspaceId,
@@ -1200,10 +1229,14 @@ export async function recordCumulativeUsage(
         })
       }
 
+      enterStage('commit')
       return { billed: true, delta, total: newTotal }
     })
+    succeeded = true
+    return result
   } catch (error) {
-    if (getPostgresErrorCode(error) === '55P03') {
+    pgCode = getPostgresErrorCode(error)
+    if (pgCode === '55P03') {
       logUsageSkip(
         'advisory_lock_timeout',
         { userId, eventKey, source, model: canonicalModel },
@@ -1211,6 +1244,20 @@ export async function recordCumulativeUsage(
       )
     }
     throw error
+  } finally {
+    const now = Date.now()
+    stageDurationsMs[stage] = now - stageStartedAt
+    const durationMs = now - startedAt
+    if (!succeeded || durationMs >= CUMULATIVE_FLUSH_SLOW_MS) {
+      logger.warn('Cumulative usage transaction did not complete promptly', {
+        eventKey,
+        succeeded,
+        stage,
+        durationMs,
+        stageDurationsMs,
+        ...(pgCode ? { pgCode } : {}),
+      })
+    }
   }
 }
 

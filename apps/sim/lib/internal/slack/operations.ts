@@ -14,6 +14,7 @@ import {
 } from '@/lib/core/security/input-validation.server'
 import {
   openSlackDm,
+  postSlackMessage as postMessage,
   requestSlackApi,
   type SlackJsonObject,
   slackArray,
@@ -181,10 +182,9 @@ async function postSlackMessage(
   channel: string,
   signal?: AbortSignal
 ) {
-  return requestSlackApi({
-    accessToken: input.accessToken,
-    method: 'chat.postMessage',
-    body: {
+  return postMessage(
+    input.accessToken,
+    {
       channel,
       text: input.text,
       ...(input.thread_ts ? { thread_ts: input.thread_ts } : {}),
@@ -193,8 +193,8 @@ async function postSlackMessage(
       ...(input.unfurl_links ? { unfurl_links: input.unfurl_links } : {}),
       ...(input.unfurl_media ? { unfurl_media: input.unfurl_media } : {}),
     },
-    signal,
-  })
+    signal
+  )
 }
 
 async function uploadSlackFiles(

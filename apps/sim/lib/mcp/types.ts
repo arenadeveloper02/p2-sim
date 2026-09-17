@@ -25,6 +25,7 @@ export interface McpServerConfig {
    */
   userId?: string
   workspaceId?: string
+  organizationId?: string
   headers?: Record<string, string>
   timeout?: number
   retries?: number
@@ -90,6 +91,7 @@ export interface McpToolSchema {
 /** SDK `Tool` plus the server context Sim tracks. */
 export interface McpTool extends Pick<Tool, 'name' | 'description'> {
   inputSchema: McpToolSchema
+  canonicalServerId?: string
   serverId: string
   serverName: string
   managedConnectorId?: ManagedMcpConnectorId

@@ -11,13 +11,39 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
 import { encryptApiKey } from '@/lib/api-key/crypto'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
-import { hasWorkspaceLiveSyncAccess } from '@/lib/billing/core/subscription'
+import {
+  hasWorkspaceLiveSyncAccess,
+  isOrganizationOnEnterprisePlan,
+} from '@/lib/billing/core/subscription'
+import {
+  incrementStorageUsageForBillingContextInTx,
+  maybeNotifyStorageLimitForBillingContext,
+  resolveStorageBillingContext,
+  type StorageBillingContext,
+} from '@/lib/billing/storage'
 import { OrchestrationError, type OrchestrationErrorCode } from '@/lib/core/orchestration/types'
+import {
+  type ResourceOwner,
+  type ResourceScope,
+  resourceScopeFields,
+  resourceScopeFromOwner,
+} from '@/lib/core/resource-scope'
+import { resourceScopeCondition } from '@/lib/core/resource-scope.server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import type { DbOrTx } from '@/lib/db/types'
+import {
+  aclIsDerived,
+  type ConnectorAccessMode,
+  effectiveConnectorSyncIntervalMinutes,
+  isContentEngineAccessMode,
+} from '@/lib/knowledge/connectors/access-modes'
+import {
+  type ConnectorAccessToken,
+  syncContextForToken,
+} from '@/lib/knowledge/connectors/access-token'
 import {
   findListingCapViolation,
   grantKnowledgeConnectorCredentialAccess,
@@ -25,7 +51,7 @@ import {
   stripListingCapFields,
 } from '@/lib/knowledge/connectors/member-access'
 import { allocateTagSlots } from '@/lib/knowledge/constants'
-import { deleteDocumentStorageFiles } from '@/lib/knowledge/documents/service'
+import { enqueueKnowledgeStorageCleanup } from '@/lib/knowledge/documents/storage-cleanup'
 import {
   auditActorFields,
   classifyKnowledgeFailure,
@@ -35,6 +61,9 @@ import {
 } from '@/lib/knowledge/orchestration/shared'
 import { cleanupUnusedTagDefinitions, createTagDefinition } from '@/lib/knowledge/tags/service'
 import { captureServerEvent } from '@/lib/posthog/server'
+import { searchSourceIdentity } from '@/lib/sim-search/source-identity'
+import { getConnectorApiKeyConfig } from '@/connectors/auth'
+import { PER_MEMBER_LISTING_CONTEXT } from '@/connectors/utils'
 
 const logger = createLogger('KnowledgeConnectorOrchestration')
 
@@ -70,7 +99,7 @@ export interface ConnectorMembersBinding {
  */
 export async function lockCredentialGroupOption(
   tx: DbOrTx,
-  binding: ConnectorMembersBinding & { workspaceId: string }
+  binding: ConnectorMembersBinding & ResourceOwner
 ): Promise<void> {
   const [group] = await tx
     .select({ options: credentialGroup.options })
@@ -78,7 +107,7 @@ export async function lockCredentialGroupOption(
     .where(
       and(
         eq(credentialGroup.id, binding.credentialGroupId),
-        eq(credentialGroup.workspaceId, binding.workspaceId)
+        resourceScopeCondition(credentialGroup, resourceScopeFromOwner(binding))
       )
     )
     .limit(1)
@@ -111,6 +140,7 @@ export interface ConnectorKnowledgeBase {
   id: string
   name: string
   workspaceId: string | null
+  organizationId?: string | null
 }
 
 function withoutSecret(row: ConnectorRow): ConnectorWithoutSecret {
@@ -123,13 +153,19 @@ function withoutSecret(row: ConnectorRow): ConnectorWithoutSecret {
  * `0` disables scheduled syncs and is always allowed.
  */
 async function assertLiveSyncAllowed(
-  workspaceId: string,
+  scope: string | ResourceScope,
   syncIntervalMinutes: number | undefined
 ): Promise<void> {
   if (syncIntervalMinutes === undefined || syncIntervalMinutes <= 0 || syncIntervalMinutes >= 60) {
     return
   }
-  if (!(await hasWorkspaceLiveSyncAccess(workspaceId))) {
+  const allowed =
+    typeof scope === 'string'
+      ? await hasWorkspaceLiveSyncAccess(scope)
+      : scope.kind === 'workspace'
+        ? await hasWorkspaceLiveSyncAccess(scope.workspaceId)
+        : await isOrganizationOnEnterprisePlan(scope.organizationId, 'throw')
+  if (!allowed) {
     throw new OrchestrationError('forbidden', 'Live sync requires a Max or Enterprise plan')
   }
 }
@@ -148,6 +184,13 @@ export interface PerformCreateKnowledgeConnectorParams extends KnowledgeOperatio
    */
   membersBinding?: ConnectorMembersBinding
   /**
+   * How the connector derives document access. `members` is implied by
+   * `membersBinding`; `admin` has no binding of its own, so it must be named.
+   */
+  accessMode?: ConnectorAccessMode
+  /** Reuses a matching members source under the knowledge base's existing insertion lock. */
+  reuseSearchSource?: boolean
+  /**
    * Resolves the payer the sync is billed to. A thunk so a request rejected by
    * a guard never pays for the lookup, and so the payer is read at the moment
    * the sync is dispatched.
@@ -157,7 +200,7 @@ export interface PerformCreateKnowledgeConnectorParams extends KnowledgeOperatio
    * Resolves an OAuth credential to its access token. Supplied by the caller
    * because credential lookup is scoped to the requesting identity.
    */
-  resolveAccessToken: (credentialId: string) => Promise<string | null>
+  resolveAccessToken: (credentialId: string) => Promise<ConnectorAccessToken | null>
   /** False only when an authorized application use case projects the semantic audit. */
   recordSemanticAudit?: boolean
   /** False when the calling HTTP/tool adapter owns product analytics. */
@@ -172,6 +215,7 @@ export type PerformConnectorResult = KnowledgeOrchestrationResult<{
    * rather than assuming it.
    */
   initialSyncQueued?: boolean
+  reused?: boolean
 }>
 
 /**
@@ -193,6 +237,7 @@ export async function performCreateKnowledgeConnector(
     sourceConfig,
     syncIntervalMinutes,
     membersBinding,
+    accessMode = 'workspace',
     resolveBillingAttribution,
     resolveAccessToken,
     request,
@@ -200,10 +245,11 @@ export async function performCreateKnowledgeConnector(
   } = params
   const requestId = params.requestId ?? generateRequestId()
 
-  if (!kb.workspaceId) {
+  if (!kb.workspaceId && !kb.organizationId) {
     return fail('Knowledge base is missing workspace billing context', 'conflict')
   }
   const workspaceId = kb.workspaceId
+  const owner = resourceScopeFields(resourceScopeFromOwner(kb))
 
   const { CONNECTOR_REGISTRY } = await import('@/connectors/registry.server')
   const connectorConfig = CONNECTOR_REGISTRY[connectorType]
@@ -212,7 +258,7 @@ export async function performCreateKnowledgeConnector(
   }
 
   try {
-    await assertLiveSyncAllowed(workspaceId, syncIntervalMinutes)
+    await assertLiveSyncAllowed(resourceScopeFromOwner(kb), syncIntervalMinutes)
   } catch (error) {
     return classifyKnowledgeFailure(error, requestId, `Create ${connectorType} connector`)
   }
@@ -220,6 +266,15 @@ export async function performCreateKnowledgeConnector(
   let resolvedCredentialId: string | null = null
   let resolvedEncryptedApiKey: string | null = null
   let accessToken: string | null = null
+  let tokenContext: Record<string, unknown> = {}
+  const apiKeyConfig = getConnectorApiKeyConfig(connectorConfig.auth)
+  if (apiKey && (!apiKeyConfig || accessMode === 'members')) {
+    return fail('This connection method requires an OAuth account', 'validation')
+  }
+  if (apiKey && credentialId) {
+    return fail('Choose either an OAuth account or an API key', 'validation')
+  }
+  const usesApiKey = connectorConfig.auth.mode === 'apiKey' || Boolean(apiKeyConfig && apiKey)
 
   if (membersBinding) {
     /**
@@ -232,16 +287,25 @@ export async function performCreateKnowledgeConnector(
     }
     const capViolation = findListingCapViolation(connectorConfig, sourceConfig)
     if (capViolation) return fail(capViolation, 'validation')
-  } else if (connectorConfig.auth.mode === 'apiKey') {
-    if (!apiKey && !connectorConfig.auth.optional) {
+    if (credentialId && !connectorConfig.supportsSeparateContentCredential) {
+      return fail(
+        `${connectorConfig.name} cannot separate content ingestion from member permissions`,
+        'validation'
+      )
+    }
+  } else if (!isContentEngineAccessMode(accessMode)) {
+    return fail(`Unsupported access mode: ${accessMode}`, 'validation')
+  }
+  if (usesApiKey) {
+    if (!apiKey && !apiKeyConfig?.optional) {
       return fail('API key is required', 'validation')
     }
     accessToken = apiKey ?? ''
-  } else {
+  } else if (!membersBinding || credentialId) {
     if (!credentialId) {
       return fail('Credential is required', 'validation')
     }
-    let token: string | null
+    let token: ConnectorAccessToken | null
     try {
       token = await resolveAccessToken(credentialId)
     } catch (error) {
@@ -250,12 +314,17 @@ export async function performCreateKnowledgeConnector(
     if (!token) {
       return fail('Credential has no access token. Please reconnect your account.', 'validation')
     }
-    accessToken = token
+    accessToken = token.accessToken
+    tokenContext = syncContextForToken(token)
     resolvedCredentialId = credentialId
   }
 
   if (accessToken !== null) {
-    const configValidation = await connectorConfig.validateConfig(accessToken, sourceConfig)
+    const configValidation = await connectorConfig.validateConfig(accessToken, sourceConfig, {
+      ...tokenContext,
+      mirrorsSourceAcls: accessMode === 'admin',
+      ...(accessMode === 'members' ? PER_MEMBER_LISTING_CONTEXT : {}),
+    })
     if (!configValidation.valid) {
       return fail(
         configValidation.error ||
@@ -265,11 +334,14 @@ export async function performCreateKnowledgeConnector(
     }
   }
 
-  if (connectorConfig.auth.mode === 'apiKey' && apiKey) {
+  if (usesApiKey && apiKey) {
     resolvedEncryptedApiKey = (await encryptApiKey(apiKey)).encrypted
   }
 
-  let finalSourceConfig: Record<string, unknown> = { ...sourceConfig }
+  /** A derived-ACL mode has no listing cap; see `aclIsDerived`. */
+  let finalSourceConfig: Record<string, unknown> = aclIsDerived(accessMode)
+    ? stripListingCapFields(connectorConfig, sourceConfig)
+    : { ...sourceConfig }
   const tagSlotMapping: Record<string, string> = {}
   let newTagSlots: Record<string, string> = {}
 
@@ -332,15 +404,16 @@ export async function performCreateKnowledgeConnector(
 
   const now = new Date()
   const connectorId = generateId()
+  const refreshInterval = effectiveConnectorSyncIntervalMinutes(accessMode, syncIntervalMinutes)
   const nextSyncAt =
-    syncIntervalMinutes > 0 ? new Date(now.getTime() + syncIntervalMinutes * 60 * 1000) : null
+    refreshInterval > 0 ? new Date(now.getTime() + refreshInterval * 60 * 1000) : null
 
   /**
    * Granted before the row exists so a connector can never be live without
    * its grant; a failed insert revokes it again. The id is fixed above, so the
    * policy names exactly the row about to be written.
    */
-  if (membersBinding) {
+  if (membersBinding && workspaceId) {
     try {
       await grantKnowledgeConnectorCredentialAccess(
         {
@@ -357,6 +430,7 @@ export async function performCreateKnowledgeConnector(
   }
 
   let created: ConnectorRow
+  let reused = false
   try {
     created = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT 1 FROM knowledge_base WHERE id = ${kb.id} FOR UPDATE`)
@@ -370,8 +444,42 @@ export async function performCreateKnowledgeConnector(
       if (activeKb.length === 0) {
         throw new OrchestrationError('not_found', 'Knowledge base not found')
       }
+      if (params.reuseSearchSource && membersBinding) {
+        const identity = searchSourceIdentity(connectorConfig, sourceConfig)
+        const candidates = await tx
+          .select()
+          .from(knowledgeConnector)
+          .where(
+            and(
+              eq(knowledgeConnector.knowledgeBaseId, kb.id),
+              eq(knowledgeConnector.connectorType, connectorType),
+              eq(knowledgeConnector.accessMode, 'members'),
+              isNull(knowledgeConnector.archivedAt),
+              isNull(knowledgeConnector.deletedAt)
+            )
+          )
+        const compatible = candidates.filter(
+          (candidate) => searchSourceIdentity(connectorConfig, candidate.sourceConfig) === identity
+        )
+        if (compatible.length > 1) {
+          throw new OrchestrationError(
+            'conflict',
+            'Several Search sources use these settings. Choose the source you want to connect.'
+          )
+        }
+        if (compatible[0]) {
+          if (compatible[0].credentialGroupOptionId !== membersBinding.credentialGroupOptionId) {
+            throw new OrchestrationError(
+              'conflict',
+              'This Search source uses a different account option. Choose the existing source explicitly.'
+            )
+          }
+          reused = true
+          return compatible[0]
+        }
+      }
       if (membersBinding) {
-        await lockCredentialGroupOption(tx, { workspaceId, ...membersBinding })
+        await lockCredentialGroupOption(tx, { ...owner, ...membersBinding })
       }
 
       for (const [semanticId, slot] of Object.entries(newTagSlots)) {
@@ -420,7 +528,12 @@ export async function performCreateKnowledgeConnector(
                 credentialGroupOptionId: membersBinding.credentialGroupOptionId,
                 nextMemberSyncAt: now,
               }
-            : {}),
+            : /**
+               * An admin-mode connector is a content-engine connector like a
+               * workspace one; only its documents' ACLs differ, and those are
+               * written by its own crawl. Nothing else here changes.
+               */
+              { accessMode }),
           createdAt: now,
           updatedAt: now,
         })
@@ -429,7 +542,7 @@ export async function performCreateKnowledgeConnector(
       return row
     })
   } catch (error) {
-    if (membersBinding) {
+    if (membersBinding && workspaceId) {
       await revokeKnowledgeConnectorCredentialAccess(
         { workspaceId, credentialGroupId: membersBinding.credentialGroupId, connectorId },
         params.userId
@@ -443,6 +556,15 @@ export async function performCreateKnowledgeConnector(
     return classifyKnowledgeFailure(error, requestId, `Create ${connectorType} connector`)
   }
 
+  if (reused && membersBinding) {
+    if (workspaceId)
+      await revokeKnowledgeConnectorCredentialAccess(
+        { workspaceId, credentialGroupId: membersBinding.credentialGroupId, connectorId },
+        params.userId
+      )
+    return { success: true, connector: withoutSecret(created), reused: true }
+  }
+
   logger.info(`[${requestId}] Created connector ${connectorId} for KB ${kb.id}`)
 
   if (params.recordProductAnalytics !== false) {
@@ -451,12 +573,13 @@ export async function performCreateKnowledgeConnector(
       'knowledge_base_connector_added',
       {
         knowledge_base_id: kb.id,
-        workspace_id: workspaceId,
+        workspace_id: workspaceId ?? undefined,
+        organization_id: kb.organizationId ?? undefined,
         connector_type: connectorType,
         sync_interval_minutes: syncIntervalMinutes,
       },
       {
-        groups: { workspace: workspaceId },
+        groups: workspaceId ? { workspace: workspaceId } : { organization: kb.organizationId! },
         setOnce: { first_connector_added_at: new Date().toISOString() },
       }
     )
@@ -477,7 +600,7 @@ export async function performCreateKnowledgeConnector(
         knowledgeBaseName: kb.name,
         connectorType,
         syncIntervalMinutes,
-        authMode: connectorConfig.auth.mode,
+        authMode: usesApiKey ? 'apiKey' : 'oauth',
       },
       ...(request ? { request } : {}),
     })
@@ -527,6 +650,11 @@ export interface PerformUpdateKnowledgeConnectorParams extends KnowledgeOperatio
   }
   /** Resolves the payer only when a source change will queue synchronization. */
   resolveBillingAttribution: () => Promise<BillingAttributionSnapshot>
+  /** Canonicalizes provider identities through the authorized application caller. */
+  prepareSourceConfig?: (
+    connector: KnowledgeConnectorRow,
+    sourceConfig: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>
   /**
    * Validates a replacement `sourceConfig` against the live source. Supplied by
    * the caller because resolving the connector's token needs the requesting
@@ -650,12 +778,17 @@ export async function performUpdateKnowledgeConnector(
   }
 
   if (updates.syncIntervalMinutes !== undefined) {
-    if (!kb.workspaceId && updates.syncIntervalMinutes > 0 && updates.syncIntervalMinutes < 60) {
+    if (
+      !kb.workspaceId &&
+      !kb.organizationId &&
+      updates.syncIntervalMinutes > 0 &&
+      updates.syncIntervalMinutes < 60
+    ) {
       return fail('Knowledge base is missing workspace billing context', 'conflict')
     }
-    if (kb.workspaceId) {
+    if (kb.workspaceId || kb.organizationId) {
       try {
-        await assertLiveSyncAllowed(kb.workspaceId, updates.syncIntervalMinutes)
+        await assertLiveSyncAllowed(resourceScopeFromOwner(kb), updates.syncIntervalMinutes)
       } catch (error) {
         return classifyKnowledgeFailure(error, requestId, `Update connector ${connectorId}`)
       }
@@ -664,23 +797,28 @@ export async function performUpdateKnowledgeConnector(
 
   let sourceConfigToStore = updates.sourceConfig
   if (updates.sourceConfig !== undefined) {
-    if (existing.accessMode === 'members') {
-      /**
-       * A members-mode connector has no credential to validate the source
-       * with; the next member run does that per member. The listing caps are
-       * what a save can refuse.
-       */
+    const accessMode = existing.accessMode as ConnectorAccessMode
+    let nextSourceConfig = params.prepareSourceConfig
+      ? await params.prepareSourceConfig(existing, updates.sourceConfig)
+      : updates.sourceConfig
+    if (aclIsDerived(accessMode)) {
+      /** A derived-ACL mode has no listing cap; a save may refuse one, never store one. */
       const { CONNECTOR_REGISTRY } = await import('@/connectors/registry.server')
       const connectorConfig = CONNECTOR_REGISTRY[existing.connectorType]
-      const capViolation = connectorConfig
-        ? findListingCapViolation(connectorConfig, updates.sourceConfig)
-        : null
-      if (capViolation) return fail(capViolation, 'validation')
       if (connectorConfig) {
-        sourceConfigToStore = stripListingCapFields(connectorConfig, updates.sourceConfig)
+        const capViolation = findListingCapViolation(connectorConfig, nextSourceConfig)
+        if (capViolation) return fail(capViolation, 'validation')
+        nextSourceConfig = stripListingCapFields(connectorConfig, nextSourceConfig)
       }
-    } else if (validateSourceConfig) {
-      const rejection = await validateSourceConfig(existing, updates.sourceConfig)
+    }
+    sourceConfigToStore = nextSourceConfig
+    /**
+     * A members-mode connector has no credential to validate the source with;
+     * the next member run does that per member. Every other mode validates
+     * with the credential it syncs as.
+     */
+    if ((isContentEngineAccessMode(accessMode) || existing.credentialId) && validateSourceConfig) {
+      const rejection = await validateSourceConfig(existing, nextSourceConfig)
       if (rejection) {
         return fail(rejection.message, rejection.errorCode)
       }
@@ -719,15 +857,22 @@ export async function performUpdateKnowledgeConnector(
   }
   if (sourceConfigToStore !== undefined) {
     values.sourceConfig = sourceConfigToStore
+    values.lastSyncAt = null
+    values.listingCheckpoint = null
+    values.directoryCheckpoint = null
   }
   if (updates.syncIntervalMinutes !== undefined) {
     values.syncIntervalMinutes = updates.syncIntervalMinutes
+    const refreshInterval = effectiveConnectorSyncIntervalMinutes(
+      existing.accessMode as ConnectorAccessMode,
+      updates.syncIntervalMinutes
+    )
     values[scheduleColumn] =
-      existingSchedule && existingSchedule <= updateTimestamp
-        ? existingSchedule
-        : updates.syncIntervalMinutes > 0
-          ? new Date(updateTimestamp.getTime() + updates.syncIntervalMinutes * 60 * 1000)
-          : null
+      refreshInterval > 0
+        ? existingSchedule && existingSchedule <= updateTimestamp
+          ? existingSchedule
+          : new Date(updateTimestamp.getTime() + refreshInterval * 60 * 1000)
+        : null
   }
   if (updates.status !== undefined) {
     values.status = updates.status
@@ -771,6 +916,8 @@ export async function performUpdateKnowledgeConnector(
       isNull(knowledgeConnector.deletedAt),
     ]
     updateConditions.push(eq(knowledgeConnector.status, existing.status))
+    if (sourceConfigToStore !== undefined)
+      updateConditions.push(eq(knowledgeConnector.updatedAt, existing.updatedAt))
     if (syncsPerMember) {
       updateConditions.push(eq(knowledgeConnector.memberSyncStatus, existing.memberSyncStatus))
     }
@@ -782,11 +929,28 @@ export async function performUpdateKnowledgeConnector(
       )
     }
 
-    const [row] = await db
-      .update(knowledgeConnector)
-      .set(values)
-      .where(and(...updateConditions))
-      .returning()
+    const row = await db.transaction(async (tx) => {
+      const [updatedConnector] = await tx
+        .update(knowledgeConnector)
+        .set(values)
+        .where(and(...updateConditions))
+        .returning()
+      if (updatedConnector && syncsPerMember && sourceConfigToStore !== undefined) {
+        await tx
+          .update(knowledgeConnectorMember)
+          .set({
+            listingCheckpoint: null,
+            changeCursor: null,
+            memberSyncedThrough: null,
+            lastCompleteListingAt: null,
+            lastListedCount: null,
+            nextAttemptAt: updateTimestamp,
+            updatedAt: updateTimestamp,
+          })
+          .where(eq(knowledgeConnectorMember.connectorId, connectorId))
+      }
+      return updatedConnector
+    })
 
     if (!row) {
       const current = await getKnowledgeConnector(kb.id, connectorId)
@@ -905,42 +1069,171 @@ export async function performDeleteKnowledgeConnector(
     return fail('Connector not found', 'not_found')
   }
   /**
-   * A members-mode document's visibility is its observers; detached from the
-   * connector it would keep an ACL nothing maintains, or become hidden to
-   * everyone. Neither is a standalone entry anyone asked for.
+   * A derived ACL is maintained by the connector's sync — observers in
+   * members mode, the source's own grants in administrator mode. Detached from
+   * the connector a document would keep an ACL nothing maintains: a person the
+   * source un-shares from keeps reading, forever. Not a standalone entry
+   * anyone asked for.
    */
-  if (existing.accessMode === 'members' && !deleteDocuments) {
+  if (existing.accessMode !== 'workspace' && !deleteDocuments) {
     return fail(
-      'Documents of a connector that syncs per member cannot be kept; delete them with the connector',
+      'Documents of a connector whose access is derived from the source cannot be kept; delete them with the connector',
       'conflict'
     )
   }
 
-  let deletedDocs: Array<{ id: string; fileUrl: string }>
   let docCount: number
+  let storageNotification: { context: StorageBillingContext; updatedUsage: number } | undefined
   try {
-    ;({ deletedDocs, docCount } = await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT 1 FROM knowledge_connector WHERE id = ${connectorId} FOR UPDATE`)
+    const [owner] = await db
+      .select({
+        id: knowledgeBase.id,
+        workspaceId: knowledgeBase.workspaceId,
+        organizationId: knowledgeBase.organizationId,
+        userId: knowledgeBase.userId,
+      })
+      .from(knowledgeBase)
+      .where(and(eq(knowledgeBase.id, kb.id), isNull(knowledgeBase.deletedAt)))
+      .limit(1)
+    if (!owner) throw new OrchestrationError('not_found', 'Knowledge base not found')
+    if (
+      owner.workspaceId !== kb.workspaceId ||
+      (owner.organizationId ?? null) !== (kb.organizationId ?? null)
+    ) {
+      throw new OrchestrationError('conflict', 'Knowledge base ownership changed; retry deletion')
+    }
+    const storageContext =
+      !deleteDocuments && owner.workspaceId
+        ? await resolveStorageBillingContext(owner.workspaceId)
+        : undefined
 
-      // Includes pending-removal (tombstoned) docs — the connector is being
-      // deleted, so there's no future sync left to confirm or resurrect them.
-      const docs = await tx
-        .select({ id: document.id, fileUrl: document.fileUrl })
-        .from(document)
-        .where(and(eq(document.connectorId, connectorId), isNull(document.archivedAt)))
+    docCount = await db.transaction(async (tx) => {
+      /** Match source writes and document deletion: parent KB, connector, then storage ledgers. */
+      const [lockedOwner] = await tx
+        .select({
+          workspaceId: knowledgeBase.workspaceId,
+          organizationId: knowledgeBase.organizationId,
+          userId: knowledgeBase.userId,
+        })
+        .from(knowledgeBase)
+        .where(and(eq(knowledgeBase.id, kb.id), isNull(knowledgeBase.deletedAt)))
+        .for('update')
+        .limit(1)
+      if (
+        !lockedOwner ||
+        lockedOwner.workspaceId !== owner.workspaceId ||
+        lockedOwner.organizationId !== owner.organizationId ||
+        lockedOwner.userId !== owner.userId
+      ) {
+        throw new OrchestrationError('conflict', 'Knowledge base ownership changed; retry deletion')
+      }
+      const [lockedConnector] = await tx
+        .select({ accessMode: knowledgeConnector.accessMode })
+        .from(knowledgeConnector)
+        .where(
+          and(
+            eq(knowledgeConnector.id, connectorId),
+            eq(knowledgeConnector.knowledgeBaseId, kb.id),
+            isNull(knowledgeConnector.archivedAt),
+            isNull(knowledgeConnector.deletedAt)
+          )
+        )
+        .for('update')
+        .limit(1)
+      if (!lockedConnector) throw new OrchestrationError('not_found', 'Connector not found')
+      if (!deleteDocuments && lockedConnector.accessMode !== 'workspace') {
+        throw new OrchestrationError(
+          'conflict',
+          'Documents with source-derived access cannot be kept after disconnecting their source'
+        )
+      }
 
-      const documentIds = docs.map((doc) => doc.id)
+      let count = 0
       if (deleteDocuments) {
-        if (documentIds.length > 0) {
+        let afterId: string | undefined
+        for (;;) {
+          /** Archived rows also lose their connector FK and must not escape deletion or cleanup. */
+          const docs = await tx
+            .select({ id: document.id, fileUrl: document.fileUrl })
+            .from(document)
+            .where(
+              and(
+                eq(document.connectorId, connectorId),
+                eq(document.knowledgeBaseId, kb.id),
+                afterId ? gt(document.id, afterId) : undefined
+              )
+            )
+            .orderBy(asc(document.id))
+            .limit(250)
+          if (docs.length === 0) break
+          const documentIds = docs.map((doc) => doc.id)
           await tx.delete(embedding).where(inArray(embedding.documentId, documentIds))
           await tx.delete(document).where(inArray(document.id, documentIds))
+          await enqueueKnowledgeStorageCleanup(
+            tx,
+            docs.map((doc) => ({
+              ...doc,
+              workspaceId: owner.workspaceId,
+              organizationId: owner.organizationId,
+              userId: owner.userId,
+            })),
+            requestId
+          )
+          count += docs.length
+          afterId = docs.at(-1)?.id
         }
-      } else if (documentIds.length > 0) {
-        // Kept documents become normal standalone KB entries once their connector
-        // is gone — resurrect any pending-removal ones rather than leaving them
-        // invisible tombstones with no future sync left to ever confirm or
-        // resurrect them.
-        await tx.update(document).set({ deletedAt: null }).where(inArray(document.id, documentIds))
+      } else {
+        /** Legacy skipped rows used remote size despite retaining no artifact. */
+        await tx
+          .update(document)
+          .set({ fileSize: 0 })
+          .where(
+            and(
+              eq(document.connectorId, connectorId),
+              eq(document.knowledgeBaseId, kb.id),
+              isNull(document.storageKey),
+              eq(document.fileUrl, '')
+            )
+          )
+        /**
+         * Connector bytes are unmetered until detachment. Count retained archived files too;
+         * live tombstones are resurrected below, while archived tombstones remain nonbillable.
+         */
+        const [totals] = await tx
+          .select({
+            count: sql<number>`COUNT(*)::integer`,
+            bytes: sql<string>`COALESCE(SUM(${document.fileSize}::bigint) FILTER (
+              WHERE ${document.archivedAt} IS NULL OR ${document.deletedAt} IS NULL
+            ), 0)::text`,
+          })
+          .from(document)
+          .where(and(eq(document.connectorId, connectorId), eq(document.knowledgeBaseId, kb.id)))
+        count = totals?.count ?? 0
+        const retainedBytes = Number(totals?.bytes ?? 0)
+        if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
+          throw new Error('Invalid retained connector storage size')
+        }
+        if (retainedBytes > 0) {
+          if (storageContext) {
+            const updatedUsage = await incrementStorageUsageForBillingContextInTx(
+              tx,
+              storageContext,
+              retainedBytes
+            )
+            if (updatedUsage !== undefined)
+              storageNotification = { context: storageContext, updatedUsage }
+          }
+        }
+        await tx
+          .update(document)
+          .set({ deletedAt: null })
+          .where(
+            and(
+              eq(document.connectorId, connectorId),
+              eq(document.knowledgeBaseId, kb.id),
+              isNull(document.archivedAt)
+            )
+          )
       }
 
       const deletedConnectors = await tx
@@ -954,25 +1247,24 @@ export async function performDeleteKnowledgeConnector(
           )
         )
         .returning({ id: knowledgeConnector.id })
-
       if (deletedConnectors.length === 0) {
         throw new OrchestrationError('not_found', 'Connector not found')
       }
-
-      return { deletedDocs: deleteDocuments ? docs : [], docCount: docs.length }
-    }))
+      return count
+    })
   } catch (error) {
     return classifyKnowledgeFailure(error, requestId, `Delete connector ${connectorId}`)
   }
 
+  if (storageNotification) {
+    await maybeNotifyStorageLimitForBillingContext(
+      storageNotification.context,
+      storageNotification.updatedUsage
+    )
+  }
+
   if (deleteDocuments) {
     await Promise.all([
-      deletedDocs.length > 0
-        ? deleteDocumentStorageFiles(
-            deletedDocs.map((doc) => ({ ...doc, workspaceId: kb.workspaceId })),
-            requestId
-          )
-        : Promise.resolve(),
       cleanupUnusedTagDefinitions(kb.id, requestId).catch((error) => {
         logger.warn(`[${requestId}] Failed to cleanup tag definitions`, error)
       }),
@@ -1097,7 +1389,7 @@ export async function performSyncKnowledgeConnector(
   if (connector.status === 'paused' || connector.status === 'disabled') {
     return fail(`Connector is ${connector.status}. Resume it before triggering a sync.`, 'conflict')
   }
-  if (!kb.workspaceId) {
+  if (!kb.workspaceId && !kb.organizationId) {
     return fail('Knowledge base is missing workspace billing context', 'conflict')
   }
   // Resolved before the audit is written, so a rejected payer lookup returns a

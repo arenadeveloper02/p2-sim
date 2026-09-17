@@ -2,13 +2,18 @@
 import { act, Suspense, startTransition } from 'react'
 import { toast } from '@sim/emcn'
 import { FILE_DOC_SEED, type JoinFileDocError } from '@sim/realtime-protocol/file-doc'
-import { PASTE_RENDER_THRESHOLDS } from '@sim/utils/paste'
+import { PASTE_LIMITS, PASTE_RENDER_THRESHOLDS } from '@sim/utils/paste'
 import { type Editor, Extension } from '@tiptap/core'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
+import { exportWorkspaceFileSnapshotBodySchema } from '@/lib/api/contracts/workspace-files'
+import { SIM_SELECTION_MIME } from '@/lib/copilot/chat/selection-clipboard'
+import type { FileDownloadSource } from '@/lib/uploads/client/download'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import { extractEmbeddedFileRef } from '@/lib/uploads/utils/embedded-image-ref'
+import { useFileDocCollaboration } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/collaboration/use-file-doc-collaboration'
 import { createMarkdownContentExtensions } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/extensions'
 import { ImageUploadPlaceholders } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/image-upload'
 import {
@@ -22,7 +27,10 @@ const { collaborationRef, uploadFile } = vi.hoisted(() => ({
   uploadFile: vi.fn(),
 }))
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/workspace/workspace-1/files',
+  useRouter: () => ({ push: vi.fn() }),
+}))
 vi.mock('@/lib/auth/auth-client', () => ({ useSession: () => ({ data: null, isPending: false }) }))
 vi.mock('@/hooks/queries/workspace-files', () => ({
   useUploadWorkspaceFile: () => ({ mutateAsync: uploadFile }),
@@ -35,10 +43,6 @@ vi.mock('@/app/workspace/[workspaceId]/components', () => ({ FindBar: () => null
 vi.mock(
   '@/app/workspace/[workspaceId]/files/components/file-viewer/use-editable-file-content',
   () => ({ useEditableFileContent: vi.fn() })
-)
-vi.mock(
-  '@/app/workspace/[workspaceId]/files/components/file-viewer/use-selection-copy-bridge',
-  () => ({ useSelectionCopyBridge: vi.fn() })
 )
 vi.mock('@/app/workspace/[workspaceId]/files/components/file-viewer/text-editor', () => ({
   TextEditor: () => null,
@@ -58,7 +62,7 @@ vi.mock(
 )
 vi.mock(
   '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/collaboration/use-file-doc-collaboration',
-  () => ({ useFileDocCollaboration: () => collaborationRef.current })
+  () => ({ useFileDocCollaboration: vi.fn(() => collaborationRef.current) })
 )
 vi.mock(
   '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/find',
@@ -145,6 +149,9 @@ class FakeFileDocProvider {
 
 interface RenderOptions {
   collaborative?: boolean
+  downloadSourceRef?: { current: FileDownloadSource | null }
+  isStreaming?: boolean
+  streamIsIncremental?: boolean
   onChange?: typeof onChange
   onSaveShortcut?: typeof onSaveShortcut
   suspend?: boolean
@@ -165,7 +172,8 @@ async function render(
             workspaceId={FILE.workspaceId}
             content={content}
             acceptedBaselineContent={acceptedBaselineContent}
-            isStreaming={false}
+            isStreaming={options.isStreaming ?? false}
+            streamIsIncremental={options.streamIsIncremental}
             canEdit={canEdit}
             userId='user-1'
             userName='User'
@@ -175,6 +183,7 @@ async function render(
             onEditSource={onEditSource}
             onClientAutosaveChange={onClientAutosaveChange}
             onSaveShortcut={options.onSaveShortcut ?? onSaveShortcut}
+            downloadSourceRef={options.downloadSourceRef}
           />
           <SuspendAfterEditor active={options.suspend ?? false} />
         </Suspense>
@@ -207,6 +216,7 @@ async function pasteImage(editor: Editor) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  uploadFile.mockReset()
   collaborationRef.current = null
   vi.spyOn(toast, 'warning').mockReturnValue('test-toast')
   vi.spyOn(toast, 'info').mockReturnValue('uploading-toast')
@@ -223,6 +233,295 @@ afterEach(async () => {
 })
 
 describe('loaded rich editor lifecycle', () => {
+  it.each([
+    { method: 'paste', caption: false },
+    { method: 'drop', caption: false },
+    { method: 'paste', caption: true },
+    { method: 'drop', caption: true },
+  ] as const)(
+    '$method uploads a display-only image from another document (caption: $caption)',
+    async ({ method, caption }) => {
+      await render('before TARGET after')
+      const editor = getEditor()
+      await act(async () => editor.commands.setTextSelection({ from: 8, to: 14 }))
+      if (method === 'drop')
+        vi.spyOn(editor.view, 'posAtCoords').mockReturnValue({ pos: 8, inside: 0 })
+      const src = '/api/workspaces/another-workspace/files/inline?fileId=another-image'
+      const image = new File(['image'], 'image.png', { type: 'image/png' })
+      const img = `<img src="${window.location.origin}${src}" alt="Original" width="140">`
+      const html = caption ? `<p>Caption<a href="/destination">${img}</a></p><p>Tail</p>` : img
+      uploadFile.mockResolvedValueOnce({ file: { url: '/api/files/view/uploaded-image' } })
+      const event = new MouseEvent(method, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, method === 'paste' ? 'clipboardData' : 'dataTransfer', {
+        value: {
+          files: [image],
+          items: [],
+          types: ['Files', 'text/html'],
+          getData: (type: string) => (type === 'text/html' ? html : ''),
+        },
+      })
+      await act(async () => editor.view.dom.dispatchEvent(event))
+      expect(event.defaultPrevented).toBe(true)
+      expect(uploadFile).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: FILE.workspaceId,
+        file: image,
+        folderId: null,
+      })
+      expect(editor.getMarkdown()).toContain('/api/files/view/uploaded-image')
+      expect(editor.getMarkdown()).not.toContain('/inline?')
+      let storedSrc = ''
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'image' || node.type.name === 'inlineImage')
+          storedSrc = node.attrs.src
+      })
+      expect(extractEmbeddedFileRef(storedSrc)).toEqual({ fileId: 'uploaded-image' })
+      expect(editor.state.doc.textContent).toBe(
+        `before ${caption ? 'CaptionTail' : ''}${method === 'paste' ? '' : 'TARGET'} after`
+      )
+      expect(editor.view.dom.querySelector('img')?.getAttribute('alt')).toBe('Original')
+      expect(editor.getMarkdown()).toContain('width="140"')
+      if (caption)
+        expect(editor.view.dom.querySelector('a')?.getAttribute('href')).toBe('/destination')
+    }
+  )
+
+  it('captures immediate collaborative edits with current shared frontmatter without saving', async () => {
+    const provider = new FakeFileDocProvider()
+    const doc = new Y.Doc()
+    const config = doc.getMap(FILE_DOC_SEED.configMap)
+    config.set(FILE_DOC_SEED.flag, true)
+    const frontmatter = '---\r\n# Metadata\r\ntitle: Updated\r\n---\r\n\r\n'
+    config.set(FILE_DOC_SEED.frontmatterKey, frontmatter)
+    collaborationRef.current = {
+      doc,
+      awareness: new Awareness(doc),
+      provider,
+      user: { name: 'User', color: '#000000', clientId: doc.clientID },
+    }
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render('stale storage', 'stale storage', true, {
+      collaborative: true,
+      downloadSourceRef,
+    })
+    await act(async () => provider.setSynced(true))
+    const editor = getEditor()
+    await act(async () => {
+      editor.commands.setContent('<p>Visible peer text</p>')
+      editor.commands.insertContentAt(1, 'Latest local text. ')
+      expect(downloadSourceRef.current?.getContent()).toBe(
+        `${frontmatter}Latest local text. Visible peer text`
+      )
+    })
+    expect(downloadSourceRef.current).toMatchObject({
+      fileId: FILE.id,
+      workspaceId: FILE.workspaceId,
+    })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onSaveShortcut).not.toHaveBeenCalled()
+    await act(async () => provider.setSynced(false))
+    expect(downloadSourceRef.current?.getContent()).toContain(
+      'Latest local text. Visible peer text'
+    )
+    const oversizedFrontmatter = `---\npadding: ${'x'.repeat(PASTE_LIMITS.RICH_MARKDOWN_BYTES)}\n---\n\n`
+    await act(async () => config.set(FILE_DOC_SEED.frontmatterKey, oversizedFrontmatter))
+    const snapshot = downloadSourceRef.current?.getContent()
+    expect(snapshot).toContain('Latest local text. Visible peer text')
+    expect(exportWorkspaceFileSnapshotBodySchema.safeParse({ content: snapshot }).success).toBe(
+      false
+    )
+  })
+
+  it('exports the frozen visible preview before sync, then switches to the live document', async () => {
+    const provider = new FakeFileDocProvider()
+    const doc = new Y.Doc()
+    collaborationRef.current = {
+      doc,
+      awareness: new Awareness(doc),
+      provider,
+      user: { name: 'User', color: '#000000', clientId: doc.clientID },
+    }
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    const initial = '---\ntitle: Opening\n---\n\nVisible preview'
+    await render(initial, initial, true, { collaborative: true, downloadSourceRef })
+    await render('newer fetch', 'newer fetch', true, { collaborative: true, downloadSourceRef })
+    const hiddenEditor = container.querySelector<HTMLElement & { editor: Editor }>(
+      '.hidden .tiptap'
+    )!.editor
+    await act(async () => hiddenEditor.commands.setContent('<p>Hidden seed</p>'))
+    expect(downloadSourceRef.current?.getContent()).toBe(initial)
+    await act(async () => {
+      doc.getMap(FILE_DOC_SEED.configMap).set(FILE_DOC_SEED.flag, true)
+      doc.getMap(FILE_DOC_SEED.configMap).set(FILE_DOC_SEED.frontmatterKey, '')
+      provider.setSynced(true)
+    })
+    expect(downloadSourceRef.current?.getContent()).toBe('Hidden seed')
+  })
+
+  it('preserves unsupported read-only source exactly and releases its download source on unmount', async () => {
+    const source = '<img src="/image.png" class="hero" />\n\nBody\n'
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render(source, source, true, { downloadSourceRef })
+    expect(getEditor().isEditable).toBe(false)
+    expect(downloadSourceRef.current?.getContent()).toBe(source)
+    await act(async () => root.render(null))
+    expect(downloadSourceRef.current).toBeNull()
+  })
+
+  it('captures a local edit synchronously before the parent receives the new content', async () => {
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render('Body', 'Body', true, { downloadSourceRef })
+    await act(async () => {
+      getEditor().commands.insertContentAt(1, 'New ')
+      expect(downloadSourceRef.current?.getContent()).toBe('New Body')
+    })
+  })
+
+  it('keeps oversized read-only sources on stored export until a supported baseline is accepted', async () => {
+    const source = 'x'.repeat(PASTE_LIMITS.RICH_MARKDOWN_BYTES + 1)
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render(source, source, false, { downloadSourceRef })
+    expect(getEditor().isEditable).toBe(false)
+    expect(downloadSourceRef.current).toBeNull()
+    await render('smaller accepted source', 'smaller accepted source', true, { downloadSourceRef })
+    expect(downloadSourceRef.current?.getContent()).toBe('smaller accepted source')
+  })
+
+  it.each(['plain text', 'heading image'] as const)(
+    'exports streamed %s and holds body and metadata during a rewrite',
+    async (contentType) => {
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrameId = 0
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+        const id = ++nextFrameId
+        frames.set(id, callback)
+        return id
+      })
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => frames.delete(id))
+      const tick = async () => {
+        const pending = [...frames.values()]
+        frames.clear()
+        await act(async () => {
+          for (const callback of pending) callback(0)
+        })
+      }
+      const downloadSourceRef = { current: null as FileDownloadSource | null }
+      const prefix = contentType === 'heading image' ? '# ' : ''
+      const suffix = contentType === 'heading image' ? ' ![Logo](/logo.png)' : ''
+      const initial = `---\ntitle: Original\n---\n\n${prefix}Original body${suffix}`
+      await render(initial, initial, true, { downloadSourceRef })
+      const replacement = `---\ntitle: Replacement\n---\n\n${prefix}Replacement body${suffix}`
+      await render(replacement, initial, true, { downloadSourceRef, isStreaming: true })
+      await tick()
+      expect(getEditor().getText().trim()).toBe('Original body')
+      expect(downloadSourceRef.current?.getContent()).toBe(initial)
+      await render(replacement, replacement, true, { downloadSourceRef })
+      expect(getEditor().getText().trim()).toBe('Replacement body')
+      if (contentType === 'heading image') {
+        expect(getEditor().view.dom.querySelector('h1 img')?.getAttribute('src')).toBe('/logo.png')
+      }
+      expect(downloadSourceRef.current?.getContent()).toBe(replacement)
+      const appended = `${replacement} and more`
+      await render(appended, replacement, true, {
+        downloadSourceRef,
+        isStreaming: true,
+        streamIsIncremental: true,
+      })
+      expect(downloadSourceRef.current?.getContent()).toBe(replacement)
+      await tick()
+      expect(downloadSourceRef.current?.getContent()).toBe(appended)
+
+      await act(async () => root.render(null))
+      await render(initial, initial, true, { downloadSourceRef, isStreaming: true })
+      expect(downloadSourceRef.current?.getContent()).toBeNull()
+      await render(replacement, initial, true, { downloadSourceRef, isStreaming: true })
+      await tick()
+      expect(getEditor().getText().trim()).toBe('Replacement body')
+      expect(downloadSourceRef.current?.getContent()).toBe(replacement)
+    }
+  )
+
+  it.each(['connecting', 'timeout', 'fatal'] as const)(
+    'copies selection context from the visible %s preview and switches to the live editor on sync',
+    async (status) => {
+      const provider = new FakeFileDocProvider()
+      const doc = new Y.Doc()
+      collaborationRef.current = {
+        doc,
+        awareness: new Awareness(doc),
+        provider,
+        user: { name: 'User', color: '#000000', clientId: doc.clientID },
+      }
+      await render('stored preview body', 'stored preview body', true, { collaborative: true })
+      if (status !== 'connecting') {
+        await act(async () =>
+          provider.fail({
+            fileId: FILE.id,
+            error: status,
+            code: status === 'timeout' ? 'READINESS_TIMEOUT' : 'ACCESS_DENIED',
+            retryable: status === 'timeout',
+          })
+        )
+      }
+
+      const preview = getEditor()
+      expect(preview.view.dom.getAttribute('aria-label')).toBe('Document preview')
+      expect(preview.isEditable).toBe(false)
+      const hiddenEditor = container.querySelector<HTMLElement & { editor: Editor }>(
+        '.hidden .tiptap'
+      )!.editor
+      await act(async () => {
+        hiddenEditor.commands.setContent('<p>stale hidden selection</p>')
+        hiddenEditor.commands.setTextSelection({ from: 1, to: 6 })
+        preview.commands.setTextSelection({ from: 1, to: 7 })
+      })
+
+      const copy = (editor: Editor) => {
+        const written: Record<string, string> = {}
+        const event = new Event('copy', { bubbles: true, cancelable: true })
+        Object.defineProperty(event, 'clipboardData', {
+          value: {
+            clearData: () => {
+              for (const key of Object.keys(written)) delete written[key]
+            },
+            setData: (type: string, value: string) => {
+              written[type] = value
+            },
+          },
+        })
+        editor.view.dom.dispatchEvent(event)
+        return written
+      }
+      const previewCopy = copy(preview)
+      expect(previewCopy['text/plain']).toBe('stored')
+      expect(previewCopy[SIM_SELECTION_MIME]).toBeDefined()
+      expect(JSON.parse(previewCopy[SIM_SELECTION_MIME])).toMatchObject({
+        sourceWorkspaceId: FILE.workspaceId,
+        context: { kind: 'file_selection', fileId: FILE.id, fileName: FILE.name, text: 'stored' },
+      })
+      expect(doc.getXmlFragment('default').length).toBe(0)
+      await act(async () => preview.commands.setTextSelection(1))
+      expect(copy(preview)[SIM_SELECTION_MIME]).toBeUndefined()
+
+      await act(async () => {
+        provider.joinError = null
+        doc.getMap(FILE_DOC_SEED.configMap).set(FILE_DOC_SEED.flag, true)
+        provider.setSynced(true)
+      })
+      const editor = getEditor()
+      expect(editor).not.toBe(preview)
+      expect(container.querySelector('[aria-label="Document preview"]')).toBeNull()
+      await act(async () => {
+        editor.commands.setContent('<p>live content</p>')
+        editor.commands.setTextSelection({ from: 1, to: 5 })
+      })
+      const liveCopy = copy(editor)
+      expect(liveCopy['text/plain']).toBe('live')
+      expect(JSON.parse(liveCopy[SIM_SELECTION_MIME])).toMatchObject({
+        context: { fileId: FILE.id, text: 'live' },
+      })
+    }
+  )
+
   it('pauses editing while reconnecting and resumes after the document resyncs', async () => {
     const provider = new FakeFileDocProvider()
     const doc = new Y.Doc()
@@ -253,9 +552,13 @@ describe('loaded rich editor lifecycle', () => {
     expect(editor.isEditable).toBe(true)
     expect(editor.view.dom.getAttribute('aria-readonly')).toBe('false')
     expect(container.textContent).not.toContain('Reconnecting…')
+    expect(container.querySelector('[role="status"]')).toBeNull()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(toast.warning).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalled()
   })
 
-  it('keeps the live document visible and read-only after a fatal collaboration error', async () => {
+  it('keeps revoked pending edits visible and read-only without draft-management prompts', async () => {
     const provider = new FakeFileDocProvider()
     const doc = new Y.Doc()
     doc.getMap(FILE_DOC_SEED.configMap).set(FILE_DOC_SEED.flag, true)
@@ -275,7 +578,7 @@ describe('loaded rich editor lifecycle', () => {
       provider.fail({
         fileId: 'file-1',
         error: 'Access denied',
-        code: 'ACCESS_DENIED',
+        code: 'ACCESS_REVOKED',
         retryable: false,
       })
     )
@@ -286,6 +589,13 @@ describe('loaded rich editor lifecycle', () => {
     expect(editor.view.dom.closest('.hidden')).toBeNull()
     expect(container.textContent).not.toContain('stale opening snapshot')
     expect(container.textContent).not.toContain('Reconnecting…')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      'You no longer have edit access to this document.'
+    )
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.querySelector('[role="alert"], [role="dialog"]')).toBeNull()
+    expect(toast.warning).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalled()
   })
 
   it('shows stored content read-only when collaboration fails before the first sync', async () => {
@@ -315,6 +625,81 @@ describe('loaded rich editor lifecycle', () => {
     expect(editor.view.dom.closest('.hidden')).toBeNull()
     expect(container.textContent).not.toContain('Reconnecting…')
   })
+
+  it('keeps timeout preview separate from the authoritative document and recovers on late sync', async () => {
+    const provider = new FakeFileDocProvider()
+    const doc = new Y.Doc()
+    collaborationRef.current = {
+      doc,
+      awareness: new Awareness(doc),
+      provider,
+      user: { name: 'User', color: '#000000', clientId: doc.clientID },
+    }
+    await render('stored preview body', 'stored preview body', true, { collaborative: true })
+    await act(async () =>
+      provider.fail({
+        fileId: 'file-1',
+        error: 'Not ready',
+        code: 'READINESS_TIMEOUT',
+        retryable: true,
+      })
+    )
+    expect(container.textContent).toContain('stored preview body')
+    expect(container.textContent).toContain('Reconnecting…')
+    expect(doc.getMap(FILE_DOC_SEED.configMap).get(FILE_DOC_SEED.flag)).toBeUndefined()
+    expect(doc.getXmlFragment('default').length).toBe(0)
+    const editors = [...container.querySelectorAll('.tiptap')].map(
+      (element) => (element as HTMLElement & { editor: Editor }).editor
+    )
+    expect(editors.every((editor) => !editor.isEditable)).toBe(true)
+    await act(async () => {
+      provider.joinError = null
+      doc.getMap(FILE_DOC_SEED.configMap).set(FILE_DOC_SEED.flag, true)
+      provider.setSynced(true)
+    })
+    expect(container.textContent).not.toContain('stored preview body')
+    expect(container.textContent).not.toContain('Reconnecting…')
+    expect(getEditor().isEditable).toBe(true)
+    expect(onClientAutosaveChange).not.toHaveBeenCalledWith(true)
+  })
+
+  it.each(['DOCUMENT_REPLACED', 'PENDING_UPDATE_LIMIT', 'INVALID_UPDATE'])(
+    'preserves pending edits with only a passive status for %s',
+    async (code) => {
+      const provider = new FakeFileDocProvider()
+      const doc = new Y.Doc()
+      doc.getMap(FILE_DOC_SEED.configMap).set(FILE_DOC_SEED.flag, true)
+      collaborationRef.current = {
+        doc,
+        awareness: new Awareness(doc),
+        provider,
+        user: { name: 'User', color: '#000000', clientId: doc.clientID },
+      }
+      await render('stored body', 'stored body', true, { collaborative: true })
+
+      await act(async () => provider.setSynced(true))
+      await act(async () => getEditor().commands.insertContent('preserved local change'))
+      await act(async () =>
+        provider.fail({
+          fileId: 'file-1',
+          error: 'Local recovery required',
+          code,
+          retryable: false,
+        })
+      )
+
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        'Live editing is unavailable.'
+      )
+      expect(container.querySelector('button')).toBeNull()
+      expect(container.querySelector('[role="alert"], [role="dialog"]')).toBeNull()
+      expect(container.textContent).not.toContain('Reconnecting…')
+      expect(toast.warning).not.toHaveBeenCalled()
+      expect(toast.info).not.toHaveBeenCalled()
+      expect(getEditor().isEditable).toBe(false)
+      expect(getEditor().getText()).toContain('preserved local change')
+    }
+  )
 
   it('explains a picker selection whose insertion anchor was invalidated', async () => {
     await render('before TARGET after')
@@ -388,7 +773,8 @@ describe('loaded rich editor lifecycle', () => {
 
   it('keeps callbacks and frontmatter tied to the committed editor during a suspended render', async () => {
     const committed = '---\ntitle: committed\n---\n\nbody'
-    await render(committed)
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render(committed, committed, true, { downloadSourceRef })
     const editor = getEditor()
     const abandonedOnChange = vi.fn()
     const abandonedSave = vi.fn()
@@ -396,14 +782,17 @@ describe('loaded rich editor lifecycle', () => {
     await render(abandoned, abandoned, true, {
       onChange: abandonedOnChange,
       onSaveShortcut: abandonedSave,
+      downloadSourceRef,
       suspend: true,
     })
     expect(onSuspendedRender).toHaveBeenCalled()
     expect(getEditor()).toBe(editor)
     expect(editor.getText()).toBe('body')
+    expect(downloadSourceRef.current?.getContent()).toBe(committed)
     await act(async () => editor.commands.insertContent('edited '))
     expect(onChange).toHaveBeenLastCalledWith(expect.stringContaining('title: committed'))
     expect(onChange.mock.lastCall?.[0]).not.toContain('title: abandoned')
+    expect(downloadSourceRef.current?.getContent()).toBe(onChange.mock.lastCall?.[0])
     editor.view.dom.dispatchEvent(
       new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })
     )
@@ -484,14 +873,57 @@ describe('loaded rich editor lifecycle', () => {
     expect(getEditor().isEditable).toBe(false)
   })
 
+  it.each(['', '## '])(
+    'selects a %s image without an image menu or content changes',
+    async (prefix) => {
+      const content = `${prefix}[![Logo](/image.png)](https://example.com)\n\nBody`
+      await render(content)
+      const editor = getEditor()
+      const before = editor.getJSON()
+      let imagePosition = -1
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'image' || node.type.name === 'inlineImage') imagePosition = pos
+      })
+      expect(imagePosition).toBeGreaterThan(-1)
+      await act(async () => editor.commands.setNodeSelection(imagePosition))
+      expect(container.querySelector('[aria-label="Image editing"]')).toBeNull()
+      expect(editor.getJSON()).toEqual(before)
+      expect(editor.state.doc.nodeAt(imagePosition)?.attrs).toMatchObject({
+        alt: 'Logo',
+        href: 'https://example.com',
+      })
+    }
+  )
+
+  it('edits heading images without source fallback', async () => {
+    const content = '# Before ![Image](/image.png) after'
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render(content, content, true, { downloadSourceRef })
+    expect(getEditor().isEditable).toBe(true)
+    expect(container.textContent).not.toContain('Edit source')
+    expect(getEditor().view.dom.querySelector('h1 img')?.getAttribute('src')).toBe('/image.png')
+    await act(async () => getEditor().commands.insertContentAt(1, 'Edited '))
+    expect(downloadSourceRef.current?.getContent()).toBe(
+      '# Edited Before ![Image](/image.png) after\n'
+    )
+    expect(onChange).toHaveBeenCalled()
+  })
+
   it.each([
     '[unused]: https://example.com',
     '1. [![foo][image]](/dest)\n\n[image]: /url',
     '- [ ] [foo][link]\n\n[link]: /dest',
     '| header |\n| --- |\n| <img src="/image"> |',
+    '| Header |\n| --- |\n| Before ![Image](/image.png) after |',
+    '| Before ![Image](/image.png) after |\n| --- |\n| Cell |',
   ])('offers source editing without mutating unsupported content: %s', async (content) => {
-    await render(content)
+    const downloadSourceRef = { current: null as FileDownloadSource | null }
+    await render(content, content, true, { collaborative: true, downloadSourceRef })
+    expect(useFileDocCollaboration).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: false })
+    )
     expect(getEditor().isEditable).toBe(false)
+    expect(downloadSourceRef.current?.getContent()).toBe(content)
     const button = Array.from(container.querySelectorAll('button')).find(
       (node) => node.textContent === 'Edit source'
     )

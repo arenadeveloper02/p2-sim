@@ -61,6 +61,7 @@ function operation(
 ): OpenApiOperationMetadata {
   return {
     operationId,
+    applicationOperation: { id: operationId },
     summary: `Summary for ${operationId}`,
     description: `Description for ${operationId}.`,
     tags: ['Tests'],
@@ -473,6 +474,39 @@ describe('OpenAPI generator', () => {
     expect(() => generateOpenApiDocument(document([route]))).toThrow(
       'apiKey security requirement must use an empty scope array'
     )
+  })
+
+  it('rejects OAuth documentation without canonical scope policy', () => {
+    expect(() =>
+      generateOpenApiDocument({
+        ...document([simpleRoute()]),
+        security: [{ oauthBearer: [] }],
+        securitySchemes: { oauthBearer: { type: 'http', scheme: 'bearer' } },
+      })
+    ).toThrow("must declare its canonical application's OAuth scope")
+  })
+
+  it('documents API read consent for Search operations instead of MCP-only consent', () => {
+    const route = simpleRoute()
+    const generated = generateOpenApiDocument({
+      ...document([
+        {
+          ...route,
+          operation: {
+            ...route.operation,
+            applicationOperation: { id: 'knowledge.search', oauthScope: 'search:read' },
+          },
+        },
+      ]),
+      security: [{ oauthBearer: [] }],
+      securitySchemes: { oauthBearer: { type: 'http', scheme: 'bearer' } },
+    })
+    const paths = generated.paths as Record<string, Record<string, JsonObject>>
+    expect(paths['/simple'].get).toMatchObject({
+      'x-sim-operation': 'knowledge.search',
+      'x-oauth-scope': 'api:read',
+      description: 'Description for simple.\n\nOAuth scope: `api:read`.',
+    })
   })
 
   it('fails fast for missing Zod documentation metadata', () => {

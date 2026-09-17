@@ -1,3 +1,4 @@
+export { PendingTagIndicator } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/pending-tag-indicator'
 export { ChartDisplay } from './chart-display'
 export type {
   ChartTagData,
@@ -31,7 +32,6 @@ export {
   credentialTagHasVisibleCard,
   formatCredentialSubmissionMessage,
   isHttpUrl,
-  PendingTagIndicator,
   parseCredentialSubmissionMessage,
   parseCredentialSubmissionProgress,
   parseCredentialTagBody,

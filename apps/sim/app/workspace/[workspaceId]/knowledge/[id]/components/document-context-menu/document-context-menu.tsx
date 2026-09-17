@@ -76,7 +76,7 @@ export function DocumentContextMenu({
 
   const hasNavigationSection = !isMultiSelect && (!!onOpenInNewTab || !!onOpenSource)
   const hasEditSection = !isMultiSelect && (!!onRename || !!onViewTags)
-  const hasStateSection = !!onToggleEnabled || !!onRetry
+  const hasStateSection = !!onToggleEnabled || (!isMultiSelect && !!onRetry)
   const hasDestructiveSection = !!onDelete
   const hasActionsAboveDestructive = hasNavigationSection || hasEditSection || hasStateSection
 
@@ -134,10 +134,10 @@ export function DocumentContextMenu({
                 {toggleLabel}
               </DropdownMenuItem>
             )}
-            {onRetry && (
+            {!isMultiSelect && onRetry && (
               <DropdownMenuItem onSelect={onRetry}>
                 <RefreshCw />
-                Retry processing
+                Retry
               </DropdownMenuItem>
             )}
 

@@ -72,6 +72,7 @@ function surfaceCreatedResource(ctx: StreamLoopContext, resource: MothershipReso
  */
 function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode): void {
   const { deps } = ctx
+  if (!deps.workspaceId) return
   const name = node.name
   const output = node.result?.output
   const isSuccess = node.status === 'success'

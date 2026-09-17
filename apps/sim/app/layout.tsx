@@ -9,6 +9,7 @@ import {
   setCreditsPerDollar,
 } from '@/lib/billing/credits/conversion'
 import { getCreditsPerDollarFromMasterConfig } from '@/lib/billing/credits/master-config'
+import { env } from '@/lib/core/config/env'
 import {
   isChatEnabled,
   isHosted,
@@ -20,6 +21,7 @@ import { ConsentProvider } from '@/app/_shell/consent/consent-provider'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { PasteAdmissionGuard } from '@/app/_shell/paste-admission-guard'
+import { BrowserTelemetry } from '@/app/_shell/providers/browser-telemetry'
 import { themeFoucScriptSource } from '@/app/_shell/providers/light-forced-segments'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
@@ -54,6 +56,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeProvider>
           <QueryProvider>
             <SessionProvider>
+              <BrowserTelemetry
+                disabled={env.NEXT_TELEMETRY_DISABLED === '1'}
+                consentRequired={isHosted}
+              />
               <ArenaSessionShell>
                 <TooltipProvider>
                   <BrandedLayout>{children}</BrandedLayout>
@@ -123,19 +129,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   }
                 } catch (e) {}
 
+                // The organization surface (/o/...) shares the workspace chrome and
+                // needs the same variables set before first paint.
                 try {
                   var path = window.location.pathname;
-                  if (path.indexOf('/workspace/') === -1) {
+                  if (path.indexOf('/workspace/') === -1 && path.indexOf('/o/') !== 0) {
                     return;
                   }
                 } catch (e) {
                   return;
                 }
 
-                // Sidebar width. Mirror clampSidebarWidth() in stores/sidebar/store.ts:
-                // the upper bound can never fall below the 238px minimum, so a narrow
-                // window yields a width >= MIN instead of a sub-minimum sliver.
-                var defaultSidebarWidth = 238;
+                // Sidebar width. Mirror getMaxSidebarWidth() in stores/sidebar/store.ts:
+                // 30% of the viewport capped at 400px, and never below the 256px
+                // minimum, so a narrow window yields a width >= MIN instead of a
+                // sub-minimum sliver.
+                var defaultSidebarWidth = 256;
                 try {
                   // Collapse comes from the cookie (independent of localStorage
                   // parsing); the persisted width is read defensively below. Match the
@@ -161,10 +170,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   // collapsed, because the desktop hover-peek renders the sidebar at
                   // its restore width while --sidebar-width still reads collapsed.
                   var width = state && state.sidebarWidth;
-                  var maxSidebarWidth = Math.max(238, window.innerWidth * 0.3);
+                  var maxSidebarWidth = Math.max(256, Math.min(400, window.innerWidth * 0.3));
                   var expandedWidth =
                     typeof width === 'number' && isFinite(width)
-                      ? Math.min(Math.max(width, 238), maxSidebarWidth)
+                      ? Math.min(Math.max(width, 256), maxSidebarWidth)
                       : defaultSidebarWidth;
                   document.documentElement.style.setProperty(
                     '--sidebar-expanded-width',

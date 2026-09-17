@@ -359,18 +359,33 @@ const MYSQL_TOOL_IDS = [
 ] as const
 
 const ATHENA_TOOL_IDS = [
+  'athena_batch_get_named_query',
+  'athena_batch_get_prepared_statement',
   'athena_batch_get_query_execution',
   'athena_create_named_query',
+  'athena_create_prepared_statement',
   'athena_delete_named_query',
+  'athena_delete_prepared_statement',
+  'athena_get_data_catalog',
+  'athena_get_database',
   'athena_get_named_query',
+  'athena_get_prepared_statement',
   'athena_get_query_execution',
   'athena_get_query_results',
+  'athena_get_query_runtime_statistics',
+  'athena_get_table_metadata',
+  'athena_get_work_group',
+  'athena_list_data_catalogs',
   'athena_list_databases',
   'athena_list_named_queries',
+  'athena_list_prepared_statements',
   'athena_list_query_executions',
   'athena_list_table_metadata',
+  'athena_list_work_groups',
   'athena_start_query',
   'athena_stop_query',
+  'athena_update_named_query',
+  'athena_update_prepared_statement',
 ] as const
 
 const CLICKHOUSE_TOOL_IDS = [
@@ -880,6 +895,7 @@ const SLACK_TOOL_IDS = [
   'slack_download',
   'slack_get_channel_history',
   'slack_get_thread_replies',
+  'slack_list_channels',
   'slack_ephemeral_message',
   'slack_message',
   'slack_message_reader',
@@ -1751,6 +1767,15 @@ registerFamily(handlerLoaders, MEMORY_TOOL_IDS, async () => {
 registerFamily(handlerLoaders, LOG_TOOL_IDS, async () => {
   return (await import('@/lib/internal/logs/execute-tool')).executeLogsTool
 })
+
+handlerLoaders.set(
+  'mcp_run_operation',
+  async () => (await import('@/lib/internal/mcp/execute-tool')).executeMcpTool
+)
+handlerLoaders.set(
+  'mcp_list_operations',
+  async () => (await import('@/lib/internal/mcp/list-operations')).listMcpOperations
+)
 
 export function isInternalToolOperationRegistered(toolId: string): boolean {
   return handlerLoaders.has(toolId) || isMcpTool(toolId)
