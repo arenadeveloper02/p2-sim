@@ -3,6 +3,7 @@
 import { cn } from '@sim/emcn'
 import Image from 'next/image'
 import circlePatternLoader from '@/app/(interfaces)/chat/components/message/components/circle-pattern-loader.gif'
+import circlePatternLoaderWhite from '@/app/(interfaces)/chat/components/message/components/circle-pattern-loader-white.gif'
 import { DEPLOYED_CHAT_TEXT_MUTED } from '@/app/(interfaces)/chat/constants'
 
 interface DeployedResponseLoaderProps {
@@ -22,8 +23,7 @@ interface DeployedResponseLoaderProps {
 
 /**
  * Loading indicator shown in deployed chat while waiting for an assistant response.
- * Multiply keeps the animation on the light canvas. Dark mode uses the
- * animation's own colors so it stays visible on the dark canvas.
+ * Light theme uses the colored GIF. Dark theme uses the same animation in white.
  */
 export function DeployedResponseLoader({
   size = 48,
@@ -42,7 +42,16 @@ export function DeployedResponseLoader({
           width={size}
           height={size}
           unoptimized
-          className='mix-blend-multiply dark:mix-blend-normal'
+          className='mix-blend-multiply dark:hidden'
+        />
+        <Image
+          src={circlePatternLoaderWhite}
+          alt=''
+          width={size}
+          height={size}
+          unoptimized
+          aria-hidden
+          className='hidden dark:block'
         />
         {showLabel ? (
           <span className='font-medium text-sm' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
@@ -70,7 +79,16 @@ export function DeployedInlineLoader({ label }: { label: string }) {
         height={24}
         unoptimized
         aria-hidden
-        className='mix-blend-multiply dark:mix-blend-normal'
+        className='mix-blend-multiply dark:hidden'
+      />
+      <Image
+        src={circlePatternLoaderWhite}
+        alt=''
+        width={24}
+        height={24}
+        unoptimized
+        aria-hidden
+        className='hidden dark:block'
       />
       <span className='font-medium'>{label}</span>
     </div>
