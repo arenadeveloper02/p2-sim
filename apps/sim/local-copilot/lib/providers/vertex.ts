@@ -8,6 +8,7 @@ import {
   createLocalCopilotVertexClient,
   getLocalCopilotVertexNotConfiguredMessage,
   isLocalCopilotVertexConfigured,
+  listLocalCopilotVertexSlots,
   resolveLocalCopilotVertexLocation,
   resolveLocalCopilotVertexProject,
 } from '@/local-copilot/lib/providers/vertex-auth'
@@ -18,6 +19,10 @@ const logger = createLogger('LocalCopilotVertexProvider')
 /**
  * Creates a Local Copilot provider backed by Vertex AI (Gemini on GCP).
  * Separate from the Google AI Studio / GenAI API-key path (`gemini` provider).
+ *
+ * Round-robins `VERTEX_PROJECT` / `_1` / `_2` with matching
+ * `VERTEX_SERVICE_ACCOUNT_JSON*` and `VERTEX_LOCATION*` when set. On 429,
+ * retries advance to the next slot.
  */
 export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotProvider {
   if (!isLocalCopilotVertexConfigured()) {
@@ -26,14 +31,15 @@ export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotPr
 
   const project = resolveLocalCopilotVertexProject()
   const location = resolveLocalCopilotVertexLocation()
-  logger.info('Vertex Local Copilot provider ready', { project, location })
+  const slotCount = listLocalCopilotVertexSlots().length
+  logger.info('Vertex Local Copilot provider ready', { project, location, slotCount })
 
   return {
     id: 'vertex',
     async *chatCompletionStream(request: ChatCompletionRequest) {
-      const ai = createLocalCopilotVertexClient()
       yield* streamGoogleGenAiChatCompletion({
-        ai,
+        ai: createLocalCopilotVertexClient(),
+        refreshAi: createLocalCopilotVertexClient,
         config,
         request,
         logLabel: 'Vertex',

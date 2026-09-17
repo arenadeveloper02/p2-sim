@@ -11,6 +11,7 @@ import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import {
   applyModelChunkToThinkingStatus,
+  ThinkingDeltaBatcher,
   ThinkingLiveStatusAccumulator,
 } from '@/local-copilot/lib/agent/thinking-live-status'
 import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
@@ -945,9 +946,20 @@ export async function* runLocalCopilotAgent(
     })
 
     const thinkingStatus = new ThinkingLiveStatusAccumulator()
+    const thinkingBatcher = new ThinkingDeltaBatcher()
     const roundAnthropicThinkingBlocks: AnthropicThinkingHistoryBlock[] = []
     let roundGeminiModelParts: GeminiHistoryPart[] = []
     let roundReasoningContent = ''
+
+    const flushThinkingBatch = function* (): Generator<
+      { type: 'thinking_delta'; content: string },
+      void,
+      undefined
+    > {
+      const batched = thinkingBatcher.flush()
+      if (batched) yield { type: 'thinking_delta', content: batched }
+    }
+
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -958,8 +970,8 @@ export async function* runLocalCopilotAgent(
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 100,
-      intervalMs: 100,
+      idleMs: 2500,
+      intervalMs: 2500,
     })) {
       if (event.type === 'status') {
         if (!thinkingStatus.isPublishing) yield event
@@ -978,12 +990,16 @@ export async function* runLocalCopilotAgent(
           )
           if (suffix) {
             roundReasoningContent += suffix
+            const announceThinking = !thinkingStatus.isPublishing
             applyModelChunkToThinkingStatus(thinkingStatus, {
               type: 'thinking',
               content: suffix,
             })
-            yield { type: 'thinking_delta', content: suffix }
-            yield { type: 'status', message: 'Thinking…' }
+            const batched = thinkingBatcher.push(suffix) ?? thinkingBatcher.flush()
+            if (batched) yield { type: 'thinking_delta', content: batched }
+            if (announceThinking) {
+              yield { type: 'status', message: 'Thinking…' }
+            }
           }
         }
         continue
@@ -995,17 +1011,18 @@ export async function* runLocalCopilotAgent(
       if (chunk.type === 'thinking' && (chunk.content || chunk.thoughtSignature)) {
         if (chunk.content) {
           roundReasoningContent += chunk.content
+          const announceThinking = !thinkingStatus.isPublishing
           applyModelChunkToThinkingStatus(thinkingStatus, chunk)
           // Thought signatures stay on `gemini_model_parts` / text trailers only.
           // Stamping them onto thinking UI blocks poisons history rebuild and
           // triggers Vertex 400 "Corrupted thought signature."
-          yield {
-            type: 'thinking_delta',
-            content: chunk.content,
+          const batched = thinkingBatcher.push(chunk.content)
+          if (batched) yield { type: 'thinking_delta', content: batched }
+          // Announce Thinking… once per model wait — not on every delta
+          // (that flooded mothership logs / SSE at ~10Hz).
+          if (announceThinking) {
+            yield { type: 'status', message: 'Thinking…' }
           }
-          // Short status only — full CoT belongs in Thinking chrome, not the
-          // trailing live-status shimmer (which would duplicate it at the bottom).
-          yield { type: 'status', message: 'Thinking…' }
         }
         // Signature-only thought trailers are absorbed into gemini_model_parts;
         // nothing to show in Thinking chrome.
@@ -1013,6 +1030,7 @@ export async function* runLocalCopilotAgent(
       }
       applyModelChunkToThinkingStatus(thinkingStatus, chunk)
       if (chunk.type === 'text' && (chunk.content || chunk.thoughtSignature)) {
+        yield* flushThinkingBatch()
         if (!chunk.content) {
           if (chunk.thoughtSignature) {
             yield {
@@ -1065,6 +1083,7 @@ export async function* runLocalCopilotAgent(
         }
       }
       if (chunk.type === 'tool_call' && chunk.toolCall) {
+        yield* flushThinkingBatch()
         if (firstModelOutputMs === null) {
           firstModelOutputMs = timing.elapsed()
           timing.mark('firstModelOutput')
@@ -1084,6 +1103,7 @@ export async function* runLocalCopilotAgent(
         pendingToolCalls.push(chunk.toolCall)
       }
       if (chunk.type === 'done') {
+        yield* flushThinkingBatch()
         if (chunk.finishReason) lastFinishReason = chunk.finishReason
         if (chunk.usage) {
           roundInputTokens = chunk.usage.inputTokens
@@ -1093,6 +1113,8 @@ export async function* runLocalCopilotAgent(
         }
       }
     }
+
+    yield* flushThinkingBatch()
 
     const roundRawText = textStreamer.roundRawText
     {
@@ -2215,8 +2237,8 @@ export async function* runLocalCopilotAgent(
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 100,
-      intervalMs: 100,
+      idleMs: 2500,
+      intervalMs: 2500,
     })) {
       if (event.type === 'status') {
         if (!stagnationThinkingStatus.isPublishing) yield event
@@ -2226,9 +2248,12 @@ export async function* runLocalCopilotAgent(
       if (chunk.type === 'thinking_block') continue
       if (chunk.type === 'gemini_model_parts') continue
       if (chunk.type === 'thinking' && chunk.content) {
+        const announceThinking = !stagnationThinkingStatus.isPublishing
         applyModelChunkToThinkingStatus(stagnationThinkingStatus, chunk)
         yield { type: 'thinking_delta', content: chunk.content }
-        yield { type: 'status', message: 'Thinking…' }
+        if (announceThinking) {
+          yield { type: 'status', message: 'Thinking…' }
+        }
         continue
       }
       applyModelChunkToThinkingStatus(stagnationThinkingStatus, chunk)

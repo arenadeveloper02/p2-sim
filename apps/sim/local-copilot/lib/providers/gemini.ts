@@ -7,8 +7,10 @@ import {
   type ThinkingConfig,
 } from '@google/genai'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import { generateShortId } from '@sim/utils/id'
+import { backoffWithJitter } from '@sim/utils/retry'
 import {
   listLocalCopilotGeminiApiKeys,
   resolveLocalCopilotGeminiApiKey,
@@ -35,6 +37,41 @@ const logger = createLogger('LocalCopilotGeminiProvider')
 
 const GEMINI_NOT_CONFIGURED =
   'Gemini is not configured on this server. Set GEMINI_API_KEY_1 through GEMINI_API_KEY_3 (or GEMINI_API_KEY / GOOGLE_API_KEY).'
+
+/** Retries when Vertex/Gemini returns 429 RESOURCE_EXHAUSTED before the stream opens. */
+const MAX_RESOURCE_EXHAUSTED_RETRIES = 4
+
+/**
+ * True when the Google GenAI / Vertex SDK failed due to quota or rate limits.
+ */
+export function isGeminiResourceExhaustedError(error: unknown): boolean {
+  const message = getErrorMessage(error, '').toLowerCase()
+  const status =
+    error && typeof error === 'object' && 'status' in error
+      ? String((error as { status: unknown }).status).toLowerCase()
+      : ''
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : ''
+
+  return (
+    status.includes('resource_exhausted') ||
+    code === '429' ||
+    message.includes('resource_exhausted') ||
+    message.includes('resource exhausted') ||
+    message.includes('"code": 429') ||
+    message.includes('"code":429') ||
+    message.includes('too many requests') ||
+    /\b429\b/.test(message)
+  )
+}
+
+function formatResourceExhaustedError(logLabel: string, error: unknown): Error {
+  return new Error(
+    `${logLabel} quota exceeded (429 RESOURCE_EXHAUSTED) after retries. Wait a minute and try again, switch catalog models, or raise the Vertex/Gemini quota. Set COPILOT_THINKING_LEVEL=low|none to reduce load. Original: ${getErrorMessage(error, 'resource exhausted')}`
+  )
+}
 
 export interface GeminiConversionResult {
   systemInstruction?: string
@@ -126,60 +163,41 @@ export function geminiHistoryPartToPart(part: GeminiHistoryPart): Part {
 
 /**
  * Prepares streamed/persisted Gemini model parts for the next generateContent
- * request. Thought summaries stay in the UI; echoing them with mismatched
- * `thoughtSignature` values causes Vertex/Gemini 400 "Invalid thought
- * signature." Function-call signatures are kept (or recovered from a thought
- * part / skip validator) so tool loops still validate.
+ * request.
+ *
+ * Vertex/Gemini 3 return 400 "Invalid thought signature" when echoed
+ * text/thought-part signatures were merged, rebuilt, or cross-endpoint. UI CoT
+ * still streams via `thinking_delta`; for API history we:
+ * - keep thought/answer text without signatures
+ * - put `skip_thought_signature_validator` on the first functionCall (Google's
+ *   documented escape hatch) so tool loops never die on a mangled opaque sig
  */
 export function prepareGeminiModelPartsForApi(parts: GeminiHistoryPart[]): Part[] {
-  let signatureFromThought: string | undefined
-  const retained: GeminiHistoryPart[] = []
+  const out: Part[] = []
+  let firstFunctionCall = true
 
   for (const part of parts) {
     if ('functionCall' in part) {
-      retained.push(part)
-      continue
-    }
-
-    const sig = optionalThoughtSignature(part.thoughtSignature)
-    if (part.thought) {
-      if (sig && !signatureFromThought) signatureFromThought = sig
-      continue
-    }
-
-    // Empty signature-only trailers must not be echoed as orphan parts.
-    if (!part.text) {
-      if (sig && !signatureFromThought) signatureFromThought = sig
-      continue
-    }
-
-    retained.push({ text: part.text })
-  }
-
-  let firstFunctionCall = true
-  const out: Part[] = []
-
-  for (const part of retained) {
-    if ('functionCall' in part) {
-      let thoughtSignature = optionalThoughtSignature(part.thoughtSignature)
-      if (firstFunctionCall) {
-        firstFunctionCall = false
-        if (!thoughtSignature) {
-          thoughtSignature = signatureFromThought ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR
-        }
-      }
       out.push({
         functionCall: {
           id: part.functionCall.id,
           name: part.functionCall.name,
           args: part.functionCall.args,
         },
-        ...(thoughtSignature ? { thoughtSignature } : {}),
+        // Only the first functionCall in a model step requires a signature.
+        ...(firstFunctionCall
+          ? { thoughtSignature: SKIP_THOUGHT_SIGNATURE_VALIDATOR }
+          : {}),
       })
+      firstFunctionCall = false
       continue
     }
 
-    out.push({ text: part.text })
+    if (!part.text) continue
+    out.push({
+      text: part.text,
+      ...(part.thought ? { thought: true } : {}),
+    })
   }
 
   return out
@@ -229,29 +247,39 @@ export function appendGeminiStreamParts(
     const thoughtSignature = optionalThoughtSignature(part.thoughtSignature)
     const isThought = isGeminiThoughtPart(part)
 
-    // Signature-only / empty-text trailer — stamp the open text or functionCall
-    // part. Never create empty signed orphans: replaying those yields Vertex
-    // 400 "Corrupted thought signature." Match by position (last part), not
-    // thought flag — Gemini often sends the final signature after answer text
-    // with an inconsistent `thought` marker.
+    // Signature-only / empty-text trailer. Gemini 3 tool turns put the required
+    // signature on the first functionCall — prefer stamping an unsigned FC.
+    // Never stamp onto thought text when a later FC is expected: that moves the
+    // signature to the wrong part and breaks the post-tool round with 400.
     if (!text) {
       if (!thoughtSignature) continue
+      let stamped = false
+      for (let index = historyParts.length - 1; index >= 0; index--) {
+        const candidate = historyParts[index]
+        if ('functionCall' in candidate) {
+          if (!candidate.thoughtSignature) candidate.thoughtSignature = thoughtSignature
+          stamped = true
+          chunks.push({
+            type: 'text',
+            content: '',
+            thoughtSignature,
+          })
+          break
+        }
+      }
+      if (stamped) continue
+
       const last = historyParts.at(-1)
-      if (last && 'text' in last) {
+      if (last && 'text' in last && !last.thought) {
         last.thoughtSignature = thoughtSignature
-        chunks.push({
-          type: last.thought ? 'thinking' : 'text',
-          content: '',
-          thoughtSignature,
-        })
-      } else if (last && 'functionCall' in last) {
-        if (!last.thoughtSignature) last.thoughtSignature = thoughtSignature
         chunks.push({
           type: 'text',
           content: '',
           thoughtSignature,
         })
       }
+      // If the only open part is thought text, hold off — a functionCall may
+      // follow with its own signature. Dropping avoids Invalid thought signature.
       continue
     }
 
@@ -389,14 +417,12 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
             args: parseToolArguments(call.arguments),
           },
         }
-        // Gemini 3+ requires a thought signature on the first functionCall of
-        // each step. Prefer the exact stream signature; otherwise skip validator.
-        let thoughtSignature = optionalThoughtSignature(call.thoughtSignature)
+        // Prefer skip validator over echoed opaque signatures — mangled history
+        // signatures cause Vertex 400 Invalid thought signature.
         if (firstFunctionCall) {
           firstFunctionCall = false
-          if (!thoughtSignature) thoughtSignature = SKIP_THOUGHT_SIGNATURE_VALIDATOR
+          part.thoughtSignature = SKIP_THOUGHT_SIGNATURE_VALIDATOR
         }
-        if (thoughtSignature) part.thoughtSignature = thoughtSignature
         parts.push(part)
       }
       contents.push({ role: 'model', parts })
