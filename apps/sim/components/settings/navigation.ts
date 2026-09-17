@@ -575,7 +575,8 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     unified: {
       id: 'teammates',
       description: 'Manage your teammates in this workspace.',
-      group: 'workspace',
+      // Lives under the General heading (account), not Configuration (workspace).
+      group: 'account',
       order: 0,
     },
     planes: {
@@ -774,8 +775,9 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     unified: {
       id: 'recently-deleted',
       description: 'Restore items deleted in the last 30 days.',
-      group: 'workspace',
-      order: 10,
+      // Lives under the General heading (account), not Configuration (workspace).
+      group: 'account',
+      order: 1,
     },
     planes: {
       workspace: { id: 'recently-deleted', group: 'system', order: 9 },

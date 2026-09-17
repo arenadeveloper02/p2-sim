@@ -18,11 +18,15 @@ export type NavigationItem = UnifiedSettingsNavigationItem
 
 export const isBillingEnabled = SETTINGS_NAVIGATION_BILLING_ENABLED
 
+/**
+ * Settings left-nav section headings. `account` is shown as General and holds
+ * Teammates and Recently deleted. `workspace` is shown as Configuration.
+ */
 export const sectionConfig: { key: NavigationSection; title: string }[] = [
-  { key: 'account', title: 'Account' },
+  { key: 'account', title: 'General' },
   { key: 'subscription', title: 'Subscription' },
   { key: 'help', title: 'Help' },
-  { key: 'workspace', title: 'Workspace' },
+  { key: 'workspace', title: 'Configuration' },
   { key: 'organization', title: 'Organization' },
   { key: 'platform', title: 'Platform' },
 ]

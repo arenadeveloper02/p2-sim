@@ -11,10 +11,10 @@ import {
 describe('unified settings navigation', () => {
   it('groups settings by the scope they affect', () => {
     expect(sectionConfig).toEqual([
-      { key: 'account', title: 'Account' },
+      { key: 'account', title: 'General' },
       { key: 'subscription', title: 'Subscription' },
       { key: 'help', title: 'Help' },
-      { key: 'workspace', title: 'Workspace' },
+      { key: 'workspace', title: 'Configuration' },
       { key: 'organization', title: 'Organization' },
       { key: 'platform', title: 'Platform' },
     ])
@@ -46,6 +46,9 @@ describe('unified settings navigation', () => {
         .sort((left, right) => left.order - right.order)
         .map(({ id }) => id)
 
+    expect(idsForSection('account')).toEqual(
+      expect.arrayContaining(['teammates', 'recently-deleted'])
+    )
     expect(idsForSection('account')).not.toContain('general')
     expect(idsForSection('help')).toEqual(['docs'])
     expect(idsForSection('platform')).toEqual(expect.arrayContaining(['admin', 'skill-share']))
