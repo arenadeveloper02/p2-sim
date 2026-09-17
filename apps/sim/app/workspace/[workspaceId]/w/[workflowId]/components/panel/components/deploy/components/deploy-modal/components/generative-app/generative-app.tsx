@@ -53,7 +53,7 @@ export function GenerativeAppDeploy({
   const { data: departmentsData } = useAgentDepartments()
 
   const existing = statusData?.deployment
-  const drafts = draftsData?.drafts ?? []
+  const drafts = (draftsData?.drafts ?? []).filter((draft) => draft.planStatus !== 'planned')
   const [draftId, setDraftId] = useState('')
   const [identifier, setIdentifier] = useState('')
   const [title, setTitle] = useState('')
@@ -192,7 +192,8 @@ export function GenerativeAppDeploy({
   if (drafts.length === 0) {
     return (
       <p className='text-[var(--text-secondary)] text-sm'>
-        Run the Arena Generative UI block first to create a draft, then publish it here.
+        Run the Arena Generative UI block and Generate from Plan first to create a draft, then
+        publish it here. Planned drafts cannot be previewed or launched.
       </p>
     )
   }

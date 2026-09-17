@@ -48,6 +48,14 @@ describe('arenaGenerativeToolRequestBody', () => {
 
     expect(body.apiBindings).toBe('[{"key":"run_history","kind":"workflow","workflowId":"abc"}]')
   })
+
+  it('passes lockPlan and existingDraftId for generate from plan', () => {
+    const body = arenaGenerativeToolRequestBody({
+      existingDraftId: 'draft-1',
+      lockPlan: true,
+    })
+    expect(body).toEqual({ existingDraftId: 'draft-1', lockPlan: true })
+  })
 })
 
 describe('arena generative UI tool request bodies', () => {

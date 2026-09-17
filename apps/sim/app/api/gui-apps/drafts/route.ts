@@ -6,6 +6,7 @@ import { desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { listGenerativeAppDraftsContract } from '@/lib/api/contracts/arena-generative-apps'
 import { parseRequest } from '@/lib/api/server'
+import { isLaunchableGenerativeDraft } from '@/lib/arena-generative-ui/composition'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkflowAccessForChatCreation } from '@/app/api/chat/utils'
@@ -40,6 +41,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             revision: generativeAppDraft.revision,
             workflowId: generativeAppDraft.workflowId,
             updatedAt: generativeAppDraft.updatedAt,
+            structuredBrief: generativeAppDraft.structuredBrief,
+            manifest: generativeAppDraft.manifest,
           })
           .from(generativeAppDraft)
           .where(eq(generativeAppDraft.workflowId, workflowId))
@@ -52,6 +55,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             revision: generativeAppDraft.revision,
             workflowId: generativeAppDraft.workflowId,
             updatedAt: generativeAppDraft.updatedAt,
+            structuredBrief: generativeAppDraft.structuredBrief,
+            manifest: generativeAppDraft.manifest,
           })
           .from(generativeAppDraft)
           .where(eq(generativeAppDraft.userId, session.user.id))
@@ -65,6 +70,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         revision: row.revision,
         workflowId: row.workflowId,
         updatedAt: row.updatedAt.toISOString(),
+        planStatus: isLaunchableGenerativeDraft(row.structuredBrief, row.manifest)
+          ? 'generated'
+          : 'planned',
       })),
     })
   } catch (error) {

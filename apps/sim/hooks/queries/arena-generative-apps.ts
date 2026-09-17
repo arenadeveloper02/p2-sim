@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson, requestRaw } from '@/lib/api/client/request'
 import {
+  arenaGenerativePlanContract,
   authenticateDeployedAppContract,
   type CreateDeployedAppBody,
   createDeployedAppContract,
@@ -12,6 +13,8 @@ import {
   getGenerativeAppDraftContract,
   getGenerativeAppStatusContract,
   listGenerativeAppDraftsContract,
+  type PatchGenerativeAppDraftBody,
+  patchGenerativeAppDraftContract,
   requestGenerativeAppEmailOtpContract,
   runDeployedAppActionContract,
   runDeployedAppActionStreamContract,
@@ -80,6 +83,46 @@ export function useGenerativeAppDraft(id?: string) {
       }),
     enabled: Boolean(id),
     staleTime: GENERATIVE_APP_DRAFTS_STALE_TIME,
+  })
+}
+
+export function usePatchGenerativeAppDraft() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchGenerativeAppDraftBody }) =>
+      requestJson(patchGenerativeAppDraftContract, { params: { id }, body }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: arenaGenerativeAppKeys.draft(variables.id) })
+      queryClient.invalidateQueries({ queryKey: arenaGenerativeAppKeys.drafts() })
+    },
+  })
+}
+
+export function usePlanGenerativeApp() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: {
+      existingDraftId: string
+      planChanges: string
+      workflowId: string
+      workspaceId?: string
+      apiBindings?: unknown
+    }) =>
+      requestJson(arenaGenerativePlanContract, {
+        body: {
+          existingDraftId: body.existingDraftId,
+          planChanges: body.planChanges,
+          workflowId: body.workflowId,
+          workspaceId: body.workspaceId,
+          apiBindings: body.apiBindings,
+        },
+      }),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: arenaGenerativeAppKeys.draft(variables.existingDraftId),
+      })
+      queryClient.invalidateQueries({ queryKey: arenaGenerativeAppKeys.drafts() })
+    },
   })
 }
 

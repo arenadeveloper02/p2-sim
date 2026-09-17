@@ -5,14 +5,19 @@ import { generativeAppDraft } from '@sim/db/schema'
 import { queueTableRows, resetDbChainMock } from '@sim/testing/mocks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGenerateManifest, mockPersistDraft, mockRefreshSchemas, mockResolveScreenshots, mockInterpretVisual } =
-  vi.hoisted(() => ({
-    mockGenerateManifest: vi.fn(),
-    mockPersistDraft: vi.fn(),
-    mockRefreshSchemas: vi.fn(async (bindings: unknown) => bindings),
-    mockResolveScreenshots: vi.fn(),
-    mockInterpretVisual: vi.fn(),
-  }))
+const {
+  mockGenerateManifest,
+  mockPersistDraft,
+  mockRefreshSchemas,
+  mockResolveScreenshots,
+  mockInterpretVisual,
+} = vi.hoisted(() => ({
+  mockGenerateManifest: vi.fn(),
+  mockPersistDraft: vi.fn(),
+  mockRefreshSchemas: vi.fn(async (bindings: unknown) => bindings),
+  mockResolveScreenshots: vi.fn(),
+  mockInterpretVisual: vi.fn(),
+}))
 
 vi.mock('@/lib/arena-generative-ui/generate-manifest', () => ({
   generateArenaGenerativeManifest: mockGenerateManifest,
@@ -386,6 +391,126 @@ describe('runArenaGenerativeUi', () => {
           },
         ],
       })
+    )
+  })
+
+  it('plan-only persist stamps planned and does not require a spec', async () => {
+    mockGenerateManifest.mockResolvedValueOnce({
+      success: true,
+      title: 'Lead qualifier',
+      content: 'Planned 2 page(s).',
+      manifest: { entryPath: 'home', pages: {}, actions: {} },
+      plannedBrief: {
+        title: 'Lead qualifier',
+        purpose: 'Score',
+        audience: 'Sales',
+        archetype: 'task',
+        entryPath: 'home',
+        pages: [
+          { path: 'home', title: 'Form' },
+          { path: 'results', title: 'Score' },
+        ],
+        actions: [],
+      },
+    })
+
+    const result = await runArenaGenerativeUi({
+      body: { ...BASE_BODY, userInput: 'Lead qualifier.', planOnly: true },
+      userId: 'user-1',
+      requireExistingDraft: false,
+      planOnly: true,
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockGenerateManifest).toHaveBeenCalledWith(expect.objectContaining({ planOnly: true }))
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planStatus: 'planned',
+        manifest: expect.objectContaining({ pages: {} }),
+      })
+    )
+  })
+
+  it('generate-from-plan locks the stored brief and skips a new planner via lockedStructuredBrief', async () => {
+    const structuredBrief = {
+      title: 'Lead qualifier',
+      purpose: 'Score leads',
+      audience: 'Sales',
+      complexity: 'simple',
+      archetype: 'task',
+      entryPath: 'home',
+      pages: [
+        { path: 'home', title: 'Form', purpose: 'Capture', data: 'cta' },
+        { path: 'results', title: 'Score', purpose: 'Report', data: 'cta result' },
+      ],
+      actions: [],
+      composition: {
+        afterSubmit: 'replace',
+        navigateWhen: 'success',
+        inspect: 'none',
+        history: 'none',
+        mutations: 'local',
+      },
+    }
+    queueDraft({ structuredBrief, manifest: { entryPath: 'home', pages: {}, actions: {} } })
+
+    await runArenaGenerativeUi({
+      body: { ...BASE_BODY, existingDraftId: 'draft-1', lockPlan: true },
+      userId: 'user-1',
+      requireExistingDraft: false,
+    })
+
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lockedStructuredBrief: expect.objectContaining({ title: 'Lead qualifier' }),
+      })
+    )
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ planStatus: 'generated' })
+    )
+  })
+
+  it('adjust-plan passes planChanges to the planner and stays planned', async () => {
+    const structuredBrief = {
+      title: 'Lead qualifier',
+      purpose: 'Score leads',
+      audience: 'Sales',
+      complexity: 'simple',
+      archetype: 'task',
+      entryPath: 'home',
+      pages: [{ path: 'home', title: 'Form', purpose: 'Capture', data: 'cta' }],
+      actions: [],
+    }
+    queueDraft({ structuredBrief, manifest: { entryPath: 'home', pages: {}, actions: {} } })
+    mockGenerateManifest.mockResolvedValueOnce({
+      success: true,
+      title: 'Lead qualifier',
+      content: 'Planned',
+      manifest: { entryPath: 'home', pages: {}, actions: {} },
+      plannedBrief: structuredBrief,
+    })
+
+    await runArenaGenerativeUi({
+      body: {
+        ...BASE_BODY,
+        existingDraftId: 'draft-1',
+        planOnly: true,
+        planChanges: 'Inspect the task without leaving.',
+      },
+      userId: 'user-1',
+      requireExistingDraft: false,
+      planOnly: true,
+    })
+
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planOnly: true,
+        planChanges: 'Inspect the task without leaving.',
+        existingStructuredBrief: expect.objectContaining({ title: 'Lead qualifier' }),
+      })
+    )
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ planStatus: 'planned' })
     )
   })
 })

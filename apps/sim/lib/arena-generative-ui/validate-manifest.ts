@@ -7,7 +7,12 @@ import {
 import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
 import { dummyCollectionSeedFromSpec } from '@/lib/arena-generative-ui/local-discovery'
 import { resolveHostContentAction } from '@/lib/arena-generative-ui/host-content-actions'
+import type { ArenaGenerativeAdoptedChange } from '@/lib/arena-generative-ui/generate-warnings'
 import { normalizeGeneratedSpec } from '@/lib/arena-generative-ui/normalize-spec'
+import {
+  remapBindingLayout,
+  remapManifestApiKeys,
+} from '@/lib/arena-generative-ui/remap-declared-bindings'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
@@ -37,6 +42,7 @@ export interface ManifestValidationResult {
   success: boolean
   error?: string
   manifest?: ArenaGenerativeAppManifest
+  adoptedChanges?: ArenaGenerativeAdoptedChange[]
 }
 
 function asString(value: unknown): string {
@@ -531,6 +537,8 @@ export function validateArenaGenerativeManifest(
       onSuccess: onSuccess
         ? {
             navigate: navigate || undefined,
+            navigateWhen:
+              asString(onSuccess.navigateWhen) === 'success' && navigate ? 'success' : undefined,
             setState:
               onSuccess.setState && typeof onSuccess.setState === 'object'
                 ? (onSuccess.setState as Record<string, unknown>)
@@ -558,21 +566,27 @@ export function validateArenaGenerativeManifest(
       }
       continue
     }
-    if (!bindingKeys.has(apiKey)) {
-      if (bindingKeys.size === 0) {
-        const dummyAction = omit(parsedAction, ['apiKey'])
-        actions[actionId] = dummyAction
-        if (navigate && pages[splitNavTarget(navigate).path]) {
-          reachabilityActions[actionId] = dummyAction
-        }
-        continue
+    if (!bindingKeys.has(apiKey) && bindingKeys.size === 0) {
+      const dummyAction = omit(parsedAction, ['apiKey'])
+      actions[actionId] = dummyAction
+      if (navigate && pages[splitNavTarget(navigate).path]) {
+        reachabilityActions[actionId] = dummyAction
       }
-      return {
-        success: false,
-        error: `Action "${actionId}" references unknown API key "${apiKey}"`,
-      }
+      continue
     }
     actions[actionId] = parsedAction
+    if (navigate && pages[splitNavTarget(navigate).path]) {
+      reachabilityActions[actionId] = parsedAction
+    }
+  }
+  const adoptedChanges = remapManifestApiKeys(actions, [...bindingKeys])
+  for (const [actionId, action] of Object.entries(actions)) {
+    const apiKey = action.apiKey
+    if (!apiKey || bindingKeys.has(apiKey) || bindingKeys.size === 0) continue
+    return {
+      success: false,
+      error: `Action "${actionId}" references unknown API key "${apiKey}"`,
+    }
   }
   if (bindingKeys.size === 0) {
     const seedError = dummyCollectionSeedError(pages, actions)
@@ -638,6 +652,8 @@ export function validateArenaGenerativeManifest(
     actions,
     ...(theme ? { theme } : {}),
   }
+  const layoutAdopted = remapBindingLayout(manifest, layoutPlansFromBindings(options.apiBindings))
+  adoptedChanges.push(...layoutAdopted)
   const layoutError = validateManifestBindingLayout(
     manifest,
     layoutPlansFromBindings(options.apiBindings),
@@ -650,5 +666,6 @@ export function validateArenaGenerativeManifest(
   return {
     success: true,
     manifest,
+    ...(adoptedChanges.length > 0 ? { adoptedChanges } : {}),
   }
 }

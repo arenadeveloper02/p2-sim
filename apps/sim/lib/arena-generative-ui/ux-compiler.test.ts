@@ -18,9 +18,9 @@ import {
   compileGenerativeUx,
   inferAsyncKind,
   injectSamePageSelectChrome,
+  specHasLoadingSurface,
   specKeepsCollectionVisible,
   stripListHiddenWithoutSamePageSelect,
-  specHasLoadingSurface,
   UX_COMPILER_SELECT_BACK_KEY,
   UX_COMPILER_STATUS_KEY,
 } from '@/lib/arena-generative-ui/ux-compiler'
@@ -309,6 +309,72 @@ describe('compileGenerativeUx', () => {
       (compiled.pages.results.spec.elements?.working as { props?: { actionId?: string } }).props
         ?.actionId
     ).toBe('submit_lead')
+  })
+
+  it('keeps WorkingCard on the form when navigateWhen is success', () => {
+    const homeWithCard: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Form' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['form', 'working'],
+        },
+        form: {
+          type: 'Form',
+          props: { actionId: 'submit_lead' },
+          children: ['submit'],
+        },
+        submit: {
+          type: 'SubmitButton',
+          props: { label: 'Submit', actionId: null, size: null, variant: null, shape: null },
+          children: [],
+        },
+        working: {
+          type: 'WorkingCard',
+          props: {
+            steps: 'Connecting\nScoring',
+            cancelTo: 'home',
+          },
+          children: [],
+        },
+      },
+    }
+    const resultsBare: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['heading'],
+        },
+        heading: { type: 'Heading', props: { text: 'Score', level: 'h2' }, children: [] },
+      },
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: { title: 'Form', path: 'home', spec: homeWithCard },
+        results: { title: 'Score', path: 'results', spec: resultsBare },
+      },
+      actions: {
+        submit_lead: {
+          apiKey: 'qualify_lead',
+          onSuccess: { navigate: 'results', navigateWhen: 'success' },
+        },
+      },
+    }
+    const compiled = compileGenerativeUx(manifest, twoPageApiBindings)
+    const homeTypes = Object.values(compiled.pages.home.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    const resultsTypes = Object.values(compiled.pages.results.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    expect(homeTypes).toContain('WorkingCard')
+    expect(resultsTypes).not.toContain('WorkingCard')
   })
 
   it('strips ProgressSteps on a same-page submit', () => {

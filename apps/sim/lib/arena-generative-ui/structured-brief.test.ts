@@ -829,9 +829,20 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed).toBeNull()
   })
 
-  it('drops actions whose apiKey is not a declared binding', () => {
+  it('remaps an invented apiKey onto the only declared binding', () => {
     const parsed = parseArenaGenerativeStructuredBrief(listDetailBrief, {
       apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+    })
+    expect(parsed?.actions.map((action) => action.apiKey)).toEqual(['list_orders', 'list_orders'])
+    expect(parsed?.actions.map((action) => action.id)).toEqual(['load_orders', 'load_order'])
+  })
+
+  it('drops an invented apiKey when two declared keys are equally far', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(listDetailBrief, {
+      apiBindings: [
+        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'cancel_order', label: 'Cancel', kind: 'workflow', workflowId: 'wf-2' },
+      ],
     })
     expect(parsed?.actions.map((action) => action.apiKey)).toEqual(['list_orders'])
   })
@@ -1026,6 +1037,21 @@ describe('structured brief helpers', () => {
     expect(formatted).toContain('emptyCopy as emptyText')
     expect(formatted).toContain('page onLoad setState')
     expect(formatted).toContain('Do not add pages, history, stats, or modules')
+  })
+
+  it('pins composition in the generator contract', () => {
+    const formatted = formatStructuredBriefForGenerator({
+      ...listDetailBrief,
+      composition: {
+        afterSubmit: 'stack',
+        inspect: 'navigate',
+        history: 'none',
+        mutations: 'local',
+      },
+    })
+    expect(formatted).toContain('COMPOSITION CONTRACT')
+    expect(formatted).toContain('"inspect": "navigate"')
+    expect(formatted).toContain('inspect navigate: emit a detail page')
   })
 
   it('serialises the stored brief as edit context without pinning the sitemap', () => {
@@ -1278,7 +1304,10 @@ describe('planArenaGenerativeStructuredBrief', () => {
 
     const planned = await planArenaGenerativeStructuredBrief({
       userInput: 'Order inbox.',
-      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+      apiBindings: [
+        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'cancel_order', label: 'Cancel', kind: 'workflow', workflowId: 'wf-2' },
+      ],
     })
 
     expect(planned.brief?.title).toBe('Orders')
@@ -1288,7 +1317,23 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
   })
 
-  it('retries once when the first brief invents remote apiKeys', async () => {
+  it('keeps remapped invented apiKeys without a planner repair turn', async () => {
+    mockCreateAnthropicMessage.mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox.',
+      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+    })
+
+    expect(planned.brief?.actions.map((action) => action.apiKey)).toEqual([
+      'list_orders',
+      'list_orders',
+    ])
+    expect(planned.droppedActions).toBeUndefined()
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries once when the first brief invents a remote apiKey with no unique declared match', async () => {
     mockCreateAnthropicMessage
       .mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
       .mockResolvedValueOnce(
@@ -1302,7 +1347,10 @@ describe('planArenaGenerativeStructuredBrief', () => {
 
     const planned = await planArenaGenerativeStructuredBrief({
       userInput: 'Order inbox.',
-      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+      apiBindings: [
+        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'cancel_order', label: 'Cancel', kind: 'workflow', workflowId: 'wf-2' },
+      ],
     })
 
     expect(planned.brief?.actions.map((action) => action.apiKey)).toEqual(['list_orders'])
@@ -1312,7 +1360,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
       content: string
     }
     expect(repair.content).toContain('invented action(s) load_order (apiKey "get_order")')
-    expect(repair.content).toContain('Declared binding keys: list_orders')
+    expect(repair.content).toContain('Declared binding keys: list_orders, cancel_order')
   })
 
   it('retries once when a Workspace page has regions but no interaction', async () => {
@@ -1370,7 +1418,10 @@ describe('planArenaGenerativeStructuredBrief', () => {
 
     const planned = await planArenaGenerativeStructuredBrief({
       userInput: 'Order inbox.',
-      apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+      apiBindings: [
+        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'cancel_order', label: 'Cancel', kind: 'workflow', workflowId: 'wf-2' },
+      ],
     })
 
     expect(planned.brief?.title).toBe('Orders')

@@ -171,6 +171,12 @@ describe('normalizeGeneratedSpec', () => {
     ['TreeView', 'Tree'],
     ['Slideshow', 'Carousel'],
     ['ActivityFeed', 'Timeline'],
+    ['Gantt', 'Timeline'],
+    ['GanttChart', 'Timeline'],
+    ['Sidebar', 'Columns'],
+    ['Board', 'Kanban'],
+    ['DataGrid', 'Table'],
+    ['SplitPane', 'Columns'],
   ])('aliases %s to %s', (alias, canonical) => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
@@ -204,6 +210,17 @@ describe('normalizeGeneratedSpec', () => {
     })
     expect(elements(spec).widget.type).toBe('UnknownWidget')
     expect(arenaGenerativeUiCatalog.validate(spec).success).toBe(false)
+  })
+
+  it('remaps a unique catalog typo before validation', () => {
+    const spec = normalizeGeneratedSpec({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['grid'] },
+        grid: { type: 'Tabel', props: { columns: 'title', statePath: 'items' }, children: [] },
+      },
+    })
+    expect(elements(spec).grid.type).toBe('Table')
   })
 
   it('keeps Chart as Chart and defaults chartType to line', () => {

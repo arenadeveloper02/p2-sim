@@ -523,7 +523,7 @@ export interface SubBlockConfig {
    * Opt-in preview under a dropdown. `arena-draft-brief` shows the selected
    * generative-app draft's original generate brief (read-only).
    */
-  previewHelper?: 'arena-draft-brief'
+  previewHelper?: 'arena-draft-brief' | 'arena-product-contract'
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean

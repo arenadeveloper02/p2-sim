@@ -161,9 +161,7 @@ describe('persistGenerativeAppDraft', () => {
     await persistGenerativeAppDraft({
       ...BASE_INPUT,
       draftId: 'draft-1',
-      generateWarnings: [
-        { code: 'critic-skipped', message: 'UI critic: skipped (unavailable)' },
-      ],
+      generateWarnings: [{ code: 'critic-skipped', message: 'UI critic: skipped (unavailable)' }],
     })
 
     const updated = dbChainMockFns.set.mock.calls[0]?.[0] as Record<string, unknown>
@@ -172,5 +170,32 @@ describe('persistGenerativeAppDraft', () => {
       archetype: 'collection',
       generateWarnings: [{ code: 'critic-skipped', message: 'UI critic: skipped (unavailable)' }],
     })
+  })
+
+  it('packs planStatus when persisting a planned placeholder', async () => {
+    await persistGenerativeAppDraft({
+      ...BASE_INPUT,
+      manifest: { entryPath: 'home', pages: {}, actions: {} },
+      structuredBrief: {
+        title: 'Lead qualifier',
+        purpose: 'Score leads',
+        audience: 'Sales',
+        archetype: 'task' as const,
+        entryPath: 'home',
+        pages: [{ path: 'home', title: 'Form', purpose: 'Capture', data: 'cta' }],
+        actions: [],
+      },
+      planStatus: 'planned',
+    })
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        structuredBrief: expect.objectContaining({
+          title: 'Lead qualifier',
+          planStatus: 'planned',
+        }),
+        manifest: expect.objectContaining({ pages: {} }),
+      })
+    )
   })
 })

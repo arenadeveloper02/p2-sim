@@ -5,9 +5,12 @@
 import type { Spec } from '@json-render/core'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  actionNavigateFrom,
+  actionNavigateWhenFrom,
   actionStateFromData,
   clearedSelectedIdHostState,
   clearedSelectedItemHostState,
+  collectionClickPromotesSelection,
   collectionFromBoundValue,
   displayTextFromActionData,
   formatBoundDateDisplay,
@@ -31,7 +34,6 @@ import {
   scrollGenerativeAppToResults,
   scrollGenerativeAppToTop,
   selectedItemHostState,
-  collectionClickPromotesSelection,
   specHasSamePageSelectItem,
   splitNavTarget,
   submittedInputsState,
@@ -630,5 +632,27 @@ describe('Repeat item scope', () => {
     scrollGenerativeAppToResults({ fallbackToTop: true })
     expect(scrollTo).toHaveBeenCalledWith(0, 0)
     vi.unstubAllGlobals()
+  })
+})
+
+describe('actionNavigateWhenFrom', () => {
+  it('records success vs immediate for navigations', () => {
+    expect(
+      actionNavigateWhenFrom({
+        actions: {
+          submit: {
+            apiKey: 'qualify',
+            onSuccess: { navigate: 'results', navigateWhen: 'success' },
+          },
+          stream: { apiKey: 'write', onSuccess: { navigate: 'results' } },
+          local: { onSuccess: { setState: { saved: true } } },
+        },
+      })
+    ).toEqual({ submit: 'success', stream: 'immediate' })
+    expect(
+      actionNavigateFrom({ actions: { submit: { onSuccess: { navigate: 'results' } } } })
+    ).toEqual({
+      submit: 'results',
+    })
   })
 })

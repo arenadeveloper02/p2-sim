@@ -7,6 +7,12 @@ import {
 } from '@/lib/api/contracts/tool-primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import {
+  ARENA_GENERATIVE_IA_PRESET_IDS,
+  ARENA_GENERATIVE_PLAN_STATUSES,
+  arenaGenerativeCompositionPatchSchema,
+  arenaGenerativeCompositionSchema,
+} from '@/lib/arena-generative-ui/composition'
+import {
   arenaGenerativeAdoptedChangeSchema,
   arenaGenerativeGenerateWarningSchema,
 } from '@/lib/arena-generative-ui/generate-warnings'
@@ -240,11 +246,20 @@ const arenaGenerativeSharedBodyShape = {
   workspaceId: z.string().min(1).optional(),
   workflowId: z.string().min(1).optional(),
   executionId: z.string().optional(),
+  lockPlan: z.boolean().optional(),
+  planOnly: z.boolean().optional(),
+  planChanges: z.preprocess(omitEmptyOptionalString, z.string().max(20_000).optional()),
+  composition: arenaGenerativeCompositionPatchSchema.optional(),
+  iaPreset: z.enum(ARENA_GENERATIVE_IA_PRESET_IDS).optional(),
 }
 
 export const arenaGenerativeGenerateBodySchema = z
   .object(arenaGenerativeSharedBodyShape)
   .superRefine((data, ctx) => {
+    if (data.lockPlan && data.existingDraftId) return
+    if (data.existingDraftId && (data.planChanges?.trim() || data.composition || data.iaPreset)) {
+      return
+    }
     if (!data.userInput?.trim() && (!data.screenshots || data.screenshots.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -270,6 +285,7 @@ export const arenaGenerativeGenerateOutputSchema = z.object({
       archetype: z.string(),
       entryPath: z.string(),
       pages: z.array(arenaGenerativePageSummarySchema),
+      composition: arenaGenerativeCompositionSchema.optional(),
     })
     .optional(),
   plannerError: z.string().optional(),
@@ -287,6 +303,25 @@ export const arenaGenerativeGenerateContract = defineRouteContract({
   method: 'POST',
   path: '/api/tools/arena_generative_ui/generate',
   body: arenaGenerativeGenerateBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.union([
+      toolSuccessResponseSchema(arenaGenerativeGenerateOutputSchema),
+      toolFailureResponseSchema.extend({
+        output: arenaGenerativeGenerateOutputSchema.partial().optional(),
+      }),
+    ]),
+  },
+})
+
+export const arenaGenerativePlanBodySchema = arenaGenerativeGenerateBodySchema
+export type ArenaGenerativePlanBody = z.input<typeof arenaGenerativePlanBodySchema>
+export type ParsedArenaGenerativePlanBody = z.output<typeof arenaGenerativePlanBodySchema>
+
+export const arenaGenerativePlanContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/tools/arena_generative_ui/plan',
+  body: arenaGenerativePlanBodySchema,
   response: {
     mode: 'json',
     schema: z.union([
@@ -341,6 +376,7 @@ export const generativeAppDraftSummarySchema = z.object({
   revision: z.number(),
   workflowId: z.string(),
   updatedAt: z.string(),
+  planStatus: z.enum(ARENA_GENERATIVE_PLAN_STATUSES),
 })
 
 export const listGenerativeAppDraftsContract = defineRouteContract({
@@ -393,7 +429,54 @@ export const getGenerativeAppDraftContract = defineRouteContract({
           closestCatalogType: z.string().optional(),
         })
       ),
+      planStatus: z.enum(ARENA_GENERATIVE_PLAN_STATUSES),
+      composition: arenaGenerativeCompositionSchema.optional(),
+      compositionIssues: z.array(z.string()),
+      plannedPages: z.array(
+        z.object({
+          path: z.string(),
+          title: z.string().optional(),
+          purpose: z.string().optional(),
+          archetype: z.string().optional(),
+          regions: z
+            .object({
+              navigator: z.unknown().optional(),
+              primary: z.unknown().optional(),
+              inspector: z.unknown().optional(),
+              auxiliary: z.unknown().optional(),
+            })
+            .optional(),
+        })
+      ),
+      plannedActions: z.array(z.unknown()),
     }),
+  },
+})
+
+export const patchGenerativeAppDraftBodySchema = z
+  .object({
+    composition: arenaGenerativeCompositionPatchSchema.optional(),
+    iaPreset: z.enum(ARENA_GENERATIVE_IA_PRESET_IDS).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.composition && !data.iaPreset) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'composition or iaPreset is required',
+        path: ['composition'],
+      })
+    }
+  })
+export type PatchGenerativeAppDraftBody = z.input<typeof patchGenerativeAppDraftBodySchema>
+
+export const patchGenerativeAppDraftContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/gui-apps/drafts/[id]',
+  params: generativeAppDraftIdParamsSchema,
+  body: patchGenerativeAppDraftBodySchema,
+  response: {
+    mode: 'json',
+    schema: getGenerativeAppDraftContract.response.schema,
   },
 })
 
@@ -513,6 +596,10 @@ export const deployedAppConfigSchema = z.object({
   pages: z.array(arenaGenerativePageSummarySchema),
   streamingActionIds: z.array(z.string()).optional().default([]),
   actionNavigate: z.record(z.string(), z.string()).optional().default({}),
+  actionNavigateWhen: z
+    .record(z.string(), z.enum(['immediate', 'success']))
+    .optional()
+    .default({}),
   pageOnLoad: z.record(z.string(), z.array(z.string())).optional().default({}),
   actionHostKeys: z.record(z.string(), z.array(z.string())).optional().default({}),
   proseAliasKeys: z.array(z.string()).optional().default([]),

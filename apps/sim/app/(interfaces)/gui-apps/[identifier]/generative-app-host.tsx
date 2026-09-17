@@ -129,6 +129,7 @@ export function GenerativeAppHost({
       }),
     isStreaming: (actionId) => streamingIds.has(actionId),
     actionNavigate: config?.actionNavigate ?? {},
+    actionNavigateWhen: config?.actionNavigateWhen ?? {},
     navigate,
     mergeState,
     setActionPending,

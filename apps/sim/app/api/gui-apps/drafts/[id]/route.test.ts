@@ -57,6 +57,10 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(body.adoptedChanges).toEqual([])
     expect(body.capabilities).toEqual([])
     expect(body.screenshotGaps).toEqual([])
+    expect(body.planStatus).toBe('generated')
+    expect(body.compositionIssues).toEqual([])
+    expect(body.plannedPages).toEqual([])
+    expect(body.plannedActions).toEqual([])
   })
 
   it('returns the original generate brief when the draft stored one', async () => {
@@ -117,9 +121,7 @@ describe('Generative app draft GET (two-page app)', () => {
             audience: 'Ops',
             archetype: 'collection',
             entryPath: 'home',
-            pages: [
-              { path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders' },
-            ],
+            pages: [{ path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders' }],
             actions: [],
             capabilities: ['search', 'chat'],
           },
@@ -174,7 +176,8 @@ describe('Generative app draft GET (two-page app)', () => {
             adoptedChanges: [
               {
                 code: 'extra-primary',
-                asked: 'Section "section" on page "home" had more than one primary action (submit, go).',
+                asked:
+                  'Section "section" on page "home" had more than one primary action (submit, go).',
                 adopted: 'Kept "submit" as primary; changed "go" to a secondary Button.',
               },
             ],

@@ -11,14 +11,15 @@ import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import { chatDeploymentPasswordSchema } from '@/lib/api/contracts/chats'
 import { layoutPlansFromBindings } from '@/lib/arena-generative-ui/binding-layout-plan'
+import { isLaunchableGenerativeDraft } from '@/lib/arena-generative-ui/composition'
 import { buildHttpAllowlist } from '@/lib/arena-generative-ui/http-allowlist'
-import { validateManifestBindingLayout } from '@/lib/arena-generative-ui/validate-binding-layout'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
+import { validateManifestBindingLayout } from '@/lib/arena-generative-ui/validate-binding-layout'
 import { isDev } from '@/lib/core/config/env-flags'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -103,6 +104,15 @@ export async function performGenerativeAppDeploy(
     return { success: false, error: 'Draft not found' }
   }
 
+  if (
+    !isLaunchableGenerativeDraft(
+      draft.structuredBrief,
+      draft.manifest as ArenaGenerativeAppManifest
+    )
+  ) {
+    return { success: false, error: 'Generate the app from this plan before launching' }
+  }
+
   let revisionId = params.revisionId
   let manifest = draft.manifest as ArenaGenerativeAppManifest
   let apiBindings = (
@@ -163,10 +173,7 @@ export async function performGenerativeAppDeploy(
     return { success: false, error: allowlist.error }
   }
 
-  const layoutError = validateManifestBindingLayout(
-    manifest,
-    layoutPlansFromBindings(apiBindings)
-  )
+  const layoutError = validateManifestBindingLayout(manifest, layoutPlansFromBindings(apiBindings))
   if (layoutError) {
     return { success: false, error: layoutError }
   }

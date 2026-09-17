@@ -631,31 +631,17 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.error).not.toMatch(/keyed by page path/)
   })
 
-  it('repairs a spec that references an undeclared API key instead of failing outright', async () => {
-    const brokenManifest = {
+  it('remaps an invented API key onto the only declared binding instead of repairing', async () => {
+    const remappedManifest = {
       entryPath: 'home',
       pages: twoPageManifest.pages,
-      actions: { qualify: { apiKey: 'invented_key' } },
+      actions: {
+        submit_lead: { apiKey: 'invented_key', onSuccess: { navigate: 'results' } },
+      },
     }
-    mockCreateAnthropicMessage
-      .mockResolvedValueOnce(
-        textMessage(JSON.stringify({ title: 'Lead', content: 'ok', manifest: brokenManifest }))
-      )
-      .mockResolvedValueOnce(
-        textMessage(
-          JSON.stringify({
-            title: 'Lead',
-            content: 'ok',
-            manifest: {
-              entryPath: 'home',
-              pages: twoPageManifest.pages,
-              actions: {
-                submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
-              },
-            },
-          })
-        )
-      )
+    mockCreateAnthropicMessage.mockResolvedValueOnce(
+      textMessage(JSON.stringify({ title: 'Lead', content: 'ok', manifest: remappedManifest }))
+    )
 
     const result = await generateArenaGenerativeManifest({
       userInput: 'Lead qualifier.',
@@ -665,15 +651,17 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     expect(result.success).toBe(true)
-    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
-    const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
-      role: string
-      content: string
-    }
-    expect(repairTurn.role).toBe('user')
-    expect(repairTurn.content).toContain('failed validation')
-    expect(repairTurn.content).toContain('invented_key')
-    expect(repairTurn.content).toContain('keep every other page')
+    expect(result.manifest?.actions.submit_lead?.apiKey).toBe('qualify_lead')
+    expect(result.adoptedChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'product-map',
+          asked: expect.stringContaining('invented_key'),
+          adopted: expect.stringContaining('qualify_lead'),
+        }),
+      ])
+    )
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
   })
 
   it('stops repairing after three attempts and returns a user-facing validation error', async () => {
@@ -685,7 +673,9 @@ describe('generateArenaGenerativeManifest', () => {
           manifest: {
             entryPath: 'home',
             pages: twoPageManifest.pages,
-            actions: { qualify: { apiKey: 'invented_key' } },
+            actions: {
+              submit_lead: { apiKey: 'invented_key', onSuccess: { navigate: 'results' } },
+            },
           },
         })
       )
@@ -695,6 +685,7 @@ describe('generateArenaGenerativeManifest', () => {
       userInput: 'Lead qualifier.',
       apiBindings: [
         { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'score_lead', label: 'Score', kind: 'workflow', workflowId: 'wf-2' },
       ],
     })
 
@@ -727,6 +718,8 @@ describe('generateArenaGenerativeManifest', () => {
         ],
       })
     )
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('run_histoy → run_history')
   })
 
   describe('edit mode', () => {
@@ -1318,6 +1311,12 @@ describe('generateArenaGenerativeManifest', () => {
           { path: 'home', title: 'Home' },
           { path: 'results', title: 'Results' },
         ],
+        composition: {
+          afterSubmit: 'stack',
+          inspect: 'none',
+          history: 'none',
+          mutations: 'local',
+        },
       })
     })
   })
@@ -2137,5 +2136,123 @@ describe('generateArenaGenerativeManifest', () => {
     )
     const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(payload).not.toContain('COMPILED HONOR LIST')
+  })
+
+  it('plan-only returns a placeholder manifest and skips the spec model', async () => {
+    mockPlanBrief.mockResolvedValueOnce({
+      brief: {
+        title: 'Lead qualifier',
+        purpose: 'Score leads',
+        audience: 'Sales',
+        complexity: 'simple',
+        archetype: 'task',
+        entryPath: 'home',
+        pages: [
+          { path: 'home', title: 'Form', purpose: 'Capture', data: 'cta', archetype: 'task' },
+          { path: 'results', title: 'Score', purpose: 'Report', data: 'cta', archetype: 'results' },
+        ],
+        actions: [],
+        capabilities: [],
+        processing: [],
+      },
+    })
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Lead qualifier. Submit then results.',
+      apiBindings: [],
+      planOnly: true,
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockCreateAnthropicMessage).not.toHaveBeenCalled()
+    expect(result.manifest?.pages).toEqual({})
+    expect(result.plannedBrief?.composition?.afterSubmit).toBe('replace')
+    expect(result.content).toContain('Confirm the product contract')
+  })
+
+  it('locked generate skips the planner and pins the sitemap', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(
+        JSON.stringify({ title: 'Lead qualifier', content: 'ok', manifest: twoPageManifest })
+      )
+    )
+    const locked = {
+      title: 'Lead qualifier',
+      purpose: 'Score leads',
+      audience: 'Sales',
+      complexity: 'simple' as const,
+      archetype: 'task' as const,
+      entryPath: 'home',
+      pages: [
+        {
+          path: 'home',
+          title: 'Form',
+          purpose: 'Capture',
+          data: 'cta',
+          archetype: 'task' as const,
+        },
+        {
+          path: 'results',
+          title: 'Score',
+          purpose: 'Report',
+          data: 'cta',
+          archetype: 'results' as const,
+        },
+      ],
+      actions: [],
+      capabilities: [],
+      processing: [],
+      composition: {
+        afterSubmit: 'replace' as const,
+        navigateWhen: 'success' as const,
+        inspect: 'none' as const,
+        history: 'none' as const,
+        mutations: 'local' as const,
+      },
+    }
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: '',
+      apiBindings: twoPageApiBindings,
+      lockedStructuredBrief: locked,
+    })
+
+    expect(mockPlanBrief).not.toHaveBeenCalled()
+    expect(mockAnalyzeIntent).not.toHaveBeenCalled()
+    expect(mockCreateAnthropicMessage).toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.manifest?.actions.submit_lead.onSuccess?.navigateWhen).toBe('success')
+  })
+
+  it('locked generate rejects a composition/sitemap mismatch', async () => {
+    const result = await generateArenaGenerativeManifest({
+      userInput: '',
+      apiBindings: [],
+      lockedStructuredBrief: {
+        title: 'Lead qualifier',
+        purpose: 'Score leads',
+        audience: 'Sales',
+        complexity: 'simple',
+        archetype: 'task',
+        entryPath: 'home',
+        pages: [
+          { path: 'home', title: 'Form', purpose: 'Capture', data: 'cta', archetype: 'task' },
+        ],
+        actions: [],
+        capabilities: [],
+        processing: [],
+        composition: {
+          afterSubmit: 'replace',
+          inspect: 'none',
+          history: 'none',
+          mutations: 'local',
+        },
+      },
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Locked plan does not match its composition')
+    expect(mockCreateAnthropicMessage).not.toHaveBeenCalled()
+    expect(mockPlanBrief).not.toHaveBeenCalled()
   })
 })

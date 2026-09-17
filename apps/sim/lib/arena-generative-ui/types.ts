@@ -198,6 +198,12 @@ export interface ArenaGenerativeActionManifest {
   append?: string[]
   onSuccess?: {
     navigate?: string
+    /**
+     * When to follow `navigate`. `immediate` (default) leaves the form before
+     * the request starts. `success` waits for a successful response so errors
+     * stay on the form.
+     */
+    navigateWhen?: 'immediate' | 'success'
     setState?: Record<string, unknown>
   }
   onError?: {
@@ -1357,8 +1363,9 @@ export function pageOnLoadFrom(
 }
 
 /**
- * `onSuccess.navigate` target per action. Hosts navigate to it before the request starts so the
- * result page mounts while the action is still pending and its loading placeholders can show.
+ * `onSuccess.navigate` target per action. Hosts that navigate immediately
+ * should also consult {@link actionNavigateWhenFrom} — `success` waits until
+ * the CTA succeeds so errors stay on the form.
  */
 export function actionNavigateFrom(
   manifest: Pick<ArenaGenerativeAppManifest, 'actions'>
@@ -1371,4 +1378,19 @@ export function actionNavigateFrom(
     }
   }
   return targets
+}
+
+/**
+ * When each action should follow `onSuccess.navigate`. Missing means immediate
+ * (legacy navigate-first).
+ */
+export function actionNavigateWhenFrom(
+  manifest: Pick<ArenaGenerativeAppManifest, 'actions'>
+): Record<string, 'immediate' | 'success'> {
+  const when: Record<string, 'immediate' | 'success'> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (!action.onSuccess?.navigate) continue
+    when[actionId] = action.onSuccess.navigateWhen === 'success' ? 'success' : 'immediate'
+  }
+  return when
 }

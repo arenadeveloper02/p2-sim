@@ -19,6 +19,7 @@ import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   actionNavigateFrom,
+  actionNavigateWhenFrom,
   pageOnLoadFrom,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
@@ -71,6 +72,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     pages: pageSummariesFromManifest(deployment.manifest),
     streamingActionIds: streamingActionIdsFrom(deployment.manifest, deployment.apiBindings),
     actionNavigate: actionNavigateFrom(deployment.manifest),
+    actionNavigateWhen: actionNavigateWhenFrom(deployment.manifest),
     pageOnLoad: pageOnLoadFrom(deployment.manifest),
     actionHostKeys: actionHostKeysFrom(deployment.manifest, deployment.apiBindings),
     proseAliasKeys: proseAliasKeysFromPlans(layoutPlansFromBindings(deployment.apiBindings)),

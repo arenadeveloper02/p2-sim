@@ -7,6 +7,12 @@ import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-pro
 import { resolveCapabilities } from '@/lib/arena-generative-ui/capabilities'
 import { compileProductBrief } from '@/lib/arena-generative-ui/compile-product-brief'
 import {
+  applyCompositionToManifest,
+  compositionSitemapIssues,
+  plannedPlaceholderManifest,
+  withComposition,
+} from '@/lib/arena-generative-ui/composition'
+import {
   type ArenaGenerativeCritique,
   critiqueArenaGenerativeManifest,
   formatCriticRepairError,
@@ -67,6 +73,7 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
+import { streamingActionIdsFrom } from '@/lib/arena-generative-ui/types'
 import { hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
@@ -337,6 +344,7 @@ function evaluateGeneratedCandidate(
     manifest: estimated.manifest,
     adoptedChanges: [
       ...sanitized.adoptedChanges,
+      ...(validation.adoptedChanges ?? []),
       ...repaired.adoptedChanges,
       ...knobbed.adoptedChanges,
       ...estimated.adoptedChanges,
@@ -399,6 +407,7 @@ function structuredBriefSummary(brief: ArenaGenerativeStructuredBrief) {
     archetype: brief.archetype,
     entryPath: brief.entryPath,
     pages: brief.pages.map((page) => ({ path: page.path, title: page.title })),
+    ...(brief.composition ? { composition: brief.composition } : {}),
   }
 }
 
@@ -421,6 +430,15 @@ export interface GenerateArenaGenerativeManifestParams {
   existingBrief?: string
   /** Generate-time structured brief. Context only — do not re-plan or pin the sitemap from it. */
   existingStructuredBrief?: ArenaGenerativeStructuredBrief
+  /**
+   * Locked IA. Skip intent and planner; pin sitemap and composition from this
+   * brief. Used by Generate from plan.
+   */
+  lockedStructuredBrief?: ArenaGenerativeStructuredBrief
+  /** Intent + planner only. Persist a placeholder manifest. */
+  planOnly?: boolean
+  /** Delta applied to the current blueprint without a spec rewrite. */
+  planChanges?: string
   /** New screenshot interpretation for this run. */
   visualBrief?: ArenaGenerativeVisualBrief
   /** Stored screenshot interpretation. Used on re-plan when no new screenshots were uploaded. */
@@ -525,15 +543,19 @@ export async function generateArenaGenerativeManifest(
   params: GenerateArenaGenerativeManifestParams
 ): Promise<GenerateArenaGenerativeManifestResult> {
   const userInput =
-    params.userInput.trim() || (params.visualBrief ? MATCH_SCREENSHOT_USER_INPUT : '')
-  if (!userInput) {
+    params.userInput.trim() ||
+    params.planChanges?.trim() ||
+    (params.visualBrief ? MATCH_SCREENSHOT_USER_INPUT : '')
+  if (!userInput && !params.lockedStructuredBrief) {
     return { success: false, error: 'userInput is required' }
   }
 
   const hasStreamingBinding = params.apiBindings.some((binding) => binding.stream === true)
-  const hasExisting = Boolean(params.existingManifest)
-  const isReplan = hasExisting && isReplanEdit(userInput)
-  const isPreserveEdit = hasExisting && !isReplan
+  const hasExistingSpec =
+    Boolean(params.existingManifest) && Object.keys(params.existingManifest?.pages ?? {}).length > 0
+  const isReplan = hasExistingSpec && isReplanEdit(userInput)
+  const isPreserveEdit =
+    hasExistingSpec && !isReplan && !params.lockedStructuredBrief && !params.planOnly
   const visualBrief =
     params.visualBrief ?? (!isPreserveEdit ? params.existingVisualBrief : undefined)
   const pinnedPageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
@@ -573,17 +595,18 @@ export async function generateArenaGenerativeManifest(
         existingBrief: params.existingBrief,
       })
     : userInput
-  const compiledBrief = isPreserveEdit
-    ? { honorPrompt: '', adoptedChanges: [] }
-    : compileProductBrief(plannerUserInput, params.apiBindings)
+  const compiledBrief =
+    isPreserveEdit || params.lockedStructuredBrief
+      ? { honorPrompt: '', adoptedChanges: [] }
+      : compileProductBrief(plannerUserInput, params.apiBindings)
 
   let analyzedIntent: ArenaGenerativeIntent | null = isPreserveEdit
     ? (params.existingStructuredBrief?.intent ?? null)
-    : null
+    : (params.lockedStructuredBrief?.intent ?? null)
   let intentError: string | undefined
-  if (!isPreserveEdit) {
+  if (!isPreserveEdit && !params.lockedStructuredBrief) {
     const analyzed = await analyzeArenaGenerativeIntent({
-      userInput: plannerUserInput,
+      userInput: plannerUserInput || 'Adjust this plan.',
       apiBindings: params.apiBindings,
       designNotes: params.designNotes,
       visualBrief,
@@ -599,19 +622,32 @@ export async function generateArenaGenerativeManifest(
     }
   }
 
-  const planned = isPreserveEdit
-    ? { brief: null as ArenaGenerativeStructuredBrief | null }
-    : await planArenaGenerativeStructuredBrief({
-        userInput: plannerUserInput,
-        pages: pinnedPageHints,
-        entryPath: params.entryPath,
-        apiBindings: params.apiBindings,
-        designNotes: params.designNotes,
-        intent: analyzedIntent,
-        visualBrief,
-        ...(compiledBrief.honorPrompt ? { compiledHonor: compiledBrief.honorPrompt } : {}),
-      })
-  const structuredBrief = planned.brief
+  const planned =
+    isPreserveEdit || params.lockedStructuredBrief
+      ? {
+          brief: null as ArenaGenerativeStructuredBrief | null,
+          droppedActions: [] as Array<{ id: string; apiKey?: string }>,
+          uncoordinatedPages: [] as string[],
+        }
+      : await planArenaGenerativeStructuredBrief({
+          userInput: plannerUserInput || params.planChanges || 'Adjust this plan.',
+          pages: pinnedPageHints,
+          entryPath: params.entryPath,
+          apiBindings: params.apiBindings,
+          designNotes: params.designNotes,
+          intent: analyzedIntent,
+          visualBrief,
+          ...(compiledBrief.honorPrompt ? { compiledHonor: compiledBrief.honorPrompt } : {}),
+          ...(params.existingStructuredBrief
+            ? { existingBrief: params.existingStructuredBrief }
+            : {}),
+          ...(params.planChanges ? { planChanges: params.planChanges } : {}),
+        })
+  const structuredBrief = params.lockedStructuredBrief
+    ? withComposition(params.lockedStructuredBrief)
+    : planned.brief
+      ? withComposition(planned.brief)
+      : planned.brief
   const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
   const plannerError = 'error' in planned ? planned.error : undefined
   const droppedActions = planned.droppedActions ?? []
@@ -622,12 +658,44 @@ export async function generateArenaGenerativeManifest(
       pageCount: structuredBrief.pages.length,
       entryPath: structuredBrief.entryPath,
       replan: isReplan,
+      planOnly: Boolean(params.planOnly),
+      locked: Boolean(params.lockedStructuredBrief),
     })
   } else if (isPreserveEdit && intentBrief) {
     logger.info('Reusing stored Arena Generative UI structured brief', {
       archetype: intentBrief.archetype,
       pageCount: intentBrief.pages.length,
     })
+  }
+
+  if (params.planOnly) {
+    if (!structuredBrief) {
+      return { success: false, error: plannerError ?? 'Could not plan the app' }
+    }
+    const compositionIssues = compositionSitemapIssues(structuredBrief)
+    return {
+      success: true,
+      title: structuredBrief.title,
+      content: withStatusPrefix(
+        `Planned ${structuredBrief.pages.length} page(s). Confirm the product contract, then Generate from Plan.`,
+        formatPlannerStatus(structuredBrief, plannerError, droppedActions, uncoordinatedPages),
+        compositionIssues.length > 0 ? `Composition: ${compositionIssues.join('; ')}.` : ''
+      ),
+      manifest: plannedPlaceholderManifest(structuredBrief.entryPath),
+      structuredBrief: structuredBriefSummary(structuredBrief),
+      plannedBrief: structuredBrief,
+      ...(plannerError ? { plannerError } : {}),
+    }
+  }
+
+  if (params.lockedStructuredBrief && structuredBrief) {
+    const compositionIssues = compositionSitemapIssues(structuredBrief)
+    if (compositionIssues.length > 0) {
+      return {
+        success: false,
+        error: `Locked plan does not match its composition: ${compositionIssues.join('; ')}`,
+      }
+    }
   }
 
   /**
@@ -689,7 +757,7 @@ export async function generateArenaGenerativeManifest(
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
   const bindingKeyLine =
     bindingKeys.length > 0
-      ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
+      ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. If User Input misspells a declared key, use the declared spelling (run_histoy → run_history). Do not invent keys from User Input.`
       : ''
   const requestedEntryPath =
     params.entryPath || (isPreserveEdit ? undefined : structuredBrief?.entryPath)
@@ -1012,7 +1080,11 @@ export async function generateArenaGenerativeManifest(
       success: true,
       title,
       content: withStatusPrefix(content, ...statusLines),
-      manifest: validation.manifest,
+      manifest: applyCompositionToManifest(validation.manifest, intentBrief?.composition, {
+        streamingActionIds: new Set(
+          streamingActionIdsFrom(validation.manifest, params.apiBindings)
+        ),
+      }),
       ...(structuredBrief
         ? {
             structuredBrief: structuredBriefSummary(structuredBrief),

@@ -229,6 +229,7 @@ import {
 import {
   arenaGenerativeUiEditTool,
   arenaGenerativeUiGenerateTool,
+  arenaGenerativeUiPlanTool,
 } from '@/tools/arena-generative-ui'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
@@ -5433,6 +5434,7 @@ export const tools: Record<string, ToolConfig> = {
   arena_development_generate_app: arenaDevelopmentGenerateAppTool,
   arena_development_edit_app: arenaDevelopmentEditAppTool,
   arena_generative_ui_generate: arenaGenerativeUiGenerateTool,
+  arena_generative_ui_plan: arenaGenerativeUiPlanTool,
   arena_generative_ui_edit: arenaGenerativeUiEditTool,
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_get_agent_card: a2aGetAgentCardTool,

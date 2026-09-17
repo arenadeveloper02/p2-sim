@@ -46,6 +46,7 @@ interface UseGenerativeAppRuntimeOptions {
   ) => Promise<RunDeployedAppActionResult>
   isStreaming: (actionId: string) => boolean
   actionNavigate: Record<string, string>
+  actionNavigateWhen?: Record<string, 'immediate' | 'success'>
   navigate: (path: string) => void
   mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
   setActionPending: (actionId: string, pending: boolean) => void
@@ -158,6 +159,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       const generation = clockRef.current.begin(actionId)
       recordLastAction(actionId, values, 'cta', surface)
       const navigateTo = current.actionNavigate[actionId]
+      const navigateWhen = current.actionNavigateWhen?.[actionId] ?? 'immediate'
       const streaming = current.isStreaming(actionId)
       flushSync(() => {
         current.setActionPending(actionId, true)
@@ -178,10 +180,15 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       })
       setToast(null)
       try {
-        if (navigateTo) current.navigate(navigateTo)
+        const leaveImmediately = Boolean(navigateTo) && navigateWhen !== 'success'
+        const deferNavigate = Boolean(navigateTo) && navigateWhen === 'success'
+        if (leaveImmediately && navigateTo) current.navigate(navigateTo)
         const result = await execute(actionId, values, generation, surface)
         if (!clockRef.current.isCurrent(actionId, generation)) return
-        applyResult(result, Boolean(navigateTo))
+        applyResult(result, leaveImmediately || deferNavigate)
+        if (result.ok && deferNavigate && navigateTo) {
+          current.navigate(result.navigate || navigateTo)
+        }
         if (result.ok && surface !== 'chat') {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => scrollGenerativeAppToResults())

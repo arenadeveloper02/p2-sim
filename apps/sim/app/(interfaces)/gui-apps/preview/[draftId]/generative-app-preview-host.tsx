@@ -28,6 +28,7 @@ import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
   actionErrorFrom,
   actionNavigateFrom,
+  actionNavigateWhenFrom,
   actionSchemaWarningFrom,
   clearedActionErrorState,
   clearedSelectedIdHostState,
@@ -109,6 +110,7 @@ export function GenerativeAppPreviewHost({
   const uxPlan = compiled?.uxPlan
 
   const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
+  const actionNavigateWhen = manifest ? actionNavigateWhenFrom(manifest) : {}
   const actionHostKeys = manifest ? actionHostKeysFrom(manifest, apiBindings ?? []) : {}
   const proseAliasKeys = manifest
     ? proseAliasKeysFromPlans(layoutPlansFromBindings(apiBindings ?? []))
@@ -145,6 +147,7 @@ export function GenerativeAppPreviewHost({
       }),
     isStreaming: (actionId) => streamingIds.has(actionId),
     actionNavigate,
+    actionNavigateWhen,
     navigate,
     mergeState,
     setActionPending,
@@ -192,6 +195,15 @@ export function GenerativeAppPreviewHost({
     return (
       <div className='p-8 text-center text-[var(--text-error)]'>
         {toError(draftQuery.error).message || 'Unable to load this draft'}
+      </div>
+    )
+  }
+
+  if (draftQuery.data.planStatus === 'planned') {
+    return (
+      <div className='p-8 text-center text-[var(--text-secondary)] text-sm'>
+        This draft is a product contract only. Confirm the plan in the Arena Generative UI block,
+        then run Generate from Plan before Preview.
       </div>
     )
   }

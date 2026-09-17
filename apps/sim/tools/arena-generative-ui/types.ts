@@ -17,6 +17,11 @@ export interface ArenaGenerativeUiParams {
   apiBindings?: unknown
   designNotes?: string
   existingDraftId?: string
+  lockPlan?: boolean
+  planOnly?: boolean
+  planChanges?: string
+  composition?: unknown
+  iaPreset?: string
   _context?: WorkflowToolExecutionContext
 }
 
@@ -33,6 +38,13 @@ export interface ArenaGenerativeUiResponse extends ToolResponse {
       archetype: string
       entryPath: string
       pages: Array<{ path: string; title: string }>
+      composition?: {
+        afterSubmit: 'replace' | 'stack' | 'alongside'
+        navigateWhen?: 'immediate' | 'success'
+        inspect: 'none' | 'same-page' | 'navigate'
+        history: 'none' | 'peer-tab'
+        mutations: 'local' | 'pages'
+      }
     }
     plannerError?: string
     generateWarnings?: ArenaGenerativeGenerateWarning[]

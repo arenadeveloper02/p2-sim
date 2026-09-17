@@ -19,10 +19,10 @@ Published apps are gated for authenticated Arena users by default, like deployed
 ## End-to-end flow
 
 1. Add an **Arena Generative UI** block to a workflow.
-2. Fill in the brief (and optional pages / API bindings).
-3. Run the workflow. The block **saves a draft** — it does not publish.
+2. For a production-ready app: **Plan App**, confirm or adjust the product contract, then **Generate from Plan**. Copilot/agents may still **Generate New App** in one shot.
+3. The block **saves a draft** — it does not publish. Planned drafts cannot be previewed or launched until Generate from Plan.
 4. Open **Deploy → GUI App** (not Deploy → App, which is the existing external-redirect flow).
-5. Pick the draft and click **Preview** (or **Preview draft**) to click through pages and run CTAs before publish.
+5. Pick a **generated** draft and click **Preview** (or **Preview draft**) to click through pages and run CTAs before publish.
 6. Set identifier / title / category / access, then **Launch GUI App**.
 7. Share `{base}/gui-apps/{identifier}`. Arena embeds add `?emailId=`, which the default gate requires.
 
@@ -86,10 +86,10 @@ Results shows score and a Back link.
 Use **Generate** on this field before you run the block. The wand writes the **brief**, not the app.
 
 - Empty User Input plus a job note **expands** a planner-ready spec (audience, pages, camelCase fields, CTA keys, empty copy).
-- A long existing brief plus `fix this brief` / `align with Arena guidelines` **repairs** it in place: names, pages, and keys stay; host chrome (loaders, toasts, login) and unrequested dashboards / history / extra routes are stripped.
+- A long existing brief plus `fix this brief` / `align with Arena guidelines` **repairs** it in place: original intent (product, audience, happy path, named pages/copy) stays; invented API keys and form/output fields remap onto declared bindings; unrepresentable layout/components become the closest catalog alternative; host chrome (loaders, toasts, login) and unrequested dashboards / history / extra routes are stripped. Conflicting asks keep the one that better serves the original job.
 - `start over` / `rebuild` in the Generate box expands from that note and ignores the current brief as product scope.
-- The wand sees **API Bindings** keys (and form / output field names, not URLs or secrets) and must not invent keys. Leave Bindings empty for dummy/local apps.
-- The Generate box cannot be empty. The wand does not receive the catalog or archetype recipes — those apply on the spec call when you run the block.
+- The wand sees **API Bindings** keys (and form / output field names, not URLs or secrets) and must not invent keys — it remaps mismatched CTA keys onto the closest declared binding. Leave Bindings empty for dummy/local apps.
+- The Generate box cannot be empty. The wand receives compiled asked→adopted mappings (not the full catalog or archetype recipes). Recipes still apply on the spec call when you run the block.
 
 The brief is stored on the draft, so Edit can send it as background context without you retyping it. The planner's structured brief (archetype and sitemap) is stored with it, so Edit keeps the same layout recipe without re-planning.
 

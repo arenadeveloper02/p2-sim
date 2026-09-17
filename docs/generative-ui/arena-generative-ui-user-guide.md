@@ -2,7 +2,54 @@
 
 This is a short how-to for filling the **Arena Generative UI** block. The full reference is [arena-generative-ui.md](./arena-generative-ui.md).
 
-The block does not publish a URL. Run it to save a **draft**, then open **Deploy → GUI App → Preview**. Launch only when the preview looks right.
+The block does not publish a URL. For a production-ready app, **Plan App**, confirm or adjust the product contract, then **Generate from Plan**. After a spec exists, open **Deploy → GUI App → Preview**. Launch only when the preview looks right. Copilot and agents can still use **Generate New App** as a one-shot.
+
+---
+
+## Production path: lock the product contract first
+
+Generate used to guess information architecture from User Input in the same expensive call as pixels. Production apps **plan first**:
+
+1. **Plan App** — cheap. Intent + planner only. You get a draft with a product contract and no usable spec. Preview and Launch stay disabled.
+2. Confirm or change the contract (dropdown knobs, an IA starting point, or **Adjust this plan**).
+3. **Generate from Plan** — the spec model is locked to that sitemap and composition. It does not re-guess from prose.
+4. **Preview**, then **Edit Existing Draft** for copy, bind, and paint. Architecture changes go back to Adjust this plan, then Generate from Plan again.
+
+| Lane | When | What runs |
+|---|---|---|
+| **Patch knobs** | Known visibility flip (“stack results below the form”, “add History tab”) | No LLM. Dropdowns write the composition object. |
+| **Adjust this plan** | Ambiguous product change (“inspect the task without leaving”) | Planner only, with the current blueprint + delta. Unmentioned pages stay. |
+| **Generate from this plan** | Contract looks right | Spec LLM. Sitemap, composition, actions, and bindings are pinned. |
+| **Edit Existing Draft** | Copy, bind, paint, one-page layout | Current scoped edit. Architecture stays unless you say `re-plan`. |
+
+Do not paste the original brief into Requested Changes.
+
+### Product contract knobs
+
+These combine (hybrids are first-class). They are not a catalog of named products.
+
+- **After submit:** replace the form / stack below / keep both visible
+- **If replace:** leave immediately (wait on Results) / leave only if the API succeeds (wait and errors stay on the form)
+- **Opening a row:** stay here / leave to a detail page / not applicable
+- **Previous runs:** none / History tab
+- **Create and edit:** on this page / separate pages
+
+Streaming generate stays **leave immediately**. JSON qualify/lookup defaults to **leave only if the API succeeds**.
+
+### IA starting points
+
+Presets fill those knobs. They are starting points, not the taxonomy. Representation names (`table`, `kanban`, `calendar`) stay off this list — they are collection body.
+
+| Preset | When | Knobs |
+|---|---|---|
+| **Stay on page** | Generate/analyze without leaving the form | stack below |
+| **Task then results** | Submit replaces the form with a report | replace. Streaming → leave immediately. JSON → leave on success |
+| **Agent with History** | Generator + results + previous runs | replace + History tab |
+| **One list** | Dummy/local collection, create on the page | mutations on this page |
+| **List then detail** | Browse, then leave to one record | inspect navigates |
+| **Keep both visible** | Parent/child stay on screen | alongside + inspect stays here |
+| **Monitor** | KPIs are the job | do not offer for a todo or research brief |
+| **Step-by-step form** | Sequential *input* stages (KYC) | not a generate wait checklist |
 
 ---
 
@@ -10,7 +57,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 
 | Field | What goes here |
 |---|---|
-| **Mode** | **Generate New App** for a first draft. **Edit Existing Draft** later — type only the delta in **Requested Changes**, or say `re-plan` / `rebuild the app` to regenerate the sitemap. |
+| **Mode** | **Plan App** then **Generate from Plan** for production-ready apps. **Generate New App** is the one-shot for Copilot/agents. **Edit Existing Draft** later — type only the delta in **Requested Changes**. Architecture changes go back to Adjust this plan, not Requested Changes. |
 | **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each remote CTA calls (if any). **Not JSON.** Use **Generate** on this field to expand a job note or repair a long brief before you run. |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
 | **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. Leave empty for dummy/local apps — do not add a fake workflow just to have a key. |
@@ -21,7 +68,7 @@ The model **cannot invent API keys**. If User Input names a key (“Submit calls
 
 Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) produce generic shells.
 
-Pasted ChatGPT product specs (React, geolocation, custom CSS, seven data-state screens) are **compiled on generate**. User Input is not rewritten. Generate notes list what Arena mapped or dropped (Chart for an hourly series, SearchField instead of geolocation, omitted weather icons). You do not need **Generate** / `fix this brief` for that.
+Pasted ChatGPT product specs (React, geolocation, custom CSS, seven data-state screens) are **compiled on generate**. Generate notes list what Arena mapped or dropped (Chart for an hourly series, SearchField instead of geolocation, omitted weather icons). Optional **Generate** / `fix this brief` on User Input rewrites the brief itself onto those closest catalog alternatives and declared API keys before you run.
 
 ---
 
@@ -29,14 +76,14 @@ Pasted ChatGPT product specs (React, geolocation, custom CSS, seven data-state s
 
 **Generate** on User Input writes the **brief**. It does not generate the app — run the block after the field looks right. It is optional authoring. Generate already compiles ChatGPT pastes; do not use the wand as recovery after a failed run.
 
-Add APIs first when you have them. The wand sees those keys (and their form / output field names) and will not invent new ones. Leave Bindings empty for dummy/local apps so it describes CTAs in words.
+Add APIs first when you have them. The wand sees those keys (and their form / output field names) and remaps mismatched CTA keys and field names onto the closest declared binding — it will not invent new ones. Leave Bindings empty for dummy/local apps so it describes CTAs in words.
 
 The Generate box cannot be empty. Type a job note, or an instruction such as `fix this brief`.
 
 | What’s in User Input | What to type in Generate | What happens |
 |---|---|---|
 | Empty or a short job | The job (`article recommender`, `simple todo`) | Expands a planner-ready brief: audience, pages, camelCase fields, CTA keys, empty copy. |
-| A long pasted spec | `align with Arena guidelines` or `fix this brief` | Repairs in place. Keeps pages, names, copy, and keys. Strips loaders / toasts / login (host-owned). Drops dashboards, stats, history, and extra routes the job did not ask for. |
+| A long pasted spec | `align with Arena guidelines` or `fix this brief` | Repairs in place. Keeps original intent (product, audience, happy path, named pages/copy). Remaps invented API keys and form/output fields onto declared bindings. Rewrites unrepresentable layout/components to the closest catalog alternative (geolocation → SearchField, Gantt → Timeline). Strips loaders / toasts / login (host-owned). Drops dashboards, stats, history, and extra routes the job did not ask for. Conflicting asks keep the one that better serves the original job. |
 | Anything | `start over` / `rebuild` plus the new job | Expands from that note and ignores the current brief as product scope. |
 
 The wand writes **prose**, not json-render JSON. Recipes and the catalog apply when you run the block.
@@ -320,7 +367,7 @@ the inspector.
 
 ## Short checklist
 
-- **Generate** on User Input is optional authoring (expand a job or `fix this brief`). Generate already compiles ChatGPT pastes. Add APIs first so keys match. Then run the block.
+- **Generate** on User Input is optional authoring (expand a job or `fix this brief`). `fix this brief` remaps binding mismatches and unrepresentable layout to closest catalog alternatives without changing the job. Generate still compiles ChatGPT pastes on run. Add APIs first so keys match. Then run the block.
 - Same API **key** in User Input and Add an API. Leave Bindings empty for dummy/local apps; do not invent a workflow key.
 - Dummy lists (todos, boards) should show sample rows on arrival. Create / edit / complete stay local, as dialogs on the same page. Ask for edit by name — it is not inferred.
 - Bound workflows are **deployed** before Preview / Launch.

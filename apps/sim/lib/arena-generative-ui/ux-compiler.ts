@@ -363,7 +363,7 @@ export function relocateNavigateFirstLoaders(
   const actionNavigate: Record<string, string> = {}
   for (const [actionId, action] of Object.entries(actions)) {
     const dest = navigatePath(action.onSuccess?.navigate)
-    if (dest) actionNavigate[actionId] = dest
+    if (dest && action.onSuccess?.navigateWhen !== 'success') actionNavigate[actionId] = dest
   }
 
   const nextPages: Record<string, ArenaGenerativePageManifest> = {}
@@ -412,7 +412,7 @@ export function pagesNeedingPendingChrome(manifest: ArenaGenerativeAppManifest):
   }
   for (const [actionId, action] of Object.entries(manifest.actions)) {
     const dest = navigatePath(action.onSuccess?.navigate)
-    if (dest) {
+    if (dest && action.onSuccess?.navigateWhen !== 'success') {
       needed.add(dest)
       continue
     }

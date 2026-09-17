@@ -69,6 +69,7 @@ import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-s
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { ArenaApiBindingImportHelper } from './components/arena-api-binding-import/arena-api-binding-import'
 import { ArenaDraftBriefPreview } from './components/arena-draft-brief-preview/arena-draft-brief-preview'
+import { ArenaProductContractPreview } from './components/arena-product-contract-preview/arena-product-contract-preview'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
 
@@ -809,6 +810,11 @@ function SubBlockComponent({
         )
         if (config.previewHelper === 'arena-draft-brief') {
           return <ArenaDraftBriefPreview blockId={blockId}>{dropdown}</ArenaDraftBriefPreview>
+        }
+        if (config.previewHelper === 'arena-product-contract') {
+          return (
+            <ArenaProductContractPreview blockId={blockId}>{dropdown}</ArenaProductContractPreview>
+          )
         }
         return dropdown
       }

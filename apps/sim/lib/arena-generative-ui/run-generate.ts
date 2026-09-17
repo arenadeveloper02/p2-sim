@@ -3,7 +3,13 @@ import { getErrorMessage } from '@sim/utils/errors'
 import type {
   ParsedArenaGenerativeEditBody,
   ParsedArenaGenerativeGenerateBody,
+  ParsedArenaGenerativePlanBody,
 } from '@/lib/api/contracts/arena-generative-apps'
+import {
+  applyIaPreset,
+  patchComposition,
+  plannedPlaceholderManifest,
+} from '@/lib/arena-generative-ui/composition'
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 import {
   parseStoredAdoptedChanges,
@@ -49,13 +55,22 @@ export interface ArenaGenerativeToolOutput {
  * Shared generate/edit pipeline used by tool API routes.
  */
 export async function runArenaGenerativeUi(options: {
-  body: ParsedArenaGenerativeGenerateBody | ParsedArenaGenerativeEditBody
+  body:
+    | ParsedArenaGenerativeGenerateBody
+    | ParsedArenaGenerativeEditBody
+    | ParsedArenaGenerativePlanBody
   userId: string
   requireExistingDraft: boolean
+  planOnly?: boolean
 }): Promise<
   { success: true; output: ArenaGenerativeToolOutput } | { success: false; error: string }
 > {
   const { body, userId, requireExistingDraft } = options
+  const planOnly = Boolean(options.planOnly || ('planOnly' in body && body.planOnly))
+  const lockPlan = Boolean('lockPlan' in body && body.lockPlan)
+  const planChanges = 'planChanges' in body ? String(body.planChanges ?? '').trim() : ''
+  const compositionPatch = 'composition' in body ? body.composition : undefined
+  const iaPreset = 'iaPreset' in body ? body.iaPreset : undefined
   const editInstructions =
     'editInstructions' in body ? String(body.editInstructions ?? '').trim() : ''
   const workspaceId = body.workspaceId?.trim()
@@ -148,28 +163,94 @@ export async function runArenaGenerativeUi(options: {
   const userInput =
     editInstructions ||
     String(body.userInput ?? '').trim() ||
+    planChanges ||
     (newVisualBrief || screenshots.length > 0 ? MATCH_SCREENSHOT_USER_INPUT : '')
-  if (!userInput) {
+  const canLock = Boolean(lockPlan && existingStructuredBrief)
+  const canAdjustWithoutProse = Boolean(
+    planOnly && existingStructuredBrief && (compositionPatch || iaPreset)
+  )
+  if (!userInput && !canLock && !canAdjustWithoutProse) {
     return {
       success: false,
       error: requireExistingDraft
         ? 'editInstructions is required'
-        : 'Describe the app or upload a screenshot',
+        : lockPlan
+          ? 'existingDraftId must point at a planned draft'
+          : 'Describe the app or upload a screenshot',
     }
+  }
+  if (lockPlan && !existingStructuredBrief) {
+    return { success: false, error: 'Draft has no plan to generate from' }
   }
 
   apiBindings = await refreshWorkflowBindingOutputSchemas(apiBindings)
 
+  if (canAdjustWithoutProse && !planChanges && !String(body.userInput ?? '').trim()) {
+    let nextBrief = existingStructuredBrief
+    if (!nextBrief) {
+      return { success: false, error: 'Draft has no plan to adjust' }
+    }
+    if (iaPreset) nextBrief = applyIaPreset(nextBrief, iaPreset)
+    if (compositionPatch) nextBrief = patchComposition(nextBrief, compositionPatch)
+    try {
+      const persisted = await persistGenerativeAppDraft({
+        draftId: body.existingDraftId,
+        workspaceId,
+        workflowId,
+        userId,
+        title: nextBrief.title,
+        entryPath: nextBrief.entryPath,
+        manifest: plannedPlaceholderManifest(nextBrief.entryPath),
+        apiBindings,
+        structuredBrief: nextBrief,
+        visualBrief: existingVisualBrief,
+        planStatus: 'planned',
+      })
+      return {
+        success: true,
+        output: {
+          draftId: persisted.draftId,
+          revisionId: persisted.revisionId,
+          entryPath: nextBrief.entryPath,
+          pages: nextBrief.pages.map((page) => ({ path: page.path, title: page.title })),
+          content: 'Updated the product contract. Confirm, then Generate from Plan.',
+          manifest: plannedPlaceholderManifest(nextBrief.entryPath),
+          structuredBrief: {
+            title: nextBrief.title,
+            archetype: nextBrief.archetype,
+            entryPath: nextBrief.entryPath,
+            pages: nextBrief.pages.map((page) => ({ path: page.path, title: page.title })),
+            ...(nextBrief.composition ? { composition: nextBrief.composition } : {}),
+          },
+        },
+      }
+    } catch (error) {
+      logger.error('Failed to persist generative app plan knobs', { error: getErrorMessage(error) })
+      return { success: false, error: getErrorMessage(error, 'Failed to save plan') }
+    }
+  }
+
+  let plannerBrief = existingStructuredBrief
+  if (planOnly && plannerBrief && (iaPreset || compositionPatch)) {
+    if (iaPreset) plannerBrief = applyIaPreset(plannerBrief, iaPreset)
+    if (compositionPatch) plannerBrief = patchComposition(plannerBrief, compositionPatch)
+  }
+
   const generateStartedAt = Date.now()
   const generated = await generateArenaGenerativeManifest({
-    userInput,
+    userInput: userInput || existingBrief || 'Generate from the locked plan.',
     pages,
     entryPath: body.entryPath,
     apiBindings,
     designNotes: body.designNotes,
     existingManifest,
     existingBrief,
-    ...(existingStructuredBrief ? { existingStructuredBrief } : {}),
+    ...(plannerBrief ? { existingStructuredBrief: plannerBrief } : {}),
+    ...(lockPlan && existingStructuredBrief
+      ? { lockedStructuredBrief: existingStructuredBrief }
+      : {}),
+    ...(planOnly ? { planOnly: true } : {}),
+    ...(planChanges ? { planChanges } : {}),
     ...(newVisualBrief ? { visualBrief: newVisualBrief } : {}),
     ...(existingVisualBrief ? { existingVisualBrief } : {}),
     ...(visualBriefError ? { visualBriefError } : {}),
@@ -202,7 +283,7 @@ export async function runArenaGenerativeUi(options: {
       manifest: generated.manifest,
       apiBindings,
       brief: body.existingDraftId
-        ? replanned
+        ? replanned || planOnly
           ? plannerInputForReplan({
               editInstructions: userInput,
               existingBrief,
@@ -210,17 +291,18 @@ export async function runArenaGenerativeUi(options: {
           : undefined
         : userInput,
       structuredBrief: body.existingDraftId
-        ? replanned
-          ? (generated.plannedBrief ?? null)
+        ? replanned || planOnly || lockPlan
+          ? (generated.plannedBrief ?? plannerBrief ?? null)
           : screenshots.length > 0
             ? existingStructuredBrief
             : undefined
         : (generated.plannedBrief ?? null),
       visualBrief: body.existingDraftId
-        ? replanned || screenshots.length > 0
+        ? replanned || planOnly || screenshots.length > 0
           ? (newVisualBrief ?? existingVisualBrief ?? null)
           : undefined
         : (newVisualBrief ?? null),
+      planStatus: planOnly ? 'planned' : 'generated',
       ...(generated.generateWarnings !== undefined
         ? { generateWarnings: generated.generateWarnings }
         : {}),

@@ -23,10 +23,18 @@ describe('suggestionForGenerateFailure', () => {
     ).toContain('one actionId per API job')
   })
 
-  it('maps invented API keys to Add an API or User Input', () => {
+  it('maps leftover unknown API keys to Add an API when remap had no unique winner', () => {
     expect(
       suggestionForGenerateFailure('Action "qualify" references unknown API key "invented_key"')
     ).toContain('Add an API')
+  })
+
+  it('does not suggest Add an API for leftover host-layout issues', () => {
+    expect(
+      suggestionForGenerateFailure(
+        'Page "home" Gantt "chart" is not a catalog type. Use Timeline or another catalog widget.'
+      )
+    ).not.toContain('Add that key in Add an API')
   })
 
   it('maps dummy Repeat boards to seeding rows on arrival', () => {

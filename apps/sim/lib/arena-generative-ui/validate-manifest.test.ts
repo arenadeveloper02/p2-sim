@@ -598,7 +598,34 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(true)
   })
 
-  it('rejects an unknown apiKey', () => {
+  it('remaps an invented apiKey onto the only declared binding', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'other_api', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.actions.submit_lead?.apiKey).toBe('qualify_lead')
+    expect(result.adoptedChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'product-map',
+          asked: expect.stringContaining('other_api'),
+          adopted: expect.stringContaining('qualify_lead'),
+        }),
+      ])
+    )
+  })
+
+  it('rejects an unknown apiKey when two declared keys are equally far', () => {
     const result = validateArenaGenerativeManifest(
       {
         entryPath: 'home',
@@ -610,7 +637,12 @@ describe('validateArenaGenerativeManifest', () => {
           submit_lead: { apiKey: 'other_api' },
         },
       },
-      { apiBindings: bindings }
+      {
+        apiBindings: [
+          ...bindings,
+          { key: 'score_lead', label: 'Score', kind: 'workflow' as const, workflowId: 'wf-2' },
+        ],
+      }
     )
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/unknown API key/)
@@ -1477,18 +1509,32 @@ describe('validateArenaGenerativeManifest', () => {
       }
     }
 
-    it('rejects Repeat bound to the nested schema path instead of the lifted hostKey', () => {
+    it('lifts Repeat bound to the nested schema path onto the collection hostKey', () => {
       const result = validateArenaGenerativeManifest(
-        pagesWithHistory(historyRepeat('run_data.history')),
+        pagesWithHistory(
+          historyRepeat('run_data.history', {
+            body: {
+              type: 'DataText',
+              props: { statePath: 'content', fallback: '', color: null, size: null },
+              children: [],
+            },
+          })
+        ),
         {
           apiBindings: [...bindings, historyBinding],
           entryPath: 'home',
         }
       )
 
-      expect(result.success).toBe(false)
-      expect(result.error).toContain('run_data.history')
-      expect(result.error).toContain('"history"')
+      expect(result.success).toBe(true)
+      expect(
+        (
+          result.manifest?.pages.history?.spec.elements as Record<
+            string,
+            { props?: { statePath?: string } }
+          >
+        ).repeat?.props?.statePath
+      ).toBe('history')
     })
 
     it('accepts Repeat bound to the lifted hostKey', () => {
@@ -2101,6 +2147,66 @@ describe('validateArenaGenerativeManifest', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain('targetKeyword')
+    })
+
+    it('remaps envelope statePaths onto declared host keys', () => {
+      const spec = resultsPlanSpec()
+      const table = spec.elements.table as { props: Record<string, unknown> }
+      table.props.statePath = 'output.articles'
+      const result = validateArenaGenerativeManifest(scoredPages(spec), {
+        apiBindings: [scoredBinding],
+        entryPath: 'home',
+      })
+
+      expect(result.success).toBe(true)
+      expect(
+        (result.manifest?.pages.results?.spec.elements as Record<string, { props?: { statePath?: string } }>)
+          .table?.props?.statePath
+      ).toBe('articles')
+    })
+
+    it('remaps a misspelled form field onto the declared inputSchema name', () => {
+      const spec = pageSpec({
+        extra: {
+          company: {
+            type: 'TextInput',
+            props: { name: 'compny', label: 'Company', required: true, placeholder: '' },
+            children: [],
+          },
+          form: {
+            type: 'Form',
+            props: { actionId: 'submit_lead' },
+            children: ['company', 'submit'],
+          },
+        },
+      })
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              inputSchema: [{ name: 'company', type: 'string' }],
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(true)
+      expect(
+        (result.manifest?.pages.home?.spec.elements as Record<string, { props?: { name?: string } }>)
+          .company?.props?.name
+      ).toBe('company')
     })
 
     it('rejects a form field that is not in inputSchema', () => {

@@ -6,6 +6,7 @@ import { truncate } from '@sim/utils/string'
 import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
+import { remapDeclaredApiKey } from '@/lib/arena-generative-ui/remap-declared-bindings'
 import {
   type ArenaGenerativeCapability,
   isCapability,
@@ -19,6 +20,12 @@ import {
   type ArenaGenerativeIntent,
   arenaGenerativeIntentSchema,
 } from '@/lib/arena-generative-ui/intent-analyzer'
+import {
+  type ArenaGenerativeComposition,
+  formatCompositionForGenerator,
+  parseArenaGenerativeComposition,
+  withComposition,
+} from '@/lib/arena-generative-ui/composition'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
 import {
   buildPlannerSystemPrompt,
@@ -350,6 +357,7 @@ const structuredBriefSchema = z.object({
   designIntent: z.unknown().optional(),
   informationHierarchy: z.unknown().optional(),
   interactionModel: z.unknown().optional(),
+  composition: z.unknown().optional(),
 })
 
 export const ARENA_GENERATIVE_HIERARCHY_DOMINANTS = [
@@ -735,11 +743,12 @@ export function parseArenaGenerativeInteractionModel(
 
 export type ArenaGenerativeStructuredBrief = Omit<
   z.output<typeof structuredBriefSchema>,
-  'designIntent' | 'informationHierarchy' | 'interactionModel' | 'design'
+  'designIntent' | 'informationHierarchy' | 'interactionModel' | 'design' | 'composition'
 > & {
   designIntent?: ArenaGenerativeDesignIntent
   informationHierarchy?: ArenaGenerativeInformationHierarchy
   interactionModel?: ArenaGenerativeInteractionModel
+  composition?: ArenaGenerativeComposition
 }
 
 function withParsedPlanClassifiers(
@@ -748,15 +757,17 @@ function withParsedPlanClassifiers(
   const designIntent = parseArenaGenerativeDesignIntent(brief.designIntent ?? brief.design)
   const informationHierarchy = parseArenaGenerativeInformationHierarchy(brief.informationHierarchy)
   const interactionModel = parseArenaGenerativeInteractionModel(brief.interactionModel)
+  const composition = parseArenaGenerativeComposition(brief.composition)
   const pageCapabilities = brief.pages.flatMap((page) => page.capabilities)
   const capabilities = plannedCapabilities([...brief.capabilities, ...pageCapabilities])
-  return {
-    ...omit(brief, ['designIntent', 'informationHierarchy', 'interactionModel', 'design']),
+  return withComposition({
+    ...omit(brief, ['designIntent', 'informationHierarchy', 'interactionModel', 'design', 'composition']),
     capabilities,
     ...(designIntent ? { designIntent } : {}),
     ...(informationHierarchy ? { informationHierarchy } : {}),
     ...(interactionModel ? { interactionModel } : {}),
-  }
+    ...(composition ? { composition } : {}),
+  })
 }
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
@@ -855,6 +866,10 @@ export interface PlanStructuredBriefParams {
    * User Input. Omitted when the brief needed no ChatGPT mapping.
    */
   compiledHonor?: string
+  /** Current locked blueprint. Adjust-plan uses this as source of truth. */
+  existingBrief?: ArenaGenerativeStructuredBrief | null
+  /** Delta to apply to the current blueprint. */
+  planChanges?: string
 }
 
 /**
@@ -983,12 +998,16 @@ export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBri
  * Serialises the planned IA for the manifest-generation user payload.
  */
 export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructuredBrief): string {
+  const composition = brief.composition
   return [
     'Structured brief (implement this information architecture; emit exactly these page paths as object keys):',
     JSON.stringify(brief, null, 2),
+    composition ? formatCompositionForGenerator(composition) : '',
     formatPageShapesForGenerator(brief),
     "Honour this sitemap and capabilities. Do not add pages, history, stats, or modules the blueprint omitted. Honour onLoad vs CTA as each page's data field describes. Dummy/local collection data.mode seeds via page onLoad setState (or Table.rows) — do not drop that seed action or manifest.actions. Use that page's emptyCopy as emptyText on its collection.",
-  ].join('\n')
+  ]
+    .filter((section) => section.length > 0)
+    .join('\n')
 }
 
 /**
@@ -1144,9 +1163,15 @@ function partitionBriefActions(
 } {
   const kept: ArenaGenerativeStructuredBrief['actions'] = []
   const dropped: DroppedBriefAction[] = []
+  const declaredKeys = [...bindingKeys]
   for (const action of actions) {
     if (isLocalBriefAction(action) || Boolean(action.apiKey && bindingKeys.has(action.apiKey))) {
       kept.push(action)
+      continue
+    }
+    const remapped = action.apiKey ? remapDeclaredApiKey(action.apiKey, declaredKeys) : undefined
+    if (remapped) {
+      kept.push({ ...action, apiKey: remapped })
       continue
     }
     dropped.push({
@@ -1369,9 +1394,7 @@ function parseStructuredBriefResult(
   let brief = parsed.data
   const bindingKeys = new Set(options.apiBindings.map((binding) => binding.key).filter(Boolean))
   const { kept, dropped } = partitionBriefActions(brief.actions, bindingKeys)
-  if (dropped.length > 0) {
-    brief = { ...brief, actions: kept }
-  }
+  brief = { ...brief, actions: kept }
   const hints = options.pageHints?.filter((hint) => hint.path.trim().length > 0) ?? []
   if (hints.length > 0) {
     brief = reconcileBriefWithPageHints(brief, hints, options.entryPath)
@@ -1476,6 +1499,10 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
     params.compiledHonor?.trim() ? params.compiledHonor.trim() : '',
+    params.existingBrief
+      ? `Current structured brief (source of truth — apply Plan changes as a delta; keep unmentioned pages, regions, and composition knobs):\n${JSON.stringify(params.existingBrief, null, 2)}`
+      : '',
+    params.planChanges?.trim() ? `Plan changes (delta only):\n${params.planChanges.trim()}` : '',
     `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,
   ]
     .filter((section) => section.length > 0)

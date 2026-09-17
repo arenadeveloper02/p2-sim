@@ -1,4 +1,6 @@
 import type { Spec } from '@json-render/core'
+import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
+import { closestDeclaredName } from '@/lib/arena-generative-ui/closest-declared'
 import {
   isArenaGenerativeSpacingToken,
   resolveArenaGenerativeSpacing,
@@ -107,6 +109,7 @@ const TYPE_ALIASES: Record<string, string> = {
   Chronology: 'Timeline',
   EventTimeline: 'Timeline',
   KanbanBoard: 'Kanban',
+  Board: 'Kanban',
   HorizontalScroll: 'Filmstrip',
   PaginationBar: 'Pagination',
   Pager: 'Pagination',
@@ -120,7 +123,53 @@ const TYPE_ALIASES: Record<string, string> = {
   CmdK: 'CommandPalette',
   Breadcrumbs: 'Breadcrumb',
   CrumbTrail: 'Breadcrumb',
+  Gantt: 'Timeline',
+  GanttChart: 'Timeline',
+  Sidebar: 'Columns',
+  SideBar: 'Columns',
+  SideNav: 'Columns',
+  LeftNav: 'Columns',
+  DataGrid: 'Table',
+  DataTable: 'Table',
+  SplitPane: 'Columns',
+  SplitView: 'Columns',
 }
+
+/**
+ * Catalog types models commonly misspell. Not every catalog entry — leftover
+ * unknown types with no unique closest stay as-is for LLM repair.
+ */
+const CLOSEST_CATALOG_TYPES: Record<string, string> = {
+  Tabel: 'Table',
+  Calander: 'Calendar',
+  Calender: 'Calendar',
+  Timline: 'Timeline',
+}
+
+const CLOSEST_CATALOG_TARGETS = [
+  'Timeline',
+  'Table',
+  'Columns',
+  'Kanban',
+  'Calendar',
+  'Chart',
+  'Repeat',
+  'Disclosure',
+  'Workspace',
+  'Button',
+  'Form',
+  'Card',
+  'List',
+  'Stat',
+  'Grid',
+  'Stack',
+  'Modal',
+  'Drawer',
+] as const
+
+const CATALOG_TYPE_SET = new Set(
+  (arenaGenerativeUiCatalog as { componentNames: readonly string[] }).componentNames
+)
 
 const SPACING_PROPS = ['gap', 'padding'] as const
 const CARD_VARIANTS = new Set(['default', 'muted'])
@@ -288,7 +337,10 @@ function resolveType(type: string, props: Record<string, unknown>): string {
     if (!asString(props.chartType)) props.chartType = chartType
     return 'Chart'
   }
-  return TYPE_ALIASES[type] ?? type
+  const aliased = TYPE_ALIASES[type] ?? CLOSEST_CATALOG_TYPES[type]
+  if (aliased) return aliased
+  if (CATALOG_TYPE_SET.has(type)) return type
+  return closestDeclaredName(type, CLOSEST_CATALOG_TARGETS) ?? type
 }
 
 function normalizeChildren(raw: unknown, elements: ElementMap, nextId: () => string): string[] {

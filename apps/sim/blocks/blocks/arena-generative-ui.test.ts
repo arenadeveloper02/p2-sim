@@ -16,10 +16,17 @@ describe('ArenaGenerativeUiBlock agent tool', () => {
 
   it('maps generate and edit operations to the registered tools', () => {
     expect(ArenaGenerativeUiBlock.tools?.access).toEqual([
+      'arena_generative_ui_plan',
       'arena_generative_ui_generate',
       'arena_generative_ui_edit',
     ])
     expect(ArenaGenerativeUiBlock.tools?.config.tool?.({ operation: 'generate' })).toBe(
+      'arena_generative_ui_generate'
+    )
+    expect(ArenaGenerativeUiBlock.tools?.config.tool?.({ operation: 'plan' })).toBe(
+      'arena_generative_ui_plan'
+    )
+    expect(ArenaGenerativeUiBlock.tools?.config.tool?.({ operation: 'generate_from_plan' })).toBe(
       'arena_generative_ui_generate'
     )
     expect(ArenaGenerativeUiBlock.tools?.config.tool?.({ operation: 'edit' })).toBe(
@@ -27,6 +34,9 @@ describe('ArenaGenerativeUiBlock agent tool', () => {
     )
     expect(getToolIdForOperation('arena_generative_ui', 'generate', ArenaGenerativeUiBlock)).toBe(
       'arena_generative_ui_generate'
+    )
+    expect(getToolIdForOperation('arena_generative_ui', 'plan', ArenaGenerativeUiBlock)).toBe(
+      'arena_generative_ui_plan'
     )
     expect(getToolIdForOperation('arena_generative_ui', 'edit', ArenaGenerativeUiBlock)).toBe(
       'arena_generative_ui_edit'
@@ -41,10 +51,11 @@ describe('ArenaGenerativeUiBlock agent tool', () => {
     expect(schema.properties).toHaveProperty('entryPath')
     expect(schema.properties).toHaveProperty('apiBindings')
     expect(schema.properties).toHaveProperty('designNotes')
-    expect(schema.properties).not.toHaveProperty('existingDraftId')
+    expect(schema.properties).toHaveProperty('existingDraftId')
+    expect(schema.properties).toHaveProperty('lockPlan')
     expect(schema.properties).not.toHaveProperty('_context')
     expect(schema.properties).not.toHaveProperty('screenshots')
-    expect(schema.required).toEqual(expect.arrayContaining(['userInput']))
+    expect(schema.required ?? []).not.toContain('userInput')
   })
 
   it('requires editInstructions and existingDraftId on the edit tool schema', async () => {
@@ -110,7 +121,7 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     const designNotes = ArenaGenerativeUiBlock.subBlocks.find(
       (subBlock) => subBlock.id === 'designNotes'
     )
-    const existingDraftId = ArenaGenerativeUiBlock.subBlocks.find(
+    const existingDraftIds = ArenaGenerativeUiBlock.subBlocks.filter(
       (subBlock) => subBlock.id === 'existingDraftId'
     )
     expect(userInput?.rows).toBe(10)
@@ -130,6 +141,9 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     )
     expect(editInstructions?.rows).toBeUndefined()
     expect(designNotes?.rows).toBeUndefined()
-    expect(existingDraftId?.previewHelper).toBe('arena-draft-brief')
+    expect(existingDraftIds.map((block) => block.previewHelper)).toEqual([
+      'arena-product-contract',
+      'arena-draft-brief',
+    ])
   })
 })

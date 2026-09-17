@@ -4,9 +4,15 @@ import { generateId } from '@sim/utils/id'
 import { filterUndefined } from '@sim/utils/object'
 import { eq } from 'drizzle-orm'
 import {
-  applyGenerateNotesToStoredBrief,
+  type ArenaGenerativePlanStatus,
+  isPlannedOnlyManifest,
+  parseStoredPlanStatus,
+  withStoredPlanStatus,
+} from '@/lib/arena-generative-ui/composition'
+import {
   type ArenaGenerativeAdoptedChange,
   type ArenaGenerativeGenerateWarning,
+  applyGenerateNotesToStoredBrief,
 } from '@/lib/arena-generative-ui/generate-warnings'
 import type { ArenaGenerativeStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type {
@@ -37,6 +43,11 @@ export interface PersistDraftInput {
   generateWarnings?: ArenaGenerativeGenerateWarning[]
   /** Host auto-repairs from this run. Ordinary edits still write this so preview stays current. */
   adoptedChanges?: ArenaGenerativeAdoptedChange[]
+  /**
+   * Packed into structured_brief jsonb. Planned drafts have an empty-pages
+   * placeholder manifest so Preview and Launch stay disabled.
+   */
+  planStatus?: ArenaGenerativePlanStatus
 }
 
 export interface PersistedDraft {
@@ -50,12 +61,16 @@ export interface PersistedDraft {
  */
 export async function persistGenerativeAppDraft(input: PersistDraftInput): Promise<PersistedDraft> {
   const now = new Date()
-  const rewritingBrief =
-    input.structuredBrief !== undefined || input.visualBrief !== undefined
+  const rewritingBrief = input.structuredBrief !== undefined || input.visualBrief !== undefined
+  const inferredPlanStatus: ArenaGenerativePlanStatus =
+    input.planStatus ?? (isPlannedOnlyManifest(input.manifest) ? 'planned' : 'generated')
   const packedBrief = rewritingBrief
-    ? packStoredStructuredBrief(
-        input.structuredBrief ? { ...input.structuredBrief } : null,
-        input.visualBrief ?? null
+    ? withStoredPlanStatus(
+        packStoredStructuredBrief(
+          input.structuredBrief ? { ...input.structuredBrief } : null,
+          input.visualBrief ?? null
+        ),
+        inferredPlanStatus
       )
     : null
 
@@ -115,18 +130,22 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
     !Array.isArray(existing.structuredBrief)
       ? { ...(existing.structuredBrief as Record<string, unknown>) }
       : {}
-  const hasNotes =
-    input.generateWarnings !== undefined || input.adoptedChanges !== undefined
+  const hasNotes = input.generateWarnings !== undefined || input.adoptedChanges !== undefined
   const nextStoredBrief = rewritingBrief
     ? applyGenerateNotesToStoredBrief(packedBrief, {
         generateWarnings: input.generateWarnings,
         adoptedChanges: input.adoptedChanges,
       })
-    : hasNotes
-      ? applyGenerateNotesToStoredBrief(existingPacked, {
-          generateWarnings: input.generateWarnings,
-          adoptedChanges: input.adoptedChanges,
-        })
+    : hasNotes || input.planStatus
+      ? withStoredPlanStatus(
+          hasNotes
+            ? applyGenerateNotesToStoredBrief(existingPacked, {
+                generateWarnings: input.generateWarnings,
+                adoptedChanges: input.adoptedChanges,
+              })
+            : existingPacked,
+          input.planStatus ?? parseStoredPlanStatus(existingPacked)
+        )
       : undefined
 
   await db

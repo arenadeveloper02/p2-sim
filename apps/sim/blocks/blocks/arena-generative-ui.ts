@@ -9,15 +9,19 @@ import { normalizeFileInput } from '@/blocks/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { ArenaGenerativeUiResponse } from '@/tools/arena-generative-ui/types'
 
-async function fetchGenerativeAppDrafts(): Promise<Array<{ label: string; id: string }>> {
+async function fetchGenerativeAppDrafts(
+  filter: 'all' | 'planned' | 'generated' = 'all'
+): Promise<Array<{ label: string; id: string }>> {
   const workflowId = useWorkflowRegistry.getState().activeWorkflowId
   const data = await requestJson(listGenerativeAppDraftsContract, {
     query: workflowId ? { workflowId } : {},
   })
-  return data.drafts.map((draft) => ({
-    id: draft.id,
-    label: draft.revision ? `${draft.title} (r${draft.revision})` : draft.title,
-  }))
+  return data.drafts
+    .filter((draft) => filter === 'all' || draft.planStatus === filter)
+    .map((draft) => ({
+      id: draft.id,
+      label: `${draft.title} (r${draft.revision})${draft.planStatus === 'planned' ? ' · plan' : ''}`,
+    }))
 }
 
 export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
@@ -27,19 +31,20 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   longDescription:
     'Creates a multi-page json-render draft (home, results, and more) with in-app navigation and optional CTA bindings to deployed workflows or allowlisted HTTP APIs. Run the block to save a draft, then publish from Deploy → GUI App to get a public /gui-apps/{identifier} URL.',
   bestPractices: `
-  - Use Generate for a new draft. Leave Pages blank so the model chooses the sitemap, or pin paths as JSON [{ "path": "home", "title": "Form" }].
+  - Humans who want a production-ready app use Plan App, confirm or adjust the product contract, then Generate from Plan. Copilot and agents may keep Generate New App as a one-shot.
   - User Input describes the app: pages, copy, which API, navigation, empty states. Do not ask for loaders, toasts, or confirm dialogs — the host compiles those.
   - Or upload Screenshots of the UI to match. Arena approximates layout, copy, and regions with catalog components — it will not clone pixels or custom widgets.
-  - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
+  - IA presets fill visibility knobs (stack, replace, History tab). They are starting points, not a taxonomy. Representation names (table, kanban) are collection body, not product shape.
   - Set apiBindings when CTAs should call a deployed workflow or HTTP URL. Copilot should write a JSON array of stubs — [{ "key": "qualify_lead", "kind": "workflow", "workflowId": "<id>", "stream": true }] or [{ "key": "search", "kind": "http", "curl": "curl -X POST https://…" }]. The host fills inputSchema from the deployed Start block (and HTTP from the curl). Leave it blank when there is no backend (dummy/local or navigation-only); dummy lists seed sample rows on arrival; dummy create/complete stay local. Do not invent keys the user did not name. Name those same keys in User Input (e.g. "Submit calls qualify_lead").
   - Set "stream": true to stream tokens into DataText. Do not add inputMapping { "email": "arenaEmailId" } — that is redundant and must not drop form fields.
   - Visitor email is host-stamped onto Start fields named userEmail / loggedInEmail / visitorEmail. Do not put an email field in the brief unless it is a lead/contact address (a field named email).
   - Humans use Add an API in the editor; Copilot must set apiBindings on the block via edit_workflow (the JSON textarea stays locked in the UI).
-  - After a successful run, tell the user to open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}. There is no Copilot tool to publish a GUI app.
+  - After Generate from Plan, tell the user to open Deploy → GUI App, pick the draft, set an identifier, and Launch. Planned drafts cannot be previewed or launched. The public URL is /gui-apps/{identifier}. There is no Copilot tool to publish a GUI app.
   - Backend workflows should be deploy_api'd before GUI App publish. Copilot can deploy those workflows first.
-  - Use Edit mode with an existing draft to change pages, copy, or CTA wiring. Put only the delta in Requested Changes — the draft already carries the original brief, and anything you do not mention is kept as-is.
+  - Use Edit mode with an existing generated draft to change pages, copy, or CTA wiring. Put only the delta in Requested Changes — the draft already carries the original brief, and anything you do not mention is kept as-is.
+  - Architecture changes after generate go back to Adjust this plan, then Generate from Plan. Do not paste the original brief into Requested Changes.
   - Name the page you mean in Requested Changes ("on the results page, ..."). Edits are scoped to the pages your request names, so a page it never mentions is left byte-identical and costs nothing to re-emit.
-  - As an Agent tool: attach Arena Generative UI, pick Generate or Edit, then preview/launch from Deploy → GUI App on this workflow.
+  - As an Agent tool: attach Arena Generative UI, pick Generate New App or Edit, then preview/launch from Deploy → GUI App on this workflow.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
   category: 'blocks',
@@ -52,10 +57,12 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       title: 'Mode',
       type: 'dropdown',
       options: [
+        { label: 'Plan App', id: 'plan' },
+        { label: 'Generate from Plan', id: 'generate_from_plan' },
         { label: 'Generate New App', id: 'generate' },
         { label: 'Edit Existing Draft', id: 'edit' },
       ],
-      value: () => 'generate',
+      value: () => 'plan',
     },
     {
       id: 'userInput',
@@ -63,7 +70,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       type: 'long-input',
       rows: 10,
       required: false,
-      condition: { field: 'operation', value: 'generate' },
+      condition: { field: 'operation', value: ['generate', 'plan'] },
       placeholder:
         'Plain language, not JSON. Describe the app, or upload a screenshot and leave this blank.',
       tooltip:
@@ -91,17 +98,37 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       id: 'existingDraftId',
       title: 'Draft',
       type: 'dropdown',
+      required: { field: 'operation', value: 'generate_from_plan' },
+      condition: { field: 'operation', value: 'generate_from_plan' },
+      description:
+        'Required. Pick the planned draft, confirm the product contract, then run Generate from Plan.',
+      placeholder: 'Select a plan',
+      options: [],
+      searchable: true,
+      dependsOn: ['operation'],
+      fetchOptions: async () => fetchGenerativeAppDrafts('all'),
+      fetchOptionById: async (_blockId: string, optionId: string) => {
+        const drafts = await fetchGenerativeAppDrafts('all')
+        const match = drafts.find((draft) => draft.id === optionId)
+        return match ?? { id: optionId, label: optionId }
+      },
+      previewHelper: 'arena-product-contract',
+    },
+    {
+      id: 'existingDraftId',
+      title: 'Draft',
+      type: 'dropdown',
       required: { field: 'operation', value: 'edit' },
       condition: { field: 'operation', value: 'edit' },
       description:
-        'Required in Edit mode. Pick the draft this block created (usually the latest on this workflow).',
+        'Required in Edit mode. Pick a generated draft (planned drafts cannot be edited).',
       placeholder: 'Select a draft',
       options: [],
       searchable: true,
       dependsOn: ['operation'],
-      fetchOptions: async () => fetchGenerativeAppDrafts(),
+      fetchOptions: async () => fetchGenerativeAppDrafts('generated'),
       fetchOptionById: async (_blockId: string, optionId: string) => {
-        const drafts = await fetchGenerativeAppDrafts()
+        const drafts = await fetchGenerativeAppDrafts('generated')
         const match = drafts.find((draft) => draft.id === optionId)
         return match ?? { id: optionId, label: optionId }
       },
@@ -136,7 +163,8 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       language: 'json',
       placeholder: '[]',
       description:
-        'Optional sitemap. Blank lets the model choose (Generate) or keeps the current pages untouched (Edit).',
+        'Optional sitemap. Blank lets the model choose (Plan / Generate) or keeps the current pages untouched (Edit). Hidden for Generate from Plan — the locked contract already has the sitemap.',
+      condition: { field: 'operation', value: ['generate', 'plan', 'edit'] },
       tooltip:
         'Optional JSON sitemap. Leave blank to let the model choose pages from User Input. In Edit, blank keeps the existing pages exactly as they are.\n\n[{"path":"home","title":"Form"},{"path":"results","title":"Score"}]',
     },
@@ -147,6 +175,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       placeholder: 'home',
       description:
         'First page after open. Defaults to home. Blank in Edit keeps the current entry.',
+      condition: { field: 'operation', value: ['generate', 'plan', 'edit'] },
       tooltip:
         'First page after open. Kebab-case path. Defaults to home if blank on Generate, and keeps the existing entry if blank on Edit.\n\nhome',
     },
@@ -176,10 +205,17 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
     },
   ],
   tools: {
-    access: ['arena_generative_ui_generate', 'arena_generative_ui_edit'],
+    access: [
+      'arena_generative_ui_plan',
+      'arena_generative_ui_generate',
+      'arena_generative_ui_edit',
+    ],
     config: {
-      tool: (params) =>
-        params.operation === 'edit' ? 'arena_generative_ui_edit' : 'arena_generative_ui_generate',
+      tool: (params) => {
+        if (params.operation === 'edit') return 'arena_generative_ui_edit'
+        if (params.operation === 'plan') return 'arena_generative_ui_plan'
+        return 'arena_generative_ui_generate'
+      },
       params: (params) => {
         const screenshots = normalizeFileInput(params.screenshots)
         const hasScreenshots = Array.isArray(screenshots)
@@ -191,29 +227,52 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
             : hasScreenshots
               ? MATCH_SCREENSHOT_USER_INPUT
               : params.userInput
-        return params.operation === 'edit'
-          ? {
-              editInstructions: params.editInstructions,
-              existingDraftId: params.existingDraftId,
-              screenshots,
-              pages: params.pages,
-              entryPath: params.entryPath,
-              apiBindings: params.apiBindings,
-              designNotes: params.designNotes,
-            }
-          : {
-              userInput,
-              screenshots,
-              pages: params.pages,
-              entryPath: params.entryPath,
-              apiBindings: params.apiBindings,
-              designNotes: params.designNotes,
-            }
+        if (params.operation === 'edit') {
+          return {
+            editInstructions: params.editInstructions,
+            existingDraftId: params.existingDraftId,
+            screenshots,
+            pages: params.pages,
+            entryPath: params.entryPath,
+            apiBindings: params.apiBindings,
+            designNotes: params.designNotes,
+          }
+        }
+        if (params.operation === 'generate_from_plan') {
+          return {
+            existingDraftId: params.existingDraftId,
+            lockPlan: true,
+            apiBindings: params.apiBindings,
+            designNotes: params.designNotes,
+          }
+        }
+        if (params.operation === 'plan') {
+          return {
+            userInput,
+            screenshots,
+            pages: params.pages,
+            entryPath: params.entryPath,
+            apiBindings: params.apiBindings,
+            designNotes: params.designNotes,
+            planOnly: true,
+          }
+        }
+        return {
+          userInput,
+          screenshots,
+          pages: params.pages,
+          entryPath: params.entryPath,
+          apiBindings: params.apiBindings,
+          designNotes: params.designNotes,
+        }
       },
     },
   },
   inputs: {
-    operation: { type: 'string', description: 'generate or edit' },
+    operation: {
+      type: 'string',
+      description: 'plan, generate_from_plan, generate, or edit',
+    },
     userInput: {
       type: 'string',
       description: 'App brief (Generate). Optional when screenshots are set.',
@@ -244,11 +303,13 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
     plannerError: { type: 'string', description: 'Why planning fell back to prose, if it did' },
     generateWarnings: {
       type: 'json',
-      description: 'Fail-open skips (intent, planner, visual, critic) when generate still succeeded',
+      description:
+        'Fail-open skips (intent, planner, visual, critic) when generate still succeeded',
     },
     adoptedChanges: {
       type: 'json',
-      description: 'Host auto-repairs applied so generate could succeed (for example one primary CTA)',
+      description:
+        'Host auto-repairs applied so generate could succeed (for example one primary CTA)',
     },
     editScope: { type: 'json', description: 'Pages rewritten on Edit, theme-only, or replan' },
   },

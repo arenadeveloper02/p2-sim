@@ -14,7 +14,7 @@ import {
 
 const DISPLAY_ENVELOPE_KEYS = new Set(['assistantContent', 'output', 'text', 'message', 'body'])
 
-const SCHEMA_ENVELOPE_SEGMENTS = new Set(['data', 'output', 'result', 'response', 'body'])
+export const SCHEMA_ENVELOPE_SEGMENTS = new Set(['data', 'output', 'result', 'response', 'body'])
 
 const PROSE_ITEM_FIELDS = new Set([
   'output',
