@@ -100,7 +100,7 @@ function getPreviousIds(): PreviousIdsResult {
   let hasChanges = false
   try {
     const diff = execSync(
-      `git diff --name-only ${baseRef} HEAD -- ${registryPath} ${blocksDir}`,
+      `git diff --name-only ${baseRef} -- ${registryPath} ${blocksDir}`,
       gitOpts
     ).trim()
     hasChanges = diff.length > 0
@@ -171,11 +171,11 @@ function checkSubblockIdStability(): CheckResult {
     const currIds = current[blockType]
     if (!currIds) continue
 
-    const migrations = SUBBLOCK_ID_MIGRATIONS[blockType] ?? {}
+    const migrations = SUBBLOCK_ID_MIGRATIONS[blockType] ?? []
 
     for (const oldId of prevIds) {
       if (currIds.has(oldId)) continue
-      if (oldId in migrations) continue
+      if (migrations.some((migration) => migration.from === oldId)) continue
 
       errors.push(
         `Block "${blockType}": subblock ID "${oldId}" was removed.\n` +

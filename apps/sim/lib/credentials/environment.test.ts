@@ -3,6 +3,7 @@
  */
 import { credential, permissions, workspace } from '@sim/db/schema'
 import { dbChainMock, dbChainMockFns, queueTableRows, resetDbChainMock } from '@sim/testing'
+import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DbOrTx } from '@/lib/db/types'
 
@@ -15,10 +16,43 @@ vi.mock('@/lib/billing/organizations/billing-identity-lock', () => ({
 }))
 
 import {
+  createWorkspaceEnvCredentials,
+  getEnrolledManagedOAuthCredentials,
   getPersonalEnvKeyRawAccess,
   getWorkspaceEnvKeyAdminAccess,
   syncPersonalEnvCredentialsForUser,
 } from '@/lib/credentials/environment'
+
+describe('managed OAuth credential lookup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+  })
+
+  it.each(['active', 'revoked'] as const)(
+    'bounds lookup and preserves %s binding checks',
+    async (status) => {
+      queueTableRows(credential, [
+        {
+          id: 'mine',
+          providerId: 'slack',
+          displayName: 'Slack',
+          credentialGroupOptionId: 'option',
+          managedOauthStatus: status,
+          enrollmentStatus: 'completed',
+          groupName: 'Connected accounts',
+          groupStatus: 'active',
+          groupOptions: [{ id: 'option', status: 'active' }],
+        },
+      ])
+      const result = await getEnrolledManagedOAuthCredentials('workspace', 'person', 'mine')
+      expect(eq).toHaveBeenCalledWith(credential.id, 'mine')
+      expect(eq).toHaveBeenCalledWith(credential.workspaceId, 'workspace')
+      expect(dbChainMockFns.limit).toHaveBeenCalledWith(1)
+      expect(result).toHaveLength(status === 'active' ? 1 : 0)
+    }
+  )
+})
 
 describe('getPersonalEnvKeyRawAccess', () => {
   beforeEach(() => {
@@ -237,5 +271,43 @@ describe('syncPersonalEnvCredentialsForUser', () => {
       expect.objectContaining({ workspaceId: 'ws-1', envKey: 'API_KEY' }),
       expect.objectContaining({ workspaceId: 'ws-2', envKey: 'API_KEY' }),
     ])
+  })
+})
+
+describe('createWorkspaceEnvCredentials', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+  })
+
+  /**
+   * The membership row count is keys × members, and neither is bounded by the
+   * request contract. A single statement past Postgres's 65535 bind parameters
+   * throws — and because this now runs inside the value's transaction, that
+   * would roll back the save on every retry rather than half-committing it.
+   */
+  it('splits a keys x members write too wide for one statement', async () => {
+    const keys = Array.from({ length: 40 }, (_, i) => `KEY_${i}`)
+    queueTableRows(workspace, [{ ownerId: 'owner-1' }])
+    queueTableRows(
+      permissions,
+      Array.from({ length: 60 }, (_, i) => ({ userId: `member-${i}` }))
+    )
+    // Every chunk of the credential insert reports its rows back as created.
+    dbChainMockFns.returning.mockImplementation(() =>
+      Promise.resolve(keys.map((_, i) => ({ id: `credential-${i}` })))
+    )
+
+    await createWorkspaceEnvCredentials({
+      workspaceId: 'ws-1',
+      newKeys: keys,
+      actingUserId: 'member-0',
+    })
+
+    const rowsPerCall = dbChainMockFns.values.mock.calls.map(([rows]) =>
+      Array.isArray(rows) ? rows.length : 1
+    )
+    expect(rowsPerCall.length).toBeGreaterThan(1)
+    expect(Math.max(...rowsPerCall)).toBeLessThanOrEqual(500)
   })
 })

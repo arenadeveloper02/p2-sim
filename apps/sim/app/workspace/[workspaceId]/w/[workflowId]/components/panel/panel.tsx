@@ -7,9 +7,11 @@ import {
   Button,
   Chip,
   ChipConfirmModal,
+  ChipLink,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Duplicate,
   Layout,
@@ -23,12 +25,11 @@ import {
   Trash,
   toast,
 } from '@sim/emcn'
-import { BubbleChatDelay, Download, Lock, Unlock } from '@sim/emcn/icons'
+import { BubbleChatDelay, Download, Lock, Unlock, Zap } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Zap } from 'lucide-react'
-import Link from 'next/link'
+import { Plus } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
@@ -42,7 +43,7 @@ import {
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
 import { getWorkspaceUsageLimitAction } from '@/lib/billing/workspace-permissions'
-import { isChatEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import {
   MOTHERSHIP_SEND_MESSAGE_EVENT,
   type MothershipSendMessageDetail,
@@ -96,6 +97,7 @@ import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useLocalCopilotCatalogSelection } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
 import { useChatStore } from '@/stores/chat/store'
+import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
 import { useVariablesModalStore } from '@/stores/variables/modal'
@@ -166,10 +168,12 @@ const RunAgentExternalChat = ({
   const isExternalUrl = chatUrl.startsWith('http://') || chatUrl.startsWith('https://')
 
   return (
-    <Link
+    <ChipLink
       href={chatUrl}
       target={isExternalUrl ? '_blank' : undefined}
       rel={isExternalUrl ? 'noopener noreferrer' : undefined}
+      variant='primary'
+      leftIcon={Zap}
       onClick={() =>
         workflowRunCTAEvent({
           'Workspace Name': workspaceName || '',
@@ -177,15 +181,28 @@ const RunAgentExternalChat = ({
         })
       }
     >
-      <Button className='h-[32px] w-[61.5px] gap-[8px]' variant={'tertiary'}>
-        <Zap className='h-[11.5px] w-[11.5px] fill-current' />
-        Run
-      </Button>
-    </Link>
+      Run
+    </ChipLink>
   )
 }
 
 const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
+
+/**
+ * Builds the persisted draft key for a workflow-copilot chat.
+ *
+ * Scoped per chat, not per workflow: a draft is cleared only on submit, so a
+ * workflow-wide key carries one chat's typed text, contexts, and attachments
+ * into the next chat selected. The workflow segment stays so each workflow
+ * keeps its own unselected-chat (`new`) draft.
+ */
+function copilotDraftKey(
+  workspaceId: string,
+  workflowId: string | undefined,
+  chatId: string | undefined
+): string | undefined {
+  return workflowId ? `${workspaceId}:workflow-copilot:${workflowId}:${chatId ?? 'new'}` : undefined
+}
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
  *
@@ -208,8 +225,10 @@ export const Panel = memo(function Panel() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const workflowIdFromUrl = typeof params.workflowId === 'string' ? params.workflowId : undefined
+  const routeWorkflowId = params.workflowId as string | undefined
 
   const posthog = usePostHog()
+  const { chatEnabled } = useDeploymentShape()
   const posthogRef = useRef(posthog)
 
   const panelRef = useRef<HTMLElement>(null)
@@ -250,7 +269,7 @@ export const Panel = memo(function Panel() {
    * `hidden`, so a persisted `activeTab: 'copilot'` would hide all three and
    * paint an empty panel — resolve it to the toolbar instead.
    */
-  const isCopilotTabAvailable = isChatEnabled && !permissionConfig.hideCopilot
+  const isCopilotTabAvailable = chatEnabled && !permissionConfig.hideCopilot
   const activeTab: PanelTab =
     storedActiveTab === 'copilot' && !isCopilotTabAvailable ? 'toolbar' : storedActiveTab
   const { isImporting, handleFileChange } = useImportWorkflow({ workspaceId })
@@ -261,7 +280,7 @@ export const Panel = memo(function Panel() {
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
-  const editorWorkflowId = activeWorkflowId || workflowIdFromUrl
+  const editorWorkflowId = activeWorkflowId || routeWorkflowId
   const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null)
 
   // Check for locked blocks (disables auto-layout)
@@ -370,6 +389,9 @@ export const Panel = memo(function Panel() {
   const { chatId: copilotChatId, setChatId: setCopilotChatId } =
     useCopilotChatSelection(editorWorkflowId)
 
+  const copilotDraftWorkflowId = activeWorkflowId ?? routeWorkflowId
+  const copilotDraftScopeKey = copilotDraftKey(workspaceId, copilotDraftWorkflowId, copilotChatId)
+
   const { data: copilotChatList = EMPTY_COPILOT_CHATS } = useCopilotChats(
     isCopilotTabAvailable ? editorWorkflowId : undefined
   )
@@ -428,13 +450,16 @@ export const Panel = memo(function Panel() {
           if (copilotChatId === chatId) {
             setCopilotChatId(undefined)
           }
+          // The draft store is persisted, so an unpruned key survives forever.
+          const draftKey = copilotDraftKey(workspaceId, copilotDraftWorkflowId, chatId)
+          if (draftKey) useMothershipDraftsStore.getState().clearDraft(draftKey)
           loadCopilotChats()
         })
         .catch((err) => {
           logger.error('Failed to delete copilot chat', { error: toError(err).message, chatId })
         })
     },
-    [copilotChatId, loadCopilotChats, setCopilotChatId]
+    [copilotChatId, loadCopilotChats, setCopilotChatId, workspaceId, copilotDraftWorkflowId]
   )
 
   const handleCopilotToolResult = useCallback(
@@ -596,6 +621,8 @@ export const Panel = memo(function Panel() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<MothershipSendMessageDetail>).detail
       if (!detail?.message) return
+      /** A mode-bearing send (Ask) belongs to the home chat, which has the mode; left unclaimed, it is stored for that surface. */
+      if (detail.requestMode) return
       e.preventDefault()
       setActiveTab('copilot')
       copilotSendMessage(detail.message, detail.fileAttachments, detail.contexts, {
@@ -760,13 +787,10 @@ export const Panel = memo(function Panel() {
     setIsMenuOpen(false)
   }, [collaborativeBatchToggleLocked])
 
-  // Compute run button state
-  const canRun = userPermissions.canRead // Running only requires read permissions
+  const canRun = userPermissions.canRead
   const isLoadingPermissions = userPermissions.isLoading
-  const hasValidationErrors = false // TODO: Add validation logic if needed
-  const isWorkflowBlocked = isExecuting || hasValidationErrors
   const isButtonDisabled =
-    !isExecuting && (isUsageGateLoading || isWorkflowBlocked || (!canRun && !isLoadingPermissions))
+    !isExecuting && (isUsageGateLoading || (!canRun && !isLoadingPermissions))
 
   /**
    * Register global keyboard shortcuts using the central commands registry.
@@ -811,7 +835,7 @@ export const Panel = memo(function Panel() {
       >
         <div className='flex h-full flex-col border-[var(--border)] border-l pt-3.5 dark:border-[var(--border)]'>
           {/* Header */}
-          <div className='flex flex-shrink-0 items-center justify-between px-2'>
+          <div className='flex shrink-0 items-center justify-between px-2'>
             {/* More and Chat */}
             <div className='flex gap-1.5'>
               <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
@@ -870,6 +894,7 @@ export const Panel = memo(function Panel() {
                     <Duplicate />
                     Duplicate workflow
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={() => {
                       setIsDeleteModalOpen(true)
@@ -915,7 +940,7 @@ export const Panel = memo(function Panel() {
                 leftAdornment={
                   <span
                     aria-hidden='true'
-                    className='inline-flex size-5 flex-shrink-0 items-center justify-center overflow-visible'
+                    className='inline-flex size-5 shrink-0 items-center justify-center overflow-visible'
                   >
                     <ThinkingLoader
                       variant={isExecuting ? undefined : 'play'}
@@ -939,7 +964,7 @@ export const Panel = memo(function Panel() {
           </div>
 
           {/* Tabs */}
-          <div className='flex flex-shrink-0 items-center justify-between px-2 pt-3.5'>
+          <div className='flex shrink-0 items-center justify-between px-2 pt-3.5'>
             <div className='flex gap-1'>
               {isCopilotTabAvailable && (
                 <Button
@@ -996,7 +1021,7 @@ export const Panel = memo(function Panel() {
                 data-tab-content='copilot'
               >
                 {/* Copilot Header */}
-                <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
+                <div className='mx-[-1px] flex shrink-0 items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
                   <h2 className='min-w-0 flex-1 truncate text-[var(--text-primary)] text-sm'>
                     {copilotChatTitle || 'New Chat'}
                   </h2>
@@ -1037,7 +1062,7 @@ export const Panel = memo(function Panel() {
                                       titleClassName='text-small'
                                       actions={
                                         <div
-                                          className={`flex flex-shrink-0 items-center gap-1 ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
+                                          className={`flex shrink-0 items-center gap-1 ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
                                         >
                                           <Button
                                             variant='ghost'
@@ -1070,6 +1095,7 @@ export const Panel = memo(function Panel() {
                   mothershipChat={
                     <MothershipChat
                       className='min-h-0 flex-1'
+                      workspaceId={workspaceId}
                       messages={copilotMessages}
                       isSending={copilotIsSending}
                       isReconnecting={copilotIsReconnecting}
@@ -1084,6 +1110,7 @@ export const Panel = memo(function Panel() {
                       onCancelQueueEdit={copilotCancelQueueEdit}
                       userId={session?.user?.id}
                       chatId={copilotResolvedChatId}
+                      draftScopeKey={copilotDraftScopeKey}
                       layout='copilot-view'
                       canSwitchCopilotBackend={canSwitchBackend}
                       copilotBackend={copilotBackend}
@@ -1138,6 +1165,7 @@ export const Panel = memo(function Panel() {
         onOpenChange={setIsDeleteModalOpen}
         srTitle='Delete Workflow'
         title='Delete Workflow'
+        defaultAction='dismiss'
         text={[
           'Are you sure you want to delete ',
           { text: currentWorkflow?.name ?? 'this workflow', bold: true },

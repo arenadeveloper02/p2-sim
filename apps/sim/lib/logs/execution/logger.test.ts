@@ -669,7 +669,9 @@ describe('ExecutionLogger', () => {
         activeExecutionPathLength: 0,
         pendingQueueLength: 0,
       })
-      expect(compacted.traceSpans?.[0]?.children?.[0]).not.toHaveProperty('input')
+      expect(compacted.traceSpans?.[0]?.children?.[0]?.input).toEqual(
+        expect.objectContaining({ _truncated: true, reason: 'trace_io_size_limit' })
+      )
     })
 
     test('retains the trusted Copilot binding in metadata-only compaction', () => {
@@ -1519,7 +1521,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
     expect(lastEntries()).toEqual([
       expect.objectContaining({
-        category: 'model',
+        category: 'model_unbilled',
         description: 'gpt-4o',
         cost: 0,
         metadata: { inputTokens: 120, outputTokens: 45 },

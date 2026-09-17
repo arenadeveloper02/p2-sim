@@ -4,7 +4,6 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import {
   Button,
   Chip,
-  ChipLink,
   chipVariants,
   cn,
   DropdownMenu,
@@ -15,15 +14,17 @@ import {
   Home,
   Library,
   Loader,
+  OverflowText,
   Skeleton,
+  scrollFadeAttributes,
+  scrollFadeClass,
   Tooltip,
   Upload,
+  useScrollEdges,
 } from '@sim/emcn'
 import {
-  BookOpen,
   Database,
   Files,
-  HelpCircle,
   Integration,
   MoreHorizontal,
   PanelLeft,
@@ -35,19 +36,17 @@ import {
   Workflow,
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
-import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
-import { SlackIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { focusVisibleBrowserOmnibox } from '@/lib/browser-agent/renderer-shortcuts'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { isChatEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isStatusNoticePreviewEnabled } from '@/lib/core/config/env-flags'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPathNames } from '@/lib/folders/tree'
-import { captureEvent } from '@/lib/posthog/client'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { useSidebarChrome } from '@/app/workspace/[workspaceId]/components/workspace-chrome'
 import { CONNECT_MODE } from '@/app/workspace/[workspaceId]/integrations/connect-route'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -55,17 +54,25 @@ import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/provide
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
+  ChatNavigationLink,
   CollapsedChatFlyoutItem,
   CollapsedFolderItems,
   CollapsedSidebarMenu,
   CollapsedWorkflowFlyoutItem,
+  FilesRailFlyout,
   HelpModal,
+  isNavItemActive,
   NavItemContextMenu,
   SearchModal,
   SettingsSidebar,
   SidebarBrandHeader,
   SidebarFooter,
+  SidebarNavChip,
+  type SidebarNavItemData,
   SidebarSection,
+  SidebarTooltip,
+  StatusNotice,
+  TablesRailFlyout,
   WorkflowList,
   WorkspaceHeader,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
@@ -83,12 +90,10 @@ import {
   SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
   SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
   SIDEBAR_ITEM_GAP_CLASS,
-  SIDEBAR_RAIL_CHIP_CLASS,
   SIDEBAR_SECTION_GAP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import {
   useChatSelection,
-  useContextMenu,
   useFlyoutInlineRename,
   useFolderOperations,
   useHoverMenu,
@@ -96,6 +101,8 @@ import {
   useWorkflowOperations,
   useWorkspaceLogoUpload,
   useWorkspaceManagement,
+  useWorkspaceWorkflowsRoom,
+  WORKSPACE_LOGO_ACCEPT_ATTRIBUTE,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import {
   compareByOrder,
@@ -105,7 +112,6 @@ import {
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
-import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { type LogFilters, useLogsList } from '@/hooks/queries/logs'
@@ -121,6 +127,7 @@ import {
 } from '@/hooks/queries/mothership-chats'
 import { useUpdateWorkflow } from '@/hooks/queries/workflows'
 import type { Workspace } from '@/hooks/queries/workspace'
+import { useContextMenu } from '@/hooks/use-context-menu'
 import { useMothershipChatEvents } from '@/hooks/use-mothership-chat-events'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -165,38 +172,11 @@ const SEARCH_MODAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 })
 
-const SLACK_COMMUNITY_URL =
-  'https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA'
-
-export function SidebarTooltip({
-  children,
-  label,
-  enabled,
-  side = 'right',
-  shortcut,
-}: {
-  children: React.ReactElement
-  label: string
-  enabled: boolean
-  side?: 'right' | 'bottom'
-  shortcut?: string
-}) {
-  if (!enabled) return children
-  return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
-      <Tooltip.Content side={side}>
-        {shortcut ? <Tooltip.Shortcut keys={shortcut}>{label}</Tooltip.Shortcut> : <p>{label}</p>}
-      </Tooltip.Content>
-    </Tooltip.Root>
-  )
-}
-
 /** Stands in for a chip row while a list loads, so it carries no margin either. */
 function SidebarItemSkeleton() {
   return (
     <div className='sidebar-collapse-hide flex h-[30px] items-center gap-2 rounded-lg px-2'>
-      <Skeleton className='h-[16px] w-[16px] flex-shrink-0 rounded-sm' />
+      <Skeleton className='h-[16px] w-[16px] shrink-0 rounded-sm' />
     </div>
   )
 }
@@ -258,8 +238,10 @@ const SidebarChatItem = memo(function SidebarChatItem({
 
   return (
     <SidebarTooltip label={chat.name} enabled={showCollapsedTooltips}>
-      <Link
+      <ChatNavigationLink
+        chatId={chat.id}
         href={chat.href}
+        isCurrentRoute={isCurrentRoute}
         className={chipVariants({
           active: isCurrentRoute || isSelected || isMenuOpen,
           fullWidth: true,
@@ -278,9 +260,9 @@ const SidebarChatItem = memo(function SidebarChatItem({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className='min-w-0 flex-1 truncate text-[var(--text-body)]'>{chat.name}</div>
+        <OverflowText label={chat.name} className='flex-1 text-[var(--text-body)]' />
         {chat.id !== 'new' && (
-          <div className='relative flex size-[18px] flex-shrink-0 items-center justify-center'>
+          <div className='relative flex size-[18px] shrink-0 items-center justify-center'>
             {showStatusDot && (
               <span
                 aria-hidden='true'
@@ -320,31 +302,10 @@ const SidebarChatItem = memo(function SidebarChatItem({
             </button>
           </div>
         )}
-      </Link>
+      </ChatNavigationLink>
     </SidebarTooltip>
   )
 })
-
-interface SidebarNavItemData {
-  id: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  href?: string
-  onClick?: () => void
-  /** Extra path prefixes that should also mark this item as active (e.g. sibling tabs). */
-  additionalActivePaths?: string[]
-}
-
-/**
- * Returns true when the current pathname matches `item.href` or any
- * `additionalActivePaths` at a segment boundary (avoids `/foo` matching `/foo-bar`).
- */
-function isNavItemActive(item: SidebarNavItemData, pathname: string | null): boolean {
-  if (!pathname) return false
-  const matches = (p: string) => pathname === p || pathname.startsWith(`${p}/`)
-  if (item.href && matches(item.href)) return true
-  return item.additionalActivePaths?.some(matches) ?? false
-}
 
 const SidebarNavItem = memo(function SidebarNavItem({
   item,
@@ -357,45 +318,17 @@ const SidebarNavItem = memo(function SidebarNavItem({
   showCollapsedTooltips: boolean
   onContextMenu?: (e: React.MouseEvent, href: string) => void
 }) {
-  const element = item.href ? (
-    <ChipLink
-      href={item.href}
-      data-item-id={item.id}
-      leftIcon={item.icon}
-      active={active}
-      fullWidth
-      className={SIDEBAR_RAIL_CHIP_CLASS}
-      onClick={
-        item.onClick
-          ? (e) => {
-              if (e.ctrlKey || e.metaKey || e.shiftKey) return
-              e.preventDefault()
-              item.onClick!()
-            }
-          : undefined
-      }
-      onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
-    >
-      {item.label}
-    </ChipLink>
-  ) : item.onClick ? (
-    <Chip
-      data-item-id={item.id}
-      leftIcon={item.icon}
-      active={active}
-      fullWidth
-      className={SIDEBAR_RAIL_CHIP_CLASS}
-      onClick={item.onClick}
-    >
-      {item.label}
-    </Chip>
-  ) : null
-
-  if (!element) return null
+  if (!item.href && !item.onClick) return null
 
   return (
     <SidebarTooltip label={item.label} enabled={showCollapsedTooltips}>
-      {element}
+      <SidebarNavChip
+        item={item}
+        active={active}
+        onContextMenu={
+          onContextMenu && item.href ? (e) => onContextMenu(e, item.href as string) : undefined
+        }
+      />
     </SidebarTooltip>
   )
 })
@@ -422,30 +355,14 @@ const DRAG_EXEMPT_CLASS = '[-webkit-app-region:no-drag]'
  *
  * This ensures server and client render identical HTML, preventing hydration errors.
  *
+ * Collapse and peek state come from the hosting chrome through
+ * {@link useSidebarChrome}; the peek card always renders the expanded layout,
+ * whatever the rail's state.
+ *
  * @returns Sidebar with workflows panel
  */
-interface SidebarProps {
-  /**
-   * Authoritative collapse state, derived once in {@link WorkspaceChrome} from the
-   * `sidebar_collapsed` cookie (server prop → store after hydration) and passed in
-   * so the rail's structure, labels, and width all read a single source.
-   */
-  isCollapsed: boolean
-  /**
-   * True while the sidebar is rendered as the desktop hover-peek card. The card shows
-   * the expanded layout even though the rail is collapsed, so this overrides
-   * {@link SidebarProps.isCollapsed} below — and separately suppresses the chrome the
-   * card already provides: it sits below the traffic-light lane, and drag-resize would
-   * fight the card's width.
-   */
-  isPeeking?: boolean
-}
-
-export const Sidebar = memo(function Sidebar({
-  isCollapsed: isCollapsedProp,
-  isPeeking = false,
-}: SidebarProps) {
-  /** The peek card always renders the expanded layout, whatever the rail's state. */
+export const Sidebar = memo(function Sidebar() {
+  const { isCollapsed: isCollapsedProp, isPeeking } = useSidebarChrome()
   const isCollapsed = isCollapsedProp && !isPeeking
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -459,9 +376,9 @@ export const Sidebar = memo(function Sidebar({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
 
-  const posthog = usePostHog()
   const { data: sessionData, isPending: sessionLoading } = useSession()
   const { workspace: routeWorkspace } = useWorkspaceHostContext()
+  const { hosted, chatEnabled } = useDeploymentShape()
   const { canAdmin, canEdit, isLoading: permissionsLoading } = useUserPermissionsContext()
   const {
     config: permissionConfig,
@@ -470,7 +387,7 @@ export const Sidebar = memo(function Sidebar({
     isToolAllowed,
     integrationAvailability,
   } = usePermissionConfig()
-  const { navigateToSettings } = useSettingsNavigation()
+  const { getSettingsHref, navigateToSettings } = useSettingsNavigation()
   const initializeSearchData = useSearchModalStore((state) => state.initializeData)
   const customBlockOverlayVersion = useCustomBlockOverlayVersion()
   const providers = useProvidersStore((state) => state.providers)
@@ -625,6 +542,7 @@ export const Sidebar = memo(function Sidebar({
   })
 
   useFolders(workspaceId)
+  useWorkspaceWorkflowsRoom(workspaceId)
   const { data: folderMap = EMPTY_FOLDER_MAP } = useFolderMap(workspaceId)
   const updateWorkflowMutation = useUpdateWorkflow()
 
@@ -722,6 +640,8 @@ export const Sidebar = memo(function Sidebar({
   const chatsHover = useHoverMenu()
   const workflowsHover = useHoverMenu()
   const brand = useOrgBrandConfig()
+  const tablesHover = useHoverMenu()
+  const filesHover = useHoverMenu()
 
   const {
     isOpen: isChatContextMenuOpen,
@@ -818,7 +738,6 @@ export const Sidebar = memo(function Sidebar({
         href: `/workspace/${workspace.id}/w`,
         isCurrent: workspace.id === workspaceId,
         logoUrl: workspace.logoUrl,
-        color: workspace.color,
       })),
     [workspaces, workspaceId]
   )
@@ -828,26 +747,36 @@ export const Sidebar = memo(function Sidebar({
       [
         {
           id: 'home',
-          label: isChatEnabled ? 'New chat' : 'New workflow',
-          icon: isChatEnabled ? Home : Plus,
-          href: isChatEnabled ? `/workspace/${workspaceId}/home` : undefined,
-          onClick: isChatEnabled ? undefined : createWorkflow,
+          label: chatEnabled ? 'New chat' : 'New workflow',
+          icon: chatEnabled ? Home : Plus,
+          href: chatEnabled ? `/workspace/${workspaceId}/home` : undefined,
+          onClick: chatEnabled ? undefined : createWorkflow,
           // Creation navigates optimistically, so a read-only member would land
           // on a workflow the server declined to create.
-          hidden: !isChatEnabled && !permissionsLoading && !canEdit,
+          hidden: !chatEnabled && !permissionsLoading && !canEdit,
         },
         {
           id: 'integrations',
           label: 'Integrations',
           icon: Integration,
           href: `/workspace/${workspaceId}/integrations`,
-          /* Skills is a tab of this surface, not its own nav item — keep the entry
-             lit while the user is on it. */
-          additionalActivePaths: [`/workspace/${workspaceId}/skills`],
+          /* Skills and Search are tabs of this surface, not their own nav items —
+             keep the entry lit while the user is on either. */
+          additionalActivePaths: [
+            `/workspace/${workspaceId}/skills`,
+            `/workspace/${workspaceId}/search`,
+          ],
           hidden: permissionConfig.hideIntegrationsTab,
         },
       ].filter((item) => !item.hidden),
-    [workspaceId, createWorkflow, canEdit, permissionsLoading, permissionConfig.hideIntegrationsTab]
+    [
+      workspaceId,
+      createWorkflow,
+      canEdit,
+      permissionsLoading,
+      permissionConfig.hideIntegrationsTab,
+      chatEnabled,
+    ]
   )
 
   const workspaceNavItems = useMemo(
@@ -889,19 +818,29 @@ export const Sidebar = memo(function Sidebar({
     ]
   )
 
-  const handleOpenSettings = useCallback(
-    (section: SettingsSection) => {
-      if (!isCollapsedRef.current) {
-        setSidebarWidth(SIDEBAR_WIDTH.MIN)
-      }
-      navigateToSettings({ section })
-    },
-    [navigateToSettings, setSidebarWidth]
-  )
+  /**
+   * Rail flyouts by nav id; a nav item without one stays a plain link. Each element is only
+   * built here — Radix mounts menu content on open, so the flyout's queries do not run (and
+   * do not subscribe) until the user actually hovers the chip.
+   */
+  const railFlyouts: Record<
+    string,
+    { hover: ReturnType<typeof useHoverMenu>; content: React.ReactNode } | undefined
+  > = {
+    tables: { hover: tablesHover, content: <TablesRailFlyout workspaceId={workspaceId} /> },
+    files: { hover: filesHover, content: <FilesRailFlyout workspaceId={workspaceId} /> },
+  }
+
+  const handleOpenSettings = (section: SettingsSection) => {
+    if (!isCollapsedRef.current) {
+      setSidebarWidth(SIDEBAR_WIDTH.MIN)
+    }
+    navigateToSettings({ section })
+  }
 
   const { data: fetchedChats = EMPTY_CHATS, isLoading: chatsLoading } = useMothershipChats(
     workspaceId,
-    { enabled: isChatEnabled }
+    { enabled: chatEnabled }
   )
 
   useMothershipChatEvents(workspaceId)
@@ -1054,33 +993,10 @@ export const Sidebar = memo(function Sidebar({
     [workflowFlyoutRename, workflowsHover]
   )
 
-  const [hasOverflowTop, setHasOverflowTop] = useState(false)
-  const [hasOverflowBottom, setHasOverflowBottom] = useState(false)
-
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    const updateScrollState = () => {
-      setHasOverflowTop(container.scrollTop > 1)
-      setHasOverflowBottom(
-        container.scrollHeight - container.scrollTop - container.clientHeight > 1
-      )
-    }
-
-    updateScrollState()
-    container.addEventListener('scroll', updateScrollState, { passive: true })
-    const observer = new ResizeObserver(updateScrollState)
-    observer.observe(container)
-    if (scrollContentRef.current) {
-      observer.observe(scrollContentRef.current)
-    }
-
-    return () => {
-      container.removeEventListener('scroll', updateScrollState)
-      observer.disconnect()
-    }
-  }, [])
+  const scrollEdges = useScrollEdges(scrollContainerRef, {
+    contentRef: scrollContentRef,
+    enabled: !isCollapsed,
+  })
 
   const isOnSettingsPage = pathname?.startsWith(`/workspace/${workspaceId}/settings`) ?? false
 
@@ -1256,10 +1172,10 @@ export const Sidebar = memo(function Sidebar({
     [workspaces, handleLeaveWorkspace]
   )
 
-  const chatsCollapsedIcon = <Task className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+  const chatsCollapsedIcon = <Task className='size-[16px] shrink-0 text-[var(--text-icon)]' />
 
   const workflowsCollapsedIcon = (
-    <Workflow className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+    <Workflow className='size-[16px] shrink-0 text-[var(--text-icon)]' />
   )
 
   const workflowsPrimaryAction = {
@@ -1282,43 +1198,10 @@ export const Sidebar = memo(function Sidebar({
     [isCollapsed, toggleCollapsed]
   )
 
-  const handleOpenHelpFromMenu = useCallback(() => setIsHelpModalOpen(true), [])
-
-  const handleOpenDocs = useCallback(() => {
-    window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
-  }, [posthog])
-
-  const handleOpenSlackCommunity = useCallback(() => {
-    window.open(SLACK_COMMUNITY_URL, '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
-  }, [posthog])
-
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]
   )
-
-  const handleOpenArenaDocs = useCallback(() => {
-    window.open(resolveBrandDocsUrl(brand?.documentationUrl), '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
-  }, [brand?.documentationUrl, posthog])
-
-  const handleContactSupport = useCallback(() => {
-    if (!brand?.supportEmail) return
-    window.location.href = `mailto:${brand.supportEmail}`
-  }, [brand?.supportEmail])
-
-  const handleOpenTerms = useCallback(() => {
-    if (!brand?.termsUrl) return
-    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
-  }, [brand?.termsUrl])
-
-  const handleOpenPrivacy = useCallback(() => {
-    if (!brand?.privacyUrl) return
-    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
-  }, [brand?.privacyUrl])
-
   const handleWorkflowRenameBlur = useCallback(
     () => void workflowFlyoutRename.saveRename(),
     [workflowFlyoutRename.saveRename]
@@ -1396,7 +1279,7 @@ export const Sidebar = memo(function Sidebar({
       <input
         ref={logoFileInputRef}
         type='file'
-        accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
+        accept={WORKSPACE_LOGO_ACCEPT_ATTRIBUTE}
         className='hidden'
         onChange={handleLogoFileChange}
       />
@@ -1437,7 +1320,7 @@ export const Sidebar = memo(function Sidebar({
             )}
             <div
               className={cn(
-                'relative flex flex-shrink-0 items-center px-2 pt-3',
+                'relative flex shrink-0 items-center px-2 pt-2',
                 !isPeeking &&
                   '[[data-sim-desktop-title-bar=inset]_&]:pt-[var(--desktop-title-bar-height)]'
               )}
@@ -1468,8 +1351,7 @@ export const Sidebar = memo(function Sidebar({
               {/*
                * The trailing chips collapse as one cluster rather than individually: a
                * chip's own `px-2` still renders under border-box, so `w-0` on the chip
-               * would leave a 16px stub — the width animation has to sit on an unpadded
-               * wrapper.
+               * would leave a 16px stub — the width has to sit on an unpadded wrapper.
                *
                * Chips carry no outer margin, so the gap here is the whole distance
                * between them. `gap-[1px]` rather than `gap-px`: the `px` spacing key
@@ -1477,19 +1359,15 @@ export const Sidebar = memo(function Sidebar({
                * hairline rules stay hairlines.
                *
                * The expanded width is EXPLICIT (2 icon chips × 32px + the 1px gap;
-               * 32px when the desktop inset title bar hides the collapse chip), never
-               * `auto`: `w-0 → auto` cannot interpolate, so on expand the cluster
-               * snapped to full width while the rail was still 51px wide — and since
-               * the cluster refuses to flex-shrink (min-width: auto) while the
-               * workspace chip's wrapper is `min-w-0 flex-1`, the workspace chip
-               * crushed to zero and the hover-filled Search chip landed exactly under
-               * the cursor on the workspace icon: a visible flash on every expand.
-               * With both endpoints explicit, the width tweens in step with the rail
-               * and the workspace chip keeps its space throughout.
+               * 32px when the desktop inset title bar hides the collapse chip) so the
+               * cluster never claims more than its chips: it refuses to flex-shrink
+               * (min-width: auto) while the workspace chip's wrapper is `min-w-0
+               * flex-1`, so an `auto` width would crush the workspace chip instead.
                */}
               <div
+                inert={isCollapsed}
                 className={cn(
-                  'flex h-[30px] items-center gap-[1px] overflow-hidden transition-all duration-200 [transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]',
+                  'flex h-[30px] items-center gap-[1px] overflow-hidden',
                   isCollapsed
                     ? 'w-0 opacity-0'
                     : 'w-[65px] [[data-sim-desktop-title-bar=inset]_&]:w-[32px]'
@@ -1538,12 +1416,16 @@ export const Sidebar = memo(function Sidebar({
               />
             ) : (
               <>
+                {/* The divider is the pinned block's bottom rule, not the scroll region's top one:
+                    the region's edge fade masks its own first pixels, which would erase a rule
+                    drawn there exactly when it should show. Same construction as the footer. */}
                 <div
                   className={cn(
                     SIDEBAR_SECTION_GAP_CLASS,
                     SIDEBAR_ITEM_GAP_CLASS,
                     SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
-                    'flex flex-shrink-0 flex-col px-2'
+                    'flex shrink-0 flex-col border-b px-2 transition-colors duration-150',
+                    !scrollEdges.top && 'border-transparent'
                   )}
                 >
                   {topNavItems.map((item) => (
@@ -1561,51 +1443,56 @@ export const Sidebar = memo(function Sidebar({
                   ref={isCollapsed ? undefined : scrollContainerRef}
                   className={cn(
                     SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
-                    'flex flex-1 flex-col overflow-y-auto overflow-x-hidden border-t transition-colors duration-150',
-                    !hasOverflowTop && 'border-transparent'
+                    SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
+                    scrollFadeClass,
+                    'flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden'
                   )}
+                  {...scrollFadeAttributes(scrollEdges)}
                 >
                   <div ref={scrollContentRef} className='flex flex-col'>
-                    {isChatEnabled && (
+                    {chatEnabled && (
                       <SidebarSection
                         title='Chats'
                         railCollapsed={isCollapsed}
-                        className='chats-section flex-shrink-0'
+                        className='chats-section shrink-0'
                       >
                         {isCollapsed ? (
-                          <CollapsedSidebarMenu
-                            icon={chatsCollapsedIcon}
-                            hover={chatsHover}
-                            ariaLabel='Chats'
-                          >
-                            {chatsLoading ? (
-                              <DropdownMenuItem disabled>
-                                <Loader className='size-[14px]' animate />
-                                Loading...
-                              </DropdownMenuItem>
-                            ) : chats.length === 0 ? (
-                              <DropdownMenuItem disabled>No chats yet</DropdownMenuItem>
-                            ) : (
-                              chats.map((chat) => (
-                                <CollapsedChatFlyoutItem
-                                  key={chat.id}
-                                  chat={chat}
-                                  isCurrentRoute={pathname === chat.href}
-                                  isMenuOpen={menuOpenChatId === chat.id}
-                                  isEditing={chat.id === chatFlyoutRename.editingId}
-                                  editValue={chatFlyoutRename.value}
-                                  inputRef={chatFlyoutRename.inputRef}
-                                  isRenaming={chatFlyoutRename.isSaving}
-                                  onEditValueChange={chatFlyoutRename.setValue}
-                                  onEditKeyDown={chatFlyoutRename.handleKeyDown}
-                                  onEditBlur={handleChatRenameBlur}
-                                  onContextMenu={handleChatContextMenu}
-                                  onMorePointerDown={handleChatMorePointerDown}
-                                  onMoreClick={handleChatMoreClick}
-                                />
-                              ))
-                            )}
-                          </CollapsedSidebarMenu>
+                          <div className='px-2'>
+                            <CollapsedSidebarMenu
+                              icon={chatsCollapsedIcon}
+                              hover={chatsHover}
+                              ariaLabel='Chats'
+                              isEditing={!!chatFlyoutRename.editingId}
+                            >
+                              {chatsLoading ? (
+                                <DropdownMenuItem disabled>
+                                  <Loader className='size-[14px]' animate />
+                                  Loading...
+                                </DropdownMenuItem>
+                              ) : chats.length === 0 ? (
+                                <DropdownMenuItem disabled>No chats yet</DropdownMenuItem>
+                              ) : (
+                                chats.map((chat) => (
+                                  <CollapsedChatFlyoutItem
+                                    key={chat.id}
+                                    chat={chat}
+                                    isCurrentRoute={pathname === chat.href}
+                                    isMenuOpen={menuOpenChatId === chat.id}
+                                    isEditing={chat.id === chatFlyoutRename.editingId}
+                                    editValue={chatFlyoutRename.value}
+                                    inputRef={chatFlyoutRename.inputRef}
+                                    isRenaming={chatFlyoutRename.isSaving}
+                                    onEditValueChange={chatFlyoutRename.setValue}
+                                    onEditKeyDown={chatFlyoutRename.handleKeyDown}
+                                    onEditBlur={handleChatRenameBlur}
+                                    onContextMenu={handleChatContextMenu}
+                                    onMorePointerDown={handleChatMorePointerDown}
+                                    onMoreClick={handleChatMoreClick}
+                                  />
+                                ))
+                              )}
+                            </CollapsedSidebarMenu>
+                          </div>
                         ) : (
                           <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
                             {chatsLoading ? (
@@ -1644,7 +1531,7 @@ export const Sidebar = memo(function Sidebar({
                                           }
                                           onKeyDown={chatFlyoutRename.handleKeyDown}
                                           onBlur={handleChatRenameBlur}
-                                          className='min-w-0 flex-1 border-none bg-transparent text-[14px] text-[var(--text-body)] outline-none'
+                                          className='min-w-0 flex-1 border-none bg-transparent text-[14px] text-[var(--text-body)] outline-hidden'
                                         />
                                       </div>
                                     )
@@ -1694,18 +1581,36 @@ export const Sidebar = memo(function Sidebar({
                     <SidebarSection
                       title='Workspace'
                       railCollapsed={isCollapsed}
-                      className={cn(SIDEBAR_SECTION_GAP_CLASS, 'flex-shrink-0')}
+                      className={cn(SIDEBAR_SECTION_GAP_CLASS, 'shrink-0')}
                     >
                       <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
-                        {workspaceNavItems.map((item) => (
-                          <SidebarNavItem
-                            key={item.id}
-                            item={item}
-                            active={isNavItemActive(item, pathname)}
-                            showCollapsedTooltips={showCollapsedTooltips}
-                            onContextMenu={handleNavItemContextMenu}
-                          />
-                        ))}
+                        {workspaceNavItems.map((item) => {
+                          const active = isNavItemActive(item, pathname)
+                          const flyout = isCollapsed ? railFlyouts[item.id] : undefined
+                          /* The flyout replaces the collapsed tooltip rather than
+                             stacking on it: both open on the same hover. */
+                          return flyout ? (
+                            <CollapsedSidebarMenu
+                              key={item.id}
+                              hover={flyout.hover}
+                              navLink={{
+                                item,
+                                active,
+                                onContextMenu: handleNavItemContextMenu,
+                              }}
+                            >
+                              {flyout.content}
+                            </CollapsedSidebarMenu>
+                          ) : (
+                            <SidebarNavItem
+                              key={item.id}
+                              item={item}
+                              active={active}
+                              showCollapsedTooltips={showCollapsedTooltips}
+                              onContextMenu={handleNavItemContextMenu}
+                            />
+                          )
+                        })}
                       </div>
                     </SidebarSection>
 
@@ -1784,64 +1689,69 @@ export const Sidebar = memo(function Sidebar({
                       }
                     >
                       {isCollapsed ? (
-                        <CollapsedSidebarMenu
-                          icon={workflowsCollapsedIcon}
-                          hover={workflowsHover}
-                          ariaLabel='Workflows'
-                          primaryAction={workflowsPrimaryAction}
-                        >
-                          {workflowsLoading && regularWorkflows.length === 0 ? (
-                            <DropdownMenuItem disabled>
-                              <Loader className='h-[14px] w-[14px]' animate />
-                              Loading...
-                            </DropdownMenuItem>
-                          ) : regularWorkflows.length === 0 ? (
-                            <DropdownMenuItem disabled>No workflows yet</DropdownMenuItem>
-                          ) : (
-                            <>
-                              {collapsedRootItems.map((item) =>
-                                item.kind === 'folder' ? (
-                                  <CollapsedFolderItems
-                                    key={item.id}
-                                    nodes={[item.node]}
-                                    workflowsByFolder={workflowsByFolder}
-                                    workspaceId={workspaceId}
-                                    currentWorkflowId={workflowId}
-                                    editingWorkflowId={workflowFlyoutRename.editingId}
-                                    editingValue={workflowFlyoutRename.value}
-                                    editInputRef={workflowFlyoutRename.inputRef}
-                                    isRenamingWorkflow={workflowFlyoutRename.isSaving}
-                                    onEditValueChange={workflowFlyoutRename.setValue}
-                                    onEditKeyDown={workflowFlyoutRename.handleKeyDown}
-                                    onEditBlur={handleWorkflowRenameBlur}
-                                    onWorkflowOpenInNewTab={handleCollapsedWorkflowOpenInNewTab}
-                                    onWorkflowRename={handleCollapsedWorkflowRename}
-                                    canRenameWorkflow={canEdit}
-                                  />
-                                ) : (
-                                  <CollapsedWorkflowFlyoutItem
-                                    key={item.id}
-                                    workflow={item.workflow}
-                                    href={`/workspace/${workspaceId}/w/${item.workflow.id}`}
-                                    isCurrentRoute={item.workflow.id === workflowId}
-                                    isEditing={item.workflow.id === workflowFlyoutRename.editingId}
-                                    editValue={workflowFlyoutRename.value}
-                                    inputRef={workflowFlyoutRename.inputRef}
-                                    isRenaming={workflowFlyoutRename.isSaving}
-                                    onEditValueChange={workflowFlyoutRename.setValue}
-                                    onEditKeyDown={workflowFlyoutRename.handleKeyDown}
-                                    onEditBlur={handleWorkflowRenameBlur}
-                                    onOpenInNewTab={() =>
-                                      handleCollapsedWorkflowOpenInNewTab(item.workflow)
-                                    }
-                                    onRename={() => handleCollapsedWorkflowRename(item.workflow)}
-                                    canRename={canEdit}
-                                  />
-                                )
-                              )}
-                            </>
-                          )}
-                        </CollapsedSidebarMenu>
+                        <div className='px-2'>
+                          <CollapsedSidebarMenu
+                            icon={workflowsCollapsedIcon}
+                            hover={workflowsHover}
+                            ariaLabel='Workflows'
+                            isEditing={!!workflowFlyoutRename.editingId}
+                            primaryAction={workflowsPrimaryAction}
+                          >
+                            {workflowsLoading && regularWorkflows.length === 0 ? (
+                              <DropdownMenuItem disabled>
+                                <Loader className='size-[14px]' animate />
+                                Loading...
+                              </DropdownMenuItem>
+                            ) : regularWorkflows.length === 0 ? (
+                              <DropdownMenuItem disabled>No workflows yet</DropdownMenuItem>
+                            ) : (
+                              <>
+                                {collapsedRootItems.map((item) =>
+                                  item.kind === 'folder' ? (
+                                    <CollapsedFolderItems
+                                      key={item.id}
+                                      nodes={[item.node]}
+                                      workflowsByFolder={workflowsByFolder}
+                                      workspaceId={workspaceId}
+                                      currentWorkflowId={workflowId}
+                                      editingWorkflowId={workflowFlyoutRename.editingId}
+                                      editingValue={workflowFlyoutRename.value}
+                                      editInputRef={workflowFlyoutRename.inputRef}
+                                      isRenamingWorkflow={workflowFlyoutRename.isSaving}
+                                      onEditValueChange={workflowFlyoutRename.setValue}
+                                      onEditKeyDown={workflowFlyoutRename.handleKeyDown}
+                                      onEditBlur={handleWorkflowRenameBlur}
+                                      onWorkflowOpenInNewTab={handleCollapsedWorkflowOpenInNewTab}
+                                      onWorkflowRename={handleCollapsedWorkflowRename}
+                                      canRenameWorkflow={canEdit}
+                                    />
+                                  ) : (
+                                    <CollapsedWorkflowFlyoutItem
+                                      key={item.id}
+                                      workflow={item.workflow}
+                                      href={`/workspace/${workspaceId}/w/${item.workflow.id}`}
+                                      isCurrentRoute={item.workflow.id === workflowId}
+                                      isEditing={
+                                        item.workflow.id === workflowFlyoutRename.editingId
+                                      }
+                                      editValue={workflowFlyoutRename.value}
+                                      inputRef={workflowFlyoutRename.inputRef}
+                                      isRenaming={workflowFlyoutRename.isSaving}
+                                      onEditValueChange={workflowFlyoutRename.setValue}
+                                      onEditKeyDown={workflowFlyoutRename.handleKeyDown}
+                                      onEditBlur={handleWorkflowRenameBlur}
+                                      onOpenInNewTab={() =>
+                                        handleCollapsedWorkflowOpenInNewTab(item.workflow)
+                                      }
+                                      onRename={() => handleCollapsedWorkflowRename(item.workflow)}
+                                      canRename={canEdit}
+                                    />
+                                  )
+                                )}
+                              </>
+                            )}
+                          </CollapsedSidebarMenu>
+                        </div>
                       ) : (
                         <div className='px-2'>
                           {workflowsLoading && regularWorkflows.length === 0 ? (
@@ -1865,72 +1775,18 @@ export const Sidebar = memo(function Sidebar({
                   </div>
                 </div>
 
-                <div
-                  className={cn(
-                    SIDEBAR_ITEM_GAP_CLASS,
-                    'flex flex-shrink-0 flex-col border-t px-2 pt-[9px] pb-2 transition-colors duration-150',
-                    !hasOverflowBottom && 'border-transparent'
-                  )}
-                >
-                  <DropdownMenu>
-                    <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type='button'
-                          data-item-id='help'
-                          className={chipVariants({ fullWidth: true })}
-                        >
-                          <HelpCircle className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-                          <span className='sidebar-collapse-hide truncate text-[var(--text-body)]'>
-                            Help
-                          </span>
-                        </button>
-                      </DropdownMenuTrigger>
-                    </SidebarTooltip>
-                    <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      <DropdownMenuItem onSelect={handleOpenArenaDocs}>
-                        <BookOpen className='h-[14px] w-[14px]' />
-                        Docs
-                      </DropdownMenuItem>
-                      {brand?.supportEmail ? (
-                        <DropdownMenuItem onSelect={handleContactSupport}>
-                          <HelpCircle className='h-[14px] w-[14px]' />
-                          Contact support
-                        </DropdownMenuItem>
-                      ) : null}
-                      {brand?.termsUrl ? (
-                        <DropdownMenuItem onSelect={handleOpenTerms}>
-                          <BookOpen className='h-[14px] w-[14px]' />
-                          Terms of service
-                        </DropdownMenuItem>
-                      ) : null}
-                      {brand?.privacyUrl ? (
-                        <DropdownMenuItem onSelect={handleOpenPrivacy}>
-                          <BookOpen className='h-[14px] w-[14px]' />
-                          Privacy policy
-                        </DropdownMenuItem>
-                      ) : null}
-                      {brand?.slackCommunityUrl ? (
-                        <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
-                          <SlackIcon className='size-[14px]' />
-                          Slack Community
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
-                        <HelpCircle className='h-[14px] w-[14px]' />
-                        Report an issue
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                {(hosted || isStatusNoticePreviewEnabled) && !isCollapsed ? (
+                  <StatusNotice preview={isStatusNoticePreviewEnabled} />
+                ) : null}
+
                 <SidebarFooter
                   workspaceId={workspaceId}
+                  showDivider={scrollEdges.bottom}
                   isCollapsed={isCollapsed}
                   showCollapsedTooltips={showCollapsedTooltips}
+                  getSettingsHref={(section) => getSettingsHref({ section })}
                   onOpenSettings={handleOpenSettings}
-                  onOpenDocs={handleOpenDocs}
-                  onJoinSlack={handleOpenSlackCommunity}
-                  onContactSupport={handleOpenHelpFromMenu}
+                  onReportIssue={() => setIsHelpModalOpen(true)}
                 />
 
                 <NavItemContextMenu
@@ -1966,6 +1822,7 @@ export const Sidebar = memo(function Sidebar({
                   showDuplicate={false}
                   disableRename={!canEdit}
                   disableDelete={!canEdit}
+                  selectedCount={contextMenuSelectionRef.current.chatIds.length}
                 />
 
                 <DeleteModal

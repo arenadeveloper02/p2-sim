@@ -62,7 +62,7 @@ export interface PlusMenuHandle {
  * so the editor reads the same whether it's the chat input or inside the modal.
  */
 const FIELD_MIRROR_CLASSES = cn(
-  'm-0 box-border min-h-[24px] w-full break-words [overflow-wrap:anywhere] border-0 bg-transparent',
+  'm-0 box-border min-h-[24px] w-full [overflow-wrap:anywhere] border-0 bg-transparent',
   'px-1 py-1 font-body text-[14px] leading-[24px] tracking-[-0.015em]'
 )
 
@@ -74,7 +74,7 @@ const FIELD_MIRROR_CLASSES = cn(
 export const TEXTAREA_BASE_CLASSES = cn(
   FIELD_MIRROR_CLASSES,
   'block h-auto resize-none overflow-hidden',
-  'text-transparent caret-[var(--text-primary)] outline-none',
+  'text-transparent caret-[var(--text-primary)] outline-hidden',
   'placeholder:text-[var(--text-muted)]',
   'focus-visible:ring-0 focus-visible:ring-offset-0'
 )
@@ -125,7 +125,12 @@ const RESOURCE_TO_CONTEXT: Record<
   folder: (r) => ({ kind: 'folder', folderId: r.id, label: r.title }),
   filefolder: (r) => ({ kind: 'filefolder', fileFolderId: r.id, label: r.title }),
   task: (r) => ({ kind: 'past_chat', chatId: r.id, label: r.title }),
-  log: (r) => ({ kind: 'logs', executionId: r.id, label: r.title }),
+  // Addressed by run, not by log row: `id` is the row's key, and the server
+  // resolves this context against `workflow_execution_logs.execution_id`. A
+  // picked resource carries the run id; one rebuilt from the wire (a restored
+  // or agent-opened tab) cannot, since the stored and streamed resource shapes
+  // are the identity triple — those keep the row id they have always sent.
+  log: (r) => ({ kind: 'logs', executionId: r.executionId ?? r.id, label: r.title }),
   integration: (r) => ({ kind: 'integration', blockType: r.id, label: r.title }),
   generic: (r) => ({ kind: 'docs', label: r.title }),
 }

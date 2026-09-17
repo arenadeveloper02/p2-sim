@@ -1,12 +1,15 @@
 import { AuditAction, AuditResourceType } from '@sim/audit'
-import { requirePrincipalSubjectUserId } from '@sim/auth/principal'
+import { resolvePrincipalSubjectUserId } from '@sim/auth/principal'
 import { isValidEmailSyntax, normalizeEmail } from '@sim/utils/string'
 import { defineAuthorizedWorkspaceUseCase } from '@/lib/core/application'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
-import { credentialGroupDelegationPolicy } from '@/lib/credential-groups/application/authorization'
+import {
+  credentialGroupDelegationPolicy,
+  requireCredentialGroupWorkflowActor,
+} from '@/lib/credential-groups/application/authorization'
 import {
   requireCredentialGroupsAvailable,
-  resolveCredentialGroupContext,
+  resolveWorkspaceAccountsContext,
 } from '@/lib/credential-groups/application/context'
 import { credentialGroupOperations } from '@/lib/credential-groups/application/operations'
 import {
@@ -16,15 +19,18 @@ import {
 } from '@/lib/credential-groups/enrollments'
 
 export interface SendCredentialGroupInviteInput {
-  credentialGroupId: string
+  workspaceId: string
   email: string
 }
 
 export const sendCredentialGroupInvite = defineAuthorizedWorkspaceUseCase({
   operation: credentialGroupOperations.sendInvite,
   resolveContext: ({ input }: { input: SendCredentialGroupInviteInput }) =>
-    resolveCredentialGroupContext(input.credentialGroupId),
+    resolveWorkspaceAccountsContext(input.workspaceId),
   authorizationOptions: { delegation: credentialGroupDelegationPolicy },
+  authorizeResource({ principal }) {
+    requireCredentialGroupWorkflowActor(principal)
+  },
   execute: async ({ principal, input, context }) => {
     if (context.status !== 'active') {
       throw new OrchestrationError('conflict', 'Credential group is disabled')
@@ -35,12 +41,11 @@ export const sendCredentialGroupInvite = defineAuthorizedWorkspaceUseCase({
     }
     await requireCredentialGroupsAvailable(context.workspaceId)
 
-    const userId = requirePrincipalSubjectUserId(principal)
-    const inviter = await loadCredentialGroupInviterIdentity(userId)
+    // Attribution, not authority. An actorless or Slack-triggered run names no
+    // inviter rather than borrowing its actor, so the email claims no one invited.
+    const userId = resolvePrincipalSubjectUserId(principal)
+    const inviter = userId ? await loadCredentialGroupInviterIdentity(userId) : null
     const inviterName = inviter?.name?.trim() || inviter?.email
-    if (!inviterName) {
-      throw new OrchestrationError('conflict', 'Inviting user has no display identity')
-    }
 
     try {
       const enrollment = await inviteCredentialGroupEnrollment(

@@ -1,6 +1,7 @@
 'use client'
 
 import { type CSSProperties, memo, useMemo } from 'react'
+import { OverflowText } from '@sim/emcn'
 import {
   CanvasSentenceView,
   HANDLE_POSITIONS,
@@ -9,7 +10,7 @@ import {
   WorkflowTypeTag,
 } from '@sim/workflow-renderer'
 import { WORKFLOW_SOURCE_HANDLE_ID, WORKFLOW_TARGET_HANDLE_ID } from '@sim/workflow-types/workflow'
-import { Handle, type NodeProps, Position } from 'reactflow'
+import { Handle, type Node, type NodeProps, Position } from '@xyflow/react'
 import { resolveCanvasBlockPresentation } from '@/lib/workflows/blocks/canvas-presentation'
 import {
   type CardSelector,
@@ -17,10 +18,12 @@ import {
   resolveCanvasSentence,
 } from '@/lib/workflows/blocks/canvas-sentence'
 import { resolveSelectedTriggerId } from '@/lib/workflows/blocks/canvas-trigger-sentence'
+import { resolveCanvasCodePreview } from '@/lib/workflows/blocks/code-preview'
 import {
   getDisplayValue,
   hasDisplayableRowValue,
   resolveDropdownLabel,
+  resolveFolderPathLabel,
   resolveSkillsLabel,
   resolveToolsLabel,
   resolveVariablesLabel,
@@ -28,7 +31,7 @@ import {
   resolveWorkflowSelectionLabel,
 } from '@/lib/workflows/subblocks/display'
 import {
-  buildCanonicalIndex,
+  buildCanonicalIndexForSurface,
   evaluateSubBlockCondition,
   isSubBlockFeatureEnabled,
   isSubBlockVisibleForMode,
@@ -54,11 +57,11 @@ interface SubBlockValueEntry {
  * Extracted to avoid recreating style objects on each render.
  */
 const HANDLE_STYLES = {
-  horizontal: '!border-none !bg-[var(--surface-7)] !h-5 !w-[7px] !rounded-xs',
+  horizontal: 'border-none! bg-[var(--surface-7)]! h-5! w-[7px]! rounded-xs!',
   right:
-    '!z-[10] !border-none !bg-[var(--workflow-edge)] !h-5 !w-[7px] !rounded-r-[2px] !rounded-l-none',
+    'z-[10]! border-none! bg-[var(--workflow-edge)]! h-5! w-[7px]! rounded-r-[2px]! rounded-l-none!',
   error:
-    '!z-[10] !border-none !bg-[var(--text-error)] !h-[7px] !w-6 !rounded-b-[2px] !rounded-t-none',
+    'z-[10]! border-none! bg-[var(--text-error)]! h-[7px]! w-6! rounded-b-[2px]! rounded-t-none!',
 } as const
 
 /** Reusable style object for error handles positioned at bottom-right */
@@ -70,7 +73,7 @@ const ERROR_HANDLE_STYLE: CSSProperties = {
   transform: 'translateX(-50%)',
 }
 
-interface WorkflowPreviewBlockData {
+interface WorkflowPreviewBlockData extends Record<string, unknown> {
   type: string
   name: string
   workflowMap?: Record<string, WorkflowMetadata>
@@ -163,7 +166,14 @@ function resolvePreviewDisplayValue(
     toolsDisplay ||
     skillsDisplay ||
     workflowName ||
-    workflowMultiSelectionNames
+    workflowMultiSelectionNames ||
+    /*
+     * A type in SELECTOR_TYPES_HYDRATION_REQUIRED with no resolver here falls to
+     * the placeholder below, so a picked folder read as "you picked nothing".
+     * Same decode the canvas card and the workflow diff use, and it needs no
+     * hook or fetch, which is what lets it sit in this hook-free resolver.
+     */
+    resolveFolderPathLabel(subBlock, rawValue)
 
   return maskedValue || hydratedName || (isSelectorType && value ? '-' : value)
 }
@@ -196,19 +206,12 @@ const SubBlockRow = memo(function SubBlockRow({
 
   return (
     <div className='flex h-5 items-center gap-2'>
-      <span
-        className='min-w-0 truncate text-[var(--text-tertiary)] text-sm capitalize'
-        title={title}
-      >
-        {title}
-      </span>
+      <OverflowText label={title} className='text-[var(--text-tertiary)] text-sm capitalize' />
       {displayValue !== undefined && (
-        <span
-          className='flex-1 truncate text-right text-[var(--text-primary)] text-sm'
-          title={displayValue}
-        >
-          {displayValue}
-        </span>
+        <OverflowText
+          label={displayValue}
+          className='flex-1 text-right text-[var(--text-primary)] text-sm'
+        />
       )}
     </div>
   )
@@ -220,7 +223,9 @@ const SubBlockRow = memo(function SubBlockRow({
  * hooks, store subscriptions, or interactive features.
  * Matches the visual structure of WorkflowBlock exactly.
  */
-function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>) {
+type WorkflowPreviewBlockNode = Node<WorkflowPreviewBlockData, 'workflowBlock' | 'noteBlock'>
+
+function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockNode>) {
   const {
     type,
     name,
@@ -237,10 +242,11 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
   } = data
 
   const blockConfig = getBlock(type)
+  const effectiveTrigger = isTrigger || type === 'starter'
 
   const canonicalIndex = useMemo(
-    () => buildCanonicalIndex(blockConfig?.subBlocks || []),
-    [blockConfig?.subBlocks]
+    () => buildCanonicalIndexForSurface(blockConfig?.subBlocks || [], effectiveTrigger),
+    [blockConfig?.subBlocks, effectiveTrigger]
   )
 
   const rawValues = useMemo(() => {
@@ -267,7 +273,6 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
     if (!blockConfig?.subBlocks) return []
 
     const isPureTriggerBlock = blockConfig.triggers?.enabled && blockConfig.category === 'triggers'
-    const effectiveTrigger = isTrigger || type === 'starter'
 
     return blockConfig.subBlocks.filter((subBlock) => {
       if (subBlock.hidden) return false
@@ -308,8 +313,7 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
     blockConfig?.subBlocks,
     blockConfig?.triggers?.enabled,
     blockConfig?.category,
-    type,
-    isTrigger,
+    effectiveTrigger,
     canonicalIndex,
     rawValues,
     canvasPresentation,
@@ -348,7 +352,6 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
    * lightweight mode, which has no values to resolve chips from.
    */
   const sentenceSegments = useMemo(() => {
-    const effectiveTrigger = isTrigger || type === 'starter'
     if (lightweight || !blockConfig) return null
     if (type === 'condition' || type === 'router_v2' || type === 'starter') return null
 
@@ -374,7 +377,7 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
       (subBlockId) => availableIds.has(subBlockId),
       (subBlockId) => onCardById.get(subBlockId) ?? null
     )
-  }, [lightweight, blockConfig, type, isTrigger, visibleSubBlocks, onCardById, rawValues])
+  }, [lightweight, blockConfig, type, effectiveTrigger, visibleSubBlocks, onCardById, rawValues])
 
   /**
    * Compute condition rows for condition blocks.
@@ -510,12 +513,10 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
       {/* Header - matches WorkflowBlock structure */}
       <div className='flex h-[40px] items-center justify-between px-2'>
         <div className='relative z-10 flex min-w-0 flex-1 items-center'>
-          <span
-            className={`truncate text-[17px] ${!enabled ? 'text-[var(--text-muted)]' : ''}`}
-            title={canvasPresentation.title}
-          >
-            {humanizeBlockName(canvasPresentation.title)}
-          </span>
+          <OverflowText
+            label={humanizeBlockName(canvasPresentation.title)}
+            className={!enabled ? 'text-[17px] text-[var(--text-muted)]' : 'text-[17px]'}
+          />
         </div>
         {!isNoteBlock && (
           <WorkflowTypeTag
@@ -564,6 +565,7 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
                   <SubBlockRowView
                     title={subBlock.title ?? subBlock.id}
                     displayValue={displayValue}
+                    codePreview={resolveCanvasCodePreview(subBlock, rawValue, rawValues)}
                     variant='inline-value'
                   />
                 )
@@ -689,8 +691,8 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
  * @returns True if render should be skipped (props are equal)
  */
 function shouldSkipPreviewBlockRender(
-  prevProps: NodeProps<WorkflowPreviewBlockData>,
-  nextProps: NodeProps<WorkflowPreviewBlockData>
+  prevProps: NodeProps<WorkflowPreviewBlockNode>,
+  nextProps: NodeProps<WorkflowPreviewBlockNode>
 ): boolean {
   if (
     prevProps.id !== nextProps.id ||

@@ -35,7 +35,7 @@ const SECRET_SCOPE_OPTIONS = [
   { value: 'selected', label: 'Selected secrets' },
 ]
 
-const DROPDOWN_TRIGGER_CLASS = 'w-[240px] flex-shrink-0'
+const DROPDOWN_TRIGGER_CLASS = 'w-[240px] shrink-0'
 
 export function InboxSettingsTab() {
   const params = useParams()
@@ -362,7 +362,6 @@ export function InboxSettingsTab() {
               setNewUsername(value)
               if (editAddressError) setEditAddressError(null)
             }}
-            onSubmit={handleEditAddress}
             placeholder='e.g., new-acme'
             error={editAddressError}
           />
@@ -370,6 +369,7 @@ export function InboxSettingsTab() {
         <ChipModalFooter
           onCancel={() => setIsEditAddressOpen(false)}
           cancelDisabled={updateAddress.isPending}
+          defaultAction='none'
           primaryAction={{
             label: updateAddress.isPending ? 'Updating...' : 'Change address',
             onClick: handleEditAddress,

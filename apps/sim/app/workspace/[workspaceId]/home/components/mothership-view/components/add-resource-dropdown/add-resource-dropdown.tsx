@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Button,
   cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuItemLabel,
   DropdownMenuSearchInput,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -21,12 +22,14 @@ import {
   BROWSER_SESSION_RESOURCE_ID,
   TERMINAL_SESSION_RESOURCE_ID,
 } from '@/lib/copilot/resources/types'
+import { subscribeDesktopPreferences } from '@/lib/desktop'
 import { isTerminalAvailable } from '@/lib/terminal/transport'
 import {
   type AvailableItem,
   buildResourceFolderTree,
   type ResourceTreeNode,
 } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown/resource-folder-tree'
+import { resourceFromItem } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown/resource-from-item'
 import {
   byResourceMenuOrder,
   getResourceConfig,
@@ -40,7 +43,7 @@ import type {
   MothershipResourceType,
 } from '@/app/workspace/[workspaceId]/home/types'
 import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils'
-import { listIntegrations } from '@/blocks/integration-matcher'
+import { listIntegrationsByPopularity } from '@/blocks/integration-matcher'
 import { useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
 import { useLogsList } from '@/hooks/queries/logs'
@@ -72,10 +75,8 @@ interface AvailableItemsByType {
 }
 
 /**
- * Folder hierarchies that exist purely to structure the browse menus. Unlike
- * workflow (`folder`) and workspace-file (`filefolder`) folders these are not
- * attachable resources, so they stay out of `groups` — which also feeds the
- * flat search results, where a non-attachable row would be a dead end.
+ * Table and knowledge-base folder hierarchies. Chat also offers these as folder
+ * mentions, while the resource tab picker uses them only for navigation.
  */
 interface StructureFolders {
   table: AvailableItem[]
@@ -94,6 +95,8 @@ interface AvailableResources {
 }
 
 interface UseAvailableResourcesOptions {
+  /** Chat can attach every folder family, so these lists also gate mention hydration. */
+  includeFolderMentions?: boolean
   /**
    * Skips the underlying list queries and the group construction they feed
    * while `false`, returning a stable empty result. Menus pass their own open
@@ -143,6 +146,16 @@ export function useAvailableResources(
 ): AvailableResources {
   const enabled = options?.enabled ?? true
   const excludeTypes = options?.excludeTypes
+  const browserAvailable = useSyncExternalStore(
+    subscribeDesktopPreferences,
+    isBrowserAgentAvailable,
+    () => false
+  )
+  const terminalAvailable = useSyncExternalStore(
+    subscribeDesktopPreferences,
+    isTerminalAvailable,
+    () => false
+  )
   // Destructured without `= []` defaults on purpose: a literal default allocates a
   // fresh array every render while `data` is undefined (exactly the disabled state),
   // which would bust the group memo below on every render. Undefined is stable.
@@ -158,16 +171,17 @@ export function useAvailableResources(
     { enabled }
   )
   const { data: folders, isPending: foldersPending } = useFolders(workspaceId, { enabled })
-  // Folder lists exist only to shape their family's submenu, so they skip the
-  // fetch entirely when that family is excluded.
-  const { data: tableFolders } = useFolders(workspaceId, {
+  const { data: tableFolders, isPending: tableFoldersPending } = useFolders(workspaceId, {
     enabled: enabled && !excludeTypes?.includes('table'),
     resourceType: 'table',
   })
-  const { data: knowledgeBaseFolders } = useFolders(workspaceId, {
-    enabled: enabled && !excludeTypes?.includes('knowledgebase'),
-    resourceType: 'knowledge_base',
-  })
+  const { data: knowledgeBaseFolders, isPending: knowledgeBaseFoldersPending } = useFolders(
+    workspaceId,
+    {
+      enabled: enabled && !excludeTypes?.includes('knowledgebase'),
+      resourceType: 'knowledge_base',
+    }
+  )
   const { data: fileFolders, isPending: fileFoldersPending } = useWorkspaceFileFolders(
     workspaceId,
     'active',
@@ -186,10 +200,8 @@ export function useAvailableResources(
    * settles to "not hydrating" — an errored query must not block the caller
    * forever.
    *
-   * Only the lists feeding `groups` count. The table and knowledge-base folder
-   * lists shape submenus but never add candidates, so gating on them would
-   * swallow an `@`-mention Enter behind two round-trips that cannot change the
-   * answer.
+   * Chat includes table and knowledge-base folders as candidates. Its Enter
+   * handling must wait for those lists too, or an unresolved mention can submit.
    */
   const isHydrating =
     enabled &&
@@ -198,6 +210,9 @@ export function useAvailableResources(
       filesPending ||
       knowledgeBasesPending ||
       foldersPending ||
+      (options?.includeFolderMentions &&
+        ((!excludeTypes?.includes('table') && tableFoldersPending) ||
+          (!excludeTypes?.includes('knowledgebase') && knowledgeBaseFoldersPending))) ||
       fileFoldersPending ||
       tasksPending ||
       logsPending)
@@ -254,7 +269,7 @@ export function useAvailableResources(
       },
       {
         type: 'integration' as const,
-        items: listIntegrations().map((integration) => ({
+        items: listIntegrationsByPopularity().map((integration) => ({
           id: integration.blockType,
           name: integration.name,
           iconComponent: integration.icon,
@@ -265,18 +280,32 @@ export function useAvailableResources(
         type: 'task' as const,
         items: (tasks ?? []).map((t) => ({ id: t.id, name: t.name })),
       },
+      /**
+       * The chip's `name` keeps the absolute timestamp because it is persisted
+       * with the chat, where "2m ago" would age into a lie; the row renders the
+       * relative form, which is what reads at a glance. `mentionFamily` is what
+       * lets `@logs` reach rows named after their workflow.
+       */
       {
         type: 'log' as const,
         items: logs.map((log) => {
           const workflowName = log.workflow?.name ?? log.workflowId ?? 'Unknown'
-          const time = formatDate(log.createdAt).compact
-          return { id: log.id, name: `${workflowName} · ${time}`, workflowName, time }
+          const when = formatDate(log.createdAt)
+          return {
+            id: log.id,
+            name: `${workflowName} · ${when.compact}`,
+            mentionFamily: getResourceConfig('log').label,
+            executionId: log.executionId ?? undefined,
+            workflowName,
+            time: when.relative,
+            status: log.status,
+          }
         }),
       },
     ]
     // The live browser panel — desktop app only (needs the agent-browser
     // bridge). There is one top-level panel; repeated launches open inner tabs.
-    if (isBrowserAgentAvailable()) {
+    if (browserAvailable) {
       groups.push({
         type: 'browser' as const,
         items: [
@@ -289,7 +318,7 @@ export function useAvailableResources(
     }
     // The live terminal — desktop app only (needs the PTY bridge), and a
     // single top-level panel like the browser.
-    if (isTerminalAvailable()) {
+    if (terminalAvailable) {
       groups.push({
         type: 'terminal' as const,
         items: [
@@ -303,6 +332,8 @@ export function useAvailableResources(
     return groups.filter((g) => !excluded.has(g.type)).sort(byResourceMenuOrder)
   }, [
     enabled,
+    browserAvailable,
+    terminalAvailable,
     workflows,
     folders,
     fileFolders,
@@ -342,9 +373,7 @@ interface ResourceFolderTreeItemsProps {
   /** Resource type of the leaf items. */
   type: MothershipResourceType
   /**
-   * Set when the folder is itself an attachable resource (workspace files): the
-   * folder is then offered as the first entry of its own submenu. Omitted for
-   * folders that only provide structure (workflows, tables, knowledge bases).
+   * Offers the folder itself as the first entry of its submenu when selectable.
    */
   folderType?: MothershipResourceType
   onSelect: (resource: MothershipResource) => void
@@ -364,7 +393,7 @@ export function ResourceFolderTreeItems({
         node.kind === 'item' ? (
           <DropdownMenuItem
             key={node.id}
-            onClick={() => onSelect({ type, id: node.id, title: node.item.name })}
+            onClick={() => onSelect(resourceFromItem(type, node.item))}
           >
             {config.renderDropdownItem({ item: node.item })}
           </DropdownMenuItem>
@@ -372,7 +401,7 @@ export function ResourceFolderTreeItems({
           <DropdownMenuSub key={node.id}>
             <DropdownMenuSubTrigger>
               <Folder className='size-[14px]' />
-              <span>{node.name}</span>
+              <DropdownMenuItemLabel label={node.name} />
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {folderType && (
@@ -380,7 +409,7 @@ export function ResourceFolderTreeItems({
                   onClick={() => onSelect({ type: folderType, id: node.id, title: node.name })}
                 >
                   <Folder className='size-[14px]' />
-                  <span>{node.name}</span>
+                  <DropdownMenuItemLabel label={node.name} />
                 </DropdownMenuItem>
               )}
               <ResourceFolderTreeItems
@@ -400,10 +429,6 @@ export function ResourceFolderTreeItems({
 interface FolderedSectionSpec {
   /** Leaf resource type — also supplies the submenu's label and icon. */
   type: MothershipResourceType
-  /**
-   * Where this family's folders come from: another entry in `groups` when the
-   * folders are attachable resources, or `structureFolders` when they are not.
-   */
   folders:
     | { kind: 'group'; type: MothershipResourceType }
     | { kind: 'structure'; key: keyof StructureFolders }
@@ -454,22 +479,25 @@ export interface ResourceTreeSection {
 export function useResourceTreeSections({
   groups,
   structureFolders,
-}: Pick<AvailableResources, 'groups' | 'structureFolders'>): ResourceTreeSection[] {
+  selectFolders = false,
+}: Pick<AvailableResources, 'groups' | 'structureFolders'> & {
+  selectFolders?: boolean
+}): ResourceTreeSection[] {
   return useMemo(() => {
     const itemsOf = (type: MothershipResourceType) =>
       groups.find((group) => group.type === type)?.items ?? []
     return FOLDERED_SECTION_SPECS.map((spec) => ({
       type: spec.type,
-      folderType: spec.folderType,
+      folderType: spec.folderType ?? (selectFolders ? 'folder' : undefined),
       nodes: buildResourceFolderTree(
         itemsOf(spec.type),
         spec.folders.kind === 'group'
           ? itemsOf(spec.folders.type)
           : structureFolders[spec.folders.key],
-        { orderBySortOrder: spec.orderBySortOrder, pruneEmpty: !spec.folderType }
+        { orderBySortOrder: spec.orderBySortOrder, pruneEmpty: !selectFolders && !spec.folderType }
       ),
     })).filter((section) => section.nodes.length > 0)
-  }, [groups, structureFolders])
+  }, [groups, structureFolders, selectFolders])
 }
 
 interface ResourceMenuSectionsProps {
@@ -518,12 +546,9 @@ export function ResourceMenuSections({
         if (!section && (type === 'browser' || type === 'terminal')) {
           const item = items[0]
           return (
-            <DropdownMenuItem
-              key={type}
-              onClick={() => onSelect({ type, id: item.id, title: item.name })}
-            >
+            <DropdownMenuItem key={type} onClick={() => onSelect(resourceFromItem(type, item))}>
               <Icon className='size-[14px]' />
-              <span>{config.label}</span>
+              <DropdownMenuItemLabel label={config.label} />
             </DropdownMenuItem>
           )
         }
@@ -532,7 +557,7 @@ export function ResourceMenuSections({
           <DropdownMenuSub key={type}>
             <DropdownMenuSubTrigger>
               <Icon className='size-[14px]' />
-              <span>{config.label}</span>
+              <DropdownMenuItemLabel label={config.label} />
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className={subContentClassName}>
               {section ? (
@@ -546,7 +571,7 @@ export function ResourceMenuSections({
                 items.map((item) => (
                   <DropdownMenuItem
                     key={item.id}
-                    onClick={() => onSelect({ type, id: item.id, title: item.name })}
+                    onClick={() => onSelect(resourceFromItem(type, item))}
                   >
                     {config.renderDropdownItem({ item })}
                   </DropdownMenuItem>
@@ -642,7 +667,7 @@ export function AddResourceDropdown({
       if (filtered.length > 0 && filtered[activeIndex]) {
         e.preventDefault()
         const { type, item } = filtered[activeIndex]
-        select({ type, id: item.id, title: item.name })
+        select(resourceFromItem(type, item))
       }
     }
   }
@@ -694,7 +719,7 @@ export function AddResourceDropdown({
                     key={`${type}:${item.id}`}
                     className={cn(index === activeIndex && 'bg-[var(--surface-hover)]')}
                     onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => select({ type, id: item.id, title: item.name })}
+                    onClick={() => select(resourceFromItem(type, item))}
                   >
                     {config.renderDropdownItem({ item })}
                   </DropdownMenuItem>

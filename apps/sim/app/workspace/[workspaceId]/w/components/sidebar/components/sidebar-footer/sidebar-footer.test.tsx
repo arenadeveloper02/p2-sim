@@ -2,8 +2,9 @@
  * @vitest-environment jsdom
  */
 import { act } from 'react'
+import { resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const desktopMocks = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -12,6 +13,17 @@ const desktopMocks = vi.hoisted(() => ({
   install: vi.fn(),
   listener: null as ((state: unknown) => void) | null,
   unsubscribe: vi.fn(),
+}))
+
+const { hostContext } = vi.hoisted(() => ({
+  hostContext: {
+    hostOrganizationId: null as string | null,
+    viewer: { isHostOrganizationMember: false },
+    features: {
+      organizationSearch: undefined as boolean | undefined,
+      knowledgeMemberAccess: false,
+    },
+  },
 }))
 
 vi.mock('@/lib/desktop', () => ({
@@ -31,19 +43,37 @@ vi.mock('@/lib/auth/auth-client', () => ({
 vi.mock('@/lib/billing/workspace-permissions', () => ({
   canViewWorkspaceBillingSettings: () => true,
 }))
-vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
+/** Billing routes the invitations-disabled row to Subscription; read at render time. */
+beforeAll(() => setEnvFlags({ isBillingEnabled: true }))
+afterAll(resetEnvFlagsMock)
 vi.mock('@/lib/workspaces/colors', () => ({ getUserColor: () => '#000000' }))
 vi.mock('@/hooks/use-workspace-invite-policy', () => ({
   useWorkspaceInvitePolicy: () => ({ isInvitationsDisabled: false }),
 }))
 vi.mock('@/app/workspace/[workspaceId]/providers/workspace-host-provider', () => ({
-  useWorkspaceHostContext: () => null,
+  useWorkspaceHostContext: () => hostContext,
 }))
-vi.mock('@/app/workspace/[workspaceId]/w/components/sidebar/sidebar', () => ({
-  SidebarTooltip: ({ children }: { children: React.ReactNode }) => children,
-}))
+vi.mock(
+  '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip/sidebar-tooltip',
+  () => ({
+    SidebarTooltip: ({ children }: { children: React.ReactNode }) => children,
+  })
+)
 vi.mock('@/components/icons', () => ({
   SlackIcon: ({ className }: { className?: string }) => <svg className={className} />,
+}))
+vi.mock('posthog-js/react', () => ({
+  usePostHog: () => ({}),
+}))
+vi.mock('@/lib/posthog/client', () => ({
+  captureEvent: vi.fn(),
+}))
+
+const { mockUseOrgBrandConfig } = vi.hoisted(() => ({
+  mockUseOrgBrandConfig: vi.fn(() => ({})),
+}))
+vi.mock('@/ee/whitelabeling/components/branding-provider', () => ({
+  useOrgBrandConfig: mockUseOrgBrandConfig,
 }))
 
 import { SidebarFooter } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-footer/sidebar-footer'
@@ -51,18 +81,22 @@ import { SidebarFooter } from '@/app/workspace/[workspaceId]/w/components/sideba
 let container: HTMLDivElement
 let root: Root
 
-async function renderFooter(initialState: Record<string, unknown>) {
+async function renderFooter(
+  initialState: Record<string, unknown>,
+  overrides: Partial<Parameters<typeof SidebarFooter>[0]> = {}
+) {
   desktopMocks.getState.mockResolvedValue(initialState)
   await act(async () => {
     root.render(
       <SidebarFooter
         workspaceId='workspace-1'
+        showDivider={false}
         isCollapsed={false}
         showCollapsedTooltips={false}
+        getSettingsHref={(section) => `/workspace/workspace-1/settings/${section}`}
         onOpenSettings={() => {}}
-        onOpenDocs={() => {}}
-        onJoinSlack={() => {}}
-        onContactSupport={() => {}}
+        onReportIssue={() => {}}
+        {...overrides}
       />
     )
   })
@@ -72,6 +106,20 @@ function helpTrigger(): HTMLButtonElement {
   const trigger = container.querySelector<HTMLButtonElement>('[data-item-id="help"]')
   if (!trigger) throw new Error('Help trigger was not rendered')
   return trigger
+}
+
+function profileTrigger(): HTMLButtonElement {
+  const trigger = container.querySelector<HTMLButtonElement>('[data-item-id="profile"]')
+  if (!trigger) throw new Error('Profile trigger was not rendered')
+  return trigger
+}
+
+function openProfileMenu() {
+  act(() => {
+    profileTrigger().dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false })
+    )
+  })
 }
 
 function openHelpMenu() {
@@ -92,6 +140,10 @@ function menuItem(label: string): HTMLElement {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  hostContext.hostOrganizationId = null
+  hostContext.viewer.isHostOrganizationMember = false
+  hostContext.features.organizationSearch = undefined
+  hostContext.features.knowledgeMemberAccess = false
   desktopMocks.listener = null
   desktopMocks.onState.mockImplementation((listener) => {
     desktopMocks.listener = listener
@@ -108,7 +160,81 @@ afterEach(() => {
   container.remove()
 })
 
-describe('SidebarFooter desktop update affordance', () => {
+describe('SidebarFooter', () => {
+  it('links members back to the organization hosting the current workspace', async () => {
+    hostContext.hostOrganizationId = 'host-org'
+    hostContext.viewer.isHostOrganizationMember = true
+    hostContext.features.organizationSearch = true
+    await renderFooter({ status: 'idle' })
+
+    openProfileMenu()
+
+    expect(menuItem('Organization')).toHaveAttribute('href', '/o/host-org')
+    const labels = Array.from(document.querySelectorAll('[role="menuitem"]')).map(
+      (item) => item.textContent
+    )
+    expect(labels.indexOf('Organization')).toBe(labels.indexOf('Settings') + 1)
+    expect(labels.indexOf('Organization')).toBeLessThan(labels.indexOf('Teammates'))
+    expect(document.querySelector('[role="menu"] [role="separator"]')).toBeNull()
+  })
+
+  it.each([false, undefined])(
+    'keeps the workspace profile menu when org rollout is %s',
+    async (enabled) => {
+      hostContext.hostOrganizationId = 'host-org'
+      hostContext.viewer.isHostOrganizationMember = true
+      hostContext.features.organizationSearch = enabled
+      hostContext.features.knowledgeMemberAccess = true
+      await renderFooter({ status: 'idle' })
+
+      openProfileMenu()
+
+      expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Organization')
+      expect(menuItem('Settings')).toHaveAttribute(
+        'href',
+        '/workspace/workspace-1/settings/general'
+      )
+    }
+  )
+
+  it.each([null, 'host-org'])('hides Organization without host membership (%s)', async (orgId) => {
+    hostContext.hostOrganizationId = orgId
+    hostContext.features.organizationSearch = true
+    await renderFooter({ status: 'idle' })
+
+    openProfileMenu()
+
+    expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Organization')
+  })
+
+  it('keeps the overflow tooltip disabled while the collapsed tooltip still owns the trigger', async () => {
+    await renderFooter({ status: 'idle' }, { isCollapsed: false, showCollapsedTooltips: true })
+    const label = profileTrigger().querySelector<HTMLElement>('[data-overflow-text]')
+    if (!label) throw new Error('Profile label was not rendered')
+    Object.defineProperties(label, {
+      clientWidth: { configurable: true, value: 40 },
+      scrollWidth: { configurable: true, value: 80 },
+    })
+
+    act(() => {
+      label.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }))
+    })
+
+    expect(document.querySelector('[data-native-surface-overlay]')).toBeNull()
+  })
+
+  it('renders profile settings destinations with native link semantics', async () => {
+    await renderFooter({ status: 'idle' })
+
+    openProfileMenu()
+
+    expect(menuItem('Settings')).toHaveAttribute('href', '/workspace/workspace-1/settings/general')
+    expect(menuItem('Subscription')).toHaveAttribute(
+      'href',
+      '/workspace/workspace-1/settings/billing'
+    )
+  })
+
   it('keeps the ordinary help treatment when no update is available', async () => {
     await renderFooter({ status: 'idle' })
 
@@ -119,6 +245,26 @@ describe('SidebarFooter desktop update affordance', () => {
     openHelpMenu()
     expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Update')
     expect(menuItem('Docs')).toBeVisible()
+    expect(menuItem('Report an issue')).toBeVisible()
+    expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Contact support')
+    expect(document.querySelector('[role="menu"]')).not.toHaveTextContent('Join Slack')
+  })
+
+  it('shows brand help destinations when they are configured', async () => {
+    mockUseOrgBrandConfig.mockReturnValue({
+      supportEmail: 'help@example.com',
+      termsUrl: 'https://example.com/terms',
+      privacyUrl: 'https://example.com/privacy',
+      slackCommunityUrl: 'https://example.com/slack',
+    })
+    await renderFooter({ status: 'idle' })
+    openHelpMenu()
+
+    expect(menuItem('Contact support')).toBeVisible()
+    expect(menuItem('Terms of service')).toBeVisible()
+    expect(menuItem('Privacy policy')).toBeVisible()
+    expect(menuItem('Slack Community')).toBeVisible()
+    expect(menuItem('Report an issue')).toBeVisible()
   })
 
   it('replaces Help with a same-size primary update icon and starts it from the same menu', async () => {
@@ -128,7 +274,7 @@ describe('SidebarFooter desktop update affordance', () => {
     expect(helpTrigger()).toHaveClass('h-[30px]', 'px-2')
     expect(helpTrigger()).not.toHaveClass('bg-[var(--text-primary)]')
     expect(helpTrigger().querySelector('circle')).not.toBeInTheDocument()
-    expect(helpTrigger().querySelector('span')).toHaveClass(
+    expect(helpTrigger().querySelector('div')).toHaveClass(
       'size-[17px]',
       'rounded-full',
       'bg-[var(--text-primary)]'
@@ -146,15 +292,25 @@ describe('SidebarFooter desktop update affordance', () => {
     expect(desktopMocks.install).not.toHaveBeenCalled()
   })
 
+  it('uses a collapsed-sidebar-safe element for the update icon', async () => {
+    await renderFooter(
+      { status: 'available', version: '1.4.0' },
+      { isCollapsed: true, showCollapsedTooltips: true }
+    )
+
+    expect(helpTrigger().querySelector('div')).toHaveClass('size-[17px]')
+    expect(helpTrigger().querySelector('span')).toBeNull()
+  })
+
   it('turns the menu action into restart-and-install when the update is ready', async () => {
     await renderFooter({ status: 'idle' })
 
     act(() => {
       desktopMocks.listener?.({ status: 'ready', version: '1.4.0' })
     })
-    expect(helpTrigger().querySelector('span')).toHaveClass('bg-[var(--text-primary)]')
+    expect(helpTrigger().querySelector('div')).toHaveClass('bg-[var(--text-primary)]')
     openHelpMenu()
-    act(() => menuItem('Update').click())
+    act(() => menuItem('Restart to update').click())
 
     expect(desktopMocks.install).toHaveBeenCalledTimes(1)
     expect(desktopMocks.check).not.toHaveBeenCalled()

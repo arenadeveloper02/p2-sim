@@ -1,13 +1,18 @@
 'use client'
 import { Chip, cn, Loader } from '@sim/emcn'
-import { useRouter } from 'next/navigation'
 import { AuthSubmitButton } from '@/app/(auth)/components'
 import { AUTH_BUTTON_CLASS } from '@/app/(auth)/components/constants'
+
+/** A document navigation, so the marketing surface initializes its own theme store. */
+function returnHome(): void {
+  window.location.href = '/'
+}
 
 interface InviteStatusCardProps {
   type: 'login' | 'loading' | 'error' | 'success' | 'invitation' | 'warning'
   title: string
   description: string | React.ReactNode
+  details?: React.ReactNode
   icon?: 'userPlus' | 'mail' | 'users' | 'error' | 'success' | 'warning'
   logoUrl?: string
   actions?: Array<{
@@ -26,12 +31,11 @@ export function InviteStatusCard({
   title,
   description,
   logoUrl,
+  details,
   icon: _icon,
   actions = EMPTY_ACTIONS,
   isExpiredError = false,
 }: InviteStatusCardProps) {
-  const router = useRouter()
-
   if (type === 'loading') {
     return (
       <>
@@ -54,8 +58,9 @@ export function InviteStatusCard({
       </div>
 
       <div className='mt-8 w-full max-w-[410px] space-y-3'>
+        {details}
         {isExpiredError && (
-          <AuthSubmitButton type='button' onClick={() => router.push('/')} loadingLabel=''>
+          <AuthSubmitButton type='button' onClick={returnHome} loadingLabel=''>
             Request New Invitation
           </AuthSubmitButton>
         )}
@@ -78,7 +83,7 @@ export function InviteStatusCard({
               fullWidth
               onClick={action.onClick}
               disabled={action.disabled || action.loading}
-              className={cn(AUTH_BUTTON_CLASS, 'border border-[var(--border-1)]')}
+              className={cn(AUTH_BUTTON_CLASS, 'border border-[var(--border)]')}
             >
               {action.loading ? (
                 <span className='flex items-center gap-2'>

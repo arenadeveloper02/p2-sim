@@ -9,7 +9,13 @@
  *
  * @vitest-environment node
  */
-import { dbChainMockFns } from '@sim/testing'
+import {
+  dbChainMockFns,
+  hasMockCondition,
+  queueTableRows,
+  resetDbChainMock,
+  schemaMock,
+} from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockGetFileMetadataByKey, mockGetUserEntityPermissions, mockGetFileMetadata } = vi.hoisted(
@@ -33,7 +39,9 @@ vi.mock('@/lib/uploads/server/metadata', () => ({
 }))
 
 vi.mock('@/lib/uploads/utils/file-utils', () => ({
-  inferContextFromKey: vi.fn(() => 'knowledge-base'),
+  inferContextFromKey: vi.fn((key: string) =>
+    key.startsWith('kb/') ? 'knowledge-base' : key.split('/')[0]
+  ),
 }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
@@ -44,6 +52,7 @@ vi.mock('@/executor/constants', () => ({
   isUuid: vi.fn(() => false),
 }))
 
+import { type KnowledgeAccessProvider, SYSTEM_ACCESS_SCOPE } from '@/lib/knowledge/access/types'
 import { verifyFileAccess, verifyKBFileWriteAccess } from '@/app/api/files/authorization'
 
 const CLOUD_KEY = 'kb/1780162789495-secret.txt'
@@ -205,5 +214,249 @@ describe('public-context access (profile-pictures / og-images / workspace-logos)
     mockGetFileMetadataByKey.mockResolvedValue(null)
     await expect(write('workspace-logos/123-logo.png', 'workspace-logos')).resolves.toBe(false)
     expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The `workspace/` prefix carries two module contexts — a Files-module workspace
+ * file and a mothership chat attachment — and both authorize identically here, by
+ * membership of the owning workspace. Filtering the binding lookup to `workspace`
+ * alone silently missed every attachment and fell through to object metadata,
+ * which cannot see a soft delete.
+ */
+describe('workspace-scoped access (workspace files and mothership attachments)', () => {
+  const ATTACHMENT_KEY = 'workspace/ws-1/1786000000000-a3f2-photo.png'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // No legacy `workspace_file` row and no object metadata, so a denial can only
+    // come from the binding itself rather than a fallback happening to grant.
+    dbChainMockFns.limit.mockResolvedValue([])
+    mockGetFileMetadata.mockResolvedValue({})
+  })
+
+  function read(cloudKey: string, context: 'workspace' | 'mothership') {
+    return verifyFileAccess(cloudKey, USER_ID, undefined, context, false)
+  }
+
+  interface BoundRow {
+    workspaceId: string
+    userId: string
+    context: string
+    deletedAt: Date | null
+  }
+
+  /**
+   * Installs the single row bound to the key, applying the same `context` and
+   * `includeDeleted` filters the real `getFileMetadataByKey` applies. Honoring the
+   * arguments is the whole point: a mock that returns the row unconditionally would
+   * pass against a lookup hard-filtered to `context = 'workspace'`, which is exactly
+   * the bug these tests exist to catch.
+   */
+  function bindRow(row: BoundRow) {
+    mockGetFileMetadataByKey.mockImplementation(
+      async (_key: string, context?: string, options?: { includeDeleted?: boolean }) => {
+        if (context && row.context !== context) return null
+        if (!options?.includeDeleted && row.deletedAt) return null
+        return row
+      }
+    )
+  }
+
+  it.each(['workspace', 'mothership'] as const)(
+    'grants a %s-context binding on workspace membership',
+    async (rowContext) => {
+      bindRow({
+        workspaceId: 'ws-1',
+        userId: USER_ID,
+        context: rowContext,
+        deletedAt: null,
+      })
+      mockGetUserEntityPermissions.mockResolvedValue('read')
+
+      await expect(read(ATTACHMENT_KEY, 'workspace')).resolves.toBe(true)
+      expect(mockGetUserEntityPermissions).toHaveBeenCalledWith(USER_ID, 'workspace', 'ws-1')
+      // The binding answered, so the weaker object-metadata path is never consulted.
+      expect(mockGetFileMetadata).not.toHaveBeenCalled()
+    }
+  )
+
+  it('resolves the binding regardless of which workspace-scoped context the caller names', async () => {
+    bindRow({
+      workspaceId: 'ws-1',
+      userId: USER_ID,
+      context: 'mothership',
+      deletedAt: null,
+    })
+    mockGetUserEntityPermissions.mockResolvedValue('read')
+
+    await expect(read(ATTACHMENT_KEY, 'mothership')).resolves.toBe(true)
+  })
+
+  it('denies a soft-deleted attachment instead of falling through to object metadata', async () => {
+    bindRow({
+      workspaceId: 'ws-1',
+      userId: USER_ID,
+      context: 'mothership',
+      deletedAt: new Date('2026-08-01T00:00:00Z'),
+    })
+    mockGetFileMetadata.mockResolvedValue({ workspaceId: 'ws-1' })
+    mockGetUserEntityPermissions.mockResolvedValue('admin')
+
+    await expect(read(ATTACHMENT_KEY, 'workspace')).resolves.toBe(false)
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('denies a cross-tenant read of an attachment', async () => {
+    bindRow({
+      workspaceId: 'victim-ws',
+      userId: 'other-user',
+      context: 'mothership',
+      deletedAt: null,
+    })
+    mockGetUserEntityPermissions.mockResolvedValue(null)
+
+    await expect(read(ATTACHMENT_KEY, 'workspace')).resolves.toBe(false)
+  })
+
+  it('does not accept a binding whose context is not workspace-scoped', async () => {
+    bindRow({
+      workspaceId: 'ws-1',
+      userId: USER_ID,
+      context: 'copilot',
+      deletedAt: null,
+    })
+
+    await expect(read(ATTACHMENT_KEY, 'workspace')).resolves.toBe(false)
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+})
+
+describe('organization connector cache access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetFileMetadataByKey.mockResolvedValue({
+      workspaceId: null,
+      organizationId: 'org-1',
+      userId: USER_ID,
+      deletedAt: null,
+    })
+    mockGetUserEntityPermissions.mockResolvedValue('admin')
+    mockGetFileMetadata.mockResolvedValue({ userId: USER_ID })
+    dbChainMockFns.limit.mockResolvedValue([{ id: 'doc-1' }])
+  })
+
+  it.each(['general', 'profile-pictures', 'knowledge-base'] as const)(
+    'denies the uploader a raw download even with a forged %s context',
+    async (context) => {
+      await expect(
+        verifyFileAccess(CLOUD_KEY, USER_ID, undefined, context, false, { knowledgeAccess: 'user' })
+      ).resolves.toBe(false)
+      expect(mockGetFileMetadata).not.toHaveBeenCalled()
+      expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+    }
+  )
+
+  it('allows the internal processor to read a live bound connector cache', async () => {
+    await expect(
+      verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'knowledge-base', false, {
+        knowledgeAccess: SYSTEM_ACCESS_SCOPE,
+      })
+    ).resolves.toBe(true)
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
+
+  it('denies system reads after the cache loses its active document reference', async () => {
+    dbChainMockFns.limit.mockResolvedValue([])
+    await expect(
+      verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'knowledge-base', false, {
+        knowledgeAccess: SYSTEM_ACCESS_SCOPE,
+      })
+    ).resolves.toBe(false)
+  })
+
+  it('denies a binding claiming both organization and workspace ownership', async () => {
+    mockGetFileMetadataByKey.mockResolvedValue({
+      organizationId: 'org-1',
+      workspaceId: 'ws-1',
+      deletedAt: null,
+    })
+    await expect(
+      verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'knowledge-base', false, {
+        knowledgeAccess: SYSTEM_ACCESS_SCOPE,
+      })
+    ).resolves.toBe(false)
+    await expect(verifyKBFileWriteAccess(CLOUD_KEY, USER_ID)).resolves.toBe(false)
+  })
+
+  it('does not let a raw download endpoint delete organization caches', async () => {
+    await expect(
+      verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'general', false, {
+        requireWrite: true,
+        knowledgeAccess: SYSTEM_ACCESS_SCOPE,
+      })
+    ).resolves.toBe(false)
+  })
+})
+
+describe('KB file live source authorization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+    mockGetFileMetadataByKey.mockResolvedValue({ workspaceId: 'ws-1', deletedAt: null })
+    mockGetUserEntityPermissions.mockResolvedValue('read')
+  })
+
+  it.each([true, false])(
+    'returns live permission %s after an ordinary file lookup misses',
+    async (allowed) => {
+      const scope = { kind: 'user' as const, userId: USER_ID, tokens: ['reader-token'] }
+      const getForConnectors = vi.fn().mockResolvedValue(scope)
+      const access: KnowledgeAccessProvider = {
+        get: async () => scope,
+        getForConnectors,
+        getForDocuments: async () => scope,
+      }
+      queueTableRows(schemaMock.document, [])
+      queueTableRows(schemaMock.document, [{ connectorId: 'confluence-source' }])
+      queueTableRows(schemaMock.document, allowed ? [{ id: 'doc-1' }] : [])
+      await expect(
+        verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'knowledge-base', false, {
+          knowledgeAccess: access,
+        })
+      ).resolves.toBe(allowed)
+      expect(getForConnectors).toHaveBeenCalledExactlyOnceWith(['confluence-source'], undefined)
+      for (const [condition] of dbChainMockFns.where.mock.calls) {
+        expect(
+          hasMockCondition(
+            condition,
+            (node) =>
+              node.type === 'eq' &&
+              node.left === schemaMock.document.storageKey &&
+              node.right === CLOUD_KEY
+          )
+        ).toBe(true)
+        expect(
+          hasMockCondition(
+            condition,
+            (node) =>
+              node.type === 'eq' &&
+              node.left === schemaMock.knowledgeBase.workspaceId &&
+              node.right === 'ws-1'
+          )
+        ).toBe(true)
+      }
+    }
+  )
+
+  it('rejects a missing ownership permission before resolving the reader', async () => {
+    mockGetUserEntityPermissions.mockResolvedValue(null)
+    const get = vi.fn()
+    await expect(
+      verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'knowledge-base', false, {
+        knowledgeAccess: { get, getForConnectors: vi.fn(), getForDocuments: vi.fn() },
+      })
+    ).resolves.toBe(false)
+    expect(get).not.toHaveBeenCalled()
   })
 })

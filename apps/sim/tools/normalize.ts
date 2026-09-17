@@ -1,5 +1,7 @@
 /**
- * Normalizes a tool ID by stripping resource ID suffix (UUID/tableId).
+ * Normalizes a legacy tool ID by stripping its former resource ID suffix (UUID/tableId).
+ * New provider requests use request-scoped aliases and resolve them through an explicit map;
+ * these cases remain for stored logs and callers that still send the historical ids directly.
  * Workflow tools: 'workflow_executor_<uuid>' -> 'workflow_executor'
  * Knowledge tools: 'knowledge_search_<uuid>' -> 'knowledge_search'
  * Table tools: 'table_query_rows_<tableId>' -> 'table_query_rows'
@@ -19,12 +21,10 @@
 const VERSION_SUFFIX = /^v\d+$/
 
 /** Standard UUID (8-4-4-4-12 hex with hyphens). */
-const UUID_HYPHEN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_HYPHEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Same UUID after hyphens were normalized to underscores. */
-const UUID_UNDERSCORE =
-  /^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$/i
+const UUID_UNDERSCORE = /^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$/i
 
 /** Mongo-style ObjectId (24 hex) or compact UUID (32 hex). */
 const LONG_HEX_ID = /^[0-9a-f]{24}$|^[0-9a-f]{32}$/i

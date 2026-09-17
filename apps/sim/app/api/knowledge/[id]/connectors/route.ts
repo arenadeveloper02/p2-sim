@@ -49,6 +49,7 @@ export const POST = defineInternalJsonRoute({
     apiKey: body.apiKey,
     sourceConfig: body.sourceConfig,
     syncIntervalMinutes: body.syncIntervalMinutes,
+    accessMode: body.accessMode,
     resolveBillingAttribution: (workspaceId: string) =>
       resolveInternalKnowledgeBillingAttribution(request, principal, workspaceId),
     source: 'ui' as const,

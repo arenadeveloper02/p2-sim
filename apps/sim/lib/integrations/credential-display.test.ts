@@ -1,6 +1,12 @@
 /**
  * @vitest-environment node
  */
+
+import {
+  getIntegrationTypesForOAuthServiceId,
+  isOAuthServiceAllowedByIntegrationTypes,
+} from '@sim/deployment-config/integration-availability'
+import integrationsJson from '@sim/deployment-config/integrations.json'
 import { describe, expect, it } from 'vitest'
 import {
   getIntegrationsForCredentialProvider,
@@ -9,7 +15,6 @@ import {
   isFamilyServiceAccount,
   resolveCredentialDisplay,
 } from '@/lib/integrations/credential-display'
-import integrationsJson from '@/lib/integrations/integrations.json'
 import { resolveOAuthServiceForIntegration } from '@/lib/integrations/oauth-service'
 import type { Integration } from '@/lib/integrations/types'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'
@@ -44,6 +49,7 @@ const EXPECTED_COVERAGE: Record<string, string[]> = {
   'calcom-service-account': ['cal-com'],
   'claude-platform-service-account': [],
   'clickup-service-account': ['clickup'],
+  'github-app-installation': ['github'],
   'google-service-account': [
     'gmail',
     'google-bigquery',
@@ -59,6 +65,7 @@ const EXPECTED_COVERAGE: Record<string, string[]> = {
     'google-tasks',
     'google-vault',
   ],
+  'harmonic-service-account': [],
   'hubspot-service-account': ['hubspot'],
   'linear-service-account': ['linear'],
   'monday-service-account': ['monday'],
@@ -95,6 +102,36 @@ const serviceAccount = (providerId: string) => ({
   type: 'service_account',
   displayName: 'Automation Bot',
   providerId,
+})
+
+describe('GitHub Search credentials', () => {
+  it('applies GitHub integration policy without changing workflow token authentication', () => {
+    expect(getIntegrationTypesForOAuthServiceId('github-repositories')).toEqual(['github_v2'])
+    expect(getIntegrationTypesForOAuthServiceId('GITHUB-REPOSITORIES')).toEqual(['github_v2'])
+    expect(isOAuthServiceAllowedByIntegrationTypes('github-repositories', new Set(['slack']))).toBe(
+      false
+    )
+    expect(
+      isOAuthServiceAllowedByIntegrationTypes('github-repositories', new Set(['github_v2']))
+    ).toBe(true)
+    expect(isOAuthServiceAllowedByIntegrationTypes('github-repositories', null)).toBe(true)
+    expect(getIntegrationsForCredentialProvider('github-repositories')).toEqual([
+      expect.objectContaining({ slug: 'github', type: 'github_v2', authType: 'api-key' }),
+    ])
+    expect(getIntegrationsForCredentialProvider('github')).toEqual([])
+  })
+
+  it('uses the GitHub brand and category for a connected Search account', () => {
+    const display = resolveCredentialDisplay({
+      type: 'oauth',
+      displayName: 'someone@example.com',
+      providerId: 'github-repositories',
+    })
+
+    expect(display.blockType).toBe('github_v2')
+    expect(display.integration?.slug).toBe('github')
+    expect(display.coveredIntegrations.map((integration) => integration.slug)).toEqual(['github'])
+  })
 })
 
 describe('service-account coverage', () => {
@@ -242,9 +279,9 @@ describe('resolveCredentialDisplay', () => {
 })
 
 describe('getServiceAccountCoverageSentence', () => {
-  it('tells the user up front that one Atlassian token spans all three products', () => {
+  it('explains that reusing an Atlassian token requires scopes and app access for each product', () => {
     expect(getServiceAccountCoverageSentence('atlassian-service-account')).toBe(
-      'One token works across Confluence, Jira, and Jira Service Management.'
+      'Reuse one token across Confluence, Jira, and Jira Service Management. Each product requires its own scopes and app access.'
     )
   })
 

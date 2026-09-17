@@ -45,10 +45,15 @@ export interface CredentialGroupProviderAdapter {
   provider: CredentialGroupProvider
   requiresRefreshToken: boolean
   getPolicy(
-    option: Pick<CredentialGroupOptionConfig, 'provider' | 'slackBotCredentialId'> | undefined,
+    option:
+      | (Pick<CredentialGroupOptionConfig, 'provider' | 'slackBotCredentialId'> &
+          Partial<Pick<CredentialGroupOptionConfig, 'requiredScopes'>>)
+      | undefined,
     context: {
-      workspaceId: string
+      workspaceId?: string | null
+      organizationId?: string | null
       credentialGroupId?: string
+      credentialGroupOptionId?: string
       authorizationAppId?: string
       executor?: DbOrTx
     }
@@ -82,5 +87,12 @@ export class CredentialGroupOAuthError extends Error {
   ) {
     super(message)
     this.name = 'CredentialGroupOAuthError'
+  }
+}
+
+export class CredentialGroupInvitationUnavailableError extends CredentialGroupOAuthError {
+  constructor() {
+    super('This account invitation was revoked.', 409)
+    this.name = 'CredentialGroupInvitationUnavailableError'
   }
 }

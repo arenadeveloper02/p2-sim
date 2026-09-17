@@ -1,4 +1,9 @@
-import type { Principal, WorkflowExecutionDelegatedPrincipal } from '@sim/auth/principal'
+import {
+  type BoundWorkflowExecutionDelegatedPrincipal,
+  isUserCredentialPrincipal,
+  type Principal,
+  requirePrincipalSubjectUserId,
+} from '@sim/auth/principal'
 import { db, dbFor } from '@sim/db'
 import { uploadSession } from '@sim/db/schema'
 import { safeCompare } from '@sim/security/compare'
@@ -46,6 +51,14 @@ import type {
 
 export const UPLOAD_SESSION_PUT_MAX_BYTES = 50 * 1024 * 1024
 export const UPLOAD_SESSION_PART_SIZE = 8 * 1024 * 1024
+/**
+ * Single-PUT ceiling for the `local` provider. A local PUT is proxied through an app route
+ * rather than sent to object storage, so it must stay under the route's body limit; anything
+ * larger goes multipart, whose parts are already sized to fit. Kept equal to
+ * {@link UPLOAD_SESSION_PART_SIZE} but named separately so tuning part size for cloud
+ * throughput cannot silently move the local proxy threshold.
+ */
+export const UPLOAD_SESSION_LOCAL_PUT_MAX_BYTES = UPLOAD_SESSION_PART_SIZE
 export const UPLOAD_SESSION_MAX_PART_URLS = 100
 export const UPLOAD_SESSION_TTL_MS = 24 * 60 * 60 * 1000
 export const UPLOAD_SESSION_ASSET_MAX_BYTES = 5 * 1024 * 1024
@@ -106,6 +119,7 @@ export interface UploadSessionAuthBinding {
   principal:
     | { kind: 'session'; userId: string; sessionId: string }
     | { kind: 'personal_api_key'; userId: string; keyId: string }
+    | { kind: 'oauth_access_token'; userId: string; clientId: string }
     | { kind: 'workspace_api_key'; workspaceId: string; keyId: string }
     | {
         kind: 'delegated'
@@ -133,11 +147,11 @@ export class UploadSessionError extends OrchestrationError {
 
 function isExecutorWorkflowExecutionPrincipal(
   principal: Principal
-): principal is WorkflowExecutionDelegatedPrincipal {
+): principal is BoundWorkflowExecutionDelegatedPrincipal {
   if (
     principal.kind !== 'delegated' ||
     principal.serviceId !== 'executor' ||
-    !('delegationContext' in principal)
+    !principal.delegationContext
   ) {
     return false
   }
@@ -212,11 +226,6 @@ export async function createUploadSession(
     })
   }
   const { storageContext, finalKey } = resolveUploadStorage(params, id)
-  const method: UploadTransferMethod =
-    params.fileSize <= UPLOAD_SESSION_PUT_MAX_BYTES ? 'put' : 'multipart'
-  const partSize = method === 'multipart' ? UPLOAD_SESSION_PART_SIZE : null
-  const partCount =
-    method === 'multipart' ? Math.ceil(params.fileSize / UPLOAD_SESSION_PART_SIZE) : null
 
   if (requiresStorageQuota(params.purpose)) {
     if (!workspaceId) throw new Error(`${params.purpose} upload is missing workspaceId`)
@@ -228,6 +237,12 @@ export async function createUploadSession(
   }
 
   const provider = uploadStorageProvider()
+  const putMaxBytes =
+    provider === 'local' ? UPLOAD_SESSION_LOCAL_PUT_MAX_BYTES : UPLOAD_SESSION_PUT_MAX_BYTES
+  const method: UploadTransferMethod = params.fileSize <= putMaxBytes ? 'put' : 'multipart'
+  const partSize = method === 'multipart' ? UPLOAD_SESSION_PART_SIZE : null
+  const partCount =
+    method === 'multipart' ? Math.ceil(params.fileSize / UPLOAD_SESSION_PART_SIZE) : null
   if (provider === 'local') await maybeCleanupLocalUploadArtifacts()
   const objectMetadata = uploadSessionObjectMetadata({
     id,
@@ -412,6 +427,9 @@ export function createUploadSessionAuthBinding(
   options: { executorDelegationAudience?: string } = {}
 ): UploadSessionAuthBinding {
   switch (principal.kind) {
+    case 'slack_app':
+    case 'slack_installation':
+      throw new UploadSessionError('forbidden', 'Slack installations cannot create uploads')
     case 'session':
       return {
         version: 1,
@@ -427,6 +445,12 @@ export function createUploadSessionAuthBinding(
         version: 1,
         workspaceId,
         principal: { kind: principal.kind, userId: principal.userId, keyId: principal.keyId },
+      }
+    case 'oauth_access_token':
+      return {
+        version: 1,
+        workspaceId,
+        principal: { kind: principal.kind, userId: principal.userId, clientId: principal.clientId },
       }
     case 'workspace_api_key':
       if (principal.workspaceId !== workspaceId) {
@@ -452,7 +476,7 @@ export function createUploadSessionAuthBinding(
         principal: {
           kind: principal.kind,
           serviceId: principal.serviceId,
-          subjectUserId: principal.subjectUserId,
+          subjectUserId: requirePrincipalSubjectUserId(principal),
           audience: principal.audience,
           workflowId: principal.delegationContext.workflowId,
           ...(principal.delegationContext.executionId
@@ -461,11 +485,19 @@ export function createUploadSessionAuthBinding(
         },
       }
     }
+    case 'organization_delegated':
     case 'credential_group_enrollment':
       throw new UploadSessionError(
         'forbidden',
         'Credential Group enrollment principals cannot create uploads'
       )
+    case 'scim_connection':
+      throw new UploadSessionError(
+        'forbidden',
+        'Directory provisioning credentials cannot create uploads'
+      )
+    case 'system':
+      throw new UploadSessionError('forbidden', 'System principals cannot create uploads')
   }
 }
 
@@ -494,16 +526,20 @@ export function assertUploadSessionAuthBinding(
         ? principal.kind === 'personal_api_key' &&
           bound.userId === principal.userId &&
           bound.keyId === principal.keyId
-        : bound.kind === 'workspace_api_key'
-          ? principal.kind === 'workspace_api_key' &&
-            bound.workspaceId === principal.workspaceId &&
-            bound.keyId === principal.keyId
-          : isExecutorWorkflowExecutionPrincipal(principal) &&
-            principal.workspaceId === session.workspaceId &&
-            principal.subjectUserId === bound.subjectUserId &&
-            principal.audience === bound.audience &&
-            principal.delegationContext.workflowId === bound.workflowId &&
-            principal.delegationContext.executionId === bound.executionId)
+        : bound.kind === 'oauth_access_token'
+          ? principal.kind === 'oauth_access_token' &&
+            bound.userId === principal.userId &&
+            bound.clientId === principal.clientId
+          : bound.kind === 'workspace_api_key'
+            ? principal.kind === 'workspace_api_key' &&
+              bound.workspaceId === principal.workspaceId &&
+              bound.keyId === principal.keyId
+            : isExecutorWorkflowExecutionPrincipal(principal) &&
+              principal.workspaceId === session.workspaceId &&
+              principal.subjectUserId === bound.subjectUserId &&
+              principal.audience === bound.audience &&
+              principal.delegationContext.workflowId === bound.workflowId &&
+              principal.delegationContext.executionId === bound.executionId)
   if (!matches) throw uploadNotFound()
 }
 
@@ -518,7 +554,7 @@ function assertLegacyUploadSessionOwner(session: UploadSessionRecord, principal:
   const matches =
     principal.kind === 'workspace_api_key'
       ? principal.workspaceId === session.workspaceId
-      : (principal.kind === 'session' || principal.kind === 'personal_api_key') &&
+      : (principal.kind === 'session' || isUserCredentialPrincipal(principal)) &&
         principal.userId === session.userId
   if (!matches) throw uploadNotFound()
 }
@@ -632,14 +668,14 @@ export async function completeUploadSession<T>(params: {
       if (claimed.method === 'put') {
         throw new UploadSessionError('conflict', 'Uploaded object not found')
       }
-      const parts = await listMultipartProviderParts({
+      const providerParts = await listMultipartProviderParts({
         provider: claimed.storageProvider,
         providerUploadId: claimed.providerUploadId,
         uploadId: claimed.id,
         key: claimed.finalKey,
         context: claimed.storageContext,
       })
-      validateProviderParts(claimed, parts)
+      const parts = validatedSortedProviderParts(claimed, providerParts)
       try {
         await completeMultipartProviderUpload({
           provider: claimed.storageProvider,
@@ -1041,7 +1077,10 @@ async function claimSession(
   return sessionFromRow(row, '')
 }
 
-function validateProviderParts(session: UploadSessionRecord, parts: CompletedUploadPart[]): void {
+function validatedSortedProviderParts(
+  session: UploadSessionRecord,
+  parts: CompletedUploadPart[]
+): CompletedUploadPart[] {
   if (!session.partCount) throw new Error('Multipart upload is missing partCount')
   if (parts.length !== session.partCount) {
     throw new UploadSessionError(
@@ -1072,6 +1111,7 @@ function validateProviderParts(session: UploadSessionRecord, parts: CompletedUpl
       )
     }
   }
+  return sorted
 }
 
 function assertObjectIdentity(
@@ -1283,6 +1323,9 @@ function isUploadSessionAuthBinding(value: unknown): value is UploadSessionAuthB
   }
   if (principal.kind === 'personal_api_key') {
     return typeof principal.userId === 'string' && typeof principal.keyId === 'string'
+  }
+  if (principal.kind === 'oauth_access_token') {
+    return typeof principal.userId === 'string' && typeof principal.clientId === 'string'
   }
   if (principal.kind === 'delegated') {
     return (

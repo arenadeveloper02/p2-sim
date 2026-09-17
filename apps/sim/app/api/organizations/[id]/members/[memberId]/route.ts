@@ -9,16 +9,21 @@ import { updateOrganizationMemberRoleContract } from '@/lib/api/contracts/organi
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { setActiveOrganizationForCurrentSession } from '@/lib/auth/active-organization'
-import { getOrgMemberLedgerByUser } from '@/lib/billing/core/organization'
-import { getUserUsageData } from '@/lib/billing/core/usage'
+import { getOrganizationMemberUsageSnapshot } from '@/lib/billing/core/organization'
 import {
+  acquireOrganizationUserMutationLocks,
   removeExternalUserFromOrganizationWorkspaces,
   removeUserFromOrganization,
   WORKSPACE_BILLING_ACCOUNT_REMOVAL_ERROR,
 } from '@/lib/billing/organizations/membership'
 import { reconcileOrganizationSeats } from '@/lib/billing/organizations/seats'
+import { ForbiddenOperationError } from '@/lib/core/application'
+import { OrchestrationError, statusForOrchestrationError } from '@/lib/core/orchestration/types'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { isRetryableTransactionError } from '@/lib/db/transaction'
+import { changeMemberRoleTx } from '@/lib/organizations/members/lifecycle'
 import { captureServerEvent } from '@/lib/posthog/server'
+import { assertMembershipNotScimManaged } from '@/ee/scim/lib/managed-membership'
 
 const logger = createLogger('OrganizationMemberAPI')
 
@@ -90,7 +95,6 @@ export const GET = withRouteHandler(
       if (includeUsage && hasAdminAccess) {
         const usageData = await db
           .select({
-            currentPeriodCost: userStats.currentPeriodCost,
             currentUsageLimit: userStats.currentUsageLimit,
             usageLimitUpdatedAt: userStats.usageLimitUpdatedAt,
             lastPeriodCost: userStats.lastPeriodCost,
@@ -99,31 +103,22 @@ export const GET = withRouteHandler(
           .where(eq(userStats.userId, memberId))
           .limit(1)
 
-        const computed = await getUserUsageData(memberId, dbReplica)
-
         if (usageData.length > 0) {
-          // currentPeriodCost is only a baseline; add this member's attributed
-          // usage_log for the period. (getUserUsageData returns the org POOL for
-          // org-scoped members, so it can't supply the per-member figure.)
-          const memberLedger =
-            (
-              await getOrgMemberLedgerByUser(
-                organizationId,
-                computed.billingPeriodStart && computed.billingPeriodEnd
-                  ? { start: computed.billingPeriodStart, end: computed.billingPeriodEnd }
-                  : null,
-                dbReplica
-              )
-            ).get(memberId) ?? 0
+          const { billingPeriod, usageByUser } = await getOrganizationMemberUsageSnapshot(
+            organizationId,
+            {
+              executor: dbReplica,
+              userIds: [memberId],
+            }
+          )
+          const memberLedger = usageByUser.get(memberId) ?? 0
           memberData = {
             ...memberData,
             usage: {
               ...usageData[0],
-              currentPeriodCost: (
-                Number(usageData[0].currentPeriodCost ?? 0) + memberLedger
-              ).toString(),
-              billingPeriodStart: computed.billingPeriodStart,
-              billingPeriodEnd: computed.billingPeriodEnd,
+              currentPeriodCost: memberLedger.toString(),
+              billingPeriodStart: billingPeriod?.start ?? null,
+              billingPeriodEnd: billingPeriod?.end ?? null,
             },
           } as typeof memberData & {
             usage: (typeof usageData)[0] & {
@@ -219,16 +214,27 @@ export const PUT = withRouteHandler(
         )
       }
 
-      const updatedMember = await db
-        .update(member)
-        .set({ role })
-        .where(and(eq(member.organizationId, organizationId), eq(member.userId, memberId)))
-        .returning()
+      /**
+       * The member is re-read under the organization's mutation lock, so a
+       * concurrent promotion to owner — or a directory provisioning this very
+       * member — cannot slip between the checks and the write. When the
+       * organization has made its identity provider the source of truth, a role
+       * set here is reverted by the next sync; refusing says so.
+       */
+      const roleChange = await db.transaction(async (tx) => {
+        await acquireOrganizationUserMutationLocks(tx, {
+          userId: memberId,
+          organizationIds: [organizationId],
+        })
+        await assertMembershipNotScimManaged({ organizationId, userId: memberId, executor: tx })
+        return changeMemberRoleTx(tx, { organizationId, userId: memberId, role })
+      })
 
-      if (updatedMember.length === 0) {
-        return NextResponse.json({ error: 'Failed to update member role' }, { status: 500 })
-      }
-
+      /**
+       * The audit row and analytics event fire whether or not the role actually
+       * moved, exactly as this route did before the write went through the
+       * shared primitive. Callers assert on those side effects.
+       */
       logger.info('Organization member role updated', {
         organizationId,
         memberId,
@@ -265,13 +271,33 @@ export const PUT = withRouteHandler(
         success: true,
         message: 'Member role updated successfully',
         data: {
-          id: updatedMember[0].id,
-          userId: updatedMember[0].userId,
-          role: updatedMember[0].role,
+          id: targetMember[0].id,
+          userId: targetMember[0].userId,
+          role: roleChange.changed ? roleChange.to : roleChange.role,
           updatedBy: session.user.id,
         },
       })
     } catch (error) {
+      if (error instanceof ForbiddenOperationError) {
+        return NextResponse.json(
+          { error: error.message, details: { code: error.detailCode } },
+          { status: 403 }
+        )
+      }
+      if (error instanceof OrchestrationError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: statusForOrchestrationError(error.code) }
+        )
+      }
+      /** The role change now serializes on the organization lock; a timeout is "retry", not a fault. */
+      if (isRetryableTransactionError(error)) {
+        return NextResponse.json(
+          { error: 'The organization is busy; retry in a moment' },
+          { status: 409 }
+        )
+      }
+
       logger.error('Failed to update organization member role', {
         organizationId: (await context.params).id,
         memberId: (await context.params).memberId,
@@ -417,6 +443,7 @@ export const DELETE = withRouteHandler(
         userId: targetUserId,
         organizationId,
         memberId: targetMember[0].id,
+        spareSessionToken: session.session.token,
       })
 
       if (!result.success) {

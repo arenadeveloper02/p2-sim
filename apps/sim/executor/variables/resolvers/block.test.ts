@@ -8,6 +8,7 @@ import { BlockResolver } from './block'
 import { RESOLVED_EMPTY, type ResolutionContext } from './reference'
 
 vi.mock('@/lib/uploads/server/metadata', () => ({
+  insertImmutableFileMetadata: vi.fn().mockResolvedValue({ id: 'execution-payload-file' }),
   insertFileMetadata: vi.fn().mockResolvedValue({ id: 'execution-payload-file' }),
   deleteFileMetadata: vi.fn().mockResolvedValue(undefined),
 }))
@@ -763,6 +764,17 @@ describe('BlockResolver', () => {
       expect(resolver.formatValueForBlock('quote "test"', 'condition')).toBe('"quote \\"test\\""')
       expect(resolver.formatValueForBlock('backslash \\', 'condition')).toBe('"backslash \\\\"')
       expect(resolver.formatValueForBlock('tab\there', 'condition')).toBe('"tab\there"')
+    })
+
+    it.concurrent('should escape the quotes it does not open for condition block', () => {
+      // The author's quoting decides which literal this lands in, so escaping only the
+      // double quote this wrapper opens leaves the other contexts breakable.
+      const resolver = new BlockResolver(createTestWorkflow())
+      expect(resolver.formatValueForBlock("' + evil() + '", 'condition')).toBe(
+        '"\\\' + evil() + \\\'"'
+      )
+      expect(resolver.formatValueForBlock(`\${evil()}`, 'condition')).toBe(`"\\\${evil()}"`)
+      expect(resolver.formatValueForBlock('`evil()`', 'condition')).toBe('"\\`evil()\\`"')
     })
 
     it.concurrent('should format object for condition block', () => {

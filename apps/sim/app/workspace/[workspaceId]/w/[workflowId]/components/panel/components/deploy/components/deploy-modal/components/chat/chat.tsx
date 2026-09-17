@@ -5,6 +5,7 @@ import {
   ChipConfirmModal,
   ChipEmailsInput,
   ChipInput,
+  ChipSelect,
   cn,
   Input,
   Label,
@@ -19,11 +20,11 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Check } from 'lucide-react'
 import { GeneratedPasswordInput } from '@/components/ui'
-import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
-import { isSsoEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
 import { validateAllowlistEntry } from '@/lib/messaging/email/validation'
+import { formatInternalOutputSelector } from '@/lib/workflows/streaming/output-selector'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import {
   type AuthType,
@@ -88,6 +89,13 @@ interface ChatDeployProps {
 }
 
 export type ExistingChat = ChatDetail
+
+function isMatchingDeployment(
+  existingChat: ExistingChat | null | undefined,
+  mode: 'chat' | 'app'
+): existingChat is ExistingChat {
+  return Boolean(existingChat && (existingChat.deploymentType ?? 'chat') === mode)
+}
 
 interface FormErrors {
   identifier?: string
@@ -279,7 +287,7 @@ export function ChatDeploy({
     }
 
     if (!formData.department?.trim()) {
-      newErrors.general = 'Category is required'
+      newErrors.department = 'Category is required'
     }
 
     setErrors(newErrors)
@@ -289,6 +297,7 @@ export function ChatDeploy({
   const isFormValid =
     isIdentifierValid &&
     Boolean(formData.title.trim()) &&
+    Boolean(formData.department?.trim()) &&
     (isAppMode || formData.selectedOutputBlocks.length > 0) &&
     (formData.authType !== 'password' || !isWhitespaceOnlyPassword(formData.password)) &&
     ((formData.authType !== 'email' && formData.authType !== 'sso') ||
@@ -306,7 +315,7 @@ export function ChatDeploy({
   }, [workflowId])
 
   useEffect(() => {
-    if (existingChat && !hasInitializedFormRef.current) {
+    if (isMatchingDeployment(existingChat, mode) && !hasInitializedFormRef.current) {
       const allowedEmails = Array.isArray(existingChat.allowedEmails)
         ? existingChat.allowedEmails
         : []
@@ -328,7 +337,8 @@ export function ChatDeploy({
         goldenQueries: existingChat.customizations?.goldenQueries ?? [],
         selectedOutputBlocks: Array.isArray(existingChat.outputConfigs)
           ? existingChat.outputConfigs.map(
-              (config: { blockId: string; path: string }) => `${config.blockId}_${config.path}`
+              (config: { workflowId?: string; blockId: string; path: string }) =>
+                formatInternalOutputSelector(config.blockId, config.path, config.workflowId)
             )
           : [],
         deploymentType: mode,
@@ -342,7 +352,11 @@ export function ChatDeploy({
       }
 
       hasInitializedFormRef.current = true
-    } else if (!existingChat && !isLoadingChat && !hasInitializedFormRef.current) {
+    } else if (
+      !isMatchingDeployment(existingChat, mode) &&
+      !isLoadingChat &&
+      !hasInitializedFormRef.current
+    ) {
       setFormData(createInitialFormData(mode, sessionEmail))
       setImageUrl(null)
       hasInitializedFormRef.current = true
@@ -416,7 +430,7 @@ export function ChatDeploy({
 
     setChatSubmitting(true)
 
-    const isNewChat = !existingChat?.id
+    const isNewChat = !isMatchingDeployment(existingChat, mode)
 
     try {
       if (!validateForm()) {
@@ -445,7 +459,7 @@ export function ChatDeploy({
         selectedOutputBlocks: isAppMode ? [] : formData.selectedOutputBlocks,
       }
 
-      if (existingChat?.id) {
+      if (isMatchingDeployment(existingChat, mode)) {
         const result = await updateChatMutation.mutateAsync({
           chatId: existingChat.id,
           workflowId,
@@ -531,7 +545,7 @@ export function ChatDeploy({
       <form id={formId} ref={formRef} onSubmit={handleSubmit} className='-mx-1 space-y-4 px-1'>
         {errors.general && (
           <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
-            <TriangleAlert className='size-4 flex-shrink-0' />
+            <TriangleAlert className='size-4 shrink-0' />
             <span>{errors.general}</span>
           </div>
         )}
@@ -559,17 +573,27 @@ export function ChatDeploy({
             <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
               Category
             </Label>
-            <CustomSelect
+            <ChipSelect
+              aria-label='Category'
+              aria-required
+              aria-invalid={Boolean(errors.department)}
+              aria-describedby={errors.department ? `${formId}-department-error` : undefined}
+              align='start'
+              fullWidth
+              dropdownWidth='trigger'
+              stayBelow
               value={formData.department || ''}
               onChange={(value) => updateField('department', value)}
               disabled={chatSubmitting}
               placeholder='Select category'
               options={departmentOptions}
             />
+            {errors.department && (
+              <p id={`${formId}-department-error`} className='mt-1 text-destructive text-sm'>
+                {errors.department}
+              </p>
+            )}
           </div>
-          {errors.department && (
-            <p className='mt-1 text-destructive text-sm'>{errors.department}</p>
-          )}
           <div>
             <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
               Description
@@ -945,6 +969,7 @@ function AuthSelector({
   const { data: session } = useSession()
   const hasPrefilledSessionEmailRef = useRef(false)
   const revealPasswordMutation = useRevealChatPassword()
+  const { features } = useDeploymentShape()
 
   /**
    * Editing or regenerating the password clears a failed reveal. The mutation
@@ -960,7 +985,7 @@ function AuthSelector({
   const allowedAuthTypes = permissionConfig.allowedChatDeployAuthTypes
 
   const ssoAvailable =
-    isSsoEnabled || savedAuthType === 'sso' || (allowedAuthTypes?.includes('sso') ?? false)
+    features.sso || savedAuthType === 'sso' || (allowedAuthTypes?.includes('sso') ?? false)
   const baseAuthOptions: AuthType[] = ssoAvailable
     ? ['public', 'password', 'email', 'sso']
     : ['public', 'password', 'email']

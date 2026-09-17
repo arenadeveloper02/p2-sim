@@ -11,6 +11,7 @@ import { formatMessagesForProvider } from '@/providers/attachments'
 import { getCachedProviderClient } from '@/providers/client-cache'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import { createOpenAICompatAssistantHistory } from '@/providers/openai-compat/assistant-history'
+import { getOpenAICompatibleApiBaseUrl } from '@/providers/openai-compat/base-url'
 import { executeProviderTool } from '@/providers/runtime-context'
 import { createSettledAgentEventStream } from '@/providers/stream-events'
 import { createStreamingExecution } from '@/providers/streaming-execution'
@@ -53,13 +54,14 @@ export const vllmProvider: ProviderConfig = {
       return
     }
 
-    const baseUrl = (env.VLLM_BASE_URL || '').replace(/\/$/, '')
+    const baseUrl = env.VLLM_BASE_URL?.trim()
     if (!baseUrl) {
       logger.info('VLLM_BASE_URL not configured, skipping initialization')
       return
     }
 
     try {
+      const apiBaseUrl = getOpenAICompatibleApiBaseUrl(baseUrl)
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       }
@@ -68,7 +70,7 @@ export const vllmProvider: ProviderConfig = {
         headers.Authorization = `Bearer ${env.VLLM_API_KEY}`
       }
 
-      const response = await fetch(`${baseUrl}/v1/models`, { headers })
+      const response = await fetch(`${apiBaseUrl}/models`, { headers })
       if (!response.ok) {
         await response.text().catch(() => {})
         useProvidersStore.getState().setProviderModels('vllm', [])
@@ -105,27 +107,31 @@ export const vllmProvider: ProviderConfig = {
 
     const userProvidedEndpoint = request.azureEndpoint
 
-    const baseUrl = (userProvidedEndpoint || env.VLLM_BASE_URL || '').replace(/\/$/, '')
+    const baseUrl = (userProvidedEndpoint || env.VLLM_BASE_URL)?.trim()
     if (!baseUrl) {
       throw new Error('VLLM_BASE_URL is required for vLLM provider')
     }
+    const apiBaseUrl = getOpenAICompatibleApiBaseUrl(baseUrl)
 
     /**
      * A user-supplied endpoint is attacker-controlled: validate it against the
-     * central SSRF guard and pin the connection to the resolved IP to defeat DNS
+     * egress guard and pin the connection to the resolved IP to defeat DNS
      * rebinding. The operator-configured `VLLM_BASE_URL` is trusted and left
      * unvalidated, mirroring the Azure providers.
      *
-     * `allowHttp` is enabled because self-hosted vLLM is frequently served over
-     * plain HTTP; this only relaxes the protocol requirement — the private/reserved
-     * IP blocklist and blocked-port checks still apply, so SSRF protection is intact.
+     * The `selfHostedService` profile is what makes a self-hosted vLLM reachable
+     * at all: over plain HTTP, which these deployments usually are, and at a
+     * private address once the operator names it in the egress allowlist.
+     * Anything they have not named stays blocked.
      */
     let pinnedFetch: typeof fetch | undefined
     let pinnedIP: string | undefined
     if (userProvidedEndpoint) {
-      const validation = await validateUrlWithDNS(userProvidedEndpoint, 'vLLM endpoint', {
-        allowHttp: true,
-      })
+      const validation = await validateUrlWithDNS(
+        userProvidedEndpoint,
+        'vLLM endpoint',
+        'selfHostedService'
+      )
       if (!validation.isValid) {
         logger.warn('Blocked SSRF attempt via vLLM endpoint', {
           endpoint: userProvidedEndpoint,
@@ -133,21 +139,18 @@ export const vllmProvider: ProviderConfig = {
         })
         throw new Error(`Invalid vLLM endpoint: ${validation.error}`)
       }
-      if (!validation.resolvedIP) {
-        throw new Error('Invalid vLLM endpoint: could not resolve a pinnable IP address')
-      }
       pinnedIP = validation.resolvedIP
-      pinnedFetch = createPinnedFetch(pinnedIP)
+      pinnedFetch = createPinnedFetch(pinnedIP, { profile: 'selfHostedService' })
     }
 
     const apiKey = request.apiKey || env.VLLM_API_KEY || 'empty'
     const vllm = getCachedProviderClient(
-      `vllm::${apiKey}::${baseUrl}::${pinnedIP ?? 'no-pin'}`,
+      `vllm::${apiKey}::${apiBaseUrl}::${pinnedIP ?? 'no-pin'}`,
       () =>
         new OpenAI({
           ...openAICompatTransport(),
           apiKey,
-          baseURL: `${baseUrl}/v1`,
+          baseURL: apiBaseUrl,
           ...(pinnedFetch ? { fetch: pinnedFetch } : {}),
         })
     )
@@ -183,7 +186,7 @@ export const vllmProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens != null) payload.max_completion_tokens = request.maxTokens
+    if (request.maxTokens != null) payload.max_tokens = request.maxTokens
 
     if (request.responseFormat) {
       payload.response_format = {
@@ -387,7 +390,12 @@ export const vllmProvider: ProviderConfig = {
               }
             }
 
-            const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+            const { toolParams, executionParams } = prepareToolExecution(
+              tool,
+              toolArgs,
+              request,
+              toolCall.id
+            )
             const { rawResponse, modelResponse } = await executeProviderTool(
               toolName,
               executionParams,

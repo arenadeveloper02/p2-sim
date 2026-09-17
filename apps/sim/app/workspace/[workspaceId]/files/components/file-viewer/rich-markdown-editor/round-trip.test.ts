@@ -5,6 +5,7 @@
  * be idempotent (a second pass changes nothing) so autosave never churns. Mirrors the exact
  * pipeline the editor uses: split frontmatter out, serialize the body, re-attach + clean up.
  */
+import type { JSONContent } from '@tiptap/core'
 import { Editor } from '@tiptap/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createMarkdownContentExtensions } from './extensions'
@@ -14,6 +15,7 @@ import {
   postProcessSerializedMarkdown,
   splitFrontmatter,
 } from './markdown-fidelity'
+import { parseMarkdownToDoc } from './markdown-parse'
 
 let editor: Editor | null = null
 
@@ -95,13 +97,11 @@ describe('markdown-fidelity utils', () => {
   })
 
   it('restores escaped callout markers', () => {
-    expect(postProcessSerializedMarkdown('> \\[!NOTE\\]\n> hi')).toBe('> [!NOTE]\n> hi')
+    expect(roundTrip('> [!NOTE]\n> hi').trim()).toBe('> [!NOTE]\n> hi')
   })
 
   it('restores escaped callout markers in nested blockquotes', () => {
-    expect(postProcessSerializedMarkdown('> > \\[!WARNING\\]\n> > hi')).toBe(
-      '> > [!WARNING]\n> > hi'
-    )
+    expect(roundTrip('> > [!WARNING]\n> > hi').trim()).toBe('> > [!WARNING]\n> > hi')
   })
 
   it('normalizes link hrefs', () => {
@@ -126,6 +126,66 @@ describe('markdown-fidelity utils', () => {
     expect(normalizeLinkHref('blob:https://x.com/uuid')).toBe('')
     expect(normalizeLinkHref('vbscript:msgbox(1)')).toBe('')
     expect(normalizeLinkHref('localhost:3000/path')).toBe('https://localhost:3000/path')
+    // Adding `//` doesn't make a scheme safe, and an unknown scheme is dropped rather than trusted —
+    // the allowlist is the whole rule.
+    expect(normalizeLinkHref('javascript://%0aalert(1)')).toBe('')
+    expect(normalizeLinkHref('customproto://host/path')).toBe('')
+  })
+
+  /**
+   * The property that matters, stated over the spellings a browser collapses before it resolves a
+   * scheme: whatever comes back must not be executable. Padding and interior tabs/newlines are the
+   * usual way a blocked scheme is smuggled past a matcher that only reads the literal text.
+   */
+  it('never returns a target that resolves to an executable scheme', () => {
+    const tab = String.fromCharCode(9)
+    const lf = String.fromCharCode(10)
+    const nbsp = String.fromCharCode(160)
+    const inputs = [
+      'javascript://%0aalert(1)',
+      'javascript:alert(1)',
+      'JAVASCRIPT://x',
+      ' javascript:alert(1) ',
+      `${nbsp}javascript:alert(1)`,
+      `java${tab}script://alert(1)`,
+      `java${lf}script:alert(1)`,
+      'data://text/html,<script>',
+      'vbscript://x',
+      'blob://x',
+      'file://x',
+    ]
+
+    const executable = inputs.filter((input) =>
+      /^(?:javascript|data|vbscript|blob|file):/.test(
+        normalizeLinkHref(input)
+          .replace(/[\t\n\r]/g, '')
+          .toLowerCase()
+      )
+    )
+    expect(executable).toEqual([])
+  })
+
+  /**
+   * A linked image carries its target in a node attribute rather than a link mark, so the mark's own
+   * URI validation never sees it and the raw target survives parsing — which is correct, since the
+   * document must serialize back verbatim. `image.tsx` builds its anchor from
+   * `normalizeLinkHref(attrs.href)` and omits the anchor entirely when that is empty, so this is the
+   * step that decides whether the target ever reaches the DOM.
+   */
+  it('drops a dangerous linked-image target before it can reach an anchor', () => {
+    const doc = parseMarkdownToDoc('[![a](https://x.example/i.png)](javascript://%0aalert(1))')
+    const hrefs: string[] = []
+    const walk = (node: JSONContent) => {
+      if (node.type === 'image' && typeof node.attrs?.href === 'string') hrefs.push(node.attrs.href)
+      node.content?.forEach(walk)
+    }
+    walk(doc)
+
+    // The parser preserves the authored target — serialization round-trips it verbatim.
+    expect(hrefs).toHaveLength(1)
+    expect(hrefs[0]).toContain('javascript://')
+    // …and the renderer refuses to build an anchor out of it.
+    expect(normalizeLinkHref(hrefs[0])).toBe('')
   })
 
   it('collapses trailing blank lines and preserves leading whitespace', () => {
@@ -237,6 +297,52 @@ describe('editor markdown round-trip', () => {
     expect(sized).toContain('<img src="https://e.com/i.png" alt="d" width="320">')
     expect(roundTrip(sized)).toBe(sized)
     expect(roundTrip('![a](https://e.com/i.png)')).toContain('![a](https://e.com/i.png)')
+  })
+
+  it('round-trips every sized linked-image attribute without dropping dimensions', () => {
+    const source =
+      '[<img src="https://e.com/i.png" alt="" title="Diagram" width="320" height="180">](https://e.com "Details")'
+    const out = roundTrip(source)
+
+    expect(out).toContain('alt=""')
+    expect(out).toContain('width="320" height="180"')
+    expect(out).toContain('](https://e.com "Details")')
+    expect(roundTrip(out)).toBe(out)
+  })
+
+  it('uses empty alt text when a linked HTML image has no alt attribute', () => {
+    const source = '[<img src="https://e.com/i.png" width="320">](https://e.com)'
+    const out = roundTrip(source)
+
+    expect(out).toContain('alt=""')
+    expect(out).not.toContain('alt="&lt;img')
+    expect(roundTrip(out)).toBe(out)
+  })
+
+  it('round-trips linked images with escaped alt text and angle-bracket destinations', () => {
+    const source = '[![a\\]b](<https://e.com/image (1).png>)](<https://e.com/view (1)> "Details")'
+    const out = roundTrip(source)
+
+    expect(out).toContain('a\\]b')
+    expect(out).toContain('<https://e.com/image (1).png>')
+    expect(out).toContain('<https://e.com/view (1)>')
+    expect(roundTrip(out)).toBe(out)
+  })
+
+  it('parses a paragraph of adjacent links and linked images without recursive suffix scans', () => {
+    const links = Array.from(
+      { length: 80 },
+      (_, index) => `[Link ${index}](https://e.com/${index})`
+    )
+    const images = Array.from(
+      { length: 40 },
+      (_, index) => `[![Image ${index}](https://e.com/${index}.png)](https://e.com/${index})`
+    )
+    const out = roundTrip([...links, ...images].join(' '))
+
+    for (const link of links) expect(out).toContain(link)
+    for (const image of images) expect(out).toContain(image)
+    expect(roundTrip(out)).toBe(out)
   })
 
   it('preserves a sized base64 image and escapes quotes in attributes', () => {
@@ -503,19 +609,23 @@ describe('highlight ==mark==', () => {
 })
 
 describe('autolink / bare-URL preservation', () => {
-  it('keeps a bare URL bare instead of rewriting it to [url](url)', () => {
-    expect(roundTrip('visit https://sim.ai today').trim()).toBe('visit https://sim.ai today')
+  it('uses the native link serializer without changing link text or destinations', () => {
+    expect(roundTrip('visit https://sim.ai today').trim()).toBe(
+      'visit [https://sim.ai](https://sim.ai) today'
+    )
     expect(roundTrip('both https://a.com and https://b.com').trim()).toBe(
-      'both https://a.com and https://b.com'
+      'both [https://a.com](https://a.com) and [https://b.com](https://b.com)'
     )
   })
 
-  it('collapses an angle autolink and a bare email to their bare form', () => {
-    expect(roundTrip('see <https://sim.ai> here').trim()).toBe('see https://sim.ai here')
-    expect(roundTrip('mail <a@b.com> now').trim()).toBe('mail a@b.com now')
+  it('preserves autolink and email destinations using explicit Markdown links', () => {
+    expect(roundTrip('see <https://sim.ai> here').trim()).toBe(
+      'see [https://sim.ai](https://sim.ai) here'
+    )
+    expect(roundTrip('mail <a@b.com> now').trim()).toBe('mail [a@b.com](mailto:a@b.com) now')
   })
 
-  it('preserves explicit and titled links (only bare autolinks collapse)', () => {
+  it('preserves explicit and titled links', () => {
     expect(roundTrip('[Sim](https://sim.ai)').trim()).toBe('[Sim](https://sim.ai)')
     expect(roundTrip('[https://a.com](https://b.com)').trim()).toBe(
       '[https://a.com](https://b.com)'

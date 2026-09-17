@@ -1,5 +1,9 @@
 import { createLogger } from '@sim/logger'
-import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
+import type { WorkspaceSearchFilters } from '@/lib/api/contracts/knowledge/search'
+import type {
+  ChatRequestMode,
+  FileAttachmentForApi,
+} from '@/app/workspace/[workspaceId]/home/types'
 import type { ChatContext } from '@/stores/panel'
 
 const logger = createLogger('MothershipEvents')
@@ -34,6 +38,9 @@ export interface MothershipSendMessageDetail {
    * chat and billing a second turn.
    */
   resumeUserMessageId?: string
+  /** The request mode the withdrawn send asked for, so a retry stays the same kind of turn. */
+  requestMode?: ChatRequestMode
+  assistantSearch?: WorkspaceSearchFilters
 }
 
 /**
@@ -49,7 +56,9 @@ export function sendMothershipMessage(
   message: string,
   contexts?: ChatContext[],
   fileAttachments?: FileAttachmentForApi[],
-  resumeUserMessageId?: string
+  resumeUserMessageId?: string,
+  requestMode?: ChatRequestMode,
+  assistantSearch?: WorkspaceSearchFilters
 ): boolean {
   const trimmed = message.trim()
   if (!trimmed) {
@@ -61,6 +70,8 @@ export function sendMothershipMessage(
     contexts,
     fileAttachments,
     ...(resumeUserMessageId ? { resumeUserMessageId } : {}),
+    ...(requestMode ? { requestMode } : {}),
+    ...(assistantSearch ? { assistantSearch } : {}),
   })
   logger.info('Dispatched mothership message event', { messageLength: trimmed.length, consumed })
   return consumed

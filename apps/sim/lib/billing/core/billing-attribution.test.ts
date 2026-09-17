@@ -36,6 +36,7 @@ vi.mock('@/lib/billing/core/plan', () => ({
 }))
 
 import {
+  assertBillingAttributionOwner,
   assertBillingAttributionSnapshot,
   billingAttributionsEqual,
   checkAttributedBillingBlocks,
@@ -43,7 +44,9 @@ import {
   createAttributedBillingRequestEnvelope,
   requireAccountBillingDecisionHeader,
   requireBillingAttributionHeader,
+  requireBillingCallbackAttribution,
   requireBillingRequestIdHeader,
+  requireWorkspaceBillingAttributionHeader,
   resolveBillingAttribution,
   resolveLegacyV0BillingAttribution,
   resolveSystemBillingAttribution,
@@ -110,6 +113,7 @@ describe('resolveBillingAttribution', () => {
       billingEntity: { id: 'org-b', type: 'organization' },
       billingPeriod: {
         end: '2026-08-01T00:00:00.000Z',
+        source: 'stripe',
         start: '2026-07-01T00:00:00.000Z',
       },
       organizationId: 'org-b',
@@ -371,6 +375,7 @@ describe('resolveBillingAttribution', () => {
       billingEntity: { type: 'organization', id: 'org-b' },
       billingPeriod: {
         end: new Date('2026-08-01T00:00:00.000Z'),
+        source: 'stripe',
         start: new Date('2026-07-01T00:00:00.000Z'),
       },
     })
@@ -385,6 +390,7 @@ describe('serialized attribution boundaries', () => {
     billingPeriod: {
       start: '2026-07-01T00:00:00.000Z',
       end: '2026-08-01T00:00:00.000Z',
+      source: 'stripe',
     },
     organizationId: 'org-b',
     payerSubscription: {
@@ -398,6 +404,36 @@ describe('serialized attribution boundaries', () => {
     },
     workspaceId: 'workspace-b',
   }
+
+  it('settles the immutable organization owner without inventing a workspace on ledger replay', () => {
+    const snapshot = { ...attribution, workspaceId: null }
+    const headers = new Headers({
+      'x-sim-billing-attribution': serializeBillingAttributionHeader(snapshot),
+    })
+    expect(
+      requireBillingAttributionHeader(headers, { actorUserId: 'actor-a', organizationId: 'org-b' })
+    ).toEqual(snapshot)
+    expect(requireBillingCallbackAttribution(headers, { actorUserId: 'actor-a' })).toEqual(snapshot)
+    expect(() => requireBillingCallbackAttribution(headers, { actorUserId: 'other' })).toThrow()
+    expect(() =>
+      requireBillingCallbackAttribution(headers, {
+        actorUserId: 'actor-a',
+        workspaceId: 'workspace-b',
+      })
+    ).toThrow()
+    expect(() =>
+      requireBillingCallbackAttribution(headers, {
+        actorUserId: 'actor-a',
+        organizationId: 'org-other',
+      })
+    ).toThrow()
+    const workspaceHeaders = new Headers({
+      'x-sim-billing-attribution': serializeBillingAttributionHeader(attribution),
+    })
+    expect(() =>
+      requireBillingCallbackAttribution(workspaceHeaders, { actorUserId: 'actor-a' })
+    ).toThrow()
+  })
 
   it('round-trips and freezes a trusted internal-request snapshot', () => {
     const headers = new Headers({
@@ -421,6 +457,19 @@ describe('serialized attribution boundaries', () => {
         workspaceId: 'workspace-b',
       })
     ).toThrow('Billing attribution header is required')
+  })
+
+  it('restores an executor snapshot by canonical workspace without making its actor authority', () => {
+    const headers = new Headers({
+      'x-sim-billing-attribution': serializeBillingAttributionHeader(attribution),
+    })
+
+    expect(
+      requireWorkspaceBillingAttributionHeader(headers, { workspaceId: 'workspace-b' })
+    ).toEqual(attribution)
+    expect(() =>
+      requireWorkspaceBillingAttributionHeader(headers, { workspaceId: 'workspace-other' })
+    ).toThrow('does not match the authenticated request scope')
   })
 
   it('rejects inconsistent or cross-scope serialized snapshots', () => {
@@ -464,6 +513,7 @@ describe('serialized attribution boundaries', () => {
         billingPeriod: {
           start: '2026-06-30T20:00:00.000-04:00',
           end: '2026-07-31T20:00:00.000-04:00',
+          source: 'stripe',
         },
       })
     ).toBe(true)
@@ -674,6 +724,19 @@ describe('checkAttributedUsageLimits', () => {
       start: new Date('2026-07-01T00:00:00.000Z'),
     })
   })
+
+  it('preserves a custom reporting-period source for the per-member cap', async () => {
+    await checkAttributedUsageLimits({
+      ...attribution,
+      billingPeriod: { ...attribution.billingPeriod, source: 'reporting' },
+    })
+
+    expect(mockCheckOrganizationMemberUsageLimit).toHaveBeenCalledWith('external-a', 'org-b', {
+      end: new Date('2026-08-01T00:00:00.000Z'),
+      source: 'reporting',
+      start: new Date('2026-07-01T00:00:00.000Z'),
+    })
+  })
 })
 
 describe('modern billing envelopes', () => {
@@ -711,11 +774,43 @@ describe('modern billing envelopes', () => {
       billingPeriod: {
         start: '2026-07-01T00:00:00.000Z',
         end: '2026-08-01T00:00:00.000Z',
+        source: 'reporting' as const,
       },
     }
     const serialized = serializeAccountBillingDecisionHeader(decision)
     const headers = new Headers({ 'x-sim-billing-account-decision': serialized })
 
     expect(requireAccountBillingDecisionHeader(headers)).toEqual(decision)
+  })
+})
+
+describe('Search billing ownership', () => {
+  const attribution = {
+    actorUserId: 'reader',
+    workspaceId: null,
+    organizationId: 'org',
+    billedAccountUserId: 'owner',
+    billingEntity: { type: 'organization' as const, id: 'org' },
+    billingPeriod: { start: '2026-09-01T00:00:00.000Z', end: '2026-10-01T00:00:00.000Z' },
+    payerSubscription: null,
+  }
+  it('accepts the organization owner and preserves the actual actor', () => {
+    expect(assertBillingAttributionSnapshot(attribution)).toEqual(attribution)
+    expect(() =>
+      assertBillingAttributionOwner(attribution, { organizationId: 'org' })
+    ).not.toThrow()
+  })
+  it('rejects another organization and a workspace using the same ID', () => {
+    expect(() => assertBillingAttributionOwner(attribution, { organizationId: 'other' })).toThrow()
+    expect(() => assertBillingAttributionOwner(attribution, { workspaceId: 'org' })).toThrow()
+  })
+  it('does not turn a workspace billing organization into a resource grant', () => {
+    const workspaceAttribution = { ...attribution, workspaceId: 'workspace' }
+    expect(() =>
+      assertBillingAttributionOwner(workspaceAttribution, { workspaceId: 'workspace' })
+    ).not.toThrow()
+    expect(() =>
+      assertBillingAttributionOwner(workspaceAttribution, { organizationId: 'org' })
+    ).toThrow()
   })
 })

@@ -10,6 +10,7 @@ const {
   mockGetSlackBotCredential,
   mockHandleChallenge,
   mockVerifySignature,
+  mockDispatchSearch,
 } = vi.hoisted(() => ({
   mockParseWebhookBody: vi.fn(),
   mockFindWebhooksByRoutingKey: vi.fn(),
@@ -17,7 +18,10 @@ const {
   mockGetSlackBotCredential: vi.fn(),
   mockHandleChallenge: vi.fn(),
   mockVerifySignature: vi.fn(),
+  mockDispatchSearch: vi.fn(),
 }))
+
+vi.mock('@/lib/slack-search/dispatcher', () => ({ dispatchSlackSearch: mockDispatchSearch }))
 
 vi.mock('@/lib/core/admission/gate', () => ({
   tryAdmit: () => ({ release: vi.fn() }),
@@ -66,6 +70,7 @@ function webhook(id: string) {
 describe('Slack custom-bot webhook route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDispatchSearch.mockResolvedValue(undefined)
     mockHandleChallenge.mockReturnValue(null)
     mockVerifySignature.mockReturnValue(null)
     mockParseWebhookBody.mockResolvedValue({
@@ -74,6 +79,7 @@ describe('Slack custom-bot webhook route', () => {
     })
     mockGetSlackBotCredential.mockResolvedValue({
       signingSecret: 'sec',
+      credentialVersion: 'version',
       botToken: 'xoxb-x',
       teamId: 'T1',
     })
@@ -99,6 +105,19 @@ describe('Slack custom-bot webhook route', () => {
     expect(mockDispatchResolvedWebhookTarget).not.toHaveBeenCalled()
   })
 
+  it('404s an action-only bot credential without a signing secret', async () => {
+    mockGetSlackBotCredential.mockResolvedValue({
+      botToken: 'xoxb-x',
+      teamId: 'T1',
+    })
+
+    const res = await POST(makeRequest(), context)
+
+    expect(res.status).toBe(404)
+    expect(mockVerifySignature).not.toHaveBeenCalled()
+    expect(mockFindWebhooksByRoutingKey).not.toHaveBeenCalled()
+  })
+
   it('verifies with the credential signing secret and rejects a bad signature', async () => {
     mockVerifySignature.mockReturnValue(new Response(null, { status: 401 }))
     const res = await POST(makeRequest(), context)
@@ -121,6 +140,20 @@ describe('Slack custom-bot webhook route', () => {
     )
     expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledTimes(1)
     expect(res.status).toBe(200)
+    expect(mockDispatchSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialId: CREDENTIAL_ID,
+        credentialVersion: 'version',
+        body: messageBody,
+      })
+    )
+  })
+
+  it('returns a retryable failure when Search enqueue fails beside a successful workflow', async () => {
+    mockDispatchSearch.mockRejectedValue(new Error('Queue unavailable'))
+    const response = await POST(makeRequest(), context)
+    expect(response.status).toBeGreaterThanOrEqual(500)
+    expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledOnce()
   })
 
   it('still returns 200 when the dispatcher filters the event', async () => {
@@ -132,5 +165,53 @@ describe('Slack custom-bot webhook route', () => {
     const res = await POST(makeRequest(), context)
     expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledTimes(1)
     expect(res.status).toBe(200)
+  })
+
+  it('returns 200 when every target permanently lacks its deployed trigger block', async () => {
+    mockDispatchResolvedWebhookTarget.mockResolvedValue({
+      outcome: 'ignored',
+      response: new Response('Trigger block not found in deployment', { status: 404 }),
+      reason: 'block-missing',
+    })
+
+    const res = await POST(makeRequest(), context)
+
+    expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(200)
+  })
+
+  it('returns a retryable failure when another target fails beside a missing block', async () => {
+    mockFindWebhooksByRoutingKey.mockResolvedValue([webhook('wh1'), webhook('wh2')])
+    mockDispatchResolvedWebhookTarget
+      .mockResolvedValueOnce({
+        outcome: 'ignored',
+        response: new Response('Trigger block not found in deployment', { status: 404 }),
+        reason: 'block-missing',
+      })
+      .mockResolvedValueOnce({
+        outcome: 'failed',
+        response: new Response('Queue failed', { status: 500 }),
+        reason: 'queue-failed',
+      })
+
+    const res = await POST(makeRequest(), context)
+
+    expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledTimes(2)
+    expect(res.status).toBe(500)
+    await expect(res.text()).resolves.toBe('Queue failed')
+  })
+
+  it('returns the dispatch failure when no target is acknowledged', async () => {
+    mockDispatchResolvedWebhookTarget.mockResolvedValue({
+      outcome: 'failed',
+      response: new Response('Preprocessing failed', { status: 500 }),
+      reason: 'preprocessing',
+    })
+
+    const res = await POST(makeRequest(), context)
+
+    expect(mockDispatchResolvedWebhookTarget).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(500)
+    await expect(res.text()).resolves.toBe('Preprocessing failed')
   })
 })

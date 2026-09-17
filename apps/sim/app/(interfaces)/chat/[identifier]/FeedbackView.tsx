@@ -125,7 +125,7 @@ export function FeedbackView({
   return (
     <div className='flex h-full w-full flex-col overflow-hidden'>
       {/* Header */}
-      <div className='flex items-center gap-4 border-gray-200 border-b bg-[#F3F8FE] px-6 py-4'>
+      <div className='flex items-center gap-4 border-[var(--border)] border-b bg-[var(--bg)] px-6 py-4'>
         <Button variant='ghost' size='icon' className='h-8 w-8' onClick={onBack}>
           <ArrowLeft className='h-4 w-4' />
         </Button>
@@ -133,7 +133,7 @@ export function FeedbackView({
       </div>
 
       {/* Content */}
-      <div className='flex-1 overflow-y-auto bg-[#F3F8FE] px-6 py-6'>
+      <div className='flex-1 overflow-y-auto bg-[var(--bg)] px-6 py-6'>
         <Tooltip.Provider>
           <div className='mx-auto max-w-7xl space-y-6'>
             {feedbackData.length === 0 ? (
@@ -152,7 +152,7 @@ export function FeedbackView({
                 return (
                   <div
                     key={itemId}
-                    className='rounded-lg border border-gray-200 bg-white p-6 shadow-sm'
+                    className='rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-6 shadow-sm'
                   >
                     {/* Timestamp and Author */}
                     {timestamp && (
@@ -166,7 +166,7 @@ export function FeedbackView({
                     {prompt && (
                       <div className='mb-4'>
                         <div className='mb-2 font-semibold text-gray-700 text-sm'>Prompt</div>
-                        <div className='rounded-md bg-[#F3F8FE] px-4 py-3'>
+                        <div className='rounded-md bg-[var(--surface-5)] px-4 py-3'>
                           <div className='text-gray-900 text-sm'>
                             <MarkdownRenderer content={prompt} />
                           </div>
@@ -178,7 +178,7 @@ export function FeedbackView({
                     {response && (
                       <div className='mb-4'>
                         <div className='mb-2 font-semibold text-gray-700 text-sm'>Response</div>
-                        <div className='rounded-md bg-[#F3F8FE] px-4 py-3'>
+                        <div className='rounded-md bg-[var(--surface-5)] px-4 py-3'>
                           <div className='text-gray-900 text-sm'>
                             <MarkdownRenderer content={response} />
                           </div>
@@ -236,7 +236,7 @@ export function FeedbackView({
                               </span>
                             ))}
                             {comment && (
-                              <div className='mt-2 w-full rounded-md bg-[#F3F8FE] px-4 py-2'>
+                              <div className='mt-2 w-full rounded-md bg-[var(--surface-5)] px-4 py-2'>
                                 <div className='text-gray-700 text-sm'>
                                   <MarkdownRenderer content={comment} />
                                 </div>

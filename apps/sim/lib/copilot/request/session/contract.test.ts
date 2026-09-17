@@ -156,7 +156,7 @@ describe('stream session contract parser', () => {
       type: 'tool' as const,
       payload: {
         toolCallId: 'preview-1',
-        toolName: 'workspace_file' as const,
+        toolName: 'prepare_file_edit' as const,
         previewPhase: 'file_preview_content' as const,
         content: 'draft body',
         contentMode: 'snapshot' as const,
@@ -252,5 +252,54 @@ describe('stream session contract parser', () => {
       throw new Error('expected invalid json result')
     }
     expect(parsed.reason).toBe('invalid_json')
+  })
+})
+
+describe('resource event view pins', () => {
+  it('accepts a table resource pinned to a saved view', () => {
+    const event = {
+      ...BASE_ENVELOPE,
+      type: 'resource' as const,
+      payload: {
+        op: 'upsert' as const,
+        resource: { id: 'tbl-1', type: 'table', title: 'Invoices', viewId: 'view-1' },
+      },
+    }
+
+    expect(isContractStreamEventEnvelope(event)).toBe(true)
+    expect(parsePersistedStreamEventEnvelope(event).ok).toBe(true)
+  })
+
+  it('rejects a pin that is not a string', () => {
+    const event = {
+      ...BASE_ENVELOPE,
+      type: 'resource' as const,
+      payload: {
+        op: 'upsert' as const,
+        resource: { id: 'tbl-1', type: 'table', title: 'Invoices', viewId: 42 },
+      },
+    }
+
+    expect(isContractStreamEventEnvelope(event)).toBe(false)
+  })
+
+  it('accepts an explicit pin clear and rejects a non-boolean directive', () => {
+    const event = {
+      ...BASE_ENVELOPE,
+      type: 'resource' as const,
+      payload: {
+        op: 'upsert' as const,
+        resource: { id: 'tbl-1', type: 'table', title: 'Invoices', clearViewId: true },
+      },
+    }
+
+    expect(isContractStreamEventEnvelope(event)).toBe(true)
+    expect(parsePersistedStreamEventEnvelope(event).ok).toBe(true)
+    expect(
+      isContractStreamEventEnvelope({
+        ...event,
+        payload: { ...event.payload, resource: { ...event.payload.resource, clearViewId: 'yes' } },
+      })
+    ).toBe(false)
   })
 })

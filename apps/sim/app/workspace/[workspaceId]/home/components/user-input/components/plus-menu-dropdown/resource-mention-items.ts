@@ -13,6 +13,28 @@ export interface ResourceMentionGroup {
   items: AvailableItem[]
 }
 
+/** Adds table and knowledge-base folders as stable folder-ID chat mentions. */
+export function withFolderMentions(
+  groups: readonly ResourceMentionGroup[],
+  folders: { table: AvailableItem[]; knowledgebase: AvailableItem[] }
+): ResourceMentionGroup[] {
+  return groups.map((group) =>
+    group.type === 'folder'
+      ? {
+          ...group,
+          items: [
+            ...group.items,
+            ...folders.table.map((item) => ({ ...item, mentionFamily: 'Table folders' })),
+            ...folders.knowledgebase.map((item) => ({
+              ...item,
+              mentionFamily: 'Knowledge base folders',
+            })),
+          ],
+        }
+      : group
+  )
+}
+
 export type ResourceMentionLevel = 'resource' | 'tab'
 
 /** A family query such as "browser" keeps that resource's live tabs visible. */
@@ -91,4 +113,31 @@ export function withDesktopTabMentions(
     }
     return group
   })
+}
+
+/** One row of the `@` list: an item plus the family it came from. */
+export interface ResourceMentionCandidate {
+  type: MothershipResourceType
+  item: AvailableItem
+}
+
+/**
+ * The rows an `@` list shows for an EMPTY query — a preview of what is mentionable,
+ * capped per family so no one family can bury the rest.
+ *
+ * `integration` carries 300+ near-identical rows and sorts FIRST, so while the cap
+ * defaulted to "uncapped" the preview was its entire catalog and no other family was
+ * reachable without scrolling past all of it. Capping is therefore the default and a
+ * family opts out by raising its own limit, not by omitting one.
+ *
+ * Only the empty-query preview is capped; {@link resourceMentionMatches} searches
+ * every family in full once the user types.
+ */
+export function buildMentionPreview(
+  groups: readonly ResourceMentionGroup[],
+  limitFor: (type: MothershipResourceType) => number
+): ResourceMentionCandidate[] {
+  return groups.flatMap(({ type, items }) =>
+    items.slice(0, limitFor(type)).map((item) => ({ type, item }))
+  )
 }

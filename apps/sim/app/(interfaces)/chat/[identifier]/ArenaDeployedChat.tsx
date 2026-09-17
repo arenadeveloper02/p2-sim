@@ -6,8 +6,11 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { useRouter } from 'next/navigation'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { resolveBrowserSessionResumeHref } from '@/lib/auth/arena-sim-resume'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
+import { isDev } from '@/lib/core/config/env-flags'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import {
   AGENT_STREAM_PROTOCOL_HEADER,
@@ -17,25 +20,14 @@ import type { InputFormatField } from '@/lib/workflows/types'
 import {
   ChatErrorState,
   ChatInput,
-  ChatLoadingState,
   type ChatMessage,
   ChatMessageContainer,
-  EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  // SSOAuth,
   UnauthorizedEmailError,
 } from '@/app/(interfaces)/chat/components'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
-import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
-import {
-  CHAT_ERROR_MESSAGES,
-  CHAT_REQUEST_TIMEOUT_MS,
-  DEPLOYED_CHAT_CANVAS_BG,
-  DEPLOYED_CHAT_CANVAS_GRADIENT,
-  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
-  DEPLOYED_CHAT_INPUT_PLACEHOLDER,
-} from '@/app/(interfaces)/chat/constants'
+import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/(interfaces)/chat/constants'
 import { useChatKeyboardShortcuts, useChatStreaming } from '@/app/(interfaces)/chat/hooks'
 import { downloadTextFile, exportChatAsMarkdown } from '@/app/(interfaces)/chat/utils/export-chat'
 // import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -133,6 +125,20 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
+function isSessionAuthRequiredError(error: string | undefined): boolean {
+  return error === 'auth_required_email' || error === 'auth_required_sso'
+}
+
+function isChatAccessDeniedError(error: string | undefined, message: string | undefined): boolean {
+  return [error, message].some(
+    (value) =>
+      value === 'Email is not authorized for this chat' ||
+      value === 'Email not authorized' ||
+      value === 'You do not have access to this chat' ||
+      value === 'Your email is not authorized to access this resource'
+  )
+}
+
 function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T {
   let timeoutId: NodeJS.Timeout | null = null
   let lastExecTime = 0
@@ -189,7 +195,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const isUserScrollingRef = useRef(false)
 
-  const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
+  const [authRequired, setAuthRequired] = useState<'password' | null>(null)
+  const [isSessionResumeInProgress, setIsSessionResumeInProgress] = useState(false)
+  const sessionResumeStartedRef = useRef(false)
 
   const threadsQuery = useDeployedChatThreads(identifier, Boolean(chatConfig) && !authRequired)
   const threads = threadsQuery.data ?? []
@@ -219,7 +227,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [messages]
   )
 
-  const { isStreamingResponse, stopStreaming, handleStreamedResponse } = useChatStreaming()
+  const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
+    useChatStreaming()
+
+  const handleStopStreaming = useCallback(() => {
+    stopStreaming(setMessages)
+    setIsLoading(false)
+  }, [stopStreaming])
 
   const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
 
@@ -544,25 +558,36 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
 
-          if (errorData.error === 'auth_required_password') {
+          const authError = typeof errorData.error === 'string' ? errorData.error : undefined
+          const authMessage = typeof errorData.message === 'string' ? errorData.message : undefined
+
+          if (authError === 'auth_required_password') {
             setAuthRequired('password')
             return
           }
 
-          // Skip email auth screen; rely on server to auto-auth or deny
-          if (errorData.error === 'auth_required_email') {
+          if (isSessionAuthRequiredError(authError)) {
+            const sessionRes = await client.getSession()
+            const hasSession = Boolean(sessionRes?.data?.user?.id)
+            if (!hasSession) {
+              if (!sessionResumeStartedRef.current) {
+                sessionResumeStartedRef.current = true
+                setIsSessionResumeInProgress(true)
+                window.location.assign(
+                  resolveBrowserSessionResumeHref(window.location.href, {
+                    isDev,
+                    hostname: window.location.hostname,
+                  })
+                )
+              }
+              return
+            }
+
             setError('You do not have access to this chat')
             return
           }
 
-          // If user email is not authorized, show error
-          if (
-            errorData.error === 'Email is not authorized for this chat' ||
-            errorData.error === 'Email not authorized' ||
-            errorData.message === 'Email not authorized' ||
-            errorData.error === 'You do not have access to this chat' ||
-            errorData.message === 'You do not have access to this chat'
-          ) {
+          if (isChatAccessDeniedError(authError, authMessage)) {
             setError('You do not have access to this chat')
             return
           }
@@ -698,17 +723,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     //   })
   }, [identifier])
 
-  const refreshChat = () => {
-    fetchChatConfig()
-  }
-
-  const handleAuthSuccess = () => {
-    setAuthRequired(null)
-    setTimeout(() => {
-      refreshChat()
-    }, 800)
-  }
-
   // Handle sending a message
   const handleSendMessage = async (
     messageParam?: string,
@@ -746,8 +760,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setUserHasScrolled(false)
 
     let userMessageId: string | null = null
-    // Create abort controller for request cancellation
+    // One AbortController for fetch + SSE body reads so Stop cancels server work too.
     const abortController = new AbortController()
+    abortControllerRef.current = abortController
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, CHAT_REQUEST_TIMEOUT_MS)
@@ -1450,6 +1465,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setFeedbackError(null)
   }, [])
 
+  if (isSessionResumeInProgress) {
+    return (
+      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-[var(--bg)]'>
+        <LoadingAgentP2 size='lg' />
+      </div>
+    )
+  }
+
   // If error, show error message using the extracted component
   if (error) {
     // Show specialized component for unauthorized email errors
@@ -1463,29 +1486,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   // If authentication is required, use the extracted components
-  if (authRequired) {
-    if (authRequired === 'password') {
-      return <PasswordAuth identifier={identifier} />
-    }
-    if (authRequired === 'email') {
-      return <EmailAuth identifier={identifier} />
-    }
-    // if (authRequired === 'sso') {
-    //   return <SSOAuth identifier={identifier} />
-    // }
-  }
-
-  // Loading state while fetching config using the extracted component
-  if (!chatConfig) {
-    return <ChatLoadingState />
+  if (authRequired === 'password') {
+    return <PasswordAuth identifier={identifier} />
   }
 
   return (
     <ToastProvider>
-      <div
-        className='fixed inset-0 z-[100] flex'
-        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-      >
+      <div className='light desktop-title-bar-page fixed inset-0 z-[var(--z-dropdown)] flex bg-[var(--bg)] text-[var(--text-primary)]'>
         <div className='hidden h-full shrink-0 md:flex'>
           <LeftNavThread
             threads={threads as ThreadRecord[]}
@@ -1545,17 +1552,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           />
         )}
 
-        <div
-          className='relative flex min-h-0 min-w-0 flex-1 flex-col'
-          style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-        >
+        <div className='relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--bg)]'>
           <div className='relative flex min-h-0 flex-1'>
             {isHistoryLoading && (
-              <div
-                className='absolute inset-0 z-[105] flex items-center justify-center'
-                style={{ backgroundColor: `${DEPLOYED_CHAT_CANVAS_BG}99` }}
-              >
-                <DeployedResponseLoader size={160} className='py-0' />
+              <div className='absolute inset-0 z-[105] flex items-center justify-center bg-[var(--bg)]/60'>
+                <LoadingAgentP2 size='lg' />
               </div>
             )}
 
@@ -1578,14 +1579,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                   chatConfig={chatConfig}
                   department={chatDepartment}
                   userName={userName}
-                  isStreaming={isStreamingResponse}
+                  isStreaming={isStreamingResponse || isLoading}
                   isLoading={isLoading}
                   insertText={askInChatText}
                   onInsertConsumed={() => setAskInChatText('')}
                   onSubmit={(value, _isVoiceInput, files) => {
                     void handleSendMessage(value, false, files)
                   }}
-                  onStopStreaming={() => stopStreaming(setMessages)}
+                  onStopStreaming={handleStopStreaming}
                   selectedGeneratedImages={effectiveGeneratedImages}
                   onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                   inputWrapperRef={chatInputWrapperRef}
@@ -1619,12 +1620,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     ref={chatInputWrapperRef}
                     className='relative w-full shrink-0 p-3 pb-4 md:p-4 md:pb-6'
                   >
-                    <div
-                      className={`relative mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}
-                    >
+                    <div className='relative mx-auto w-full max-w-3xl md:max-w-[768px]'>
                       <ChatInput
                         embedded
-                        placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}
                         insertText={askInChatText}
                         onInsertConsumed={() => setAskInChatText('')}
                         onSubmit={(
@@ -1642,7 +1640,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                           void handleSendMessage(value, false, files)
                         }}
                         isStreaming={isLoading || isStreamingResponse}
-                        onStopStreaming={() => stopStreaming(setMessages)}
+                        onStopStreaming={handleStopStreaming}
                         selectedGeneratedImages={effectiveGeneratedImages}
                         onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                       />
@@ -1659,7 +1657,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           <StartBlockInputModal
             open={isInputModalOpen}
             onOpenChange={setIsInputModalOpen}
-            inputFormat={chatConfig.inputFormat}
+            inputFormat={chatConfig?.inputFormat}
             onSubmit={handleStartBlockInputsSubmit}
             initialValues={startBlockInputs}
           />

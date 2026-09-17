@@ -2,29 +2,34 @@
  * @vitest-environment jsdom
  */
 import { Editor } from '@tiptap/core'
-import { afterEach, describe, expect, it } from 'vitest'
-import { createMarkdownContentExtensions } from './extensions'
-import { parseMarkdownToDoc, serializeMarkdownBody, splitMarkdownBlocks } from './markdown-parse'
-import { isRoundTripSafe } from './round-trip-safety'
+import { afterAll, describe, expect, it } from 'vitest'
+import { createMarkdownContentExtensions } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/extensions'
+import {
+  parseMarkdownToDoc,
+  serializeMarkdownBody,
+  splitMarkdownBlocks,
+} from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/markdown-parse'
+import { isRoundTripSafe } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/round-trip-safety'
 
 /** Mirror of the production `isEmptyParagraph` (not exported): the shape a blank line reconstructs to. */
 const isEmptyPara = (n: { type?: string; content?: unknown[] }): boolean =>
   n.type === 'paragraph' && !n.content?.length
 
 let editor: Editor | null = null
-afterEach(() => {
+afterAll(() => {
   editor?.destroy()
   editor = null
 })
 
-/** The current whole-document path: parse markdown in one shot, serialize back. */
+/**
+ * The current whole-document path: parse markdown in one shot, serialize back. One editor serves
+ * every call — `setContent` replaces the document wholesale, so a fresh instance per call only adds
+ * the cost of building the view, which the property tests below paid hundreds of times over.
+ */
 function oneShot(body: string): string {
-  editor = new Editor({ extensions: createMarkdownContentExtensions() })
+  editor ??= new Editor({ extensions: createMarkdownContentExtensions() })
   editor.commands.setContent(body, { contentType: 'markdown' })
-  const out = editor.getMarkdown()
-  editor.destroy()
-  editor = null
-  return out
+  return editor.getMarkdown()
 }
 
 /**
@@ -166,17 +171,15 @@ describe('parseMarkdownToDoc (chunked)', () => {
       expect(serializeMarkdownBody(once)).toBe(once)
     })
 
-    // The whole-document path hands blank runs to @tiptap/markdown, which keeps them after a paragraph
-    // but swallows them after a heading/ordered list/table. Preserving only some would break the fixpoint
-    // for the same document, so that path keeps none — consistently zero, which IS a fixpoint.
+    /** Whole-document parsing now preserves authored spacing as well as structural paragraphs. */
     it.each([
-      ['block HTML', '# H\n\n\n\ntext\n\n<div>x</div>', 'heading,paragraph,rawHtmlBlock'],
+      ['block HTML', '# H\n\n\n\ntext\n\n<div>x</div>', 'heading,∅,paragraph,rawHtmlBlock'],
       [
         'a reference definition',
         '# H\n\n\n\nsee [y][r]\n\n[r]: https://e.com',
-        'heading,paragraph',
+        'heading,∅,paragraph',
       ],
-    ])('a document that must parse whole keeps no empty paragraphs: %s', (_label, md, expected) => {
+    ])('preserves empty paragraphs when parsing whole: %s', (_label, md, expected) => {
       expect(shapeOf(md)).toBe(expected)
       const once = serializeMarkdownBody(md)
       expect(serializeMarkdownBody(once)).toBe(once)

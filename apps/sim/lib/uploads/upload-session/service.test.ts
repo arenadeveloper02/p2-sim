@@ -17,6 +17,7 @@ const {
   mockInitiateMultipart,
   mockListMultipartParts,
   mockResolveBillingContext,
+  mockUploadStorageProvider,
 } = vi.hoisted(() => ({
   mockAbortProviderUpload: vi.fn(),
   mockCheckStorageQuota: vi.fn(),
@@ -27,6 +28,7 @@ const {
   mockInitiateMultipart: vi.fn(),
   mockListMultipartParts: vi.fn(),
   mockResolveBillingContext: vi.fn(),
+  mockUploadStorageProvider: vi.fn(() => 's3' as const),
 }))
 
 vi.mock('@/lib/billing/storage', () => ({
@@ -63,7 +65,7 @@ vi.mock('@/lib/uploads/upload-session/provider', () => ({
   headProviderObject: mockHeadObject,
   initiateMultipartProviderUpload: mockInitiateMultipart,
   listMultipartProviderParts: mockListMultipartParts,
-  uploadStorageProvider: vi.fn(() => 's3'),
+  uploadStorageProvider: mockUploadStorageProvider,
 }))
 
 import { OrchestrationError } from '@/lib/core/orchestration/types'
@@ -109,6 +111,7 @@ describe('upload sessions', () => {
     resetDbChainMock()
     mockResolveBillingContext.mockResolvedValue({ workspaceId: WORKSPACE_ID })
     mockCheckStorageQuota.mockResolvedValue({ allowed: true })
+    mockUploadStorageProvider.mockReturnValue('s3')
     mockCreatePutTransfer.mockResolvedValue({
       method: 'put',
       url: 'https://storage.example/upload',
@@ -220,6 +223,33 @@ describe('upload sessions', () => {
       }
     }
   )
+
+  it('keeps an OAuth upload bound across access-token rotation for the same client', () => {
+    const original: Principal = {
+      kind: 'oauth_access_token',
+      userId: 'user-1',
+      clientId: 'sim-cli',
+      tokenId: 'token-1',
+      scopes: ['api:write'],
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    }
+    const session = sessionRecord({
+      purpose: 'knowledge_document',
+      knowledgeBaseId: 'kb-1',
+      metadata: { authBinding: createUploadSessionAuthBinding(original, WORKSPACE_ID) },
+    })
+    const rotated: Principal = { ...original, tokenId: 'token-2' }
+    const otherClient: Principal = { ...original, clientId: 'other-client', tokenId: 'token-3' }
+    const otherUser: Principal = { ...original, userId: 'user-2', tokenId: 'token-4' }
+
+    expect(() => assertUploadSessionAuthBinding(session, rotated)).not.toThrow()
+    expect(() => assertUploadSessionAuthBinding(session, otherClient)).toThrow(
+      'Upload session not found'
+    )
+    expect(() => assertUploadSessionAuthBinding(session, otherUser)).toThrow(
+      'Upload session not found'
+    )
+  })
 
   it('allocates distinct keys for same-named execution attachments', async () => {
     dbChainMockFns.returning
@@ -624,6 +654,30 @@ describe('upload sessions', () => {
     expect(mockCreatePutTransfer).not.toHaveBeenCalled()
   })
 
+  it('uses proxy-safe multipart parts for large local uploads', async () => {
+    const fileSize = UPLOAD_SESSION_PART_SIZE + 1
+    mockUploadStorageProvider.mockReturnValue('local')
+    mockInitiateMultipart.mockResolvedValueOnce({ provider: 'local', providerUploadId: null })
+    dbChainMockFns.returning.mockResolvedValueOnce([
+      uploadRow({
+        fileSize,
+        method: 'multipart',
+        storageProvider: 'local',
+        partSize: UPLOAD_SESSION_PART_SIZE,
+        partCount: 2,
+      }),
+    ])
+
+    const created = await createWorkspaceUpload(fileSize)
+
+    expect(created.transfer).toEqual({
+      method: 'multipart',
+      partSize: UPLOAD_SESSION_PART_SIZE,
+      partCount: 2,
+    })
+    expect(mockCreatePutTransfer).not.toHaveBeenCalled()
+  })
+
   it('preserves multipart request bounds before provider signing', async () => {
     const multipart = sessionRecord({
       method: 'multipart',
@@ -714,8 +768,8 @@ describe('upload sessions', () => {
       partCount: 2,
     })
     const parts = [
-      { partNumber: 1, etag: 'etag-1', size: UPLOAD_SESSION_PART_SIZE },
       { partNumber: 2, etag: 'etag-2', size: 3 },
+      { partNumber: 1, etag: 'etag-1', size: UPLOAD_SESSION_PART_SIZE },
     ]
     mockListMultipartParts.mockResolvedValue(parts)
     mockHeadObject
@@ -733,7 +787,13 @@ describe('upload sessions', () => {
       expect.objectContaining({ key: FINAL_KEY, providerUploadId: 'provider-upload-1' })
     )
     expect(mockCompleteMultipart).toHaveBeenCalledWith(
-      expect.objectContaining({ key: FINAL_KEY, parts })
+      expect.objectContaining({
+        key: FINAL_KEY,
+        parts: [
+          { partNumber: 1, etag: 'etag-1', size: UPLOAD_SESSION_PART_SIZE },
+          { partNumber: 2, etag: 'etag-2', size: 3 },
+        ],
+      })
     )
     expect(finalize).toHaveBeenCalledOnce()
   })

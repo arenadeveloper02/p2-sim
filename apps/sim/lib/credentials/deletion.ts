@@ -4,6 +4,12 @@ import * as schema from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, notExists, or, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import {
+  type ResourceOwner,
+  type ResourceScope,
+  resourceScopeFromOwner,
+} from '@/lib/core/resource-scope'
+import { resourceScopeCondition } from '@/lib/core/resource-scope.server'
 import { CREDENTIAL_SUBBLOCK_IDS } from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('CredentialDeletion')
@@ -23,9 +29,8 @@ interface DeleteCredentialParams {
   request?: NextRequest
 }
 
-export interface DeleteConnectionCredentialParams {
+export interface DeleteConnectionCredentialParams extends ResourceOwner {
   credentialId: string
-  workspaceId: string
   reason: CredentialDeleteReason
 }
 
@@ -40,6 +45,7 @@ export async function deleteCredential(params: DeleteCredentialParams): Promise<
     .select({
       id: schema.credential.id,
       workspaceId: schema.credential.workspaceId,
+      organizationId: schema.credential.organizationId,
       type: schema.credential.type,
       displayName: schema.credential.displayName,
       providerId: schema.credential.providerId,
@@ -51,7 +57,7 @@ export async function deleteCredential(params: DeleteCredentialParams): Promise<
 
   if (!row) return
 
-  await clearCredentialRefs(credentialId, row.workspaceId)
+  await clearCredentialRefs(credentialId, resourceScopeFromOwner(row))
 
   await db.delete(schema.credential).where(eq(schema.credential.id, credentialId))
 
@@ -81,12 +87,13 @@ export async function deleteCredential(params: DeleteCredentialParams): Promise<
 export async function deleteConnectionCredential(
   params: DeleteConnectionCredentialParams
 ): Promise<boolean> {
-  const { credentialId, workspaceId } = params
-  await clearCredentialRefs(credentialId, workspaceId)
+  const { credentialId } = params
+  const scope = resourceScopeFromOwner(params)
+  await clearCredentialRefs(credentialId, scope)
   const deleted = await db
     .delete(schema.credential)
     .where(
-      and(eq(schema.credential.id, credentialId), eq(schema.credential.workspaceId, workspaceId))
+      and(eq(schema.credential.id, credentialId), resourceScopeCondition(schema.credential, scope))
     )
     .returning({ id: schema.credential.id })
   if (deleted.length > 1) throw new Error('Credential deletion affected multiple rows')
@@ -94,7 +101,7 @@ export async function deleteConnectionCredential(
   if (deleted.length === 1) {
     logger.info('Deleted credential', {
       credentialId,
-      workspaceId,
+      scope,
       reason: params.reason,
     })
   }
@@ -109,9 +116,14 @@ export async function deleteConnectionCredential(
  * Scoped by `accountId`, not by owner — the caller is already authorized
  * against the credential, which may belong to another user.
  *
- * The reference check is a predicate on the delete: `credential.accountId` is
- * `ON DELETE CASCADE`, so a credential racing a separate check would be reaped
- * by Postgres without {@link clearCredentialRefs} ever running.
+ * The reference check is a predicate on the delete rather than a separate
+ * SELECT, which narrows the race from check-then-act down to a single
+ * statement — it does not close it. The caller issues the credential delete and
+ * this account delete as two statements (`orchestration/index.ts`), so under
+ * READ COMMITTED a `credential` row another workspace commits after this
+ * statement takes its snapshot is invisible here and is then reaped by
+ * `credential.accountId ON DELETE CASCADE` without {@link clearCredentialRefs}
+ * ever running. The window is narrow, but a hit is silent data loss.
  */
 export async function deleteOrphanedOAuthAccount(accountId: string): Promise<void> {
   const deleted = await db
@@ -143,8 +155,17 @@ export async function deleteOrphanedOAuthAccount(accountId: string): Promise<voi
  */
 export async function clearCredentialRefs(
   credentialId: string,
-  workspaceId: string
+  scopeInput: string | ResourceScope
 ): Promise<void> {
+  const scope =
+    typeof scopeInput === 'string'
+      ? { kind: 'workspace' as const, workspaceId: scopeInput }
+      : scopeInput
+  if (scope.kind === 'organization') {
+    await clearInKnowledgeConnectors(credentialId)
+    return
+  }
+  const workspaceId = scope.workspaceId
   const needle = `%${credentialId}%`
 
   await Promise.all([
@@ -160,9 +181,9 @@ export async function clearCredentialRefs(
 /**
  * Deactivates app-level trigger webhooks bound to this credential so inbound
  * events stop routing once the account is disconnected. Native Slack and
- * TikTok rows reference it via `providerConfig.credentialId`; custom-bot Slack
- * rows use `routingKey` = the bot credential id. Neither is a foreign key, so
- * neither is covered by CASCADE.
+ * QuickBooks and TikTok rows reference it via `providerConfig.credentialId`;
+ * custom-bot Slack rows use `routingKey` = the bot credential id. None is a
+ * foreign key, so none is covered by CASCADE.
  */
 async function deactivateCredentialBoundWebhooks(credentialId: string): Promise<void> {
   await db
@@ -178,6 +199,10 @@ async function deactivateCredentialBoundWebhooks(credentialId: string): Promise<
           ),
           and(
             eq(schema.webhook.provider, 'tiktok'),
+            sql`${schema.webhook.providerConfig}->>'credentialId' = ${credentialId}`
+          ),
+          and(
+            eq(schema.webhook.provider, 'quickbooks'),
             sql`${schema.webhook.providerConfig}->>'credentialId' = ${credentialId}`
           ),
           and(eq(schema.webhook.provider, 'slack'), eq(schema.webhook.routingKey, credentialId))

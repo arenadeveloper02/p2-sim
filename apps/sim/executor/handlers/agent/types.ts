@@ -1,3 +1,4 @@
+import type { McpOperationPolicy } from '@/lib/mcp/operation-policy'
 import type { UserFile } from '@/executor/types'
 
 export interface SkillInput {
@@ -51,8 +52,10 @@ export interface AgentInputs {
  * - Standard block types (e.g., 'api', 'search', 'function')
  * - 'custom-tool': User-defined tools with custom code
  * - 'mcp': Individual MCP tool from a connected server
+ * - 'mcp-server-advanced': All tools available to the executing subject from one MCP server
  */
 export interface ToolInput {
+  operationPolicy?: McpOperationPolicy
   /** Tool type identifier */
   type?: string
   schema?: any

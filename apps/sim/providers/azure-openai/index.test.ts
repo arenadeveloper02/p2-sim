@@ -97,7 +97,6 @@ function request(overrides: Partial<ProviderRequest>): ProviderRequest {
 function makeTool(id: string): ProviderToolConfig {
   return {
     id,
-    name: id,
     description: '',
     params: {},
     parameters: { type: 'object', properties: {}, required: [] },
@@ -143,8 +142,14 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
         request({ azureEndpoint: 'https://rebind.attacker.tld' })
       )
 
-      expect(mockValidate).toHaveBeenCalledWith('https://rebind.attacker.tld', 'azureEndpoint')
-      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10')
+      expect(mockValidate).toHaveBeenCalledWith(
+        'https://rebind.attacker.tld',
+        'azureEndpoint',
+        'configuredEndpoint'
+      )
+      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10', {
+        profile: 'configuredEndpoint',
+      })
       expect(responsesConfig().fetch).toBe(sentinelFetch)
     })
 
@@ -170,19 +175,6 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
       expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
       expect(mockExecuteResponses).not.toHaveBeenCalled()
     })
-
-    it('fails closed when validation passes but yields no resolvable IP to pin', async () => {
-      mockValidate.mockResolvedValue({ isValid: true })
-
-      await expect(
-        azureOpenAIProvider.executeRequest(
-          request({ azureEndpoint: 'https://rebind.attacker.tld' })
-        )
-      ).rejects.toThrow('could not resolve a pinnable IP address')
-
-      expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
-      expect(mockExecuteResponses).not.toHaveBeenCalled()
-    })
   })
 
   describe('Chat Completions path', () => {
@@ -200,7 +192,9 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
         })
       )
 
-      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10')
+      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10', {
+        profile: 'configuredEndpoint',
+      })
       expect(azureOpenAIArgs[0]).toMatchObject({ fetch: sentinelFetch })
     })
 

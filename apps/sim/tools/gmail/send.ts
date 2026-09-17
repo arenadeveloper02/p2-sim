@@ -1,7 +1,7 @@
 import type { GmailSendParams, GmailToolResponse } from '@/tools/gmail/types'
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
+export const gmailSendTool: InternalToolConfig<GmailSendParams, GmailToolResponse> = {
   id: 'gmail_send',
   name: 'Gmail Send',
   description: 'Send emails using Gmail',
@@ -76,13 +76,8 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
     },
   },
 
-  request: {
-    url: '/api/tools/gmail/send',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: GmailSendParams) => ({
+  operation: {
+    input: (params: GmailSendParams) => ({
       accessToken: params.accessToken,
       to: params.to,
       subject: params.subject,
@@ -134,14 +129,23 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
   },
 }
 
-export const gmailSendV2Tool: ToolConfig<GmailSendParams, GmailToolResponse> = {
+interface GmailSendV2Response {
+  success: boolean
+  output: {
+    id?: string
+    threadId?: string
+    labelIds?: string[]
+  }
+}
+
+export const gmailSendV2Tool: InternalToolConfig<GmailSendParams, GmailSendV2Response> = {
   id: 'gmail_send_v2',
   name: 'Gmail Send',
   description: 'Send emails using Gmail',
   version: '2.0.0',
   oauth: gmailSendTool.oauth,
   params: gmailSendTool.params,
-  request: gmailSendTool.request,
+  operation: gmailSendTool.operation,
   transformResponse: async (response) => {
     return await gmailSendTool.transformResponse!(response)
   },

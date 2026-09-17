@@ -3,37 +3,26 @@
  */
 
 /**
- * Updates the theme in next-themes by dispatching a storage event.
- * This works by updating localStorage and notifying next-themes of the change.
- * @param theme - The desired theme ('light' or 'dark')
+ * Updates the theme by writing the account-synced `sim-theme` key and
+ * dispatching a storage event so the document ThemeProvider applies it. User
+ * settings load and save go through this path from the database.
+ * @param theme - The desired theme ('system', 'light', or 'dark')
  */
 export function syncThemeToNextThemes(theme: 'light' | 'dark' | 'system') {
   if (typeof window === 'undefined') return
 
-  localStorage.setItem('sim-theme', theme)
+  const oldValue = localStorage.getItem('sim-theme')
+  if (oldValue !== theme) {
+    localStorage.setItem('sim-theme', theme)
 
-  window.dispatchEvent(
-    new StorageEvent('storage', {
-      key: 'sim-theme',
-      newValue: theme,
-      oldValue: localStorage.getItem('sim-theme'),
-      storageArea: localStorage,
-      url: window.location.href,
-    })
-  )
-
-  const root = document.documentElement
-  root.classList.remove('light', 'dark')
-  root.classList.add(theme)
-}
-
-/**
- * Gets the current theme from next-themes localStorage
- */
-export function getThemeFromNextThemes(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light'
-  const theme = localStorage.getItem('sim-theme')
-  // Convert 'system' to 'light' for backward compatibility
-  if (theme === 'system' || !theme) return 'light'
-  return theme as 'light' | 'dark'
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'sim-theme',
+        newValue: theme,
+        oldValue,
+        storageArea: localStorage,
+        url: window.location.href,
+      })
+    )
+  }
 }

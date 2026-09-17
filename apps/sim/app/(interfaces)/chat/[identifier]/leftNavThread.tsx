@@ -1,6 +1,6 @@
 'use client'
 
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChipConfirmModal,
   ChipInput,
@@ -22,12 +22,6 @@ import {
   RenameMenuIcon,
   ReRunNavIcon,
 } from '@/app/(interfaces)/chat/[identifier]/sidebar-nav-icons'
-import {
-  DEPLOYED_CHAT_CANVAS_BG,
-  DEPLOYED_CHAT_DIVIDER,
-  DEPLOYED_CHAT_SIDEBAR_BORDER,
-  DEPLOYED_CHAT_TEXT_SUBTLE,
-} from '@/app/(interfaces)/chat/constants'
 import { groupThreadsByDate } from '@/app/(interfaces)/chat/utils/thread-date-groups'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
@@ -74,13 +68,9 @@ type SidebarActionIcon = React.ComponentType<{ className?: string }>
 function sidebarRowClass(isActive: boolean, disabled = false) {
   return cn(
     'group flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
-    isActive ? 'bg-white shadow-none' : 'bg-transparent hover:bg-white',
+    isActive ? 'bg-[var(--surface-5)] shadow-none' : 'bg-transparent hover:bg-[var(--surface-5)]',
     disabled && 'cursor-not-allowed opacity-50'
   )
-}
-
-function sidebarRowStyle(_isActive: boolean): CSSProperties | undefined {
-  return undefined
 }
 
 function sidebarRowIconClass(isActive: boolean) {
@@ -88,8 +78,8 @@ function sidebarRowIconClass(isActive: boolean) {
     // Pulls the icon left so it lines up with the logo (row padding otherwise over-indents it).
     '-ml-1.5 size-6 shrink-0',
     isActive
-      ? 'text-[var(--color-ds-text-link-hover,#155CBA)]'
-      : 'text-[var(--color-ds-icon-default,#575A66)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+      ? 'text-[var(--text-primary)]'
+      : 'text-[var(--text-icon)] group-hover:text-[var(--text-primary)]'
   )
 }
 
@@ -97,13 +87,13 @@ function sidebarRowLabelClass(isActive: boolean) {
   return cn(
     'truncate text-sm',
     isActive
-      ? 'font-medium text-[var(--color-ds-text-link-hover,#155CBA)]'
-      : 'font-normal text-[var(--color-ds-text-primary,#2C2D33)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+      ? 'font-medium text-[var(--text-primary)]'
+      : 'text-[var(--text-primary)] group-hover:text-[var(--text-primary)]'
   )
 }
 
 const THREAD_MENU_ITEM_CLASS =
-  'h-9 gap-2.5 px-3 text-sm font-normal text-[var(--color-ds-text-secondary,#575A66)] focus:bg-[var(--color-ds-brand-surface,#F3F8FE)] data-[highlighted]:bg-[var(--color-ds-brand-surface,#F3F8FE)] data-[highlighted]:text-[var(--color-ds-text-link-hover,#155CBA)] [&_svg]:size-4 [&_svg]:text-current'
+  'h-9 gap-2.5 px-3 text-[var(--text-muted)] text-sm focus:bg-[var(--surface-5)] data-[highlighted]:bg-[var(--surface-5)] data-[highlighted]:text-[var(--text-primary)] [&_svg]:size-4 [&_svg]:text-current'
 
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
@@ -120,14 +110,8 @@ interface SidebarShellProps {
 
 function SidebarShell({ collapsed = false, children }: SidebarShellProps) {
   return (
-    <div className='flex h-full shrink-0 p-2' style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}>
-      <div
-        className={sidebarPanelClass(collapsed)}
-        style={{
-          borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER,
-          backgroundColor: DEPLOYED_CHAT_CANVAS_BG,
-        }}
-      >
+    <div className='flex h-full shrink-0 bg-[var(--bg)] p-2'>
+      <div className={cn(sidebarPanelClass(collapsed), 'border-[var(--border)] bg-[var(--bg)]')}>
         {children}
       </div>
     </div>
@@ -143,8 +127,8 @@ interface SidebarToggleButtonProps {
  */
 function sidebarSoftIconClass() {
   return cn(
-    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[var(--color-ds-brand-surface,#F3F8FE)] text-[var(--color-ds-icon-default,#575A66)] transition-colors',
-    'group-hover:bg-white group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[var(--surface-5)] text-[var(--text-icon)] transition-colors',
+    'group-hover:bg-[var(--surface-3)] group-hover:text-[var(--text-primary)]'
   )
 }
 
@@ -184,7 +168,7 @@ function SidebarLogoImage({
       alt='Logo'
       width={24}
       height={24}
-      className={cn('size-6 shrink-0 rounded-[var(--radius-ds-sm,4px)] object-cover', className)}
+      className={cn('size-6 shrink-0 rounded-[4px] object-cover', className)}
     />
   )
 }
@@ -196,7 +180,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
         <button
           type='button'
           onClick={onToggleSidebar}
-          className='group relative flex size-6 items-center justify-center overflow-hidden rounded-[var(--radius-ds-sm,4px)] p-0'
+          className='group relative flex size-6 items-center justify-center overflow-hidden rounded-[4px] p-0'
           aria-label='Expand sidebar'
         >
           {logoUrl ? (
@@ -254,7 +238,6 @@ function SidebarActionButton({
         sidebarRowClass(isActive, disabled),
         collapsed ? 'size-6 min-h-0 justify-center gap-0 p-0' : 'w-full'
       )}
-      style={sidebarRowStyle(isActive)}
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
@@ -347,7 +330,7 @@ function ThreadRow({
 
   if (isRenaming) {
     return (
-      <div className='flex min-h-8 items-center gap-1 rounded-lg bg-white px-2 py-1'>
+      <div className='flex min-h-8 items-center gap-1 rounded-lg bg-[var(--surface-5)] px-2 py-1'>
         <ChipInput
           ref={renameInputRef}
           value={renameValue}
@@ -364,7 +347,7 @@ function ThreadRow({
           }}
           onBlur={handleRenameBlur}
           autoFocus
-          className='h-7 min-w-0 flex-1 border-[var(--color-ds-blue-200,#D1E3FA)] bg-white'
+          className='h-7 min-w-0 flex-1'
         />
       </div>
     )
@@ -373,7 +356,6 @@ function ThreadRow({
   return (
     <div
       className={sidebarRowClass(isActive)}
-      style={sidebarRowStyle(isActive)}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -419,7 +401,7 @@ function ThreadRow({
           <DropdownMenuTrigger asChild>
             <button
               type='button'
-              className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
+              className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-[var(--surface-3)]'
               aria-label='Thread options'
               disabled={isStreaming}
             >
@@ -429,7 +411,7 @@ function ThreadRow({
           <DropdownMenuContent
             align='start'
             side='right'
-            className='min-w-[132px] rounded-lg border-[var(--color-ds-blue-200,#D1E3FA)] bg-white p-1.5 shadow-md'
+            className='min-w-[132px] rounded-lg border-[var(--border)] bg-[var(--surface-2)] p-1.5 shadow-md'
           >
             <DropdownMenuItem onClick={onStartRename} className={THREAD_MENU_ITEM_CLASS}>
               <RenameMenuIcon />
@@ -661,15 +643,10 @@ const LeftNavThread = ({
 
       {primaryActionButtons(false)}
 
-      <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
+      <hr className='my-3 border-[var(--border)]' />
 
       <div className='flex min-h-0 flex-1 flex-col'>
-        <p
-          className='mb-[var(--spacing-ds-component-md,12px)] px-1 font-medium text-xs'
-          style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
-        >
-          Chats
-        </p>
+        <p className='mb-3 px-1 text-[var(--text-muted)] text-xs'>Chats</p>
 
         <div className='mb-3'>
           <ChipInput
@@ -678,7 +655,7 @@ const LeftNavThread = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder='Search chats...'
             icon={Search}
-            className='h-8 rounded-lg border-none bg-white shadow-sm'
+            className='h-8'
             aria-label='Search chats'
           />
         </div>
@@ -698,9 +675,7 @@ const LeftNavThread = ({
             <div className='flex flex-col gap-3'>
               {groupedThreads.map((group) => (
                 <div key={group.label} className='flex flex-col'>
-                  <p className='mb-1 px-1 text-xs' style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}>
-                    {group.label}
-                  </p>
+                  <p className='mb-1 px-1 text-[var(--text-muted)] text-xs'>{group.label}</p>
                   <div className='flex flex-col gap-1'>
                     {group.threads.map((thread) => (
                       <ThreadRow
@@ -738,7 +713,7 @@ const LeftNavThread = ({
               {!searchQuery && (
                 <button
                   type='button'
-                  className='text-[var(--color-ds-text-link,#1A73E8)] text-sm hover:underline'
+                  className='text-[var(--text-primary)] text-sm hover:underline'
                   onClick={() => onNewChat?.()}
                   disabled={isStreaming}
                 >
@@ -750,7 +725,7 @@ const LeftNavThread = ({
         </div>
       </div>
 
-      <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
+      <hr className='my-3 border-[var(--border)]' />
 
       {exitActionButton(false)}
 

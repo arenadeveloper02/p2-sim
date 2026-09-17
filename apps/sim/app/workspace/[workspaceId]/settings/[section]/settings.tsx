@@ -5,13 +5,14 @@ import dynamic from 'next/dynamic'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { captureEvent } from '@/lib/posthog/client'
+import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
 import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import {
   getSettingsSectionMeta,
-  isBillingEnabled,
   isPlatformAdminSettingsSection,
   type SettingsSection,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -35,6 +36,11 @@ const BYOK = dynamic(() =>
 const Forks = dynamic(() => import('@/ee/workspace-forking/components/forks').then((m) => m.Forks))
 const Secrets = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/secrets/secrets').then((m) => m.Secrets)
+)
+const OrganizationConnectedAccounts = dynamic(() =>
+  import('@/ee/credential-groups/components/organization-connected-accounts').then(
+    (m) => m.OrganizationConnectedAccounts
+  )
 )
 const Sandboxes = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/sandboxes/sandboxes').then(
@@ -102,9 +108,6 @@ const AccessControl = dynamic(() =>
 const CustomBlocks = dynamic(() =>
   import('@/ee/custom-blocks/components/custom-blocks').then((m) => m.CustomBlocks)
 )
-const CredentialGroups = dynamic(() =>
-  import('@/ee/credential-groups/components').then((m) => m.CredentialGroupsSettings)
-)
 const AuditLogs = dynamic(() =>
   import('@/ee/audit-logs/components/audit-logs').then((m) => m.AuditLogs)
 )
@@ -133,12 +136,10 @@ const Terminal = dynamic(() =>
     (m) => m.Terminal
   )
 )
-const WhitelabelingSettings = dynamic(
-  () =>
-    import('@/ee/whitelabeling/components/whitelabeling-settings').then(
-      (m) => m.WhitelabelingSettings
-    ),
-  { ssr: false }
+const WhitelabelingSettings = dynamic(() =>
+  import('@/ee/whitelabeling/components/whitelabeling-settings').then(
+    (m) => m.WhitelabelingSettings
+  )
 )
 
 interface SettingsPageProps {
@@ -148,6 +149,7 @@ interface SettingsPageProps {
 export function SettingsPage({ section }: SettingsPageProps) {
   const { data: session, isPending: sessionLoading } = useSession()
   const hostContext = useWorkspaceHostContext()
+  const { billingEnabled } = useDeploymentShape()
   const posthog = usePostHog()
 
   const isAdminRole = session?.user?.role === 'admin'
@@ -157,10 +159,10 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const isBillingSection = normalizedSection === 'billing' || normalizedSection === 'arena-billing'
   const canManageBilling = canManageWorkspaceBilling(hostContext, session?.user?.id)
   const billingRedirectToUsage =
-    isBillingEnabled && isBillingSection && !sessionLoading && !canManageBilling
+    billingEnabled && isBillingSection && !sessionLoading && !canManageBilling
 
   const effectiveSection =
-    !isBillingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
+    !billingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
       ? 'general'
       : billingRedirectToUsage
         ? 'usage'
@@ -176,6 +178,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
       plane: 'workspace',
       section: effectiveSection,
     })
+    const label = effectiveSection.charAt(0).toUpperCase() + effectiveSection.slice(1)
+    void settingsPageTabSwitchEvent({ Tabs: label })
   }, [effectiveSection, sessionLoading, posthog])
 
   return (
@@ -185,8 +189,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'browser' && <Browser />}
       {effectiveSection === 'terminal' && <Terminal />}
       {effectiveSection === 'secrets' && <Secrets />}
-      {effectiveSection === 'credential-groups' && (
-        <CredentialGroups workspaceId={hostContext.workspace.id} />
+      {effectiveSection === 'connected-accounts' && organizationId && (
+        <OrganizationConnectedAccounts organizationId={organizationId} />
       )}
       {effectiveSection === 'access-control' && organizationId && (
         <AccessControl
@@ -196,16 +200,15 @@ export function SettingsPage({ section }: SettingsPageProps) {
       )}
       {effectiveSection === 'custom-blocks' && <CustomBlocks />}
       {effectiveSection === 'usage' && <Usage />}
-      {isBillingEnabled && effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}
+      {effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}
       {effectiveSection === 'audit-logs' && organizationId && (
         <AuditLogs organizationId={organizationId} />
       )}
       {effectiveSection === 'apikeys' && <ApiKeys scope='combined' />}
-      {isBillingEnabled && effectiveSection === 'billing' && (
+      {billingEnabled && effectiveSection === 'billing' && (
         <Billing
           scope={organizationId ? 'organization' : 'account'}
           organizationId={organizationId ?? undefined}
-          governingWorkspaceName={hostContext.workspace.name}
           creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/billing/credit-usage`}
         />
       )}
@@ -218,7 +221,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
         />
       )}
       {effectiveSection === 'teammates' && <Teammates />}
-      {isBillingEnabled && effectiveSection === 'organization' && organizationId && (
+      {billingEnabled && effectiveSection === 'organization' && organizationId && (
         <TeamManagement
           organizationId={organizationId}
           billingHref={`/workspace/${hostContext.workspace.id}/settings/billing`}

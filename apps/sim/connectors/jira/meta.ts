@@ -2,14 +2,17 @@ import { JiraIcon } from '@/components/icons'
 import type { ConnectorMeta } from '@/connectors/types'
 
 export const jiraConnectorMeta: ConnectorMeta = {
+  search: true,
+  searchDocsUrl: 'https://docs.sim.ai/search/jira',
   id: 'jira',
   name: 'Jira',
-  description: 'Sync issues from a Jira project',
+  description: 'Search issue titles and descriptions from Jira projects',
   version: '1.0.0',
   icon: JiraIcon,
 
   auth: { mode: 'oauth', provider: 'jira', requiredScopes: ['read:jira-work', 'offline_access'] },
 
+  permissionScopedListing: { capFieldIds: ['maxIssues'] },
   configFields: [
     {
       id: 'domain',
@@ -22,7 +25,7 @@ export const jiraConnectorMeta: ConnectorMeta = {
       id: 'projectSelector',
       title: 'Projects',
       type: 'selector',
-      selectorKey: 'jira.projects',
+      selectorKey: 'jira.projectKeys',
       canonicalParamId: 'projectKey',
       mode: 'basic',
       multi: true,
@@ -42,6 +45,7 @@ export const jiraConnectorMeta: ConnectorMeta = {
     },
     {
       id: 'jql',
+      setupGroup: 'options',
       title: 'JQL Filter',
       type: 'short-input',
       required: false,
@@ -49,6 +53,7 @@ export const jiraConnectorMeta: ConnectorMeta = {
     },
     {
       id: 'maxIssues',
+      setupGroup: 'options',
       title: 'Max Issues',
       type: 'short-input',
       required: false,

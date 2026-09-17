@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => import('@/test/electron-mock'))
 
-import { WebContentsView, type WebFrameMain } from 'electron'
+import { nativeImage, type WebContents, WebContentsView, type WebFrameMain } from 'electron'
 import {
+  captureScreenshot,
   clickAt,
   ensureInstrumented,
   evaluateInIsolatedFrame,
@@ -481,4 +482,235 @@ describe('browser-agent CDP theme', () => {
       features: [],
     })
   })
+})
+
+/**
+ * The browser panel shows a LIVE view, so a capture must not perturb the page.
+ * Chromium serves `clip` by applying device-emulation params to the widget and
+ * syncing visual properties, which the user sees as the page rescaling and
+ * snapping back. Resolution is bounded on the returned image instead.
+ */
+describe('browser-agent screenshot capture', () => {
+  function captureFixture(imageSize: { width: number; height: number } | null) {
+    const contents = new WebContentsView().webContents
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({ cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024 } })
+      }
+      if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'c2lt' })
+      return Promise.resolve(undefined)
+    })
+    const resized = {
+      getSize: vi.fn(() => ({ width: 1024, height: 512 })),
+      toJPEG: vi.fn(() => Buffer.from('resized')),
+    }
+    const cropped = {
+      getSize: vi.fn(() => ({ width: 400, height: 200 })),
+      resize: vi.fn(() => resized),
+      toJPEG: vi.fn(() => Buffer.from('cropped')),
+    }
+    // Shared module-level mock: without this, a later fixture reads the
+    // earlier test's decoded image.
+    vi.mocked(nativeImage.createFromBuffer).mockReset()
+    vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
+      isEmpty: vi.fn(() => imageSize === null),
+      getSize: vi.fn(() => imageSize ?? { width: 0, height: 0 }),
+      crop: vi.fn(() => cropped),
+      resize: vi.fn(() => resized),
+      toJPEG: vi.fn(() => Buffer.alloc(0)),
+    } as unknown as ReturnType<typeof nativeImage.createFromBuffer>)
+    return { contents, resized, cropped }
+  }
+
+  function screenshotParams(contents: WebContents): Record<string, unknown> {
+    const call = vi
+      .mocked(contents.debugger.sendCommand)
+      .mock.calls.find(([method]) => method === 'Page.captureScreenshot')
+    if (!call) throw new Error('no capture was requested')
+    return call[1] as Record<string, unknown>
+  }
+
+  it('never sends a clip, which would emulate the live page for the capture', async () => {
+    const { contents } = captureFixture({ width: 4096, height: 2048 })
+
+    await captureScreenshot(contents)
+
+    expect(screenshotParams(contents)).not.toHaveProperty('clip')
+  })
+
+  it('crops the decoded image in memory without sending a CDP clip', async () => {
+    const { contents, cropped } = captureFixture({ width: 4096, height: 2048 })
+
+    const shot = await captureScreenshot(contents, { x: 100, y: 50, width: 200, height: 100 })
+
+    const image = vi.mocked(nativeImage.createFromBuffer).mock.results[0].value
+    expect(screenshotParams(contents)).not.toHaveProperty('clip')
+    expect(image.crop).toHaveBeenCalledWith({ x: 200, y: 100, width: 400, height: 200 })
+    expect(cropped.resize).not.toHaveBeenCalled()
+    expect(shot).toEqual({
+      dataUrl: `data:image/jpeg;base64,${Buffer.from('cropped').toString('base64')}`,
+      scale: 2,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 400, height: 200 },
+    })
+  })
+
+  /**
+   * A 2048px CSS viewport bounded to 1024px is scale 0.5, and the capture
+   * arrives at device resolution (4096px on a 2x display). The resize is what
+   * lands the image on the CSS-relative size the coordinate contract
+   * (cssX = imageX / scale) assumes.
+   */
+  it('downscales the returned image to the CSS-relative size', async () => {
+    const { contents, resized } = captureFixture({ width: 4096, height: 2048 })
+
+    const shot = await captureScreenshot(contents)
+
+    const image = vi.mocked(nativeImage.createFromBuffer).mock.results[0].value
+    expect(image.resize).toHaveBeenCalledWith({ width: 1024, height: 512, quality: 'good' })
+    expect(resized.toJPEG).toHaveBeenCalled()
+    expect(shot).toEqual({
+      dataUrl: `data:image/jpeg;base64,${Buffer.from('resized').toString('base64')}`,
+      scale: 0.5,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it('skips the re-encode when the capture already matches the target size', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+
+    const shot = await captureScreenshot(contents)
+
+    const image = vi.mocked(nativeImage.createFromBuffer).mock.results[0].value
+    expect(image.resize).not.toHaveBeenCalled()
+    expect(shot).toEqual({
+      dataUrl: 'data:image/jpeg;base64,c2lt',
+      scale: 0.5,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it('returns the raw capture when the image cannot be decoded', async () => {
+    const { contents } = captureFixture(null)
+
+    const shot = await captureScreenshot(contents)
+
+    expect(shot).toEqual({
+      dataUrl: 'data:image/jpeg;base64,c2lt',
+      scale: 0.5,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: null,
+    })
+  })
+
+  it('does not expose deprecated device-pixel metrics as a CSS viewport', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({ layoutViewport: { clientWidth: 2048, clientHeight: 1024 } })
+      }
+      if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'c2lt' })
+      return Promise.resolve(undefined)
+    })
+
+    const shot = await captureScreenshot(contents)
+
+    expect(shot.viewport).toBeNull()
+    expect(shot.imageSize).toEqual({ width: 1024, height: 512 })
+  })
+
+  it('refuses element cropping without verified CSS viewport metrics', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({ layoutViewport: { clientWidth: 2048, clientHeight: 1024 } })
+      }
+      return Promise.resolve(undefined)
+    })
+
+    await expect(
+      captureScreenshot(contents, { x: 10, y: 10, width: 100, height: 50 })
+    ).rejects.toThrow(/CSS viewport/)
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Page.captureScreenshot',
+      expect.anything()
+    )
+  })
+
+  it('accepts stable finite scroll offsets around the capture', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({
+          cssLayoutViewport: {
+            clientWidth: 2048,
+            clientHeight: 1024,
+            pageX: 12,
+            pageY: 34,
+          },
+        })
+      }
+      if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'c2lt' })
+      return Promise.resolve(undefined)
+    })
+
+    await expect(captureScreenshot(contents)).resolves.toMatchObject({
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it.each([
+    [
+      'dimensions',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024 } },
+      { cssLayoutViewport: { clientWidth: 1024, clientHeight: 512 } },
+    ],
+    [
+      'metric units',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024 } },
+      { layoutViewport: { clientWidth: 2048, clientHeight: 1024 } },
+    ],
+    [
+      'horizontal scroll offset',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 0, pageY: 20 } },
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 10, pageY: 20 } },
+    ],
+    [
+      'vertical scroll offset',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 10, pageY: 20 } },
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 10, pageY: 30 } },
+    ],
+    [
+      'offset validity',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 0, pageY: 0 } },
+      {
+        cssLayoutViewport: {
+          clientWidth: 2048,
+          clientHeight: 1024,
+          pageX: 0,
+          pageY: Number.NaN,
+        },
+      },
+    ],
+    ['availability', {}, {}],
+  ])(
+    'rejects a capture when viewport %s change during CDP capture',
+    async (_label, before, after) => {
+      const { contents } = captureFixture({ width: 1024, height: 512 })
+      let metricsRead = 0
+      vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+        if (method === 'Page.getLayoutMetrics') {
+          metricsRead++
+          return Promise.resolve(metricsRead === 1 ? before : after)
+        }
+        if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'c2lt' })
+        return Promise.resolve(undefined)
+      })
+
+      await expect(captureScreenshot(contents)).rejects.toThrow(/viewport changed/)
+    }
+  )
 })

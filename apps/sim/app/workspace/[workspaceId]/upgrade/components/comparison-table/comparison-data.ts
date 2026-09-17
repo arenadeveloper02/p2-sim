@@ -1,5 +1,5 @@
 import { DEFAULT_BILLING_CONCURRENCY_LIMITS } from '@/lib/billing/concurrency-defaults'
-import { CREDIT_TIERS, DAILY_REFRESH_RATE, DEFAULT_FREE_CREDITS } from '@/lib/billing/constants'
+import { CREDIT_TIERS, DEFAULT_FREE_CREDITS } from '@/lib/billing/constants'
 import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 
 /**
@@ -17,10 +17,6 @@ const MAX_TIER = tierByName('Max')
 
 /** Formats a credit count with thousands separators (e.g. 25000 → "25,000"). */
 const formatCredits = (credits: number): string => credits.toLocaleString('en-US')
-
-/** Daily refresh credits for a plan: 1% of plan dollars/day, in credits. */
-const dailyRefreshCredits = (dollars: number): number =>
-  Math.round(dollars * DAILY_REFRESH_RATE * getCreditsPerDollar())
 
 /** A brand icon rendered in a cell instead of a check/em-dash/text. */
 export interface CellIcon {
@@ -81,20 +77,20 @@ export const COMPARISON_SECTIONS: ComparisonSection[] = [
     title: 'Credits & pricing',
     rows: [
       {
-        label: 'Monthly credits',
+        label: 'Included credits',
         values: [
-          formatCredits(DEFAULT_FREE_CREDITS * getCreditsPerDollar()),
-          formatCredits(PRO_TIER.credits),
-          formatCredits(MAX_TIER.credits),
+          `${formatCredits(DEFAULT_FREE_CREDITS * getCreditsPerDollar())} one-time`,
+          `${formatCredits(PRO_TIER.credits)}/month`,
+          `${formatCredits(MAX_TIER.credits)}/month`,
           'Custom',
         ],
       },
       {
-        label: 'Daily refresh',
+        label: 'Weekly refresh',
         values: [
           false,
-          `+${formatCredits(dailyRefreshCredits(PRO_TIER.dollars))}`,
-          `+${formatCredits(dailyRefreshCredits(MAX_TIER.dollars))}`,
+          `+${formatCredits(PRO_TIER.weeklyRefreshCredits)}/week`,
+          `+${formatCredits(MAX_TIER.weeklyRefreshCredits)}/week`,
           'Custom',
         ],
       },
@@ -187,6 +183,10 @@ export const COMPARISON_SECTIONS: ComparisonSection[] = [
       },
       {
         label: 'KB Live Sync',
+        values: [false, false, true, true],
+      },
+      {
+        label: 'Sandboxes',
         values: [false, false, true, true],
       },
       {

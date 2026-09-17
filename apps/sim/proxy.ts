@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
+import { APP_ENTRY_PATH } from '@/lib/navigation/paths'
+import { isOAuthAuthorizationCallback, resolveAuthRedirect } from '@/app/(auth)/auth-redirect'
 import { sendToProfound } from './lib/analytics/profound'
 import {
   ARENA_SSO_SESSION_REQUIRED_PATH,
@@ -73,17 +75,17 @@ const DEFAULT_API_ALLOWED_METHODS = 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS'
  * to miss.
  */
 const DEFAULT_API_EXPOSED_HEADERS =
-  'Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-Id, X-Run-Id'
+  'Retry-After, WWW-Authenticate, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-Id, X-Run-Id'
 
 const DEFAULT_API_ALLOWED_HEADERS =
   'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, Authorization'
 
 const WORKFLOW_EXECUTE_HEADERS =
-  'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, X-Execution-Id, X-Execution-Mode, X-Execution-Timeout-Seconds'
+  'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, Authorization, X-Execution-Id, X-Execution-Mode, X-Execution-Timeout-Seconds'
 
 /** v2 execute: run identity and modes use the v2 wire names while streaming negotiates its protocol. */
 const WORKFLOW_EXECUTE_V2_HEADERS =
-  'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, X-Run-Id, X-Sim-Stream-Protocol'
+  'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, Authorization, X-Run-Id, X-Sim-Stream-Protocol'
 
 /** Subpaths under /api/chat/* that serve the workspace UI, not embeds. */
 const EMBED_RESERVED_SEGMENTS = new Set(['manage', 'validate'])
@@ -112,6 +114,15 @@ const CORS_RULES: readonly CorsRule[] = [
       credentials: false,
       methods: 'GET, POST, OPTIONS',
       headers: 'Content-Type, Authorization, Accept',
+    }),
+  },
+  {
+    match: (p) => p.startsWith('/api/auth/.well-known/'),
+    policy: () => ({
+      origin: '*',
+      credentials: false,
+      methods: 'GET, OPTIONS',
+      headers: 'Content-Type, Accept',
     }),
   },
   {
@@ -210,7 +221,7 @@ function resolveDefaultApiCorsOrigin(request: NextRequest): string {
  * The exposed-header list is applied to every policy, matched rule or fallback,
  * because the headers it names are set by the same shared route machinery on
  * every route. A rule opts out by spelling `exposeHeaders: undefined`; carrying
- * the list per rule instead is how `/api/v2/workflows/{id}/execute` — the only
+ * the list per rule instead is how `/api/v2/workflows/{workflowId}/execute` — the only
  * route that emits `X-Run-Id`, and wildcard-origin precisely so browsers can
  * call it — ended up unable to hand a browser the run id or a 429's
  * `Retry-After`.
@@ -282,7 +293,7 @@ function handleRootPathRedirects(
   if (hasActiveSession) {
     const isBrowsingHome = url.searchParams.has('home')
     if (!isBrowsingHome) {
-      return NextResponse.redirect(new URL('/workspace', request.url))
+      return NextResponse.redirect(new URL(APP_ENTRY_PATH, request.url))
     }
     return null
   }
@@ -369,7 +380,7 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   return null
 }
 
-export async function proxy(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const url = request.nextUrl
 
   if (url.pathname.startsWith('/api/')) {
@@ -393,11 +404,21 @@ export async function proxy(request: NextRequest) {
   }
 
   const redirect = handleRootPathRedirects(request, hasActiveSession)
-  if (redirect) return track(request, redirect)
+  if (redirect) return applyIndexingPolicy(request, redirect)
 
   if (url.pathname === '/login' || url.pathname === '/signup') {
-    if (hasActiveSession) {
-      return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
+    const { rawCallbackUrl } = resolveAuthRedirect({
+      redirect: url.searchParams.get('redirect'),
+      callbackUrl: url.searchParams.get('callbackUrl'),
+      inviteFlow: url.searchParams.get('invite_flow'),
+    })
+    const isOAuthSignIn =
+      isOAuthAuthorizationCallback(rawCallbackUrl, url.origin) && !isAuthDisabled
+    if (hasActiveSession && !isOAuthSignIn) {
+      return applyIndexingPolicy(
+        request,
+        NextResponse.redirect(new URL(APP_ENTRY_PATH, request.url))
+      )
     }
     // Non-local: Arena SSO resume (Agent has no product login UI)
     if (!isDev) {
@@ -407,12 +428,12 @@ export async function proxy(request: NextRequest) {
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
     response.headers.set('X-Content-Type-Options', 'nosniff')
     response.headers.set('X-Frame-Options', 'SAMEORIGIN')
-    return track(request, response)
+    return applyIndexingPolicy(request, response)
   }
 
   // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
   if (url.pathname.startsWith('/chat/')) {
-    return track(request, NextResponse.next())
+    return applyIndexingPolicy(request, NextResponse.next())
   }
 
   // Arena redirect SSO callback / error — no Better Auth session yet
@@ -427,15 +448,14 @@ export async function proxy(request: NextRequest) {
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
     response.headers.set('X-Content-Type-Options', 'nosniff')
-    // response.headers.set('X-Frame-Options', 'SAMEORIGIN')
     return track(request, response)
   }
 
   const invitationRedirect = handleInvitationRedirects(request, hasActiveSession)
-  if (invitationRedirect) return track(request, invitationRedirect)
+  if (invitationRedirect) return applyIndexingPolicy(request, invitationRedirect)
 
   const securityBlock = handleSecurityFiltering(request)
-  if (securityBlock) return track(request, securityBlock)
+  if (securityBlock) return applyIndexingPolicy(request, securityBlock)
 
   const response = NextResponse.next()
   response.headers.set('Vary', 'User-Agent')
@@ -444,7 +464,7 @@ export async function proxy(request: NextRequest) {
   response.headers.set('X-Content-Type-Options', 'nosniff')
   // response.headers.set('X-Frame-Options', 'SAMEORIGIN')
 
-  return track(request, response)
+  return applyIndexingPolicy(request, response)
 }
 
 /**
@@ -457,7 +477,7 @@ export async function proxy(request: NextRequest) {
  * the index. robots.txt is excluded from this proxy's matcher so it keeps
  * serving the crawlable rules this header depends on.
  */
-function applyIndexingPolicy(request: NextRequest, response: NextResponse): void {
+function applyIndexingPolicy(request: NextRequest, response: NextResponse): NextResponse {
   const host =
     request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ||
     request.headers.get('host') ||
@@ -466,6 +486,8 @@ function applyIndexingPolicy(request: NextRequest, response: NextResponse): void
   if (!isSearchIndexableHost(host)) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
+
+  return response
 }
 
 /**
@@ -485,6 +507,9 @@ export const config = {
     '/w', // Legacy /w redirect
     '/w/:path*', // Legacy /w/* redirects
     '/workspace/:path*', // New workspace routes
+    '/home', // App entry
+    '/o', // Organization surface
+    '/o/:path*',
     '/login',
     '/signup',
     '/invite/:path*', // Match invitation routes

@@ -25,6 +25,9 @@ import type {
 
 export const PENDING_DESKTOP_SCOPE_PREFIX = 'pending:' as const
 
+/** Boolean results preserve compatibility with older installed desktop shells. */
+export type TerminalPasteResult = boolean | 'too-large'
+
 const DESKTOP_SCOPE_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 const PENDING_DESKTOP_SCOPE_PATTERN = /^pending:[A-Za-z0-9_-]{1,128}$/
 
@@ -71,7 +74,7 @@ export interface SimDesktopTerminalApi {
    * only replay what the user already copied instead of choosing the bytes.
    * Resolves false when the clipboard held nothing to paste.
    */
-  paste(terminalId: string, scopeId: string): Promise<boolean>
+  paste(terminalId: string, scopeId: string): Promise<TerminalPasteResult>
   resize(terminalId: string, cols: number, rows: number, scopeId: string): void
   /** Open an additional terminal and make it active. */
   openTerminal(cwd: string | undefined, scopeId: string): Promise<ScopedTerminalTabsState>
@@ -92,8 +95,6 @@ export interface SimDesktopTerminalApi {
   disposeScope(scopeId: string): Promise<boolean>
   /** Stops a soft-deleted chat's shells while retaining its restart descriptor. */
   suspendScope(scopeId: string): Promise<boolean>
-  /** End every shell. A new one starts on the next `start`. */
-  dispose(): void
   /** Subscribe to PTY output batches. Returns an unsubscribe function. */
   onData(callback: (terminalId: string, data: string, scopeId: string) => void): () => void
   /**
@@ -139,6 +140,11 @@ export interface SimDesktopBrowserAgentApi {
   /** New shells can atomically force-hide a native page before renderer effects paint. */
   readonly supportsAtomicPanelOcclusion?: true
   /**
+   * Confirms that this renderer can present and answer site-origin prompts.
+   * Optional for compatibility with installed shells that predate site consent.
+   */
+  registerSitePermissionPromptSupport?(): void
+  /**
    * Execute one browser tool. Resolves with the tool's outcome; never
    * rejects for tool-level failures (those ride `ok: false`).
    */
@@ -159,6 +165,8 @@ export interface SimDesktopBrowserAgentApi {
    * Optional for compatibility with installed shells that predate acknowledged tab creation.
    */
   openTab?(scopeId: string): Promise<BrowserTabsState>
+  /** Atomically creates a user-owned tab and grants/navigates its exact destination origin. */
+  openUrl?(url: string, scopeId: string): Promise<BrowserTabsState>
   /** Makes a chat's browser tab set the renderer-visible set. */
   activateScope(scopeId: string): Promise<BrowserTabsState>
   /** Materializes a lazily activated chat's persisted tabs without showing its panel. */
@@ -232,6 +240,11 @@ export interface SimDesktopBrowserAgentApi {
   getTabsState(scopeId: string): Promise<BrowserTabsState>
   /** Read a privacy-preserving hint of websites that may have a usable session. */
   getKnownSessions(): Promise<BrowserKnownSessionsState>
+  /**
+   * Live search completions for the omnibox. Optional while installed shells
+   * that predate search suggestions remain supported.
+   */
+  getSearchSuggestions?(query: string): Promise<string[]>
   /**
    * Erase browsing data from the dedicated profile and resolve the resulting
    * session list. Pass the kinds to clear; omit for all of them. Saved
@@ -833,6 +846,8 @@ export interface DesktopPreferences {
   trayEnabled: boolean
   /** Let Chat drive the built-in agent browser on this device. */
   browserEnabled: boolean
+  /** Whether typing in the omnibox may request live Google search completions. */
+  browserSearchSuggestionsEnabled?: boolean
   /** Let Chat run commands in local shells. */
   terminalEnabled: boolean
   /**
@@ -917,6 +932,11 @@ export interface SimDesktopSettingsApi {
     key: K,
     value: DesktopPreferences[K]
   ): Promise<DesktopPreferences>
+  /**
+   * Controls whether partial omnibox queries may be sent to Google. Optional
+   * for compatibility with installed shells that predate live suggestions.
+   */
+  setBrowserSearchSuggestionsEnabled?(enabled: boolean): Promise<DesktopPreferences>
   notify(payload: DesktopNotificationPayload): Promise<boolean>
   /** Overrides the appearance requested by browser pages. */
   setBrowserTheme(theme: DesktopAppearanceTheme): Promise<DesktopPreferences>
@@ -936,9 +956,9 @@ export interface SimDesktopTerminalThemesApi {
 }
 
 /**
- * Where the shell's update pipeline currently is. `available` only occurs
- * when automatic downloads are disabled; with them enabled the shell moves
- * straight to `downloading`.
+ * Where the shell's update pipeline currently is. `available` occurs when
+ * automatic downloads are disabled or the shell requires a manual installer;
+ * self-updating shells with automatic downloads enabled move to `downloading`.
  */
 export type DesktopUpdateStatus =
   | 'idle'
@@ -955,11 +975,9 @@ export interface DesktopUpdateState {
   /** Whole-number download progress (0-100) while `downloading`. */
   percent?: number
   /**
-   * True when this shell cannot apply updates in place (a build without a
-   * Developer ID signature — local installs and pre-signing CI prereleases;
-   * Squirrel.Mac refuses to swap unsigned bundles). `available` is then the
-   * pipeline's terminal state and the advance action opens the download in
-   * the browser instead of downloading in the background.
+   * True when this shell cannot apply updates in place, such as an unsigned build
+   * or an app running outside /Applications. `available` is then the terminal state
+   * and the advance action opens the installer in the browser.
    */
   manual?: boolean
 }
@@ -968,11 +986,11 @@ export interface DesktopUpdateState {
 export interface SimDesktopUpdatesApi {
   getState(): Promise<DesktopUpdateState>
   /**
-   * Advance the pipeline: checks for an update, or starts the download when
-   * one is already known to be available (auto-download off).
+   * Advances the pipeline: checks for an update, downloads an available
+   * self-update, or opens an available manual installer.
    */
   check(): void
-  /** Quit and install a `ready` update. No-op in any other state. */
+  /** Installs a ready update or opens the installer for an available manual update. */
   install(): void
   /** Subscribe to pipeline state changes. Returns an unsubscribe function. */
   onState(callback: (state: DesktopUpdateState) => void): () => void
@@ -989,10 +1007,52 @@ export interface SimDesktopWindowStateApi {
   onStateChange(callback: (state: DesktopWindowState) => void): () => void
 }
 
+/**
+ * The Sim deployment an installed shell is pointed at. The bundle bakes only a
+ * DEFAULT origin; navigation, CSP, cookie partition, and the update feed are
+ * all derived from the configured one.
+ */
+export interface DesktopServerConfiguration {
+  /** The origin the shell is currently pointed at. */
+  origin: string
+  /** The origin this build falls back to when nothing is stored. */
+  defaultOrigin: string
+  /**
+   * Whether the configured origin is one of Sim's own deployments. Sim-operated
+   * resources (the public status page) describe only those, so a self-hosted
+   * shell must not be pointed at them.
+   */
+  isSimCloud: boolean
+}
+
+/** Outcome of a server change. On success the shell relaunches immediately. */
+export type DesktopServerChangeResult =
+  | { ok: true; origin: string; unchanged: boolean }
+  | { ok: false; error: string }
+
+/**
+ * Reading and changing the server origin. Exposed only to the shell's own
+ * bundled `file:` pages: the surface that changes which server the app talks
+ * to must stay reachable when that server cannot be reached at all, and must
+ * never be drivable by a page the current server serves.
+ */
+export interface SimDesktopServerApi {
+  /** Opens the shell's native server-selection window. */
+  open(): void
+  getConfiguration(): Promise<DesktopServerConfiguration>
+  /**
+   * Validates and persists a new server origin, then relaunches the shell.
+   * Resolves with an error message when the origin is rejected.
+   */
+  setOrigin(origin: string): Promise<DesktopServerChangeResult>
+}
+
 export interface SimDesktopApi {
   /** Installed shell version (plain semver, e.g. `0.3.1`). */
   version: string
   openExternal(url: string): Promise<boolean>
+  /** Opens the operating system's microphone privacy settings when supported. */
+  openMicrophoneSettings?(): Promise<boolean>
   /**
    * Start the OAuth connect handoff for a provider: the whole flow runs in
    * the system browser and returns via loopback. Resolves false when the
@@ -1005,6 +1065,11 @@ export interface SimDesktopApi {
    */
   onOAuthConnectComplete(callback: (result: DesktopOAuthConnectResult) => void): () => void
   offlineRetry(): void
+  /**
+   * Optional because shells older than this surface do not expose it. Only
+   * the shell's own bundled pages can call it — see {@link SimDesktopServerApi}.
+   */
+  server?: SimDesktopServerApi
   localFilesystem(request: LocalFilesystemRequest): Promise<LocalFilesystemResponse>
   /** Subscribe to commands initiated by the native application menu. */
   onCommand(callback: (command: DesktopCommand) => void): () => void

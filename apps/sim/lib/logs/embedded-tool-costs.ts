@@ -132,10 +132,7 @@ export function resolveBillableToolChargeKey(span: {
 }
 
 /** Canvas / block display label for ledger `tool_id` / `description`. */
-export function resolveBillableToolDisplayName(span: {
-  type?: string
-  name?: string
-}): string {
+export function resolveBillableToolDisplayName(span: { type?: string; name?: string }): string {
   return span.name?.trim() || span.type?.trim() || 'tool'
 }
 

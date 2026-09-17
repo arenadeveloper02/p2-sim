@@ -38,8 +38,16 @@ import { ToolSchemaEnrichmentError } from '@/tools/params'
 
 process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000'
 
-const { mockImportWorkspaceFileSecretProvenanceForModelView } = vi.hoisted(() => ({
+const {
+  mockDiscoverMcpServerToolsAsExecutor,
+  mockImportWorkspaceFileSecretProvenanceForModelView,
+} = vi.hoisted(() => ({
+  mockDiscoverMcpServerToolsAsExecutor: vi.fn().mockResolvedValue([]),
   mockImportWorkspaceFileSecretProvenanceForModelView: vi.fn().mockResolvedValue(true),
+}))
+
+vi.mock('@/lib/internal/mcp/discover-tools', () => ({
+  discoverMcpServerToolsAsExecutor: mockDiscoverMcpServerToolsAsExecutor,
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () => ({
@@ -118,15 +126,26 @@ vi.mock('@/executor/utils/http', () => ({
 
 /** Connected MCP servers every workspace-server lookup in this suite resolves. */
 const MCP_SERVER_ROWS = [
-  { id: 'mcp-search-server', connectionStatus: 'connected' },
-  { id: 'same-server', connectionStatus: 'connected' },
-  { id: 'mcp-legacy-server', connectionStatus: 'connected' },
+  {
+    id: 'mcp-search-server',
+    connectionStatus: 'connected',
+    credentialGroupId: null,
+    enabled: true,
+  },
+  { id: 'same-server', connectionStatus: 'connected', credentialGroupId: null, enabled: true },
+  {
+    id: 'mcp-legacy-server',
+    connectionStatus: 'connected',
+    credentialGroupId: null,
+    enabled: true,
+  },
 ]
 
-const mockGetCustomToolById = vi.fn()
+const mockReadAvailableCustomToolByIdOrTitleAsExecutor = vi.fn()
 
-vi.mock('@/lib/workflows/custom-tools/operations', () => ({
-  getCustomToolById: (...args: unknown[]) => mockGetCustomToolById(...args),
+vi.mock('@/lib/internal/custom-tools/read-available-by-id-or-title', () => ({
+  readAvailableCustomToolByIdOrTitleAsExecutor: (...args: unknown[]) =>
+    mockReadAvailableCustomToolByIdOrTitleAsExecutor(...args),
 }))
 
 const mockGetAllBlocks = getAllBlocks as Mock
@@ -153,6 +172,32 @@ describe('AgentBlockHandler', () => {
   beforeEach(() => {
     handler = new AgentBlockHandler()
     vi.clearAllMocks()
+    mockDiscoverMcpServerToolsAsExecutor.mockImplementation(
+      async ({ serverId }: { serverId: string }) =>
+        [
+          'read_file',
+          'search_files',
+          'list_files',
+          'search',
+          'failing_tool',
+          'test_tool',
+          'tool',
+          'tool_1',
+          'tool_2',
+          'tool_3',
+          'tool1',
+          'tool2',
+        ].map((name) => ({
+          name,
+          serverId,
+          serverName: 'Live server',
+          description: `Live ${name}`,
+          inputSchema: {
+            type: 'object',
+            properties: { query: { type: 'string' }, path: { type: 'string' } },
+          },
+        }))
+    )
     mockImportWorkspaceFileSecretProvenanceForModelView.mockResolvedValue(true)
     resetDbChainMock()
     // The MCP server lookup awaits select().from(mcpServers).where(...) directly;
@@ -182,6 +227,7 @@ describe('AgentBlockHandler', () => {
       enabled: true,
     } as SerializedBlock
     mockContext = {
+      workspaceId: 'test-workspace',
       workflowId: 'test-workflow',
       blockStates: new Map(),
       blockLogs: [],
@@ -933,13 +979,13 @@ describe('AgentBlockHandler', () => {
       expect(tools.length).toBe(2)
 
       const autoTool = tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'auto_tool'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Auto Tool'
       )
       const forceTool = tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'force_tool'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Force Tool'
       )
       const noneTool = tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'none_tool'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_None Tool'
       )
 
       expect(autoTool).toBeDefined()
@@ -948,6 +994,55 @@ describe('AgentBlockHandler', () => {
 
       expect(autoTool.usageControl).toBe('auto')
       expect(forceTool.usageControl).toBe('force')
+    })
+
+    /**
+     * `schema.function.name` has no uniqueness constraint — only the tool title
+     * does — so two custom tools can declare the same one. The model-facing
+     * function name is the tool's `id` (`custom_<title>`), never that field, so
+     * the declarations stay distinguishable at the agent boundary.
+     */
+    it('keeps two custom tools distinguishable when their schemas declare one name', async () => {
+      const declaration = (name: string) => ({
+        function: {
+          name,
+          description: 'Collides on the declared function name',
+          parameters: { type: 'object', properties: { input: { type: 'string' } } },
+        },
+      })
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the tools provided.',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            type: 'custom-tool',
+            title: 'First Tool',
+            code: 'return {}',
+            schema: declaration('collides'),
+            usageControl: 'auto' as const,
+          },
+          {
+            type: 'custom-tool',
+            title: 'Second Tool',
+            code: 'return {}',
+            schema: declaration('collides'),
+            usageControl: 'auto' as const,
+          },
+        ],
+      }
+
+      mockGetProviderFromModel.mockReturnValue('openai')
+
+      await handler.execute(mockContext, mockBlock, inputs)
+
+      const tools = mockExecuteProviderRequest.mock.calls[0][1].tools as Array<{ id: string }>
+      expect(tools.length).toBe(2)
+      expect(new Set(tools.map((tool) => tool.id)).size).toBe(2)
+      expect(tools.map((tool) => tool.id).sort()).toEqual([
+        'custom_First Tool',
+        'custom_Second Tool',
+      ])
     })
 
     it('should filter out tools with usageControl set to "none"', async () => {
@@ -1101,18 +1196,16 @@ describe('AgentBlockHandler', () => {
 
       expect(requestBody.tools.length).toBe(2)
 
-      const toolNames = requestBody.tools.map(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name
-      )
-      expect(toolNames).toContain('custom_tool_auto')
-      expect(toolNames).toContain('custom_tool_force')
-      expect(toolNames).not.toContain('custom_tool_none')
+      const toolNames = requestBody.tools.map((t: { id?: string; usageControl?: string }) => t.id)
+      expect(toolNames).toContain('custom_Custom Tool - Auto')
+      expect(toolNames).toContain('custom_Custom Tool - Force')
+      expect(toolNames).not.toContain('custom_Custom Tool - None')
 
       const autoTool = requestBody.tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'custom_tool_auto'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Custom Tool - Auto'
       )
       const forceTool = requestBody.tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'custom_tool_force'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Custom Tool - Force'
       )
 
       expect(autoTool.usageControl).toBe('auto')
@@ -1652,11 +1745,12 @@ describe('AgentBlockHandler', () => {
             }),
           }),
           expect.objectContaining({
-            name: 'search_files',
-            description: 'MCP tool search_files from Docs {{MCP_SERVER_LABEL}}',
+            id: expect.stringContaining('search_files'),
+            description: 'Live search_files',
             parameters: expect.objectContaining({
               properties: {
-                query: { type: 'string', description: 'Search {{MCP_PARAMETER}}' },
+                query: { type: 'string' },
+                path: { type: 'string' },
               },
             }),
           }),
@@ -3247,41 +3341,13 @@ describe('AgentBlockHandler', () => {
       expect(contextWithWorkspace.workspaceId).toBe('test-workspace-456')
     })
 
-    it('should use cached schema for MCP tools (no discovery needed)', async () => {
-      const fetchCalls: any[] = []
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        fetchCalls.push({ url, options })
-
-        if (url.includes('/api/providers')) {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => (name === 'Content-Type' ? 'application/json' : null),
-            },
-            json: () =>
-              Promise.resolve({
-                content: 'Used MCP tool successfully',
-                model: 'gpt-4o',
-                tokens: { input: 10, output: 10, total: 20 },
-                toolCalls: [],
-                timing: { total: 50 },
-              }),
-          })
-        }
-
-        if (url.includes('/api/mcp/tools/execute')) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                success: true,
-                data: { output: { content: [{ type: 'text', text: 'Tool executed' }] } },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    it('rediscovers MCP tools even when an editor schema is cached', async () => {
+      mockExecuteProviderRequest.mockResolvedValueOnce({
+        content: 'Used MCP tool successfully',
+        model: 'gpt-4o',
+        tokens: { input: 10, output: 10, total: 20 },
+        toolCalls: [],
+        timing: { total: 50 },
       })
 
       const inputs = {
@@ -3319,15 +3385,11 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(contextWithWorkspace, mockBlock, inputs)
 
-      const discoveryCalls = fetchCalls.filter((c) => c.url.includes('/api/mcp/tools/discover'))
-      expect(discoveryCalls.length).toBe(0)
-
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledOnce()
       expect(mockExecuteProviderRequest).toHaveBeenCalled()
     })
 
-    it('should pass toolSchema to execution endpoint when using cached schema', async () => {
-      let executionCall: any = null
-
+    it('passes the authorized live schema to the provider', async () => {
       mockExecuteProviderRequest.mockResolvedValueOnce({
         content: 'Tool executed',
         model: 'gpt-4o',
@@ -3339,22 +3401,6 @@ describe('AgentBlockHandler', () => {
           },
         ],
         timing: { total: 50 },
-      })
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        if (url.includes('/api/mcp/tools/execute')) {
-          executionCall = { url, body: JSON.parse(options.body) }
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                success: true,
-                data: { output: { content: [{ type: 'text', text: 'Search results' }] } },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
       })
 
       const cachedSchema = {
@@ -3398,7 +3444,7 @@ describe('AgentBlockHandler', () => {
       const providerCallArgs = mockExecuteProviderRequest.mock.calls[0]
       expect(providerCallArgs[1].tools).toBeDefined()
       expect(providerCallArgs[1].tools.length).toBe(1)
-      expect(providerCallArgs[1].tools[0].name).toBe('search_files')
+      expect(providerCallArgs[1].tools[0].id).toContain('search_files')
     })
 
     it('should pass callChain to executeProviderRequest for MCP cycle detection', async () => {
@@ -3565,29 +3611,12 @@ describe('AgentBlockHandler', () => {
     })
 
     it('should handle multiple MCP tools from the same server efficiently', async () => {
-      const fetchCalls: any[] = []
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        fetchCalls.push({ url, options })
-
-        if (url.includes('/api/providers')) {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => (name === 'Content-Type' ? 'application/json' : null),
-            },
-            json: () =>
-              Promise.resolve({
-                content: 'Used tools',
-                model: 'gpt-4o',
-                tokens: { input: 10, output: 10, total: 20 },
-                toolCalls: [],
-                timing: { total: 50 },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+      mockExecuteProviderRequest.mockResolvedValueOnce({
+        content: 'Used tools',
+        model: 'gpt-4o',
+        tokens: { input: 10, output: 10, total: 20 },
+        toolCalls: [],
+        timing: { total: 50 },
       })
 
       const inputs = {
@@ -3641,58 +3670,27 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(contextWithWorkspace, mockBlock, inputs)
 
-      const discoveryCalls = fetchCalls.filter((c) => c.url.includes('/api/mcp/tools/discover'))
-      expect(discoveryCalls.length).toBe(0)
-
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledOnce()
       expect(mockExecuteProviderRequest).toHaveBeenCalled()
       const providerCallArgs = mockExecuteProviderRequest.mock.calls[0]
       expect(providerCallArgs[1].tools.length).toBe(3)
     })
 
-    it('should fallback to discovery for MCP tools without cached schema', async () => {
-      const fetchCalls: any[] = []
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        fetchCalls.push({ url, options })
-
-        if (url.includes('/api/mcp/tools/discover')) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                success: true,
-                data: {
-                  tools: [
-                    {
-                      name: 'legacy_tool',
-                      description: 'A legacy tool without cached schema',
-                      inputSchema: { type: 'object', properties: {} },
-                      serverName: 'legacy-server',
-                    },
-                  ],
-                },
-              }),
-          })
-        }
-
-        if (url.includes('/api/providers')) {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => (name === 'Content-Type' ? 'application/json' : null),
-            },
-            json: () =>
-              Promise.resolve({
-                content: 'Used legacy tool',
-                model: 'gpt-4o',
-                tokens: { input: 10, output: 10, total: 20 },
-                toolCalls: [],
-                timing: { total: 50 },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    it('should discover MCP tools without cached schema through the application operation', async () => {
+      mockDiscoverMcpServerToolsAsExecutor.mockResolvedValue([
+        {
+          name: 'legacy_tool',
+          description: 'A legacy tool without cached schema',
+          inputSchema: { type: 'object', properties: {} },
+          serverName: 'legacy-server',
+        },
+      ])
+      mockExecuteProviderRequest.mockResolvedValueOnce({
+        content: 'Used legacy tool',
+        model: 'gpt-4o',
+        tokens: { input: 10, output: 10, total: 20 },
+        toolCalls: [],
+        timing: { total: 50 },
       })
 
       const inputs = {
@@ -3715,6 +3713,7 @@ describe('AgentBlockHandler', () => {
 
       const contextWithWorkspace = {
         ...mockContext,
+        userId: 'user-1',
         workspaceId: 'test-workspace-123',
         workflowId: 'test-workflow-456',
       }
@@ -3723,10 +3722,139 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(contextWithWorkspace, mockBlock, inputs)
 
-      const discoveryCalls = fetchCalls.filter((c) => c.url.includes('/api/mcp/tools/discover'))
-      expect(discoveryCalls.length).toBe(1)
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: 'test-workspace-123',
+          context: expect.objectContaining({
+            userId: contextWithWorkspace.userId,
+            workflowId: 'test-workflow-456',
+          }),
+          serverId: 'mcp-legacy-server',
+        })
+      )
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/api/mcp/tools/discover'),
+        expect.anything()
+      )
+    })
 
-      expect(discoveryCalls[0].url).toContain('serverId=mcp-legacy-server')
+    it('expands every live tool from an explicitly selected managed MCP connection', async () => {
+      const credentialId = 'mcp-cg-123456789012345678901'
+      mockDiscoverMcpServerToolsAsExecutor.mockResolvedValue([
+        {
+          name: 'search_transcripts',
+          description: 'Search transcripts',
+          inputSchema: {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+          },
+          serverId: credentialId,
+          serverName: 'Fireflies',
+        },
+        {
+          name: 'get_transcript',
+          description: 'Get one transcript',
+          inputSchema: {
+            type: 'object',
+            properties: { transcriptId: { type: 'string' } },
+            required: ['transcriptId'],
+          },
+          serverId: credentialId,
+          serverName: 'Fireflies',
+        },
+      ])
+
+      await handler.execute(
+        {
+          ...mockContext,
+          userId: 'permission-check-user',
+          workspaceId: 'test-workspace-123',
+          workflowId: 'test-workflow-456',
+        },
+        mockBlock,
+        {
+          model: 'gpt-4o',
+          userPrompt: 'Use Fireflies',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'mcp-server-advanced',
+              params: { serverId: credentialId },
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+      )
+
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverId: credentialId,
+          workspaceId: 'test-workspace-123',
+        })
+      )
+      const providerTools = mockExecuteProviderRequest.mock.calls[0][1].tools
+      expect(providerTools).toEqual([
+        expect.objectContaining({
+          id: `${credentialId}-search_transcripts`,
+          params: {},
+        }),
+        expect.objectContaining({
+          id: `${credentialId}-get_transcript`,
+          params: {},
+        }),
+      ])
+    })
+
+    it('rejects a blank advanced MCP server binding', async () => {
+      await expect(
+        handler.execute(
+          {
+            ...mockContext,
+            workspaceId: 'test-workspace-123',
+            workflowId: 'test-workflow-456',
+          },
+          mockBlock,
+          {
+            model: 'gpt-4o',
+            userPrompt: 'Continue without MCP tools',
+            apiKey: 'test-api-key',
+            tools: [
+              {
+                type: 'mcp-server-advanced',
+                params: { serverId: '' },
+                usageControl: 'auto' as const,
+              },
+            ],
+          }
+        )
+      ).rejects.toThrow('requires params.serverId')
+
+      expect(mockDiscoverMcpServerToolsAsExecutor).not.toHaveBeenCalled()
+      expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
+    })
+
+    it('fails before invoking the model when no advanced operations are permitted', async () => {
+      mockDiscoverMcpServerToolsAsExecutor.mockResolvedValue([])
+      await expect(
+        handler.execute(
+          { ...mockContext, workspaceId: 'test-workspace-123', workflowId: 'test-workflow-456' },
+          mockBlock,
+          {
+            model: 'gpt-4o',
+            userPrompt: 'Use MCP',
+            apiKey: 'test-api-key',
+            tools: [
+              {
+                type: 'mcp-server-advanced',
+                params: { serverId: 'mcp-server-1' },
+                operationPolicy: { mode: 'allow', operations: [] },
+              },
+            ],
+          }
+        )
+      ).rejects.toThrow('No permitted MCP operations')
+      expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
     })
 
     describe('customToolId resolution - DB as source of truth', () => {
@@ -3765,8 +3893,9 @@ describe('AgentBlockHandler', () => {
       const dbCode = 'return { title, content, format };'
 
       function mockDBForCustomTool(toolId: string) {
-        mockGetCustomToolById.mockImplementation(({ toolId: id }: { toolId: string }) => {
-          if (id === toolId) {
+        mockReadAvailableCustomToolByIdOrTitleAsExecutor.mockImplementation(
+          ({ identifier }: { identifier: string }) => {
+            if (identifier !== toolId) return Promise.resolve(null)
             return Promise.resolve({
               id: toolId,
               title: 'formatReport',
@@ -3774,12 +3903,13 @@ describe('AgentBlockHandler', () => {
               code: dbCode,
             })
           }
-          return Promise.resolve(null)
-        })
+        )
       }
 
       function mockDBFailure() {
-        mockGetCustomToolById.mockRejectedValue(new Error('DB connection failed'))
+        mockReadAvailableCustomToolByIdOrTitleAsExecutor.mockRejectedValue(
+          new Error('DB connection failed')
+        )
       }
 
       beforeEach(() => {
@@ -3788,7 +3918,7 @@ describe('AgentBlockHandler', () => {
           writable: true,
           configurable: true,
         })
-        mockGetCustomToolById.mockReset()
+        mockReadAvailableCustomToolByIdOrTitleAsExecutor.mockReset()
         mockContext.userId = 'test-user'
       })
 
@@ -3852,7 +3982,7 @@ describe('AgentBlockHandler', () => {
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
         expect(tools[0].parameters.required).toContain('format')
       })
 
@@ -3885,10 +4015,12 @@ describe('AgentBlockHandler', () => {
 
         await handler.execute(mockContext, mockBlock, inputs)
 
-        expect(mockGetCustomToolById).toHaveBeenCalledWith(expect.objectContaining({ toolId }))
+        expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).toHaveBeenCalledWith(
+          expect.objectContaining({ context: mockContext, identifier: toolId, lookup: 'id' })
+        )
         const providerRequest = mockExecuteProviderRequest.mock.calls[0][1]
         expect(providerRequest.tools).toHaveLength(1)
-        expect(providerRequest.tools[0].name).toBe('formatReport')
+        expect(providerRequest.tools[0].id).toBe('custom_formatReport')
         expect(JSON.stringify(providerRequest.tools)).not.toContain(toolId)
         expect(JSON.stringify(providerRequest.tools)).not.toContain('CANARY_CUSTOM_TOOL_ID')
         expect(inputs.tools[0].customToolId).toBe('{{CANARY_CUSTOM_TOOL_ID}}')
@@ -3992,7 +4124,9 @@ describe('AgentBlockHandler', () => {
 
         await expect(handler.execute(mockContext, mockBlock, inputs)).rejects.toBe(failure)
 
-        expect(mockGetCustomToolById).toHaveBeenCalledWith(expect.objectContaining({ toolId }))
+        expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).toHaveBeenCalledWith(
+          expect.objectContaining({ context: mockContext, identifier: toolId, lookup: 'id' })
+        )
         expect(inputs.tools[0].customToolId).toBe('{{CANARY_CUSTOM_TOOL_ID}}')
         expect(mockContext.resolvedSecretTraceRegistry?.getActiveMatches()).toEqual([])
         expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
@@ -4024,9 +4158,7 @@ describe('AgentBlockHandler', () => {
         await handler.execute(mockContext, mockBlock, inputs)
 
         const providerRequest = mockExecuteProviderRequest.mock.calls[0][1]
-        expect(providerRequest.tools).toContainEqual(
-          expect.objectContaining({ id: 'load_skill', name: 'load_skill' })
-        )
+        expect(providerRequest.tools).toContainEqual(expect.objectContaining({ id: 'load_skill' }))
         expect(JSON.stringify(providerRequest.tools)).toContain('Reporting')
         expect(inputs.skills[0].skillId).toBe('{{CANARY_SKILL_ID}}')
         expect(mockContext.resolvedSecretTraceRegistry?.getActiveMatches()).toEqual([])
@@ -4060,7 +4192,7 @@ describe('AgentBlockHandler', () => {
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
         expect(tools[0].parameters.required).not.toContain('format')
       })
 
@@ -4120,7 +4252,7 @@ describe('AgentBlockHandler', () => {
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
       })
 
       it('should not fetch from DB when no customToolId is present', async () => {
@@ -4143,14 +4275,14 @@ describe('AgentBlockHandler', () => {
 
         await handler.execute(mockContext, mockBlock, inputs)
 
-        expect(mockGetCustomToolById).not.toHaveBeenCalled()
+        expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).not.toHaveBeenCalled()
 
         expect(mockExecuteProviderRequest).toHaveBeenCalled()
         const providerCall = mockExecuteProviderRequest.mock.calls[0]
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
         expect(tools[0].parameters.required).not.toContain('format')
       })
     })

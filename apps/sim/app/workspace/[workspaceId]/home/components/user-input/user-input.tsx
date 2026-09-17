@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react'
 import {
-  Button,
+  Chip,
   ChipSwitch,
   cn,
   DropdownMenu,
@@ -21,18 +21,15 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Paperclip,
-  Plus,
-  Slash,
   Tooltip,
   toast,
 } from '@sim/emcn'
-import { ChevronDown } from '@sim/emcn/icons'
+import { ChevronDown, Paperclip, Plus, Slash } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { isDesktopApp } from '@/lib/desktop'
+import { getDesktopBridge } from '@/lib/desktop'
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
@@ -41,11 +38,14 @@ import {
   AttachedFilesList,
   DropOverlay,
   MicButton,
+  MicrophonePermissionHelp,
+  ModeSwitcher,
   PromptEditor,
   SendButton,
   usePromptEditor,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
 import { handleMothershipAddContextEvent } from '@/app/workspace/[workspaceId]/home/components/user-input/mothership-context-event'
+import { useMothershipMode } from '@/app/workspace/[workspaceId]/home/hooks/use-mothership-mode'
 import type {
   FileAttachmentForApi,
   MothershipResource,
@@ -54,6 +54,7 @@ import type {
 import { useFileAttachments } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks'
 import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
+import { useChatInputFocus } from '@/hooks/use-chat-input-focus'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { type SpeechToTextError, useSpeechToText } from '@/hooks/use-speech-to-text'
 import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
@@ -64,7 +65,7 @@ import {
   LOCAL_COPILOT_PROVIDER_GROUPS,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
-import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
+import { type DraftPayload, useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
@@ -127,16 +128,6 @@ function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotM
   )
 }
 
-/**
- * Whether the element is somewhere the user could be typing. Focusing the composer on mount
- * must not steal focus from another field, but may take it from a link or button — opening a
- * chat leaves the sidebar link focused, and the composer should win.
- */
-function isTextEntry(element: HTMLElement): boolean {
-  const tag = element.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable
-}
-
 interface UserInputProps {
   defaultValue?: string
   draftScopeKey?: string
@@ -149,6 +140,21 @@ interface UserInputProps {
   onStopGeneration: () => void
   isInitialView?: boolean
   onSendQueuedHead?: () => void
+  /**
+   * Whether the composer offers Search mode. Only the Home composer answers a
+   * search with documents; the workflow copilot always talks to the agent, so
+   * it must not show a mode it cannot honour.
+   */
+  canSearch?: boolean
+  /**
+   * Whether the text is cleared once submitted. A search keeps its query in
+   * the box, the way a search bar does, so it can be read and refined against
+   * the results; a message to the agent clears, since it now lives in the
+   * transcript. Defaults to clearing.
+   */
+  clearOnSubmit?: boolean
+  /** Called when the text becomes empty after having had content, such as a search being cleared. */
+  onCleared?: () => void
   onEditQueuedTail?: () => void
 }
 
@@ -160,6 +166,8 @@ export interface UserInputHandle {
    * names chip with brand icons. Focuses the input and places the caret at the
    * end. Does NOT submit. Safe to call with the same text twice in a row. */
   populatePrompt: (text: string) => void
+  /** Empties the composer and its draft, as a send does; for a question handed to the agent from outside the box. */
+  clear: () => void
 }
 
 /**
@@ -177,6 +185,9 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     isInitialView = true,
     onSendQueuedHead,
     onEditQueuedTail,
+    canSearch = false,
+    clearOnSubmit = true,
+    onCleared,
   },
   ref
 ) {
@@ -201,6 +212,12 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     setLocalCopilotCatalogId !== undefined
 
   const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
+  const [mode] = useMothershipMode()
+  const isSearch = canSearch && mode === 'search'
+  const contextsEnabled = !canSearch || mode === 'build'
+  const contextsEnabledRef = useRef(contextsEnabled)
+  contextsEnabledRef.current = contextsEnabled
+  const [microphonePermissionHelpOpen, setMicrophonePermissionHelpOpen] = useState(false)
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -214,17 +231,17 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const files = useFileAttachments({
     userId,
     workspaceId,
-    disabled: false,
+    disabled: !contextsEnabled,
     isLoading: isSending,
   })
-  const hasFiles = files.attachedFiles.some((f) => !f.uploading && f.key)
-  const hasUploadingFiles = files.attachedFiles.some((f) => f.uploading)
+  const hasFiles = contextsEnabled && files.attachedFiles.some((f) => !f.uploading && f.key)
+  const hasUploadingFiles = contextsEnabled && files.attachedFiles.some((f) => f.uploading)
 
   const filesRef = useRef(files)
   filesRef.current = files
 
   const handlePasteFiles = useCallback((pasted: FileList) => {
-    filesRef.current.processFiles(pasted)
+    if (contextsEnabledRef.current) filesRef.current.processFiles(pasted)
   }, [])
 
   const editor = usePromptEditor({
@@ -232,10 +249,12 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     initialValue,
     onContextAdd,
     onPasteFiles: handlePasteFiles,
+    contextsEnabled,
   })
   const editorRef = useRef(editor)
   editorRef.current = editor
   const textareaRef = editor.textareaRef
+  useChatInputFocus({ textareaRef })
 
   /**
    * Attaches context chips pushed from elsewhere in the app (browser/terminal
@@ -245,7 +264,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
    */
   useEffect(() => {
     const handleAddContext = (event: Event) => {
-      handleMothershipAddContextEvent(event, editorRef.current)
+      if (contextsEnabledRef.current) handleMothershipAddContextEvent(event, editorRef.current)
     }
 
     window.addEventListener(MOTHERSHIP_ADD_CONTEXT_EVENT, handleAddContext)
@@ -254,6 +273,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
   const draftScopeKeyRef = useRef(draftScopeKey)
   draftScopeKeyRef.current = draftScopeKey
+  const clearOnSubmitRef = useRef(clearOnSubmit)
+  clearOnSubmitRef.current = clearOnSubmit
 
   const hasRestoredDraftRef = useRef(false)
   useEffect(() => {
@@ -288,8 +309,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       useMothershipDraftsStore.getState().clearDraft(draftScopeKey)
       return
     }
-    if (restoredContexts) editor.setContexts(restoredContexts)
-    if (restoredFiles) files.restoreAttachedFiles(restoredFiles)
+    if (contextsEnabled && restoredContexts) editor.setContexts(restoredContexts)
+    if (contextsEnabled && restoredFiles) files.restoreAttachedFiles(restoredFiles)
     if (caretText !== null) {
       const textarea = textareaRef.current
       if (textarea) {
@@ -299,7 +320,18 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only restore
 
+  const onClearedRef = useRef(onCleared)
+  onClearedRef.current = onCleared
+  const hadTextRef = useRef(false)
+  useEffect(() => {
+    const hasText = editor.value.trim().length > 0
+    if (hadTextRef.current && !hasText) onClearedRef.current?.()
+    hadTextRef.current = hasText
+  }, [editor.value])
+
   const isFirstSaveRef = useRef(true)
+  const draftSaveTimerRef = useRef<number | null>(null)
+  const pendingDraftRef = useRef<{ key: string; payload: DraftPayload } | null>(null)
   useEffect(() => {
     if (isFirstSaveRef.current) {
       isFirstSaveRef.current = false
@@ -316,12 +348,31 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         size: f.size,
         ...(f.path ? { path: f.path } : {}),
       }))
-    useMothershipDraftsStore.getState().setDraft(draftScopeKeyRef.current, {
-      text: editor.value,
-      fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
-      contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
-    })
+    pendingDraftRef.current = {
+      key: draftScopeKeyRef.current,
+      payload: {
+        text: editor.value,
+        fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+        contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
+      },
+    }
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+      pendingDraftRef.current = null
+      draftSaveTimerRef.current = null
+    }, 200)
   }, [editor.value, files.attachedFiles, editor.contexts])
+
+  useEffect(
+    () => () => {
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+    },
+    []
+  )
 
   const onContextRemoveRef = useRef(onContextRemove)
   onContextRemoveRef.current = onContextRemove
@@ -367,6 +418,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
    * landing prompt panel as well as curated CTAs. Curated producers opt their
    * bare names in at the store seam (`storeCuratedPrompt`), so prose seeded here
    * is never bare-chipped (the scunthorpe constraint).
+   * An empty seed must not erase a queued message loaded in the same event
+   * that clears the search URL. The mode menu clears its query explicitly.
    */
   useEffect(() => {
     if (defaultValue === prevDefaultValueRef.current) return
@@ -400,11 +453,28 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
   function handleSpeechError(error: SpeechToTextError) {
     if (error === 'microphone-blocked') {
-      toast.error(
-        isDesktopApp()
-          ? 'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.'
-          : 'Microphone access is blocked. Allow it for this site and try again.'
-      )
+      const desktopBridge = getDesktopBridge()
+      if (desktopBridge) {
+        const { openMicrophoneSettings } = desktopBridge
+        toast.error(
+          'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.',
+          openMicrophoneSettings
+            ? {
+                action: {
+                  label: 'Open Settings',
+                  onClick: () => void openMicrophoneSettings(),
+                },
+              }
+            : undefined
+        )
+      } else {
+        toast.error('Microphone access is blocked. Allow it for this site and try again.', {
+          action: {
+            label: 'Show steps',
+            onClick: () => setMicrophonePermissionHelpOpen(true),
+          },
+        })
+      }
       return
     }
     if (error === 'microphone-unavailable') {
@@ -415,6 +485,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   }
 
   const {
+    audioLevelsRef,
     isListening,
     isSupported: isSttSupported,
     toggleListening: rawToggle,
@@ -462,6 +533,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         currentEditor.setContexts(msg.contexts ?? [])
         currentEditor.focusAtEnd()
       },
+      clear: clearComposer,
       populatePrompt: (text: string) => {
         // `text` is a curated prompt, so opt its bare integration names into
         // `@`-mention form before chipification (the auto-mention pipeline only
@@ -476,7 +548,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   )
 
   const handleFileSelectStable = useCallback(() => {
-    filesRef.current.handleFileSelect()
+    if (contextsEnabledRef.current) filesRef.current.handleFileSelect()
   }, [])
 
   const handleFileClick = useCallback((file: AttachedFile) => {
@@ -502,6 +574,10 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
   const handleContainerDrop = useCallback(
     (e: React.DragEvent) => {
+      if (!contextsEnabledRef.current) {
+        e.preventDefault()
+        return
+      }
       const resourcesJson = e.dataTransfer.getData(SIM_RESOURCES_DRAG_TYPE)
       if (resourcesJson) {
         e.preventDefault()
@@ -560,29 +636,40 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     wasSendingRef.current = isSending
   }, [isSending, textareaRef])
 
-  useEffect(() => {
-    const raf = window.requestAnimationFrame(() => {
-      if (!document.hasFocus()) return
-      const active = document.activeElement
-      if (active instanceof HTMLElement && isTextEntry(active)) return
-      textareaRef.current?.focus()
-    })
-    return () => window.cancelAnimationFrame(raf)
-  }, [textareaRef])
+  /**
+   * Menu rows are excluded alongside buttons: the mode switcher's items are
+   * portaled, so their clicks still bubble here through the React tree.
+   */
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, [role="dialog"], [role="menu"]')) return
+    textareaRef.current?.focus()
+  }
 
-  const handleContainerClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest('button')) return
-      textareaRef.current?.focus()
-    },
-    [textareaRef]
-  )
+  /** Empties the text, chips, attachments, transcript, and the saved draft in one step. */
+  const clearComposer = useCallback(() => {
+    editorRef.current.clear()
+    sttPrefixRef.current = ''
+    if (draftSaveTimerRef.current !== null) {
+      window.clearTimeout(draftSaveTimerRef.current)
+      draftSaveTimerRef.current = null
+    }
+    pendingDraftRef.current = null
+    if (draftScopeKeyRef.current) {
+      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
+    }
+    /** The chips are gone with the text, and clearing is not a removal to report. */
+    prevSelectedContextsRef.current = []
+    resetTranscript()
+    filesRef.current.clearAttachedFiles()
+  }, [resetTranscript])
 
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
     const currentEditor = editorRef.current
 
-    const fileAttachmentsForApi: FileAttachmentForApi[] = currentFiles.attachedFiles
+    const fileAttachmentsForApi: FileAttachmentForApi[] = (
+      contextsEnabledRef.current ? currentFiles.attachedFiles : []
+    )
       .filter((f) => !f.uploading && f.key)
       .map((f) => ({
         id: f.id,
@@ -602,15 +689,13 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
       activeContexts.length > 0 ? activeContexts : undefined
     )
-    currentEditor.clear()
-    sttPrefixRef.current = ''
-    if (draftScopeKeyRef.current) {
-      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
-    }
-    resetTranscript()
-    currentFiles.clearAttachedFiles()
-    prevSelectedContextsRef.current = []
-  }, [onSubmit, resetTranscript])
+    /**
+     * A composer that keeps its text (Search mode) keeps its attachments and
+     * chips too: the search took the query alone, and the person may hand the
+     * rest to the agent next.
+     */
+    if (clearOnSubmitRef.current) clearComposer()
+  }, [onSubmit, clearComposer])
 
   /**
    * Enter policy for the editor: mirror canSubmit's uploading guard (Enter
@@ -672,21 +757,31 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
-      <AnimatedPlaceholderEffect
-        textareaRef={textareaRef}
-        isInitialView={isInitialView}
-        isSending={isSending}
-      />
+      {!isSearch && mode !== 'assistant' && (
+        <AnimatedPlaceholderEffect
+          textareaRef={textareaRef}
+          isInitialView={isInitialView}
+          isSending={isSending}
+        />
+      )}
 
-      <AttachedFilesList
-        attachedFiles={files.attachedFiles}
-        onFileClick={handleFileClick}
-        onRemoveFile={handleRemoveFile}
-      />
+      {contextsEnabled && (
+        <AttachedFilesList
+          attachedFiles={files.attachedFiles}
+          onFileClick={handleFileClick}
+          onRemoveFile={handleRemoveFile}
+        />
+      )}
 
       <PromptEditor
         editor={editor}
-        placeholder='Ask Arena to '
+        placeholder={
+          isSearch
+            ? 'Search your documents…'
+            : mode === 'assistant'
+              ? 'Ask about your documents or take action…'
+              : 'Ask Arena to '
+        }
         onSubmit={handleEnterSubmit}
         onArrowUpOnEmpty={handleArrowUpOnEmpty}
         className={cn('max-h-[200px]', isInitialView && 'min-h-[56px]')}
@@ -694,48 +789,43 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-1'>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
-                onClick={handlePlusClick}
-                aria-label='Add resources'
-                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Plus className='size-[16px] text-[var(--text-icon)]' />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side='top'>Add resources</Tooltip.Content>
-          </Tooltip.Root>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
-                onClick={handleFileSelectStable}
-                aria-label='Attach file'
-                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Paperclip className='size-[16px] text-[var(--text-icon)]' />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side='top'>Attach file</Tooltip.Content>
-          </Tooltip.Root>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
-                onClick={handleSlashTriggerClick}
-                aria-label='Skills'
-                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Slash className='size-[16px] text-[var(--text-icon)]' />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side='top'>Skills</Tooltip.Content>
-          </Tooltip.Root>
+          {contextsEnabled && (
+            <>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <Chip
+                    shape='round'
+                    leftIcon={Plus}
+                    onClick={handlePlusClick}
+                    aria-label='Add resources'
+                  />
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>Add resources</Tooltip.Content>
+              </Tooltip.Root>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <Chip
+                    shape='round'
+                    leftIcon={Paperclip}
+                    onClick={handleFileSelectStable}
+                    aria-label='Attach file'
+                  />
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>Attach file</Tooltip.Content>
+              </Tooltip.Root>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <Chip
+                    shape='round'
+                    leftIcon={Slash}
+                    onClick={handleSlashTriggerClick}
+                    aria-label='Skills'
+                  />
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>Skills</Tooltip.Content>
+              </Tooltip.Root>
+            </>
+          )}
           {canSwitchCopilotBackend && copilotBackend && setCopilotBackend ? (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
@@ -765,7 +855,14 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
           {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
         </div>
         <div className='flex items-center gap-1.5'>
-          {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
+          {canSearch && <ModeSwitcher onModeChange={clearComposer} />}
+          {isSttSupported && (
+            <MicButton
+              audioLevelsRef={audioLevelsRef}
+              isListening={isListening}
+              onToggle={toggleListening}
+            />
+          )}
           <SendButton
             isSending={isSending}
             canSubmit={canSubmit}
@@ -782,9 +879,15 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         className='hidden'
         accept={MOTHERSHIP_ACCEPT_ATTRIBUTE}
         multiple
+        disabled={!contextsEnabled}
       />
 
       {files.isDragging && <DropOverlay />}
+
+      <MicrophonePermissionHelp
+        open={microphonePermissionHelpOpen}
+        onOpenChange={setMicrophonePermissionHelpOpen}
+      />
     </div>
   )
 })

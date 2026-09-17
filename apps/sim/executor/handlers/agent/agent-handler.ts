@@ -1,11 +1,7 @@
-import { db } from '@sim/db'
-import { mcpServers } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { sleep } from '@sim/utils/helpers'
-import { isPlainRecord } from '@sim/utils/object'
+import { isPlainRecord, omit } from '@sim/utils/object'
 import { truncate } from '@sim/utils/string'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
 import {
   projectModelSchemaAnnotations,
@@ -13,6 +9,14 @@ import {
   selectModelSchemaInputPaths,
 } from '@/lib/execution/model-input-provenance'
 import { applyAgentChatFilesToImageGeneratorTools } from '@/lib/image-generation/reference-files'
+import { readAvailableCustomToolByIdOrTitleAsExecutor } from '@/lib/internal/custom-tools/read-available-by-id-or-title'
+import { discoverMcpServerToolsAsExecutor } from '@/lib/internal/mcp/discover-tools'
+import {
+  readWorkflowInputFieldsForTool,
+  readWorkflowMetadataForTool,
+} from '@/lib/internal/workflows/read-tool-enrichment'
+import { assertValidMcpServerToolBindings, MCP_SERVER_ADVANCED_TOOL_TYPE } from '@/lib/mcp/shared'
+import { resolveMcpToolBinding } from '@/lib/mcp/tool-binding'
 import type { McpToolSchema } from '@/lib/mcp/types'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import {
@@ -32,17 +36,14 @@ import {
 import { selectModelBoundFileInputPaths } from '@/lib/uploads/utils/model-input'
 import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
 import { resolveCustomBlockToolBinding } from '@/lib/workflows/custom-blocks/operations'
-import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
-import { getAllBlocks } from '@/blocks'
+import { getAllBlocks, getBlock } from '@/blocks'
 import { assembleCustomBlockInputMapping, isCustomBlockType } from '@/blocks/custom/build-config'
 import type { BlockOutput } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
 import {
+  assertPermissionsAllowed,
   validateBlockType,
-  validateCustomToolsAllowed,
-  validateMcpToolsAllowed,
   validateModelProvider,
-  validateSkillsAllowed,
 } from '@/ee/access-control/utils/permission-check'
 import { AGENT, BlockType, DEFAULTS, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
@@ -60,7 +61,6 @@ import type {
 import { parseResponseFormat } from '@/executor/handlers/shared/response-format'
 import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
-import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
 import { stringifyJSON } from '@/executor/utils/json'
 import { projectResolvedSecretDiagnosticContent } from '@/executor/utils/resolved-secret-content-projection'
 import { prepareResolvedSecretProjectedInputs } from '@/executor/utils/resolved-secret-input-projection'
@@ -69,6 +69,7 @@ import type {
   ResolvedSecretInputPath,
   ResolvedSecretTraceRegistry,
 } from '@/executor/utils/resolved-secret-trace-registry'
+import { annotateDuplicateToolBindings } from '@/executor/utils/tool-binding-labels'
 import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
 import { executeProviderRequest } from '@/providers'
 import {
@@ -91,6 +92,7 @@ import {
 import type { ProviderToolConfig } from '@/providers/types'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
+import { buildJsonSchemaParamShapes, decodeToolParams } from '@/tools/param-shape'
 import { filterSchemaForLLM, type ToolSchema, ToolSchemaEnrichmentError } from '@/tools/params'
 import { getTool } from '@/tools/utils'
 import { getToolAsync } from '@/tools/utils.server'
@@ -220,6 +222,7 @@ export class AgentBlockHandler implements BlockHandler {
     block: SerializedBlock,
     inputs: AgentInputs
   ): Promise<BlockOutput | StreamingExecution> {
+    ctx.mcpBlockId = block.id
     const providerErrorRegistry = ctx.resolvedSecretTraceRegistry?.forkForInputPaths(
       AGENT_RAW_PROVIDER_ERROR_INPUT_PATHS
     )
@@ -261,7 +264,7 @@ export class AgentBlockHandler implements BlockHandler {
         }
       )
       responseFormatModelInputPaths = responseFormatProjection.inputPaths
-      const filteredTools = await this.filterUnavailableMcpTools(ctx, inputs.tools || [])
+      const filteredTools = inputs.tools || []
       const filteredInputs = {
         ...inputs,
         tools: applyAgentChatFilesToImageGeneratorTools(filteredTools, inputs.files),
@@ -361,7 +364,12 @@ export class AgentBlockHandler implements BlockHandler {
       const skillInputs = filteredInputs.skills ?? []
       let skillMetadata: Array<{ name: string; description: string }> = []
       if (skillInputs.length > 0 && ctx.workspaceId) {
-        await validateSkillsAllowed(ctx.userId, ctx.workspaceId, ctx)
+        await assertPermissionsAllowed({
+          userId: ctx.userId,
+          workspaceId: ctx.workspaceId,
+          toolKind: 'skill',
+          ctx,
+        })
         skillMetadata = await resolveSkillMetadata(skillInputs, ctx.workspaceId)
         if (skillMetadata.length > 0) {
           const skillNames = skillMetadata.map((s) => s.name)
@@ -591,75 +599,28 @@ export class AgentBlockHandler implements BlockHandler {
   private async validateToolPermissions(ctx: ExecutionContext, tools: ToolInput[]): Promise<void> {
     if (!Array.isArray(tools) || tools.length === 0) return
 
-    const hasMcpTools = tools.some((t) => t.type === 'mcp')
+    const hasMcpTools = tools.some(
+      (t) => t.type === 'mcp' || t.type === MCP_SERVER_ADVANCED_TOOL_TYPE
+    )
     const hasCustomTools = tools.some((t) => t.type === 'custom-tool')
 
     if (hasMcpTools) {
-      await validateMcpToolsAllowed(ctx.userId, ctx.workspaceId, ctx)
+      await assertPermissionsAllowed({
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+        toolKind: 'mcp',
+        ctx,
+      })
     }
 
     if (hasCustomTools) {
-      await validateCustomToolsAllowed(ctx.userId, ctx.workspaceId, ctx)
+      await assertPermissionsAllowed({
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+        toolKind: 'custom',
+        ctx,
+      })
     }
-  }
-
-  private async filterUnavailableMcpTools(
-    ctx: ExecutionContext,
-    tools: ToolInput[]
-  ): Promise<ToolInput[]> {
-    if (!Array.isArray(tools) || tools.length === 0) return tools
-
-    const mcpTools = tools.filter((t) => t.type === 'mcp')
-    if (mcpTools.length === 0) return tools
-
-    const serverIds = [...new Set(mcpTools.map((t) => t.params?.serverId).filter(Boolean))]
-    if (serverIds.length === 0) return tools
-
-    if (!ctx.workspaceId) {
-      logger.warn('Skipping MCP availability filtering without workspace scope')
-      return tools
-    }
-
-    const availableServerIds = new Set<string>()
-    if (serverIds.length > 0) {
-      try {
-        const servers = await db
-          .select({ id: mcpServers.id, connectionStatus: mcpServers.connectionStatus })
-          .from(mcpServers)
-          .where(
-            and(
-              eq(mcpServers.workspaceId, ctx.workspaceId),
-              inArray(mcpServers.id, serverIds),
-              isNull(mcpServers.deletedAt)
-            )
-          )
-
-        for (const server of servers) {
-          if (server.connectionStatus === 'connected') {
-            availableServerIds.add(server.id)
-          }
-        }
-      } catch (error) {
-        logger.warn(
-          'Failed to check MCP server availability, including all tools',
-          projectAgentDiagnosticMetadata(
-            ctx,
-            getErrorDiagnosticMetadata(error),
-            getErrorDiagnosticFallback(error)
-          )
-        )
-        for (const serverId of serverIds) {
-          availableServerIds.add(serverId)
-        }
-      }
-    }
-
-    return tools.filter((tool) => {
-      if (tool.type !== 'mcp') return true
-      const serverId = tool.params?.serverId
-      if (!serverId) return false
-      return availableServerIds.has(serverId)
-    })
   }
 
   /**
@@ -709,8 +670,11 @@ export class AgentBlockHandler implements BlockHandler {
         const root = ['tools', String(toolIndex)] as const
         const paths: ResolvedSecretInputPath[] = [[...root, 'type']]
         if (tool.operation !== undefined) paths.push([...root, 'operation'])
+        if (tool.type === 'mcp' || tool.type === MCP_SERVER_ADVANCED_TOOL_TYPE) {
+          paths.push([...root, 'params', 'serverId'])
+        }
         if (tool.type === 'mcp') {
-          paths.push([...root, 'params', 'serverId'], [...root, 'params', 'toolName'])
+          paths.push([...root, 'params', 'toolName'])
         }
         if (tool.type === 'custom-tool' && !tool.customToolId) {
           paths.push([...root, 'title'], [...root, 'schema', 'function', 'name'])
@@ -721,6 +685,7 @@ export class AgentBlockHandler implements BlockHandler {
     )
 
     const mcpTools: IndexedToolInput[] = []
+    const advancedMcpServers: IndexedToolInput[] = []
     const otherTools: IndexedToolInput[] = []
     const inputProvenance = new Map<
       ProviderToolConfig,
@@ -753,9 +718,14 @@ export class AgentBlockHandler implements BlockHandler {
       return formattedTool
     }
 
+    assertValidMcpServerToolBindings(filtered.map(({ tool }) => tool))
     for (const entry of filtered) {
       if (entry.tool.type === 'mcp') {
         mcpTools.push(entry)
+      } else if (entry.tool.type === MCP_SERVER_ADVANCED_TOOL_TYPE) {
+        const serverId = entry.tool.params?.serverId
+        if (typeof serverId === 'string' && !serverId.trim()) continue
+        advancedMcpServers.push(entry)
       } else {
         otherTools.push(entry)
       }
@@ -800,20 +770,19 @@ export class AgentBlockHandler implements BlockHandler {
       })
     )
 
-    const mcpResults = await this.processMcpToolsBatched(
+    const mcpResults = await this.processMcpToolsBatched(ctx, mcpTools, trackInputProvenance)
+    const advancedMcpResults = await this.processAdvancedMcpServers(
       ctx,
-      mcpTools,
-      trackInputProvenance,
-      projectedToolInputs
+      advancedMcpServers,
+      trackInputProvenance
     )
 
-    const allTools = [...otherResults, ...mcpResults]
-    return {
-      tools: allTools.filter(
-        (tool): tool is ProviderToolConfig => tool !== null && tool !== undefined
-      ),
-      inputProvenance,
-    }
+    const allTools = [...otherResults, ...mcpResults, ...advancedMcpResults]
+    const tools = allTools.filter(
+      (tool): tool is ProviderToolConfig => tool !== null && tool !== undefined
+    )
+    await annotateDuplicateToolBindings(ctx, tools)
+    return { tools, inputProvenance }
   }
 
   private assertInputPathsDoNotResolveSecrets(
@@ -847,9 +816,14 @@ export class AgentBlockHandler implements BlockHandler {
     const formattedParams = formattedTool.params ?? {}
 
     if (isCustomBlockType(tool.type)) {
+      // Same sub-blocks the raw copy was assembled with, so both sides decode alike and
+      // the projection keeps the shape the provenance registry compares.
       return {
         ...formattedParams,
-        inputMapping: assembleCustomBlockInputMapping(projectedParams),
+        inputMapping: assembleCustomBlockInputMapping(
+          projectedParams,
+          formattedTool.customBlockInputFields
+        ),
       }
     }
 
@@ -859,10 +833,18 @@ export class AgentBlockHandler implements BlockHandler {
         Object.hasOwn(projectedParams, key) ? projectedParams[key] : formattedParams[key],
       ])
     )
-    if (tool.type === 'mcp' || tool.type === 'custom-tool') return alignedParams
-
-    const blockInputs = getAllBlocks().find((block) => block.type === tool.type)?.inputs
-    return prepareResolvedSecretProjectedInputs(alignedParams, blockInputs, formattedParams)
+    // An MCP tool has no block, so its only structured keys are the ones its own
+    // `paramsTransform` decodes. A custom tool has neither.
+    const blockInputs =
+      tool.type &&
+      tool.type !== 'mcp' &&
+      tool.type !== MCP_SERVER_ADVANCED_TOOL_TYPE &&
+      tool.type !== 'custom-tool'
+        ? getBlock(tool.type)?.inputs
+        : undefined
+    return prepareResolvedSecretProjectedInputs(alignedParams, blockInputs, formattedParams, {
+      additionalStructuredKeys: formattedTool.jsonShapedParamKeys,
+    })
   }
 
   private async createCustomTool(
@@ -871,7 +853,12 @@ export class AgentBlockHandler implements BlockHandler {
     projectedTool?: ToolInput,
     toolIndex?: number
   ): Promise<any> {
-    const userProvidedParams = tool.params || {}
+    const userProvidedParams = omit(tool.params || {}, [
+      'serverId',
+      'toolName',
+      'serverName',
+      'connectionId',
+    ])
 
     let schema = tool.schema
     let modelSchema = projectedTool?.schema ?? schema
@@ -969,7 +956,6 @@ export class AgentBlockHandler implements BlockHandler {
     const toolId = `${AGENT.CUSTOM_TOOL_PREFIX}${title}`
     const base: any = {
       id: toolId,
-      name: schema.function.name,
       description: projectedDescription || '',
       params: userProvidedParams,
       parameters: {
@@ -989,7 +975,7 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     customToolId: string
   ): Promise<{ schema: any; title: string } | null> {
-    if (!ctx.userId) {
+    if (!ctx.userId && !ctx.executorDelegationOrigin?.subjectUserId) {
       logger.error(
         'Cannot fetch custom tool without userId',
         projectAgentDiagnosticMetadata(
@@ -1002,10 +988,10 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     try {
-      const tool = await getCustomToolById({
-        toolId: customToolId,
-        userId: ctx.userId,
-        workspaceId: ctx.workspaceId,
+      const tool = await readAvailableCustomToolByIdOrTitleAsExecutor({
+        context: ctx,
+        identifier: customToolId,
+        lookup: 'id',
       })
 
       if (!tool) {
@@ -1038,8 +1024,7 @@ export class AgentBlockHandler implements BlockHandler {
   }
 
   /**
-   * Process MCP tools using cached schemas from build time.
-   * Note: Unavailable tools are already filtered by filterUnavailableMcpTools.
+   * Discovers authorized schemas once per selected server and rejects missing operations.
    */
   private async processMcpToolsBatched(
     ctx: ExecutionContext,
@@ -1047,322 +1032,94 @@ export class AgentBlockHandler implements BlockHandler {
     trackInputProvenance: (
       formattedTool: ProviderToolConfig | null,
       entry: IndexedToolInput
-    ) => ProviderToolConfig | null,
-    projectedToolInputs?: ToolInput[]
+    ) => ProviderToolConfig | null
   ): Promise<Array<ProviderToolConfig | null>> {
-    if (mcpTools.length === 0) return []
-
+    const byServer = new Map<string, Awaited<ReturnType<typeof discoverMcpServerToolsAsExecutor>>>()
     const results: Array<ProviderToolConfig | null> = []
-    const toolsWithSchema: IndexedToolInput[] = []
-    const toolsNeedingDiscovery: IndexedToolInput[] = []
-
     for (const entry of mcpTools) {
-      const { tool } = entry
-      const serverId = tool.params?.serverId
-      const toolName = tool.params?.toolName
-
-      if (!serverId || !toolName) {
-        logger.error(
-          'MCP tool missing serverId or toolName',
-          projectAgentDiagnosticMetadata(
-            ctx,
-            getToolDiagnosticMetadata(tool),
-            getToolDiagnosticFallback(tool)
-          )
-        )
-        continue
+      const { serverId, toolName } = resolveMcpToolBinding(entry.tool)
+      let discovered = byServer.get(serverId)
+      if (!discovered) {
+        discovered = await this.discoverMcpToolsForServer(ctx, serverId)
+        byServer.set(serverId, discovered)
       }
-
-      if (tool.schema) {
-        toolsWithSchema.push(entry)
-      } else {
-        logger.warn(
-          'MCP tool missing cached schema, will need discovery',
-          projectAgentDiagnosticMetadata(
-            ctx,
-            getToolDiagnosticMetadata(tool),
-            getToolDiagnosticFallback(tool)
-          )
-        )
-        toolsNeedingDiscovery.push(entry)
-      }
+      const tool = discovered.find((candidate) => candidate.name === toolName)
+      if (!tool) throw new Error(`MCP operation "${toolName}" is missing or not permitted`)
+      const created = await this.createMcpToolFromDiscoveredData(entry.tool, tool, serverId)
+      results.push(trackInputProvenance(created, entry))
     }
-
-    for (const entry of toolsWithSchema) {
-      const { tool } = entry
-      try {
-        const created = await this.createMcpToolFromCachedSchema(
-          ctx,
-          tool,
-          projectedToolInputs?.[entry.toolIndex],
-          entry.toolIndex
-        )
-        if (created) results.push(trackInputProvenance(created, entry))
-      } catch (error) {
-        if (error instanceof AgentToolInputSafetyError) throw error
-        logger.error(
-          'Error creating MCP tool from cached schema',
-          projectAgentDiagnosticMetadata(
-            ctx,
-            { ...getToolDiagnosticMetadata(tool), ...getErrorDiagnosticMetadata(error) },
-            { ...getToolDiagnosticFallback(tool), ...getErrorDiagnosticFallback(error) }
-          )
-        )
-      }
-    }
-
-    if (toolsNeedingDiscovery.length > 0) {
-      const discoveredResults = await this.processMcpToolsWithDiscovery(
-        ctx,
-        toolsNeedingDiscovery,
-        trackInputProvenance
-      )
-      results.push(...discoveredResults)
-    }
-
     return results
   }
 
-  /**
-   * Create MCP tool from cached schema. No MCP server connection required.
-   */
-  private async createMcpToolFromCachedSchema(
+  private async processAdvancedMcpServers(
     ctx: ExecutionContext,
-    tool: ToolInput,
-    projectedTool?: ToolInput,
-    toolIndex?: number
-  ): Promise<any> {
-    const { serverId, toolName, serverName, ...userProvidedParams } = tool.params || {}
-    const projectedSchema = projectedTool?.schema ?? tool.schema
-    if (projectedSchema !== undefined && !isPlainRecord(projectedSchema)) {
-      refuseResolvedSecretProjection({
-        site: 'agent.mcpToolSchemaShape',
-        message: AGENT_TOOL_INPUT_REFUSAL,
-        registry: ctx.resolvedSecretTraceRegistry,
-        inputPath: 'tools',
-        createError: toAgentToolInputSafetyError,
-      })
-    }
-    const schemaProjection = projectModelSchemaAnnotations(tool.schema, projectedSchema)
-    if (!schemaProjection.safe || !isPlainRecord(schemaProjection.value)) {
-      refuseResolvedSecretProjection({
-        site: 'agent.mcpToolSchemaAnnotations',
-        message: AGENT_TOOL_INPUT_REFUSAL,
-        registry: ctx.resolvedSecretTraceRegistry,
-        inputPath: 'tools',
-        createError: toAgentToolInputSafetyError,
-      })
-    }
-    const projectedServerName =
-      typeof projectedTool?.params?.serverName === 'string'
-        ? projectedTool.params.serverName
-        : serverName
-    if (schemaProjection.value.type !== 'object') {
-      refuseResolvedSecretProjection({
-        site: 'agent.mcpToolSchemaType',
-        message: AGENT_TOOL_INPUT_REFUSAL,
-        registry: ctx.resolvedSecretTraceRegistry,
-        inputPath: 'tools',
-        createError: toAgentToolInputSafetyError,
-      })
-    }
-    const schema: McpToolSchema = { ...schemaProjection.value, type: 'object' }
-    const schemaDescription =
-      typeof schema.description === 'string' ? schema.description : undefined
-    if (toolIndex !== undefined) {
-      const schemaPaths = selectModelSchemaInputPaths(tool.schema, [
-        'tools',
-        String(toolIndex),
-        'schema',
-      ])
-      this.assertInputPathsDoNotResolveSecrets(
-        ctx,
-        schemaPaths.semanticInputPaths,
-        'Agent structural model inputs cannot contain secret references'
-      )
-    }
-    return this.buildMcpTool({
-      serverId,
-      toolName,
-      description:
-        schemaDescription || `MCP tool ${toolName} from ${projectedServerName || serverId}`,
-      schema,
-      userProvidedParams,
-      usageControl: tool.usageControl,
-    })
-  }
-
-  /**
-   * Fallback for legacy tools without cached schemas. Groups by server to minimize connections.
-   */
-  private async processMcpToolsWithDiscovery(
-    ctx: ExecutionContext,
-    mcpTools: IndexedToolInput[],
+    entries: IndexedToolInput[],
     trackInputProvenance: (
       formattedTool: ProviderToolConfig | null,
       entry: IndexedToolInput
     ) => ProviderToolConfig | null
   ): Promise<Array<ProviderToolConfig | null>> {
-    const toolsByServer = new Map<string, IndexedToolInput[]>()
-    for (const entry of mcpTools) {
-      const { tool } = entry
-      const serverId = tool.params?.serverId
-      if (!toolsByServer.has(serverId)) {
-        toolsByServer.set(serverId, [])
-      }
-      toolsByServer.get(serverId)!.push(entry)
-    }
-
-    const serverDiscoveryResults = await Promise.all(
-      Array.from(toolsByServer.entries()).map(async ([serverId, tools]) => {
-        try {
-          const discoveredTools = await this.discoverMcpToolsForServer(ctx, serverId)
-          return { serverId, tools, discoveredTools, error: null as Error | null }
-        } catch (error) {
-          logger.error(
-            'Failed to discover tools from MCP server',
-            projectAgentDiagnosticMetadata(
-              ctx,
-              { serverId, ...getErrorDiagnosticMetadata(error) },
-              { hasServerId: serverId.length > 0, ...getErrorDiagnosticFallback(error) }
-            )
-          )
-          return { serverId, tools, discoveredTools: [] as any[], error: error as Error }
-        }
+    const results = await Promise.all(
+      entries.map(async (entry) => {
+        const serverId = entry.tool.params?.serverId
+        if (!serverId) throw new Error('MCP Server (Advanced) requires params.serverId')
+        const tools = await this.discoverMcpToolsForServer(ctx, serverId)
+        if (!tools.length)
+          throw new Error(`No permitted MCP operations are available for ${serverId}`)
+        return Promise.all(
+          tools.map(async (tool) => {
+            const created = await this.buildMcpTool({
+              serverId: serverId,
+              toolName: tool.name,
+              description: tool.description || `MCP tool ${tool.name} from ${tool.serverName}`,
+              schema: tool.inputSchema,
+              userProvidedParams: {},
+              usageControl: entry.tool.usageControl,
+            })
+            return trackInputProvenance(created, entry)
+          })
+        )
       })
     )
-
-    const results: Array<ProviderToolConfig | null> = []
-    for (const { serverId, tools, discoveredTools, error } of serverDiscoveryResults) {
-      if (error) continue
-
-      for (const entry of tools) {
-        const { tool } = entry
-        try {
-          const toolName = tool.params?.toolName
-          const mcpTool = discoveredTools.find((t: any) => t.name === toolName)
-
-          if (!mcpTool) {
-            logger.error(
-              'MCP tool not found on server',
-              projectAgentDiagnosticMetadata(
-                ctx,
-                { toolName, serverId },
-                { hasToolName: Boolean(toolName), hasServerId: serverId.length > 0 }
-              )
-            )
-            continue
-          }
-
-          const created = await this.createMcpToolFromDiscoveredData(ctx, tool, mcpTool, serverId)
-          if (created) results.push(trackInputProvenance(created, entry))
-        } catch (error) {
-          logger.error(
-            'Error creating MCP tool',
-            projectAgentDiagnosticMetadata(
-              ctx,
-              { ...getToolDiagnosticMetadata(tool), ...getErrorDiagnosticMetadata(error) },
-              { ...getToolDiagnosticFallback(tool), ...getErrorDiagnosticFallback(error) }
-            )
-          )
-        }
-      }
-    }
-
-    return results
+    return results.flat()
   }
 
-  /**
-   * Discover tools from a single MCP server with retry logic.
-   */
-  private async discoverMcpToolsForServer(ctx: ExecutionContext, serverId: string): Promise<any[]> {
+  /** Discovers one server's tools through the authorized MCP operation. */
+  private async discoverMcpToolsForServer(ctx: ExecutionContext, serverId: string) {
     if (!ctx.workspaceId) {
       throw new Error('workspaceId is required for MCP tool discovery')
     }
     if (!ctx.workflowId) {
-      throw new Error('workflowId is required for internal JWT authentication')
+      throw new Error('workflowId is required for MCP tool discovery')
     }
 
-    const headers = await buildAuthHeaders(ctx.userId)
-    const url = buildAPIUrl('/api/mcp/tools/discover', {
-      serverId,
+    return discoverMcpServerToolsAsExecutor({
       workspaceId: ctx.workspaceId,
-      workflowId: ctx.workflowId,
-      ...(ctx.userId ? { userId: ctx.userId } : {}),
+      context: {
+        workflowId: ctx.workflowId,
+        workspaceId: ctx.workspaceId,
+        executionId: ctx.executionId,
+        userId: ctx.userId,
+        executorDelegationOrigin: ctx.executorDelegationOrigin,
+        mcpBlockId: ctx.mcpBlockId,
+      },
+      serverId,
+      signal: ctx.abortSignal,
     })
-
-    const maxAttempts = 2
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const response = await fetch(url.toString(), { method: 'GET', headers })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          if (this.isRetryableError(errorText) && attempt < maxAttempts - 1) {
-            logger.warn(
-              '[AgentHandler] Session error discovering tools, retrying',
-              projectAgentDiagnosticMetadata(
-                ctx,
-                { serverId, attempt: attempt + 1 },
-                { hasServerId: serverId.length > 0, attempt: attempt + 1 }
-              )
-            )
-            await sleep(100)
-            continue
-          }
-          throw new Error(`Failed to discover tools: ${response.status} ${errorText}`)
-        }
-
-        const data = await response.json()
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to discover MCP tools')
-        }
-
-        return data.data.tools
-      } catch (error) {
-        const errorMsg = toError(error).message
-        if (this.isRetryableError(errorMsg) && attempt < maxAttempts - 1) {
-          logger.warn(
-            '[AgentHandler] Retryable error discovering tools',
-            projectAgentDiagnosticMetadata(
-              ctx,
-              { serverId, attempt: attempt + 1, ...getErrorDiagnosticMetadata(error) },
-              {
-                hasServerId: serverId.length > 0,
-                attempt: attempt + 1,
-                ...getErrorDiagnosticFallback(error),
-              }
-            )
-          )
-          await sleep(100)
-          continue
-        }
-        throw error
-      }
-    }
-
-    throw new Error(
-      `Failed to discover tools from server ${serverId} after ${maxAttempts} attempts`
-    )
-  }
-
-  private isRetryableError(errorMsg: string): boolean {
-    const lowerMsg = errorMsg.toLowerCase()
-    return lowerMsg.includes('session') || lowerMsg.includes('400') || lowerMsg.includes('404')
   }
 
   private async createMcpToolFromDiscoveredData(
-    ctx: ExecutionContext,
     tool: ToolInput,
-    mcpTool: any,
+    mcpTool: Awaited<ReturnType<typeof discoverMcpServerToolsAsExecutor>>[number],
     serverId: string
-  ): Promise<any> {
-    const { toolName, ...userProvidedParams } = tool.params || {}
+  ): Promise<ProviderToolConfig> {
+    const { toolName } = resolveMcpToolBinding(tool)
+    const userProvidedParams = tool.params || {}
     return this.buildMcpTool({
       serverId,
       toolName,
       description: mcpTool.description || `MCP tool ${toolName} from ${mcpTool.serverName}`,
-      schema: mcpTool.inputSchema || { type: 'object', properties: {} },
+      schema: mcpTool.inputSchema,
       userProvidedParams,
       usageControl: tool.usageControl,
     })
@@ -1375,17 +1132,32 @@ export class AgentBlockHandler implements BlockHandler {
     schema: McpToolSchema
     userProvidedParams: Record<string, unknown>
     usageControl?: 'auto' | 'force' | 'none'
-  }) {
+  }): Promise<ProviderToolConfig> {
     const filteredSchema = filterSchemaForLLM(config.schema, config.userProvidedParams)
     const toolId = createMcpToolId(config.serverId, config.toolName)
 
+    // An MCP tool row renders its arguments through the same sub-block controls a block
+    // tool uses, so its stored values are stringified the same way and need the same
+    // decode. The shapes come from the tool's own JSON Schema, which is what chose the
+    // controls in the first place.
+    const paramShapes = buildJsonSchemaParamShapes(config.schema)
+    const jsonShapedParamKeys = [...paramShapes]
+      .filter(([, shape]) => shape === 'json')
+      .map(([paramId]) => paramId)
+
     return {
       id: toolId,
-      name: config.toolName,
       description: config.description,
-      parameters: filteredSchema,
+      parameters: {
+        ...filteredSchema,
+        type: filteredSchema.type,
+        properties: filteredSchema.properties ?? {},
+        required: filteredSchema.required ?? [],
+      },
       params: config.userProvidedParams,
       usageControl: config.usageControl || 'auto',
+      paramsTransform: (params: Record<string, unknown>) => decodeToolParams(params, paramShapes),
+      ...(jsonShapedParamKeys.length > 0 && { jsonShapedParamKeys }),
     }
   }
 
@@ -1400,9 +1172,7 @@ export class AgentBlockHandler implements BlockHandler {
       getAllBlocks,
       getToolAsync: (toolId: string) =>
         getToolAsync(toolId, {
-          workflowId: ctx.workflowId,
-          userId: ctx.userId,
-          workspaceId: ctx.workspaceId,
+          executionContext: ctx,
         }),
       getTool,
       canonicalModes,
@@ -1411,10 +1181,13 @@ export class AgentBlockHandler implements BlockHandler {
         workspaceId: ctx.workspaceId,
         executionId: ctx.executionId,
         userId: ctx.userId,
+        executorDelegationOrigin: ctx.executorDelegationOrigin,
       },
       toolIndex,
       resolveCustomBlockBinding: (blockType: string) =>
         resolveCustomBlockToolBinding(blockType, ctx.workspaceId),
+      readWorkflowInputFields: readWorkflowInputFieldsForTool,
+      readWorkflowMetadata: readWorkflowMetadataForTool,
     })
 
     if (transformedTool) {
@@ -1674,6 +1447,7 @@ export class AgentBlockHandler implements BlockHandler {
         fileKeys: ctx.fileKeys,
         allowLargeValueWorkflowScope: ctx.allowLargeValueWorkflowScope,
         userId: ctx.userId,
+        principal: ctx.principal,
         logger,
         maxBytes: inlineMaxBytes,
         onServableFileContributors: async (file, contributors) => {
@@ -1684,6 +1458,7 @@ export class AgentBlockHandler implements BlockHandler {
               identity,
               registry: ctx.resolvedSecretTraceRegistry,
               view: 'opaque',
+              ...(ctx.userId ? { actorUserId: ctx.userId } : {}),
             })
             if (!safe) {
               unsafeGeneratedDocumentFiles.add(`${file.key}:${file.id}`)

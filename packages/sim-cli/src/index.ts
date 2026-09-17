@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 
 import chalk from 'chalk'
+import { dump } from 'js-yaml'
 import { ProfileConfigError } from './config/index'
-import { formatApiErrorDetails, SimApiError } from './http/client'
+import { clientFrom } from './context'
+import {
+  formatApiErrorDetails,
+  isRequestTimeout,
+  RAISE_TIMEOUT_HINT,
+  SimApiError,
+} from './http/client'
 import { sanitize } from './output/render'
 import { buildProgram } from './program'
 
@@ -12,14 +19,40 @@ import { buildProgram } from './program'
  * friendly message would make it unreportable.
  */
 async function main() {
+  const program = buildProgram()
   try {
-    await buildProgram().parseAsync(process.argv)
+    await program.parseAsync(process.argv)
   } catch (error) {
     if (error instanceof ProfileConfigError) {
       console.error(chalk.red(`Error: ${sanitize(error.message)}`))
       process.exit(1)
     }
+    // `AbortSignal.timeout` keeps firing after `fetch` resolves, so a bound that
+    // elapses while the body is still being read — a large `files get`, say —
+    // surfaces here rather than inside the client. A user's own Ctrl-C raises
+    // `AbortError` instead, which is deliberately left alone.
+    if (isRequestTimeout(error)) {
+      console.error(chalk.red(`Error: the request timed out. ${RAISE_TIMEOUT_HINT}`))
+      process.exit(1)
+    }
     if (error instanceof SimApiError) {
+      let output = program.opts().output
+      try {
+        output = clientFrom(program).profile.output
+      } catch {
+        /** Preserve the original error when configuration is invalid. */
+      }
+      if (output === 'json' || output === 'yaml') {
+        const payload = {
+          error: {
+            code: error.code ?? 'CLI_ERROR',
+            message: error.message,
+            ...(error.details === undefined ? {} : { details: error.details }),
+          },
+        }
+        process.stderr.write(output === 'json' ? `${JSON.stringify(payload)}\n` : dump(payload))
+        process.exit(error.exitCode)
+      }
       console.error(chalk.red(`Error: ${sanitize(error.message)}`))
       if (error.code) console.error(chalk.dim(`  code: ${sanitize(error.code)}`))
       if (error.details !== undefined) {
@@ -27,7 +60,7 @@ async function main() {
           console.error(chalk.dim(sanitize(line)))
         }
       }
-      process.exit(1)
+      process.exit(error.exitCode)
     }
     throw error
   }

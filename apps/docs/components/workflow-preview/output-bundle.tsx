@@ -1,20 +1,10 @@
 'use client'
 
-import { Badge } from '@sim/emcn'
+import { ChipTag } from '@sim/emcn'
 import { ChevronDown, Clipboard, Download, Search } from '@sim/emcn/icons'
-import { resolveIcon } from '@/components/workflow-preview/block-icons'
+import { cn } from '@/lib/utils'
 
 type ValueType = 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null'
-
-/** Output value type → emcn Badge color variant. */
-const TYPE_VARIANT = {
-  string: 'green',
-  number: 'blue',
-  boolean: 'orange',
-  array: 'purple',
-  object: 'gray',
-  null: 'gray',
-} as const
 
 interface OutputNode {
   key: string
@@ -49,14 +39,6 @@ interface OutputBundleProps {
   values: OutputNode[]
 }
 
-function TypeBadge({ type }: { type: ValueType }) {
-  return (
-    <Badge variant={TYPE_VARIANT[type]} size='sm'>
-      {type}
-    </Badge>
-  )
-}
-
 function TreeNode({ node, depth = 0 }: { node: OutputNode; depth?: number }) {
   const type = node.type ?? 'string'
   const expanded = node.expanded ?? Boolean(node.children || node.value !== undefined)
@@ -64,12 +46,14 @@ function TreeNode({ node, depth = 0 }: { node: OutputNode; depth?: number }) {
     <div className='flex min-w-0 flex-col'>
       <div className='flex min-h-[26px] items-center gap-2 rounded-[6px] px-1'>
         <span
-          className='text-small'
-          style={{ color: node.highlight ? 'var(--brand-secondary)' : 'var(--text-primary)' }}
+          className={cn(
+            'text-[var(--text-primary)] text-small',
+            node.highlight && 'underline decoration-[var(--brand-secondary)] underline-offset-4'
+          )}
         >
           {node.key}
         </span>
-        <TypeBadge type={type} />
+        <ChipTag>{type}</ChipTag>
         <ChevronDown
           className='size-[14px] flex-shrink-0 text-[var(--text-muted)]'
           style={expanded ? undefined : { transform: 'rotate(-90deg)' }}
@@ -114,7 +98,6 @@ export function OutputBundle({
         <div className='flex w-[210px] flex-shrink-0 flex-col border-[var(--border)] border-r px-2 py-2'>
           <div className='px-2 pb-2 text-[var(--text-muted)] text-caption'>Logs</div>
           {logRows.map((row) => {
-            const Icon = row.type ? resolveIcon(row.type) : null
             return (
               <div
                 key={row.name}

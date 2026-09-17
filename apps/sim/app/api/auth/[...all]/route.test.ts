@@ -7,6 +7,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const handlerMocks = vi.hoisted(() => ({
   betterAuthGET: vi.fn(),
   betterAuthPOST: vi.fn(),
+  credentialGroupCallback: vi.fn(),
+  credentialGroupRateLimit: vi.fn(),
   ensureAnonymousUserExists: vi.fn(),
   createAnonymousSession: vi.fn(() => ({
     user: { id: 'anon' },
@@ -30,9 +32,110 @@ vi.mock('@/lib/auth/anonymous', () => ({
   createAnonymousSession: handlerMocks.createAnonymousSession,
 }))
 
+vi.mock('@/lib/credential-groups/oauth-state', () => ({
+  isCredentialGroupOAuthState: (state: string) => state.startsWith('cg_'),
+}))
+
+vi.mock('@/lib/credential-groups/providers', () => ({
+  CREDENTIAL_GROUP_PROVIDER_IDS: ['gmail', 'google-calendar', 'confluence', 'jira', 'slack'],
+  CREDENTIAL_GROUP_STANDARD_OAUTH_PROVIDER_IDS: ['gmail', 'google-calendar', 'confluence', 'jira'],
+  getCredentialGroupStandardOAuthProviderFromProviderId: (providerId: string) => {
+    const providers: Record<string, string> = {
+      'google-email': 'gmail',
+      'google-calendar': 'google-calendar',
+      confluence: 'confluence',
+      jira: 'jira',
+    }
+    const provider = providers[providerId]
+    if (!provider) throw new Error(`Unsupported managed OAuth provider: ${providerId}`)
+    return provider
+  },
+}))
+
+vi.mock('@/lib/credential-groups/rate-limit', () => ({
+  enforcePublicCredentialGroupIpRateLimit: handlerMocks.credentialGroupRateLimit,
+}))
+
+vi.mock('@/app/api/credential-groups/oauth-callback', () => ({
+  handleCredentialGroupOAuthCallback: handlerMocks.credentialGroupCallback,
+}))
+
 import { GET, POST } from '@/app/api/auth/[...all]/route'
 
 afterAll(resetEnvFlagsMock)
+beforeEach(() => setEnvFlags({ isAuthDisabled: false }))
+
+describe('auth catch-all route managed OAuth callbacks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    handlerMocks.credentialGroupRateLimit.mockResolvedValue(null)
+    handlerMocks.credentialGroupCallback.mockResolvedValue(new Response(null, { status: 204 }))
+  })
+
+  it.each([
+    ['google-email', 'gmail'],
+    ['google-calendar', 'google-calendar'],
+    ['confluence', 'confluence'],
+    ['jira', 'jira'],
+  ])('dispatches a managed %s callback by its state prefix', async (providerId, provider) => {
+    const request = createMockRequest(
+      'GET',
+      undefined,
+      {},
+      `http://localhost:3000/api/auth/oauth2/callback/${providerId}?state=cg_attempt&code=code-1`
+    )
+
+    const response = await GET(request)
+
+    expect(response.status).toBe(204)
+    expect(handlerMocks.credentialGroupRateLimit).toHaveBeenCalledWith(request, 'oauth-callback')
+    expect(handlerMocks.credentialGroupCallback).toHaveBeenCalledWith({
+      request,
+      provider,
+      query: { state: 'cg_attempt', code: 'code-1' },
+      limited: null,
+    })
+    expect(handlerMocks.betterAuthGET).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])(
+    'preserves connector callbacks with authentication disabled=%s',
+    async (authDisabled) => {
+      setEnvFlags({ isAuthDisabled: authDisabled })
+      handlerMocks.betterAuthGET.mockResolvedValueOnce(new Response(null, { status: 204 }))
+      const request = createMockRequest(
+        'GET',
+        undefined,
+        {},
+        'http://localhost:3000/api/auth/oauth2/callback/jira?state=better-auth-state&code=code-1'
+      )
+
+      const response = await GET(request)
+
+      expect(response.status).toBe(204)
+      expect(handlerMocks.betterAuthGET).toHaveBeenCalledWith(request)
+      expect(handlerMocks.credentialGroupCallback).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects a managed state sent to an unsupported connector callback', async () => {
+    const request = createMockRequest(
+      'GET',
+      undefined,
+      {},
+      'http://localhost:3000/api/auth/oauth2/callback/unknown?state=cg_attempt&code=code-1'
+    )
+
+    const response = await GET(request)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unsupported managed OAuth provider.',
+    })
+    expect(handlerMocks.betterAuthGET).not.toHaveBeenCalled()
+    expect(handlerMocks.credentialGroupCallback).not.toHaveBeenCalled()
+  })
+})
 
 describe('auth catch-all route (DISABLE_AUTH get-session)', () => {
   beforeEach(() => {
@@ -198,4 +301,113 @@ describe('auth catch-all route SSO provider mutations', () => {
     expect(handlerMocks.betterAuthPOST).toHaveBeenCalledTimes(1)
     expect(await res.json()).toEqual({ data: { url: 'https://idp.example.com' } })
   })
+})
+
+describe('OAuth provider client endpoints', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    handlerMocks.betterAuthPOST.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 })
+    )
+  })
+
+  it.each(['.well-known/openid-configuration', 'oauth2/end-session', 'oauth2/userinfo'])(
+    'does not expose the OIDC-only %s endpoint',
+    async (path) => {
+      const getResponse = await GET(
+        createMockRequest('GET', undefined, {}, `http://localhost:3000/api/auth/${path}`)
+      )
+      const postResponse = await POST(
+        createMockRequest('POST', {}, {}, `http://localhost:3000/api/auth/${path}`)
+      )
+
+      expect(getResponse.status).toBe(404)
+      expect(postResponse.status).toBe(404)
+      expect(getResponse.headers.get('cache-control')).toBe('no-store')
+      expect(handlerMocks.betterAuthGET).not.toHaveBeenCalled()
+      expect(handlerMocks.betterAuthPOST).not.toHaveBeenCalled()
+    }
+  )
+
+  /**
+   * The plugin gates client creation on a session alone, so without this any
+   * signed-in user could register a client with arbitrary redirect URIs and
+   * the full scope set. Nothing must reach the plugin.
+   */
+  it.each([
+    'oauth2/create-client',
+    'oauth2/update-client',
+    'oauth2/delete-client',
+    'oauth2/client/rotate-secret',
+    'oauth2/register',
+    'oauth2/introspect',
+    'oauth2/token',
+    'oauth2/revoke',
+    'oauth2/anything-a-future-version-adds',
+  ])('refuses POST /%s without reaching Better Auth', async (path) => {
+    const req = createMockRequest('POST', {}, {}, `http://localhost:3000/api/auth/${path}`)
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(404)
+    expect(handlerMocks.betterAuthPOST).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'oauth2/consent',
+    'oauth2/continue',
+    'oauth2/public-client-prelogin',
+    'oauth2/callback/jira',
+  ])('lets the protocol endpoint %s through', async (path) => {
+    const req = createMockRequest('POST', {}, {}, `http://localhost:3000/api/auth/${path}`)
+
+    await POST(req)
+
+    expect(handlerMocks.betterAuthPOST).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['oauth2/consent', 'oauth2/continue', 'oauth2/public-client-prelogin'])(
+    'requires authentication for %s',
+    async (path) => {
+      setEnvFlags({ isAuthDisabled: true })
+      const request = createMockRequest('POST', {}, {}, `http://localhost:3000/api/auth/${path}`)
+      const response = await POST(request)
+      expect(response.status).toBe(404)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(handlerMocks.betterAuthPOST).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([true, false])(
+    'preserves connector POST callbacks with authentication disabled=%s',
+    async (authDisabled) => {
+      setEnvFlags({ isAuthDisabled: authDisabled })
+      const request = createMockRequest(
+        'POST',
+        {},
+        {},
+        'http://localhost:3000/api/auth/oauth2/callback/jira'
+      )
+      expect((await POST(request)).status).toBe(200)
+      expect(handlerMocks.betterAuthPOST).toHaveBeenCalledExactlyOnceWith(request)
+    }
+  )
+
+  it.each([true, false])(
+    'preserves authenticated connector linking with authentication disabled=%s',
+    async (authDisabled) => {
+      setEnvFlags({ isAuthDisabled: authDisabled })
+      const request = createMockRequest(
+        'POST',
+        { providerId: 'google-email', callbackURL: 'http://localhost:3000/workspace' },
+        { cookie: 'better-auth.session_token=existing-session' },
+        'http://localhost:3000/api/auth/oauth2/link'
+      )
+
+      const response = await POST(request)
+
+      expect(response.status).toBe(200)
+      expect(handlerMocks.betterAuthPOST).toHaveBeenCalledExactlyOnceWith(request)
+    }
+  )
 })

@@ -50,7 +50,10 @@ import {
   TimeInput,
   ToolInput,
   VariablesInput,
+  WorkflowInputMapper,
+  WorkflowOutputSelector,
   WorkflowSelectorInput,
+  WorkspaceFolderSelector,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
 import { MODAL_REGISTRY } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/modal-registry'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
@@ -69,23 +72,23 @@ import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
 
+/**
+ * Slack channel/user selectors. Custom Bot stores the connected account on
+ * `credential` (or a pasted `botToken`); Sim Bot uses `credential`. The server
+ * adapter reads `authMethod` to pick the user token (`xoxp-`) vs bot token.
+ */
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
-    // v1 gates on authMethod; v2 drops it and uses one credential picker.
-    // Custom Bot (bot_token) still stores the OAuth / custom-bot credential id
-    // in `credential` — only legacy paste / webhook setup writes `botToken`.
-    // Fall back so channel/user selectors fetch for Custom Bot, not only Sim Bot.
-    const authMethod = deps.authMethod as string
+    const authMethod = typeof deps.authMethod === 'string' ? deps.authMethod : undefined
     const oauthCredential =
       authMethod === 'bot_token'
         ? String(deps.botToken || deps.credential || deps.customBotCredential || '')
         : String(deps.credential ?? deps.customBotCredential ?? '')
-    // Custom Bot on a connected Slack account lists with the user token
-    // (`xoxp-`). Pasted `xoxb-` and reusable custom-bot credentials have no
-    // user token — the selector route ignores the flag for those.
-    const useUserToken =
-      authMethod === 'bot_token' && Boolean(oauthCredential) && !oauthCredential.startsWith('xoxb-')
-    return { ...context, oauthCredential, useUserToken }
+    return {
+      ...context,
+      ...(oauthCredential ? { oauthCredential } : {}),
+      ...(authMethod ? { authMethod } : {}),
+    }
   },
 }
 
@@ -318,7 +321,7 @@ const renderLabel = (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <span className='inline-flex'>
-                  <TriangleAlert className='size-3 flex-shrink-0 cursor-pointer text-destructive' />
+                  <TriangleAlert className='size-3 shrink-0 cursor-pointer text-destructive' />
                 </span>
               </Tooltip.Trigger>
               <Tooltip.Content side='top'>
@@ -402,7 +405,7 @@ const renderLabel = (
                     e.stopPropagation()
                     wandState.onSearchSubmit()
                   }}
-                  className='size-[20px] flex-shrink-0 p-0'
+                  className='size-[20px] shrink-0 p-0'
                 >
                   <ArrowUp className='size-[12px]' />
                 </Button>
@@ -415,11 +418,11 @@ const renderLabel = (
             <Tooltip.Trigger asChild>
               <button
                 type='button'
-                className='flex size-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0'
+                className='flex size-[12px] shrink-0 items-center justify-center bg-transparent p-0'
                 onClick={externalLink?.onClick}
                 aria-label={externalLink?.tooltip}
               >
-                <SquareArrowUpRight className='!h-[12px] !w-[12px] text-[var(--text-secondary)]' />
+                <SquareArrowUpRight className='h-[12px]! w-[12px]! text-[var(--text-secondary)]' />
               </button>
             </Tooltip.Trigger>
             <Tooltip.Content side='top'>
@@ -432,7 +435,7 @@ const renderLabel = (
             <Tooltip.Trigger asChild>
               <button
                 type='button'
-                className='flex size-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0 disabled:cursor-not-allowed disabled:opacity-50'
+                className='flex size-[12px] shrink-0 items-center justify-center bg-transparent p-0 disabled:cursor-not-allowed disabled:opacity-50'
                 onClick={canonicalToggle?.onToggle}
                 disabled={canonicalToggleDisabledResolved}
                 aria-label={
@@ -443,7 +446,7 @@ const renderLabel = (
               >
                 <ArrowLeftRight
                   className={cn(
-                    '!h-[12px] !w-[12px]',
+                    'h-[12px]! w-[12px]!',
                     canonicalToggle?.mode === 'advanced'
                       ? 'text-[var(--text-primary)]'
                       : 'text-[var(--text-secondary)]'
@@ -541,6 +544,7 @@ function SubBlockComponent({
     triggerId: undefined,
     isPreview,
     useWebhookUrl: config.useWebhookUrl,
+    providerWebhookUrl: config.providerWebhookUrl,
   })
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
@@ -783,8 +787,8 @@ function SubBlockComponent({
               disabled={isDisabled}
               multiSelect={config.multiSelect}
               selectAllOption={config.selectAllOption}
-              fetchOptions={config.fetchOptions}
-              fetchOptionById={config.fetchOptionById}
+              selectorKey={config.selectorKey}
+              selectorExcludeSelf={config.selectorExcludeSelf}
               dependsOn={config.dependsOn}
               searchable={config.searchable}
               clearable={config.clearable}
@@ -823,8 +827,8 @@ function SubBlockComponent({
               previewValue={previewValue as any}
               disabled={isDisabled}
               config={config}
-              fetchOptions={config.fetchOptions}
-              fetchOptionById={config.fetchOptionById}
+              selectorKey={config.selectorKey}
+              selectorExcludeSelf={config.selectorExcludeSelf}
               dependsOn={config.dependsOn}
             />
           </div>
@@ -902,7 +906,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
-            value={config.defaultValue as boolean}
+            value={typeof config.defaultValue === 'boolean' ? config.defaultValue : undefined}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -956,12 +960,10 @@ function SubBlockComponent({
           <GroupedCheckboxList
             blockId={blockId}
             subBlockId={config.id}
-            title={config.title ?? ''}
             options={config.options as { label: string; id: string; group?: string }[]}
             isPreview={isPreview}
             subBlockValues={subBlockValues ?? {}}
             disabled={isDisabled}
-            maxHeight={config.maxHeight}
           />
         )
 
@@ -1049,6 +1051,7 @@ function SubBlockComponent({
             conversationFileMode={config.conversationFileMode}
             defaultValue={config.defaultValue}
             requiresCloudStorage={config.requiresCloudStorage === true}
+            folderScope={config.folderScope}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -1086,6 +1089,18 @@ function SubBlockComponent({
         )
 
       case 'folder-selector':
+        if (config.resourceType) {
+          return (
+            <WorkspaceFolderSelector
+              blockId={blockId}
+              subBlock={config}
+              disabled={isDisabled}
+              required={isFieldRequired(config, subBlockValues)}
+              isPreview={isPreview}
+              previewValue={previewValue}
+            />
+          )
+        }
         return (
           <SelectorInput
             blockId={blockId}
@@ -1171,6 +1186,18 @@ function SubBlockComponent({
           />
         )
 
+      case 'workflow-input-mapper':
+        return (
+          <WorkflowInputMapper
+            blockId={blockId}
+            subBlock={config}
+            isPreview={isPreview}
+            previewValue={previewValue as string | null | undefined}
+            disabled={isDisabled}
+            contextValues={contextValues}
+          />
+        )
+
       case 'variables-input':
         return (
           <VariablesInput
@@ -1238,6 +1265,18 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as string | null}
+          />
+        )
+
+      case 'workflow-output-selector':
+        return (
+          <WorkflowOutputSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue as string[] | null | undefined}
+            disabled={isDisabled}
+            placeholder={config.placeholder}
           />
         )
 
@@ -1465,7 +1504,9 @@ function SubBlockComponent({
         canonicalToggle,
         Boolean(canonicalToggle?.disabled || disabled || isPreview),
         {
-          showCopyButton: Boolean(config.showCopyButton && config.useWebhookUrl),
+          showCopyButton: Boolean(
+            config.showCopyButton && (config.useWebhookUrl || config.providerWebhookUrl)
+          ),
           copied,
           onCopy: handleCopy,
         },

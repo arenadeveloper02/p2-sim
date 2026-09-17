@@ -1,8 +1,6 @@
 'use client'
 
 import {
-  ChipSelect,
-  ChipSwitch,
   ChipTag,
   chipFieldSurfaceClass,
   chipFieldTextClass,
@@ -10,9 +8,7 @@ import {
   FieldDivider,
   Label,
 } from '@sim/emcn'
-import { BookOpen, Pencil } from '@sim/emcn/icons'
-import { resolveIcon } from '@/components/workflow-preview/block-icons'
-import { formatReferences } from '@/components/workflow-preview/format-references'
+import { formatDisplayText } from '@sim/workflow-renderer/formatted-text'
 
 type FieldKind = 'select' | 'input' | 'textarea' | 'code' | 'slider' | 'toggle'
 
@@ -40,50 +36,28 @@ interface BlockInspectorProps {
   /** Block type, for the header icon. */
   type?: string
   color?: string
+  isIntegration?: boolean
+  triggerMode?: boolean
   fields: InspectorField[]
   tools?: InspectorTool[]
   /** Render as a borderless panel filling its parent (the lightbox sidebar). */
   embedded?: boolean
 }
 
-const NOOP = () => {}
-
-/**
- * Read-only facsimile of one configuration field, composed from emcn chip
- * chrome: `select`→{@link ChipSelect}, `toggle`→{@link ChipSwitch}; text fields
- * (`input`/`textarea`/`code`) render the value with `<...>`/`{{...}}` references
- * highlighted via {@link formatReferences} in the canonical chip field surface.
- * `slider` has no chip equivalent and stays a minimal app-token bar.
- */
+/** Displays a configuration value using the shared chip field surface. */
 function FieldControl({ field }: { field: InspectorField }) {
   const kind = field.kind ?? 'input'
   const value = field.value ?? ''
   const placeholder = field.placeholder ?? '—'
 
-  if (kind === 'select') {
+  if (kind === 'select' || kind === 'toggle') {
+    const content = kind === 'toggle' ? (value === 'on' ? 'On' : 'Off') : value || placeholder
     return (
-      <ChipSelect
-        fullWidth
-        value={value || undefined}
-        onChange={NOOP}
-        placeholder={placeholder}
-        options={value ? [{ value, label: value }] : []}
-      />
-    )
-  }
-
-  if (kind === 'toggle') {
-    const on = field.value === 'on'
-    return (
-      <ChipSwitch
-        value={on ? 'on' : 'off'}
-        onChange={NOOP}
-        aria-label={field.label}
-        options={[
-          { value: 'on', label: 'On' },
-          { value: 'off', label: 'Off' },
-        ]}
-      />
+      <div className={cn(chipFieldSurfaceClass, 'flex min-h-[30px] items-center px-2 py-1')}>
+        <span className={chipFieldTextClass}>
+          {formatDisplayText(content, { highlightAll: true })}
+        </span>
+      </div>
     )
   }
 
@@ -106,10 +80,8 @@ function FieldControl({ field }: { field: InspectorField }) {
     )
   }
 
-  // input / textarea / code: read-only value with `<...>` block references and
-  // `{{...}}` environment variables highlighted, in the canonical chip chrome.
   const content = value ? (
-    formatReferences(value)
+    formatDisplayText(value, { highlightAll: true })
   ) : (
     <span className='text-[var(--text-muted)]'>{placeholder}</span>
   )
@@ -155,19 +127,20 @@ export function BlockInspector({
   name,
   type = 'agent',
   color = '#33C482',
+  isIntegration,
+  triggerMode,
   fields,
   tools,
   embedded = false,
 }: BlockInspectorProps) {
-  const Icon = resolveIcon(type)
   const hasTools = Boolean(tools && tools.length > 0)
 
   return (
     <div
       className={cn(
-        'bg-[var(--surface-1)]',
+        'bg-[var(--surface-1)] [--brand-secondary:#0067a3] dark:[--brand-secondary:#33b4ff]',
         embedded
-          ? 'flex h-full w-full flex-col overflow-y-auto'
+          ? 'flex min-h-0 w-full flex-1 flex-col overflow-y-auto'
           : 'not-prose my-6 w-full max-w-[380px] overflow-hidden rounded-xl border border-[var(--border)]'
       )}
     >
@@ -202,7 +175,6 @@ export function BlockInspector({
               <Label className='pl-0.5'>Tools</Label>
               <div className='flex flex-wrap gap-[6px]'>
                 {tools?.map((tool) => {
-                  const TIcon = resolveIcon(tool.type)
                   return (
                     <ChipTag key={tool.type} variant='gray'>
                       <span

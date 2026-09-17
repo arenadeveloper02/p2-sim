@@ -1,7 +1,13 @@
+import { cn } from '@sim/emcn'
 import Link from 'next/link'
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from '@/lib/branding/defaults'
 import { ALL_COMPETITORS } from '@/app/(landing)/comparisons/utils'
+import { FooterWordmarkLoop } from '@/app/(landing)/components/footer/components/footer-wordmark-loop'
+import { ThemeToggle } from '@/app/(landing)/components/footer/components/theme-toggle'
+import { LANDING_CONTENT_WIDTH, LANDING_GUTTER } from '@/app/(landing)/components/landing-layout'
 import { ArenaWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
 import { MODEL_PROVIDERS_WITH_CATALOGS } from '@/app/(landing)/models/utils'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
 /**
  * Landing footer - the site link directory. Re-authored from the prior landing
@@ -11,28 +17,41 @@ import { MODEL_PROVIDERS_WITH_CATALOGS } from '@/app/(landing)/models/utils'
  * The closing CTA lives in its own {@link Cta} section above; this is purely the
  * `<footer>` landmark.
  *
+ * The wordmark cell also carries the {@link ThemeToggle} - the site's light/dark
+ * switch - tucked under the mark, where a visitor looking for the dark version
+ * of the site finds it without it competing with the link directory.
+ *
+ * Below the link directory, the site signs off on a large centered
+ * {@link FooterWordmarkLoop} - the wordmark melting into the thinking loader
+ * and back - sitting between the columns and the copyright line the way
+ * Legora closes its footer on a giant wordmark. Responsive top spacing gives
+ * the mark its own beat after the columns, followed by the copyright line.
+ *
  * Carries `SiteNavigationElement` schema for crawlable footer nav. A top
  * hairline separates it from the page and spans the full viewport width
  * (edge-to-edge): the border lives on the full-width `<footer>` landmark while
- * an inner container caps and centers the content at the shared
- * `max-w-[1460px]` with the same `px-20` gutter as every section above.
+ * an inner container caps and centers the content at
+ * {@link LANDING_CONTENT_WIDTH} with {@link LANDING_GUTTER}, matching every
+ * section above.
  */
 
 const LINK_CLASS =
-  'text-sm text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]'
+  'text-left text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]'
 
-interface FooterItem {
+interface FooterLinkItem {
   label: string
   href: string
   external?: boolean
 }
 
+type FooterItem = FooterLinkItem
+
 /**
  * Platform modules link to their local landing pages (internal link equity
- * stays on the ranking pages); docs-only surfaces (MCP, API, Self Hosting)
- * and Status remain external.
+ * stays on the ranking pages); docs-only surfaces remain external.
  */
 const PRODUCT_LINKS: FooterItem[] = [
+  { label: 'Overview', href: '/platform' },
   { label: 'Enterprise', href: '/enterprise' },
   { label: 'Chat', href: 'https://docs.sim.ai/mothership', external: true },
   { label: 'Workflows', href: '/workflows' },
@@ -42,17 +61,20 @@ const PRODUCT_LINKS: FooterItem[] = [
   { label: 'Logs', href: '/logs' },
   { label: 'MCP', href: 'https://docs.sim.ai/agents/mcp', external: true },
   { label: 'API', href: 'https://docs.sim.ai/api-reference/getting-started', external: true },
+  { label: 'CLI', href: 'https://docs.sim.ai/cli', external: true },
   { label: 'Self Hosting', href: 'https://docs.sim.ai/platform/self-hosting', external: true },
-  { label: 'Status', href: 'https://status.sim.ai', external: true },
 ]
 
 const RESOURCES_LINKS: FooterItem[] = [
+  { label: 'Customers', href: '/customers' },
   { label: 'Blog', href: '/blog' },
   { label: 'Docs', href: 'https://docs.sim.ai', external: true },
   { label: 'Library', href: '/library' },
   { label: 'Careers', href: '/careers' },
   { label: 'Changelog', href: '/changelog' },
   { label: 'Contact', href: '/contact' },
+  { label: 'Status', href: 'https://status.sim.ai', external: true },
+  { label: 'Security', href: 'https://trust.sim.ai', external: true },
 ]
 
 /** Top model providers, sourced from the catalog so labels/hrefs never drift. */
@@ -105,30 +127,25 @@ const SOCIAL_LINKS: FooterItem[] = [
   },
 ]
 
-const LEGAL_LINKS: FooterItem[] = [
-  { label: 'Terms of Service', href: '/terms' },
-  { label: 'Privacy Policy', href: '/privacy' },
-]
-
 function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) {
   return (
     <div>
       <h3 className='mb-4 text-[var(--text-primary)] text-sm'>{title}</h3>
       <div className='flex flex-col gap-2.5'>
-        {items.map(({ label, href, external }) =>
-          external ? (
+        {items.map((item) =>
+          item.external ? (
             <a
-              key={label}
-              href={href}
+              key={item.label}
+              href={item.href}
               target='_blank'
               rel='noopener noreferrer'
               className={LINK_CLASS}
             >
-              {label}
+              {item.label}
             </a>
           ) : (
-            <Link key={label} href={href} className={LINK_CLASS}>
-              {label}
+            <Link key={item.label} href={item.href} className={LINK_CLASS}>
+              {item.label}
             </Link>
           )
         )}
@@ -138,9 +155,17 @@ function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) 
 }
 
 export function Footer() {
+  const brand = getBrandConfig()
+  const legalLinks: FooterItem[] = [
+    { label: 'Terms of Service', href: brand.termsUrl ?? DEFAULT_TERMS_URL, external: true },
+    { label: 'Privacy Policy', href: brand.privacyUrl ?? DEFAULT_PRIVACY_URL, external: true },
+  ]
+
   return (
-    <footer className='mt-[120px] w-full border-[var(--border)] border-t max-sm:mt-16 max-lg:mt-[88px]'>
-      <div className='mx-auto w-full max-w-[1460px] px-20 pt-16 pb-16 max-sm:px-5 max-lg:px-8 max-lg:pt-12 max-lg:pb-12'>
+    <footer className='w-full border-[var(--border)] border-t'>
+      <div
+        className={cn('pt-16 pb-6 max-sm:pb-5 max-lg:pt-12', LANDING_CONTENT_WIDTH, LANDING_GUTTER)}
+      >
         <nav
           aria-label='Footer navigation'
           itemScope
@@ -161,7 +186,7 @@ export function Footer() {
           <FooterColumn title='Integrations' items={INTEGRATION_LINKS} />
           <FooterColumn title='Models' items={MODEL_LINKS} />
           <FooterColumn title='Socials' items={SOCIAL_LINKS} />
-          <FooterColumn title='Legal' items={LEGAL_LINKS} />
+          <FooterColumn title='Legal' items={legalLinks} />
         </nav>
 
         <p className='mt-16 text-[var(--text-muted)] text-sm'>© 2026 Arena. All rights reserved.</p>

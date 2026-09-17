@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { cn } from '@sim/emcn'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
-import { Read as ReadTool, WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
+import { PrepareFileEdit, Read as ReadTool } from '@/lib/copilot/generated/tool-catalog-v1'
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { resolveToolDisplay } from '@/lib/copilot/tools/client/store-utils'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/tool-call-state'
@@ -23,10 +23,24 @@ import {
 } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import type { CredentialSubmissionPayload } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
-import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
-import { SUBAGENT_LABELS } from '../../types'
+import { collectMessageSources } from '@/app/workspace/[workspaceId]/home/components/message-content/message-sources'
+import { resolveMessageCitations } from '@/app/workspace/[workspaceId]/home/components/message-content/resolve-citations'
+import type {
+  ContentBlock,
+  OptionItem,
+  ToolCallData,
+} from '@/app/workspace/[workspaceId]/home/types'
+import { SUBAGENT_LABELS } from '@/app/workspace/[workspaceId]/home/types'
+import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import type { AgentGroupItem } from './components'
-import { AgentGroup, ChatContent, CircleStop, Options, PendingTagIndicator } from './components'
+import {
+  AgentGroup,
+  ChatContent,
+  CircleStop,
+  MessageSources,
+  Options,
+  PendingTagIndicator,
+} from './components'
 import { deriveMessagePhase, isToolDone, type MessagePhase } from './utils'
 
 const FILE_SUBAGENT_ID = 'file'
@@ -247,7 +261,7 @@ function prepareChatMarkdownForRender(content: string): string {
  * group is absorbed so it doesn't render as a separate Mothership entry.
  */
 const SUBAGENT_DISPATCH_TOOLS: Record<string, string> = {
-  [FILE_SUBAGENT_ID]: WorkspaceFile.id,
+  [FILE_SUBAGENT_ID]: PrepareFileEdit.id,
 }
 
 function isToolResultRead(params?: Record<string, unknown>): boolean {
@@ -511,6 +525,7 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
       const dispatchToolName = SUBAGENT_DISPATCH_TOOLS[block.content]
       if (dispatchToolName) absorbDispatchTool(dispatchToolName, block.parentSpanId)
       const g = ensureSpanGroup(block.content, block.spanId, block.parentSpanId)
+      if (block.subagentName) g.agentLabel = block.subagentName
       if (block.endedAt !== undefined) {
         // Persisted backend path: the lane was stamped closed (endedAt) without
         // a separate subagent_end block (the Sim backend stamps endedAt only;
@@ -626,6 +641,23 @@ export function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
     return parseBlocksWithSpanTree(blocks)
   }
   return parseBlocksLegacy(blocks)
+}
+
+function joinRenderableText(parts: string[]): string {
+  return parts.filter(Boolean).join('\n\n')
+}
+
+/** Returns only top-level orchestrator text, excluding agent groups and other UI segments. */
+export function getOrchestratorMessageText(
+  blocks: ContentBlock[],
+  fallbackContent: string
+): string {
+  const parsed = blocks.length > 0 ? parseBlocks(blocks) : []
+  if (parsed.length === 0) return fallbackContent
+
+  return joinRenderableText(
+    parsed.map((segment) => (segment.type === 'text' ? segment.content : ''))
+  )
 }
 
 function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
@@ -760,6 +792,7 @@ function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
       }
       groupsByKey.delete(groupKey('mothership', undefined))
       const { group: g } = ensureGroup(key, block.parentToolCallId)
+      if (block.subagentName) g.agentLabel = block.subagentName
       if (inheritedDelegation) g.isDelegating = true
       g.isOpen = true
       activeGroupKey = resolveGroupKey(key, block.parentToolCallId)
@@ -946,6 +979,7 @@ interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
   messageId?: string
+  requestMode?: 'agent' | 'assistant'
   isStreaming: boolean
   liveStatus?: string
   /**
@@ -977,6 +1011,7 @@ function MessageContentInner({
   blocks,
   fallbackContent,
   messageId,
+  requestMode,
   isStreaming = false,
   liveStatus,
   isLast = false,
@@ -989,7 +1024,15 @@ function MessageContentInner({
   actions,
 }: MessageContentProps) {
   const { onWorkspaceResourceSelect } = useChatSurface()
-  const parsed = useMemo(() => (blocks.length > 0 ? parseBlocks(blocks) : []), [blocks])
+  const blockOverlayVersion = useCustomBlockOverlayVersion()
+  const cited = useMemo(
+    () => resolveMessageCitations(blocks, fallbackContent, requestMode === 'assistant'),
+    [blocks, fallbackContent, requestMode]
+  )
+  const parsed = useMemo(
+    () => (cited.blocks.length > 0 ? parseBlocks(cited.blocks) : []),
+    [cited.blocks, blockOverlayVersion]
+  )
 
   const [trailingRevealing, setTrailingRevealing] = useState(false)
   const handleTrailingRevealChange = useCallback((revealing: boolean) => {
@@ -1005,12 +1048,28 @@ function MessageContentInner({
   }, [])
   const [isStreamIdle, setIsStreamIdle] = useState(false)
 
-  const segments: MessageSegment[] =
-    parsed.length > 0
-      ? parsed
-      : fallbackContent?.trim()
-        ? [{ type: 'text' as const, id: 'text-fallback', content: fallbackContent }]
-        : []
+  const segments = useMemo<MessageSegment[]>(
+    () =>
+      parsed.length > 0
+        ? parsed
+        : cited.fallbackContent?.trim()
+          ? [{ type: 'text', id: 'text-fallback', content: cited.fallbackContent }]
+          : [],
+    [parsed, cited.fallbackContent]
+  )
+  /**
+   * Collected from the segments that render, not the raw blocks: that is the
+   * same text the inline chips come from, so the footer agrees with them — it
+   * covers the fallback text of a block-less message and leaves out lane text
+   * that `parseBlocks` folds into agent groups.
+   */
+  const sources = useMemo(
+    () =>
+      collectMessageSources(
+        segments.flatMap((segment) => (segment.type === 'text' ? [segment.content] : []))
+      ),
+    [segments]
+  )
   const visibleStreamActivityKey = getVisibleStreamActivityKey(segments)
 
   // Every visible stream update restarts the quiet-period clock. A layout
@@ -1079,6 +1138,13 @@ function MessageContentInner({
       trailingPendingTag ||
       (!trailingStreamActivity && !hasExecutingTool && (Boolean(liveLabel) || isStreamIdle)))
 
+  const actionsRow = (
+    <div className='flex items-center gap-0.5'>
+      {actions}
+      {sources.length > 0 && <MessageSources sources={sources} />}
+    </div>
+  )
+
   return (
     <div>
       <div className='space-y-[10px]'>
@@ -1092,6 +1158,7 @@ function MessageContentInner({
                   // tables before render.
                   content={prepareChatMarkdownForRender(segment.content)}
                   messageId={messageId}
+                  requestMode={requestMode}
                   isStreaming={shouldSmoothTextSegment({
                     isStreaming,
                     segmentIndex: i,
@@ -1176,13 +1243,13 @@ function MessageContentInner({
       lastSegment?.type === 'stopped' ? (
         <>
           <div className='mt-[10px] flex items-center gap-[8px]'>
-            <CircleStop className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+            <CircleStop className='size-[16px] shrink-0 text-[var(--text-icon)]' />
             <span className='text-[14px] text-[var(--text-body)]'>Stopped by user</span>
           </div>
-          {actions && <div className='mt-[10px]'>{actions}</div>}
+          {actions && <div className='mt-[10px]'>{actionsRow}</div>}
         </>
       ) : (
-        actions && <div className={TAIL_REGION_CLASSES}>{actions}</div>
+        actions && <div className={TAIL_REGION_CLASSES}>{actionsRow}</div>
       )}
     </div>
   )

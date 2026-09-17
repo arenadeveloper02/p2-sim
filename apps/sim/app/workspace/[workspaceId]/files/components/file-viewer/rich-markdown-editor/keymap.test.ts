@@ -8,12 +8,20 @@
  */
 import { Editor } from '@tiptap/core'
 import { GapCursor } from '@tiptap/pm/gapcursor'
+import { undoDepth } from '@tiptap/pm/history'
 import { AllSelection, NodeSelection } from '@tiptap/pm/state'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMarkdownEditorExtensions } from './editor-extensions'
-import { postProcessSerializedMarkdown } from './markdown-fidelity'
-import { MENTION_PLUGIN_KEY } from './mention'
-import { SLASH_COMMAND_PLUGIN_KEY } from './slash-command/slash-command'
+import * as Y from 'yjs'
+import { FileCollaboration } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/collaboration/file-collaboration'
+import { createMarkdownEditorExtensions } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/editor-extensions'
+import { createMarkdownContentExtensions } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/extensions'
+import { RichMarkdownKeymap } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/keymap'
+import { postProcessSerializedMarkdown } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/markdown-fidelity'
+import { parseMarkdownToDoc } from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/markdown-parse'
+import {
+  MENTION_PLUGIN_KEY,
+  SLASH_COMMAND_PLUGIN_KEY,
+} from '@/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/suggestion-plugin-keys'
 
 function editorWith(content: string): Editor {
   return new Editor({ extensions: createMarkdownEditorExtensions({ placeholder: '' }), content })
@@ -87,6 +95,7 @@ describe('suggestion-aware arrow keymap', () => {
     editor.commands.insertContent('@gma')
 
     expect(MENTION_PLUGIN_KEY.getState(editor.state)?.active).toBe(true)
+    expect(MENTION_PLUGIN_KEY.get(editor.state)?.spec.key).toBe(MENTION_PLUGIN_KEY)
     editor.destroy()
   })
 
@@ -96,6 +105,7 @@ describe('suggestion-aware arrow keymap', () => {
     editor.commands.insertContent('/')
 
     expect(SLASH_COMMAND_PLUGIN_KEY.getState(editor.state)?.active).toBe(true)
+    expect(SLASH_COMMAND_PLUGIN_KEY.get(editor.state)?.spec.key).toBe(SLASH_COMMAND_PLUGIN_KEY)
     editor.destroy()
   })
 
@@ -351,7 +361,9 @@ describe('list Backspace (clear / outdent)', () => {
     expect(editor.state.selection.empty).toBe(true)
     expect(editor.state.selection.$from.parent.type.name).toBe('paragraph')
     expect(editor.state.selection.$from.parent.textContent).toBe('')
-    expect(editor.getMarkdown().trim()).toBe('- one')
+    const saved = postProcessSerializedMarkdown(editor.getMarkdown())
+    editor.commands.setContent(parseMarkdownToDoc(saved))
+    expect(blockShape(editor)).toEqual(['bulletList', 'paragraph'])
     editor.destroy()
   })
 
@@ -388,7 +400,7 @@ describe('list Backspace (clear / outdent)', () => {
     pressBackspace(editor)
 
     const { md, reparsed } = markdownRoundTrip(editor)
-    expect(md.trim()).toBe('- one\n- \n- three')
+    expect(md.trim()).toBe('- one\n-\n- three')
     expect(reparsed).toBe(md)
     editor.destroy()
   })
@@ -477,10 +489,7 @@ describe('empty nested bullet does not corrupt its parent (Enter → Tab)', () =
     Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('serializes a stranded empty sub-bullet away instead of turning the parent into a heading', () => {
-    // Repro: type a bullet, Enter for a new bullet, Tab to indent it into an empty sub-bullet, then
-    // leave it. The serialized `- one\n  - ` would re-parse as `- ## one` (Setext underline). The
-    // serialize step must strip the empty sub-bullet so the parent stays a bullet and round-trips.
+  it('preserves an empty sub-bullet without turning the parent into a heading', () => {
     const editor = editorWith('')
     editor.commands.setContent('- one', { contentType: 'markdown' })
     editor.commands.focus()
@@ -493,12 +502,14 @@ describe('empty nested bullet does not corrupt its parent (Enter → Tab)', () =
     pressKey(editor, 'Tab')
 
     const saved = postProcessSerializedMarkdown(editor.getMarkdown())
-    expect(saved).toBe('- one\n')
+    const before = editor.getJSON().content?.[0]
 
     // Reloading the saved markdown keeps a bullet — never a heading.
     editor.commands.setContent(saved, { contentType: 'markdown' })
     expect(blockShape(editor)).not.toContain('heading')
     expect(blockShape(editor)).toContain('bulletList')
+    expect(editor.getJSON().content?.[0]).toEqual(before)
+    expect(postProcessSerializedMarkdown(editor.getMarkdown())).toBe(saved)
     editor.destroy()
   })
 })
@@ -508,20 +519,46 @@ describe('empty list-item Enter', () => {
     Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('removes an empty MIDDLE item instead of splitting the list into a stranded paragraph', () => {
+  it.each([
+    ['bulletList', '- one\n- two\n- three'],
+    ['orderedList', '1. one\n2. two\n3. three'],
+    ['taskList', '- [ ] one\n- [ ] two\n- [x] three'],
+  ])('removes an empty middle %s item without splitting the list', (listType, markdown) => {
     const editor = editorWith('')
-    editor.commands.setContent('- one\n- two\n- three', { contentType: 'markdown' })
+    editor.commands.setContent(markdown, { contentType: 'markdown' })
     editor.commands.focus()
     emptyItem(editor, 'two')
     pressKey(editor, 'Enter')
 
-    const { md, reparsed } = markdownRoundTrip(editor)
-    expect(md.trim()).toBe('- one\n- three')
-    expect(reparsed).toBe(md)
+    expect(editor.state.doc.child(0).type.name).toBe(listType)
+    expect(editor.state.doc.child(0).childCount).toBe(2)
+    expect(editor.state.selection.$from.parent.textContent).toBe('one')
+
+    const saved = postProcessSerializedMarkdown(editor.getMarkdown())
+    editor.commands.setContent(parseMarkdownToDoc(saved))
+    expect(editor.state.doc.child(0).type.name).toBe(listType)
+    expect(editor.state.doc.child(0).childCount).toBe(2)
+    expect(postProcessSerializedMarkdown(editor.getMarkdown())).toBe(saved)
     editor.destroy()
   })
 
-  it('leaves an empty TRAILING item to the default (exits the list)', () => {
+  it('Enter twice after a middle bullet preserves the existing whole-list behavior', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one\n- two', { contentType: 'markdown' })
+    editor.commands.setTextSelection(6)
+    pressKey(editor, 'Enter')
+    expect(editor.isActive('listItem')).toBe(true)
+    expect(editor.state.selection.$from.parent.textContent).toBe('')
+    pressKey(editor, 'Enter')
+
+    expect(editor.isActive('listItem')).toBe(true)
+    expect(editor.state.selection.$from.parent.textContent).toBe('one')
+    expect(editor.state.selection.$from.parentOffset).toBe(3)
+    expect(editor.getMarkdown().trim()).toBe('- one\n- two')
+    editor.destroy()
+  })
+
+  it('exits an empty trailing item into a paragraph', () => {
     const editor = editorWith('')
     editor.commands.setContent('- one\n- two', { contentType: 'markdown' })
     editor.commands.focus()
@@ -577,6 +614,175 @@ describe('empty list-item Enter', () => {
     expect(editor.state.doc.textContent).toBe('more')
     const list = editor.getJSON().content?.find((n) => n.type === 'bulletList')
     expect(list?.content).toHaveLength(1)
+    editor.destroy()
+  })
+})
+
+describe('list item descendant preservation', () => {
+  it.each([
+    '- Parent\n  - Child\n- After',
+    '1. Parent\n   1. Child\n2. After',
+    '- [ ] Parent\n  - [ ] Child\n- [ ] After',
+  ])(
+    'does not move a collaborative caret or emit a Yjs replacement for an empty parent: %s',
+    (markdown) => {
+      const localDoc = new Y.Doc()
+      const peerDoc = new Y.Doc()
+      const createEditor = (document: Y.Doc) =>
+        new Editor({
+          extensions: [
+            ...createMarkdownContentExtensions({}, { disableHistory: true }),
+            RichMarkdownKeymap,
+            FileCollaboration.configure({ document }),
+          ],
+          editorProps: { handleScrollToSelection: () => true },
+        })
+      const local = createEditor(localDoc)
+      local.commands.setContent(parseMarkdownToDoc(`Before\n\n${markdown}`))
+      Y.applyUpdate(peerDoc, Y.encodeStateAsUpdate(localDoc))
+      const peer = createEditor(peerDoc)
+      try {
+        emptyItem(local, 'Parent')
+        Y.applyUpdate(peerDoc, Y.encodeStateAsUpdate(localDoc))
+        const before = local.getJSON()
+        const selection = local.state.selection.toJSON()
+        const updates = vi.fn()
+        localDoc.on('update', updates)
+        for (const key of ['Backspace', 'Backspace', 'Enter']) pressKey(local, key)
+        expect(local.state.selection.toJSON()).toEqual(selection)
+        expect(local.getJSON()).toEqual(before)
+        expect(peer.getJSON()).toEqual(before)
+        expect(updates).not.toHaveBeenCalled()
+      } finally {
+        local.destroy()
+        peer.destroy()
+        localDoc.destroy()
+        peerDoc.destroy()
+      }
+    }
+  )
+
+  it.each(['Backspace', 'Enter'])(
+    '%s preserves nested descendants without lifting their parent',
+    (key) => {
+      const editor = editorWith(
+        '<ul><li><p>one</p></li><li><p></p><ul><li><p><strong>child</strong></p><ul><li><p>grandchild</p></li></ul></li></ul></li><li><p>three</p></li></ul>'
+      )
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'paragraph' && node.content.size === 0) {
+          editor.commands.setTextSelection(pos + 1)
+        }
+      })
+      const before = editor.getJSON()
+      const selectionBefore = editor.state.selection.toJSON()
+      const historyBefore = undoDepth(editor.state)
+      pressKey(editor, key)
+
+      expect(editor.state.selection.toJSON()).toEqual(selectionBefore)
+      expect(editor.state.doc.textContent).toBe('onechildgrandchildthree')
+      expect(editor.getHTML()).toContain('<strong>child</strong>')
+      expect(editor.state.doc.child(0).type.name).toBe('bulletList')
+      expect(editor.state.doc.child(0).childCount).toBe(3)
+      expect(editor.state.doc.child(0).child(1).textContent).toBe('childgrandchild')
+      expect(undoDepth(editor.state)).toBe(historyBefore)
+      expect(editor.getJSON()).toEqual(before)
+      editor.destroy()
+    }
+  )
+
+  it.each([
+    ['bulletList', 'listItem'],
+    ['orderedList', 'listItem'],
+    ['taskList', 'taskItem'],
+  ])('keeps the caret in a required empty %s parent after repeated Backspace', (list, item) => {
+    const paragraph = (text: string) => ({
+      type: 'paragraph',
+      content: text ? [{ type: 'text', text }] : [],
+    })
+    const editor = editorWith('')
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        paragraph('Before'),
+        {
+          type: list,
+          content: [
+            {
+              type: item,
+              content: [
+                paragraph(''),
+                { type: list, content: [{ type: item, content: [paragraph('Child')] }] },
+              ],
+            },
+            { type: item, content: [paragraph('After')] },
+          ],
+        },
+      ],
+    })
+    editor.commands.setTextSelection(11)
+    const before = editor.state.doc
+    const selectionBefore = editor.state.selection.toJSON()
+    pressBackspace(editor)
+    pressBackspace(editor)
+    expect(editor.state.doc.eq(before)).toBe(true)
+    expect(editor.state.selection.toJSON()).toEqual(selectionBefore)
+    editor.destroy()
+  })
+
+  it.each(['Backspace', 'Enter'])(
+    '%s removes a replaceable leading paragraph while retaining the whole list',
+    (key) => {
+      const editor = editorWith(
+        '<ul><li><p>one</p></li><li><p></p><p>continuation</p></li><li><p>three</p></li></ul>'
+      )
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'paragraph' && node.content.size === 0) {
+          editor.commands.setTextSelection(pos + 1)
+        }
+      })
+      pressKey(editor, key)
+
+      expect(editor.state.selection.$from.parent.textContent).toBe('one')
+      expect(editor.state.selection.$from.parentOffset).toBe(3)
+      expect(editor.state.doc.child(0).child(1).childCount).toBe(1)
+      expect(editor.state.doc.textContent).toBe('onecontinuationthree')
+      editor.destroy()
+    }
+  )
+})
+
+describe('code select-all boundaries', () => {
+  function selectAllKey(editor: Editor): void {
+    editor.view.dom.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'a',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+  }
+
+  it('does not shrink a selection that spans a code block and prose', () => {
+    const editor = editorWith('<pre><code>alpha</code></pre><p>beta</p>')
+    editor.commands.setTextSelection({ from: 2, to: 10 })
+    selectAllKey(editor)
+
+    expect(editor.state.selection instanceof AllSelection).toBe(true)
+    expect(editor.state.selection.from).toBe(0)
+    expect(editor.state.selection.to).toBe(editor.state.doc.content.size)
+    editor.destroy()
+  })
+
+  it('selects code first and the document on the second press', () => {
+    const editor = editorWith('<pre><code>alpha</code></pre><p>beta</p>')
+    editor.commands.setTextSelection(3)
+    selectAllKey(editor)
+
+    expect(editor.state.selection.from).toBe(1)
+    expect(editor.state.selection.to).toBe(6)
+    selectAllKey(editor)
+    expect(editor.state.selection instanceof AllSelection).toBe(true)
     editor.destroy()
   })
 })
