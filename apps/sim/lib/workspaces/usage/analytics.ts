@@ -412,9 +412,7 @@ export async function getWorkspaceUsageAnalytics(
           ...ledgerCostSelect(),
         })
         .from(usageLog)
-        .where(
-          and(...ledgerConditions, eq(usageLog.category, 'tool'), isNotNull(usageLog.toolId))
-        )
+        .where(and(...ledgerConditions, eq(usageLog.category, 'tool'), isNotNull(usageLog.toolId)))
         .groupBy(toolBucketId),
 
       dbReplica

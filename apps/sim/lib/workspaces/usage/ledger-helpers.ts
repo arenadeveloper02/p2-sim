@@ -392,10 +392,7 @@ export function buildExecutionConditions(workspaceCondition: SQL, period: Resolv
 export function periodRange(column: SQLWrapper, period: ResolvedPeriod): [SQL, SQL] {
   const startIso = ensurePeriodDate(period.start).toISOString()
   const endIso = ensurePeriodDate(period.end).toISOString()
-  return [
-    sql`${column} >= ${startIso}::timestamptz`,
-    sql`${column} <= ${endIso}::timestamptz`,
-  ]
+  return [sql`${column} >= ${startIso}::timestamptz`, sql`${column} <= ${endIso}::timestamptz`]
 }
 
 /** Resolves a fixed window from explicit start/end or a relative period preset. */

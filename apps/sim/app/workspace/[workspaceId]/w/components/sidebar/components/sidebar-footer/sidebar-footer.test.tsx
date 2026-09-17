@@ -52,6 +52,7 @@ async function renderFooter() {
         isCollapsed={false}
         showCollapsedTooltips={false}
         onOpenSettings={() => {}}
+        onOpenSettingsMenu={() => {}}
         onOpenDocs={() => {}}
         onJoinSlack={() => {}}
         onContactSupport={() => {}}

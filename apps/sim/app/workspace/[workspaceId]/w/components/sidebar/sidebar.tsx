@@ -467,7 +467,8 @@ export const Sidebar = memo(function Sidebar({
     isToolAllowed,
     integrationAvailability,
   } = usePermissionConfig()
-  const { navigateToSettings } = useSettingsNavigation()
+  const { navigateToSettings, rememberSettingsReturnUrl, clearSettingsReturnUrl } =
+    useSettingsNavigation()
   const initializeSearchData = useSearchModalStore((state) => state.initializeData)
   const customBlockOverlayVersion = useCustomBlockOverlayVersion()
   const providers = useProvidersStore((state) => state.providers)
@@ -1080,6 +1081,30 @@ export const Sidebar = memo(function Sidebar({
   }, [])
 
   const isOnSettingsPage = pathname?.startsWith(`/workspace/${workspaceId}/settings`) ?? false
+  /**
+   * More opens this list in the left nav without changing the URL. Routing
+   * starts only when a settings row is clicked. Back while this is open
+   * restores the normal nav instead of leaving the page.
+   */
+  const [settingsNavPreview, setSettingsNavPreview] = useState(false)
+  const showSettingsNav = isOnSettingsPage || settingsNavPreview
+
+  const handleOpenSettingsPreview = useCallback(() => {
+    // Remember the current page so Back after a later settings click can return here.
+    rememberSettingsReturnUrl()
+    setSettingsNavPreview(true)
+  }, [rememberSettingsReturnUrl])
+
+  const handleCloseSettingsPreview = useCallback(() => {
+    // Preview Back never routed, so drop the stored return page too.
+    clearSettingsReturnUrl()
+    setSettingsNavPreview(false)
+  }, [clearSettingsReturnUrl])
+
+  useEffect(() => {
+    // A real settings route owns the list from here; preview Back must not close it.
+    if (isOnSettingsPage) setSettingsNavPreview(false)
+  }, [isOnSettingsPage])
 
   const logsViewMode = useFilterStore((state) => state.viewMode)
 
@@ -1423,7 +1448,7 @@ export const Sidebar = memo(function Sidebar({
               brandLogoUrl={brand?.logoUrl || brand?.logoUrlBlacktext}
               brandWordmarkUrl={brand?.wordmarkUrl}
               brandName={brand?.name}
-              arenaHubAgentsUrl={isOnSettingsPage ? null : arenaHubAgentsUrl}
+              arenaHubAgentsUrl={showSettingsNav ? null : arenaHubAgentsUrl}
             />
             {/* The peek card already sits below the lane; reserving it again doubles the offset. */}
             {!isPeeking && (
@@ -1528,10 +1553,13 @@ export const Sidebar = memo(function Sidebar({
               </div>
             </div>
 
-            {isOnSettingsPage ? (
+            {showSettingsNav ? (
               <SettingsSidebar
                 isCollapsed={isCollapsed}
                 showCollapsedTooltips={showCollapsedTooltips}
+                onClose={
+                  settingsNavPreview && !isOnSettingsPage ? handleCloseSettingsPreview : undefined
+                }
               />
             ) : (
               <>
@@ -1927,6 +1955,7 @@ export const Sidebar = memo(function Sidebar({
                   isCollapsed={isCollapsed}
                   showCollapsedTooltips={showCollapsedTooltips}
                   onOpenSettings={handleOpenSettings}
+                  onOpenSettingsMenu={handleOpenSettingsPreview}
                   onOpenDocs={handleOpenDocs}
                   onJoinSlack={handleOpenSlackCommunity}
                   onContactSupport={handleOpenHelpFromMenu}

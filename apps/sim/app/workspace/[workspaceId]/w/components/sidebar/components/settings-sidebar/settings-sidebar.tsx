@@ -47,11 +47,17 @@ import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 interface SettingsSidebarProps {
   isCollapsed?: boolean
   showCollapsedTooltips?: boolean
+  /**
+   * When set, Back closes the settings list without leaving the current page.
+   * Used when More opens the list before any settings route is selected.
+   */
+  onClose?: () => void
 }
 
 export function SettingsSidebar({
   isCollapsed = false,
   showCollapsedTooltips = false,
+  onClose,
 }: SettingsSidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
@@ -237,10 +243,11 @@ export function SettingsSidebar({
   const activeSection = useMemo(() => {
     const segments = pathname?.split('/') ?? []
     const settingsIdx = segments.indexOf('settings')
+    // Null while More is only previewing the list, so no row looks selected yet.
     if (settingsIdx !== -1 && segments[settingsIdx + 1]) {
       return segments[settingsIdx + 1] as SettingsSection
     }
-    return 'general'
+    return null
   }, [pathname])
 
   const handlePrefetch = useCallback(
@@ -280,10 +287,15 @@ export function SettingsSidebar({
   const { popSettingsReturnUrl, getSettingsHref } = useSettingsNavigation()
 
   const handleBack = useCallback(() => {
+    // Preview mode: close the list and stay on the current page.
+    if (onClose) {
+      onClose()
+      return
+    }
     requestLeave(() => {
       router.push(popSettingsReturnUrl(`/workspace/${workspaceId}`))
     })
-  }, [requestLeave, router, popSettingsReturnUrl, workspaceId])
+  }, [onClose, requestLeave, router, popSettingsReturnUrl, workspaceId])
 
   const handleConfirmDiscard = useCallback(() => {
     confirmLeave()

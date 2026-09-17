@@ -1,60 +1,60 @@
 'use client'
 
-import type { ComponentType, SVGProps } from 'react'
-import {
-  chipContentLabelClass,
-  chipVariants,
-  cn,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  // Skeleton,
-} from '@sim/emcn'
-import { Credit, Settings, Trash, Users } from '@sim/emcn/icons'
+import type { SVGProps } from 'react'
+import { chipContentLabelClass, chipVariants, cn } from '@sim/emcn'
+// import type { ComponentType } from 'react'
+// import {
+//   DropdownMenu,
+//   DropdownMenuContent,
+//   DropdownMenuItem,
+//   DropdownMenuTrigger,
+//   Skeleton,
+// } from '@sim/emcn'
+// import { Credit, Settings, Trash, Users } from '@sim/emcn/icons'
 // Help menu (commented out — Docs lives under Settings → Help):
 // import { BookOpen, Download, HelpCircle } from '@sim/emcn/icons'
 // import { Chip, chipPrimaryFillTokens, DropdownMenuSeparator } from '@sim/emcn'
 // import type { DesktopUpdateState } from '@sim/desktop-bridge'
 // import { SlackIcon } from '@/components/icons'
 // import { getDesktopUpdates } from '@/lib/desktop'
-import { useSession } from '@/lib/auth/auth-client'
-import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
+// import { useSession } from '@/lib/auth/auth-client'
+// import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
+// import { isBillingEnabled } from '@/lib/core/config/env-flags'
 // import { getUserColor } from '@/lib/workspaces/colors'
-import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
+// import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
-import {
-  firstAccessibleSettingsSection,
-  useVisibleSettingsNavigation,
-} from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/use-visible-settings-navigation'
+// import {
+//   firstAccessibleSettingsSection,
+//   useVisibleSettingsNavigation,
+// } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/use-visible-settings-navigation'
 import {
   // SIDEBAR_ITEM_GAP_CLASS,
   SIDEBAR_RAIL_CHIP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
-// import { useUserProfile } from '@/hooks/queries/user-profile'
-import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
 
-/**
- * Settings destinations reachable from the profile menu, in display order. Labels
- * and icons mirror the settings navigation entries they open, so the menu and the
- * settings sidebar never disagree about what a section is called.
- *
- * Which of them a given viewer actually gets is decided in {@link SidebarFooter} —
- * the same gates the settings sidebar and the section route apply, so the menu
- * never lists a page the server would refuse.
- */
-const PROFILE_MENU_ITEMS: readonly {
-  section: SettingsSection
-  label: string
-  icon: ComponentType<{ className?: string }>
-}[] = [
-  { section: 'general', label: 'Settings', icon: Settings },
-  { section: 'billing', label: 'Subscription', icon: Credit },
-  { section: 'teammates', label: 'Teammates', icon: Users },
-  { section: 'recently-deleted', label: 'Recently deleted', icon: Trash },
-]
+// import { useUserProfile } from '@/hooks/queries/user-profile'
+// import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
+
+// /**
+//  * Settings destinations reachable from the profile menu, in display order. Labels
+//  * and icons mirror the settings navigation entries they open, so the menu and the
+//  * settings sidebar never disagree about what a section is called.
+//  *
+//  * Which of them a given viewer actually gets is decided in {@link SidebarFooter} —
+//  * the same gates the settings sidebar and the section route apply, so the menu
+//  * never lists a page the server would refuse.
+//  */
+// const PROFILE_MENU_ITEMS: readonly {
+//   section: SettingsSection
+//   label: string
+//   icon: ComponentType<{ className?: string }>
+// }[] = [
+//   { section: 'general', label: 'Settings', icon: Settings },
+//   { section: 'billing', label: 'Subscription', icon: Credit },
+//   { section: 'teammates', label: 'Teammates', icon: Users },
+//   { section: 'recently-deleted', label: 'Recently deleted', icon: Trash },
+// ]
 
 // function hasAvailableDesktopUpdate(state: DesktopUpdateState): boolean {
 //   return state.status === 'available' || state.status === 'downloading' || state.status === 'ready'
@@ -115,7 +115,10 @@ interface SidebarFooterProps {
   workspaceId: string
   isCollapsed: boolean
   showCollapsedTooltips: boolean
+  /** Routes to a settings section. Used by callers that already know the destination. */
   onOpenSettings: (section: SettingsSection) => void
+  /** Opens the settings left nav without changing the current page. */
+  onOpenSettingsMenu: () => void
   /** @deprecated Help moved to Settings → Help; kept for call-site compatibility. */
   onOpenDocs: () => void
   /** @deprecated Help moved to Settings → Help; kept for call-site compatibility. */
@@ -125,22 +128,25 @@ interface SidebarFooterProps {
 }
 
 /**
- * Pinned bottom bar of the workspace sidebar: the More menu for settings
- * destinations. The help control previously sat beside it and is commented out —
- * Docs now lives under Settings → Help.
+ * Pinned bottom bar of the workspace sidebar. More opens the settings list in
+ * place; a section is not routed until the user clicks it.
  */
 export function SidebarFooter({
-  workspaceId,
+  // workspaceId,
   isCollapsed,
   showCollapsedTooltips,
-  onOpenSettings,
+  // onOpenSettings,
+  onOpenSettingsMenu,
+  // onOpenDocs,
+  // onJoinSlack,
+  // onContactSupport,
 }: SidebarFooterProps) {
   // const { data: profile } = useUserProfile()
-  const { data: session } = useSession()
-  const hostContext = useWorkspaceHostContext()
-  const { isInvitationsDisabled } = useWorkspaceInvitePolicy(workspaceId)
-  const visibleSettings = useVisibleSettingsNavigation(workspaceId)
-  const firstSettingsSection = firstAccessibleSettingsSection(visibleSettings)
+  // const { data: session } = useSession()
+  // const hostContext = useWorkspaceHostContext()
+  // const { isInvitationsDisabled } = useWorkspaceInvitePolicy(workspaceId)
+  // const visibleSettings = useVisibleSettingsNavigation(workspaceId)
+  // const firstSettingsSection = firstAccessibleSettingsSection(visibleSettings)
   // const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
   //
   // useEffect(() => {
@@ -173,43 +179,43 @@ export function SidebarFooter({
   //   }
   // }
 
-  /**
-   * Subscription is dropped for viewers the Billing page would turn away — a
-   * deployment with billing off, or anyone who is not the payer (on an
-   * organization-hosted workspace, every member who is not an org admin). The
-   * settings sidebar hides its own Billing entry on exactly this test.
-   */
-  const menuItems = PROFILE_MENU_ITEMS.filter(
-    (item) =>
-      item.section !== 'billing' || canViewWorkspaceBillingSettings(hostContext, session?.user?.id)
-  )
+  // /**
+  //  * Subscription is dropped for viewers the Billing page would turn away — a
+  //  * deployment with billing off, or anyone who is not the payer (on an
+  //  * organization-hosted workspace, every member who is not an org admin). The
+  //  * settings sidebar hides its own Billing entry on exactly this test.
+  //  */
+  // const menuItems = PROFILE_MENU_ITEMS.filter(
+  //   (item) =>
+  //     item.section !== 'billing' || canViewWorkspaceBillingSettings(hostContext, session?.user?.id)
+  // )
 
-  /**
-   * Teammates is a dead end on a plan that cannot invite, so a blocked viewer is
-   * sent to the plan itself instead — which resolves to the upgrade page for
-   * anyone who cannot manage the payer. With billing off there is nowhere to send
-   * them and no upgrade to make, so the row simply does nothing. This is the gate
-   * the workspace switcher's "Manage workspace" entry carried before this menu
-   * took the section over.
-   */
-  const handleSelectSection = (section: SettingsSection) => {
-    if (section === 'general') {
-      if (firstSettingsSection) onOpenSettings(firstSettingsSection)
-      return
-    }
-    if (section === 'teammates' && isInvitationsDisabled) {
-      if (isBillingEnabled) onOpenSettings('billing')
-      return
-    }
-    onOpenSettings(section)
-  }
+  // /**
+  //  * Teammates is a dead end on a plan that cannot invite, so a blocked viewer is
+  //  * sent to the plan itself instead — which resolves to the upgrade page for
+  //  * anyone who cannot manage the payer. With billing off there is nowhere to send
+  //  * them and no upgrade to make, so the row simply does nothing. This is the gate
+  //  * the workspace switcher's "Manage workspace" entry carried before this menu
+  //  * took the section over.
+  //  */
+  // const handleSelectSection = (section: SettingsSection) => {
+  //   if (section === 'general') {
+  //     if (firstSettingsSection) onOpenSettings(firstSettingsSection)
+  //     return
+  //   }
+  //   if (section === 'teammates' && isInvitationsDisabled) {
+  //     if (isBillingEnabled) onOpenSettings('billing')
+  //     return
+  //   }
+  //   onOpenSettings(section)
+  // }
 
-  /**
-   * Built from plain `img`/`div` rather than the emcn `Avatar`, whose Radix root
-   * renders a `<span>` — and globals fade every `span` in the collapsed rail to
-   * `opacity: 0`, which blanked the avatar exactly where it is the only thing
-   * left to see. The workspace header's logo sidesteps the same rule the same way.
-   */
+  // /**
+  //  * Built from plain `img`/`div` rather than the emcn `Avatar`, whose Radix root
+  //  * renders a `<span>` — and globals fade every `span` in the collapsed rail to
+  //  * `opacity: 0`, which blanked the avatar exactly where it is the only thing
+  //  * left to see. The workspace header's logo sidesteps the same rule the same way.
+  //  */
   // const avatar = !profile ? (
   //   <Skeleton className='size-[16px] flex-shrink-0 rounded-full' />
   // ) : profile.image ? (
@@ -228,41 +234,41 @@ export function SidebarFooter({
   //   </div>
   // )
 
-  const profileMenu = (
-    <DropdownMenu>
-      <SidebarTooltip label='More' enabled={showCollapsedTooltips}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type='button'
-            data-item-id='profile'
-            className={cn(
-              chipVariants({ fullWidth: true }),
-              isCollapsed ? 'min-w-0' : 'w-full',
-              SIDEBAR_RAIL_CHIP_CLASS,
-              'data-[state=open]:bg-[var(--surface-active)] data-[state=open]:hover-hover:bg-[var(--surface-active)]'
-            )}
-          >
-            {/* {avatar} */}
-            {/* {profile ? (
-              <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>{name}</span>
-            ) : (
-              <Skeleton className='sidebar-collapse-hide h-[14px] w-[96px] rounded-sm' />
-            )} */}
-            <MoreCircle className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-            <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>More</span>
-          </button>
-        </DropdownMenuTrigger>
-      </SidebarTooltip>
-      <DropdownMenuContent align='start' side='top' sideOffset={4}>
-        {menuItems.map(({ section, label, icon: Icon }) => (
-          <DropdownMenuItem key={section} onSelect={() => handleSelectSection(section)}>
-            <Icon className='size-[14px]' />
-            {label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+  // const profileMenu = (
+  //   <DropdownMenu>
+  //     <SidebarTooltip label='More' enabled={showCollapsedTooltips}>
+  //       <DropdownMenuTrigger asChild>
+  //         <button
+  //           type='button'
+  //           data-item-id='profile'
+  //           className={cn(
+  //             chipVariants({ fullWidth: true }),
+  //             isCollapsed ? 'min-w-0' : 'w-full',
+  //             SIDEBAR_RAIL_CHIP_CLASS,
+  //             'data-[state=open]:bg-[var(--surface-active)] data-[state=open]:hover-hover:bg-[var(--surface-active)]'
+  //           )}
+  //         >
+  //           {avatar}
+  //           {profile ? (
+  //             <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>{name}</span>
+  //           ) : (
+  //             <Skeleton className='sidebar-collapse-hide h-[14px] w-[96px] rounded-sm' />
+  //           )}
+  //           <MoreCircle className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
+  //           <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>More</span>
+  //         </button>
+  //       </DropdownMenuTrigger>
+  //     </SidebarTooltip>
+  //     <DropdownMenuContent align='start' side='top' sideOffset={4}>
+  //       {menuItems.map(({ section, label, icon: Icon }) => (
+  //         <DropdownMenuItem key={section} onSelect={() => handleSelectSection(section)}>
+  //           <Icon className='size-[14px]' />
+  //           {label}
+  //         </DropdownMenuItem>
+  //       ))}
+  //     </DropdownMenuContent>
+  //   </DropdownMenu>
+  // )
 
   // const helpMenu = (
   //   <DropdownMenu>
@@ -311,7 +317,24 @@ export function SidebarFooter({
 
   return (
     <div className='flex flex-shrink-0 border-t px-2 pt-[9px] pb-2'>
-      <div className={cn('flex min-w-0', !isCollapsed && 'w-full flex-1')}>{profileMenu}</div>
+      <div className={cn('flex min-w-0', !isCollapsed && 'w-full flex-1')}>
+        <SidebarTooltip label='More' enabled={showCollapsedTooltips}>
+          {/* Opens the settings left nav in place. Do not route from this click. */}
+          <button
+            type='button'
+            data-item-id='profile'
+            className={cn(
+              chipVariants({ fullWidth: true }),
+              isCollapsed ? 'min-w-0' : 'w-full',
+              SIDEBAR_RAIL_CHIP_CLASS
+            )}
+            onClick={onOpenSettingsMenu}
+          >
+            <MoreCircle className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
+            <span className={cn('sidebar-collapse-hide', chipContentLabelClass)}>More</span>
+          </button>
+        </SidebarTooltip>
+      </div>
       {/* {helpMenu} */}
     </div>
   )

@@ -10,9 +10,9 @@ import {
   isImageGenerationBillingKey,
   UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
+import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 import { normalizeUsageToolBucketId } from '@/tools/normalize'
 import { getToolIds } from '@/tools/tool-ids'
-import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 
 /**
  * Synthetic By Tools bucket for mothership / Copilot ledger tool rows.
@@ -141,7 +141,9 @@ function getUsageToolServiceFamilies(): string[] {
  * roll up to the longest registered service family (`exa_search` / `exaindnewssearch` → `exa`).
  */
 export function resolveUsageToolFamilyId(toolId: string): string {
-  const normalized = normalizeUsageToolBucketId(toolId).toLowerCase().replace(/[\s-]+/g, '_')
+  const normalized = normalizeUsageToolBucketId(toolId)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
   if (!normalized) return toolId
   if (normalized === COPILOT_USAGE_TOOL_BUCKET_ID) return COPILOT_USAGE_TOOL_BUCKET_ID
   if (normalized === UNATTRIBUTED_AGENT_TOOLS_ID) return UNATTRIBUTED_AGENT_TOOLS_ID
