@@ -23,6 +23,7 @@ import {
   sseHandlers,
   subAgentHandlers,
 } from '@/lib/copilot/request/handlers'
+import { flushSubagentThinkingBlock, flushThinkingBlock } from '@/lib/copilot/request/handlers/types'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
 import {
   isSubagentSpanStreamEvent,
@@ -215,10 +216,16 @@ async function dispatchLocalCopilotEvent(
   options: CopilotLifecycleOptions,
   toolArgsByCallId: Map<string, Record<string, unknown>>,
   filePreview: LocalFilePreviewRuntime,
-  specialistSpans: SpecialistSpanTracker
+  specialistSpans: SpecialistSpanTracker,
+  liveStatusDedupe: { lastMessage: string | null }
 ): Promise<void> {
   if (event.type === 'status') {
     // Ephemeral UI-only: publish synthetic envelope via onEvent, skip content-block handlers.
+    // Skip consecutive duplicates — idle fallback used to republish "Thinking…" at 10Hz.
+    if (event.message === liveStatusDedupe.lastMessage) {
+      return
+    }
+    liveStatusDedupe.lastMessage = event.message
     const statusEvent: StreamEvent = {
       type: 'run',
       payload: {
@@ -228,11 +235,6 @@ async function dispatchLocalCopilotEvent(
         ...(event.toolName ? { toolName: event.toolName } : {}),
       },
     }
-    logger.info('Arena Copilot publishing live status', {
-      message: event.message,
-      toolCallId: event.toolCallId ?? null,
-      toolName: event.toolName ?? null,
-    })
     await options.onEvent?.(statusEvent)
     return
   }
@@ -254,6 +256,7 @@ async function dispatchLocalCopilotEvent(
           executor: MothershipStreamV1ToolExecutor.go,
           mode: MothershipStreamV1ToolMode.sync,
           arguments: event.args,
+          ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
         },
         ...(nestedScope ? { scope: nestedScope } : {}),
       },
@@ -380,9 +383,9 @@ async function dispatchLocalCopilotEvent(
     return
   }
 
-  if (event.type === 'text_delta' && event.content) {
-    const safeText = stripIdsFromUserFacingText(event.content)
-    if (!safeText) return
+  if (event.type === 'text_delta' && (event.content || event.thoughtSignature)) {
+    const safeText = event.content ? stripIdsFromUserFacingText(event.content) : ''
+    if (!safeText && !event.thoughtSignature) return
     const nestedScope = specialistSpans.scopeForNested()
     await dispatchStreamEvent(
       {
@@ -390,6 +393,7 @@ async function dispatchLocalCopilotEvent(
         payload: {
           channel: MothershipStreamV1TextChannel.assistant,
           text: safeText,
+          ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
         },
         ...(nestedScope ? { scope: nestedScope } : {}),
       },
@@ -398,6 +402,37 @@ async function dispatchLocalCopilotEvent(
       options,
       filePreview
     )
+    return
+  }
+
+  if (event.type === 'thinking_delta' && (event.content || event.thoughtSignature)) {
+    // UI Thinking chrome is content-only. Opaque thought signatures belong on
+    // gemini_model_parts / assistant text trailers — forwarding them here stamps
+    // them onto thinking blocks and corrupts Vertex follow-up turns.
+    if (!event.content) return
+    const nestedScope = specialistSpans.scopeForNested()
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.text,
+        payload: {
+          channel: MothershipStreamV1TextChannel.thinking,
+          text: event.content,
+        },
+        ...(nestedScope ? { scope: nestedScope } : {}),
+      },
+      context,
+      execContext,
+      options,
+      filePreview
+    )
+    return
+  }
+
+  if (event.type === 'gemini_model_parts' && event.parts.length > 0) {
+    if (!context.geminiModelPartRounds) {
+      context.geminiModelPartRounds = []
+    }
+    context.geminiModelPartRounds.push(event.parts)
     return
   }
 
@@ -652,10 +687,22 @@ export async function runLocalCopilotMothershipLifecycle(
     })
     priorMessages = history.messages
     sessionMemoryTurns = history.sessionMemoryTurns
+    const geminiHistory = priorMessages.filter((m) => m.role === 'assistant' && m.geminiModelParts)
     logger.info('Loaded mothership chat history for Arena Copilot', {
       chatId: options.chatId,
       turns: priorMessages.length,
       sessionMemoryTurns: sessionMemoryTurns.length,
+      geminiModelTurns: geminiHistory.length,
+      geminiThoughtParts: geminiHistory.reduce(
+        (sum, m) =>
+          sum + (m.geminiModelParts?.filter((p) => 'thought' in p && p.thought).length ?? 0),
+        0
+      ),
+      geminiSignatureParts: geminiHistory.reduce(
+        (sum, m) =>
+          sum + (m.geminiModelParts?.filter((p) => Boolean(p.thoughtSignature)).length ?? 0),
+        0
+      ),
       memory: getLocalCopilotMemorySnapshot(),
     })
   }
@@ -704,6 +751,8 @@ export async function runLocalCopilotMothershipLifecycle(
       signal: options.abortSignal,
     })
 
+    const liveStatusDedupe = { lastMessage: null as string | null }
+
     while (true) {
       const { done, value } = await agent.next()
       if (done) {
@@ -738,9 +787,18 @@ export async function runLocalCopilotMothershipLifecycle(
         options,
         toolArgsByCallId,
         filePreview,
-        specialistSpans
+        specialistSpans,
+        liveStatusDedupe
       )
     }
+
+    // Local defers the wire `complete` event until after `onComplete` persists
+    // the assistant row. `handleCompleteEvent` normally flushes open thinking
+    // into contentBlocks — without an explicit flush here, CoT stays only in
+    // `currentThinkingBlock` / subagent maps and never reaches persistence or
+    // the settled UI chrome.
+    flushSubagentThinkingBlock(context)
+    flushThinkingBlock(context)
 
     const status =
       context.errors.length > 0

@@ -35,6 +35,11 @@ interface PersistedToolCall {
   calledBy?: string
   durationMs?: number
   display?: { title?: string }
+  /**
+   * Gemini thought signature when persisted for tool-loop / follow-up history
+   * round-trip. Absent on older rows — those tool turns are collapsed to text.
+   */
+  thoughtSignature?: string
 }
 
 export interface PersistedContentBlock {
@@ -53,6 +58,10 @@ export interface PersistedContentBlock {
   lifecycle?: MothershipStreamV1SpanLifecycleEvent
   status?: MothershipStreamV1CompletionStatus
   content?: string
+  /**
+   * Gemini 3+ thought signature for this text/thinking part (follow-up CoT).
+   */
+  thoughtSignature?: string
   toolCall?: PersistedToolCall
   timestamp?: number
   endedAt?: number
@@ -127,6 +136,19 @@ export interface PersistedMessage {
   contexts?: PersistedMessageContext[]
   /** Ephemeral Local Copilot status for live turns; never saved as assistant prose. */
   liveStatus?: string
+  /**
+   * Exact Gemini/Vertex model-turn parts (one array per tool-loop round).
+   * Preferred over reconstructing parts from thinking/prose blocks on reload.
+   */
+  geminiModelPartRounds?: Array<
+    Array<
+      | { text: string; thought?: boolean; thoughtSignature?: string }
+      | {
+          functionCall: { id: string; name: string; args: Record<string, unknown> }
+          thoughtSignature?: string
+        }
+    >
+  >
 }
 
 /**
@@ -232,12 +254,14 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
         type: MothershipStreamV1EventType.text,
         channel: MothershipStreamV1TextChannel.assistant,
         content: block.content,
+        ...(block.thoughtSignature ? { thoughtSignature: block.thoughtSignature } : {}),
       }
     case 'thinking':
       return {
         type: MothershipStreamV1EventType.text,
         channel: MothershipStreamV1TextChannel.thinking,
         content: block.content,
+        ...(block.thoughtSignature ? { thoughtSignature: block.thoughtSignature } : {}),
       }
     case 'subagent':
       return {
@@ -290,6 +314,9 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
             ? { params: block.toolCall.params }
             : {}),
         ...(block.calledBy ? { calledBy: block.calledBy } : {}),
+        ...(block.toolCall.thoughtSignature
+          ? { thoughtSignature: block.toolCall.thoughtSignature }
+          : {}),
         ...(block.toolCall.displayTitle
           ? {
               display: {
@@ -326,17 +353,13 @@ export function buildPersistedAssistantMessage(
   }
 
   if (result.contentBlocks.length > 0) {
-    // Reasoning is display-transient and never rendered, so it is never
-    // persisted either: storing it bloats whale chats and lets the persisted
-    // turn diverge from the streamed one (the refresh-vs-switch mismatch).
-    // This is the single write-side choke point for assistant blocks, so the
-    // guarantee holds for every terminal path (complete, cancelled, error).
-    const withoutThinking = result.contentBlocks.filter(
-      (block) => block.type !== 'thinking' && block.type !== 'subagent_thinking'
-    )
-    if (withoutThinking.length > 0) {
-      message.contentBlocks = mergeAndRedactPersistedBlocks(withoutThinking.map(mapContentBlock))
-    }
+    // Keep thinking / reasoning-summary blocks so the session can show them at
+    // the top of the message after reload (AgentStreamThinkingChrome).
+    message.contentBlocks = mergeAndRedactPersistedBlocks(result.contentBlocks.map(mapContentBlock))
+  }
+
+  if (result.geminiModelPartRounds && result.geminiModelPartRounds.length > 0) {
+    message.geminiModelPartRounds = result.geminiModelPartRounds
   }
 
   return message
@@ -447,6 +470,7 @@ interface RawBlock {
   parentToolCallId?: string
   spanId?: string
   parentSpanId?: string
+  thoughtSignature?: string
   toolCall?: {
     id?: string
     name?: string
@@ -457,6 +481,7 @@ interface RawBlock {
     calledBy?: string
     durationMs?: number
     error?: string
+    thoughtSignature?: string
   } | null
 }
 
@@ -509,6 +534,9 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
   if (block.lifecycle) result.lifecycle = block.lifecycle as MothershipStreamV1SpanLifecycleEvent
   if (block.status) result.status = block.status as MothershipStreamV1CompletionStatus
   if (block.parentToolCallId) result.parentToolCallId = block.parentToolCallId
+  if (typeof block.thoughtSignature === 'string' && block.thoughtSignature.length > 0) {
+    result.thoughtSignature = block.thoughtSignature
+  }
   if (block.toolCall) {
     result.toolCall = {
       id: block.toolCall.id ?? '',
@@ -519,6 +547,10 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
       ...(block.toolCall.calledBy ? { calledBy: block.toolCall.calledBy } : {}),
       ...(block.toolCall.error ? { error: block.toolCall.error } : {}),
       ...(block.toolCall.durationMs ? { durationMs: block.toolCall.durationMs } : {}),
+      ...(typeof block.toolCall.thoughtSignature === 'string' &&
+      block.toolCall.thoughtSignature.length > 0
+        ? { thoughtSignature: block.toolCall.thoughtSignature }
+        : {}),
       ...(block.toolCall.display
         ? {
             display: {
@@ -694,6 +726,11 @@ export function normalizeMessage(raw: Record<string, unknown>): PersistedMessage
 
   if (raw.requestId && typeof raw.requestId === 'string') {
     msg.requestId = raw.requestId
+  }
+
+  if (Array.isArray(raw.geminiModelPartRounds) && raw.geminiModelPartRounds.length > 0) {
+    // double-cast-allowed: JSONB reload — rounds are opaque Gemini history parts
+    msg.geminiModelPartRounds = raw.geminiModelPartRounds as PersistedMessage['geminiModelPartRounds']
   }
 
   const rawBlocks = raw.contentBlocks as RawBlock[] | undefined

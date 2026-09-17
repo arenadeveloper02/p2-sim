@@ -259,6 +259,11 @@ export interface ThinkingLoaderProps {
    */
   labelRatio?: number
   /**
+   * Allow the status phrase to wrap onto multiple lines (e.g. full thinking
+   * summaries as live status). Default keeps a single nowrap row.
+   */
+  labelWrap?: boolean
+  /**
    * Paint the label with the sweeping Claude-style shimmer (default). Set
    * `false` for a static label in solid `--text-body` ink — no gradient, no
    * sweep — while the phrase crossfade still applies.
@@ -302,6 +307,7 @@ export function ThinkingLoader({
   label,
   phase,
   labelRatio = 0.7,
+  labelWrap = false,
   shimmer = true,
   tone = 'default',
   className,
@@ -389,15 +395,26 @@ export function ThinkingLoader({
   // caller's static label (if any). Cycling, it updates as the shape morphs.
   const displayLabel = phase ? VARIANT_PHRASE[shown] : label
 
-  // Crossfade the phrase when it changes: the outgoing phrase rises and fades
-  // out while the incoming one rises and fades in, so they rotate smoothly
-  // instead of snapping. The shimmer keeps running on the text underneath.
+  // Crossfade when the phrase is replaced; extend in place when the new label
+  // is a prefix growth (streaming thinking summaries) so each token doesn't
+  // animate a full exit/enter.
   const [shownLabel, setShownLabel] = useState(displayLabel)
   const [exitingLabel, setExitingLabel] = useState<string | undefined>(undefined)
+  const [labelAnimKey, setLabelAnimKey] = useState(0)
   useEffect(() => {
     if (displayLabel === shownLabel) return
+    const isExtension =
+      typeof displayLabel === 'string' &&
+      typeof shownLabel === 'string' &&
+      displayLabel.startsWith(shownLabel)
+    if (isExtension) {
+      setShownLabel(displayLabel)
+      setExitingLabel(undefined)
+      return
+    }
     setExitingLabel(shownLabel)
     setShownLabel(displayLabel)
+    setLabelAnimKey((key) => key + 1)
   }, [displayLabel, shownLabel])
   useEffect(() => {
     if (!exitingLabel) return
@@ -526,7 +543,7 @@ export function ThinkingLoader({
 
   return (
     <output
-      className={cn(styles.labelRow, className)}
+      className={cn(styles.labelRow, labelWrap && styles.labelRowWrap, className)}
       style={
         {
           '--tl-label-size': `${size * labelRatio}px`,
@@ -535,13 +552,13 @@ export function ThinkingLoader({
       }
     >
       {loader}
-      <span className={styles.labelStack}>
+      <span className={cn(styles.labelStack, labelWrap && styles.labelStackWrap)}>
         {exitingLabel ? (
-          <span key={exitingLabel} className={cn(styles.labelLayer, styles.labelOut)}>
+          <span key={`out-${labelAnimKey}`} className={cn(styles.labelLayer, styles.labelOut)}>
             <span className={shimmer ? styles.label : styles.labelStatic}>{exitingLabel}</span>
           </span>
         ) : null}
-        <span key={shownLabel} className={cn(styles.labelLayer, styles.labelIn)}>
+        <span key={`in-${labelAnimKey}`} className={cn(styles.labelLayer, styles.labelIn)}>
           <span className={shimmer ? styles.label : styles.labelStatic}>{shownLabel}</span>
         </span>
       </span>
