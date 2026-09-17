@@ -917,14 +917,18 @@ export function validateAwsRegion(
 /**
  * Validates a Google Cloud location (region) identifier.
  *
- * Google SDKs interpolate this value directly into the API hostname
- * (`https://{location}-aiplatform.googleapis.com/`), so an unvalidated value
- * containing `/`, `:`, `@`, or whitespace can terminate the authority component
- * and relocate the request — along with any attached credential — to an
- * attacker-controlled host.
+ * Google SDKs interpolate this value into the API hostname
+ * (`https://{location}-aiplatform.googleapis.com/` for regions,
+ * `https://aiplatform.googleapis.com/` for `global`, and
+ * `https://aiplatform.{us|eu}.rep.googleapis.com/` for multi-region), so an
+ * unvalidated value containing `/`, `:`, `@`, or whitespace can terminate the
+ * authority component and relocate the request — along with any attached
+ * credential — to an attacker-controlled host.
  *
- * Accepts `global` plus the documented `{geography}-{direction}{index}` region
- * form (e.g. us-central1, europe-west4, northamerica-northeast1, me-central2).
+ * Accepts:
+ * - `global`
+ * - multi-region `us` / `eu` (Vertex generative multi-region endpoints)
+ * - regional `{geography}-{direction}{index}` (e.g. us-central1, europe-west4)
  *
  * @param value - The location to validate
  * @param paramName - Name of the parameter for error messages
@@ -939,7 +943,7 @@ export function validateGoogleCloudLocation(
   }
 
   const googleLocationPattern =
-    /^(global|(africa|asia|australia|europe|me|northamerica|southamerica|us)-(central|east|north|northeast|northwest|south|southeast|southwest|west)\d{1,2})$/
+    /^(global|us|eu|(africa|asia|australia|europe|me|northamerica|southamerica|us)-(central|east|north|northeast|northwest|south|southeast|southwest|west)\d{1,2})$/
 
   if (!googleLocationPattern.test(value)) {
     logger.warn('Invalid Google Cloud location format', {
@@ -948,7 +952,7 @@ export function validateGoogleCloudLocation(
     })
     return {
       isValid: false,
-      error: `${paramName} must be a valid Google Cloud location (e.g., us-central1, europe-west4, global)`,
+      error: `${paramName} must be a valid Google Cloud location (e.g., us, eu, us-central1, europe-west4, global)`,
     }
   }
 

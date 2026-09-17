@@ -1,5 +1,4 @@
 import { GoogleGenAI } from '@google/genai'
-import { OAuth2Client } from 'google-auth-library'
 import {
   validateGoogleCloudLocation,
   validateGoogleCloudProject,
@@ -8,14 +7,58 @@ import {
 const DEFAULT_VERTEX_LOCATION = 'global'
 const VERTEX_CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 
+/**
+ * Three Local Copilot Vertex slots (in rotation order).
+ * Slot 0 uses unsuffixed envs; slots 1–2 use `_1` / `_2`.
+ */
+const VERTEX_SLOTS = [
+  {
+    index: 0,
+    projectEnv: 'VERTEX_PROJECT',
+    locationEnv: 'VERTEX_LOCATION',
+    serviceAccountEnv: 'VERTEX_SERVICE_ACCOUNT_JSON',
+  },
+  {
+    index: 1,
+    projectEnv: 'VERTEX_PROJECT_1',
+    locationEnv: 'VERTEX_LOCATION_1',
+    serviceAccountEnv: 'VERTEX_SERVICE_ACCOUNT_JSON_1',
+  },
+  {
+    index: 2,
+    projectEnv: 'VERTEX_PROJECT_2',
+    locationEnv: 'VERTEX_LOCATION_2',
+    serviceAccountEnv: 'VERTEX_SERVICE_ACCOUNT_JSON_2',
+  },
+] as const
+
 const VERTEX_NOT_CONFIGURED =
-  'Vertex AI is not configured on this server. Set VERTEX_PROJECT (and optionally VERTEX_LOCATION). Auth via VERTEX_SERVICE_ACCOUNT_JSON, GCS_CREDENTIALS_JSON, GOOGLE_APPLICATION_CREDENTIALS / ADC, or VERTEX_ACCESS_TOKEN (a ya29.* OAuth access token from `gcloud auth print-access-token`).'
+  'Vertex AI is not configured on this server. Set VERTEX_PROJECT + VERTEX_SERVICE_ACCOUNT_JSON (and optionally VERTEX_PROJECT_1/_2 with matching VERTEX_SERVICE_ACCOUNT_JSON_1/_2 and VERTEX_LOCATION_1/_2). Auth also accepts GCS_CREDENTIALS_JSON or Application Default Credentials.'
 
 interface ServiceAccountCredentials {
   client_email: string
   private_key: string
   project_id?: string
 }
+
+/**
+ * One Vertex project / location / credential combo for Local Copilot.
+ * Rotation spreads parent rounds and 429 retries across slots.
+ */
+export interface LocalCopilotVertexSlot {
+  /** 0 = primary (`VERTEX_PROJECT`), 1–2 = `_1` / `_2`. */
+  slot: number
+  project: string
+  location: string
+  credentials?: ServiceAccountCredentials
+}
+
+/**
+ * Process-local counter so consecutive Local Copilot Vertex calls (parent
+ * rounds, specialists, parallel subagents, 429 retries) spread across the
+ * three configured slots.
+ */
+let vertexSlotRotationCounter = 0
 
 /**
  * Parses inline service-account JSON from Vertex or GCS env vars.
@@ -38,102 +81,145 @@ function parseServiceAccountJson(raw: string | undefined): ServiceAccountCredent
   return credentials as ServiceAccountCredentials
 }
 
-/**
- * True when the value looks like a usable Vertex bearer token.
- * Rejects Gemini API keys (`AIza…`) and OAuth auth codes (`4/…`).
- */
-export function isVertexOAuthAccessToken(value: string): boolean {
-  const token = value.trim()
-  if (!token) return false
-  if (token.startsWith('AIza')) return false
-  if (token.startsWith('4/')) return false
-  // User/refresh tokens from gcloud / Google OAuth are typically `ya29.`.
-  return token.startsWith('ya29.') || token.length >= 100
+function readEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim()
+  if (!value || value === 'undefined') return undefined
+  return value
 }
 
-/** Resolves `VERTEX_PROJECT` (validated). */
-export function resolveLocalCopilotVertexProject(): string | undefined {
-  const project = process.env.VERTEX_PROJECT?.trim()
-  if (!project) return undefined
-  const validation = validateGoogleCloudProject(project, 'VERTEX_PROJECT')
+function validateProject(project: string, paramName: string): string {
+  const validation = validateGoogleCloudProject(project, paramName)
   if (!validation.isValid) {
-    throw new Error(`Invalid VERTEX_PROJECT: ${validation.error}`)
+    throw new Error(`Invalid ${paramName}: ${validation.error}`)
   }
   return project
 }
 
-/** Resolves `VERTEX_LOCATION` (default `global`, validated). */
-export function resolveLocalCopilotVertexLocation(): string {
-  const location = (process.env.VERTEX_LOCATION?.trim() || DEFAULT_VERTEX_LOCATION).toLowerCase()
-  const validation = validateGoogleCloudLocation(location, 'VERTEX_LOCATION')
+function validateLocation(location: string, paramName: string): string {
+  const normalized = location.toLowerCase()
+  const validation = validateGoogleCloudLocation(normalized, paramName)
   if (!validation.isValid) {
-    throw new Error(`Invalid VERTEX_LOCATION: ${validation.error}`)
+    throw new Error(`Invalid ${paramName}: ${validation.error}`)
   }
-  return location
+  return normalized
 }
 
-/** True when Local Copilot can attempt Vertex (project is set). */
+/**
+ * Collects configured Vertex slots for Local Copilot (max 3).
+ *
+ * Each slot has its own project, location, and service-account JSON:
+ * - Slot 0: `VERTEX_PROJECT`, `VERTEX_LOCATION`, `VERTEX_SERVICE_ACCOUNT_JSON`
+ * - Slot 1: `VERTEX_PROJECT_1`, `VERTEX_LOCATION_1`, `VERTEX_SERVICE_ACCOUNT_JSON_1`
+ * - Slot 2: `VERTEX_PROJECT_2`, `VERTEX_LOCATION_2`, `VERTEX_SERVICE_ACCOUNT_JSON_2`
+ *
+ * A slot is included when its project env is set. Location falls back to
+ * `VERTEX_LOCATION` then `global`. Credentials fall back to the primary SA /
+ * `GCS_CREDENTIALS_JSON`, otherwise the SDK uses Application Default Credentials.
+ */
+export function listLocalCopilotVertexSlots(): LocalCopilotVertexSlot[] {
+  const primaryLocation = validateLocation(
+    readEnv('VERTEX_LOCATION') || DEFAULT_VERTEX_LOCATION,
+    'VERTEX_LOCATION'
+  )
+  const primaryCredentials =
+    parseServiceAccountJson(readEnv('VERTEX_SERVICE_ACCOUNT_JSON')) ??
+    parseServiceAccountJson(readEnv('GCS_CREDENTIALS_JSON'))
+
+  const slots: LocalCopilotVertexSlot[] = []
+  for (const def of VERTEX_SLOTS) {
+    const project =
+      readEnv(def.projectEnv) ||
+      (def.index === 0 ? primaryCredentials?.project_id?.trim() : undefined)
+    if (!project) continue
+
+    const location = validateLocation(
+      readEnv(def.locationEnv) || primaryLocation,
+      def.locationEnv
+    )
+
+    const slotCredentials =
+      parseServiceAccountJson(readEnv(def.serviceAccountEnv)) ?? primaryCredentials
+
+    slots.push({
+      slot: def.index,
+      project: validateProject(project, def.projectEnv),
+      location,
+      ...(slotCredentials ? { credentials: slotCredentials } : {}),
+    })
+  }
+
+  return slots
+}
+
+/**
+ * Picks the next Vertex slot for a Local Copilot LLM request (round-robin).
+ */
+export function resolveLocalCopilotVertexSlot(): LocalCopilotVertexSlot {
+  const slots = listLocalCopilotVertexSlots()
+  if (slots.length === 0) {
+    throw new Error(VERTEX_NOT_CONFIGURED)
+  }
+  const index = vertexSlotRotationCounter % slots.length
+  vertexSlotRotationCounter += 1
+  return slots[index]!
+}
+
+/** Resolves the first configured project (for startup logging). */
+export function resolveLocalCopilotVertexProject(): string | undefined {
+  return listLocalCopilotVertexSlots()[0]?.project
+}
+
+/** Resolves location from the first configured slot (or shared default). */
+export function resolveLocalCopilotVertexLocation(): string {
+  const slots = listLocalCopilotVertexSlots()
+  if (slots[0]) return slots[0].location
+  return validateLocation(readEnv('VERTEX_LOCATION') || DEFAULT_VERTEX_LOCATION, 'VERTEX_LOCATION')
+}
+
+/** True when Local Copilot can attempt Vertex (at least one slot). */
 export function isLocalCopilotVertexConfigured(): boolean {
-  return Boolean(process.env.VERTEX_PROJECT?.trim())
+  try {
+    return listLocalCopilotVertexSlots().length > 0
+  } catch {
+    return false
+  }
 }
 
 export function getLocalCopilotVertexNotConfiguredMessage(): string {
   return VERTEX_NOT_CONFIGURED
 }
 
-/**
- * Builds a `@google/genai` client pointed at Vertex AI.
- *
- * Auth priority:
- * 1. `VERTEX_SERVICE_ACCOUNT_JSON` or `GCS_CREDENTIALS_JSON`
- * 2. Valid `VERTEX_ACCESS_TOKEN` (`ya29.*` from `gcloud auth print-access-token`)
- * 3. Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS`, Workload Identity, etc.)
- */
-export function createLocalCopilotVertexClient(): GoogleGenAI {
-  const project = resolveLocalCopilotVertexProject()
-  if (!project) {
-    throw new Error(VERTEX_NOT_CONFIGURED)
-  }
-  const location = resolveLocalCopilotVertexLocation()
+/** Test-only: reset the round-robin counter. */
+export function resetLocalCopilotVertexSlotRotation(): void {
+  vertexSlotRotationCounter = 0
+}
 
-  const credentials =
-    parseServiceAccountJson(process.env.VERTEX_SERVICE_ACCOUNT_JSON) ??
-    parseServiceAccountJson(process.env.GCS_CREDENTIALS_JSON)
-
-  if (credentials) {
+function buildVertexClient(slot: LocalCopilotVertexSlot): GoogleGenAI {
+  if (slot.credentials) {
     return new GoogleGenAI({
       vertexai: true,
-      project,
-      location,
+      project: slot.project,
+      location: slot.location,
       googleAuthOptions: {
-        credentials,
+        credentials: slot.credentials,
         scopes: [VERTEX_CLOUD_PLATFORM_SCOPE],
       },
     })
   }
 
-  const accessToken = process.env.VERTEX_ACCESS_TOKEN?.trim()
-  if (accessToken) {
-    if (!isVertexOAuthAccessToken(accessToken)) {
-      throw new Error(
-        'VERTEX_ACCESS_TOKEN must be an OAuth access token (usually starts with ya29.). ' +
-          'Values starting with 4/ are authorization codes and AIza… are Gemini API keys — neither works with Vertex. ' +
-          'Prefer VERTEX_SERVICE_ACCOUNT_JSON, or run: gcloud auth print-access-token'
-      )
-    }
-    const authClient = new OAuth2Client()
-    authClient.setCredentials({ access_token: accessToken })
-    return new GoogleGenAI({
-      vertexai: true,
-      project,
-      location,
-      googleAuthOptions: { authClient },
-    })
-  }
-
   return new GoogleGenAI({
     vertexai: true,
-    project,
-    location,
+    project: slot.project,
+    location: slot.location,
   })
+}
+
+/**
+ * Builds a `@google/genai` client pointed at Vertex AI.
+ *
+ * Round-robins up to three slots, each with its own project, location, and
+ * service-account JSON (`VERTEX_*`, `VERTEX_*_1`, `VERTEX_*_2`).
+ */
+export function createLocalCopilotVertexClient(): GoogleGenAI {
+  return buildVertexClient(resolveLocalCopilotVertexSlot())
 }

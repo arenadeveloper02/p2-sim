@@ -216,10 +216,16 @@ async function dispatchLocalCopilotEvent(
   options: CopilotLifecycleOptions,
   toolArgsByCallId: Map<string, Record<string, unknown>>,
   filePreview: LocalFilePreviewRuntime,
-  specialistSpans: SpecialistSpanTracker
+  specialistSpans: SpecialistSpanTracker,
+  liveStatusDedupe: { lastMessage: string | null }
 ): Promise<void> {
   if (event.type === 'status') {
     // Ephemeral UI-only: publish synthetic envelope via onEvent, skip content-block handlers.
+    // Skip consecutive duplicates — idle fallback used to republish "Thinking…" at 10Hz.
+    if (event.message === liveStatusDedupe.lastMessage) {
+      return
+    }
+    liveStatusDedupe.lastMessage = event.message
     const statusEvent: StreamEvent = {
       type: 'run',
       payload: {
@@ -229,11 +235,6 @@ async function dispatchLocalCopilotEvent(
         ...(event.toolName ? { toolName: event.toolName } : {}),
       },
     }
-    logger.info('Arena Copilot publishing live status', {
-      message: event.message,
-      toolCallId: event.toolCallId ?? null,
-      toolName: event.toolName ?? null,
-    })
     await options.onEvent?.(statusEvent)
     return
   }
@@ -750,6 +751,8 @@ export async function runLocalCopilotMothershipLifecycle(
       signal: options.abortSignal,
     })
 
+    const liveStatusDedupe = { lastMessage: null as string | null }
+
     while (true) {
       const { done, value } = await agent.next()
       if (done) {
@@ -784,7 +787,8 @@ export async function runLocalCopilotMothershipLifecycle(
         options,
         toolArgsByCallId,
         filePreview,
-        specialistSpans
+        specialistSpans,
+        liveStatusDedupe
       )
     }
 

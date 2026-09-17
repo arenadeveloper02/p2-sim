@@ -137,7 +137,12 @@ export async function* iterateWithIdleStatus<T>(options: {
           if (abortSignal?.aborted) return
           continue
         }
-        yield { type: 'status', message: messages[index % messages.length]! }
+        const nextMessage = messages[index % messages.length]!
+        // Single-line fallbacks (Thinking…) only need one pulse — repeating
+        // the same string every interval flooded SSE/logs at the old 100ms rate.
+        if (messages.length > 1 || index === 0) {
+          yield { type: 'status', message: nextMessage }
+        }
         index += 1
         nextGap = restartGap(intervalMs)
         continue

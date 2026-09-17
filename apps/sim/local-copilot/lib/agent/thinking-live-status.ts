@@ -37,6 +37,34 @@ export class ThinkingLiveStatusAccumulator {
 }
 
 /**
+ * Batches tiny provider thinking deltas so mothership SSE / React are not
+ * flooded at token rate (Vertex especially feels "slow while rendering").
+ */
+export class ThinkingDeltaBatcher {
+  private buffer = ''
+
+  constructor(private readonly minChars = 80) {}
+
+  /** Returns a flushable chunk once the batch is large enough; otherwise null. */
+  push(delta: string): string | null {
+    if (!delta) return null
+    this.buffer += delta
+    if (this.buffer.length < this.minChars) return null
+    const out = this.buffer
+    this.buffer = ''
+    return out
+  }
+
+  /** Drains any remainder (call before answer text / tool calls / round end). */
+  flush(): string | null {
+    if (!this.buffer) return null
+    const out = this.buffer
+    this.buffer = ''
+    return out
+  }
+}
+
+/**
  * Applies a model stream chunk to thinking live-status state.
  * Keeps thinking as the live-status label through assistant prose so idle
  * fallbacks cannot overwrite it; only tool calls release the line for tool
