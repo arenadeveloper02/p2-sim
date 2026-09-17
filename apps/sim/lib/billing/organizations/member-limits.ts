@@ -211,3 +211,31 @@ export async function getOrgMemberUsageForCurrentPeriod(
 
   return getOrgMemberUsageForBillingPeriod(organizationId, userId, billingPeriod)
 }
+
+/**
+ * Display-only per-member used + cap for a workspace's organization.
+ * Unlike enforcement ({@link checkOrgMemberUsageLimit}), this does not gate on
+ * hosted/billing flags — Usage UI still needs the real allocation when set.
+ */
+export async function getMyMemberCreditsForWorkspace(
+  userId: string,
+  workspaceId: string
+): Promise<{ usedDollars: number; limitDollars: number | null }> {
+  const [workspaceRow] = await db
+    .select({ organizationId: workspace.organizationId })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1)
+
+  const organizationId = workspaceRow?.organizationId
+  if (!organizationId) {
+    return { usedDollars: 0, limitDollars: null }
+  }
+
+  const [limitDollars, usedDollars] = await Promise.all([
+    getOrgMemberUsageLimit(organizationId, userId),
+    getOrgMemberUsageForCurrentPeriod(organizationId, userId),
+  ])
+
+  return { usedDollars, limitDollars }
+}

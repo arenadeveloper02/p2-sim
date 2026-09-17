@@ -7,7 +7,7 @@ import {
   workflowExecutionLogs,
   workspace,
 } from '@sim/db/schema'
-import { and, eq, gte, inArray, isNotNull, lte, or, type SQL, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, or, type SQL, type SQLWrapper, sql } from 'drizzle-orm'
 import {
   type UsageChargeTypeValue,
   type UsageLogSourceValue,
@@ -40,6 +40,32 @@ export const TOP_EXPENSIVE_COPILOT_CHATS = 25
 export const TOP_EXPENSIVE_WORKFLOWS = 25
 
 export const WORKFLOW_SOURCE: UsageLogSource = 'workflow'
+
+/**
+ * Synthetic By Tools bucket id for mothership / Copilot ledger *tool* rows
+ * so the Usage UI shows one "Copilot tools" line.
+ * Keep in sync with `COPILOT_USAGE_TOOL_BUCKET_ID` in usage `format.ts`.
+ */
+export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
+
+/**
+ * Groups tool spend for By Tools analytics.
+ * Prefers `usage_log.tool_name` (registry operation) when set, else `tool_id`
+ * (display label / legacy rows). Copilot / mothership *tool* sources collapse to
+ * {@link COPILOT_USAGE_TOOL_BUCKET_ID} ("Copilot tools"). Model spend for those
+ * sources is reported separately.
+ *
+ * String literals are inlined (same pattern as {@link chargeTypeExpr}) so SELECT
+ * and GROUP BY stay identical — parameterized CASE fragments diverge under
+ * Drizzle and Postgres rejects the query.
+ */
+export function byToolBucketIdExpr() {
+  return sql<string>`case
+    when ${usageLog.source} in ('copilot', 'workspace-chat', 'mcp_copilot', 'mothership_block')
+      then 'copilot'
+    else coalesce(${usageLog.toolName}, ${usageLog.toolId})
+  end`
+}
 
 export const PERIOD_MS: Record<'1d' | '7d' | '30d' | '90d', number> = {
   '1d': 24 * 60 * 60 * 1000,
@@ -350,22 +376,26 @@ export function buildLedgerJoinConditions(workspaceCondition: SQL, period: Resol
 }
 
 export function buildExecutionConditions(workspaceCondition: SQL, period: ResolvedPeriod): SQL[] {
-  const start = ensurePeriodDate(period.start)
-  const end = ensurePeriodDate(period.end)
+  const startIso = ensurePeriodDate(period.start).toISOString()
+  const endIso = ensurePeriodDate(period.end).toISOString()
   return [
     workspaceCondition,
-    gte(workflowExecutionLogs.startedAt, start),
-    lte(workflowExecutionLogs.startedAt, end),
+    sql`${workflowExecutionLogs.startedAt} >= ${startIso}::timestamptz`,
+    sql`${workflowExecutionLogs.startedAt} <= ${endIso}::timestamptz`,
   ]
 }
 
-export function periodRange<T extends Parameters<typeof gte>[0]>(
-  column: T,
-  period: ResolvedPeriod
-): [SQL, SQL] {
-  const start = ensurePeriodDate(period.start)
-  const end = ensurePeriodDate(period.end)
-  return [gte(column, start), lte(column, end)]
+/**
+ * Inclusive period bounds for a timestamp column.
+ * Uses ISO timestamptz params — same encoding as {@link ledgerPeriodBounds}.
+ */
+export function periodRange(column: SQLWrapper, period: ResolvedPeriod): [SQL, SQL] {
+  const startIso = ensurePeriodDate(period.start).toISOString()
+  const endIso = ensurePeriodDate(period.end).toISOString()
+  return [
+    sql`${column} >= ${startIso}::timestamptz`,
+    sql`${column} <= ${endIso}::timestamptz`,
+  ]
 }
 
 /** Resolves a fixed window from explicit start/end or a relative period preset. */
@@ -410,6 +440,22 @@ export function executionBucketExpr(useHourly: boolean) {
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
+
+/**
+ * Hourly buckets for the 24h preset and short custom ranges (≤ ~25h).
+ * Longer windows stay daily so charts stay readable.
+ */
+export function shouldUseHourlyTimeBuckets(
+  options: { allTime?: boolean; period?: '1d' | '7d' | '30d' | '90d' },
+  period: ResolvedPeriod
+): boolean {
+  if (options.allTime) return false
+  if (options.period === '1d') return true
+
+  const startMs = ensurePeriodDate(period.start).getTime()
+  const endMs = ensurePeriodDate(period.end).getTime()
+  return endMs - startMs <= DAY_MS + HOUR_MS
+}
 
 /** Usage dashboard time-series point shared by workspace and org analytics. */
 export interface UsageTimeSeriesBucket {

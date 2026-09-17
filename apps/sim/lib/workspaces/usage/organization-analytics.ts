@@ -30,6 +30,7 @@ import {
   bySourceDisplayBucketExpr,
   bySourceDisplayLabelExpr,
   bySourceLedgerSourceExpr,
+  byToolBucketIdExpr,
   chargeTypeExpr,
   coerceToDate,
   densifyTimeSeries,
@@ -55,6 +56,7 @@ import {
   resolvedActorUserIdExpr,
   resolveExplicitPeriod,
   resolvePeriodFromDateCandidates,
+  shouldUseHourlyTimeBuckets,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
@@ -150,7 +152,8 @@ async function resolveOrganizationPeriod(
 function emptyOrganizationAnalytics(
   workspaces: OrgWorkspaceRef[],
   scopedWorkspaces: OrgWorkspaceRef[],
-  period: ResolvedPeriod
+  period: ResolvedPeriod,
+  useHourlyBuckets = false
 ): OrganizationUsageAnalytics {
   return {
     period: {
@@ -198,6 +201,7 @@ function emptyOrganizationAnalytics(
       byChatType: [],
       byChat: [],
       byModel: [],
+      modelSpend: { billableCost: 0, rawCost: 0, count: 0 },
       triggeredWorkflows: {
         executionCount: 0,
         billableCost: 0,
@@ -212,7 +216,7 @@ function emptyOrganizationAnalytics(
     byProvider: [],
     byTool: [],
     byVendor: [],
-    timeSeries: [],
+    timeSeries: densifyTimeSeries([], period, useHourlyBuckets),
     lineage: { roots: [] },
     dataHealth: { limitedAttribution: false, warnings: [] },
   }
@@ -232,7 +236,13 @@ export async function getOrganizationUsageAnalytics(
     const allWorkspaces = await listActiveOrganizationWorkspaces(organizationId)
 
     if (allWorkspaces.length === 0) {
-      return emptyOrganizationAnalytics([], [], resolveExplicitPeriod(options))
+      const period = resolveExplicitPeriod(options)
+      return emptyOrganizationAnalytics(
+        [],
+        [],
+        period,
+        shouldUseHourlyTimeBuckets(options, period)
+      )
     }
 
     let scopedWorkspaces = allWorkspaces
@@ -262,10 +272,11 @@ export async function getOrganizationUsageAnalytics(
     const ledgerJoinConditions = buildLedgerJoinConditions(ledgerWorkspaceCondition, period)
     const executionWorkspaceCondition = inArray(workflowExecutionLogs.workspaceId, workspaceIds)
     const executionConditions = buildExecutionConditions(executionWorkspaceCondition, period)
-    const useHourlyBuckets = !options.allTime && (options.period ?? '30d') === '1d'
+    const useHourlyBuckets = shouldUseHourlyTimeBuckets(options, period)
     const bucketExpr = timeBucketExpr(useHourlyBuckets)
     const executionBucket = executionBucketExpr(useHourlyBuckets)
     const chargeType = chargeTypeExpr()
+    const toolBucketId = byToolBucketIdExpr()
     const workspaceIdsSql = sql.join(
       workspaceIds.map((id) => sql`${id}`),
       sql`, `
@@ -291,6 +302,7 @@ export async function getOrganizationUsageAnalytics(
       byModelRows,
       byProviderRows,
       byToolRows,
+      copilotModelSpendRows,
       byVendorRows,
       timeSeriesLedgerRows,
       timeSeriesExecutionRows,
@@ -523,12 +535,25 @@ export async function getOrganizationUsageAnalytics(
 
       dbReplica
         .select({
-          toolId: usageLog.toolId,
+          toolId: toolBucketId,
           ...ledgerCostSelect(),
         })
         .from(usageLog)
-        .where(and(...ledgerConditions, isNotNull(usageLog.toolId)))
-        .groupBy(usageLog.toolId),
+        .where(
+          and(...ledgerConditions, eq(usageLog.category, 'tool'), isNotNull(usageLog.toolId))
+        )
+        .groupBy(toolBucketId),
+
+      dbReplica
+        .select(ledgerCostSelect())
+        .from(usageLog)
+        .where(
+          and(
+            ...ledgerConditions,
+            eq(usageLog.category, 'model'),
+            inArray(usageLog.source, COPILOT_USAGE_SOURCES)
+          )
+        ),
 
       dbReplica
         .select({
@@ -970,6 +995,11 @@ export async function getOrganizationUsageAnalytics(
             count: parseIntMetric(row.count),
           }))
         ),
+        modelSpend: {
+          billableCost: parseDecimal(copilotModelSpendRows[0]?.billableCost),
+          rawCost: parseDecimal(copilotModelSpendRows[0]?.rawCost),
+          count: parseIntMetric(copilotModelSpendRows[0]?.count),
+        },
         triggeredWorkflows: {
           executionCount: triggeredWorkflowTotal.executionCount,
           billableCost: triggeredWorkflowTotal.billableCost,

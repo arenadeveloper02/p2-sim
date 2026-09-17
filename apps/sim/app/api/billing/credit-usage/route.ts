@@ -9,11 +9,12 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 const logger = createLogger('BillingCreditUsageAPI')
 
 /**
- * GET /api/billing/credit-usage?workspaceId=...
+ * GET /api/billing/credit-usage?workspaceId=...&personal=...
  *
  * Returns Mothership + workflow-run credit usage for the billing page.
- * Organization admins receive org-wide totals and per-member rows; everyone
- * else receives only their own usage for the active billing period.
+ * Organization admins receive org-wide totals and per-member rows unless
+ * `personal=true`, in which case they receive their own usage plus the org
+ * pool. Everyone else receives only their own usage for the active billing period.
  */
 export const GET = withRouteHandler(async (request: NextRequest) => {
   const session = await getSession()
@@ -28,6 +29,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const summary = await getCreditUsageSummary({
       userId: session.user.id,
       workspaceId: parsed.data.query.workspaceId,
+      personal: parsed.data.query.personal === true,
     })
 
     if (!summary) {
