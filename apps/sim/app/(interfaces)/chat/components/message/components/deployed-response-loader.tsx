@@ -1,10 +1,42 @@
 'use client'
 
+import { useSyncExternalStore } from 'react'
 import { cn } from '@sim/emcn'
-import Image from 'next/image'
 import circlePatternLoader from '@/app/(interfaces)/chat/components/message/components/circle-pattern-loader.gif'
 import circlePatternLoaderWhite from '@/app/(interfaces)/chat/components/message/components/circle-pattern-loader-white.gif'
 import { DEPLOYED_CHAT_TEXT_MUTED } from '@/app/(interfaces)/chat/constants'
+
+/**
+ * Dark chat styles come from `html.dark`. Tailwind `dark:` does not swap this
+ * GIF reliably here — the custom variant uses `:where()`, so `hidden` wins over
+ * `dark:block` and the colored file stays the one that is shown. Read the same
+ * class next-themes writes, and point `src` at the white GIF.
+ */
+function subscribeToThemeClass(onStoreChange: () => void) {
+  const root = document.documentElement
+  const observer = new MutationObserver(onStoreChange)
+  observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+  return () => observer.disconnect()
+}
+
+function isDarkTheme() {
+  return document.documentElement.classList.contains('dark')
+}
+
+function LoaderGif({ size, alt }: { size: number; alt: string }) {
+  const isDark = useSyncExternalStore(subscribeToThemeClass, isDarkTheme, () => false)
+  const source = isDark ? circlePatternLoaderWhite : circlePatternLoader
+
+  return (
+    <img
+      src={source.src}
+      alt={alt}
+      width={size}
+      height={size}
+      className={isDark ? undefined : 'mix-blend-multiply'}
+    />
+  )
+}
 
 interface DeployedResponseLoaderProps {
   /**
@@ -36,23 +68,7 @@ export function DeployedResponseLoader({
   return (
     <div className={cn('py-4', className)}>
       <div className={cn('flex items-center gap-2.5', size > 48 && 'justify-center')}>
-        <Image
-          src={circlePatternLoader}
-          alt={showLabel ? `${label}...` : 'Loading'}
-          width={size}
-          height={size}
-          unoptimized
-          className='mix-blend-multiply dark:hidden'
-        />
-        <Image
-          src={circlePatternLoaderWhite}
-          alt=''
-          width={size}
-          height={size}
-          unoptimized
-          aria-hidden
-          className='hidden dark:block'
-        />
+        <LoaderGif size={size} alt={showLabel ? `${label}...` : 'Loading'} />
         {showLabel ? (
           <span className='font-medium text-sm' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
             {label}...
@@ -72,24 +88,7 @@ export function DeployedInlineLoader({ label }: { label: string }) {
       className='mt-2 flex items-center gap-2.5 text-sm'
       style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
     >
-      <Image
-        src={circlePatternLoader}
-        alt=''
-        width={24}
-        height={24}
-        unoptimized
-        aria-hidden
-        className='mix-blend-multiply dark:hidden'
-      />
-      <Image
-        src={circlePatternLoaderWhite}
-        alt=''
-        width={24}
-        height={24}
-        unoptimized
-        aria-hidden
-        className='hidden dark:block'
-      />
+      <LoaderGif size={24} alt='' />
       <span className='font-medium'>{label}</span>
     </div>
   )
