@@ -9,6 +9,7 @@ import {
   Label,
 } from '@sim/emcn'
 import { formatDisplayText } from '@sim/workflow-renderer/formatted-text'
+import { DocsBlockTile } from '@/components/workflow-preview/docs-block-tile'
 
 type FieldKind = 'select' | 'input' | 'textarea' | 'code' | 'slider' | 'toggle'
 
@@ -146,17 +147,13 @@ export function BlockInspector({
     >
       <div className='flex items-center justify-between border-[var(--border)] border-b bg-[var(--surface-4)] px-3 py-1.5'>
         <div className='flex min-w-0 flex-1 items-center gap-2'>
-          <div
-            className='flex size-[18px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm [&_img]:size-full'
-            style={{ background: color }}
-          >
-            {Icon && <Icon className='size-[12px] text-white' />}
-          </div>
-          <span className='truncate font-medium text-[var(--text-primary)] text-sm'>{name}</span>
-        </div>
-        <div className='flex shrink-0 items-center gap-2 text-[var(--text-secondary)]'>
-          <Pencil className='size-[14px]' />
-          <BookOpen className='size-[14px]' />
+          <DocsBlockTile
+            type={type}
+            color={color}
+            isIntegration={isIntegration}
+            triggerMode={triggerMode}
+          />
+          <span className='truncate text-[var(--text-primary)] text-sm'>{name}</span>
         </div>
       </div>
 
@@ -177,12 +174,12 @@ export function BlockInspector({
                 {tools?.map((tool) => {
                   return (
                     <ChipTag key={tool.type} variant='gray'>
-                      <span
-                        className='flex size-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px] [&_img]:size-full'
-                        style={{ background: tool.bgColor }}
-                      >
-                        {TIcon && <TIcon className='size-[9px] text-white' />}
-                      </span>
+                      <DocsBlockTile
+                        type={tool.type}
+                        color={tool.bgColor}
+                        isIntegration
+                        size='md'
+                      />
                       {tool.name}
                     </ChipTag>
                   )

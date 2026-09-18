@@ -487,6 +487,32 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       workspace: { id: 'forks', group: 'enterprise', order: 10 },
     },
   },
+  {
+    label: 'Subscription',
+    icon: Credit,
+    unified: {
+      id: 'billing',
+      description: 'Manage your plan, pricing, and invoices.',
+      group: 'account',
+      order: 1,
+      hideWhenBillingDisabled: true,
+      organizationSection: 'billing',
+    },
+    planes: {
+      account: {
+        id: 'billing',
+        description: 'Manage your personal plan, usage, and invoices.',
+        group: 'account',
+        order: 1,
+      },
+      selfhost: {
+        id: 'billing',
+        description: 'Manage your personal plan, usage, and invoices.',
+        group: 'account',
+        order: 1,
+      },
+    },
+  },
   arenaAgentsBilling,
   arenaAgentsUsage,
   {

@@ -2,6 +2,7 @@
 
 import { ChipTag } from '@sim/emcn'
 import { ChevronDown, Clipboard, Download, Search } from '@sim/emcn/icons'
+import { DocsBlockTile } from '@/components/workflow-preview/docs-block-tile'
 import { cn } from '@/lib/utils'
 
 type ValueType = 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null'
@@ -104,12 +105,7 @@ export function OutputBundle({
                 className='flex h-[30px] items-center gap-2 rounded-[6px] px-2'
                 style={row.selected ? { background: 'var(--surface-active)' } : undefined}
               >
-                <div
-                  className='flex size-[18px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[5px] [&_img]:size-full'
-                  style={{ background: row.color ?? 'var(--border-1)' }}
-                >
-                  {Icon && <Icon className='size-[10px] text-white' />}
-                </div>
+                <DocsBlockTile type={row.type ?? ''} color={row.color ?? 'var(--border)'} />
                 <span className='truncate text-[var(--text-primary)] text-small'>{row.name}</span>
                 {row.duration && (
                   <span className='ml-auto text-[var(--text-muted)] text-caption'>
