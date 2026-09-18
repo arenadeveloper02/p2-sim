@@ -31,7 +31,6 @@ import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/messa
 import {
   CHAT_ERROR_MESSAGES,
   CHAT_REQUEST_TIMEOUT_MS,
-  DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_CANVAS_GRADIENT,
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_PLACEHOLDER,
@@ -1553,7 +1552,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             {isHistoryLoading && (
               <div
                 className='absolute inset-0 z-[105] flex items-center justify-center'
-                style={{ backgroundColor: `${DEPLOYED_CHAT_CANVAS_BG}99` }}
+                style={{
+                  backgroundColor:
+                    'color-mix(in srgb, var(--color-ds-brand-surface) 60%, transparent)',
+                }}
               >
                 <DeployedResponseLoader size={160} className='py-0' />
               </div>

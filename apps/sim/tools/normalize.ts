@@ -19,12 +19,10 @@
 const VERSION_SUFFIX = /^v\d+$/
 
 /** Standard UUID (8-4-4-4-12 hex with hyphens). */
-const UUID_HYPHEN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_HYPHEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Same UUID after hyphens were normalized to underscores. */
-const UUID_UNDERSCORE =
-  /^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$/i
+const UUID_UNDERSCORE = /^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$/i
 
 /** Mongo-style ObjectId (24 hex) or compact UUID (32 hex). */
 const LONG_HEX_ID = /^[0-9a-f]{24}$|^[0-9a-f]{32}$/i
