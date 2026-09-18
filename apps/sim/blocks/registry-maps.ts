@@ -1,5 +1,6 @@
 import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
+import { AgentFrontBlock } from '@/blocks/blocks/agent-front'
 import { AgentMailBlock, AgentMailBlockMeta } from '@/blocks/blocks/agentmail'
 import { AgentPhoneBlock, AgentPhoneBlockMeta } from '@/blocks/blocks/agentphone'
 import { AgiloftBlock, AgiloftBlockMeta } from '@/blocks/blocks/agiloft'
@@ -392,6 +393,7 @@ const ARENA_CUSTOM_BLOCK_REGISTRY: Record<string, BlockConfig> = {
 export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   a2a: A2ABlock,
   agent: AgentBlock,
+  agent_front: AgentFrontBlock,
   agentmail: AgentMailBlock,
   agentphone: AgentPhoneBlock,
   agiloft: AgiloftBlock,

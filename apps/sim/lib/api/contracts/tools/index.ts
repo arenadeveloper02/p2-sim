@@ -1,4 +1,5 @@
 export * from './a2a'
+export * from './agent-front'
 export * from './agiloft'
 export * from './asana'
 export * from './brex'

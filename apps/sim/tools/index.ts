@@ -313,6 +313,58 @@ async function executeImageGenerationWrapperV2Direct(
   }
 }
 
+async function executeAgentFrontGenerateAppDirect(
+  params: Record<string, any>
+): Promise<ToolResponse> {
+  const [{ generateAgentFrontApp }, { mapAgentFrontResultToToolResponse }] = await Promise.all([
+    import('@/lib/agent-front/generate-app'),
+    import('@/tools/agent-front/map-response'),
+  ])
+
+  return mapAgentFrontResultToToolResponse(
+    await generateAgentFrontApp({
+      userInput: params.userInput,
+      uiMode: params.uiMode,
+      combineMode: params.combineMode,
+      repoName: params.repoName,
+      api1Name: params.api1Name,
+      api1Curl: params.api1Curl,
+      api1Key: params.api1Key,
+      api2Name: params.api2Name,
+      api2Curl: params.api2Curl,
+      api2Key: params.api2Key,
+      api3Name: params.api3Name,
+      api3Curl: params.api3Curl,
+      api3Key: params.api3Key,
+    })
+  )
+}
+
+async function executeAgentFrontEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const [{ editAgentFrontApp }, { mapAgentFrontResultToToolResponse }] = await Promise.all([
+    import('@/lib/agent-front/generate-app'),
+    import('@/tools/agent-front/map-response'),
+  ])
+
+  return mapAgentFrontResultToToolResponse(
+    await editAgentFrontApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      uiMode: params.uiMode,
+      combineMode: params.combineMode,
+      api1Name: params.api1Name,
+      api1Curl: params.api1Curl,
+      api1Key: params.api1Key,
+      api2Name: params.api2Name,
+      api2Curl: params.api2Curl,
+      api2Key: params.api2Key,
+      api3Name: params.api3Name,
+      api3Curl: params.api3Curl,
+      api3Key: params.api3Key,
+    })
+  )
+}
+
 async function executeDevelopmentGenerateAppDirect(
   params: Record<string, any>
 ): Promise<ToolResponse> {
@@ -2397,7 +2449,11 @@ async function executeToolImplementation(
                             ? true
                             : params.arenaMode,
                       })
-                  : tool.directExecution
+                  : normalizedToolId === 'agent_front_generate_app'
+                    ? executeAgentFrontGenerateAppDirect
+                    : normalizedToolId === 'agent_front_edit_app'
+                      ? executeAgentFrontEditAppDirect
+                      : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       if (
