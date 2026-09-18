@@ -8,6 +8,7 @@ import type { LoopOrchestrator } from '@/executor/orchestrators/loop'
 import type { ParallelOrchestrator } from '@/executor/orchestrators/parallel'
 import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
 import {
+  buildLoopScopedId,
   buildOuterBranchScopedId,
   extractBaseBlockId,
   extractOuterBranchIndex,
@@ -272,6 +273,11 @@ export class NodeExecutionOrchestrator {
   ): void {
     this.loopOrchestrator.storeLoopNodeOutput(ctx, loopId, node.id, output)
     this.state.setBlockOutput(node.id, output)
+    const scope = this.loopOrchestrator.getLoopScope(ctx, loopId)
+    if (scope && scope.iteration !== undefined) {
+      const baseId = extractBaseBlockId(node.metadata.originalBlockId ?? node.id)
+      this.state.setBlockOutput(buildLoopScopedId(baseId, scope.iteration), output)
+    }
   }
 
   private async handleParallelNodeCompletion(

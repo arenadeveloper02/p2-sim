@@ -81,9 +81,11 @@ const ORGANIZATION_SECTION_MAP: Partial<Record<SettingsSection, OrganizationSett
 
 function parseSection(section: string): SettingsSection | null {
   const normalized = SECTION_ALIASES[section] ?? section
-  return allNavigationItems.some((item) => item.id === normalized)
-    ? (normalized as SettingsSection)
-    : null
+  if (normalized === 'general') return 'general'
+  const item = allNavigationItems.find((candidate) => candidate.id === normalized)
+  // External-link nav items (e.g. Docs) are not routable settings pages.
+  if (!item || item.externalUrl) return null
+  return normalized as SettingsSection
 }
 
 /**

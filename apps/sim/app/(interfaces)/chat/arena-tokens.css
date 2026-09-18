@@ -187,6 +187,11 @@
   --color-ds-brand-hover: var(--color-ds-blue-700);
   --color-ds-brand-pressed: var(--color-ds-blue-800);
   --color-ds-brand-surface: var(--color-ds-blue-50);
+  /** Page canvas. Light uses the Arena brand wash; dark follows the app background. */
+  --color-ds-canvas: var(--color-ds-brand-surface);
+  --color-ds-input-glow: var(--color-ds-blue-200);
+  /** User prompt and hovered or active thread. Light stays raised; dark lifts above the canvas. */
+  --color-ds-indication: var(--color-ds-surface-raised);
 
   /* â”€â”€ Interactive (buttons, links, controls) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
@@ -441,6 +446,73 @@
   --tracking-ds-body: 0;
   --tracking-ds-label: 0.25px;
   --tracking-ds-caption: 0.4px;
+
+  /**
+   * Bridge Sim app chrome tokens → Arena DS so shared components (input thumbs,
+   * message chrome, auth gates) inherit the light Arena theme inside `.deployed-chat`.
+   */
+  --text-primary: var(--color-ds-text-primary);
+  --text-body: var(--color-ds-text-primary);
+  --text-muted: var(--color-ds-text-secondary);
+  --text-secondary: var(--color-ds-text-secondary);
+  --text-icon: var(--color-ds-icon-default);
+  --text-error: var(--color-ds-status-error-default);
+  --border-1: var(--color-ds-border-default);
+  --border-200: var(--color-ds-border-default);
+  --border: var(--color-ds-border-default);
+  --surface-1: var(--color-ds-surface-raised);
+  --surface-2: var(--color-ds-surface-subtle);
+  --surface-3: var(--color-ds-grey-200);
+  --surface-5: var(--color-ds-surface-subtle);
+  --surface-hover: var(--color-ds-brand-surface);
+  --selection: var(--color-ds-brand-default);
+  --landing-bg: var(--color-ds-surface-page);
+  --landing-bg-elevated: var(--color-ds-surface-raised);
+  --landing-text-muted: var(--color-ds-text-tertiary);
+  --brand-primary-hover-hex: var(--color-ds-brand-hover);
+}
+
+/**
+ * Page-shell paint only. Portaled menus/popovers also use `.deployed-chat` for
+ * tokens, but must not inherit this canvas fill or they look transparent/odd.
+ */
+.deployed-chat-root {
+  color: var(--color-ds-text-primary);
+  background-color: var(--color-ds-canvas);
+  color-scheme: light;
+}
+
+/**
+ * Dark mode: drop the light-blue brand wash and follow the app theme
+ * (`html.dark` surfaces from globals.css).
+ */
+.dark .deployed-chat {
+  --color-ds-canvas: #1b1b1b;
+  --color-ds-surface-page: #1b1b1b;
+  --color-ds-surface-subtle: #232323;
+  --color-ds-surface-raised: #1e1e1e;
+  --color-ds-brand-surface: #262626;
+  --color-ds-blue-50: #262626;
+  --color-ds-blue-200: #3d3d3d;
+  --color-ds-indication: #3a3a3a;
+  --color-ds-input-glow: transparent;
+  --color-ds-text-primary: #e6e6e6;
+  --color-ds-text-secondary: #cccccc;
+  --color-ds-text-tertiary: #969696;
+  --color-ds-text-placeholder: #8d8d8d;
+  --color-ds-text-disabled: #6e6e6e;
+  --color-ds-icon-default: #969696;
+  --color-ds-icon-subtle: #7d7d7d;
+  --color-ds-border-default: #444444;
+  --color-ds-border-strong: #575757;
+  --color-ds-border-subtle: #363636;
+  --surface-3: #363636;
+}
+
+.dark .deployed-chat-root {
+  color-scheme: dark;
+  color: var(--color-ds-text-primary);
+  background-color: var(--color-ds-canvas);
 }
 
 /**

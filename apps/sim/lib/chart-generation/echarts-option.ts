@@ -495,8 +495,7 @@ function applyCartesianLabelLayout(option: EChartsOptionLike): void {
     (max, axis) => (isCategoryAxis(axis) ? Math.max(max, categoryLength(axis)) : max),
     0
   )
-  const dualValueY =
-    yAxes.filter((axis) => axis.type === 'value' || axis.type == null).length >= 2
+  const dualValueY = yAxes.filter((axis) => axis.type === 'value' || axis.type == null).length >= 2
   const hasTitle = isRecord(option.title) && Boolean(option.title.text)
   const hasLegend = option.legend != null
 
@@ -506,7 +505,10 @@ function applyCartesianLabelLayout(option: EChartsOptionLike): void {
     if (grid.containLabel !== false) {
       grid.containLabel = true
     }
-    grid.bottom = atLeastPadding(grid.bottom, hasRotatedCategoryX ? 88 : categoryXCount > 0 ? 56 : 48)
+    grid.bottom = atLeastPadding(
+      grid.bottom,
+      hasRotatedCategoryX ? 88 : categoryXCount > 0 ? 56 : 48
+    )
     if (dualValueY) {
       grid.right = atLeastPadding(grid.right, 64)
     }

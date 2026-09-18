@@ -312,4 +312,148 @@ describe('terminal console store', () => {
       expect(entry.agentStreamThinking).toBeUndefined()
     })
   })
+
+  describe('loop iteration identity', () => {
+    it('keeps distinct rows for the same block across loop iterations', () => {
+      const store = useTerminalConsoleStore.getState()
+      store.addConsole({
+        workflowId: 'wf-1',
+        blockId: 'fn-1',
+        blockName: 'Function',
+        blockType: 'function',
+        executionId: 'exec-1',
+        executionOrder: 1,
+        isRunning: true,
+        iterationCurrent: 0,
+        iterationTotal: 4,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+      })
+      store.addConsole({
+        workflowId: 'wf-1',
+        blockId: 'fn-1',
+        blockName: 'Function',
+        blockType: 'function',
+        executionId: 'exec-1',
+        executionOrder: 2,
+        isRunning: true,
+        iterationCurrent: 1,
+        iterationTotal: 4,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+      })
+
+      store.updateConsole(
+        'fn-1',
+        {
+          executionOrder: 2,
+          iterationCurrent: 1,
+          iterationContainerId: 'loop-1',
+          replaceOutput: { result: 'iter-1' },
+          isRunning: false,
+          success: true,
+        },
+        'exec-1'
+      )
+      store.updateConsole(
+        'fn-1',
+        {
+          executionOrder: 1,
+          iterationCurrent: 0,
+          iterationContainerId: 'loop-1',
+          replaceOutput: { result: 'iter-0' },
+          isRunning: false,
+          success: true,
+        },
+        'exec-1'
+      )
+
+      const entries = store.getWorkflowEntries('wf-1')
+      const iter0 = entries.find((entry) => entry.iterationCurrent === 0)
+      const iter1 = entries.find((entry) => entry.iterationCurrent === 1)
+      expect(iter0?.output).toMatchObject({ result: 'iter-0' })
+      expect(iter1?.output).toMatchObject({ result: 'iter-1' })
+      expect(entries).toHaveLength(2)
+    })
+
+    it('does not paint identity-less stream chrome onto completed iterations', () => {
+      const store = useTerminalConsoleStore.getState()
+      store.addConsole({
+        workflowId: 'wf-1',
+        blockId: 'agent-1',
+        blockName: 'Agent',
+        blockType: 'agent',
+        executionId: 'exec-1',
+        executionOrder: 1,
+        isRunning: false,
+        success: true,
+        iterationCurrent: 0,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+        output: { result: 'done-0' },
+      })
+      store.addConsole({
+        workflowId: 'wf-1',
+        blockId: 'agent-1',
+        blockName: 'Agent',
+        blockType: 'agent',
+        executionId: 'exec-1',
+        executionOrder: 2,
+        isRunning: true,
+        agentStreamActive: true,
+        iterationCurrent: 1,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+      })
+
+      store.updateConsole('agent-1', { agentStreamThinking: 'iter 1 thinking' }, 'exec-1')
+
+      const entries = store.getWorkflowEntries('wf-1')
+      const iter0 = entries.find((entry) => entry.iterationCurrent === 0)
+      const iter1 = entries.find((entry) => entry.iterationCurrent === 1)
+      expect(iter0?.agentStreamThinking).toBeUndefined()
+      expect(iter0?.output).toMatchObject({ result: 'done-0' })
+      expect(iter1?.agentStreamThinking).toBe('iter 1 thinking')
+    })
+
+    it('adds a new iteration row when a completion has no matching start', () => {
+      const store = useTerminalConsoleStore.getState()
+      store.addConsole({
+        workflowId: 'wf-1',
+        blockId: 'fn-1',
+        blockName: 'Function',
+        blockType: 'function',
+        executionId: 'exec-1',
+        executionOrder: 1,
+        isRunning: false,
+        success: true,
+        iterationCurrent: 0,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+        output: { result: 'iter-0' },
+      })
+
+      store.updateConsole(
+        'fn-1',
+        {
+          executionOrder: 4,
+          iterationCurrent: 3,
+          iterationTotal: 4,
+          iterationType: 'loop',
+          iterationContainerId: 'loop-1',
+          replaceOutput: { result: 'iter-3' },
+          isRunning: false,
+          success: true,
+        },
+        'exec-1'
+      )
+
+      const entries = store.getWorkflowEntries('wf-1')
+      expect(entries).toHaveLength(2)
+      const iter3 = entries.find((entry) => entry.iterationCurrent === 3)
+      const iter0 = entries.find((entry) => entry.iterationCurrent === 0)
+      expect(iter3?.output).toMatchObject({ result: 'iter-3' })
+      expect(iter0?.output).toMatchObject({ result: 'iter-0' })
+    })
+  })
 })

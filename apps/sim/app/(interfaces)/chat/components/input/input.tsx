@@ -280,7 +280,7 @@ export const ChatInput: React.FC<{
           placeholder={isDragOver ? 'Drop files here...' : placeholder}
           rows={1}
           className={cn(
-            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] text-[var(--color-ds-text-primary,#2C2D33)] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#A7AAB2] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
+            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] text-[var(--color-ds-text-primary)] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[16px] placeholder:text-[var(--color-ds-text-placeholder)] focus-visible:ring-0 focus-visible:ring-offset-0',
             isMultiLineInput
               ? 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
               : 'min-h-[24px] overflow-hidden'
@@ -412,7 +412,7 @@ export const ChatInput: React.FC<{
                   {selectedGeneratedImages.map((image) => (
                     <Tooltip.Root key={image.id}>
                       <Tooltip.Trigger asChild>
-                        <div className='group relative h-[56px] w-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] dark:bg-[var(--landing-bg)]'>
+                        <div className='group relative h-[56px] w-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-subtle)]'>
                           <img
                             src={image.url}
                             alt={image.name}
@@ -445,7 +445,7 @@ export const ChatInput: React.FC<{
                   {attachedFiles.map((file) => (
                     <Tooltip.Root key={file.id}>
                       <Tooltip.Trigger asChild>
-                        <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] dark:bg-[var(--landing-bg)]'>
+                        <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-subtle)]'>
                           {file.dataUrl ? (
                             <img
                               src={file.dataUrl}
@@ -453,7 +453,7 @@ export const ChatInput: React.FC<{
                               className='h-full w-full object-cover'
                             />
                           ) : (
-                            <div className='flex h-full w-full flex-col items-center justify-center gap-0.5 text-[var(--landing-text-muted)]'>
+                            <div className='flex h-full w-full flex-col items-center justify-center gap-0.5 text-[var(--color-ds-text-tertiary)]'>
                               <Paperclip className='size-[18px]' />
                               <span className='max-w-[48px] truncate px-[2px] text-[9px]'>
                                 {file.name.split('.').pop()}

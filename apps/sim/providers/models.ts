@@ -1019,27 +1019,27 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2025-11-24',
       },
-      {
-        id: 'claude-opus-4-1',
-        pricing: {
-          input: 15.0,
-          cachedInput: 1.5,
-          output: 75.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 32000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-            streamed: 'summary',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-08-05',
-        sunset: { status: 'legacy' },
-      },
+      // {
+      //   id: 'claude-opus-4-1',
+      //   pricing: {
+      //     input: 15.0,
+      //     cachedInput: 1.5,
+      //     output: 75.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 32000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //       streamed: 'summary',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-08-05',
+      //   sunset: { status: 'legacy' },
+      // },
       // {
       //   id: 'claude-opus-4-0',
       //   pricing: {

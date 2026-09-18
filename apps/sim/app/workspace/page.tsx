@@ -9,6 +9,10 @@ import { isApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
+import {
+  ARENA_SSO_SESSION_REQUIRED_PATH,
+  buildArenaSimResumeUrl,
+} from '@/lib/auth/arena-sim-resume'
 import { useSession } from '@/lib/auth/auth-client'
 // import { recoverFromStaleSession } from '@/lib/auth/stale-session-recovery'
 import {
@@ -16,6 +20,7 @@ import {
   isUpgradeReason,
   UPGRADE_REASON_PARAM,
 } from '@/lib/billing/upgrade-reasons'
+import { isDev } from '@/lib/core/config/env-flags'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
@@ -74,9 +79,8 @@ export default function WorkspacePage() {
     error: workspacesError,
   } = useWorkspacesWithMetadata(isAuthenticated)
 
-  // Do not auto sign-out on stale/401 session here — that races AutoLoginProvider
-  // when profile/session briefly fails. Auto-login already recovers via the email cookie.
-  // Previously: recoverFromStaleSession() on authenticated+401 workspaces errors.
+  // Do not auto sign-out on stale/401 session here — that races session recovery
+  // when profile/session briefly fails.
 
   useEffect(() => {
     fetchUserProfileSetPeopleMP()
@@ -86,10 +90,14 @@ export default function WorkspacePage() {
     if (isSessionPending || hasRedirectedRef.current) return
 
     if (!session?.user) {
-      // Match prior working behavior: soft-redirect to login and let AutoLoginProvider
-      // recover. Do not sign out — that clears cookies and races auto-login.
-      logger.info('User not authenticated, redirecting to login')
-      router.replace('/login')
+      if (isDev) {
+        logger.info('User not authenticated, redirecting to login')
+        router.replace('/login')
+        return
+      }
+      logger.info('User not authenticated, redirecting to Arena SSO resume')
+      const resume = buildArenaSimResumeUrl(window.location.href, window.location.hostname)
+      window.location.assign(resume?.href ?? ARENA_SSO_SESSION_REQUIRED_PATH)
       return
     }
 
@@ -270,5 +278,10 @@ async function handleNoWorkspaces(
     }
     logger.error('Error creating default workspace:', error)
   }
-  router.replace('/login')
+  if (isDev) {
+    router.replace('/login')
+    return
+  }
+  const resume = buildArenaSimResumeUrl(window.location.href, window.location.hostname)
+  window.location.assign(resume?.href ?? ARENA_SSO_SESSION_REQUIRED_PATH)
 }

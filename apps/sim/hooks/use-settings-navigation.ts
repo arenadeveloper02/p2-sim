@@ -23,6 +23,10 @@ interface UseSettingsNavigationReturn {
   navigateToSettings: (options?: SettingsNavigationOptions) => void
   getSettingsHref: (options?: SettingsNavigationOptions) => string
   popSettingsReturnUrl: (fallback: string) => string
+  /** Stores the current page so a later settings Back can return to it. */
+  rememberSettingsReturnUrl: () => void
+  /** Drops a stored return page when settings was opened but never routed to. */
+  clearSettingsReturnUrl: () => void
 }
 
 interface ResolveSettingsHrefParams {
@@ -93,6 +97,20 @@ export function useSettingsNavigation(): UseSettingsNavigationReturn {
     }
   }, [])
 
+  const rememberSettingsReturnUrl = useCallback(() => {
+    const currentPath = window.location.pathname
+    if (currentPath.startsWith(settingsPrefix)) return
+    try {
+      sessionStorage.setItem(SETTINGS_RETURN_URL_KEY, currentPath)
+    } catch {}
+  }, [settingsPrefix])
+
+  const clearSettingsReturnUrl = useCallback(() => {
+    try {
+      sessionStorage.removeItem(SETTINGS_RETURN_URL_KEY)
+    } catch {}
+  }, [])
+
   const navigateToSettings = useCallback(
     (options?: SettingsNavigationOptions) => {
       const currentPath = window.location.pathname
@@ -108,5 +126,11 @@ export function useSettingsNavigation(): UseSettingsNavigationReturn {
     [router, settingsPrefix, getSettingsHref]
   )
 
-  return { navigateToSettings, getSettingsHref, popSettingsReturnUrl }
+  return {
+    navigateToSettings,
+    getSettingsHref,
+    popSettingsReturnUrl,
+    rememberSettingsReturnUrl,
+    clearSettingsReturnUrl,
+  }
 }

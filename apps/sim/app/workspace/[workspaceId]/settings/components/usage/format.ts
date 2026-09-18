@@ -5,8 +5,21 @@ import type {
   WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
-import { formatEmbeddedToolLabel } from '@/lib/logs/embedded-tool-costs'
+import {
+  formatEmbeddedToolLabel,
+  isImageGenerationBillingKey,
+  UNATTRIBUTED_AGENT_TOOLS_ID,
+} from '@/lib/logs/embedded-tool-costs'
 import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
+import { normalizeUsageToolBucketId } from '@/tools/normalize'
+import { getToolIds } from '@/tools/tool-ids'
+
+/**
+ * Synthetic By Tools bucket for mothership / Copilot ledger tool rows.
+ * Must stay in sync with {@link byToolBucketIdExpr} in ledger-helpers.
+ * Displayed as "Copilot tools" (tool spend only; models are a separate block).
+ */
+export const COPILOT_USAGE_TOOL_BUCKET_ID = 'copilot' as const
 
 /** Human-readable labels for usage_log source values. */
 export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
@@ -91,7 +104,111 @@ export function formatChargeTypeLabel(chargeType: UsageChargeTypeValue): string 
 
 /** Format a tool id for dashboard display (includes virtual embedded-tool ids). */
 export function formatToolLabel(toolId: string): string {
+  if (toolId === COPILOT_USAGE_TOOL_BUCKET_ID) return 'Copilot tools'
   return formatEmbeddedToolLabel(toolId)
+}
+
+/**
+ * Service-family prefixes derived from registered tool ids (cached).
+ * Shared by 2+ tools — longest match wins (`google_ads` over `google`, `exa` for
+ * `exa_search` / glued names like `exacomposesearch`).
+ */
+let usageToolServiceFamilies: string[] | null = null
+
+function getUsageToolServiceFamilies(): string[] {
+  if (usageToolServiceFamilies) return usageToolServiceFamilies
+
+  const prefixCounts = new Map<string, number>()
+  for (const id of getToolIds()) {
+    const parts = id.split('_').filter(Boolean)
+    if (parts.length < 2) continue
+    for (let length = 1; length < parts.length; length++) {
+      const prefix = parts.slice(0, length).join('_')
+      prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1)
+    }
+  }
+
+  usageToolServiceFamilies = [...prefixCounts.entries()]
+    .filter(([, count]) => count >= 2)
+    .map(([prefix]) => prefix)
+    .sort((a, b) => b.length - a.length || a.localeCompare(b))
+
+  return usageToolServiceFamilies
+}
+
+/**
+ * Normalizes a By Tools bucket id: strip resource ids / mid-id API versions, then
+ * roll up to the longest registered service family (`exa_search` / `exaindnewssearch` → `exa`).
+ */
+export function resolveUsageToolFamilyId(toolId: string): string {
+  const normalized = normalizeUsageToolBucketId(toolId)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (!normalized) return toolId
+  if (normalized === COPILOT_USAGE_TOOL_BUCKET_ID) return COPILOT_USAGE_TOOL_BUCKET_ID
+  if (normalized === UNATTRIBUTED_AGENT_TOOLS_ID) return UNATTRIBUTED_AGENT_TOOLS_ID
+  if (isImageGenerationBillingKey(normalized)) return normalized
+
+  for (const family of getUsageToolServiceFamilies()) {
+    if (normalized === family || normalized.startsWith(`${family}_`)) return family
+  }
+
+  // Display / agent names with spaces stripped (`ExaComposeSearch` → `exacomposesearch`).
+  if (!normalized.includes('_')) {
+    for (const family of getUsageToolServiceFamilies()) {
+      if (family.length < 3) continue
+      if (normalized.length > family.length && normalized.startsWith(family)) return family
+    }
+  }
+
+  return normalized
+}
+
+/** Display label for a tool bucket (`google_ads` → `Google Ads`). */
+export function formatUsageToolFamilyLabel(familyId: string): string {
+  if (familyId === COPILOT_USAGE_TOOL_BUCKET_ID) return 'Copilot tools'
+  if (familyId === UNATTRIBUTED_AGENT_TOOLS_ID) return formatEmbeddedToolLabel(familyId)
+  if (isImageGenerationBillingKey(familyId)) return formatEmbeddedToolLabel(familyId)
+  return familyId.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+interface UsageToolBucketRow {
+  toolId: string
+  billableCost: number
+  count: number
+  rawCost?: number
+}
+
+/**
+ * Aggregates By Tools rows after {@link resolveUsageToolFamilyId} normalization.
+ * Drops buckets with no billable credits.
+ */
+export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: T[]): T[] {
+  const merged = new Map<string, T>()
+
+  for (const row of rows) {
+    const familyId = resolveUsageToolFamilyId(row.toolId)
+    const existing = merged.get(familyId)
+    if (existing) {
+      existing.billableCost += row.billableCost
+      existing.count += row.count
+      if (typeof existing.rawCost === 'number' || typeof row.rawCost === 'number') {
+        existing.rawCost = (existing.rawCost ?? 0) + (row.rawCost ?? 0)
+      }
+    } else {
+      merged.set(familyId, {
+        ...row,
+        toolId: familyId,
+        billableCost: row.billableCost,
+        count: row.count,
+        ...(typeof row.rawCost === 'number' ? { rawCost: row.rawCost } : {}),
+      })
+    }
+  }
+
+  return [...merged.values()]
+    .filter((row) => row.billableCost > 0)
+    .sort((a, b) => b.billableCost - a.billableCost)
 }
 
 /** Format actor_type for display. */
@@ -130,6 +247,22 @@ export function formatPeriodLabel(period: UsagePeriod): string {
       return 'Past 30 days'
     case '90d':
       return 'Past 90 days'
+    default:
+      return period
+  }
+}
+
+/** Shorter period chip labels for the admin Usage screenshot layout. */
+export function formatAdminPeriodChipLabel(period: UsagePeriod): string {
+  switch (period) {
+    case '1d':
+      return '24 hours'
+    case '7d':
+      return '7 days'
+    case '30d':
+      return '30 days'
+    case '90d':
+      return '90 days'
     default:
       return period
   }

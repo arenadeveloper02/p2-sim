@@ -2,6 +2,10 @@ import { createLogger } from '@sim/logger'
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sendToProfound } from './lib/analytics/profound'
+import {
+  ARENA_SSO_SESSION_REQUIRED_PATH,
+  buildArenaSimResumeUrl,
+} from './lib/auth/arena-sim-resume'
 import { getEnv } from './lib/core/config/env'
 import { isAuthDisabled, isDev } from './lib/core/config/env-flags'
 import { apiCorsPatch } from './lib/core/security/api-cors'
@@ -12,12 +16,27 @@ import { getLoginRedirectUrl, isSearchIndexableHost } from './lib/core/utils/url
 const logger = createLogger('Proxy')
 
 /**
- * Helper function to check if email cookie exists
+ * No Better Auth session: send the browser to Arena hub to mint an SSO code.
+ * Local/dev falls back to `/login`. Non-local falls back to `/session-required`
+ * when the hub URL cannot be resolved.
+ *
+ * `returnTo` uses `NEXT_PUBLIC_APP_URL` + path — not `request.nextUrl.href`, which
+ * becomes `https://0.0.0.0:3000/...` when the container sets `HOSTNAME=0.0.0.0`.
  */
-function hasEmailCookie(request: NextRequest): boolean {
-  const emailCookie = request.cookies.get('email')
-  return !!emailCookie?.value
+function redirectUnauthenticated(request: NextRequest): NextResponse {
+  if (isDev) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
+  const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
+  const returnTo = appBase ? new URL(pathWithSearch, `${appBase}/`).href : null
+  const resume = returnTo ? buildArenaSimResumeUrl(returnTo, request.nextUrl.hostname) : null
+  if (resume) {
+    return NextResponse.redirect(resume)
+  }
+  return NextResponse.redirect(new URL(ARENA_SSO_SESSION_REQUIRED_PATH, request.url))
 }
+
 export interface CorsPolicy {
   origin: string
   credentials: boolean
@@ -256,16 +275,7 @@ function handleRootPathRedirects(
     return null
   }
 
-  // Always redirect root path to workspace
-  // Auto-login will handle authentication if email cookie exists
-  // if (!isHosted && !isDev) {
-  //   // Self-hosted production: Always redirect based on session.
-  //   if (hasActiveSession) {
-  //     return NextResponse.redirect(new URL('/workspace', request.url))
-  //   }
-  //   return NextResponse.redirect(new URL('/login', request.url))
-  // }
-
+  // Always redirect root path to workspace when authenticated.
   // For root path, redirect authenticated users to workspace
   // Unless they have a 'home' query parameter (e.g., ?home)
   // This allows intentional navigation to the homepage from anywhere in the app
@@ -277,18 +287,7 @@ function handleRootPathRedirects(
     return null
   }
 
-  // No session - check for email cookie in local dev
-  if (isDev) {
-    if (hasEmailCookie(request)) {
-      // Email cookie exists - redirect to workspace (auto-login will handle it)
-      return NextResponse.redirect(new URL('/workspace', request.url))
-    }
-    // No email cookie in dev - redirect to login page
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  // Non-local environment - always redirect to workspace (auto-login will handle it)
-  return NextResponse.redirect(new URL('/workspace', request.url))
+  return redirectUnauthenticated(request)
 }
 
 /**
@@ -397,13 +396,12 @@ export async function proxy(request: NextRequest) {
   if (redirect) return track(request, redirect)
 
   if (url.pathname === '/login' || url.pathname === '/signup') {
-    // Block login/signup pages in non-local environments
-    if (!isDev) {
-      // In non-local environments, redirect to workspace (auto-login will handle authentication)
-      return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
-    }
     if (hasActiveSession) {
       return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
+    }
+    // Non-local: Arena SSO resume (Agent has no product login UI)
+    if (!isDev) {
+      return track(request, redirectUnauthenticated(request))
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
@@ -417,24 +415,14 @@ export async function proxy(request: NextRequest) {
     return track(request, NextResponse.next())
   }
 
+  // Arena redirect SSO callback / error — no Better Auth session yet
+  if (url.pathname === '/auth/arena-sso-callback' || url.pathname === '/auth/arena-sso-error') {
+    return track(request, NextResponse.next())
+  }
+
   if (url.pathname.startsWith('/workspace')) {
     if (!hasActiveSession) {
-      if (isDev) {
-        if (hasEmailCookie(request)) {
-          return track(request, NextResponse.next())
-        }
-        return track(request, NextResponse.redirect(new URL('/login', request.url)))
-      }
-      const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
-      if (arenaHub) {
-        // Same as dev: allow workspace to load so AutoLoginProvider can run sign-in
-        // when the email cookie is present (avoids flashing session-required first).
-        if (hasEmailCookie(request)) {
-          return track(request, NextResponse.next())
-        }
-        return track(request, NextResponse.redirect(new URL('/session-required', request.url)))
-      }
-      return track(request, NextResponse.next())
+      return track(request, redirectUnauthenticated(request))
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
@@ -501,6 +489,8 @@ export const config = {
     '/signup',
     '/invite/:path*', // Match invitation routes
     '/session-required',
+    '/auth/arena-sso-callback',
+    '/auth/arena-sso-error',
     '/api/:path*', // Runtime CORS
     // Catch-all for other pages, excluding static assets and public directories
     '/((?!api/|api$|_next/static|_next/image|ingest|favicon.ico|logo/|landing/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',

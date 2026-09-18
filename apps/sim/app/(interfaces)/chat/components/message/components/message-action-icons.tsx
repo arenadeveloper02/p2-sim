@@ -10,7 +10,7 @@ interface MessageActionIconProps {
 export function messageActionIconButtonClass(active = false) {
   return cn(
     'inline-flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-ds-sm,4px)] bg-[var(--color-ds-brand-surface,#F3F8FE)] text-[var(--color-ds-icon-default,#575A66)] transition-colors',
-    'hover:bg-white hover:text-[var(--color-ds-text-link-hover,#155CBA)]',
+    'hover:bg-[var(--color-ds-surface-raised)] hover:text-[var(--color-ds-text-link-hover)]',
     active && 'text-[var(--color-ds-text-link-hover,#155CBA)]'
   )
 }

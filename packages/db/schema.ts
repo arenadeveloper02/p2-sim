@@ -4376,8 +4376,16 @@ export const usageLog = pgTable(
     vendor: text('vendor'),
     /** Provider integration slug (e.g. "anthropic", "openai"). */
     provider: text('provider'),
-    /** Registry tool id for tool-category rows (snake_case). */
+    /**
+     * Tool display label for tool-category rows (canvas / agent tool title).
+     * May be a user rename such as "Competitor Research".
+     */
     toolId: text('tool_id'),
+    /**
+     * Registry operation id for tool-category rows (e.g. `exa_search`).
+     * Used only by Usage By Tools analytics; other billing paths use `tool_id`.
+     */
+    toolName: text('tool_name'),
     /** Copilot/mothership chat this row bills against. */
     chatId: uuid('chat_id').references(() => copilotChats.id, { onDelete: 'set null' }),
     /** Copilot run this row bills against. */
@@ -6007,7 +6015,9 @@ export const deployedApp = pgTable(
     ),
   })
 )
-/* Maps an external client id (from Arena / partner systems) to a Sim organization.
+
+/**
+ * Maps an external client id (from Arena / partner systems) to a Sim organization.
  * One client → one org; used by the admin ensure-member provisioning API.
  */
 export const clientOrganization = pgTable(

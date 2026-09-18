@@ -2,10 +2,15 @@ import { Suspense } from 'react'
 import { ToastProvider } from '@sim/emcn'
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
+import {
+  ARENA_SSO_SESSION_REQUIRED_PATH,
+  buildArenaSimResumeUrl,
+} from '@/lib/auth/arena-sim-resume'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
+import { isDev } from '@/lib/core/config/env-flags'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/components/impersonation-banner'
@@ -72,35 +77,24 @@ async function WorkspaceLayoutInner({
   children: React.ReactNode
   params: Promise<{ workspaceId: string }>
 }) {
+  const { workspaceId } = await params
   const session = await getSession()
   if (!session?.user) {
-    // Allow render when an email cookie is present so AutoLoginProvider can establish a session
-    // (Arena iframe embeds rely on the shared `email` cookie across *.thearena.ai).
-    const cookieStore = await cookies()
-    const hasEmailCookie = !!cookieStore.get('email')?.value
-    if (!hasEmailCookie) {
+    if (isDev) {
       redirect('/login')
     }
-
-    // Host context / sidebar prefetch need a user id. Show the route loader until
-    // AutoLoginProvider finishes signing in and the layout re-renders with a session.
-    return (
-      <BrandingProvider
-        hostOrganizationId={null}
-        viewerIsHostOrganizationMember={false}
-        initialOrgSettings={null}
-      >
-        <ToastProvider>
-          <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
-            <AppBanner />
-            <WorkspaceRouteLoading />
-          </div>
-        </ToastProvider>
-      </BrandingProvider>
-    )
+    const headerStore = await headers()
+    const host =
+      headerStore.get('x-forwarded-host')?.split(',')[0]?.trim() ||
+      headerStore.get('host') ||
+      undefined
+    const proto = headerStore.get('x-forwarded-proto')?.split(',')[0]?.trim() || 'https'
+    const returnTo = host
+      ? `${proto}://${host}/workspace/${workspaceId}`
+      : `/workspace/${workspaceId}`
+    const resume = buildArenaSimResumeUrl(returnTo, host?.split(':')[0])
+    redirect(resume?.href ?? ARENA_SSO_SESSION_REQUIRED_PATH)
   }
-
-  const { workspaceId } = await params
   const queryClient = getQueryClient()
   const hostContext = await prefetchWorkspaceHostContext(queryClient, workspaceId, session.user.id)
   if (!hostContext) {

@@ -2,6 +2,11 @@
 
 import { type ReactNode, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import {
+  ARENA_SSO_SESSION_REQUIRED_PATH,
+  buildArenaSimResumeUrl,
+} from '@/lib/auth/arena-sim-resume'
+import { isDev } from '@/lib/core/config/env-flags'
 
 const logger = createLogger('AutoLoginSessionMigrationProvider')
 
@@ -11,8 +16,12 @@ const logger = createLogger('AutoLoginSessionMigrationProvider')
  * older deploys mixed cross-subdomain and host-only `__Secure-better-auth.*`
  * cookies (same name, two Domain scopes → redirect / logout loops).
  *
- * Children (including AutoLoginProvider) mount only after the clear finishes
- * so auto-login can mint a fresh session without racing the wipe.
+ * When the migration key is missing: clear cookies, mark the key (before any
+ * redirect — otherwise SSO return would clear again), then re-authenticate via
+ * Arena `/sso/sim-resume` (or `/login` in local/dev).
+ *
+ * Children mount only after migration is done when we stay on-page (already
+ * migrated, or auth surface / failed resume). A successful resume navigates away.
  *
  * Bump the localStorage key when a new clear pass is required in production.
  */
@@ -22,9 +31,24 @@ interface AutoLoginSessionMigrationProviderProps {
   children: ReactNode
 }
 
+function markMigrationDone(): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(AUTO_LOGIN_MIGRATION_KEY, '1')
+  }
+}
+
+function isAuthSurfacePath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/auth/arena-sso') ||
+    pathname === '/session-required' ||
+    pathname === '/login' ||
+    pathname === '/signup'
+  )
+}
+
 /**
  * Gates children until the one-time cookie-scope clear has completed (or was
- * already done in a prior visit).
+ * already done). After a clear, redirects to Arena SSO resume to mint a fresh session.
  */
 export function AutoLoginSessionMigrationProvider({
   children,
@@ -46,15 +70,37 @@ export function AutoLoginSessionMigrationProvider({
         })
         if (!res.ok) {
           logger.error('Session cookie scope migration clear failed', { status: res.status })
-        } else if (typeof window !== 'undefined') {
-          window.localStorage.setItem(AUTO_LOGIN_MIGRATION_KEY, '1')
         }
       } catch (error) {
         logger.error('Session cookie scope migration clear failed', { error })
-      } finally {
-        // Always unblock the tree — a failed clear must not leave the app blank.
-        setReady(true)
       }
+
+      // Mark before re-auth so the post-SSO load does not wipe the new cookies.
+      markMigrationDone()
+
+      if (typeof window === 'undefined') {
+        setReady(true)
+        return
+      }
+
+      if (isAuthSurfacePath(window.location.pathname)) {
+        setReady(true)
+        return
+      }
+
+      if (isDev) {
+        window.location.assign('/login')
+        return
+      }
+
+      const resume = buildArenaSimResumeUrl(window.location.href, window.location.hostname)
+      if (resume) {
+        window.location.assign(resume.href)
+        return
+      }
+
+      logger.warn('Arena SSO resume URL unavailable after cookie migration clear')
+      window.location.assign(ARENA_SSO_SESSION_REQUIRED_PATH)
     }
 
     void run()

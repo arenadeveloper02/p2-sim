@@ -19,7 +19,7 @@ interface HelpSupportImageInput {
 
 interface PersistHelpSupportIssueInput {
   id: string
-  userId: string
+  userId?: string | null
   userEmail: string
   workspaceId?: string | null
   workflowId?: string | null
@@ -72,7 +72,7 @@ export async function uploadHelpSupportAttachments(
 export async function persistHelpSupportIssue(input: PersistHelpSupportIssueInput): Promise<void> {
   await db.insert(helpSupportIssue).values({
     id: input.id,
-    userId: input.userId,
+    userId: input.userId ?? null,
     userEmail: input.userEmail,
     workspaceId: input.workspaceId ?? null,
     workflowId: input.workflowId ?? null,
