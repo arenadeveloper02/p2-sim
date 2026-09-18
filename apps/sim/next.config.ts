@@ -122,12 +122,6 @@ const nextConfig: NextConfig = {
   // no additional exposure versus Next's default (disabled to avoid leaking
   // source on the client).
   productionBrowserSourceMaps: true,
-  /**
-   * Production `next build` uses webpack (`package.json` `build` passes `--webpack`).
-   * Next 16.2.12 Turbopack truncates chunk idents to 7 base38 chars; this app's
-   * `[root-of-the-server]` graph collides deterministically (same output path and
-   * the same two content hashes on every Docker run). `next dev` still uses Turbopack.
-   */
   turbopack: {
     root: monorepoRoot,
     resolveAlias: {

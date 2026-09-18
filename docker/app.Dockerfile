@@ -94,12 +94,10 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy pruned source tree (apps/sim + workspace packages it depends on)
 COPY --from=pruner /app/out/full/ ./
 
-# Next.js 16 workspace-root detection looks for a lockfile next to the
-# workspace package.json. Without it, `next build` fails with
+# Next.js 16 / Turbopack workspace-root detection looks for a lockfile next to
+# the workspace package.json. Without it, `next build` fails with
 # "couldn't find next/package.json from /app/apps/sim". turbo also warns
 # "Lockfile not found at /app/bun.lock" without it.
-# Production compile is webpack (`next build --webpack`): Turbopack 16.2.12
-# collides `[root-of-the-server]` chunk names on this app (7-char ident hash).
 COPY --from=pruner /app/bun.lock ./bun.lock
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
