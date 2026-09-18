@@ -1,7 +1,6 @@
 import React from 'react'
 import { Badge } from '@sim/emcn'
-import { formatDuration, formatRelativeTime } from '@sim/utils/formatting'
-import { format } from 'date-fns'
+import { formatDuration, formatUserDateTime } from '@sim/utils/formatting'
 import { getIntegrationMetadata } from '@/lib/logs/get-trigger-options'
 import { getBlock } from '@/blocks/registry'
 import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
@@ -210,28 +209,16 @@ export function formatLatency(ms: number): string {
   return formatDuration(ms, { precision: 2 }) ?? '—'
 }
 
-export const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return {
-    full: date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }),
-    time: date.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }),
-    formatted: format(date, 'HH:mm:ss'),
-    compact: format(date, 'MMM d HH:mm:ss'),
-    compactDate: format(date, 'MMM d').toUpperCase(),
-    compactTime: format(date, 'h:mm a'),
-    relative: formatRelativeTime(dateString),
-  }
-}
+/**
+ * Formats a log timestamp for display in the user's timezone.
+ *
+ * Thin wrapper around {@link formatUserDateTime} so every logs surface
+ * (list, details, dashboard) shares one conversion path. Always pass the
+ * IANA id from `useTimezone()` — without it, times fall back to the device
+ * zone and disagree with the account timezone setting.
+ *
+ * @param dateString - ISO timestamp from the API (UTC)
+ * @param timezone - IANA zone from `useTimezone()` / `settings.timezone`
+ */
+export const formatDate = (dateString: string, timezone?: string) =>
+  formatUserDateTime(dateString, timezone)

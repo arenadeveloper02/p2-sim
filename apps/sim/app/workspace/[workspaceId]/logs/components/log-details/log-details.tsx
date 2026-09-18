@@ -70,6 +70,7 @@ import {
   TriggerBadge,
   workflowEditorPath,
 } from '@/app/workspace/[workspaceId]/logs/utils'
+import { useTimezone } from '@/hooks/queries/general-settings'
 import { useVerifyExecutionCosts } from '@/hooks/queries/logs'
 import { useCodeViewerFeatures } from '@/hooks/use-code-viewer'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
@@ -297,6 +298,11 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
   })
   const { copied: copiedRunId, copy: copyRunId } = useCopyToClipboard({ resetMs: 1500 })
   const verifyCosts = useVerifyExecutionCosts()
+  /**
+   * Same zone as the logs list so the details "Timestamp" field matches the
+   * row the user clicked (account preference via `useTimezone()`).
+   */
+  const timezone = useTimezone()
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -425,7 +431,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
     }
   }, [log.costLedger, log.cost])
 
-  const formattedTimestamp = formatDate(log.createdAt)
+  const formattedTimestamp = formatDate(log.createdAt, timezone)
   const logStatus = getDisplayStatus(log.status)
 
   /**
