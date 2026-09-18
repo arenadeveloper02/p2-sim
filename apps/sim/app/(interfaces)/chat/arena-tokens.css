@@ -470,7 +470,13 @@
   --landing-bg-elevated: var(--color-ds-surface-raised);
   --landing-text-muted: var(--color-ds-text-tertiary);
   --brand-primary-hover-hex: var(--color-ds-brand-hover);
+}
 
+/**
+ * Page-shell paint only. Portaled menus/popovers also use `.deployed-chat` for
+ * tokens, but must not inherit this canvas fill or they look transparent/odd.
+ */
+.deployed-chat-root {
   color: var(--color-ds-text-primary);
   background-color: var(--color-ds-canvas);
   color-scheme: light;
@@ -481,7 +487,6 @@
  * (`html.dark` surfaces from globals.css).
  */
 .dark .deployed-chat {
-  color-scheme: dark;
   --color-ds-canvas: #1b1b1b;
   --color-ds-surface-page: #1b1b1b;
   --color-ds-surface-subtle: #232323;
@@ -502,6 +507,10 @@
   --color-ds-border-strong: #575757;
   --color-ds-border-subtle: #363636;
   --surface-3: #363636;
+}
+
+.dark .deployed-chat-root {
+  color-scheme: dark;
   color: var(--color-ds-text-primary);
   background-color: var(--color-ds-canvas);
 }

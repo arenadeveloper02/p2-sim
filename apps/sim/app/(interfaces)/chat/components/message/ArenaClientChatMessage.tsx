@@ -1167,15 +1167,12 @@ export const ArenaClientChatMessage = memo(
                                       </Tooltip.Trigger>
                                     </PopoverTrigger>
                                     <PopoverContent
-                                      className='z-[9999] w-[400px] border-0 bg-transparent shadow-none'
+                                      className='deployed-chat z-[9999] w-[400px] border-0 bg-transparent p-0 shadow-none'
                                       align='start'
                                       side={popoverSide}
                                       sideOffset={-15}
                                       avoidCollisions={true}
                                       collisionPadding={16}
-                                      style={{
-                                        padding: 0,
-                                      }}
                                     >
                                       <FeedbackBox
                                         isOpen={true}
@@ -1220,15 +1217,12 @@ export const ArenaClientChatMessage = memo(
                                       </Tooltip.Trigger>
                                     </PopoverTrigger>
                                     <PopoverContent
-                                      className='z-[9999] w-[400px] border-0 bg-transparent shadow-none'
+                                      className='deployed-chat z-[9999] w-[400px] border-0 bg-transparent p-0 shadow-none'
                                       align='start'
                                       side={popoverSide}
                                       sideOffset={-15}
                                       avoidCollisions={true}
                                       collisionPadding={16}
-                                      style={{
-                                        padding: 0,
-                                      }}
                                     >
                                       <FeedbackBox
                                         isOpen={true}

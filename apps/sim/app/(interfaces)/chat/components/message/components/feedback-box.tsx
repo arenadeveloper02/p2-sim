@@ -5,9 +5,6 @@ import { Checkbox, ChipTextarea, cn } from '@sim/emcn'
 import { X } from 'lucide-react'
 import { messageActionIconButtonClass } from '@/app/(interfaces)/chat/components/message/components/message-action-icons'
 import {
-  DEPLOYED_CHAT_CANVAS_BG,
-  DEPLOYED_CHAT_DIVIDER,
-  DEPLOYED_CHAT_SIDEBAR_BORDER,
   DEPLOYED_CHAT_TEXT_BODY,
   DEPLOYED_CHAT_TEXT_DISPLAY,
   DEPLOYED_CHAT_TEXT_MUTED,
@@ -112,13 +109,7 @@ export function FeedbackBox({
   if (!isOpen) return null
 
   return (
-    <div
-      className='overflow-auto rounded-2xl border p-4'
-      style={{
-        backgroundColor: DEPLOYED_CHAT_CANVAS_BG,
-        borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER,
-      }}
-    >
+    <div className='overflow-auto rounded-2xl border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-raised)] p-4 shadow-lg'>
       <div className='mb-3 flex items-center justify-between gap-3'>
         <h3
           className='font-semibold text-[length:var(--text-ds-heading-xsm,16px)] leading-[var(--leading-ds-heading-xsm,24px)]'
@@ -136,10 +127,7 @@ export function FeedbackBox({
         </button>
       </div>
 
-      <div
-        className='space-y-4 rounded-xl border bg-[var(--color-ds-surface-raised)] p-4'
-        style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
-      >
+      <div className='space-y-4'>
         {!isLikeFeedback && (
           <div className='grid grid-cols-2 gap-4'>
             <div className='space-y-3'>
@@ -195,8 +183,8 @@ export function FeedbackBox({
           <button
             type='button'
             onClick={onClose}
-            className='rounded-lg border px-3 py-1.5 font-medium text-[14px] transition-colors hover:bg-[var(--color-ds-brand-surface,#F3F8FE)]'
-            style={{ borderColor: DEPLOYED_CHAT_DIVIDER, color: DEPLOYED_CHAT_TEXT_BODY }}
+            className='rounded-lg border border-[var(--color-ds-border-default)] px-3 py-1.5 font-medium text-[14px] transition-colors hover:bg-[var(--color-ds-brand-surface)]'
+            style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
           >
             Cancel
           </button>

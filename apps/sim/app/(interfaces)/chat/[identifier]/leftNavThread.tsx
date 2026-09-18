@@ -104,8 +104,13 @@ function sidebarRowLabelClass(isActive: boolean) {
   )
 }
 
+/**
+ * Resting text uses primary (not secondary + light-mode `#575A66` fallback).
+ * Menu content portals outside `.deployed-chat`, so invalid secondary vars used
+ * to fall back to dark grey on a dark surface until hover.
+ */
 const THREAD_MENU_ITEM_CLASS =
-  'h-9 gap-2.5 px-3 text-sm font-normal text-[var(--color-ds-text-secondary,#575A66)] focus:bg-[var(--color-ds-brand-surface,#F3F8FE)] data-[highlighted]:bg-[var(--color-ds-brand-surface,#F3F8FE)] data-[highlighted]:text-[var(--color-ds-text-link-hover,#155CBA)] [&_svg]:size-4 [&_svg]:text-current'
+  'h-9 gap-2.5 px-3 text-sm font-normal text-[var(--color-ds-text-primary,#2C2D33)] focus:bg-[var(--color-ds-brand-surface)] data-[highlighted]:bg-[var(--color-ds-brand-surface)] data-[highlighted]:text-[var(--color-ds-text-link-hover,#155CBA)] [&_svg]:size-4 [&_svg]:text-current'
 
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
@@ -433,7 +438,7 @@ function ThreadRow({
           <DropdownMenuContent
             align='start'
             side='right'
-            className='min-w-[132px] rounded-lg border-[var(--color-ds-blue-200,#D1E3FA)] bg-[var(--color-ds-surface-raised)] p-1.5 shadow-md'
+            className='deployed-chat min-w-[132px] rounded-lg border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-raised)] p-1.5 text-[var(--color-ds-text-primary)] shadow-md'
           >
             <DropdownMenuItem onClick={onStartRename} className={THREAD_MENU_ITEM_CLASS}>
               <RenameMenuIcon />
