@@ -41,13 +41,18 @@ import { format } from 'date-fns'
 import { useParams, useRouter } from 'next/navigation'
 import { useQueryState, useQueryStates } from 'nuqs'
 import { usePostHog } from 'posthog-js/react'
+import { getDocumentIcon } from '@/components/icons/document-icons'
 import {
   ALL_TAG_SLOTS,
   type AllTagSlot,
   getFieldTypeForSlot,
   KNOWLEDGE_DOCUMENT_PROCESSING_STALE_THRESHOLD_MS,
 } from '@/lib/knowledge/constants'
-import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
+import {
+  type DocumentSortField,
+  getDocumentIndexingStatus,
+  type SortOrder,
+} from '@/lib/knowledge/documents/types'
 import { type FilterFieldType, getOperatorsForFieldType } from '@/lib/knowledge/filters/types'
 import type { DocumentData } from '@/lib/knowledge/types'
 import { captureEvent } from '@/lib/posthog/client'
@@ -104,7 +109,6 @@ import {
   documentFiltersUrlKeys,
   kbDocumentSortParams,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/search-params'
-import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { canDeleteKnowledgeBase } from '@/app/workspace/[workspaceId]/knowledge/permissions'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -179,7 +183,7 @@ const AnimatedLoader = ({ className }: { className?: string }) => (
 )
 
 const getStatusBadge = (doc: DocumentData) => {
-  switch (doc.processingStatus) {
+  switch (getDocumentIndexingStatus(doc)) {
     case 'pending':
       return (
         <Badge variant='gray' size='sm'>
@@ -190,6 +194,12 @@ const getStatusBadge = (doc: DocumentData) => {
       return (
         <Badge variant='purple' size='sm' icon={AnimatedLoader}>
           Processing
+        </Badge>
+      )
+    case 'skipped':
+      return (
+        <Badge variant='gray' size='sm'>
+          Skipped
         </Badge>
       )
     case 'failed':
@@ -1601,6 +1611,7 @@ export function KnowledgeBase({
         }
         onRetry={
           contextMenuDocument &&
+          getDocumentIndexingStatus(contextMenuDocument) === 'failed' &&
           selectedDocumentCount === 1 &&
           userPermissions.canEdit &&
           (contextMenuDocument.processingStatus === 'pending' ||

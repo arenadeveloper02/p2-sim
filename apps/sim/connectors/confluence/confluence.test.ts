@@ -7,16 +7,107 @@ import {
   AtlassianSiteNotMatchedError,
 } from '@/lib/atlassian/discovery'
 import {
-  buildLastModifiedClause,
   confluenceConnector,
   confluenceStorageToPlainText,
+  confluenceViewToPlainText,
+  DYNAMIC_CONTENT_SKIP_REASON,
   escapeCql,
+  extractConfluenceStorageText,
   isCurrentContent,
-  preserveConfluenceCallouts,
   readIncludedLabels,
 } from '@/connectors/confluence/confluence'
 import { extractCursor } from '@/connectors/confluence/cursor'
-import { htmlToPlainText } from '@/connectors/utils'
+
+/** Existing page fixtures have no files; attachment traversal has its own regression suite. */
+function stubFetchWithoutAttachments(mockFetch: typeof fetch): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      return url.pathname.endsWith('/attachments')
+        ? Promise.resolve(Response.json({ results: [] }))
+        : mockFetch(input, init)
+    })
+  )
+}
+
+describe('Confluence dynamic All scope', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('lists newly accessible spaces on each sync, including old content, and follows pagination', async () => {
+    const fetchMock = vi.fn()
+    const page = (id: string, key: string) => ({
+      id,
+      type: 'page',
+      status: 'current',
+      title: id,
+      space: { key },
+      version: { number: 1 },
+    })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ results: [page('1', 'ENG')], _links: { next: '?cursor=next' } })
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [page('2', 'HR')] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [page('3', 'NEW')] })))
+    stubFetchWithoutAttachments(fetchMock)
+    const config = {
+      domain: 'example.atlassian.net',
+      spaceKey: ['*'],
+      contentType: 'all',
+      labelFilter: 'published',
+    }
+    const context = { cloudId: 'cloud-1' }
+    const first = await confluenceConnector.listDocuments(
+      'token',
+      config,
+      undefined,
+      context,
+      new Date()
+    )
+    const second = await confluenceConnector.listDocuments(
+      'token',
+      config,
+      first.nextCursor,
+      context,
+      new Date()
+    )
+    const nextSync = await confluenceConnector.listDocuments(
+      'token',
+      config,
+      undefined,
+      { cloudId: 'cloud-1' },
+      new Date()
+    )
+    expect(first.hasMore).toBe(true)
+    expect(second.documents[0].externalId).toBe('2')
+    expect(second.hasMore).toBe(false)
+    expect(nextSync.documents[0].externalId).toBe('3')
+    const urls = fetchMock.mock.calls.map(([input]) => new URL(String(input)))
+    expect(urls.map((url) => url.searchParams.get('cql'))).toEqual(
+      Array(3).fill('type in ("page","blogpost") AND label="published"')
+    )
+    expect(urls[1].searchParams.get('cursor')).toBe('next')
+  })
+
+  it.each([
+    {},
+    { results: [], _links: { next: '?broken=cursor' } },
+    { results: [], _links: { next: '?cursor=repeat' } },
+  ])('rejects an incomplete search response %#', async (body) => {
+    stubFetchWithoutAttachments(vi.fn().mockResolvedValue(new Response(JSON.stringify(body))))
+    await expect(
+      confluenceConnector.listDocuments(
+        'token',
+        { domain: 'example.atlassian.net', spaceKey: '*' },
+        'repeat',
+        { cloudId: 'cloud-1' }
+      )
+    ).rejects.toThrow(/invalid|repeated/)
+  })
+})
 
 describe('Confluence service-account scopes', () => {
   it('requests metadata and role reads needed for complete mirrored ACLs', () => {
@@ -59,33 +150,13 @@ describe('escapeCql', () => {
   })
 })
 
-describe('buildLastModifiedClause', () => {
-  const now = new Date('2026-09-01T12:00:00Z')
-
-  it.concurrent('rounds the watermark up to whole minutes relative to the server clock', () => {
-    expect(buildLastModifiedClause(new Date('2026-09-01T11:30:30Z'), now)).toBe(
-      'lastModified >= now("-30m")'
-    )
-  })
-
-  it.concurrent('never asks for less than a minute', () => {
-    expect(buildLastModifiedClause(now, now)).toBe('lastModified >= now("-1m")')
-    expect(buildLastModifiedClause(new Date(now.getTime() + 60_000), now)).toBe(
-      'lastModified >= now("-1m")'
-    )
-  })
-})
-
 describe('Confluence rejected credentials', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it.each(['discovery', 'space', 'pages', 'cql', 'content'] as const)(
     'preserves authenticated401 at the %s boundary',
     async (boundary) => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => new Response('', { status: 401 }))
-      )
+      stubFetchWithoutAttachments(vi.fn(async () => new Response('', { status: 401 })))
       const config = {
         domain: 'revocation-fixture.atlassian.net',
         spaceKey: 'ENG',
@@ -214,14 +285,14 @@ describe('readIncludedLabels', () => {
   })
 })
 
-describe('preserveConfluenceCallouts', () => {
+describe('confluenceViewToPlainText', () => {
   it.concurrent('handles empty content', () => {
-    expect(preserveConfluenceCallouts('')).toBe('')
+    expect(confluenceViewToPlainText('')).toBe('')
   })
 
   it.concurrent('leaves content with no macros unchanged', () => {
     const html = '<p>Just a normal paragraph.</p>'
-    expect(preserveConfluenceCallouts(html)).toContain('Just a normal paragraph.')
+    expect(confluenceViewToPlainText(html)).toContain('Just a normal paragraph.')
   })
 
   it.concurrent('labels a built-in warning macro and keeps its body', () => {
@@ -230,7 +301,7 @@ describe('preserveConfluenceCallouts', () => {
       '<span class="aui-icon aui-icon-small aui-iconfont-warning confluence-information-macro-icon"></span>' +
       '<div class="confluence-information-macro-body"><p>Do NOT use this form for GitLab access.</p></div>' +
       '</div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).toContain('[WARNING]')
     expect(result).toContain('Do NOT use this form for GitLab access.')
   })
@@ -240,7 +311,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="confluence-information-macro confluence-information-macro-information">' +
       '<div class="confluence-information-macro-body"><p>Heads up.</p></div>' +
       '</div>'
-    expect(preserveConfluenceCallouts(html)).toContain('[INFO] Heads up.')
+    expect(confluenceViewToPlainText(html)).toContain('[INFO] Heads up.')
   })
 
   it.concurrent('labels a built-in note macro', () => {
@@ -248,7 +319,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="confluence-information-macro confluence-information-macro-note">' +
       '<div class="confluence-information-macro-body"><p>See also.</p></div>' +
       '</div>'
-    expect(preserveConfluenceCallouts(html)).toContain('[NOTE] See also.')
+    expect(confluenceViewToPlainText(html)).toContain('[NOTE] See also.')
   })
 
   it.concurrent('labels a built-in tip macro', () => {
@@ -256,7 +327,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="confluence-information-macro confluence-information-macro-tip">' +
       '<div class="confluence-information-macro-body"><p>Pro tip.</p></div>' +
       '</div>'
-    expect(preserveConfluenceCallouts(html)).toContain('[TIP] Pro tip.')
+    expect(confluenceViewToPlainText(html)).toContain('[TIP] Pro tip.')
   })
 
   it.concurrent('labels a generic custom-colored Panel macro using its header title', () => {
@@ -265,7 +336,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="panelHeader" style="background-color: #ffebe6;"><b>Do NOT use this form for:</b></div>' +
       '<div class="panelContent"><p>GitLab access requests go to the private channel instead.</p></div>' +
       '</div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).toContain('[CALLOUT: Do NOT use this form for:]')
     expect(result).toContain('GitLab access requests go to the private channel instead.')
   })
@@ -274,7 +345,7 @@ describe('preserveConfluenceCallouts', () => {
     const html =
       '<div class="panel"><div class="panelHeader"><b>Warning:</b></div>' +
       '<div class="panelContent"><p>See replacement form.</p></div></div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).toContain('[CALLOUT: Warning:] See replacement form.')
   })
 
@@ -284,7 +355,7 @@ describe('preserveConfluenceCallouts', () => {
       const html =
         '<div class="panel"><div class="panelHeader"><b>Warning:</b> <span>Do not use</span></div>' +
         '<div class="panelContent"><p>See replacement form.</p></div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       expect(result).toContain('[CALLOUT: Warning: Do not use]')
     }
   )
@@ -292,13 +363,13 @@ describe('preserveConfluenceCallouts', () => {
   it.concurrent('falls back to a bare CALLOUT label when a Panel macro has no header text', () => {
     const html =
       '<div class="panel"><div class="panelContent"><p>Untitled panel body.</p></div></div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).toContain('[CALLOUT]')
     expect(result).toContain('Untitled panel body.')
   })
 
   it.concurrent(
-    'keeps the exclusion marker attached to its content through htmlToPlainText, even across surrounding whitespace collapse',
+    'keeps the exclusion marker attached to its content across surrounding whitespace collapse',
     () => {
       const html =
         '<p>Intro paragraph.</p>\n\n' +
@@ -307,7 +378,7 @@ describe('preserveConfluenceCallouts', () => {
         '<ul><li>GitLab</li></ul></div>' +
         '</div>\n\n' +
         '<p>Trailing paragraph.</p>'
-      const plainText = htmlToPlainText(preserveConfluenceCallouts(html))
+      const plainText = confluenceViewToPlainText(html)
       expect(plainText).toContain('[WARNING] Do NOT use this form for: GitLab')
       expect(plainText).toContain('Intro paragraph.')
       expect(plainText).toContain('Trailing paragraph.')
@@ -323,7 +394,7 @@ describe('preserveConfluenceCallouts', () => {
         '<p>Do NOT use this form for:</p>' +
         '<ul><li>GitLab</li><li>ServiceNow</li></ul>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       expect(result).not.toContain('for:GitLab')
       expect(result).not.toContain('GitLabServiceNow')
       expect(result).toContain('Do NOT use this form for: GitLab ServiceNow')
@@ -337,7 +408,7 @@ describe('preserveConfluenceCallouts', () => {
         '<div class="panel"><div class="panelContent">' +
         '<p>First sentence.</p><p>Second sentence.</p>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       expect(result).toContain('First sentence. Second sentence.')
       expect(result).not.toContain('sentence.Second')
     }
@@ -353,7 +424,7 @@ describe('preserveConfluenceCallouts', () => {
         '<ul><li>Nested item A</li><li>Nested item B</li></ul>' +
         '</li><li>Outer item two</li></ul>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       // Each nested <li>'s text must appear exactly once, not duplicated by the
       // outer <li> also being matched and its .text() recursing into it.
       const occurrences = (result.match(/Nested item A/g) ?? []).length
@@ -368,7 +439,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="panel"><div class="panelContent">' +
       '<table><tr><td>Cell text<blockquote><p>quoted text</p></blockquote>after quote</td></tr></table>' +
       '</div></div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).not.toContain('quotedtext')
     expect(result).not.toContain('textafter')
     expect(result).toContain('Cell text quoted text after quote')
@@ -381,7 +452,7 @@ describe('preserveConfluenceCallouts', () => {
         '<div class="panel"><div class="panelContent">' +
         '<p>This is un<b>believe</b>able.</p>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       expect(result).not.toContain('un believe able')
       expect(result).toContain('This is unbelieveable.')
     }
@@ -392,7 +463,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="confluence-information-macro confluence-information-macro-warning">' +
       '<div class="confluence-information-macro-body"><p>Do not proceed<b>!</b></p></div>' +
       '</div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).not.toContain('proceed !')
     expect(result).toContain('[WARNING] Do not proceed!')
   })
@@ -402,7 +473,7 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="panel"><div class="panelContent">' +
       '<p>Do <b>NOT</b> use this form.</p>' +
       '</div></div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).toContain('Do NOT use this form.')
   })
 
@@ -414,7 +485,7 @@ describe('preserveConfluenceCallouts', () => {
         '<div class="panel"><div class="panelHeader"><b>Inner</b></div>' +
         '<div class="panelContent"><p>inner body</p></div></div>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       expect(result).toContain('[CALLOUT: Outer]')
       expect(result).toContain('[CALLOUT: Inner] inner body')
     }
@@ -428,7 +499,7 @@ describe('preserveConfluenceCallouts', () => {
         '<div class="confluence-information-macro confluence-information-macro-warning">' +
         '<div class="confluence-information-macro-body"><p>Do not use this.</p></div></div>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       expect(result).toContain('[WARNING] Do not use this.')
     }
   )
@@ -441,7 +512,7 @@ describe('preserveConfluenceCallouts', () => {
         '<div class="panel"><div class="panelHeader"><b>Inner title</b></div>' +
         '<div class="panelContent"><p>inner body</p></div></div>' +
         '</div></div>'
-      const result = preserveConfluenceCallouts(html)
+      const result = confluenceViewToPlainText(html)
       // The outer panel has no header of its own — it must fall back to a
       // bare [CALLOUT], not steal "Inner title" from the nested panel.
       expect(result).toContain('[CALLOUT] [CALLOUT: Inner title] inner body')
@@ -453,72 +524,97 @@ describe('preserveConfluenceCallouts', () => {
       '<div class="confluence-information-macro confluence-information-macro-warning">' +
       '<div class="confluence-information-macro-body"><p>Do NOT use this form for:<br>GitLab</p></div>' +
       '</div>'
-    const result = preserveConfluenceCallouts(html)
+    const result = confluenceViewToPlainText(html)
     expect(result).not.toContain('for:GitLab')
     expect(result).toContain('[WARNING] Do NOT use this form for: GitLab')
   })
-})
 
-describe('confluence incremental CQL listing', () => {
-  const fetchMock =
-    vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
-
-  function jsonResponse(body: unknown): Response {
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
-
-  function cqlOfCall(index: number): string | null {
-    return new URL(String(fetchMock.mock.calls[index][0])).searchParams.get('cql')
-  }
-
-  beforeEach(() => {
-    vi.useFakeTimers()
-    fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
+  it.concurrent('drops app macro bootstrap scripts, inline styles, and chart data', () => {
+    const html =
+      '<p><style>[data-colorid=yr9gnc4vid]{color:#333333}</style>' +
+      '<span data-colorid="yr9gnc4vid">Colored text</span></p>' +
+      '<style type="text/css">/*<![CDATA[*/ div.rbtoc1748352890217 {padding: 0px;} /*]]>*/</style>' +
+      '<div class="ap-container" id="ap-lucidchart"><div class="ap-content"></div>' +
+      '<script class="ap-iframe-body-script">//<![CDATA[\n(function(){ var data = {"addon_key":"lucidchart-app"}; AP._createContainer(data); }());\n//]]></script></div>' +
+      '<script class="chart-render-data" type="application/json">{"pluginKey": "confluence.extra.chart"}</script>' +
+      '<p>After</p>'
+    expect(confluenceViewToPlainText(html)).toBe('Colored text After')
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.useRealTimers()
+  it.concurrent('keeps the word break a dropped script or style occupied', () => {
+    expect(confluenceViewToPlainText('<p>Before<style>.a{}</style>After</p>')).toBe('Before After')
   })
 
-  it('keeps one lastModified clause across pages that straddle a minute boundary', async () => {
-    const lastSyncAt = new Date('2026-09-01T11:30:00Z')
-    const config = { domain: 'example.atlassian.net', spaceKey: 'ENG' }
-    const syncContext: Record<string, unknown> = { cloudId: 'cloud-1' }
-    fetchMock
-      .mockResolvedValueOnce(
-        jsonResponse({
-          results: [],
-          _links: { next: '/wiki/rest/api/content/search?cursor=page-2&cql=ignored' },
-        })
-      )
-      .mockResolvedValueOnce(jsonResponse({ results: [] }))
+  it.concurrent('treats a page holding only an app macro as having no text', () => {
+    const html =
+      '<div class="ap-container"><div class="ap-content"></div>' +
+      '<script class="ap-iframe-body-script">(function(){ var data = {"addon_key":"drawio"}; }());</script></div>'
+    expect(confluenceViewToPlainText(html)).toBe('')
+  })
 
-    vi.setSystemTime(new Date('2026-09-01T12:00:59Z'))
-    const first = await confluenceConnector.listDocuments(
-      'token',
-      config,
-      undefined,
-      syncContext,
-      lastSyncAt
+  it.concurrent('reduces an unresolved Jira issue macro to its issue key', () => {
+    const html =
+      '<p>Tracked in ' +
+      '<span class="confluence-jim-macro jira-issue" data-jira-key="ENG-101">' +
+      '<a href="https://example.atlassian.net/browse/ENG-101" class="jira-issue-key">' +
+      '<span class="aui-icon aui-icon-wait issue-placeholder"></span>ENG-101</a> - ' +
+      '<span class="summary">Getting issue details...</span> ' +
+      '<span class="aui-lozenge aui-lozenge-subtle aui-lozenge-default issue-placeholder">STATUS</span>' +
+      '</span> and ' +
+      '<span class="confluence-jim-macro jira-issue conf-macro output-block">' +
+      '<a href="https://example.atlassian.net/browse/ENG-102" class="jira-issue-key">' +
+      '<span class="aui-icon aui-icon-wait issue-placeholder"> </span>ENG-102</a> - ' +
+      '<span class="summary">이슈 세부사항 가져오는 중...</span> ' +
+      '<span class="aui-lozenge aui-lozenge-subtle aui-lozenge-default issue-placeholder">상태</span>' +
+      '</span>.</p>'
+    expect(confluenceViewToPlainText(html)).toBe('Tracked in ENG-101 and ENG-102 .')
+  })
+
+  it.concurrent('falls back to the data attribute when the issue key link has no text', () => {
+    const html =
+      '<span class="confluence-jim-macro jira-issue" data-jira-key="ENG-103">' +
+      '<span class="summary">Getting issue details...</span>' +
+      '<span class="aui-lozenge issue-placeholder">STATUS</span></span>'
+    expect(confluenceViewToPlainText(html)).toBe('ENG-103')
+  })
+
+  it.concurrent('keeps the summary and status of a Jira issue macro Confluence resolved', () => {
+    const html =
+      '<span class="confluence-jim-macro jira-issue resolved" data-jira-key="OPS-201">' +
+      '<a href="https://example.atlassian.net/browse/OPS-201" class="jira-issue-key">' +
+      '<img class="icon" src="https://example.atlassian.net/avatar.png" />OPS-201</a> - ' +
+      '<span class="summary">Rotate the signing key</span> ' +
+      '<span class="aui-lozenge aui-lozenge-success jira-macro-single-issue-export-pdf">Done</span>' +
+      '</span>'
+    expect(confluenceViewToPlainText(html)).toBe('OPS-201 - Rotate the signing key Done')
+  })
+
+  it.concurrent('keeps the block break of a Jira issue macro inside a callout', () => {
+    const html =
+      '<div class="confluence-information-macro confluence-information-macro-warning">' +
+      '<div class="confluence-information-macro-body">Blocked by' +
+      '<div class="confluence-jim-macro jira-issue" data-jira-key="ENG-104">' +
+      '<a class="jira-issue-key"><span class="aui-icon issue-placeholder"></span>ENG-104</a> - ' +
+      '<span class="summary">Getting issue details...</span>' +
+      '<span class="aui-lozenge issue-placeholder">STATUS</span></div>' +
+      'until release</div></div>'
+    expect(confluenceViewToPlainText(html)).toBe('[WARNING] Blocked by ENG-104 until release')
+  })
+
+  it.concurrent('drops only the placeholder shell of a Jira issues table', () => {
+    const html =
+      '<p>Release notes</p>' +
+      '<div class="confluence-jim-macro refresh-module-id jira-table placeholder conf-macro output-block">' +
+      '<div class="jira-issues"><table class="aui"><tbody><tr></tr>' +
+      '<tr><th>type</th><th>key</th><th>summary</th></tr></tbody></table></div>' +
+      '<div class="refresh-issues-bottom"><span class="aui-icon aui-icon-wait">Loading...</span></div></div>' +
+      '<div class="confluence-jim-macro jira-table"><table class="aui"><tbody>' +
+      '<tr><th>key</th><th>summary</th></tr><tr><td>ENG-104</td><td>Update the runbook</td></tr>' +
+      '</tbody></table></div>' +
+      '<div class="confluence-jim-macro jira-table"><div class="aui-message">No issues found</div></div>'
+    expect(confluenceViewToPlainText(html)).toBe(
+      'Release notes key summary ENG-104 Update the runbook No issues found'
     )
-    expect(first.nextCursor).toBe('page-2')
-
-    vi.setSystemTime(new Date('2026-09-01T12:01:01Z'))
-    await confluenceConnector.listDocuments(
-      'token',
-      config,
-      first.nextCursor,
-      syncContext,
-      lastSyncAt
-    )
-
-    expect(cqlOfCall(0)).toContain('lastModified >= now("-31m")')
-    expect(cqlOfCall(1)).toBe(cqlOfCall(0))
   })
 })
 
@@ -530,7 +626,7 @@ describe('Confluence service-account site binding', () => {
   beforeEach(() => {
     fetchMock.mockReset()
     fetchMock.mockRejectedValue(new Error('Unexpected provider request'))
-    vi.stubGlobal('fetch', fetchMock)
+    stubFetchWithoutAttachments(fetchMock)
   })
 
   afterEach(() => vi.unstubAllGlobals())
@@ -607,7 +703,7 @@ describe('Confluence listing limits', () => {
 
   beforeEach(() => {
     fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
+    stubFetchWithoutAttachments(fetchMock)
     context = { cloudId: 'cloud-1', spaceId: 'space-1' }
   })
 
@@ -718,7 +814,9 @@ describe('Confluence listing limits', () => {
     )
     expect(result.documents).toHaveLength(4)
     expect(result.hasMore).toBe(true)
-    expect(JSON.parse(result.nextCursor!)).toEqual({
+    expect(
+      JSON.parse(JSON.parse(result.nextCursor!.slice('attachments:'.length)).parentCursor)
+    ).toEqual({
       page: 'next-page',
       blog: 'next-blog',
       pagesDone: false,
@@ -770,6 +868,77 @@ describe('confluenceStorageToPlainText', () => {
     expect(confluenceStorageToPlainText(storage)).toBe('Public body')
   })
 
+  it('keeps text authored inside legacy section and column layouts', () => {
+    const storage =
+      '<ac:structured-macro ac:name="section"><ac:rich-text-body>' +
+      '<ac:structured-macro ac:name="column"><ac:parameter ac:name="width">50%</ac:parameter>' +
+      '<ac:rich-text-body><h1>Linux Patching</h1><p>Run the playbook.</p></ac:rich-text-body>' +
+      '</ac:structured-macro>' +
+      '<ac:structured-macro ac:name="column"><ac:rich-text-body><p>Second column</p></ac:rich-text-body>' +
+      '</ac:structured-macro></ac:rich-text-body></ac:structured-macro>'
+
+    expect(confluenceStorageToPlainText(storage)).toBe(
+      'Linux Patching Run the playbook. Second column'
+    )
+  })
+
+  it('keeps page properties tables, table-macro bodies, and status labels', () => {
+    const storage =
+      '<ac:structured-macro ac:name="details"><ac:rich-text-body>' +
+      '<table><tbody><tr><th>Owner</th><td>Platform team</td></tr></tbody></table>' +
+      '</ac:rich-text-body></ac:structured-macro>' +
+      '<ac:structured-macro ac:name="table-filter"><ac:parameter ac:name="column">Name</ac:parameter>' +
+      '<ac:rich-text-body><table><tbody><tr><td>Filtered row</td></tr></tbody></table></ac:rich-text-body>' +
+      '</ac:structured-macro>' +
+      '<p>State: <ac:structured-macro ac:name="status"><ac:parameter ac:name="colour">Green</ac:parameter>' +
+      '<ac:parameter ac:name="title">Approved</ac:parameter></ac:structured-macro></p>'
+
+    expect(confluenceStorageToPlainText(storage)).toBe(
+      'Owner Platform team Filtered row State: Approved'
+    )
+  })
+
+  it('keeps new-editor panel and decision text while dropping app extensions', () => {
+    const storage =
+      '<ac:adf-extension><ac:adf-node type="panel">' +
+      '<ac:adf-attribute key="panel-type">custom</ac:adf-attribute>' +
+      '<ac:adf-content><p>Rotate the key quarterly.</p></ac:adf-content>' +
+      '</ac:adf-node><ac:adf-fallback><p>Rotate the key quarterly.</p></ac:adf-fallback></ac:adf-extension>' +
+      '<ac:adf-extension><ac:adf-node type="decision-list">' +
+      '<ac:adf-attribute key="local-id">abc</ac:adf-attribute>' +
+      '<ac:adf-node type="decision-item"><ac:adf-attribute key="state">DECIDED</ac:adf-attribute>' +
+      '<ac:adf-content>Use Vault</ac:adf-content></ac:adf-node></ac:adf-node></ac:adf-extension>' +
+      '<ac:adf-extension><ac:adf-node type="extension">' +
+      '<ac:adf-attribute key="parameters">remote</ac:adf-attribute></ac:adf-node>' +
+      '<ac:adf-fallback><p>Rendered by an app</p></ac:adf-fallback></ac:adf-extension>'
+
+    expect(confluenceStorageToPlainText(storage)).toBe(
+      '[CALLOUT] Rotate the key quarterly. Use Vault'
+    )
+  })
+
+  it('drops template placeholders and task bookkeeping but keeps task text intact', () => {
+    const storage =
+      '<p><ac:placeholder>Type your summary here</ac:placeholder></p>' +
+      '<ac:task-list><ac:task><ac:task-id>1</ac:task-id><ac:task-uuid>u</ac:task-uuid>' +
+      '<ac:task-status>incomplete</ac:task-status><ac:task-body>Ship it</ac:task-body></ac:task></ac:task-list>' +
+      '<p>Un<ac:inline-comment-marker ac:ref="r">believ</ac:inline-comment-marker>able</p>'
+
+    expect(confluenceStorageToPlainText(storage)).toBe('Ship it Unbelievable')
+  })
+
+  it('reports whether dynamic content was removed', () => {
+    expect(extractConfluenceStorageText('<p>Local</p>')).toEqual({
+      text: 'Local',
+      droppedDynamicContent: false,
+    })
+    expect(
+      extractConfluenceStorageText(
+        '<ac:structured-macro ac:name="children"><ac:parameter ac:name="depth">1</ac:parameter></ac:structured-macro>'
+      )
+    ).toEqual({ text: '', droppedDynamicContent: true })
+  })
+
   it.each(['expand', 'excerpt', 'noformat'])(
     'retains the authored content of the %s macro',
     (name) => {
@@ -794,8 +963,7 @@ describe('Confluence permission-scoped content', () => {
   const view = '<p>Shared handbook</p><p>CONFIDENTIAL SALARY DATA</p><p>Local information</p>'
 
   beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
+    stubFetchWithoutAttachments(
       vi.fn(async (input: string | URL | Request) => {
         const format = new URL(String(input)).searchParams.get('body-format')
         return new Response(
@@ -902,7 +1070,36 @@ describe('Confluence permission-scoped content', () => {
         cloudId: 'cloud-1',
         mirrorsSourceAcls: true,
       })
-    ).resolves.toMatchObject({ content: '', skippedExistingDisposition: 'replace' })
+    ).resolves.toMatchObject({
+      content: '',
+      skippedReason: DYNAMIC_CONTENT_SKIP_REASON,
+      skippedExistingDisposition: 'replace',
+    })
+  })
+
+  it('names dynamic-only hub pages distinctly from genuinely empty ones', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: 'hub',
+          version: { number: 2 },
+          body: {
+            storage: {
+              value:
+                '<ac:structured-macro ac:name="children" /><ac:structured-macro ac:name="jira">' +
+                '<ac:parameter ac:name="jql">project = X</ac:parameter></ac:structured-macro>',
+            },
+          },
+        })
+      )
+    )
+    const document = await confluenceConnector.getDocument('token', config, 'hub', {
+      cloudId: 'cloud-1',
+      perMemberListing: true,
+      memberId: 'member-1',
+    })
+    expect(document?.skippedReason).toBe(DYNAMIC_CONTENT_SKIP_REASON)
+    expect(document?.skippedRetryPolicy).toBe('source-change')
   })
 
   it('keeps skipped pages retryable when no usable source version is available', async () => {
@@ -953,7 +1150,29 @@ describe('Confluence permission-scoped content', () => {
     )
 
     expect(document?.content).toContain('CONFIDENTIAL SALARY DATA')
-    expect(document?.contentHash).toBe('confluence:view-callouts:shared-page:1')
+    expect(document?.contentHash).toBe('confluence:view-text-v2:shared-page:1')
+  })
+
+  it('reports the content type of the endpoint that answered and omits unknown metadata', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('', { status: 404 }))
+
+    const document = await confluenceConnector.getDocument('token', config, 'shared-page', {
+      cloudId: 'cloud-1',
+    })
+
+    expect(vi.mocked(fetch).mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
+      '/ex/confluence/cloud-1/wiki/api/v2/pages/shared-page',
+      '/ex/confluence/cloud-1/wiki/api/v2/blogposts/shared-page',
+    ])
+    expect(document?.metadata).toEqual({
+      spaceId: 'space-1',
+      contentType: 'blogpost',
+      status: 'current',
+      version: 1,
+      labels: [],
+      lastModified: '',
+    })
+    expect(document?.metadata).not.toHaveProperty('spaceKey')
   })
 
   it('rejects a missing storage body without falling back to rendered content', async () => {
@@ -987,6 +1206,7 @@ describe('Confluence permission-scoped content', () => {
       }
       vi.mocked(fetch).mockImplementation(async (input) => {
         const url = new URL(String(input))
+        if (url.pathname.endsWith('/attachments')) return Response.json({ results: [] })
         if (url.pathname.endsWith('/spaces')) {
           return new Response(JSON.stringify({ results: [{ id: 'space-1', key: 'ENG' }] }))
         }
@@ -1015,8 +1235,8 @@ describe('Confluence permission-scoped content', () => {
       )
       const expectedHash =
         'mirrorsSourceAcls' in mode || 'perMemberListing' in mode
-          ? 'confluence:storage-local-body-v1:shared-page:1'
-          : 'confluence:view-callouts:shared-page:1'
+          ? 'confluence:storage-local-body-v2:shared-page:1'
+          : 'confluence:view-text-v2:shared-page:1'
 
       expect(v2.documents[0].contentHash).toBe(expectedHash)
       expect(cql.documents[0].contentHash).toBe(expectedHash)
@@ -1086,7 +1306,7 @@ describe('confluence mirrored permissions', () => {
 
   beforeEach(() => {
     fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
+    stubFetchWithoutAttachments(fetchMock)
   })
 
   afterEach(() => {
@@ -1105,12 +1325,13 @@ describe('confluence mirrored permissions', () => {
       'token',
       { domain: 'example.atlassian.net', spaceKey: ['ENG', 'HR'] },
       [page('eng-page', 'ENG'), page('hr-post', 'HR', 'blogpost')],
-      { cloudId: 'cloud-1' }
+      { cloudId: 'cloud-1' },
+      { persistGroupMembership: vi.fn().mockResolvedValue(undefined) }
     )
 
     expect(acls).toEqual({
-      'eng-page': ['s:confluence:-:acc-eng'],
-      'hr-post': ['s:confluence:-:acc-hr'],
+      'eng-page': ['g:confluence:cloud-1:space-readers:1'],
+      'hr-post': ['g:confluence:cloud-1:space-readers:2'],
     })
     /** A blog post has no ancestors and is never asked for them. */
     const asked = fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname)
@@ -1133,10 +1354,66 @@ describe('confluence mirrored permissions', () => {
       'token',
       { domain: 'example.atlassian.net', spaceKey: 'ENG' },
       [page('eng-page', 'ENG'), page('broken', 'ENG')],
-      { cloudId: 'cloud-1' }
+      { cloudId: 'cloud-1' },
+      { persistGroupMembership: vi.fn().mockResolvedValue(undefined) }
     )
 
-    expect(acls).toEqual({ 'eng-page': ['s:confluence:-:acc-eng'] })
+    expect(acls).toEqual({ 'eng-page': ['g:confluence:cloud-1:space-readers:1'] })
+  })
+
+  it('refreshes and persists a shared space audience once for the entire document batch', async () => {
+    site()
+    const persistGroupMembership = vi.fn().mockResolvedValue(undefined)
+    const acls = await confluenceConnector.getDocumentAcls?.(
+      'token',
+      { domain: 'example.atlassian.net', spaceKey: 'ENG' },
+      [page('first', 'ENG'), page('second', 'ENG')],
+      { cloudId: 'cloud-1' },
+      { persistGroupMembership }
+    )
+    expect(Object.keys(acls ?? {})).toEqual(['first', 'second'])
+    expect(persistGroupMembership).toHaveBeenCalledOnce()
+    expect(persistGroupMembership).toHaveBeenCalledWith({
+      providerId: 'confluence',
+      tenantId: 'cloud-1',
+      group: expect.objectContaining({ id: 'space-readers:1' }),
+      memberTokens: ['s:confluence:-:acc-eng'],
+    })
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith('/spaces/1/permissions?limit=250')
+      )
+    ).toHaveLength(1)
+  })
+
+  it('withholds only the failed space when its audience cannot be refreshed', async () => {
+    site()
+    const healthy = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) =>
+      String(input).includes('/spaces/2/permissions') ? jsonResponse({}, 403) : healthy(input, init)
+    )
+    const persistGroupMembership = vi.fn().mockResolvedValue(undefined)
+    const acls = await confluenceConnector.getDocumentAcls?.(
+      'token',
+      { domain: 'example.atlassian.net', spaceKey: ['ENG', 'HR'] },
+      [page('eng', 'ENG'), page('hr', 'HR')],
+      { cloudId: 'cloud-1' },
+      { persistGroupMembership }
+    )
+    expect(acls).toEqual({ eng: ['g:confluence:cloud-1:space-readers:1'] })
+    expect(persistGroupMembership).toHaveBeenCalledOnce()
+  })
+
+  it('withholds a space ACL when its verified audience could not be persisted', async () => {
+    site()
+    const acls = await confluenceConnector.getDocumentAcls?.(
+      'token',
+      { domain: 'example.atlassian.net', spaceKey: 'ENG' },
+      [page('eng', 'ENG')],
+      { cloudId: 'cloud-1' },
+      { persistGroupMembership: vi.fn().mockRejectedValue(new Error('database unavailable')) }
+    )
+    expect(acls).toEqual({})
   })
 
   it('loads restrictions above the first ancestor batch even when the page and parent already restrict access', async () => {
@@ -1164,10 +1441,11 @@ describe('confluence mirrored permissions', () => {
       'token',
       { domain: 'example.atlassian.net', spaceKey: 'ENG' },
       [page('eng-page', 'ENG')],
-      { cloudId: 'cloud-1' }
+      { cloudId: 'cloud-1' },
+      { persistGroupMembership: vi.fn().mockResolvedValue(undefined) }
     )
     expect(acls?.['eng-page']).toEqual({
-      acl: ['s:confluence:-:acc-eng'],
+      acl: ['g:confluence:cloud-1:space-readers:1'],
       requirements: expect.arrayContaining([
         ['g:confluence:cloud-1:group-eng-page'],
         ['g:confluence:cloud-1:group-parent'],

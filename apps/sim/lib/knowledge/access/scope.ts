@@ -7,6 +7,7 @@ import {
   document,
   foldedEmail,
   knowledgeBase,
+  knowledgeConnector,
   knowledgeExternalGroup,
   knowledgeExternalGroupMember,
   member,
@@ -14,7 +15,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { type ResourceScope, resourceScopeFromOwner } from '@/lib/core/resource-scope'
 import { resourceScopeCondition } from '@/lib/core/resource-scope.server'
@@ -24,6 +25,7 @@ import {
   type ConfluenceReaderCredential,
   resolveConfluenceSiteReadGrants,
 } from '@/lib/knowledge/access/confluence-site'
+import { loadConnectorPermissionGroupTokens } from '@/lib/knowledge/access/connector-permissions'
 import {
   domainMemberWildcard,
   EXTERNAL_GROUP_STALE_AFTER_MS,
@@ -33,6 +35,16 @@ import {
   type GitHubReaderCredential,
   resolveGitHubInstallationReadGrants,
 } from '@/lib/knowledge/access/github-installation'
+import {
+  assertExternalGroupTokenCapacity,
+  MAX_EXTERNAL_GROUP_TOKENS,
+  parentGroupTokensQuery,
+} from '@/lib/knowledge/access/group-membership'
+import {
+  confluenceSiteSourceCondition,
+  githubInstallationSourceCondition,
+  liveSourceKnowledgeBaseCondition,
+} from '@/lib/knowledge/access/live-sources'
 import { knowledgeMetadataCandidateAccessCondition } from '@/lib/knowledge/access/predicate'
 import {
   groupToken,
@@ -98,7 +110,7 @@ async function loadExternalGroupTokens(
    */
   const freshEnough = new Date(Date.now() - EXTERNAL_GROUP_STALE_AFTER_MS)
   const rows = await db
-    .select({
+    .selectDistinct({
       providerId: knowledgeExternalGroup.providerId,
       tenantId: knowledgeExternalGroup.tenantId,
       externalGroupId: knowledgeExternalGroup.externalGroupId,
@@ -115,6 +127,10 @@ async function loadExternalGroupTokens(
         gte(knowledgeExternalGroup.lastSyncedAt, freshEnough)
       )
     )
+    .limit(MAX_EXTERNAL_GROUP_TOKENS + 1)
+  if (rows.length > MAX_EXTERNAL_GROUP_TOKENS) {
+    throw new Error('External group access exceeded its token capacity')
+  }
 
   const tokens: string[] = []
   for (const row of rows) {
@@ -125,7 +141,19 @@ async function loadExternalGroupTokens(
     })
     if (token) tokens.push(token)
   }
-  return tokens
+  assertExternalGroupTokenCapacity(tokens)
+  if (tokens.length > 0) {
+    const parents = await db.execute<{ token: string }>(
+      parentGroupTokensQuery(tokens, scope, freshEnough)
+    )
+    if (parents.length > MAX_EXTERNAL_GROUP_TOKENS) {
+      throw new Error('External group access exceeded its token capacity')
+    }
+    for (const parent of parents) tokens.push(parent.token)
+  }
+  const uniqueTokens = sortAccessTokens(tokens)
+  assertExternalGroupTokenCapacity(uniqueTokens)
+  return uniqueTokens
 }
 
 export interface KnowledgeAccessScopeContext {
@@ -274,6 +302,10 @@ async function loadUserAccess(
     const email = rows[0]?.email
     const own = userToken(email)
     if (own) identityTokens.add(own)
+    if (own) {
+      for (const token of await loadConnectorPermissionGroupTokens(own, scope))
+        identityTokens.add(token)
+    }
     const groupMemberTokens = [...identityTokens]
     if (own && email) groupMemberTokens.push(domainMemberWildcard(emailDomain(email)))
     if (groupMemberTokens.length > 0) {
@@ -391,6 +423,33 @@ function createAccessProvider(
   const provider: KnowledgeAccessProvider = {
     async get() {
       return (await identity()).access
+    },
+    async liveSourceConnectorCondition() {
+      const { access, githubReaders, confluenceReaders } = await identity()
+      if (
+        access.kind !== 'user' ||
+        (!githubReaders.length && !confluenceReaders.length) ||
+        context.knowledgeBaseIds?.length === 0
+      )
+        return null
+      return and(
+        or(
+          githubReaders.length ? githubInstallationSourceCondition() : undefined,
+          confluenceReaders.length ? confluenceSiteSourceCondition() : undefined
+        ),
+        inArray(
+          knowledgeConnector.knowledgeBaseId,
+          db
+            .select({ id: knowledgeBase.id })
+            .from(knowledgeBase)
+            .where(
+              liveSourceKnowledgeBaseCondition(
+                resourceScopeFromOwner(context),
+                context.knowledgeBaseIds
+              )
+            )
+        )
+      )!
     },
     async getForConnectors(connectorIds, signal) {
       const ids = boundedIds(connectorIds)

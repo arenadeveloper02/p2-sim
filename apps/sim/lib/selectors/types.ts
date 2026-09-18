@@ -17,6 +17,7 @@ export const selectorContextKeys = [
   'driveId',
   'excludeWorkflowId',
   'baseId',
+  'docId',
   'datasetId',
   'serviceDeskId',
   'impersonateUserEmail',
@@ -104,6 +105,13 @@ export type SelectorScope =
       kind: 'workspace'
       workspaceId: string
     }
+
+/** Chooses a dedicated client transport without granting access through the generic selector API. */
+export interface SelectorSurface {
+  kind: 'personal-search-setup'
+  organizationId: string
+  connectorType: 'jira' | 'confluence'
+}
 
 export type SelectorRequest =
   | {

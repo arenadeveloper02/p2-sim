@@ -636,6 +636,23 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2026-03-17',
         speedOptimized: true,
       },
+      {
+        id: 'gpt-5.3-codex',
+        pricing: {
+          input: 1.75,
+          cachedInput: 0.175,
+          output: 14.0,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 400000,
+        releaseDate: '2026-02-05',
+      },
       // GPT-5.2 family
       {
         id: 'gpt-5.2-pro',
@@ -770,6 +787,20 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 400000,
         releaseDate: '2025-08-07',
+      },
+      {
+        id: 'chat-latest',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 30.0,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 400000,
+        releaseDate: '2026-05-05',
       },
       {
         id: 'gpt-5-chat-latest',
@@ -1613,6 +1644,90 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'azure-anthropic/claude-fable-5-1',
+        pricing: {
+          input: 10,
+          cachedInput: 0.25,
+          output: 50,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          forcedToolUse: false,
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-09-01',
+      },
+      {
+        id: 'azure-anthropic/claude-opus-5',
+        pricing: {
+          input: 5,
+          cachedInput: 0.5,
+          output: 25,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-07-24',
+      },
+      {
+        id: 'azure-anthropic/claude-opus-4-8',
+        pricing: {
+          input: 5,
+          cachedInput: 0.5,
+          output: 25,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-05-28',
+      },
+      {
+        id: 'azure-anthropic/claude-opus-4-7',
+        pricing: {
+          input: 5,
+          cachedInput: 0.5,
+          output: 25,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 2048 },
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-04-16',
+      },
+      {
         id: 'azure-anthropic/claude-opus-4-6',
         pricing: {
           input: 5.0,
@@ -1655,6 +1770,47 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-11-24',
+      },
+      {
+        id: 'azure-anthropic/claude-sonnet-5',
+        pricing: {
+          input: 2,
+          cachedInput: 0.2,
+          output: 10,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-30',
+      },
+      {
+        id: 'azure-anthropic/claude-sonnet-4-6',
+        pricing: {
+          input: 3,
+          cachedInput: 0.3,
+          output: 15,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-17',
       },
       {
         id: 'azure-anthropic/claude-sonnet-4-5',
@@ -1757,12 +1913,31 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         recommended: true,
       },
       {
+        id: 'gemini-3.7-flash',
+        pricing: {
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-08-13',
+      },
+      {
         id: 'gemini-3.6-flash',
         pricing: {
-          input: 1.5,
-          cachedInput: 0.15,
-          output: 7.5,
-          updatedAt: '2026-07-21',
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1820,7 +1995,15 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.0,
           cachedInput: 0.2,
           output: 12.0,
-          updatedAt: '2026-06-11',
+          tiers: [
+            {
+              aboveInputTokens: 200000,
+              input: 4.0,
+              cachedInput: 0.4,
+              output: 18.0,
+            },
+          ],
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1878,7 +2061,15 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.25,
           cachedInput: 0.125,
           output: 10.0,
-          updatedAt: '2026-06-11',
+          tiers: [
+            {
+              aboveInputTokens: 200000,
+              input: 2.5,
+              cachedInput: 0.25,
+              output: 15.0,
+            },
+          ],
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1991,6 +2182,79 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
+      {
+        id: 'vertex/gemini-3.8-flash',
+        pricing: {
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-09-02',
+      },
+      {
+        id: 'vertex/gemini-3.7-flash',
+        pricing: {
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-08-13',
+      },
+      {
+        id: 'vertex/gemini-3.6-flash',
+        pricing: {
+          input: 0.75,
+          cachedInput: 0.075,
+          output: 3.75,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          thinking: {
+            levels: ['minimal', 'low', 'medium', 'high'],
+            default: 'medium',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-07-21',
+      },
+      {
+        id: 'vertex/gemini-3.5-flash-lite',
+        pricing: {
+          input: 0.3,
+          cachedInput: 0.03,
+          output: 2.5,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          thinking: {
+            levels: ['minimal', 'low', 'medium', 'high'],
+            default: 'minimal',
+          },
+          maxOutputTokens: 65536,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-07-21',
+        speedOptimized: true,
+      },
       {
         id: 'vertex/gemini-3.5-flash',
         pricing: {
@@ -2338,7 +2602,15 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.0,
           cachedInput: 0.5,
           output: 6.0,
-          updatedAt: '2026-08-12',
+          tiers: [
+            {
+              aboveInputTokens: 200000,
+              input: 4.0,
+              cachedInput: 1.0,
+              output: 12.0,
+            },
+          ],
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -2579,6 +2851,23 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'cerebras/qwen-3.8-27b',
+        pricing: {
+          input: 0.99,
+          output: 1.49,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high'],
+          },
+          maxOutputTokens: 40960,
+        },
+        contextWindow: 131072,
+        releaseDate: '2026-08-14',
+      },
+      {
         id: 'cerebras/gpt-oss-120b',
         pricing: {
           input: 0.35,
@@ -2805,16 +3094,69 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   sakana: {
     id: 'sakana',
     name: 'Sakana AI',
-    description: "Sakana AI's Fugu multi-agent models via an OpenAI-compatible API",
+    description: 'Sakana AI Fugu and Namazu models via an OpenAI-compatible API',
     defaultModel: 'fugu',
     modelPatterns: [/^fugu/],
     icon: SakanaIcon,
     color: '#E60000',
     capabilities: {
-      temperature: { min: 0, max: 2 },
       toolUsageControl: true,
     },
     models: [
+      {
+        id: 'fugu-ultra-v2.0',
+        pricing: {
+          input: 5,
+          cachedInput: 0.5,
+          output: 30,
+          tiers: [{ aboveInputTokens: 272000, input: 10, cachedInput: 1, output: 45 }],
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+        releaseDate: '2026-09-11',
+      },
+      {
+        id: 'fugu-max',
+        pricing: {
+          input: 2,
+          cachedInput: 0.25,
+          output: 6,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+        releaseDate: '2026-09-11',
+      },
+      {
+        id: 'fugu-max-v1.0',
+        pricing: {
+          input: 2,
+          cachedInput: 0.25,
+          output: 6,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+        releaseDate: '2026-09-11',
+      },
+      {
+        id: 'sakana-namazu',
+        pricing: {
+          input: 0.95,
+          cachedInput: 0.15,
+          output: 4,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+      },
+      {
+        id: 'sakana-namazu-v1.0',
+        pricing: {
+          input: 0.95,
+          cachedInput: 0.15,
+          output: 4,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+      },
       {
         id: 'fugu',
         pricing: {
@@ -2834,7 +3176,8 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 5,
           cachedInput: 0.5,
           output: 30,
-          updatedAt: '2026-06-22',
+          tiers: [{ aboveInputTokens: 272000, input: 10, cachedInput: 1, output: 45 }],
+          updatedAt: '2026-09-14',
         },
         capabilities: {},
         contextWindow: 1000000,
@@ -2854,10 +3197,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     isReseller: true,
     contextInformationAvailable: true,
     capabilities: {
-      temperature: { min: 0, max: 2 },
       toolUsageControl: true,
     },
     models: [
+      {
+        id: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: false,
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-08-11',
+      },
       {
         id: 'nvidia/llama-3.1-nemotron-70b-instruct',
         pricing: {
@@ -3025,6 +3380,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['low', 'high', 'max'],
+          },
           maxOutputTokens: 1048576,
         },
         contextWindow: 1048576,
@@ -3097,8 +3455,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'glm-5.3',
         pricing: {
           input: 1.4,
+          cachedInput: 0.26,
           output: 4.4,
-          updatedAt: '2026-08-26',
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -3116,13 +3475,17 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'glm-5.3-flash',
         pricing: {
           input: 0.15,
+          cachedInput: 0.03,
           output: 0.5,
-          updatedAt: '2026-08-26',
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
           toolUsageControl: true,
           maxOutputTokens: 131072,
+          reasoningEffort: {
+            values: ['low', 'high', 'max'],
+          },
         },
         contextWindow: 1000000,
         releaseDate: '2026-08-26',
@@ -3745,7 +4108,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     name: 'Ollama',
     description: 'Local LLM models via Ollama',
     defaultModel: '',
-    modelPatterns: [],
+    modelPatterns: [/^ollama\//],
     icon: OllamaIcon,
     capabilities: {
       toolUsageControl: false, // Ollama does not support tool_choice parameter
@@ -3828,7 +4191,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     color: '#FF9900',
     isReseller: true,
     capabilities: {
-      temperature: { min: 0, max: 1 },
       toolUsageControl: true,
     },
     models: [
@@ -3863,16 +4225,29 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           promptCaching: { minimumCacheableTokens: 1024 },
         },
         contextWindow: 1000000,
-        releaseDate: '2026-06-25',
-        recommended: true,
+        releaseDate: '2026-06-30',
+      },
+      {
+        id: 'bedrock/anthropic.claude-fable-5',
+        pricing: {
+          input: 11,
+          cachedInput: 1.1,
+          output: 55,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-09',
       },
       {
         id: 'bedrock/anthropic.claude-opus-4-8',
         pricing: {
-          input: 5.0,
-          cachedInput: 0.5,
-          output: 25.0,
-          updatedAt: '2026-08-20',
+          input: 5.5,
+          cachedInput: 0.55,
+          output: 27.5,
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           nativeStructuredOutputs: true,
@@ -3902,10 +4277,10 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'bedrock/anthropic.claude-sonnet-4-6',
         pricing: {
-          input: 3.0,
-          cachedInput: 0.3,
-          output: 15.0,
-          updatedAt: '2026-08-20',
+          input: 3.3,
+          cachedInput: 0.33,
+          output: 16.5,
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -3915,6 +4290,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-02-17',
+      },
+      {
+        id: 'bedrock/anthropic.claude-opus-4-6-v1',
+        pricing: {
+          input: 5.5,
+          cachedInput: 0.55,
+          output: 27.5,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-05',
       },
       {
         id: 'bedrock/anthropic.claude-opus-4-5-20251101-v1:0',
@@ -3982,6 +4373,140 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2025-08-05',
         sunset: { status: 'legacy' },
+      },
+      {
+        id: 'bedrock/openai.gpt-6-astra',
+        pricing: {
+          input: 11,
+          output: 55,
+          tiers: [{ aboveInputTokens: 272000, input: 22, output: 82.5 }],
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-09-08',
+      },
+      {
+        id: 'bedrock/openai.gpt-5.6-sol',
+        pricing: {
+          input: 4.4,
+          output: 22,
+          tiers: [{ aboveInputTokens: 272000, input: 8.8, output: 33 }],
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+        contextWindow: 1000000,
+        releaseDate: '2026-07-13',
+      },
+      {
+        id: 'bedrock/openai.gpt-5.6-terra',
+        pricing: {
+          input: 2.2,
+          output: 13.2,
+          tiers: [{ aboveInputTokens: 272000, input: 4.4, output: 19.8 }],
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+        contextWindow: 1000000,
+        releaseDate: '2026-07-13',
+      },
+      {
+        id: 'bedrock/openai.gpt-5.6-luna',
+        pricing: {
+          input: 0.22,
+          output: 1.32,
+          tiers: [{ aboveInputTokens: 272000, input: 0.44, output: 1.98 }],
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {},
+        contextWindow: 1000000,
+        releaseDate: '2026-07-13',
+      },
+      {
+        id: 'bedrock/openai.gpt-oss-120b-1:0',
+        pricing: {
+          input: 0.15,
+          output: 0.6,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 16000,
+        },
+        contextWindow: 128000,
+        releaseDate: '2025-08-05',
+      },
+      {
+        id: 'bedrock/openai.gpt-oss-20b-1:0',
+        pricing: {
+          input: 0.07,
+          output: 0.3,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 16000,
+        },
+        contextWindow: 128000,
+        releaseDate: '2025-08-05',
+      },
+      {
+        id: 'bedrock/minimax.minimax-m2.5',
+        pricing: {
+          input: 0.3,
+          output: 1.2,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 8000,
+        },
+        contextWindow: 196000,
+        releaseDate: '2026-02-12',
+      },
+      {
+        id: 'bedrock/zai.glm-5',
+        pricing: {
+          input: 1,
+          output: 3.2,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 200000,
+        releaseDate: '2026-02-11',
+      },
+      {
+        id: 'bedrock/moonshotai.kimi-k2.5',
+        pricing: {
+          input: 0.6,
+          output: 3,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 16000,
+        },
+        contextWindow: 256000,
+        releaseDate: '2026-01-27',
+      },
+      {
+        id: 'bedrock/deepseek.v3.2',
+        pricing: {
+          input: 0.62,
+          output: 1.85,
+          updatedAt: '2026-09-14',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 8000,
+        },
+        contextWindow: 164000,
+        releaseDate: '2025-12-01',
       },
       {
         id: 'bedrock/amazon.nova-2-lite-v1:0',
@@ -4404,9 +4929,8 @@ interface ModelCatalogEntry {
 
 /**
  * Lowercased model ID → catalog position metadata, built once from the static
- * provider catalog. Dynamic providers contribute nothing here because their model
- * lists are populated at runtime (not at module load), and only catalog models are
- * ever reordered by release date.
+ * provider catalog, including built-in models of dynamic providers. Models added
+ * by runtime discovery are excluded.
  */
 const MODEL_CATALOG_INDEX: Map<string, ModelCatalogEntry> = new Map(
   Object.entries(PROVIDER_DEFINITIONS).flatMap(([providerId, provider]) =>
@@ -4423,6 +4947,13 @@ const MODEL_CATALOG_INDEX: Map<string, ModelCatalogEntry> = new Map(
     })
   )
 )
+
+/** Returns built-in public models, excluding names added by runtime discovery. */
+export function getStaticProviderModels(providerId: string): ModelDefinition[] {
+  return (PROVIDER_DEFINITIONS[providerId]?.models ?? []).filter(
+    (model) => MODEL_CATALOG_INDEX.get(model.id.toLowerCase())?.providerId === providerId
+  )
+}
 
 /**
  * Reorders model IDs so that, within each provider, newer models (by release date)
@@ -4473,6 +5004,18 @@ export const DYNAMIC_MODEL_PROVIDERS = [
   'together',
   'baseten',
 ] as const
+
+/** Providers whose adapter accepts namespaced IDs, rather than only a native model-family name. */
+const NAMESPACED_MODEL_PROVIDERS = new Set(
+  Object.entries(PROVIDER_DEFINITIONS)
+    .filter(
+      ([providerId, provider]) =>
+        provider.isReseller ||
+        (DYNAMIC_MODEL_PROVIDERS as readonly string[]).includes(providerId) ||
+        provider.models.some((model) => model.id.startsWith(`${providerId}/`))
+    )
+    .map(([providerId]) => providerId)
+)
 
 function getAllStaticModelIds(): string[] {
   const ids: string[] = []
@@ -4574,7 +5117,7 @@ export function isKnownModelId(modelId: string): boolean {
 
   const lowered = trimmed.toLowerCase()
   for (const provider of DYNAMIC_MODEL_PROVIDERS) {
-    if (lowered.startsWith(`${provider}/`)) return true
+    if (lowered.startsWith(`${provider}/`) && lowered.slice(provider.length + 1).trim()) return true
   }
 
   return false
@@ -4668,8 +5211,19 @@ export function getBaseModelProviders(): Record<string, ProviderId> {
     )
 }
 
-export function getProviderFromModel(model: string): ProviderId {
+/** Resolves catalog entries and provider patterns without guessing a fallback provider. */
+export function findProviderFromModel(model: string): ProviderId | null {
   const normalizedModel = model.toLowerCase()
+
+  /** Explicit provider namespaces take precedence over names discovered on a local server. */
+  for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
+    if (
+      NAMESPACED_MODEL_PROVIDERS.has(providerId) &&
+      provider.modelPatterns?.some((pattern) => pattern.test(normalizedModel))
+    ) {
+      return providerId as ProviderId
+    }
+  }
 
   for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
     if (
@@ -4685,7 +5239,20 @@ export function getProviderFromModel(model: string): ProviderId {
     }
   }
 
-  return 'ollama'
+  return null
+}
+
+export function getProviderFromModel(model: string): ProviderId {
+  return findProviderFromModel(model) ?? 'ollama'
+}
+
+/** Recognized provider namespaces accept deployment and model IDs outside the static catalog. */
+export function isCustomModelId(modelId: string): boolean {
+  const separator = modelId.indexOf('/')
+  if (separator < 1 || modelId.slice(separator + 1).trim().length === 0) return false
+
+  const providerId = findProviderFromModel(modelId)
+  return providerId !== null && NAMESPACED_MODEL_PROVIDERS.has(providerId)
 }
 
 export function getProviderIcon(model: string): React.ComponentType<{ className?: string }> | null {

@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { isVersionedType, stripVersionSuffix } from '@sim/utils/string'
+import ts from '@typescript/typescript6'
 import { glob } from 'glob'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
@@ -11,6 +12,7 @@ import { visit } from 'unist-util-visit'
 import type { BlockCategory } from '../apps/sim/blocks/types'
 import { IntegrationType } from '../apps/sim/blocks/types'
 import type { ToolOutputProperty } from '../apps/sim/tools/types'
+import { formatGeneratedSource } from './format-generated-source'
 
 /**
  * Cache for resolved const definitions from types files.
@@ -49,6 +51,76 @@ const TRIGGERS_PATH = path.join(rootDir, 'apps/sim/triggers')
 const sourceFileCache = new Map<string, string>()
 const sourceGlobCache = new Map<string, Promise<string[]>>()
 const blockConfigCache = new Map<string, ReturnType<typeof extractAllBlockConfigs>>()
+
+interface SourceObjectDeclaration {
+  name: string
+  start: number
+  end: number
+  content: string
+  satisfies: boolean
+  blockConfig: boolean
+}
+
+const sourceObjectCache = new Map<string, SourceObjectDeclaration[]>()
+
+/** Type assertions and satisfies checks do not change an initializer's runtime value. */
+function unwrapExpression(expression: ts.Expression): {
+  expression: ts.Expression
+  satisfies: boolean
+} {
+  let current = expression
+  let satisfies = false
+  while (
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isParenthesizedExpression(current) ||
+    ts.isTypeAssertionExpression(current)
+  ) {
+    satisfies ||= ts.isSatisfiesExpression(current)
+    current = current.expression
+  }
+  return { expression: current, satisfies }
+}
+
+/** Reads exported object initializers without executing integration modules. */
+function sourceObjectDeclarations(content: string): SourceObjectDeclaration[] {
+  const cached = sourceObjectCache.get(content)
+  if (cached) return cached
+  const source = ts.createSourceFile('integration.ts', content, ts.ScriptTarget.Latest, true)
+  const declarations: SourceObjectDeclaration[] = []
+  for (const statement of source.statements) {
+    if (
+      !ts.isVariableStatement(statement) ||
+      !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+    )
+      continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue
+      const { expression: initializer, satisfies } = unwrapExpression(declaration.initializer)
+      if (!ts.isObjectLiteralExpression(initializer)) continue
+      const start = initializer.getStart(source)
+      const end = initializer.getEnd()
+      declarations.push({
+        name: declaration.name.text,
+        start,
+        end,
+        content: content.slice(start, end),
+        satisfies,
+        blockConfig:
+          /^BlockConfig\b/.test(declaration.type?.getText(source) ?? '') ||
+          /\bsatisfies\s+BlockConfig\b/.test(content.slice(end, declaration.getEnd())),
+      })
+    }
+  }
+  sourceObjectCache.set(content, declarations)
+  return declarations
+}
+
+function blockDeclarations(content: string): SourceObjectDeclaration[] {
+  return sourceObjectDeclarations(content).filter(
+    (declaration) => declaration.name.endsWith('Block') && declaration.blockConfig
+  )
+}
 
 function readSourceFile(filePath: string): string {
   const cached = sourceFileCache.get(filePath)
@@ -572,14 +644,10 @@ export async function generateIconMappings(): Promise<{
       // First, extract the primary icon from the file (usually the legacy block's icon)
       const primaryIcon = extractIconNameFromContent(fileContent)
 
-      const exportRegex = /export\s+const\s+(\w+)Block\s*:\s*BlockConfig[^=]*=\s*\{/g
-      let match
-
-      while ((match = exportRegex.exec(fileContent)) !== null) {
-        const blockName = match[1]
-        const startIndex = match.index + match[0].length - 1
-
-        const endIndex = findMatchingClose(fileContent, startIndex)
+      for (const declaration of blockDeclarations(fileContent)) {
+        const blockName = declaration.name.replace(/Block$/, '')
+        const startIndex = declaration.start
+        const endIndex = declaration.end
 
         if (endIndex !== -1) {
           const blockContent = fileContent.substring(startIndex, endIndex)
@@ -1999,6 +2067,42 @@ async function writeIntegrationsJson(iconMapping: Record<string, IconRef>): Prom
 
     integrations.sort((a, b) => compareCatalogNames(a.name, b.name))
 
+    const metadataPath = path.join(INTEGRATIONS_CATALOG_PATH, 'integration-metadata.ts')
+    const metadata = integrations.map(
+      ({ type, slug, name, authType, oauthServiceId, bgColor, integrationType }) => ({
+        type,
+        slug,
+        name,
+        authType,
+        ...(oauthServiceId ? { oauthServiceId } : {}),
+        bgColor,
+        integrationType,
+      })
+    )
+    emitGeneratedFile(
+      metadataPath,
+      formatGeneratedSource(
+        `/**
+ * Generated by scripts/generate-docs.ts from the public integration catalog.
+ * Identity and authentication metadata without descriptions, operations, or icons.
+ */
+export interface IntegrationMetadata {
+  type: string
+  slug: string
+  name: string
+  authType: 'oauth' | 'api-key' | 'none'
+  oauthServiceId?: string
+  bgColor: string
+  integrationType: string
+}
+
+export const INTEGRATION_METADATA: readonly IntegrationMetadata[] = JSON.parse(${JSON.stringify(JSON.stringify(metadata))})
+`,
+        metadataPath,
+        rootDir
+      )
+    )
+
     const jsonPath = path.join(INTEGRATIONS_CATALOG_PATH, 'integrations.json')
     // `JSON.stringify` always expands every array across multiple lines, but Biome's
     // JSON formatter inlines short arrays of primitive strings. Pre-collapse those
@@ -2049,14 +2153,10 @@ export function extractAllBlockConfigs(fileContent: string): BlockConfig[] {
   // First, extract the primary icon from the file (for V2 blocks that inherit via spread)
   const primaryIcon = extractIconNameFromContent(fileContent)
 
-  const exportRegex = /export\s+const\s+(\w+)Block\s*:\s*BlockConfig[^=]*=\s*\{/g
-  let match
-
-  while ((match = exportRegex.exec(fileContent)) !== null) {
-    const blockName = match[1]
-    const startIndex = match.index + match[0].length - 1 // Position of opening brace
-
-    const endIndex = findMatchingClose(fileContent, startIndex)
+  for (const declaration of blockDeclarations(fileContent)) {
+    const blockName = declaration.name.replace(/Block$/, '')
+    const startIndex = declaration.start
+    const endIndex = declaration.end
 
     if (endIndex !== -1) {
       const blockContent = fileContent.substring(startIndex, endIndex)
@@ -2110,14 +2210,9 @@ export function extractInheritedBlockCategory(
     const base = extractSpreadBase(current)
     if (!base || visited.has(base)) return null
     visited.add(base)
-    const declaration = new RegExp(
-      `export\\s+const\\s+${base}\\s*:\\s*BlockConfig[^=]*=\\s*\\{`
-    ).exec(fileContent)
+    const declaration = blockDeclarations(fileContent).find((candidate) => candidate.name === base)
     if (!declaration) return null
-    const start = declaration.index + declaration[0].length - 1
-    const end = findMatchingClose(fileContent, start)
-    if (end === -1) return null
-    current = fileContent.substring(start, end)
+    current = declaration.content
   }
 }
 
@@ -2136,24 +2231,14 @@ function extractBlockConfigFromContent(
     let baseConfig: BlockConfig | null = null
 
     if (spreadBase && fileContent) {
-      const baseBlockRegex = new RegExp(
-        `export\\s+const\\s+${spreadBase}\\s*:\\s*BlockConfig[^=]*=\\s*\\{`,
-        'g'
+      const declaration = blockDeclarations(fileContent).find(
+        (candidate) => candidate.name === spreadBase
       )
-      const baseMatch = baseBlockRegex.exec(fileContent)
-
-      if (baseMatch) {
-        const startIndex = baseMatch.index + baseMatch[0].length - 1
-        const endIndex = findMatchingClose(fileContent, startIndex)
-
-        if (endIndex !== -1) {
-          const baseBlockContent = fileContent.substring(startIndex, endIndex)
-          // Recursively extract base config (but don't pass fileContent to avoid infinite loops)
-          baseConfig = extractBlockConfigFromContent(
-            baseBlockContent,
-            spreadBase.replace('Block', '')
-          )
-        }
+      if (declaration) {
+        baseConfig = extractBlockConfigFromContent(
+          declaration.content,
+          spreadBase.replace(/Block$/, '')
+        )
       }
     }
 
@@ -2180,7 +2265,14 @@ function extractBlockConfigFromContent(
       '#F5F5F5'
     const iconName = extractIconNameFromContent(blockContent) || (baseConfig as any)?.iconName || ''
 
-    const outputs = extractOutputsFromContent(blockContent)
+    const ownOutputs = extractOutputsFromContent(blockContent)
+    const inheritsOutputs = /\boutputs\s*:\s*\{\s*\.\.\.\w+Block\.outputs\b/.test(blockContent)
+    const omittedOutputs = extractOmittedOutputs(blockContent, baseConfig?.outputs)
+    const outputs = omittedOutputs
+      ? { ...omittedOutputs, ...ownOutputs }
+      : inheritsOutputs
+        ? { ...baseConfig?.outputs, ...ownOutputs }
+        : ownOutputs
     const toolsAccess = extractToolsAccessFromContent(blockContent)
 
     // For tools.access, if not found directly, check if it's derived from base via map
@@ -2194,6 +2286,14 @@ function extractBlockConfigFromContent(
       if (mapMatch) {
         const versionSuffix = `_v${mapMatch[1]}`
         finalToolsAccess = baseConfig.tools.access.map((tool) => `${tool}${versionSuffix}`)
+      }
+      const replacement = blockContent.match(
+        /access\s*:\s*\w+Block\.tools\.access\.map\s*\(\s*\(\s*(\w+)\s*\)\s*=>\s*\1\s*===\s*['"]([^'"]+)['"]\s*\?\s*['"]([^'"]+)['"]\s*:\s*\1\s*\)/
+      )
+      if (replacement) {
+        finalToolsAccess = baseConfig.tools.access.map((tool) =>
+          tool === replacement[2] ? replacement[3] : tool
+        )
       }
     }
 
@@ -2568,6 +2668,20 @@ function extractOutputsFromContent(content: string): Record<string, any> {
     }
   })
 
+  return outputs
+}
+
+/** Resolves a version's explicit removal of inherited output fields. */
+function extractOmittedOutputs<T>(
+  content: string,
+  inherited: Record<string, T> | undefined
+): Record<string, T> | null {
+  const omission = content.match(
+    /\boutputs\s*:\s*(?:\{\s*\.\.\.\s*)?omit\(\s*\w+\.outputs!?\s*,\s*\[([^\]]*)\]\s*\)/
+  )
+  if (!omission || !inherited) return null
+  const outputs = { ...inherited }
+  for (const [, key] of omission[1].matchAll(/['"]([^'"]+)['"]/g)) delete outputs[key]
   return outputs
 }
 
@@ -3118,6 +3232,35 @@ export function extractToolInfo(
   outputs: Record<string, ToolOutputProperty>
 } | null {
   try {
+    const declarations = sourceObjectDeclarations(fileContent)
+    const declaration = declarations.find(
+      (candidate) => extractStringPropertyFromContent(candidate.content, 'id', true) === toolName
+    )
+    const omittedBase = declaration?.content.match(/\boutputs\s*:\s*omit\(\s*(\w+)\.outputs!?\s*,/)
+    const baseDeclaration =
+      omittedBase && declarations.find((candidate) => candidate.name === omittedBase[1])
+    const baseId =
+      baseDeclaration && extractStringPropertyFromContent(baseDeclaration.content, 'id', true)
+    if (declaration && baseId && baseId !== toolName) {
+      const baseInfo = extractToolInfo(
+        baseId,
+        baseDeclaration.content,
+        factorySource,
+        toolFilePath,
+        rootDir,
+        userSettableParamIdSet
+      )
+      const outputs = extractOmittedOutputs(declaration.content, baseInfo?.outputs)
+      if (baseInfo && outputs) {
+        return {
+          ...baseInfo,
+          description:
+            extractStringPropertyFromContent(declaration.content, 'description', true) ||
+            baseInfo.description,
+          outputs,
+        }
+      }
+    }
     // First, try to find the specific tool definition by its ID
     // Look for: id: 'toolName' or id: "toolName"
     const toolIdRegex = new RegExp(`id:\\s*['"]${toolName}['"]`)
@@ -3882,6 +4025,18 @@ export function parsePropertiesContent(
   return properties
 }
 
+/** Wrapped tool declarations use the canonical evaluated output metadata. */
+function hasWrappedToolBase(toolName: string, content: string): boolean {
+  const declarations = sourceObjectDeclarations(content)
+  const declaration = declarations.find(
+    (candidate) => extractStringPropertyFromContent(candidate.content, 'id', true) === toolName
+  )
+  if (!declaration) return false
+  const baseName = declaration.content.match(/^\s*\.\.\.(\w+)\s*,/m)?.[1]
+  const base = declarations.find((candidate) => candidate.name === baseName)
+  return base?.satisfies === true
+}
+
 export async function getToolInfo(
   toolName: string,
   userSettableParamIds: readonly string[] | null = null
@@ -4057,7 +4212,9 @@ export async function getToolInfo(
       description: metadata.description ?? sourceInfo?.description ?? 'No description available',
       params,
       outputs:
-        toolPrefix === 'sailpoint' || toolName === 'file_edit'
+        toolPrefix === 'sailpoint' ||
+        toolName === 'file_edit' ||
+        hasWrappedToolBase(toolName, toolFileContent)
           ? (generatedOutputs ?? sourceInfo?.outputs ?? {})
           : (sourceInfo?.outputs ?? generatedOutputs ?? {}),
     }
@@ -4944,12 +5101,9 @@ async function collectPreviewOnlyTriggerIds(): Promise<Set<string>> {
   const blockFiles = (await sourceGlob(`${BLOCKS_PATH}/*.ts`)).sort()
   for (const blockFile of blockFiles) {
     const fileContent = readSourceFile(blockFile)
-    const exportRegex = /export\s+const\s+(\w+)Block\s*:\s*BlockConfig[^=]*=\s*\{/g
-    let match: RegExpExecArray | null
-
-    while ((match = exportRegex.exec(fileContent)) !== null) {
-      const startIndex = match.index + match[0].length - 1
-      const endIndex = findMatchingClose(fileContent, startIndex)
+    for (const declaration of blockDeclarations(fileContent)) {
+      const startIndex = declaration.start
+      const endIndex = declaration.end
       if (endIndex === -1) continue
 
       const blockContent = fileContent.substring(startIndex, endIndex)

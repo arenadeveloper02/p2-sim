@@ -59,7 +59,10 @@ vi.mock('@/lib/knowledge/embeddings', () => ({
 
 vi.mock('@/lib/knowledge/search/queries', () => ({
   generateSearchEmbedding: mocks.generateEmbedding,
-  executeKnowledgeSearch: mocks.executeSearch,
+  retrieveKnowledgeSearch: async (...args: unknown[]) => ({
+    rows: await mocks.executeSearch(...args),
+    retrieval: { status: 'complete', timedOutLegs: [] },
+  }),
   getDocumentMetadataByIds: mocks.getDocumentMetadata,
 }))
 
@@ -104,10 +107,6 @@ import {
 } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import {
-  isDurableSecretProvenanceEnforced,
-  resetDurableSecretProvenanceEnforcementCache,
-} from '@/lib/execution/durable-secret-provenance-enforcement'
 import { createKnowledgeDocumentSourceValue } from '@/lib/knowledge/secret-provenance'
 import { POST } from '@/app/api/v2/knowledge/search/route'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
@@ -208,12 +207,6 @@ function providerPayload() {
   return JSON.parse(provider.fetch.mock.calls[0][1].body)
 }
 
-function enforceKnowledge(enforced: boolean) {
-  env.DURABLE_SECRET_PROVENANCE_ENFORCED_SURFACES = enforced ? 'all' : ''
-  resetDurableSecretProvenanceEnforcementCache()
-  expect(isDurableSecretProvenanceEnforced('knowledge')).toBe(enforced)
-}
-
 async function requestSearch(overrides: Partial<typeof requestInput> = {}) {
   return POST(
     new NextRequest('http://localhost/api/v2/knowledge/search', {
@@ -227,7 +220,6 @@ async function requestSearch(overrides: Partial<typeof requestInput> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   resetDbChainMock()
-  enforceKnowledge(true)
   env.COHERE_API_KEY = 'synthetic-cohere-key'
   provider.decrypt.mockResolvedValue({ decrypted: SECRET })
   provider.fetch.mockResolvedValue(
@@ -261,26 +253,22 @@ beforeEach(() => {
 
 /** The route, use case, sidecar binding/import, registry, projection and provider request builder are real. */
 describe('Knowledge search provenance through the V2 route and reranker HTTP boundary', () => {
-  it.each([false, true])(
-    'redacts current known-secret chunks with enforcement=%s',
-    async (enforced) => {
-      enforceKnowledge(enforced)
-      seedSidecar('exact')
-      const response = await requestSearch()
-      const body = await response.json()
-      expect(response.status).toBe(200)
-      expect(body.data.rerankerStatus).toBe('applied')
-      expect(providerPayload().documents).toEqual([CONTENT.replace(SECRET, '{{TOKEN}}')])
-      expect(body.data.results[0].content).toBe(CONTENT)
-      expect(provider.decrypt).toHaveBeenCalledWith('synthetic-encrypted-token')
-      expect(mocks.generateEmbedding).toHaveBeenCalledWith(
-        requestInput.query,
-        expect.anything(),
-        'workspace-1',
-        undefined
-      )
-    }
-  )
+  it('redacts current known-secret chunks', async () => {
+    seedSidecar('exact')
+    const response = await requestSearch()
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(body.data.rerankerStatus).toBe('applied')
+    expect(providerPayload().documents).toEqual([CONTENT.replace(SECRET, '{{TOKEN}}')])
+    expect(body.data.results[0].content).toBe(CONTENT)
+    expect(provider.decrypt).toHaveBeenCalledWith('synthetic-encrypted-token')
+    expect(mocks.generateEmbedding).toHaveBeenCalledWith(
+      requestInput.query,
+      expect.anything(),
+      'workspace-1',
+      undefined
+    )
+  })
 
   it('does not assign a billing owner secret name to a workspace-key caller', async () => {
     seedSidecar('exact')
@@ -311,7 +299,7 @@ describe('Knowledge search provenance through the V2 route and reranker HTTP bou
   })
 
   it.each(['unknown', 'missing', 'stale', 'malformed'] as const)(
-    'refuses %s tracked provenance before provider HTTP when enforcement is enabled',
+    'refuses %s tracked provenance before provider HTTP',
     async (status) => {
       seedSidecar(status)
       const response = await requestSearch()
@@ -323,27 +311,12 @@ describe('Knowledge search provenance through the V2 route and reranker HTTP bou
     }
   )
 
-  it.each(['unknown', 'missing', 'stale', 'malformed'] as const)(
-    'preserves existing flag-off compatibility for %s sidecars',
-    async (status) => {
-      enforceKnowledge(false)
-      seedSidecar(status)
-      const response = await requestSearch()
-      expect(response.status).toBe(200)
-      expect(providerPayload().documents).toEqual([CONTENT])
-    }
-  )
-
-  it.each([false, true])(
-    'keeps pre-tracking NULL rows readable with enforcement=%s',
-    async (enforced) => {
-      enforceKnowledge(enforced)
-      seedSidecar('legacy')
-      const response = await requestSearch()
-      expect(response.status).toBe(200)
-      expect(providerPayload().documents).toEqual([CONTENT])
-    }
-  )
+  it('keeps pre-tracking NULL rows readable', async () => {
+    seedSidecar('legacy')
+    const response = await requestSearch()
+    expect(response.status).toBe(200)
+    expect(providerPayload().documents).toEqual([CONTENT])
+  })
 
   it('does not subject a raw public read without reranking to durable-model enforcement', async () => {
     seedSidecar('unknown')

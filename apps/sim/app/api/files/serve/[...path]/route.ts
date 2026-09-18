@@ -7,6 +7,7 @@ import { fileServeParamsSchema, fileServeQuerySchema } from '@/lib/api/contracts
 import {
   concealCrossTenantResourceError,
   InternalUnauthenticatedError,
+  internalSessionAuth,
 } from '@/lib/api/server/routes'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { resolveServableDocBytes } from '@/lib/copilot/tools/server/files/doc-compile'
@@ -17,6 +18,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { ORG_LOGOS_S3_PREFIX } from '@/lib/uploads/contexts/org-logos/utils'
+import { readOrganizationAssistantImage } from '@/lib/uploads/contexts/organization-assistant/application'
 import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { resolveServableImageBytes } from '@/lib/uploads/server/image-derivative'
@@ -356,11 +358,27 @@ export const GET = withRouteHandler(
         return await handleDeployedChatExecutionFileLocal(fullPath)
       }
 
+      if (cloudKey.startsWith('assistant/')) {
+        const principal = await internalSessionAuth.authenticate()
+        const image = await readOrganizationAssistantImage({
+          principal,
+          key: cloudKey,
+          signal: request.signal,
+        })
+        return createFileResponse({
+          buffer: image.buffer,
+          filename: image.name,
+          contentType: image.contentType,
+          cacheControl: 'private, no-store',
+        })
+      }
+
       const isPublicByKeyPrefix =
         cloudKey.startsWith('profile-pictures/') ||
         cloudKey.startsWith('og-images/') ||
         cloudKey.startsWith('workspace-logos/') ||
-        cloudKey.startsWith(`${ORG_LOGOS_S3_PREFIX}/`)
+        cloudKey.startsWith(`${ORG_LOGOS_S3_PREFIX}/`) ||
+        cloudKey.startsWith('organization-logos/')
 
       if (isPublicByKeyPrefix) {
         const context = inferContextFromKey(cloudKey)

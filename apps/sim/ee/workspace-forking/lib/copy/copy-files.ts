@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { workspaceFileColumns, workspaceFiles } from '@sim/db/schema'
+import { workspaceFiles } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -22,6 +22,7 @@ import {
 } from '@/lib/uploads/core/storage-service'
 import { getWorkspaceFileSize, type StorageContext } from '@/lib/uploads/shared/types'
 import { MAX_FILE_SIZE } from '@/lib/uploads/utils/validation'
+import { activeWorkspaceFileConditions } from '@/lib/workspace-files/query-scope'
 import { resolveForkFolderMapping } from '@/ee/workspace-forking/lib/copy/copy-workflows'
 import {
   assertForkCopyActive,
@@ -196,14 +197,12 @@ export async function planForkFileCopies(params: {
     selectors.length === 0
       ? []
       : await tx
-          .select(workspaceFileColumns)
+          .select()
           .from(workspaceFiles)
           .where(
             and(
               selectors.length === 1 ? selectors[0] : or(...selectors),
-              eq(workspaceFiles.workspaceId, sourceWorkspaceId),
-              eq(workspaceFiles.context, 'workspace'),
-              isNull(workspaceFiles.deletedAt)
+              ...activeWorkspaceFileConditions([sourceWorkspaceId])
             )
           )
 

@@ -11,7 +11,7 @@ interface UseProfilePictureUploadProps {
   onUpload?: (url: string | null) => void
   onError?: (error: string) => void
   currentImage?: string | null
-  context?: 'profile-pictures' | 'workspace-logos' | 'org-logos'
+  context?: 'profile-pictures' | 'workspace-logos' | 'organization-logos'
   workspaceId?: string
   organizationId?: string
 }
@@ -67,12 +67,12 @@ export function useProfilePictureUpload({
 
   const uploadFileToServer = useCallback(
     async (file: File): Promise<string> => {
-      if (context === 'org-logos') {
+      if (context === 'organization-logos') {
         if (!organizationId) {
           throw new Error('organizationId is required for organization logo upload')
         }
         const result = await uploadInternalFileSession({
-          purpose: 'org_logo',
+          purpose: 'organization_logo',
           organizationId,
           file,
         })

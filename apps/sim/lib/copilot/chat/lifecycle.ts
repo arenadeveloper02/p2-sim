@@ -4,7 +4,10 @@ import { copilotChats, copilotMessages } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
-import { authorizeOrganizationChat } from '@/lib/copilot/chat/organization-chats'
+import {
+  authorizeOrganizationChat,
+  authorizeOrganizationChatCancellation,
+} from '@/lib/copilot/chat/organization-chats'
 import { type PersistedMessage, stripToolResultOutput } from '@/lib/copilot/chat/persisted-message'
 import { asOrchestrationError } from '@/lib/core/orchestration/types'
 import {
@@ -131,7 +134,10 @@ async function authorizeCopilotChatRow<T extends CopilotChatAuthRow>(
   chat: T | undefined,
   chatId: string,
   userId: string,
-  principal?: Principal
+  principal?: Principal,
+  organizationAuthorization:
+    | typeof authorizeOrganizationChat
+    | typeof authorizeOrganizationChatCancellation = authorizeOrganizationChat
 ): Promise<T | null> {
   if (!chat) {
     logger.warn('Copilot chat not found or not owned by user', { chatId, userId })
@@ -140,8 +146,13 @@ async function authorizeCopilotChatRow<T extends CopilotChatAuthRow>(
 
   if (chat.organizationId) {
     if (!principal || resolvePrincipalSubjectUserId(principal) !== userId) return null
+    if (
+      principal.kind === 'organization_delegated' &&
+      (principal.serviceId !== 'copilot' || principal.resourceScope.chatId !== chat.id)
+    )
+      return null
     try {
-      await authorizeOrganizationChat.execute({
+      await organizationAuthorization.execute({
         principal,
         input: { organizationId: chat.organizationId },
       })
@@ -185,10 +196,40 @@ async function authorizeCopilotChatRow<T extends CopilotChatAuthRow>(
  * authorization check — use this for routes that only need ownership
  * verification before a mutation (rename, delete, update-messages).
  */
-export async function getAccessibleCopilotChatAuth(
+export function getAccessibleCopilotChatAuth(
   chatId: string,
   userId: string,
   options?: { principal?: Principal }
+): Promise<CopilotChatAuthRow | null> {
+  return loadAccessibleCopilotChatAuth(
+    chatId,
+    userId,
+    options?.principal,
+    authorizeOrganizationChat
+  )
+}
+
+/** Resolves the same owned, live chat under the Stop operation's current membership policy. */
+export function getAccessibleCopilotChatForCancellation(
+  chatId: string,
+  userId: string,
+  options?: { principal?: Principal }
+): Promise<CopilotChatAuthRow | null> {
+  return loadAccessibleCopilotChatAuth(
+    chatId,
+    userId,
+    options?.principal,
+    authorizeOrganizationChatCancellation
+  )
+}
+
+async function loadAccessibleCopilotChatAuth(
+  chatId: string,
+  userId: string,
+  principal: Principal | undefined,
+  organizationAuthorization:
+    | typeof authorizeOrganizationChat
+    | typeof authorizeOrganizationChatCancellation
 ): Promise<CopilotChatAuthRow | null> {
   const [chat] = await db
     .select(copilotChatAuthColumns)
@@ -196,7 +237,7 @@ export async function getAccessibleCopilotChatAuth(
     .where(ownedLiveChatWhere(chatId, userId))
     .limit(1)
 
-  return authorizeCopilotChatRow(chat, chatId, userId, options?.principal)
+  return authorizeCopilotChatRow(chat, chatId, userId, principal, organizationAuthorization)
 }
 
 /**

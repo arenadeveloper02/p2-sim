@@ -7,17 +7,24 @@ import { authMockFns } from '@sim/testing'
 import { dehydrate } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resolveDeploymentShape } from '@/lib/core/config/deployment-shape'
 
 const {
   mockGetOrganizationSurfaceContext,
   mockWorkspaceChrome,
   mockPrefetchOrganizationSidebar,
   mockUseSession,
+  mockUseMothershipChatEvents,
 } = vi.hoisted(() => ({
   mockGetOrganizationSurfaceContext: vi.fn(),
   mockWorkspaceChrome: vi.fn(({ children }: { children: ReactNode }) => children),
   mockPrefetchOrganizationSidebar: vi.fn(async () => undefined),
   mockUseSession: vi.fn(),
+  mockUseMothershipChatEvents: vi.fn(),
+}))
+
+vi.mock('@/hooks/use-mothership-chat-events', () => ({
+  useMothershipChatEvents: mockUseMothershipChatEvents,
 }))
 
 vi.mock('@/lib/auth/auth-client', () => ({ useSession: mockUseSession }))
@@ -76,6 +83,7 @@ const SURFACE_CONTEXT = {
   organization: { id: 'org-1', name: 'Acme', slug: 'acme', logo: null, memberCount: 1 },
   viewer: { role: 'member', isAdmin: false },
   searchAccess: { memberScoped: true, sourceMirrored: true },
+  deployment: resolveDeploymentShape(),
 }
 
 describe('OrganizationLayout', () => {
@@ -118,6 +126,10 @@ describe('OrganizationLayout', () => {
       'active-org'
     )
     expect(html).toContain('Organization child')
+    expect(mockUseMothershipChatEvents).toHaveBeenCalledWith(
+      { organizationId: 'org-1' },
+      SURFACE_CONTEXT.deployment.chatEnabled
+    )
     expect(html).not.toContain('Stop impersonating')
     expect(mockWorkspaceChrome).toHaveBeenCalledWith(
       expect.objectContaining({ initialSidebarCollapsed: true }),

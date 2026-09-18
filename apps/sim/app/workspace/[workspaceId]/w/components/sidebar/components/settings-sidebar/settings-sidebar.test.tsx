@@ -33,7 +33,7 @@ vi.mock('@/lib/billing/client', () => ({
     getSubscriptionAccessState(...args),
 }))
 vi.mock('@/lib/core/config/deployment-shape', () => ({
-  useDeploymentShape: () => deployment,
+  useDeploymentShape: () => hostContext.deployment,
   getDeploymentShape: () => deployment,
 }))
 vi.mock('@/lib/desktop', () => ({
@@ -199,6 +199,7 @@ describe('workspace SettingsSidebar organization rollout', () => {
     renderSidebar()
 
     expect(workspaceLink('connected-accounts')).toBeNull()
+    expect(workspaceLink('organization')).toBeNull()
   })
 
   it.each([false, undefined])(
@@ -209,9 +210,9 @@ describe('workspace SettingsSidebar organization rollout', () => {
 
       expect(workspaceLink('organization')).toHaveTextContent('Members')
       expect(workspaceLink('billing')).toHaveTextContent('Subscription')
-      expect(workspaceLink('usage')).toHaveTextContent('Usage tracking')
+      expect(workspaceLink('usage')).toHaveTextContent('Insights')
       expect(workspaceLink('sso')).toHaveTextContent('Single sign-on')
-      expect(workspaceLink('connected-accounts')).toHaveTextContent('Connected accounts')
+      expect(workspaceLink('connected-accounts')).toHaveTextContent('Credential Groups')
       expect(container.querySelector('a[href^="/o/"]')).toBeNull()
       expectWorkspaceLinks()
     }
@@ -239,7 +240,10 @@ describe('workspace SettingsSidebar organization rollout', () => {
       expect(links).toHaveLength(1)
       expect(links[0]).toHaveAttribute('href', '/o/host-org/settings/members')
       expect(links[0]).toHaveTextContent('Organization')
-      for (const section of ['organization', 'billing', 'usage', 'sso', 'connected-accounts']) {
+      if (role === 'admin')
+        expect(workspaceLink('connected-accounts')).toHaveTextContent('Credential Groups')
+      else expect(workspaceLink('connected-accounts')).toBeNull()
+      for (const section of ['organization', 'billing', 'usage', 'sso']) {
         expect(workspaceLink(section)).toBeNull()
       }
       expectWorkspaceLinks()
@@ -264,11 +268,37 @@ describe('workspace SettingsSidebar organization rollout', () => {
     renderSidebar()
 
     expect(workspaceLink('billing')).toHaveTextContent('Subscription')
-    for (const section of ['organization', 'usage', 'sso']) {
+    expect(workspaceLink('organization')).toHaveTextContent('Members')
+    for (const section of ['usage', 'sso']) {
       expect(workspaceLink(section)).toBeNull()
     }
     expectWorkspaceLinks()
   })
+
+  it.each(['admin', 'member', 'external'] as const)(
+    'shows permitted inline settings for a self-hosted %s with Search and billing disabled',
+    (role) => {
+      hostContext = makeHostContext(role, false)
+      hostContext.deployment = { ...deployment, hosted: false, billingEnabled: false }
+      renderSidebar()
+
+      expect(container.querySelector('a[href^="/o/"]')).toBeNull()
+      expect(workspaceLink('billing')).toBeNull()
+      if (role === 'external') {
+        expect(workspaceLink('organization')).toBeNull()
+      } else {
+        expect(workspaceLink('organization')).toHaveTextContent('Members')
+      }
+      for (const section of ['connected-accounts', 'access-control', 'usage', 'sso', 'security']) {
+        if (role === 'admin') {
+          expect(workspaceLink(section)).not.toBeNull()
+        } else {
+          expect(workspaceLink(section)).toBeNull()
+        }
+      }
+      expectWorkspaceLinks()
+    }
+  )
 
   it.each([false, true])(
     'keeps external workspace admins out of organization settings when rollout is %s',

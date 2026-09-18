@@ -15,7 +15,15 @@ import { resolveKnowledgeOrganizationContext } from '@/lib/knowledge/application
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
 import { loadSlackSearchCredential } from '@/lib/knowledge/application/slack-search/repository'
 import { SLACK_CUSTOM_BOT_PROVIDER_ID } from '@/lib/oauth/types'
-import { slackBotCredentialVersion } from '@/lib/slack-search/app-configuration'
+import {
+  resolveSlackAppCredentials,
+  slackBotCredentialVersion,
+} from '@/lib/slack-search/app-configuration'
+import { SLACK_SHARED_SEARCH_BOT_SCOPES } from '@/lib/slack-search/constants'
+import {
+  readSharedSlackSearchApp,
+  requireSlackSearchAppAvailable,
+} from '@/lib/slack-search/shared-app'
 
 interface OrganizationInput {
   organizationId: string
@@ -34,12 +42,13 @@ export const listSlackSearchInstallations = defineAuthorizedKnowledgeUseCase({
     resolveKnowledgeOrganizationContext(input),
   async execute({ context }) {
     await requireOrganizationSearchAvailable(context.organizationId)
-    const [installations, bots] = await Promise.all([
+    const [installations, bots, sharedApp] = await Promise.all([
       db
         .select({
           id: slackSearchInstallation.id,
           credentialId: slackSearchInstallation.credentialId,
           appId: slackSearchInstallation.appId,
+          appKind: slackApp.kind,
           teamId: slackSearchInstallation.teamId,
           teamName: slackSearchInstallation.teamName,
           enabled: slackSearchInstallation.enabled,
@@ -48,6 +57,7 @@ export const listSlackSearchInstallations = defineAuthorizedKnowledgeUseCase({
           credentialVersion: slackSearchInstallation.credentialVersion,
         })
         .from(slackSearchInstallation)
+        .leftJoin(slackApp, eq(slackApp.id, slackSearchInstallation.slackAppId))
         .where(eq(slackSearchInstallation.organizationId, context.organizationId))
         .limit(101),
       db
@@ -67,6 +77,7 @@ export const listSlackSearchInstallations = defineAuthorizedKnowledgeUseCase({
           )
         )
         .limit(101),
+      readSharedSlackSearchApp(context.organizationId),
     ])
     if (installations.length > 100 || bots.length > 100)
       throw new OrchestrationError(
@@ -74,13 +85,18 @@ export const listSlackSearchInstallations = defineAuthorizedKnowledgeUseCase({
         'Slack Search supports up to 100 bots per organization'
       )
     return {
+      sharedAppAvailable: Boolean(sharedApp),
       installations: installations.map(({ credentialVersion, ...installation }) => {
         const bot = bots.find((bot) => bot.id === installation.credentialId)
+        const shared = installation.appKind === 'shared'
+        const appRevision = shared ? sharedApp?.revision : bot?.appRevision
         return {
           ...installation,
+          appKind: installation.appKind ?? 'custom',
           needsValidation:
+            (shared && sharedApp?.id !== installation.appId) ||
             !bot?.encryptedKey ||
-            slackBotCredentialVersion(bot.encryptedKey, bot.appRevision ?? undefined) !==
+            slackBotCredentialVersion(bot.encryptedKey, appRevision ?? undefined) !==
               credentialVersion,
         }
       }),
@@ -101,7 +117,11 @@ export const configureSlackSearchInstallation = defineAuthorizedKnowledgeUseCase
     let identity: Awaited<ReturnType<typeof verifySlackSearchBot>> | undefined
     if (secret) {
       try {
-        identity = await verifySlackSearchBot(secret.botToken, AbortSignal.timeout(10_000))
+        identity = await verifySlackSearchBot(
+          secret.botToken,
+          AbortSignal.timeout(10_000),
+          secret.appKind === 'shared' ? SLACK_SHARED_SEARCH_BOT_SCOPES : undefined
+        )
       } catch (error) {
         if (
           error instanceof SlackSearchProviderError ||
@@ -137,11 +157,15 @@ export const configureSlackSearchInstallation = defineAuthorizedKnowledgeUseCase
       const [app] = current.slackAppId
         ? await tx.select().from(slackApp).where(eq(slackApp.id, current.slackAppId)).limit(1)
         : []
+      if (input.enabled && current.slackAppId)
+        await requireSlackSearchAppAvailable(current.slackAppId, context.organizationId)
       if (current.slackAppId && !app) throw new Error('Slack app configuration is missing')
+      const appRevision =
+        app && secret ? (await resolveSlackAppCredentials(app)).revision : undefined
       if (
         secret &&
         (!current.encryptedServiceAccountKey ||
-          slackBotCredentialVersion(current.encryptedServiceAccountKey, app?.revision) !==
+          slackBotCredentialVersion(current.encryptedServiceAccountKey, appRevision) !==
             secret.version)
       )
         throw new OrchestrationError('conflict', 'The bot credential changed. Validate it again.')

@@ -1,5 +1,7 @@
 import { ChipLink, cn } from '@sim/emcn'
+import Image from 'next/image'
 import Link from 'next/link'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { LandingCtaLink } from '@/app/(landing)/components/landing-cta-link'
 import { LANDING_CONTENT_WIDTH, LANDING_GUTTER } from '@/app/(landing)/components/landing-layout'
 import {
@@ -11,7 +13,6 @@ import {
   NavbarAuthPill,
   NavbarShell,
   NavMenuCluster,
-  SimWordmark,
 } from '@/app/(landing)/components/navbar/components'
 import { ModelsMenuPreview } from '@/app/(landing)/components/navbar/components/nav-menu-chip/components/nav-menu-preview/components/models-menu-preview'
 import { DEMO_HREF } from '@/app/(landing)/constants'
@@ -34,8 +35,7 @@ interface NavbarProps {
 
 export function Navbar({ stars }: NavbarProps) {
   return (
-    <NavbarShell>
-      <AnnouncementBanner />
+    <NavbarShell announcement={<AnnouncementBanner />}>
       <nav
         aria-label='Primary navigation'
         itemScope
@@ -48,15 +48,15 @@ export function Navbar({ stars }: NavbarProps) {
       >
         <Link
           href='/'
-          aria-label='Sim home'
+          aria-label='Arena home'
           itemProp='url'
           className='relative z-10 flex h-[30px] shrink-0 items-center'
         >
           <span itemProp='name' className='sr-only'>
-            Sim
+            Arena
           </span>
           <LogoMark>
-            <SimWordmark />
+            <Image src={arenaLogo} alt='Arena' width={30} height={30} priority />
           </LogoMark>
         </Link>
 

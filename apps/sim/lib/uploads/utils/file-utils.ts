@@ -779,7 +779,7 @@ export function inferContextFromKey(key: string): StorageContext {
   if (!context) {
     throw new Error(
       key
-        ? `File key must start with a context prefix (kb/, knowledge-base/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, or logs/). Got: ${key}`
+        ? `File key must start with a context prefix (kb/, knowledge-base/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, organization-logos/, or logs/). Got: ${key}`
         : 'Cannot infer context from empty key'
     )
   }
@@ -805,11 +805,14 @@ export function tryInferContextFromKey(key: string): StorageContext | null {
   if (key.startsWith('copilot/')) return 'copilot'
   if (key.startsWith('execution/')) return 'execution'
   if (key.startsWith('workspace/')) return 'workspace'
+  if (key.startsWith('assistant/')) return 'mothership'
   if (key.startsWith('profile-pictures/')) return 'profile-pictures'
   if (key.startsWith('og-images/')) return 'og-images'
   if (key.startsWith('agent-generated-images/')) return 'agent-generated-images'
   if (key.startsWith('workspace-logos/')) return 'workspace-logos'
-  if (key.startsWith(`${ORG_LOGOS_S3_PREFIX}/`)) return 'org-logos'
+  if (key.startsWith(`${ORG_LOGOS_S3_PREFIX}/`) || key.startsWith('organization-logos/')) {
+    return 'organization-logos'
+  }
   if (key.startsWith('logs/')) return 'logs'
 
   return null
@@ -825,6 +828,7 @@ const PUBLIC_STORAGE_CONTEXTS = new Set<StorageContext>([
   'profile-pictures',
   'og-images',
   'workspace-logos',
+  'organization-logos',
 ])
 
 /** Whether a trusted storage context is world-readable. */

@@ -29,6 +29,7 @@ import { assembleCustomBlockInputMapping, isCustomBlockType } from '@/blocks/cus
 import type { SubBlockConfig } from '@/blocks/types'
 import { isCustomTool } from '@/executor/constants'
 import {
+  findProviderFromModel as findProviderFromDefinitions,
   getComputerUseModels,
   getHostedModels as getHostedModelsFromDefinitions,
   getMaxOutputTokensForModel as getMaxOutputTokensForModelFromDefinitions,
@@ -64,7 +65,6 @@ import {
   registerPreparedProviderToolInputProvenance,
 } from '@/providers/tool-input-provenance'
 import type { ModelPricing, ProviderId, ProviderToolConfig } from '@/providers/types'
-import { useProvidersStore } from '@/stores/providers/store'
 import { mergeToolParameters } from '@/tools/merge-params'
 import { buildToolParamShapes, decodeToolParams } from '@/tools/param-shape'
 import type { SchemaProperty } from '@/tools/params'
@@ -295,18 +295,7 @@ export function getAllModelProviders(): Record<string, ProviderId> {
  * that was never about it.
  */
 export function findProviderFromModel(model: string): ProviderId | null {
-  const normalizedModel = model.toLowerCase()
-
-  const declared = getAllModelProviders()[normalizedModel]
-  if (declared) return declared
-
-  for (const [id, config] of Object.entries(providers)) {
-    for (const pattern of config.modelPatterns ?? []) {
-      if (pattern.test(normalizedModel)) return id as ProviderId
-    }
-  }
-
-  return null
+  return findProviderFromDefinitions(model)
 }
 
 export function getProviderFromModel(model: string): ProviderId {
@@ -1389,27 +1378,20 @@ export function getApiKey(
     userProvidedKey && !userProvidedKey.includes('{{') && !userProvidedKey.includes('}}')
   const hasUserKey = !!isResolvedKey
 
-  const isOllamaModel =
-    provider === 'ollama' || useProvidersStore.getState().providers.ollama.models.includes(model)
-  if (isOllamaModel) {
+  if (provider === 'ollama') {
     return 'empty'
   }
 
-  const isVllmModel =
-    provider === 'vllm' || useProvidersStore.getState().providers.vllm.models.includes(model)
-  if (isVllmModel) {
+  if (provider === 'vllm') {
     return userProvidedKey || 'empty'
   }
 
-  const isLitellmModel =
-    provider === 'litellm' || useProvidersStore.getState().providers.litellm.models.includes(model)
-  if (isLitellmModel) {
+  if (provider === 'litellm') {
     return userProvidedKey || 'empty'
   }
 
-  // Bedrock uses its own credentials (bedrockAccessKeyId/bedrockSecretKey), not apiKey
-  const isBedrockModel = provider === 'bedrock' || model.startsWith('bedrock/')
-  if (isBedrockModel) {
+  /** Bedrock authenticates through its configured AWS credentials. */
+  if (provider === 'bedrock') {
     return PROVIDER_PLACEHOLDER_KEY
   }
 
@@ -1854,7 +1836,13 @@ export function isDeepResearchModel(model: string): boolean {
 }
 
 export function isGemini3Model(model: string): boolean {
-  const normalized = model.toLowerCase().replace(/^vertex\//, '')
+  const normalized = model
+    .toLowerCase()
+    .replace(/^vertex\//, '')
+    .replace(
+      /^(?:google\/|(?:projects\/[^/]+\/locations\/[^/]+\/)?publishers\/google\/models\/)/,
+      ''
+    )
   return normalized.startsWith('gemini-3')
 }
 

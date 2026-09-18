@@ -41,14 +41,12 @@ const toolConfig = {
   },
   outputs: {
     file: { type: 'file' },
-    image: { type: 'file', description: 'Generated image file' },
   },
 } satisfies ToolConfig
 
 describe('FileToolProcessor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('image-bytes'))
     mockUploadExecutionFile.mockResolvedValue({
       id: 'file-1',
       key: 'workspace/workspace-1/file-1',
@@ -59,20 +57,34 @@ describe('FileToolProcessor', () => {
     } satisfies UserFile)
   })
 
-  it('processes bare image URL strings for file outputs', async () => {
-    mockUploadExecutionFile.mockResolvedValue({
-      id: 'file_1',
-      key: 'exec/key.png',
-      name: 'generated-image.png',
-      url: 'https://example.com/file.png',
-      size: 11,
-      type: 'image/png',
+  it('passes stored file descriptors through without downloading or uploading again', async () => {
+    const stored: UserFile = {
+      id: 'file-1',
+      key: 'execution/workspace-1/workflow-1/execution-1/file-1/workbook.xlsx',
+      name: 'workbook.xlsx',
+      size: 12 * 1024 * 1024,
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      url: 'https://storage.example/workbook.xlsx',
       context: 'execution',
-    })
+    }
+
+    const result = await FileToolProcessor.processToolOutputs(
+      { file: stored },
+      toolConfig,
+      executionContext
+    )
+
+    expect(result.file).toBe(stored)
+    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
+    expect(mockDownloadFileFromUrl).not.toHaveBeenCalled()
+  })
+
+  it('processes bare image URL strings for file outputs', async () => {
+    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('image-bytes'))
 
     const processed = await FileToolProcessor.processToolOutputs(
       {
-        image: 'https://example.com/generated.png',
+        file: 'https://example.com/generated.png',
       },
       toolConfig,
       executionContext
@@ -83,24 +95,10 @@ describe('FileToolProcessor', () => {
       userId: 'user-1',
     })
     expect(mockUploadExecutionFile).toHaveBeenCalled()
-    expect(processed.image).toMatchObject({
-      id: 'file_1',
-      url: 'https://example.com/file.png',
+    expect(processed.file).toMatchObject({
+      id: 'file-1',
+      url: '/api/files/serve?key=workspace%2Fworkspace-1%2Ffile-1',
     })
-  })
-
-  it('skips unprocessable file outputs instead of throwing', async () => {
-    const processed = await FileToolProcessor.processToolOutputs(
-      {
-        image: {},
-      },
-      toolConfig,
-      executionContext
-    )
-
-    expect(processed.image).toEqual({})
-    expect(mockDownloadFileFromUrl).not.toHaveBeenCalled()
-    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
   })
 
   it('caps URL downloads and stores raster images using byte-derived metadata', async () => {

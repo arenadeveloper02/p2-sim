@@ -17,59 +17,22 @@ import {
   OverflowText,
   Skeleton,
 } from '@sim/emcn'
-import {
-  BookOpen,
-  Building,
-  Credit,
-  Download,
-  HelpCircle,
-  Settings,
-  Trash,
-  Users,
-} from '@sim/emcn/icons'
-import { usePostHog } from 'posthog-js/react'
+import { BookOpen, Download, HelpCircle, LogOut, Settings } from '@sim/emcn/icons'
+import { useRouter } from 'next/navigation'
 import { SlackIcon } from '@/components/icons'
 import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
-import { useSession } from '@/lib/auth/auth-client'
-import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
-import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
+import { signOutAndRedirect } from '@/lib/auth/sign-out'
 import { getDesktopUpdates } from '@/lib/desktop'
-import { organizationRoutes } from '@/lib/navigation/paths'
-import { captureEvent } from '@/lib/posthog/client'
 import { getUserColor } from '@/lib/workspaces/colors'
-import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
-import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip'
 import {
   SIDEBAR_ITEM_GAP_CLASS,
   SIDEBAR_RAIL_CHIP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
-import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
-import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useUserProfile } from '@/hooks/queries/user-profile'
 import { useDesktopUpdateState } from '@/hooks/use-desktop-update-state'
-import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
-
-/**
- * Settings destinations reachable from the profile menu, in display order. Labels
- * and icons mirror the settings navigation entries they open, so the menu and the
- * settings sidebar never disagree about what a section is called.
- *
- * Which of them a given viewer actually gets is decided in {@link SidebarFooter} —
- * the same gates the settings sidebar and the section route apply, so the menu
- * never lists a page the server would refuse.
- */
-const PROFILE_MENU_ITEMS: readonly {
-  section: SettingsSection | 'organization'
-  label: string
-  icon: ComponentType<{ className?: string }>
-}[] = [
-  { section: 'general', label: 'Settings', icon: Settings },
-  { section: 'organization', label: 'Organization', icon: Building },
-  { section: 'billing', label: 'Subscription', icon: Credit },
-  { section: 'teammates', label: 'Teammates', icon: Users },
-  { section: 'recently-deleted', label: 'Recently deleted', icon: Trash },
-]
+import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 function hasAvailableDesktopUpdate(state: DesktopUpdateState): boolean {
   return state.status === 'available' || state.status === 'downloading' || state.status === 'ready'
@@ -101,8 +64,14 @@ function DesktopUpdateIcon({ className }: { className?: string }) {
   )
 }
 
+interface SidebarNavigationLink {
+  label: string
+  icon: ComponentType<{ className?: string }>
+  href: string
+  onNavigate: () => void
+}
+
 interface SidebarFooterProps {
-  workspaceId: string
   /**
    * True while the scroll region above still hides rows beyond its bottom edge —
    * the same test the divider under the pinned nav applies at the top. The bar's
@@ -111,15 +80,16 @@ interface SidebarFooterProps {
   showDivider: boolean
   isCollapsed: boolean
   showCollapsedTooltips: boolean
-  getSettingsHref: (section: SettingsSection) => string
-  onOpenSettings: (section: SettingsSection) => void
-  onReportIssue: () => void
+  accountSettingsHref: string
+  onOpenAccountSettings: () => void
+  navigationLinks: readonly SidebarNavigationLink[]
+  onOpenDocs: () => void
+  onJoinSlack: () => void
+  onContactSupport: () => void
 }
 
 /**
- * Pinned bottom bar of the workspace sidebar: the viewer's avatar and name, which
- * open a menu of their settings destinations, plus a help menu of brand docs,
- * support, legal links, Slack, and issue reporting.
+ * Shared account and Help menus for the workspace and organization sidebars.
  *
  * Expanded, the two share one row — the profile claims the free width so the help
  * button lands hard right, mirroring the collapse control in the workspace header.
@@ -141,31 +111,23 @@ interface SidebarFooterProps {
  * than remounting a trigger mid-animation.
  */
 export function SidebarFooter({
-  workspaceId,
   showDivider,
   isCollapsed,
   showCollapsedTooltips,
-  getSettingsHref,
-  onOpenSettings,
-  onReportIssue,
+  accountSettingsHref,
+  onOpenAccountSettings,
+  navigationLinks,
+  onOpenDocs,
+  onJoinSlack,
+  onContactSupport,
 }: SidebarFooterProps) {
   const { data: profile } = useUserProfile()
-  const { data: session } = useSession()
-  const hostContext = useWorkspaceHostContext()
-  const { billingEnabled } = useDeploymentShape()
-  const { isInvitationsDisabled } = useWorkspaceInvitePolicy(workspaceId)
+  const router = useRouter()
   const updateState = useDesktopUpdateState()
-  const brand = useOrgBrandConfig()
-  const posthog = usePostHog()
 
   const name = profile ? profile.name?.trim() || profile.email : ''
   const updateAvailable = hasAvailableDesktopUpdate(updateState)
-  const organizationHref =
-    hostContext.hostOrganizationId &&
-    hostContext.viewer.isHostOrganizationMember &&
-    hostContext.features?.organizationSearch
-      ? organizationRoutes(hostContext.hostOrganizationId).root
-      : null
+  const canSignOut = Boolean(profile && profile.id !== ANONYMOUS_USER_ID)
 
   const handleUpdateSelect = () => {
     const updates = getDesktopUpdates()
@@ -174,60 +136,6 @@ export function SidebarFooter({
     } else if (updateState.status === 'available') {
       updates?.check()
     }
-  }
-
-  const handleOpenDocs = () => {
-    window.open(resolveBrandDocsUrl(brand.documentationUrl), '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
-  }
-
-  const handleContactSupport = () => {
-    if (!brand.supportEmail) return
-    window.location.href = `mailto:${brand.supportEmail}`
-  }
-
-  const handleOpenTerms = () => {
-    if (!brand.termsUrl) return
-    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
-  }
-
-  const handleOpenPrivacy = () => {
-    if (!brand.privacyUrl) return
-    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
-  }
-
-  const handleOpenSlackCommunity = () => {
-    if (!brand.slackCommunityUrl) return
-    window.open(brand.slackCommunityUrl, '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
-  }
-
-  /**
-   * Subscription is dropped for viewers the Billing page would turn away — a
-   * deployment with billing off, or anyone who is not the payer (on an
-   * organization-hosted workspace, every member who is not an org admin). The
-   * settings sidebar hides its own Billing entry on exactly this test.
-   */
-  const menuItems = PROFILE_MENU_ITEMS.filter(
-    (item) =>
-      (item.section !== 'organization' || Boolean(organizationHref)) &&
-      (item.section !== 'billing' ||
-        canViewWorkspaceBillingSettings(hostContext, session?.user?.id))
-  )
-
-  /**
-   * Teammates is a dead end on a plan that cannot invite, so a blocked viewer is
-   * sent to the plan itself instead — which resolves to the upgrade page for
-   * anyone who cannot manage the payer. With billing off there is nowhere to send
-   * them and no upgrade to make, so the row simply does nothing. This is the gate
-   * the workspace switcher's "Manage workspace" entry carried before this menu
-   * took the section over.
-   */
-  const resolveMenuDestination = (section: SettingsSection): SettingsSection | null => {
-    if (section === 'teammates' && isInvitationsDisabled) {
-      return billingEnabled ? 'billing' : null
-    }
-    return section
   }
 
   /**
@@ -305,43 +213,40 @@ export function SidebarFooter({
         </DropdownMenuTrigger>
       </SidebarTooltip>
       <DropdownMenuContent align='start' side='top' sideOffset={4}>
-        {menuItems.map(({ section, label, icon: Icon }) => {
-          if (section === 'organization') {
-            if (!organizationHref) return null
-            return (
-              <DropdownMenuItem key={section} asChild>
-                <SettingsIntentLink href={organizationHref}>
-                  <Icon className='size-[14px]' />
-                  <DropdownMenuItemLabel label={label} />
-                </SettingsIntentLink>
-              </DropdownMenuItem>
-            )
-          }
-          const destination = resolveMenuDestination(section)
-          if (!destination) {
-            return (
-              <DropdownMenuItem key={section}>
-                <Icon className='size-[14px]' />
-                {label}
-              </DropdownMenuItem>
-            )
-          }
-
-          return (
-            <DropdownMenuItem key={section} asChild>
-              <SettingsIntentLink
-                href={getSettingsHref(destination)}
-                onNavigate={(event) => {
-                  event.preventDefault()
-                  onOpenSettings(destination)
-                }}
-              >
-                <Icon className='size-[14px]' />
-                <DropdownMenuItemLabel label={label} />
-              </SettingsIntentLink>
-            </DropdownMenuItem>
-          )
-        })}
+        {[
+          {
+            label: 'Settings',
+            icon: Settings,
+            href: accountSettingsHref,
+            onNavigate: onOpenAccountSettings,
+          },
+          ...navigationLinks,
+        ].map(({ label, icon: Icon, href, onNavigate }) => (
+          <DropdownMenuItem key={href} asChild>
+            <SettingsIntentLink
+              href={href}
+              onNavigate={(event) => {
+                event.preventDefault()
+                useSettingsDirtyStore.getState().requestLeave(onNavigate)
+              }}
+            >
+              <Icon className='size-[14px]' />
+              <DropdownMenuItemLabel label={label} />
+            </SettingsIntentLink>
+          </DropdownMenuItem>
+        ))}
+        {canSignOut && (
+          <DropdownMenuItem
+            onSelect={() => {
+              useSettingsDirtyStore.getState().requestLeave(() => {
+                void signOutAndRedirect(router.push)
+              })
+            }}
+          >
+            <LogOut className='size-[14px]' />
+            Sign out
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -393,37 +298,17 @@ export function SidebarFooter({
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem onSelect={handleOpenDocs}>
+        <DropdownMenuItem onSelect={onOpenDocs}>
           <BookOpen className='size-[14px]' />
           Docs
         </DropdownMenuItem>
-        {brand.supportEmail ? (
-          <DropdownMenuItem onSelect={handleContactSupport}>
-            <HelpCircle className='size-[14px]' />
-            Contact support
-          </DropdownMenuItem>
-        ) : null}
-        {brand.termsUrl ? (
-          <DropdownMenuItem onSelect={handleOpenTerms}>
-            <BookOpen className='size-[14px]' />
-            Terms of service
-          </DropdownMenuItem>
-        ) : null}
-        {brand.privacyUrl ? (
-          <DropdownMenuItem onSelect={handleOpenPrivacy}>
-            <BookOpen className='size-[14px]' />
-            Privacy policy
-          </DropdownMenuItem>
-        ) : null}
-        {brand.slackCommunityUrl ? (
-          <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
-            <SlackIcon className='size-[14px]' />
-            Slack Community
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem onSelect={onReportIssue}>
+        <DropdownMenuItem onSelect={onJoinSlack}>
+          <SlackIcon className='size-[14px]' />
+          Join Slack
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onContactSupport}>
           <HelpCircle className='size-[14px]' />
-          Report an issue
+          Contact support
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -443,7 +328,7 @@ export function SidebarFooter({
           exactly the chip's 30px instead of a line box padded by the strut's
           half-leading, which would deepen the bar below the chip. Collapsed, it
           stretches to the rail on its own and the chip fills it. */}
-      <div className={cn('flex', !isCollapsed && 'flex-1')}>{profileMenu}</div>
+      <div className={cn('flex min-w-0', !isCollapsed && 'flex-1')}>{profileMenu}</div>
       {helpMenu}
     </div>
   )

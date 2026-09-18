@@ -18,11 +18,15 @@ const container = `sim-acl-test-${generateId()}`
 const redisContainer = `${container}-redis`
 const database = 'sim_acl_test_application'
 const scale = process.env.KNOWLEDGE_SCALE_TEST === 'true'
+const searchPerformance = process.env.KNOWLEDGE_SEARCH_PERFORMANCE_TEST === 'true'
 const testFilters = process.argv.slice(2)
 if (testFilters.some((filter) => filter.startsWith('-')) || (scale && testFilters.length)) {
   throw new Error('Pass only filename filters, and do not combine them with the scale suite')
 }
-const keepScaleDatabase = scale && process.env.KNOWLEDGE_SCALE_KEEP_DATABASE === 'true'
+const keepDatabase =
+  (scale && process.env.KNOWLEDGE_SCALE_KEEP_DATABASE === 'true') ||
+  (process.env.KNOWLEDGE_SEARCH_PERFORMANCE_TEST === 'true' &&
+    process.env.KNOWLEDGE_SEARCH_PERFORMANCE_KEEP_DATABASE === 'true')
 const scaleReportFile =
   process.env.KNOWLEDGE_SCALE_REPORT_FILE ?? path.join(tmpdir(), `${container}.json`)
 
@@ -51,14 +55,21 @@ try {
       'run',
       '--rm',
       '--detach',
-      ...(scale ? ['--shm-size', '3g'] : []),
+      ...(scale
+        ? ['--shm-size', '3g']
+        : searchPerformance
+          ? ['--cpus', '2', '--memory', '1g', '--shm-size', '512m']
+          : []),
       '--name',
       container,
       '--env',
       'POSTGRES_HOST_AUTH_METHOD=trust',
       '--publish',
       '127.0.0.1::5432',
-      'pgvector/pgvector:pg17',
+      process.env.KNOWLEDGE_TEST_POSTGRES_IMAGE ?? 'pgvector/pgvector:pg17',
+      ...(searchPerformance
+        ? ['-c', 'shared_buffers=256MB', '-c', 'work_mem=8MB', '-c', 'maintenance_work_mem=256MB']
+        : []),
     ],
     { capture: true }
   )
@@ -96,8 +107,8 @@ try {
   if (!/^127\.0\.0\.1:\d+$/.test(endpoint))
     throw new Error('Unexpected disposable Postgres endpoint')
   const databaseUrl = `postgresql://postgres@${endpoint}/${database}`
-  if (keepScaleDatabase)
-    logger.info('Retaining disposable scale database for follow-up measurements', {
+  if (keepDatabase)
+    logger.info('Retaining disposable benchmark database for follow-up measurements', {
       container,
       databaseUrl,
     })
@@ -139,6 +150,7 @@ try {
   const environment = {
     ...process.env,
     DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: databaseUrl,
     KNOWLEDGE_ACL_TEST_DATABASE_URL: databaseUrl,
     KNOWLEDGE_ACL_TEST_REDIS_URL: `redis://${redisEndpoint}`,
     ...(scale ? { KNOWLEDGE_SCALE_REPORT_FILE: scaleReportFile } : {}),
@@ -148,6 +160,10 @@ try {
     env: environment,
   })
   run('bun', ['./scripts/reconcile-credential-group-resource-policies.ts'], {
+    cwd: path.join(root, 'packages/db'),
+    env: environment,
+  })
+  run('bun', ['./script-migrations/0016_backfill_search_vectors.ts'], {
     cwd: path.join(root, 'packages/db'),
     env: environment,
   })
@@ -165,7 +181,7 @@ try {
       env: environment,
     }
   )
-  if (!scale && testFilters.length === 0)
+  if (!scale && testFilters.length === 0) {
     run(
       'bunx',
       [
@@ -180,6 +196,15 @@ try {
         env: environment,
       }
     )
+    run(
+      'bunx',
+      ['vitest', 'run', 'script-migrations/0016_backfill_search_vectors.postgres.test.ts'],
+      {
+        cwd: path.join(root, 'packages/db'),
+        env: environment,
+      }
+    )
+  }
   logger.info(
     scale
       ? 'Opt-in knowledge scale measurements passed'
@@ -192,6 +217,6 @@ try {
   try {
     if (redisStarted) run('docker', ['stop', redisContainer], { capture: true })
   } finally {
-    if (started && !keepScaleDatabase) run('docker', ['stop', container], { capture: true })
+    if (started && !keepDatabase) run('docker', ['stop', container], { capture: true })
   }
 }

@@ -14,6 +14,7 @@ import {
   useScrollEdges,
 } from '@sim/emcn'
 import { ArrowUpRight, ChevronLeft } from '@sim/emcn/icons'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import {
   SETTINGS_PLANE_CHROME,
@@ -23,7 +24,7 @@ import {
 } from '@/components/settings/navigation'
 import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
 import { APP_ENTRY_PATH } from '@/lib/navigation/paths'
-import { SimWordmark } from '@/app/(landing)/components/navbar/components'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { SidebarSection } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-section'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip'
 import {
@@ -119,11 +120,11 @@ export function SettingsSidebar<Section extends SettingsSection>({
         {SETTINGS_PLANE_CHROME[plane].showWordmark ? (
           <button
             type='button'
-            aria-label='Sim home'
+            aria-label='Arena home'
             onClick={() => requestLeave(() => router.push(LANDING_HREF))}
             className='flex h-[30px] shrink-0 items-center px-2 transition-opacity hover:opacity-70'
           >
-            <SimWordmark />
+            <Image src={arenaLogo} alt='Arena' width={30} height={30} />
           </button>
         ) : (
           <SidebarTooltip label='Back' enabled={showCollapsedTooltips}>

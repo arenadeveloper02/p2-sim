@@ -1,11 +1,12 @@
 import { cn } from '@sim/emcn'
+import Image from 'next/image'
 import Link from 'next/link'
 import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from '@/lib/branding/defaults'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ALL_COMPETITORS } from '@/app/(landing)/comparisons/utils'
 import { FooterWordmarkLoop } from '@/app/(landing)/components/footer/components/footer-wordmark-loop'
 import { ThemeToggle } from '@/app/(landing)/components/footer/components/theme-toggle'
 import { LANDING_CONTENT_WIDTH, LANDING_GUTTER } from '@/app/(landing)/components/landing-layout'
-import { ArenaWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
 import { MODEL_PROVIDERS_WITH_CATALOGS } from '@/app/(landing)/models/utils'
 import { getBrandConfig } from '@/ee/whitelabeling'
 
@@ -80,7 +81,7 @@ const RESOURCES_LINKS: FooterItem[] = [
 /** Top model providers, sourced from the catalog so labels/hrefs never drift. */
 const MODEL_LINKS: FooterItem[] = [
   { label: 'All Models', href: '/models' },
-  ...MODEL_PROVIDERS_WITH_CATALOGS.slice(0, 8).map((provider) => ({
+  ...MODEL_PROVIDERS_WITH_CATALOGS.slice(0, 7).map((provider) => ({
     label: provider.name,
     href: provider.href,
   })),
@@ -112,7 +113,7 @@ const SOCIAL_LINKS: FooterItem[] = [
   { label: 'X (Twitter)', href: 'https://x.com/simdotai', external: true },
   {
     label: 'LinkedIn',
-    href: 'https://www.linkedin.com/company/simstudioai/',
+    href: 'https://www.linkedin.com/company/simdotai/',
     external: true,
   },
   {
@@ -177,7 +178,7 @@ export function Footer() {
             aria-label='Arena home'
             className='flex h-[18px] items-center max-lg:col-span-full max-lg:mb-2'
           >
-            <ArenaWordmark />
+            <Image src={arenaLogo} alt='Arena' width={85} height={26} className='h-[18px] w-auto' />
           </Link>
 
           <FooterColumn title='Product' items={PRODUCT_LINKS} />

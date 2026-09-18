@@ -24,22 +24,65 @@ vi.mock('@/hooks/queries/kb/knowledge', () => ({
   useUpdateDocument: () => ({ ...mocks.retryState, mutate: mocks.retry }),
 }))
 
+vi.mock(
+  '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/use-connector-settings-form',
+  () => ({
+    useConnectorSettingsForm: () => ({
+      displayName: 'GitHub',
+      saving: false,
+      canSave: true,
+      save: vi.fn(),
+      fieldsProps: {},
+    }),
+  })
+)
+vi.mock(
+  '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/connector-settings-fields',
+  () => ({ ConnectorSettingsFields: () => <div>Settings content</div> })
+)
+
+import type { ConnectorData } from '@/lib/api/contracts/knowledge/connectors'
 import { ConnectorDocuments } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connector-documents/connector-documents'
-import { ConnectorDocumentsTab } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/connector-documents-tab'
+import { EditConnectorModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/edit-connector-modal'
+
+const connector: ConnectorData = {
+  id: 'connector',
+  knowledgeBaseId: 'kb',
+  connectorType: 'github',
+  credentialId: null,
+  sourceConfig: {},
+  syncMode: 'full',
+  syncIntervalMinutes: 60,
+  status: 'active',
+  lastSyncAt: null,
+  lastSyncError: null,
+  lastSyncDocCount: null,
+  nextSyncAt: null,
+  consecutiveFailures: 0,
+  accessMode: 'workspace',
+  viewerMembership: null,
+  credentialGroupId: null,
+  credentialGroupOptionId: null,
+  memberSyncStatus: 'idle',
+  lastMemberSyncAt: null,
+  nextMemberSyncAt: null,
+  lastMemberSyncError: null,
+  memberSyncConsecutiveFailures: 0,
+  accessRewritePending: false,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+}
 
 let root: Root
-function render() {
+function render(showDocuments = true) {
   root = createRoot(document.createElement('div'))
   rerender()
+  if (showDocuments) act(() => button('Documents').click())
 }
 function rerender() {
   act(() =>
     root.render(
-      <ChipModal open srTitle='Source settings'>
-        <ChipModalBody>
-          <ConnectorDocumentsTab knowledgeBaseId='kb' connectorId='connector' />
-        </ChipModalBody>
-      </ChipModal>
+      <EditConnectorModal open onOpenChange={vi.fn()} knowledgeBaseId='kb' connector={connector} />
     )
   )
 }
@@ -49,6 +92,18 @@ function button(name: string) {
   )
   if (!result) throw new Error(`Missing button ${name}`)
   return result
+}
+function selectStatus(label: string) {
+  act(() =>
+    document
+      .querySelector('[aria-label="Document status"]')
+      ?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+  )
+  const option = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+    item.textContent?.includes(label)
+  )
+  if (!option) throw new Error(`Missing status option ${label}`)
+  act(() => option.click())
 }
 beforeEach(() => {
   vi.clearAllMocks()
@@ -69,16 +124,26 @@ beforeEach(() => {
               id: 'failed',
               filename: 'Handbook.txt',
               processingStatus: 'failed',
+              processingError: 'Source download failed',
               userExcluded: false,
             },
             {
               id: 'ready',
               filename: 'Guide.txt',
               processingStatus: 'completed',
+              processingError: null,
+              userExcluded: false,
+            },
+            {
+              id: 'skipped',
+              filename: 'logo.png',
+              processingStatus: 'failed',
+              processingOutcome: 'skipped',
+              processingError: 'Binary file was not indexed',
               userExcluded: false,
             },
           ],
-          counts: { active: 3, excluded: 0, failed: 1 },
+          counts: { active: 4, excluded: 0, failed: 1, skipped: 1 },
         },
       ],
     },
@@ -96,6 +161,31 @@ afterEach(() => {
 })
 
 describe('connector document recovery', () => {
+  it('keeps focused navigation mounted and document filters selected across tabs', () => {
+    render(false)
+    expect(mocks.query).not.toHaveBeenCalled()
+    const settings = button('Settings')
+    const documents = button('Documents')
+    act(() => {
+      documents.focus()
+      documents.click()
+    })
+    expect(document.activeElement).toBe(documents)
+    selectStatus('Failed (1)')
+    act(() => {
+      settings.focus()
+      settings.click()
+    })
+    expect(button('Settings')).toBe(settings)
+    expect(button('Documents')).toBe(documents)
+    expect(document.activeElement).toBe(settings)
+    expect(document.querySelector('[aria-label="Document status"]')).toBeNull()
+    act(() => documents.click())
+    expect(document.querySelector('[aria-label="Document status"]')?.textContent).toContain(
+      'Failed (1)'
+    )
+  })
+
   it('labels Search documents by the current viewer access without changing general knowledge bases', () => {
     render()
     expect(document.body.textContent).not.toContain('Documents you can access')
@@ -130,21 +220,46 @@ describe('connector document recovery', () => {
   })
   it('requests failed documents from the server and hides healthy placeholder rows', () => {
     render()
-    act(() =>
-      document
-        .querySelector('[aria-label="Document status"]')
-        ?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
-    )
-    const failed = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes('Failed (1)')
-    ) as HTMLElement
-    act(() => failed.click())
+    selectStatus('Failed (1)')
     expect(mocks.query).toHaveBeenLastCalledWith('kb', 'connector', {
       filter: 'failed',
       search: undefined,
     })
     expect(document.body.textContent).toContain('Handbook.txt')
     expect(document.body.textContent).not.toContain('Guide.txt')
+    expect(document.body.textContent).not.toContain('logo.png')
+  })
+  it('keeps skipped documents included with their reason and reserves retries for real failures', () => {
+    render()
+    expect(document.body.textContent).toContain('Included (4)')
+    expect(document.body.textContent).toContain('logo.png')
+    expect(document.body.textContent).toContain('Skipped · Binary file was not indexed')
+    expect(document.body.textContent).toContain('Indexing failed')
+    expect(
+      [...document.querySelectorAll('button')].filter(
+        (node) => node.textContent?.trim() === 'Retry indexing'
+      )
+    ).toHaveLength(1)
+  })
+  it('requests skipped documents from the server without exposing failed rows or retries', () => {
+    render()
+    selectStatus('Skipped (1)')
+    expect(mocks.query).toHaveBeenLastCalledWith('kb', 'connector', {
+      filter: 'skipped',
+      search: undefined,
+    })
+    expect(document.body.textContent).toContain('logo.png')
+    expect(document.body.textContent).toContain('Skipped · Binary file was not indexed')
+    expect(document.body.textContent).not.toContain('Handbook.txt')
+    expect(document.body.textContent).not.toContain('Guide.txt')
+    expect(document.body.textContent).not.toContain('Retry indexing')
+    expect(document.body.textContent).not.toContain('Load more documents')
+    act(() => button('Exclude').click())
+    expect(mocks.exclude).toHaveBeenCalledWith({
+      knowledgeBaseId: 'kb',
+      connectorId: 'connector',
+      documentIds: ['skipped'],
+    })
   })
   it.each([false, true])(
     'clears prior action errors before retry (retry fails: %s)',

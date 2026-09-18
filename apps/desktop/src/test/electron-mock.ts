@@ -173,6 +173,8 @@ function createWebContentsMock() {
     print: vi.fn(),
     focus: vi.fn(),
     invalidate: vi.fn(),
+    beginFrameSubscription: vi.fn(),
+    endFrameSubscription: vi.fn(),
     isFocused: vi.fn(() => false),
     close: vi.fn(),
     isDestroyed: vi.fn(() => false),
@@ -248,6 +250,8 @@ export class BrowserWindow {
     BrowserWindow.lastOptions = options
   }
   webContents = {
+    ipc: { on: vi.fn(), handle: vi.fn() },
+    mainFrame: { url: '' },
     on: vi.fn(),
     getURL: vi.fn(() => ''),
     loadURL: vi.fn(() => Promise.resolve()),
@@ -276,6 +280,7 @@ export class BrowserWindow {
   getNormalBounds = vi.fn(() => ({ x: 0, y: 0, width: 1360, height: 860 }))
   getBounds = vi.fn(() => ({ x: 1292, y: 41, width: 420, height: 150 }))
   setBounds = vi.fn()
+  setContentSize = vi.fn()
   loadURL = vi.fn(() => Promise.resolve())
   loadFile = vi.fn(() => Promise.resolve())
   focus = vi.fn()

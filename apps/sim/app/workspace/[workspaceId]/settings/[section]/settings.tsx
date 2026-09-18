@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { usePostHog } from 'posthog-js/react'
+import { PermissionAccessBoundary } from '@/components/access-requests/permission-access-boundary'
+import { getSettingsPermissionConfigKey } from '@/components/settings/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
@@ -112,11 +114,6 @@ const AuditLogs = dynamic(() =>
   import('@/ee/audit-logs/components/audit-logs').then((m) => m.AuditLogs)
 )
 const SSO = dynamic(() => import('@/ee/sso/components/sso-settings').then((m) => m.SSO))
-const SessionPolicySettings = dynamic(() =>
-  import('@/ee/session-policy/components/session-policy-settings').then(
-    (m) => m.SessionPolicySettings
-  )
-)
 const DataRetentionSettings = dynamic(() =>
   import('@/ee/data-retention/components/data-retention-settings').then(
     (m) => m.DataRetentionSettings
@@ -124,6 +121,12 @@ const DataRetentionSettings = dynamic(() =>
 )
 const DataDrainsSettings = dynamic(() =>
   import('@/ee/data-drains/components/data-drains-settings').then((m) => m.DataDrainsSettings)
+)
+const OrganizationSecuritySettings = dynamic(() =>
+  import('@/components/settings/organization-security').then((m) => m.OrganizationSecuritySettings)
+)
+const UsageMonitoring = dynamic(() =>
+  import('@/ee/organization-usage/components/usage-monitoring').then((m) => m.UsageMonitoring)
 )
 const Desktop = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/desktop/desktop').then((m) => m.Desktop)
@@ -146,7 +149,17 @@ interface SettingsPageProps {
   section: SettingsSection
 }
 
-export function SettingsPage({ section }: SettingsPageProps) {
+export function SettingsPage(props: SettingsPageProps) {
+  const configKey = getSettingsPermissionConfigKey(props.section)
+  if (!configKey) return <SettingsPageContent {...props} />
+  return (
+    <PermissionAccessBoundary configKey={configKey}>
+      <SettingsPageContent {...props} />
+    </PermissionAccessBoundary>
+  )
+}
+
+function SettingsPageContent({ section }: SettingsPageProps) {
   const { data: session, isPending: sessionLoading } = useSession()
   const hostContext = useWorkspaceHostContext()
   const { billingEnabled } = useDeploymentShape()
@@ -162,7 +175,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
     billingEnabled && isBillingSection && !sessionLoading && !canManageBilling
 
   const effectiveSection =
-    !billingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
+    !billingEnabled && normalizedSection === 'billing'
       ? 'general'
       : billingRedirectToUsage
         ? 'usage'
@@ -221,21 +234,21 @@ export function SettingsPage({ section }: SettingsPageProps) {
         />
       )}
       {effectiveSection === 'teammates' && <Teammates />}
-      {billingEnabled && effectiveSection === 'organization' && organizationId && (
+      {effectiveSection === 'organization' && organizationId && (
         <TeamManagement
           organizationId={organizationId}
           billingHref={`/workspace/${hostContext.workspace.id}/settings/billing`}
         />
       )}
       {effectiveSection === 'sso' && organizationId && <SSO organizationId={organizationId} />}
-      {effectiveSection === 'sessions' && organizationId && (
-        <SessionPolicySettings key={organizationId} organizationId={organizationId} />
-      )}
       {effectiveSection === 'data-retention' && organizationId && (
         <DataRetentionSettings organizationId={organizationId} />
       )}
       {effectiveSection === 'data-drains' && organizationId && (
         <DataDrainsSettings organizationId={organizationId} />
+      )}
+      {effectiveSection === 'security' && organizationId && (
+        <OrganizationSecuritySettings organizationId={organizationId} />
       )}
       {effectiveSection === 'whitelabeling' && organizationId && (
         <WhitelabelingSettings organizationId={organizationId} />

@@ -167,7 +167,7 @@ function WhitelabelingForm({ initialSettings, orgId }: WhitelabelingFormProps) {
     currentImage: logoUrl,
     onUpload: (url) => setLogoUrl(url),
     onError: (error) => toast.error(error),
-    context: 'org-logos',
+    context: 'organization-logos',
     organizationId: orgId,
   })
 
@@ -175,7 +175,7 @@ function WhitelabelingForm({ initialSettings, orgId }: WhitelabelingFormProps) {
     currentImage: wordmarkUrl,
     onUpload: (url) => setWordmarkUrl(url),
     onError: (error) => toast.error(error),
-    context: 'org-logos',
+    context: 'organization-logos',
     organizationId: orgId,
   })
 
@@ -183,7 +183,7 @@ function WhitelabelingForm({ initialSettings, orgId }: WhitelabelingFormProps) {
     currentImage: faviconUrl,
     onUpload: (url) => setFaviconUrl(url),
     onError: (error) => toast.error(error),
-    context: 'org-logos',
+    context: 'organization-logos',
     organizationId: orgId,
   })
 

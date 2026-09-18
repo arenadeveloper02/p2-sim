@@ -1034,17 +1034,17 @@ function AuthSelector({
         <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
           Access control
         </Label>
-        <ButtonGroup
+        <ChipButtonGroup
           value={authType}
           onValueChange={(val) => onAuthTypeChange(val as AuthType)}
           disabled={disabled}
         >
           {authOptions.map((type) => (
-            <ButtonGroupItem key={type} value={type}>
-              {type}
-            </ButtonGroupItem>
+            <ChipButtonGroupItem key={type} value={type}>
+              {AUTH_LABELS[type]}
+            </ChipButtonGroupItem>
           ))}
-        </ButtonGroup>
+        </ChipButtonGroup>
       </div>
       */}
 

@@ -1,7 +1,15 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ search: vi.fn(), read: vi.fn(), authorizeChat: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  search: vi.fn(),
+  read: vi.fn(),
+  authorizeChat: vi.fn(),
+  info: vi.fn(),
+}))
+vi.mock('@sim/logger', () => ({
+  createLogger: () => ({ info: mocks.info, error: vi.fn(), warn: vi.fn() }),
+}))
 vi.mock('@/lib/copilot/chat/organization-chats', () => ({
   authorizeOrganizationChatDelegation: { execute: mocks.authorizeChat },
 }))
@@ -27,15 +35,13 @@ vi.mock('@/lib/knowledge/application/read-search-document', () => ({
     execute: mocks.read,
   },
 }))
-vi.mock('@/executor/utils/resolved-secret-content-projection', () => ({
-  projectResolvedSecretModelContent: (value: unknown) => ({ safe: true, value }),
-}))
 
 import {
   readDocumentServerTool,
   searchWorkspaceServerTool,
 } from '@/lib/copilot/tools/server/knowledge/workspace-search'
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
+import { annotateSearchDiagnostics } from '@/lib/knowledge/search/diagnostics'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
 const context = {
@@ -53,6 +59,7 @@ describe('Assistant retrieval tools', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.search.mockResolvedValue({
+      retrieval: { status: 'complete', timedOutLegs: [] },
       knowledgeBases: [{ id: 'index', name: 'Enterprise Search' }],
       results: [
         {
@@ -75,8 +82,37 @@ describe('Assistant retrieval tools', () => {
       sourceUrl: 'https://source.test/doc',
       chunks: [{ content: 'body', chunkIndex: 0 }],
       hasMore: false,
-      nextOffset: null,
+      next: null,
     })
+  })
+  it('returns empty incomplete retrieval as a recoverable search outcome and logs coverage', async () => {
+    mocks.search.mockImplementation(async () => {
+      annotateSearchDiagnostics({
+        retrievalStatus: 'partial',
+        timedOutLegs: ['vector', 'keyword'],
+      })
+      return {
+        retrieval: { status: 'partial', timedOutLegs: ['vector', 'keyword'] },
+        knowledgeBases: [{ id: 'index', name: 'Enterprise Search' }],
+        results: [],
+      }
+    })
+
+    const result = await searchWorkspaceServerTool.execute({ query: 'canaries' }, context)
+
+    expect(result).toMatchObject({
+      success: true,
+      message: expect.stringContaining('cannot establish absence or completeness'),
+      data: {
+        retrieval: { status: 'partial', timedOutLegs: ['vector', 'keyword'] },
+        results: [],
+      },
+    })
+    expect(result).not.toHaveProperty('error')
+    expect(mocks.info).toHaveBeenCalledWith(
+      'Knowledge search completed',
+      expect.objectContaining({ passageBytes: 0, originalPassageBytes: 0, outcome: 'partial' })
+    )
   })
   it('pins organization and private chat while reusing the canonical search index and citations', async () => {
     const orgContext = {
@@ -119,6 +155,31 @@ describe('Assistant retrieval tools', () => {
     })
   })
 
+  it.each([
+    { searchSurface: undefined, expected: 'copilot' },
+    { searchSurface: 'slack' as const, expected: 'slack' },
+  ])(
+    'attributes organization searches to trusted $expected provenance',
+    async ({ searchSurface, expected }) => {
+      const result = await searchWorkspaceServerTool.execute(
+        { query: 'policy', surface: 'api', searchSurface: 'api' },
+        {
+          ...context,
+          workspaceId: undefined,
+          organizationId: 'org-1',
+          chatId: 'chat-1',
+          requestMode: 'assistant',
+          searchSurface,
+        }
+      )
+      expect(result).toMatchObject({ success: true })
+      expect(mocks.search).toHaveBeenCalledWith({
+        principal: expect.objectContaining({ organizationId: 'org-1', subjectUserId: 'reader' }),
+        input: expect.objectContaining({ surface: expected, organizationId: 'org-1' }),
+      })
+    }
+  )
+
   it('rejects a removed member or another private chat before reading documents', async () => {
     mocks.authorizeChat.mockRejectedValueOnce(new Error('Conversation not found'))
     const result = await readDocumentServerTool.execute(
@@ -154,6 +215,67 @@ describe('Assistant retrieval tools', () => {
       })
     )
   })
+  it('returns only the projected query to the model', async () => {
+    const secret = 'private-resolved-query-token'
+    const registry = new ResolvedSecretTraceRegistry([
+      { name: 'TOKEN', plaintext: secret, encryptedValue: 'ciphertext' },
+    ])
+    registry.recordResolved('TOKEN', secret)
+    const result = await searchWorkspaceServerTool.execute(
+      { query: `Find ${secret}` },
+      { ...context, resolvedSecretTraceRegistry: registry }
+    )
+    expect(result).toMatchObject({ success: true, data: { query: 'Find {{TOKEN}}' } })
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ query: 'Find {{TOKEN}}' }) })
+    )
+    expect(JSON.stringify(result)).not.toContain(secret)
+  })
+
+  it.each([0, 20, 50])(
+    'measures UTF-8 bytes for %i passages without logging their content',
+    async (count) => {
+      const content = 'Confidential passage é🔎'.repeat(100)
+      mocks.search.mockResolvedValueOnce({
+        retrieval: { status: 'complete', timedOutLegs: [] },
+        knowledgeBases: [{ id: 'index', name: 'Enterprise Search' }],
+        results: Array.from({ length: count }, (_, index) => ({
+          knowledgeBaseId: 'index',
+          documentId: `doc-${index % 4}`,
+          documentName: 'Private title',
+          sourceUrl: null,
+          sourceModifiedAt: null,
+          metadata: {},
+          content,
+          chunkIndex: index,
+          similarity: 1,
+        })),
+      })
+
+      const output = await searchWorkspaceServerTool.execute(
+        { query: 'Private query', ...(count === 50 ? { topK: 50 } : {}) },
+        context
+      )
+
+      expect(output.success).toBe(true)
+      expect(mocks.info).toHaveBeenCalledWith(
+        'Knowledge search completed',
+        expect.objectContaining({
+          toolCallId: 'call',
+          toolResultBytes: Buffer.byteLength(JSON.stringify(output)),
+          passageBytes: count * Buffer.byteLength(content.slice(0, 1200)),
+          originalPassageBytes: count * Buffer.byteLength(content),
+          maxPassageBytes: count ? Buffer.byteLength(content.slice(0, 1200)) : 0,
+          uniqueDocumentCount: Math.min(count, 4),
+        })
+      )
+      const logged = JSON.stringify(mocks.info.mock.calls)
+      expect(logged).not.toContain('Confidential passage')
+      expect(logged).not.toContain('Private title')
+      expect(logged).not.toContain('Private query')
+    }
+  )
+
   it('returns stable citation IDs with internal links for uploaded documents', async () => {
     const result = await searchWorkspaceServerTool.execute({ query: 'orion' }, context)
     expect(result).toMatchObject({
@@ -170,6 +292,7 @@ describe('Assistant retrieval tools', () => {
   })
   it('projects the provider name for connected-source citations instead of the index name', async () => {
     mocks.search.mockResolvedValueOnce({
+      retrieval: { status: 'complete', timedOutLegs: [] },
       knowledgeBases: [{ id: 'index', name: 'Sim Search' }],
       results: [
         {
@@ -217,20 +340,20 @@ describe('Assistant retrieval tools', () => {
   })
   it('reads a selected document through the shared use case and rejects unbounded pages', async () => {
     expect(
-      await readDocumentServerTool.execute({ documentId: 'doc', offset: 20 }, context)
+      await readDocumentServerTool.execute({ documentId: 'doc', startChunkIndex: 20 }, context)
     ).toMatchObject({ success: true })
     expect(mocks.read).toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({
           assertedWorkspaceId: 'workspace',
           filters: context.assistantSearch,
-          offset: 20,
-          limit: 20,
+          startChunkIndex: 20,
+          limit: 3,
         }),
       })
     )
     expect(
-      await readDocumentServerTool.execute({ documentId: 'doc', limit: 10000 }, context)
+      await readDocumentServerTool.execute({ documentId: 'doc', limit: 9 }, context)
     ).toMatchObject({ success: false })
     expect(mocks.read).toHaveBeenCalledOnce()
   })

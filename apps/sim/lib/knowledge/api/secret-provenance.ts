@@ -283,8 +283,6 @@ export async function finalizeKnowledgePersistedResponse(options: {
     registry,
     documents: options.documents,
     chunks: options.chunks,
-    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-    actorUserId: options.userId,
   })
   return finalizeKnowledgeRegistryResponse({
     headers: options.headers,

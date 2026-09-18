@@ -12,6 +12,7 @@ import { useSettingsUnsavedGuard } from '@/components/settings/use-settings-unsa
 import { isApiClientError } from '@/lib/api/client/errors'
 import type { ConnectorData, ConnectorDetailData } from '@/lib/api/contracts/knowledge/connectors'
 import type { ResourceScope } from '@/lib/core/resource-scope'
+import { SOURCE_PERMISSION_ERROR } from '@/lib/knowledge/connectors/sync-limits'
 import { organizationRoutes } from '@/lib/navigation/paths'
 import { describeSearchSource } from '@/lib/sim-search/source-identity'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
@@ -70,7 +71,7 @@ export function OrganizationSourceDetail({ connectorId }: OrganizationSourceDeta
 
   if (!viewer.isAdmin)
     return (
-      <SettingsPanel back={back} title='Search source'>
+      <SettingsPanel back={back} title='Connection'>
         <SettingsEmptyState variant='inline'>
           Only organization admins can manage sources.
         </SettingsEmptyState>
@@ -89,17 +90,17 @@ export function OrganizationSourceDetail({ connectorId }: OrganizationSourceDeta
   )
   if (failedQuery && (!hasCanonicalDetail || accessFailure))
     return (
-      <SettingsPanel back={back} title='Search source'>
+      <SettingsPanel back={back} title='Connection'>
         {isApiClientError(failedQuery.error) && failedQuery.error.status === 404 ? (
           <SettingsEmptyState variant='inline'>
-            This source is no longer available.
+            This connection is no longer available.
           </SettingsEmptyState>
         ) : (
           <SettingsQueryErrorState
             error={failedQuery.error}
             isRetrying={failedQuery.isFetching}
             onRetry={() => void failedQuery.refetch()}
-            fallback='Could not load source'
+            fallback='Could not load connection'
             variant='inline'
           />
         )}
@@ -107,9 +108,9 @@ export function OrganizationSourceDetail({ connectorId }: OrganizationSourceDeta
     )
   if (!index.isPending && !knowledgeBaseId)
     return (
-      <SettingsPanel back={back} title='Search source'>
+      <SettingsPanel back={back} title='Connection'>
         <SettingsEmptyState variant='inline'>
-          This source is no longer available.
+          This connection is no longer available.
         </SettingsEmptyState>
       </SettingsPanel>
     )
@@ -120,8 +121,8 @@ export function OrganizationSourceDetail({ connectorId }: OrganizationSourceDeta
     detail.data.knowledgeBaseId !== knowledgeBaseId
   )
     return (
-      <SettingsPanel back={back} title='Search source'>
-        <SettingsEmptyState variant='inline'>Loading source…</SettingsEmptyState>
+      <SettingsPanel back={back} title='Connection'>
+        <SettingsEmptyState variant='inline'>Loading connection…</SettingsEmptyState>
       </SettingsPanel>
     )
   return (
@@ -137,7 +138,7 @@ export function OrganizationSourceDetail({ connectorId }: OrganizationSourceDeta
             error={failedQuery.error}
             isRetrying={failedQuery.isFetching}
             onRetry={() => void failedQuery.refetch()}
-            fallback='Could not refresh source'
+            fallback='Could not refresh connection'
             variant='inline'
           />
         ) : undefined
@@ -184,8 +185,10 @@ function SourceDetailContent({
   const meta = CONNECTOR_META_REGISTRY[connector.connectorType]
   const title = meta
     ? describeSearchSource(meta, connector.sourceConfig) || meta.name
-    : 'Search source'
+    : 'Connection'
   const { effectiveStatus, lastSyncError } = getConnectorSyncState(connector)
+  const permissionsIncomplete =
+    connector.lastSyncError?.split('\n').includes(SOURCE_PERMISSION_ERROR) ?? false
   const status =
     effectiveStatus === 'paused'
       ? 'Sync paused'
@@ -197,6 +200,8 @@ function SourceDetailContent({
   const description =
     [title === meta?.name ? undefined : meta?.name, status].filter(Boolean).join(' · ') || undefined
   const onBack = () => router.push(backHref)
+  const onRemoved = () =>
+    router.replace(organizationRoutes(organization.id).settingsSection('integrations'))
   const onViewChange = (value: string) => {
     const next = sourceViewParam.parser.parse(value)
     if (next) void setView(next)
@@ -209,7 +214,7 @@ function SourceDetailContent({
     return (
       <SettingsPanel
         back={{ text: backText, icon: ArrowLeft, onSelect: onBack }}
-        title='Search source'
+        title='Connection'
       >
         <SettingsQueryErrorState
           error={integrations.error}
@@ -241,15 +246,6 @@ function SourceDetailContent({
           description='Its content is unavailable in Search, Assistant, and MCP.'
         />
       )}
-      {connector.accessMode === 'members' && (
-        <SettingsResourceRow
-          title='Search accounts'
-          description='Each person connects from Integrations to sync content they can access.'
-          href={organizationRoutes(organization.id).integrations}
-          clickLabel='Manage your Search accounts'
-          navigable
-        />
-      )}
     </>
   )
   if (view === 'settings')
@@ -263,6 +259,7 @@ function SourceDetailContent({
         queryError={integrationFeedback}
         backText={backText}
         onBack={onBack}
+        onRemoved={onRemoved}
         onViewChange={onViewChange}
       />
     )
@@ -273,16 +270,27 @@ function SourceDetailContent({
       title={title}
       description={description}
       docsLink={meta?.searchDocsUrl}
-      onRemoved={onBack}
+      onRemoved={onRemoved}
     >
       {integrationFeedback}
       <SourceNavigation view={view} onViewChange={onViewChange} />
-      {effectiveStatus === 'active' && lastSyncError && (
-        <SettingsResourceRow
-          title='Some source updates are incomplete'
-          description='Review the source settings and try syncing again.'
-        />
-      )}
+      {lastSyncError &&
+        (effectiveStatus === 'active' ||
+          (permissionsIncomplete &&
+            (effectiveStatus === 'pending' || effectiveStatus === 'syncing'))) && (
+          <SettingsResourceRow
+            title={
+              permissionsIncomplete
+                ? 'Permission verification incomplete'
+                : 'Some connection updates are incomplete'
+            }
+            description={
+              permissionsIncomplete
+                ? SOURCE_PERMISSION_ERROR
+                : 'Review the connection settings and try syncing again.'
+            }
+          />
+        )}
       <ConnectorRecovery
         connector={connector}
         knowledgeBaseId={connector.knowledgeBaseId}
@@ -326,7 +334,7 @@ function SourceNavigation({ view, onViewChange }: SourceNavigationProps) {
         tabs={SOURCE_VIEWS}
         value={view}
         onChange={onViewChange}
-        aria-label='Source views'
+        aria-label='Connection views'
       />
     </div>
   )
@@ -376,6 +384,7 @@ interface SourceSettingsEditorProps {
   queryError?: ReactNode
   backText: string
   onBack: () => void
+  onRemoved: () => void
   onViewChange: (view: string) => void
 }
 
@@ -409,6 +418,7 @@ function SourceSettingsForm({
   queryError,
   backText,
   onBack,
+  onRemoved,
   onViewChange,
   onSaved,
   onDiscard,
@@ -429,7 +439,7 @@ function SourceSettingsForm({
       description={description}
       docsLink={form.docsUrl}
       lifecycleDisabled={form.dirty || form.saving}
-      onRemoved={onBack}
+      onRemoved={onRemoved}
       actions={saveDiscardActions({
         dirty: form.dirty,
         saving: form.saving,

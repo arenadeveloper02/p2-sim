@@ -3,8 +3,14 @@
  */
 import { createMockRequest, hybridAuthMockFns } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as XLSX from 'xlsx'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
+import { isSupportedFileType, parseBuffer } from '@/lib/file-parsers'
+import { CsvParser } from '@/lib/file-parsers/csv-parser'
+import { FileParserError } from '@/lib/file-parsers/errors'
+import { XlsxParser } from '@/lib/file-parsers/xlsx-parser'
 import { MAX_FOLDER_PATH_SEGMENTS } from '@/lib/folders/paths'
+import { extractIndexText } from '@/lib/workspace-files/search/extract'
 
 const {
   mockAssertActiveWorkspaceAccess,
@@ -128,6 +134,8 @@ vi.mock('@/lib/uploads/contexts/workspace', () => ({
   getWorkspaceFileByName: (...args: unknown[]) => mockGetWorkspaceFileByName(...args),
   getWorkspaceFile: (...args: unknown[]) => mockGetWorkspaceFile(...args),
   loadActiveWorkspaceContext: (...args: unknown[]) => mockLoadActiveWorkspaceContext(...args),
+  loadActiveWorkspaceFileContext: (...args: unknown[]) =>
+    mockLoadActiveWorkspaceFileContext(...args),
   updateWorkspaceFileContent: (...args: unknown[]) => mockUpdateWorkspaceFileContent(...args),
   uploadWorkspaceFile: (...args: unknown[]) => mockUploadWorkspaceFile(...args),
 }))
@@ -1017,6 +1025,7 @@ describe('file manage folder wiring', () => {
 describe('file manage operations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetFileMetadataByKey.mockResolvedValue(null)
     hybridAuthMockFns.mockCheckInternalAuth.mockResolvedValue({
       success: true,
       userId: 'user-1',
@@ -1061,6 +1070,78 @@ describe('file manage operations', () => {
     })
   })
 
+  it.each(['csv', 'xlsx'])('reads the same late %s line that search indexed', async (extension) => {
+    let buffer: Buffer
+    if (extension === 'csv') {
+      buffer = Buffer.from(`name,name\n${'first,second\n'.repeat(1001)}tail,needle\n`)
+    } else {
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(
+        workbook,
+        {
+          A1: { t: 's', v: 'header' },
+          ZZ1001: { t: 's', v: 'tail needle' },
+          '!ref': 'A1:ZZ1001',
+        },
+        'Data'
+      )
+      buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+    }
+    const parser = extension === 'csv' ? new CsvParser() : new XlsxParser()
+    const parse = (
+      bytes: Buffer,
+      _extension: string,
+      options?: import('@/lib/file-parsers/types').FileParseOptions
+    ) => parser.parseBuffer(bytes, options)
+    vi.mocked(isSupportedFileType).mockReturnValueOnce(true).mockReturnValueOnce(true)
+    vi.mocked(parseBuffer).mockImplementationOnce(parse).mockImplementationOnce(parse)
+    const indexed = await extractIndexText(
+      { kind: 'stored', buffer },
+      `data.${extension}`,
+      new AbortController().signal
+    )
+    const lines = indexed!.text.split('\n')
+    const lineNumber = lines.findIndex((line) => line.includes('needle')) + 1
+    expect(lineNumber).toBeGreaterThan(0)
+    mockGetWorkspaceFile.mockResolvedValueOnce({
+      ...workspaceFile('file-1'),
+      name: `data.${extension}`,
+    })
+    mockDownloadServableFileFromStorage.mockResolvedValueOnce({ buffer })
+    const response = await POST(
+      createMockRequest('POST', {
+        operation: 'content',
+        workspaceId: 'workspace-1',
+        fileId: 'file-1',
+        offset: lineNumber,
+        limit: 1,
+      })
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        contents: [lines[lineNumber - 1]],
+        lineRanges: [{ offset: lineNumber, lineCount: 1, totalLinesExact: true }],
+      },
+    })
+  })
+  it('does not bypass complete extraction limits with a raw-text fallback', async () => {
+    vi.mocked(isSupportedFileType).mockReturnValueOnce(true)
+    vi.mocked(parseBuffer).mockRejectedValueOnce(
+      new FileParserError('complexity_limit', 'too large')
+    )
+    const response = await POST(
+      createMockRequest('POST', {
+        operation: 'content',
+        workspaceId: 'workspace-1',
+        fileId: 'file-1',
+        offset: 1,
+        limit: 1,
+      })
+    )
+    expect(response.status).toBe(413)
+  })
+
   it('returns a scoped, deduplicated union of exact canonical file provenance', async () => {
     mockGetBoundWorkspaceFileSecretProvenance.mockImplementation(
       async (_workspaceId: string, identity: { fileId: string }) =>
@@ -1068,13 +1149,30 @@ describe('file manage operations', () => {
           ? {
               status: 'exact',
               entries: [
-                { name: 'TOKEN', encryptedValue: 'encrypted-token' },
-                { name: 'ALPHA', encryptedValue: 'encrypted-alpha' },
+                {
+                  name: 'TOKEN',
+                  encryptedValue: 'encrypted-token',
+                  sourceUserId: 'user-1',
+                  sourceWorkspaceId: 'workspace-1',
+                },
+                {
+                  name: 'ALPHA',
+                  encryptedValue: 'encrypted-alpha',
+                  sourceUserId: 'user-1',
+                  sourceWorkspaceId: 'workspace-1',
+                },
               ],
             }
           : {
               status: 'exact',
-              entries: [{ name: 'TOKEN', encryptedValue: 'encrypted-token' }],
+              entries: [
+                {
+                  name: 'TOKEN',
+                  encryptedValue: 'encrypted-token',
+                  sourceUserId: 'user-1',
+                  sourceWorkspaceId: 'workspace-1',
+                },
+              ],
             }
     )
 
@@ -1113,6 +1211,216 @@ describe('file manage operations', () => {
       'workspace-1',
       expect.objectContaining({ fileId: 'file-2', contentUpdatedAt: CONTENT_UPDATED_AT })
     )
+  })
+
+  describe('rendered file contributors', () => {
+    const contributor = {
+      fileId: 'image',
+      key: 'workspace/workspace-1/image.txt',
+      context: 'workspace' as const,
+      contentUpdatedAt: CONTENT_UPDATED_AT,
+    }
+    const secretEntries = [
+      {
+        name: 'IMAGE_TOKEN',
+        encryptedValue: 'encrypted-image-token',
+        sourceUserId: 'user-1',
+        sourceWorkspaceId: 'workspace-1',
+      },
+    ]
+
+    function mockContributorMetadata(overrides: { userId?: string; workspaceId?: string } = {}) {
+      const document = {
+        id: 'document',
+        key: 'workspace/workspace-1/document.txt',
+        context: 'workspace',
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        contentUpdatedAt: CONTENT_UPDATED_AT,
+      }
+      const image = {
+        ...document,
+        id: contributor.fileId,
+        key: contributor.key,
+        ...overrides,
+      }
+      const records = new Map([
+        [document.key, document],
+        [image.key, image],
+      ])
+      mockGetFileMetadataByKey.mockImplementation(async (key: string) => records.get(key) ?? null)
+    }
+
+    beforeEach(() => {
+      mockResolveWorkspaceFileReference.mockResolvedValue(workspaceFile('document'))
+      mockContributorMetadata()
+      mockDownloadServableFileFromStorage.mockResolvedValue({
+        buffer: Buffer.from('rendered image content'),
+        contentType: 'text/plain',
+        contributingFiles: [contributor],
+      })
+    })
+
+    function renderedRequest(operation: 'write' | 'compress' | 'content') {
+      return createMockRequest(
+        'POST',
+        {
+          operation,
+          workspaceId: 'workspace-1',
+          ...(operation === 'write'
+            ? {
+                fileName: 'copy.txt',
+                fileInput: {
+                  id: 'document',
+                  name: 'document.txt',
+                  key: 'workspace/workspace-1/document.txt',
+                  url: '/api/files/serve/document',
+                  context: 'workspace',
+                  size: 1,
+                  type: 'text/plain',
+                },
+              }
+            : { fileId: 'document' }),
+        },
+        PRIVATE_REQUEST_HEADER
+      )
+    }
+
+    it.each(['write', 'compress', 'content'] as const)(
+      '%s keeps transformed secret-bearing assets unknown even when the source is exact-empty',
+      async (operation) => {
+        mockGetBoundWorkspaceFileSecretProvenance.mockImplementation(
+          async (_workspaceId: string, identity: { fileId: string }) => ({
+            status: 'exact',
+            entries: identity.fileId === contributor.fileId ? secretEntries : [],
+          })
+        )
+
+        mockDownloadServableFileFromStorage.mockResolvedValueOnce({
+          buffer: Buffer.from('<img src="data:image/png;base64,aGlkZGVuLXNlY3JldA==">'),
+          contentType: 'text/html',
+          contributingFiles: [contributor],
+        })
+        const response = await POST(renderedRequest(operation))
+
+        expect(response.status, await response.clone().text()).toBe(200)
+        if (operation === 'content') {
+          await expect(response.json()).resolves.toMatchObject({
+            __resolvedSecretTraceProvenance: {
+              complete: false,
+              entries: [],
+            },
+          })
+        } else {
+          expect(mockUploadWorkspaceFile.mock.calls[0]?.[5]).toMatchObject({
+            secretProvenance: { status: 'unknown' },
+          })
+        }
+        expect(mockDownloadServableFileFromStorage).toHaveBeenCalledWith(
+          expect.anything(),
+          'request-1',
+          expect.anything(),
+          expect.objectContaining({
+            filePrincipal: expect.objectContaining({ subjectUserId: 'user-1' }),
+            signal: expect.any(AbortSignal),
+          })
+        )
+        expect(mockGetBoundWorkspaceFileSecretProvenance).toHaveBeenCalledWith(
+          'workspace-1',
+          contributor
+        )
+      }
+    )
+
+    it.each(['write', 'compress', 'content'] as const)(
+      '%s preserves unknown rendered-asset provenance',
+      async (operation) => {
+        mockGetBoundWorkspaceFileSecretProvenance.mockImplementation(
+          async (_workspaceId: string, identity: { fileId: string }) =>
+            identity.fileId === contributor.fileId
+              ? { status: 'unknown' }
+              : { status: 'exact', entries: [] }
+        )
+
+        const response = await POST(renderedRequest(operation))
+
+        expect(response.status, await response.clone().text()).toBe(200)
+        if (operation === 'content') {
+          await expect(response.json()).resolves.toMatchObject({
+            __resolvedSecretTraceProvenance: { complete: false, entries: [] },
+          })
+        } else {
+          expect(mockUploadWorkspaceFile.mock.calls[0]?.[5]).toMatchObject({
+            secretProvenance: { status: 'unknown' },
+          })
+        }
+      }
+    )
+
+    it.each(['write', 'compress', 'content'] as const)(
+      '%s does not replace an older rendered revision with a safe revision of the same file',
+      async (operation) => {
+        const oldRevision = new Date(CONTENT_UPDATED_AT.getTime() - 1_000)
+        mockDownloadServableFileFromStorage.mockResolvedValue({
+          buffer: Buffer.from('both old and new image bytes'),
+          contentType: 'text/plain',
+          contributingFiles: [{ ...contributor, contentUpdatedAt: oldRevision }, contributor],
+        })
+        mockGetBoundWorkspaceFileSecretProvenance.mockImplementation(
+          async (_workspaceId: string, identity: { contentUpdatedAt?: Date }) =>
+            identity.contentUpdatedAt?.getTime() === oldRevision.getTime()
+              ? { status: 'unknown' }
+              : { status: 'exact', entries: [] }
+        )
+
+        const response = await POST(renderedRequest(operation))
+
+        expect(response.status, await response.clone().text()).toBe(200)
+        expect(mockGetBoundWorkspaceFileSecretProvenance).toHaveBeenCalledWith('workspace-1', {
+          ...contributor,
+          contentUpdatedAt: oldRevision,
+        })
+        if (operation === 'content') {
+          await expect(response.json()).resolves.toMatchObject({
+            __resolvedSecretTraceProvenance: { complete: false, entries: [] },
+          })
+        } else {
+          expect(mockUploadWorkspaceFile.mock.calls[0]?.[5]).toMatchObject({
+            secretProvenance: { status: 'unknown' },
+          })
+        }
+      }
+    )
+
+    it.each(['write', 'compress'] as const)(
+      '%s retains the secret owner guard for rendered contributors',
+      async (operation) => {
+        mockContributorMetadata({ userId: 'other-user' })
+        mockGetBoundWorkspaceFileSecretProvenance.mockImplementation(
+          async (_workspaceId: string, identity: { fileId: string }) => ({
+            status: 'exact',
+            entries: identity.fileId === contributor.fileId ? secretEntries : [],
+          })
+        )
+
+        const response = await POST(renderedRequest(operation))
+
+        expect(response.status, await response.clone().text()).toBe(200)
+        expect(mockUploadWorkspaceFile.mock.calls[0]?.[5]).toMatchObject({
+          secretProvenance: { status: 'unknown' },
+        })
+      }
+    )
+
+    it('refuses a rendered contributor whose canonical scope differs', async () => {
+      mockContributorMetadata({ workspaceId: 'other-workspace' })
+      mockGetBoundWorkspaceFileSecretProvenance.mockResolvedValue({ status: 'exact', entries: [] })
+
+      const response = await POST(renderedRequest('write'))
+
+      expect(response.status).toBe(404)
+      expect(mockUploadWorkspaceFile).not.toHaveBeenCalled()
+    })
   })
 
   it('pins resolved file-input provenance to the captured content revision', async () => {
@@ -1870,7 +2178,14 @@ describe('file manage operations', () => {
     )
     mockGetBoundWorkspaceFileSecretProvenance.mockResolvedValue({
       status: 'exact',
-      entries: [{ name: 'TOKEN', encryptedValue: 'encrypted-token' }],
+      entries: [
+        {
+          name: 'TOKEN',
+          encryptedValue: 'encrypted-token',
+          sourceUserId: 'user-1',
+          sourceWorkspaceId: 'workspace-1',
+        },
+      ],
     })
 
     const response = await POST(
@@ -1885,7 +2200,7 @@ describe('file manage operations', () => {
     expect(body.__resolvedSecretTraceProvenance).toEqual({
       version: 1,
       complete: true,
-      entries: [{ name: 'TOKEN', encryptedValue: 'encrypted-token' }],
+      entries: [{ encryptedValue: 'encrypted-token' }],
     })
   })
 

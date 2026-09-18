@@ -21,6 +21,8 @@ import { truncate } from '@sim/utils/string'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQueryStates } from 'nuqs'
 import { EmptyState } from '@/components/empty-state/empty-state'
+import { getDocumentIcon } from '@/components/icons/document-icons'
+import { getDocumentIndexingStatus } from '@/lib/knowledge/documents/types'
 import type { ChunkData } from '@/lib/knowledge/types'
 import { formatTokenCount } from '@/lib/tokenization'
 import type {
@@ -58,7 +60,6 @@ import {
   documentUrlKeys,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/search-params'
 import { ActionBar } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/action-bar'
-import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
 import { useDocument, useDocumentChunks, useKnowledgeBase } from '@/hooks/kb/use-knowledge'
@@ -1084,7 +1085,8 @@ export function Document({
   )
 
   const hasDocumentData = documentData !== null
-  const processingStatus = documentData?.processingStatus
+  const processingStatus = documentData ? getDocumentIndexingStatus(documentData) : undefined
+  const processingError = documentData?.processingError
 
   const chunkRows: ResourceRow[] = useMemo(() => {
     /**
@@ -1107,6 +1109,8 @@ export function Document({
                     {processingStatus === 'pending' && 'Document processing pending...'}
                     {processingStatus === 'processing' && 'Document processing in progress...'}
                     {processingStatus === 'failed' && 'Document processing failed'}
+                    {processingStatus === 'skipped' &&
+                      (processingError ? `Skipped · ${processingError}` : 'Document skipped')}
                     {!processingStatus && 'Document not ready'}
                   </span>
                 </div>
@@ -1151,7 +1155,7 @@ export function Document({
         },
       }
     })
-  }, [isCompleted, hasDocumentData, processingStatus, displayChunks, searchQuery])
+  }, [isCompleted, hasDocumentData, processingStatus, processingError, displayChunks, searchQuery])
 
   const saveLabel =
     saveStatus === 'saving'

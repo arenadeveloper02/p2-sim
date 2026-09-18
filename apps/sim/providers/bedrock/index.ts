@@ -23,17 +23,19 @@ import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { buildBedrockMessageContent } from '@/providers/attachments'
 import { createBedrockStreamingToolLoopStream } from '@/providers/bedrock/streaming-tool-loop'
 import {
-  buildBedrockInferenceConfig,
   checkForForcedToolUsage,
   createReadableStreamFromBedrockStream,
   generateToolUseId,
+  getBedrockBaseModelId,
   getBedrockInferenceProfileId,
   supportsToolResultStatus,
 } from '@/providers/bedrock/utils'
 import { getCachedProviderClient } from '@/providers/client-cache'
 import {
+  getModelCapabilities,
   getProviderDefaultModel,
   getProviderModels,
+  isKnownModelId,
   supportsNativeStructuredOutputs,
 } from '@/providers/models'
 import { executeProviderTool } from '@/providers/runtime-context'
@@ -377,13 +379,19 @@ export const bedrockProvider: ProviderConfig = {
 
     const systemPromptWithSchema = systemContent
 
-    const inferenceConfig = buildBedrockInferenceConfig({
-      model: request.model,
-      temperature:
-        request.temperature != null ? Number.parseFloat(String(request.temperature)) : undefined,
-      maxTokens: request.maxTokens != null ? Number.parseInt(String(request.maxTokens)) : undefined,
-      defaultTemperature: 0.7,
-    })
+    const canonicalModelId = `bedrock/${getBedrockBaseModelId(request.model)}`
+    const knownModel = isKnownModelId(canonicalModelId)
+    const modelCapabilities = getModelCapabilities(canonicalModelId)
+    const inferenceConfig: { temperature?: number; maxTokens?: number } = {}
+    if (
+      (knownModel && modelCapabilities?.temperature) ||
+      (!knownModel && request.temperature != null)
+    ) {
+      inferenceConfig.temperature = Number.parseFloat(String(request.temperature ?? 0.7))
+    }
+    if (request.maxTokens != null) {
+      inferenceConfig.maxTokens = Number.parseInt(String(request.maxTokens))
+    }
 
     /**
      * The live tool loop cannot honor responseFormat — structured output on

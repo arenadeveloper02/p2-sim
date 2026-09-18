@@ -13,7 +13,10 @@ import {
   type ListingCheckpoint,
 } from '@/lib/knowledge/connectors/listing-checkpoint'
 import { runConnectorContentPass } from '@/lib/knowledge/connectors/sync-content-pass'
-import { SOURCE_CONTENT_ERROR } from '@/lib/knowledge/connectors/sync-limits'
+import {
+  SOURCE_CONTENT_ERROR,
+  SOURCE_PERMISSION_ERROR,
+} from '@/lib/knowledge/connectors/sync-limits'
 import { stillHoldsSyncLock } from '@/lib/knowledge/connectors/sync-lock'
 import { confluenceConnector } from '@/connectors/confluence/confluence'
 import type { ExternalDocument, SyncResult } from '@/connectors/types'
@@ -105,6 +108,7 @@ beforeEach(() => {
   hydrationVersion = undefined
   sourceBody = { value: '' }
   mocks.hardDelete.mockResolvedValue(0)
+  mocks.onPage.mockReset()
   mocks.upload.mockImplementation(async ({ customKey }: { customKey: string }) => ({
     key: customKey,
     path: `/api/files/serve/${encodeURIComponent(customKey)}`,
@@ -124,6 +128,7 @@ beforeEach(() => {
         version: { number: sourceVersion },
       }
       if (url.pathname.endsWith('/spaces/space/pages')) return Response.json({ results: [page] })
+      if (url.pathname.endsWith('/pages/page/attachments')) return Response.json({ results: [] })
       if (url.pathname.endsWith('/pages/page')) {
         return Response.json({
           ...page,
@@ -284,6 +289,8 @@ async function runPass(
     checkpoint?: ListingCheckpoint
     databaseTime?: Date
     getDocument?: () => Promise<ExternalDocument | null>
+    permissionsOnly?: boolean
+    permissionStoredAfter?: StoredPage
   } = {}
 ) {
   vi.clearAllMocks()
@@ -316,6 +323,11 @@ async function runPass(
       queueTableRows(schemaMock.document, [{ fileUrl: options.existing?.fileUrl ?? '' }])
     }
   }
+  if (options.permissionsOnly)
+    queueTableRows(
+      schemaMock.document,
+      options.permissionStoredAfter ? [options.permissionStoredAfter] : []
+    )
   queueTableRows(schemaMock.document, [
     { ownedCount: 1, listedCount: 1, softCount: 0, hardCount: 0 },
   ])
@@ -342,7 +354,14 @@ async function runPass(
     options.getDocument ??
       (() => confluenceConnector.getDocument('token', SOURCE_CONFIG, 'page', syncContext))
   )
-  const listDocuments = vi.fn(confluenceConnector.listDocuments)
+  const listDocuments = vi.fn(
+    async (...args: Parameters<typeof confluenceConnector.listDocuments>) => {
+      const page = await confluenceConnector.listDocuments(...args)
+      return options.permissionsOnly
+        ? { ...page, permissionsOnly: true, reconciliationSafe: false }
+        : page
+    }
+  )
   const pass = await runConnectorContentPass({
     connectorId: 'connector',
     connector: {
@@ -381,6 +400,136 @@ function contentWrite(): Record<string, unknown> {
 }
 
 describe('content pass checkpoint intent', () => {
+  it('preserves non-Google replay behavior for already-seen documents', async () => {
+    sourceBody = { value: '<p>Updated body</p>' }
+    const checkpoint = beginListingCheckpoint({
+      fingerprint: 'a'.repeat(64),
+      generationId: 'incomplete-company',
+      startedAt: new Date('2026-09-07T12:00:00Z'),
+    })
+    const { hydrate, result } = await runPass({
+      access: 'admin',
+      readCurrent: true,
+      checkpoint,
+      existing: {
+        ...EXISTING,
+        contentHash: 'old-body',
+        storageKey: 'kb/old.txt',
+        sourceSeenAt: new Date(checkpoint.startedAt),
+      },
+    })
+    expect(hydrate).not.toHaveBeenCalled()
+    expect(result.docsUpdated).toBe(0)
+  })
+
+  it.each([403, 401])(
+    'indexes healthy Confluence pages while preserving attachments after access failure %s',
+    async (status) => {
+      sourceBody = { value: '<p>Current content</p>' }
+      const healthy = vi.mocked(fetch).getMockImplementation()!
+      vi.mocked(fetch).mockImplementation(async (input, init) =>
+        String(input).includes('/pages/page/attachments')
+          ? status === 401
+            ? Response.json(
+                { code: 401, message: 'Unauthorized; scope does not match' },
+                { status }
+              )
+            : new Response(null, { status })
+          : healthy(input, init)
+      )
+      const { pass, result } = await runPass({ access: 'admin' })
+      expect(pass.complete).toBe(true)
+      expect(pass.checkpoint).toMatchObject({
+        unsafe: true,
+        listingFailures: {
+          count: 1,
+          samples: [
+            {
+              scope: 'page',
+              operation: 'confluence.attachments.list',
+              status,
+              reasons: [status === 401 ? 'attachment_scope_mismatch' : 'attachment_access_denied'],
+            },
+          ],
+        },
+      })
+      expect(pass.holdNotice).toContain('unlisted documents were kept')
+      expect(result.docsAdded).toBe(1)
+      expect(result.docsDeleted).toBe(0)
+      expect(mocks.dispatch).toHaveBeenCalledOnce()
+      expect(mocks.hardDelete).not.toHaveBeenCalled()
+      expect(dbChainMockFns.set.mock.calls.some(([value]) => value.deletedAt != null)).toBe(false)
+    }
+  )
+
+  it('does not reconcile deletions after a user listing failed, even without the unsafe marker', async () => {
+    sourceBody = { value: '<p>Current content</p>' }
+    const checkpoint = {
+      ...beginListingCheckpoint({
+        fingerprint: 'a'.repeat(64),
+        generationId: 'prior',
+        startedAt: new Date(0),
+      }),
+      listingFailures: {
+        count: 1,
+        samples: [
+          {
+            scope: 'unavailable@example.com',
+            operation: 'gmail.threads.list',
+            status: 400,
+            reasons: ['failedPrecondition'],
+          },
+        ],
+      },
+    }
+    const { pass, result } = await runPass({ checkpoint, access: 'admin' })
+    expect(pass.complete).toBe(true)
+    expect(pass.checkpoint.listingFailures).toEqual(checkpoint.listingFailures)
+    expect(pass.holdNotice).toContain('unlisted documents were kept')
+    expect(result.docsDeleted).toBe(0)
+    expect(mocks.hardDelete).not.toHaveBeenCalled()
+    expect(dbChainMockFns.set.mock.calls.some(([value]) => value.deletedAt != null)).toBe(false)
+  })
+
+  it('persists unresolved permissions independently of successful content processing', async () => {
+    sourceBody = { value: '<p>Current content</p>' }
+    mocks.onPage.mockResolvedValue({ permissionsIncomplete: true })
+    const { pass, result } = await runPass({ access: 'admin' })
+    expect(pass).toMatchObject({
+      complete: true,
+      holdNotice: SOURCE_PERMISSION_ERROR,
+      checkpoint: { permissionFailures: true, contentFailures: false },
+    })
+    expect(result.docsFailed).toBe(0)
+    expect(dbChainMockFns.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        listingCheckpoint: expect.objectContaining({ permissionFailures: true }),
+      })
+    )
+  })
+
+  it('does not erase an earlier worker permission failure when later pages verify successfully', async () => {
+    const checkpoint = {
+      ...beginListingCheckpoint({
+        fingerprint: 'a'.repeat(64),
+        generationId: 'prior',
+        startedAt: new Date(0),
+      }),
+      permissionFailures: true,
+    }
+    mocks.onPage.mockResolvedValue({ permissionsIncomplete: false })
+    const { pass } = await runPass({ checkpoint, access: 'admin' })
+    expect(pass.holdNotice).toBe(SOURCE_PERMISSION_ERROR)
+    expect(pass.checkpoint.permissionFailures).toBe(true)
+  })
+
+  it('clears permission failure evidence for a newly verified crawl', async () => {
+    mocks.onPage.mockResolvedValue({ permissionsIncomplete: false })
+    const { pass } = await runPass({ access: 'admin' })
+    expect(pass.checkpoint.permissionFailures).toBe(false)
+    expect(pass.holdNotice).toBeNull()
+  })
+
   it('uses the database clock for a new generation despite a different worker clock', async () => {
     const databaseTime = new Date('2026-09-08T10:00:00Z')
     sourceBody = { value: '<p>Current content</p>' }
@@ -421,7 +570,7 @@ describe('content pass checkpoint intent', () => {
       const { pass, result, hydrate, listDocuments } = await runPass({
         existing: {
           ...EXISTING,
-          contentHash: 'confluence:view-callouts:page:3',
+          contentHash: 'confluence:view-text-v2:page:3',
           storageKey: 'kb/old.txt',
           sourceSeenAt: new Date(checkpoint.startedAt),
         },
@@ -473,7 +622,7 @@ describe('content pass checkpoint intent', () => {
       const { pass, hydrate, listDocuments } = await runPass({
         existing: {
           ...EXISTING,
-          contentHash: 'confluence:view-callouts:page:3',
+          contentHash: 'confluence:view-text-v2:page:3',
           storageKey: 'kb/old.txt',
           sourceSeenAt: new Date(checkpoint.startedAt),
         },
@@ -492,6 +641,89 @@ describe('content pass checkpoint intent', () => {
       expect(mocks.dispatch).not.toHaveBeenCalled()
     }
   )
+})
+
+describe('permission refresh through the shared content pass', () => {
+  const current: StoredPage = {
+    ...EXISTING,
+    contentHash: 'confluence:storage-local-body-v2:page:3',
+    storageKey: 'kb/current.txt',
+    sourceSeenAt: new Date('2026-09-07T12:00:00Z'),
+  }
+
+  it('refreshes unchanged stored bodies without hydration, new content, counts, or absence reconciliation', async () => {
+    const { pass, result, hydrate } = await runPass({
+      access: 'admin',
+      existing: current,
+      permissionsOnly: true,
+      permissionStoredAfter: current,
+    })
+    expect(hydrate).not.toHaveBeenCalled()
+    expect(mocks.onPage).toHaveBeenCalledWith(
+      [expect.objectContaining({ externalId: 'page' })],
+      expect.any(Date)
+    )
+    expect(pass.checkpoint.listedCount).toBe(0)
+    expect(result).toMatchObject({ docsAdded: 0, docsUpdated: 0, docsDeleted: 0 })
+    expect(
+      dbChainMockFns.set.mock.calls.some(
+        ([values]) => 'sourceSeenAt' in values || 'deletedAt' in values
+      )
+    ).toBe(false)
+    expect(mocks.hardDelete).not.toHaveBeenCalled()
+  })
+
+  it('ignores documents not previously stored instead of indexing them during permission refresh', async () => {
+    const { hydrate, result } = await runPass({ access: 'admin', permissionsOnly: true })
+    expect(hydrate).not.toHaveBeenCalled()
+    expect(mocks.onPage).toHaveBeenCalledWith([], expect.any(Date))
+    expect(result.docsAdded).toBe(0)
+    expect(mocks.upload).not.toHaveBeenCalled()
+  })
+
+  it('revokes an old body before repairing a changed document and renews permission only for the persisted version', async () => {
+    sourceBody = { value: '<p>Current safe body</p>' }
+    const { hydrate, result } = await runPass({
+      access: 'admin',
+      permissionsOnly: true,
+      readCurrent: true,
+      existing: { ...current, contentHash: 'old-body' },
+      permissionStoredAfter: current,
+    })
+    expect(hydrate).toHaveBeenCalledOnce()
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({
+      acl: [],
+      aclRequirements: [],
+      aclVerifiedAt: null,
+    })
+    expect(dbChainMockFns.set.mock.calls.some(([value]) => 'sourceSeenAt' in value)).toBe(false)
+    expect(result.docsUpdated).toBe(1)
+    expect(mocks.onPage).toHaveBeenCalledWith(
+      [expect.objectContaining({ contentHash: current.contentHash })],
+      expect.any(Date)
+    )
+  })
+
+  it('never renews a changed body after its hydration fails', async () => {
+    const { hydrate, result } = await runPass({
+      access: 'admin',
+      permissionsOnly: true,
+      existing: { ...current, contentHash: 'old-body' },
+      getDocument: async () => {
+        throw new Error('provider unavailable')
+      },
+      permissionStoredAfter: { ...current, contentHash: null },
+    })
+    expect(hydrate).toHaveBeenCalledOnce()
+    expect(result.docsFailed).toBe(1)
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({
+      acl: [],
+      aclRequirements: [],
+      aclVerifiedAt: null,
+    })
+    expect(dbChainMockFns.set.mock.calls.some(([value]) => 'sourceSeenAt' in value)).toBe(false)
+    expect(mocks.onPage).toHaveBeenCalledWith([], expect.any(Date))
+  })
 })
 
 describe('Confluence empty content through the shared content pass', () => {
@@ -645,7 +877,7 @@ describe('Confluence empty content through the shared content pass', () => {
     expect(dbChainMockFns.values).toHaveBeenCalledWith([
       expect.objectContaining({
         externalId: 'page',
-        contentHash: 'confluence:view-callouts:page:3',
+        contentHash: 'confluence:view-text-v2:page:3',
         storageKey: null,
         processingError: 'Document contains no extractable text',
       }),
@@ -655,7 +887,7 @@ describe('Confluence empty content through the shared content pass', () => {
   it('explicitly rehydrates a skipped source whose version is unchanged', async () => {
     sourceBody = { value: '<p>Local content is rechecked</p>' }
     const { result, hydrate } = await runPass({
-      existing: { ...EXISTING, contentHash: 'confluence:storage-local-body-v1:page:3' },
+      existing: { ...EXISTING, contentHash: 'confluence:storage-local-body-v2:page:3' },
       access: 'admin',
       readCurrent: true,
       forceRehydrate: true,
@@ -669,7 +901,7 @@ describe('Confluence empty content through the shared content pass', () => {
     hydrationVersion = 3
     await runPass({ existing: EXISTING, readCurrent: true, access: 'admin' })
     const skipped = contentWrite()
-    expect(skipped.contentHash).toBe('confluence:storage-local-body-v1:page:3')
+    expect(skipped.contentHash).toBe('confluence:storage-local-body-v2:page:3')
 
     hydrationVersion = undefined
     sourceBody = { value: '<p>Current version content</p>' }

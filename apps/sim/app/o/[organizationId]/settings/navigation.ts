@@ -37,7 +37,13 @@ export function resolveOrganizationSettingsSection(
     path,
     items: ORGANIZATION_SETTINGS_ITEMS,
     defaultSection: null,
-    aliases: { organization: 'members', team: 'members', subscription: 'billing', domains: 'sso' },
+    aliases: {
+      organization: 'members',
+      team: 'members',
+      subscription: 'billing',
+      domains: 'sso',
+      sessions: 'security',
+    },
   })
 }
 
@@ -65,8 +71,7 @@ export function organizationSettingsNavigation(
 ) {
   return ORGANIZATION_SETTINGS_ITEMS.filter(
     (item) =>
-      (item.id !== 'connected-accounts' ||
-        (availability.connectedAccounts && !availability.search)) &&
+      (item.id !== 'connected-accounts' || availability.connectedAccounts) &&
       ((item.id !== 'search-mcp' && item.id !== 'search-slack' && item.id !== 'integrations') ||
         availability.search) &&
       resolveOrganizationSectionAccess({

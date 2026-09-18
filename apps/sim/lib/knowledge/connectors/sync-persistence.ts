@@ -209,18 +209,22 @@ function connectorStoredArtifact(extDoc: ExternalDocument): {
     mimeType: 'text/plain',
   }
 }
-type KnowledgeBaseLockingTx = Pick<typeof db, 'execute' | 'select'>
+type KnowledgeBaseLockingTx = Pick<typeof db, 'select'>
 
+/**
+ * Holds an active KB through commit without serializing independent document saves.
+ * SHARE blocks soft deletion's NO KEY UPDATE but permits other saves and FK checks.
+ * Callers acquire this before connector/document locks and must not update the KB.
+ */
 async function isKnowledgeBaseActiveInTx(
   tx: KnowledgeBaseLockingTx,
   knowledgeBaseId: string
 ): Promise<boolean> {
-  await tx.execute(sql`SELECT 1 FROM knowledge_base WHERE id = ${knowledgeBaseId} FOR UPDATE`)
-
   const rows = await tx
     .select({ id: knowledgeBase.id })
     .from(knowledgeBase)
     .where(and(eq(knowledgeBase.id, knowledgeBaseId), isNull(knowledgeBase.deletedAt)))
+    .for('share')
     .limit(1)
 
   return rows.length > 0
@@ -258,7 +262,7 @@ export interface KnowledgeBaseOwner {
   userId: string
 }
 
-/** Builds a content-less `failed` document row for a skipped (e.g. oversized) file. */
+/** Builds a content-less document row for an intentional source exclusion. */
 function buildSkippedDocumentRow(
   knowledgeBaseId: string,
   connectorId: string,
@@ -295,7 +299,7 @@ function buildSkippedDocumentRow(
 }
 
 /**
- * Records source files that were intentionally not indexed as content-less `failed`
+ * Records source files that were intentionally not indexed as content-less
  * documents. New rows are inserted in bulk; authoritative skips replace stale rows.
  * This keeps the files visible in the knowledge base UI — with `processingError`
  * explaining why — instead of silently dropping them. The rows have no storage key,

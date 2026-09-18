@@ -1,10 +1,18 @@
 'use client'
 
 import { useRef } from 'react'
-import { Button, cn } from '@sim/emcn'
-import { ArrowUp } from '@sim/emcn/icons'
+import { Button, Chip, cn, Tooltip } from '@sim/emcn'
+import { ArrowUp, Plus } from '@sim/emcn/icons'
+import { ASSISTANT_IMAGE_ACCEPT_ATTRIBUTE } from '@/lib/uploads/shared/assistant-images'
+import { useOrganizationContext } from '@/app/o/[organizationId]/providers/organization-provider'
+import { AttachedFilesList } from '@/app/workspace/[workspaceId]/home/components/user-input/components/attached-files-list/attached-files-list'
+import { DropOverlay } from '@/app/workspace/[workspaceId]/home/components/user-input/components/drop-overlay/drop-overlay'
+import { MicButton } from '@/app/workspace/[workspaceId]/home/components/user-input/components/mic-button/mic-button'
+import { MicrophonePermissionHelp } from '@/app/workspace/[workspaceId]/home/components/user-input/components/microphone-permission-help/microphone-permission-help'
+import type { useFileAttachments } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
 import { useAnimatedPlaceholder } from '@/hooks/use-animated-placeholder'
 import { useChatInputFocus } from '@/hooks/use-chat-input-focus'
+import { useVoiceInput } from '@/hooks/use-voice-input'
 
 const SEND_BUTTON_BASE = 'size-[28px] rounded-full border-0 p-0 transition-colors'
 const SEND_BUTTON_ACTIVE =
@@ -13,6 +21,7 @@ const SEND_BUTTON_DISABLED = 'bg-[#808080] dark:bg-[#808080]'
 
 interface ComposerProps {
   value: string
+  files: ReturnType<typeof useFileAttachments>
   /** On the empty home the placeholder types itself and the field is taller; in a chat it is the plain footer input. */
   isInitialView: boolean
   isSending: boolean
@@ -28,6 +37,7 @@ interface ComposerProps {
  */
 export function Composer({
   value,
+  files,
   isInitialView,
   isSending,
   onChange,
@@ -35,18 +45,41 @@ export function Composer({
   onStop,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { organization } = useOrganizationContext()
   useChatInputFocus({ textareaRef })
-  const canSubmit = value.trim().length > 0
+  const voice = useVoiceInput({
+    organizationId: organization.id,
+    getValue: () => value,
+    onChange,
+  })
+  const canSubmit =
+    !files.attachedFiles.some((file) => file.uploading) &&
+    (value.trim().length > 0 || files.attachedFiles.some((file) => file.key))
   const animatedPlaceholder = useAnimatedPlaceholder(isInitialView)
   const placeholder = isInitialView ? animatedPlaceholder : 'Send message to Sim'
 
+  const submit = () => {
+    if (!canSubmit) return
+    voice.resetTranscript()
+    onSubmit()
+  }
+
   return (
     <div
+      onDragEnter={files.handleDragEnter}
+      onDragLeave={files.handleDragLeave}
+      onDragOver={files.handleDragOver}
+      onDrop={files.handleDrop}
       className={cn(
         'relative z-10 mx-auto w-full max-w-chat rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
         isInitialView && 'shadow-ambient'
       )}
     >
+      <AttachedFilesList
+        attachedFiles={files.attachedFiles}
+        onFileClick={files.handleFileClick}
+        onRemoveFile={files.removeFile}
+      />
       <div
         className={cn(
           'relative max-h-[200px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
@@ -57,10 +90,16 @@ export function Composer({
           ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onPaste={(event) => {
+            const pasted = event.clipboardData.files
+            if (!pasted.length) return
+            event.preventDefault()
+            void files.processFiles(pasted)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
-              onSubmit()
+              submit()
             }
           }}
           placeholder={placeholder}
@@ -70,36 +109,72 @@ export function Composer({
         />
       </div>
 
-      <div className='flex items-center justify-end'>
-        {isSending ? (
-          <Button
-            type='button'
-            variant='ghost'
-            onClick={onStop}
-            aria-label='Stop generation'
-            className={cn(SEND_BUTTON_BASE, SEND_BUTTON_ACTIVE)}
-          >
-            <svg
-              className='block size-[14px] fill-white dark:fill-black'
-              viewBox='0 0 24 24'
-              xmlns='http://www.w3.org/2000/svg'
+      <div className='flex items-center justify-between'>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Chip
+              shape='round'
+              leftIcon={Plus}
+              onClick={files.handleFileSelect}
+              aria-label='Attach images'
+            />
+          </Tooltip.Trigger>
+          <Tooltip.Content side='top'>Attach images</Tooltip.Content>
+        </Tooltip.Root>
+        <div className='flex items-center gap-1.5'>
+          {voice.isSupported && (
+            <MicButton
+              audioLevelsRef={voice.audioLevelsRef}
+              isListening={voice.isListening}
+              onToggle={voice.toggleListening}
+            />
+          )}
+          {isSending ? (
+            <Button
+              type='button'
+              variant='ghost'
+              onClick={onStop}
+              aria-label='Stop generation'
+              className={cn(SEND_BUTTON_BASE, SEND_BUTTON_ACTIVE)}
             >
-              <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
-            </svg>
-          </Button>
-        ) : (
-          <Button
-            type='button'
-            variant='ghost'
-            onClick={onSubmit}
-            disabled={!canSubmit}
-            aria-label='Send'
-            className={cn(SEND_BUTTON_BASE, canSubmit ? SEND_BUTTON_ACTIVE : SEND_BUTTON_DISABLED)}
-          >
-            <ArrowUp className='block size-[16px] text-white dark:text-black' />
-          </Button>
-        )}
+              <svg
+                className='block size-[14px] fill-white dark:fill-black'
+                viewBox='0 0 24 24'
+                xmlns='http://www.w3.org/2000/svg'
+              >
+                <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
+              </svg>
+            </Button>
+          ) : (
+            <Button
+              type='button'
+              variant='ghost'
+              onClick={submit}
+              disabled={!canSubmit}
+              aria-label='Send'
+              className={cn(
+                SEND_BUTTON_BASE,
+                canSubmit ? SEND_BUTTON_ACTIVE : SEND_BUTTON_DISABLED
+              )}
+            >
+              <ArrowUp className='block size-[16px] text-white dark:text-black' />
+            </Button>
+          )}
+        </div>
       </div>
+      <input
+        ref={files.fileInputRef}
+        type='file'
+        accept={ASSISTANT_IMAGE_ACCEPT_ATTRIBUTE}
+        onChange={files.handleFileChange}
+        className='hidden'
+        multiple
+      />
+      {files.isDragging && <DropOverlay imagesOnly />}
+      <MicrophonePermissionHelp
+        open={voice.permissionHelpOpen}
+        onOpenChange={voice.setPermissionHelpOpen}
+      />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { member, organization, settings, user, userStats, userStatsColumns } from '@sim/db/schema'
+import { member, organization, settings, user, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { generateId } from '@sim/utils/id'
@@ -113,16 +113,27 @@ export async function getOrgUsageLimit(
   seats: number | null,
   executor: DbClient = db
 ): Promise<OrgUsageLimitResult> {
-  const orgData = await executor
+  return (
+    (await findOrgUsageLimit(organizationId, plan, seats, executor)) ??
+    calculateOrgUsageLimit(organizationId, plan, seats, null)
+  )
+}
+
+async function findOrgUsageLimit(
+  organizationId: string,
+  plan: string,
+  seats: number | null,
+  executor: DbClient = db
+): Promise<OrgUsageLimitResult | null> {
+  const [orgData] = await executor
     .select({ orgUsageLimit: organization.orgUsageLimit })
     .from(organization)
     .where(eq(organization.id, organizationId))
     .limit(1)
 
-  const configured =
-    orgData.length > 0 && orgData[0].orgUsageLimit
-      ? toNumber(toDecimal(orgData[0].orgUsageLimit))
-      : null
+  if (!orgData) return null
+
+  const configured = orgData.orgUsageLimit ? toNumber(toDecimal(orgData.orgUsageLimit)) : null
 
   const arenaStarterLimit = await resolveArenaStarterOrgUsageLimit(
     organizationId,
@@ -139,6 +150,15 @@ export async function getOrgUsageLimit(
     return flatOrgLimit
   }
 
+  return calculateOrgUsageLimit(organizationId, plan, seats, configured)
+}
+
+function calculateOrgUsageLimit(
+  organizationId: string,
+  plan: string,
+  seats: number | null,
+  configured: number | null
+): OrgUsageLimitResult {
   if (isEnterprise(plan)) {
     // Enterprise: Use configured limit directly (no per-seat minimum)
     if (configured !== null) {
@@ -236,7 +256,7 @@ export async function getResolvedUserUsageData(
       // inserted, which a lagging replica can miss (this path throws on a
       // missing row). Stays on the primary deliberately.
       db
-        .select(userStatsColumns)
+        .select()
         .from(userStats)
         .where(eq(userStats.userId, userId))
         .limit(1),
@@ -354,7 +374,7 @@ export async function getUserUsageLimitInfo(userId: string): Promise<UsageLimitI
   try {
     const [subscription, userStatsRecord] = await Promise.all([
       getHighestPrioritySubscription(userId),
-      db.select(userStatsColumns).from(userStats).where(eq(userStats.userId, userId)).limit(1),
+      db.select().from(userStats).where(eq(userStats.userId, userId)).limit(1),
     ])
 
     if (userStatsRecord.length === 0) {
@@ -490,21 +510,16 @@ export async function getUserUsageLimit(
       : await getHighestPrioritySubscription(userId)
 
   if (isOrgScopedSubscription(subscription, userId) && subscription) {
-    const orgExists = await db
-      .select({ id: organization.id })
-      .from(organization)
-      .where(eq(organization.id, subscription.referenceId))
-      .limit(1)
-
-    if (orgExists.length === 0) {
-      throw new Error(`Organization not found: ${subscription.referenceId} for user: ${userId}`)
-    }
-
-    const orgLimit = await getOrgUsageLimit(
+    const orgLimit = await findOrgUsageLimit(
       subscription.referenceId,
       subscription.plan,
       subscription.seats
     )
+
+    if (!orgLimit) {
+      throw new Error(`Organization not found: ${subscription.referenceId} for user: ${userId}`)
+    }
+
     return orgLimit.limit
   }
 
@@ -605,7 +620,7 @@ export async function checkUsageStatus(userId: string): Promise<{
 export async function syncUsageLimitsFromSubscription(userId: string): Promise<void> {
   const [subscription, currentUserStats] = await Promise.all([
     getHighestPriorityPersonalSubscription(userId, { onError: 'throw' }),
-    db.select(userStatsColumns).from(userStats).where(eq(userStats.userId, userId)).limit(1),
+    db.select().from(userStats).where(eq(userStats.userId, userId)).limit(1),
   ])
 
   if (currentUserStats.length === 0) {

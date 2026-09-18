@@ -27,11 +27,11 @@ export const MAX_PROCESSING_ATTEMPTS = 5
  * `STALE_PROCESSING_MINUTES` bounds a run that has already begun, derived from
  * the task's own duration and retry budget. Queue *wait* is a different
  * quantity: it is backlog / concurrency, not run duration.
- * `document-processing-queue` has a global concurrency shared by every
- * workspace, so a corpus large enough to approach
- * `CONNECTOR_SYNC_MAX_DURATION_SECONDS` enqueues thousands of documents that
- * drain in waves of that width — at roughly a minute of occupancy each, a few
- * hours, and longer while other workspaces hold slots.
+ * Backfill drains through a per-tenant copy of the backfill queue, so a corpus
+ * large enough to approach `CONNECTOR_SYNC_MAX_DURATION_SECONDS` enqueues
+ * thousands of documents that drain in waves of that concurrency — at roughly a
+ * minute of occupancy each, a few hours. Another tenant's corpus no longer
+ * extends that wait, but the shared environment concurrency limit still can.
  *
  * Four hours is chosen against three bounds that are all constants in this
  * repository rather than any one deployment's corpus: it is well above that
@@ -94,6 +94,17 @@ export const DOCUMENT_PROCESSING_STATUSES = [
 ] as const
 
 export type DocumentProcessingStatus = (typeof DOCUMENT_PROCESSING_STATUSES)[number]
+
+/** An intentional source omission, separate from the backward-compatible processing state. */
+export type DocumentProcessingOutcome = 'skipped' | null
+
+/** Displays an intentional source outcome while accepting responses from older servers. */
+export function getDocumentIndexingStatus(document: {
+  processingStatus: string
+  processingOutcome?: DocumentProcessingOutcome
+}): string {
+  return document.processingOutcome ?? document.processingStatus
+}
 
 /**
  * Narrows a stored `processing_status` onto the union.

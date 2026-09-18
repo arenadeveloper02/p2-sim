@@ -1,6 +1,9 @@
 import { reconcileOAuthProviderLifecycleMigration } from '@sim/db/script-migrations/0012_reconcile_oauth_provider_lifecycle'
 import { backfillLegacyKnowledgeBaseWorkspacesMigration } from '@sim/db/script-migrations/0013_backfill_legacy_knowledge_base_workspaces'
 import { requireKnowledgeBaseOwnerMigration } from '@sim/db/script-migrations/0014_require_knowledge_base_owner'
+import { backfillSearchVectorsMigration } from '@sim/db/script-migrations/0016_backfill_search_vectors'
+import { indexSearchDocumentsMigration } from '@sim/db/script-migrations/0017_index_search_documents'
+import { repairWorkspaceFileContentRevisionMigration } from '@sim/db/script-migrations/0018_repair_workspace_file_content_revision'
 import type { Sql } from 'postgres'
 import { backfillTableOrderKeys } from './0001_backfill_table_order_keys'
 import { backfillPausedBillingAttribution } from './0002_backfill_paused_billing_attribution'
@@ -9,8 +12,6 @@ import { backfillForkKnowledgeBaseFileOwnership } from './0004_backfill_fork_kb_
 import { repairUnknownTableRowProvenance } from './0005_repair_unknown_table_row_provenance'
 import { repairUnknownTableRowProvenanceSecondPass } from './0006_repair_unknown_table_row_provenance_second_pass'
 import { repairUnknownWorkspaceFileProvenance } from './0007_repair_unknown_workspace_file_provenance'
-import { backfillWorkspaceFileSizeBytesMigration } from './0008_backfill_workspace_file_size_bytes'
-import { backfillWelResidualCostTotalMigration } from './0009_backfill_wel_residual_cost_total'
 import { backfillCredentialGroupResourcePolicies } from './0010_backfill_credential_group_resource_policies'
 import { remapLegacyKnowledgeConnectorCredentialsMigration } from './0011_remap_legacy_knowledge_connector_credentials'
 import type { ScriptMigration } from './types'
@@ -19,7 +20,7 @@ export type { ScriptMigration } from './types'
 
 /**
  * Ordered, append-only registry of script migrations. An entry may be deleted
- * once a later SQL migration supersedes it (accepting that deployments which
+ * once a later migration supersedes it (accepting that deployments which
  * never ran it skip the backfill) — never renamed or reordered.
  */
 export const scriptMigrations: readonly ScriptMigration[] = [
@@ -30,13 +31,16 @@ export const scriptMigrations: readonly ScriptMigration[] = [
   repairUnknownTableRowProvenance,
   repairUnknownTableRowProvenanceSecondPass,
   repairUnknownWorkspaceFileProvenance,
-  backfillWorkspaceFileSizeBytesMigration,
-  backfillWelResidualCostTotalMigration,
   backfillCredentialGroupResourcePolicies,
   remapLegacyKnowledgeConnectorCredentialsMigration,
   reconcileOAuthProviderLifecycleMigration,
   backfillLegacyKnowledgeBaseWorkspacesMigration,
   requireKnowledgeBaseOwnerMigration,
+  /** 0016 completes partially applied 0015 binary projections together with the new search vectors. */
+  backfillSearchVectorsMigration,
+  indexSearchDocumentsMigration,
+  /** 0358 stops new sub-millisecond revisions; this retires the ones that predate it. */
+  repairWorkspaceFileContentRevisionMigration,
 ]
 
 /**
@@ -96,10 +100,11 @@ export async function runScriptMigrations(sql: Sql): Promise<void> {
     console.log(`Applying script migration ${migration.name}...`)
     const startedAt = Date.now()
     await migration.up(sql)
-    await sql`
-      INSERT INTO script_migrations (name) VALUES (${migration.name})
-      ON CONFLICT (name) DO NOTHING
-    `
+    await sql.begin(async (tx) => {
+      for (const name of [migration.name, ...(migration.supersedes ?? [])]) {
+        await tx`INSERT INTO script_migrations (name) VALUES (${name}) ON CONFLICT (name) DO NOTHING`
+      }
+    })
     console.log(`Script migration ${migration.name} applied in ${Date.now() - startedAt}ms.`)
   }
 }

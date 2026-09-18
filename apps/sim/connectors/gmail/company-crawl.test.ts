@@ -9,9 +9,12 @@ const { fetchProvider, listUsers, getUser } = vi.hoisted(() => ({
   getUser: vi.fn(),
 }))
 
-vi.mock('@/lib/knowledge/documents/utils', () => ({
-  fetchWithRetry: fetchProvider,
-  VALIDATE_RETRY_OPTIONS: {},
+vi.mock('@/lib/knowledge/documents/secure-fetch.server', () => ({
+  fetchWithRetry: (
+    url: string,
+    init: RequestInit,
+    options?: import('@/lib/knowledge/documents/utils').RetryOptions
+  ) => (options?.fetcher ? options.fetcher(url, init, fetchProvider) : fetchProvider(url, init)),
 }))
 vi.mock('@/components/icons', () => ({ GmailIcon: () => null }))
 vi.mock('@/connectors/google-workspace/users', () => ({
@@ -61,7 +64,11 @@ function providerResponse(url: string, init?: RequestInit): Response {
   const parsed = new URL(url)
   const token = new Headers(init?.headers).get('Authorization')
   const mailbox = token?.includes(BOB.email) ? 'Bob' : 'Alice'
-  if (parsed.pathname.endsWith('/profile')) return Response.json({ emailAddress: ALICE.email })
+  if (parsed.pathname.endsWith('/profile'))
+    return Response.json({
+      emailAddress: mailbox === 'Bob' ? BOB.email : ALICE.email,
+      historyId: '100',
+    })
   if (parsed.pathname.endsWith('/labels')) {
     return Response.json({ labels: [{ id: 'Label_7', name: `${mailbox} label` }] })
   }
@@ -182,8 +189,7 @@ describe('company-wide Gmail indexing', () => {
     ).resolves.toEqual({ valid: true })
     expect(fetchProvider).toHaveBeenCalledWith(
       expect.stringContaining('/profile'),
-      expect.objectContaining({ signal: controller.signal }),
-      expect.any(Object)
+      expect.objectContaining({ signal: controller.signal })
     )
   })
 
@@ -232,6 +238,7 @@ describe('company-wide Gmail indexing', () => {
     const context = centralContext()
     const first = await gmailConnector.listDocuments('directory-token', CONFIG, undefined, context)
     const alice = first.documents[0]
+    expect(new URL(alice.sourceUrl!).searchParams.get('Email')).toBe(ALICE.email)
     const aliceBody = await gmailConnector.getDocument(
       'directory-token',
       CONFIG,
@@ -245,6 +252,7 @@ describe('company-wide Gmail indexing', () => {
       context
     )
     const bob = second.documents[0]
+    expect(new URL(bob.sourceUrl!).searchParams.get('Email')).toBe(BOB.email)
     const bobBody = await gmailConnector.getDocument(
       'directory-token',
       CONFIG,
@@ -320,7 +328,10 @@ describe('company-wide Gmail indexing', () => {
       resumedContext
     )
     expect(resumed.documents).toEqual(first.documents)
-    expect(new URL(fetchProvider.mock.calls[1][0]).searchParams.get('q')).toBe(firstQuery)
+    const listings = fetchProvider.mock.calls.filter(([url]) =>
+      new URL(url).pathname.endsWith('/threads')
+    )
+    expect(new URL(listings[1][0]).searchParams.get('q')).toBe(firstQuery)
     const body = await gmailConnector.getDocument(
       'directory-token',
       CONFIG,
@@ -396,6 +407,69 @@ describe('company-wide Gmail indexing', () => {
     await expect(
       gmailConnector.listDocuments('directory-token', CONFIG, undefined, centralContext())
     ).rejects.toThrow('403')
+  })
+
+  it('continues after Gmail failedPrecondition with the later mailbox owner ACL intact', async () => {
+    fetchProvider.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (
+        new URL(url).pathname.endsWith('/threads') &&
+        new Headers(init?.headers).get('Authorization')?.includes(ALICE.email)
+      ) {
+        return Response.json(
+          {
+            error: {
+              message: 'private provider response',
+              errors: [{ reason: 'failedPrecondition' }],
+            },
+          },
+          { status: 400 }
+        )
+      }
+      return providerResponse(url, init)
+    })
+    const first = await gmailConnector.listDocuments(
+      'directory-token',
+      CONFIG,
+      undefined,
+      centralContext()
+    )
+    expect(first).toMatchObject({
+      documents: [],
+      reconciliationSafe: false,
+      listingFailures: {
+        count: 1,
+        samples: [
+          {
+            scope: ALICE.email,
+            operation: 'gmail.threads.list',
+            status: 400,
+            reasons: ['failedPrecondition'],
+          },
+        ],
+      },
+    })
+    expect(JSON.stringify(first)).not.toContain('private provider response')
+    const ctx = centralContext()
+    const second = await gmailConnector.listDocuments(
+      'directory-token',
+      CONFIG,
+      first.nextCursor,
+      ctx
+    )
+    expect(second).toMatchObject({
+      hasMore: false,
+      reconciliationSafe: false,
+      listingFailures: first.listingFailures,
+    })
+    expect(second.documents[0].acl).toEqual([`u:${BOB.email}`])
+    const hydrated = await gmailConnector.getDocument(
+      'directory-token',
+      CONFIG,
+      second.documents[0].externalId,
+      ctx
+    )
+    expect(hydrated?.acl).toEqual([`u:${BOB.email}`])
+    expect(hydrated?.content).toContain('Bob private body')
   })
 
   it('invalidates previous hydration authority when the next mailbox fails', async () => {

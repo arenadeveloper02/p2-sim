@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
-import { cn } from '@sim/emcn'
+import { LogoPage } from '@sim/emcn'
 import Image from 'next/image'
 import Link from 'next/link'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
+import { LogoMark } from '@/app/(landing)/components/navbar/components/logo-mark'
 
 /**
  * The canonical light, logo-only page frame — an Arena mark linking home, no
@@ -42,26 +43,23 @@ export function LogoShell({
   theme = 'light',
 }: LogoShellProps) {
   return (
-    <div
-      className={cn(
-        'desktop-title-bar-page relative flex flex-col bg-[var(--bg)] text-[var(--text-primary)]',
-        theme === 'light' && 'light'
-      )}
+    <LogoPage
+      className='desktop-title-bar-page'
+      titleBar={<DesktopTitleBarLane />}
+      center={center}
+      theme={theme}
+      footer={footer}
+      logo={
+        <Link href={logoHref} aria-label={logoLabel} className='flex h-[30px] items-center'>
+          {logo ?? (
+            <LogoMark>
+              <Image src={arenaLogo} alt='Arena' width={30} height={30} priority />
+            </LogoMark>
+          )}
+        </Link>
+      }
     >
-      <DesktopTitleBarLane />
-      <header>
-        <nav className='mx-auto flex w-full max-w-[1460px] items-center px-20 py-4 max-sm:px-5 max-lg:px-8'>
-          <Link href={logoHref} aria-label={logoLabel} className='flex h-[30px] items-center'>
-            {logo ?? <Image src={arenaLogo} alt='Arena' width={30} height={30} priority />}
-          </Link>
-        </nav>
-      </header>
-      <main
-        className={cn('flex flex-1 flex-col', center && 'items-center justify-center px-4 pb-16')}
-      >
-        {children}
-      </main>
-      {footer}
-    </div>
+      {children}
+    </LogoPage>
   )
 }

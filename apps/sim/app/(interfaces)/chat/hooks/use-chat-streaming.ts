@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { filterUndefined } from '@sim/utils/object'
 import {
   anyToolCallRunning,
   applyToolCallPhase,
@@ -27,6 +28,7 @@ import {
   isChatChunkResetFrame,
   isChatErrorFrame,
   isChatFinalFrame,
+  isChatOutputFrame,
   isChatStreamErrorFrame,
   isChatThinkingFrame,
   isChatToolFrame,
@@ -42,43 +44,47 @@ import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[w
 
 const logger = createLogger('UseChatStreaming')
 
-function extractFilesFromData(
-  data: any,
-  files: ChatFile[] = [],
-  seenIds = new Set<string>()
-): ChatFile[] {
-  if (!data || typeof data !== 'object') {
-    return files
+/** Separates file attachments from visible output, omitting empty containers. */
+function extractChatOutput(value: unknown, files: Map<string, ChatFile>): unknown {
+  if (value === null || value === undefined) return value
+  if (isUserFileWithMetadata(value)) {
+    files.set(value.id, {
+      id: value.id,
+      name: value.name,
+      url: value.url,
+      key: value.key,
+      size: value.size,
+      type: value.type,
+      context: value.context,
+      base64: value.base64,
+    })
+    return undefined
   }
-
-  if (isUserFileWithMetadata(data)) {
-    if (!seenIds.has(data.id)) {
-      seenIds.add(data.id)
-      files.push({
-        id: data.id,
-        name: data.name,
-        url: data.url,
-        key: data.key,
-        size: data.size,
-        type: data.type,
-        context: data.context,
-      })
-    }
-    return files
+  if (Array.isArray(value)) {
+    const items = value
+      .map((item) => extractChatOutput(item, files))
+      .filter((item) => item !== undefined)
+    return items.length > 0 ? items : undefined
   }
-
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      extractFilesFromData(item, files, seenIds)
-    }
-    return files
+  if (typeof value === 'object') {
+    const content = filterUndefined(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, extractChatOutput(entry, files)])
+      )
+    )
+    return Object.keys(content).length > 0 ? content : undefined
   }
+  return value
+}
 
-  for (const value of Object.values(data)) {
-    extractFilesFromData(value, files, seenIds)
+function formatChatOutput(value: unknown, files: Map<string, ChatFile>): string {
+  const content = extractChatOutput(value, files)
+  if (content === null || content === undefined) return ''
+  if (typeof content === 'string') return content
+  if (typeof content === 'object') {
+    return `\`\`\`json\n${JSON.stringify(content, null, 2)}\n\`\`\``
   }
-
-  return files
+  return String(content)
 }
 
 export interface StreamingOptions {
@@ -228,6 +234,7 @@ export function useChatStreaming() {
         toolCallsMap,
       })
     }
+    const outputFiles = new Map<string, ChatFile>()
     let accumulatedText = ''
     const recomputeAccumulatedText = () => {
       accumulatedText = blockTextOrder.map((id) => blockTextSegments.get(id) ?? '').join('')
@@ -269,6 +276,7 @@ export function useChatStreaming() {
       const toolCallsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
       const toolStreamingSnapshot = anyToolCallRunning(toolCallsMap)
       const outputSegmentsSnapshot = snapshotSegments()
+      const filesSnapshot = Array.from(outputFiles.values())
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== messageId) return msg
@@ -281,6 +289,7 @@ export function useChatStreaming() {
             toolCalls: toolCallsSnapshot,
             isToolStreaming: toolStreamingSnapshot,
             outputSegments: outputSegmentsSnapshot,
+            files: filesSnapshot.length > 0 ? filesSnapshot : undefined,
           }
         })
       )
@@ -457,6 +466,22 @@ export function useChatStreaming() {
             return false
           }
 
+          if (isChatOutputFrame(json)) {
+            const content = formatChatOutput(json.data, outputFiles)
+            if (content.trim()) {
+              if (!blockTextSegments.has(json.blockId)) {
+                blockTextOrder.push(json.blockId)
+              }
+              const previous = blockTextSegments.get(json.blockId) ?? ''
+              const separator = accumulatedText.trim() ? '\n\n' : ''
+              blockTextSegments.set(json.blockId, previous + separator + content)
+              recomputeAccumulatedText()
+            }
+            uiDirty = true
+            scheduleUIFlush()
+            return false
+          }
+
           if (isChatFinalFrame(json)) {
             flushUI()
             const finalData = json.data as ChatFinalData
@@ -473,6 +498,11 @@ export function useChatStreaming() {
               outputConfigs: streamingOptions?.outputConfigs,
               pendingKnowledgeResults,
             })
+            const filesByKey = new Map<string, ChatFile>()
+            for (const file of [...outputFiles.values(), ...(forkFinal.files ?? [])]) {
+              filesByKey.set(file.id || file.key, file)
+            }
+            const mergedFiles = Array.from(filesByKey.values())
 
             setMessages((prev) =>
               prev.map((msg) =>
@@ -486,7 +516,7 @@ export function useChatStreaming() {
                       thinking: accumulatedThinking || msg.thinking,
                       toolCalls: toolsSnapshot ?? msg.toolCalls,
                       executionId: forkFinal.executionId ?? msg.executionId,
-                      files: forkFinal.files,
+                      files: mergedFiles.length > 0 ? mergedFiles : undefined,
                       generatedImages: forkFinal.generatedImages,
                       knowledgeResults: forkFinal.knowledgeResults,
                       outputSegments: undefined,

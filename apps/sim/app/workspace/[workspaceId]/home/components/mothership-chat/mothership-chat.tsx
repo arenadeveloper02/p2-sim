@@ -4,7 +4,6 @@ import type { ComponentType } from 'react'
 import {
   memo,
   type ReactNode,
-  type RefObject,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -71,14 +70,6 @@ interface MothershipChatProps {
   composer?: ReactNode
   messages: ChatMessage[]
   isSending: boolean
-  /** The composer's Search-mode results, shown above the input. */
-  searchResults?: ReactNode
-  /** The live search query; the composer shows it so the box and the results never disagree. */
-  searchQuery?: string
-  /** The composer, for a caller that hands a question to the agent from outside the box. */
-  userInputRef?: RefObject<UserInputHandle | null>
-  /** Puts the composer in the mode a queued message was written in, when one is loaded for editing. */
-  onRestoreQueuedMode?: (requestMode: QueuedMessage['requestMode']) => void
   isReconnecting?: boolean
   isLoading?: boolean
   onSubmit: (
@@ -86,12 +77,6 @@ interface MothershipChatProps {
     fileAttachments?: FileAttachmentForApi[],
     contexts?: ChatContext[]
   ) => void
-  /** Whether the composer offers Search mode; only the Home composer answers a search. */
-  canSearch?: boolean
-  /** Off in Search mode, where the query stays put so the person can refine it. */
-  clearOnSubmit?: boolean
-  /** Fires when the composer's text goes from something to nothing. */
-  onCleared?: () => void
   onStopGeneration: () => void
   messageQueue: QueuedMessage[]
   editingQueuedId: string | null
@@ -349,16 +334,9 @@ export function MothershipChat({
   composer,
   messages: messagesProp,
   isSending,
-  searchResults,
-  searchQuery,
-  userInputRef: userInputRefProp,
-  onRestoreQueuedMode,
   isReconnecting = false,
   isLoading = false,
   onSubmit,
-  canSearch = false,
-  clearOnSubmit,
-  onCleared,
   onStopGeneration,
   messageQueue,
   editingQueuedId,
@@ -714,8 +692,7 @@ export function MothershipChat({
     item.index !== lastIndex && item.start < (instance.scrollElement?.scrollTop ?? 0)
 
   const scrolledChatRef = useRef<string | undefined | typeof UNSCROLLED>(UNSCROLLED)
-  const ownUserInputRef = useRef<UserInputHandle>(null)
-  const userInputRef = userInputRefProp ?? ownUserInputRef
+  const userInputRef = useRef<UserInputHandle>(null)
   const messageQueueRef = useRef(messageQueue)
   useEffect(() => {
     messageQueueRef.current = messageQueue
@@ -739,10 +716,9 @@ export function MothershipChat({
     (id: string) => {
       const msg = onEditQueuedMessage(id)
       if (!msg) return
-      onRestoreQueuedMode?.(msg.requestMode)
       userInputRef.current?.loadQueuedMessage(msg)
     },
-    [onEditQueuedMessage, onRestoreQueuedMode, userInputRef]
+    [onEditQueuedMessage, userInputRef]
   )
 
   const handleEditQueuedTail = useCallback(() => {
@@ -878,9 +854,6 @@ export function MothershipChat({
           onAnimationEnd={animateInput ? onInputAnimationEnd : undefined}
         >
           <div className={styles.footerInner}>
-            {searchResults && (
-              <div className='max-h-[40vh] overflow-y-auto pb-2'>{searchResults}</div>
-            )}
             <QueuedMessages
               messageQueue={messageQueue}
               editingQueuedId={editingQueuedId}
@@ -895,11 +868,7 @@ export function MothershipChat({
                 <UserInput
                   key={draftScopeKey}
                   ref={userInputRef}
-                  defaultValue={searchQuery}
                   onSubmit={onSubmit}
-                  canSearch={canSearch}
-                  clearOnSubmit={clearOnSubmit}
-                  onCleared={onCleared}
                   isSending={isStreamActive}
                   onStopGeneration={onStopGeneration}
                   isInitialView={false}

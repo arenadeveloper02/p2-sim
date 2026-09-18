@@ -18,6 +18,7 @@ import {
 const enterprise: OrganizationSettingsFeatures = {
   billingEnabled: true,
   hasEnterprisePlan: true,
+  governanceActive: true,
   hosted: true,
   selfHosted: {},
 }
@@ -28,12 +29,12 @@ describe('organization settings navigation', () => {
   it('exposes MCP setup and the read-only roster to an ordinary organization member', () => {
     expect(
       organizationSettingsNavigation(false, enterprise, available).map(({ id }) => id)
-    ).toEqual(['members', 'search-mcp'])
+    ).toEqual(['members', 'recently-deleted', 'search-mcp'])
   })
 
   it('uses Sources for administration when Search is available', () => {
     expect(organizationSettingsNavigation(true, enterprise, available)).toEqual(
-      ORGANIZATION_SETTINGS_ITEMS.filter(({ id }) => id !== 'connected-accounts')
+      ORGANIZATION_SETTINGS_ITEMS
     )
     expect(
       organizationSettingsNavigation(true, enterprise, available).find(
@@ -46,10 +47,25 @@ describe('organization settings navigation', () => {
     expect(
       organizationSettingsNavigation(
         true,
-        { ...enterprise, hasEnterprisePlan: false },
+        { ...enterprise, hasEnterprisePlan: false, governanceActive: false },
         available
       ).map(({ id }) => id)
-    ).toEqual(['billing', 'members', 'search-mcp'])
+    ).toEqual(['billing', 'members', 'recently-deleted', 'search-mcp'])
+  })
+
+  /**
+   * A failing payment closes the plan gate while the organization's permission groups keep
+   * applying, so the page that edits them has to stay listed — otherwise its members are governed
+   * by rules nobody can reach until the invoice clears.
+   */
+  it('keeps Access Control listed while the organization is still governed', () => {
+    expect(
+      organizationSettingsNavigation(
+        true,
+        { ...enterprise, hasEnterprisePlan: false, governanceActive: true },
+        available
+      ).map(({ id }) => id)
+    ).toEqual(['billing', 'members', 'recently-deleted', 'access-control', 'search-mcp'])
   })
 
   it('honors individual self-hosted feature flags and hides billing when disabled', () => {
@@ -64,7 +80,7 @@ describe('organization settings navigation', () => {
         },
         available
       ).map(({ id }) => id)
-    ).toEqual(['members', 'sso', 'integrations', 'search-mcp', 'search-slack'])
+    ).toEqual(['members', 'recently-deleted', 'sso', 'integrations', 'search-mcp', 'search-slack'])
   })
 
   it('normalizes old section names and does not expose unsupported routes', () => {
@@ -73,6 +89,8 @@ describe('organization settings navigation', () => {
     )
     expect(resolveOrganizationSettingsSection('subscription')).toBe('billing')
     expect(resolveOrganizationSettingsSection('domains')).toBe('sso')
+    expect(resolveOrganizationSettingsSection('sessions')).toBe('security')
+    expect(resolveOrganizationSettingsSection('/o/one/settings/network')).toBeNull()
     expect(resolveOrganizationSettingsSection('skills')).toBeNull()
     expect(buildOrganizationNavItems('org', true).map(({ id }) => id)).toEqual([
       'home',
@@ -88,10 +106,11 @@ describe('organization settings navigation', () => {
       'organization:connected-accounts',
       'organization:usage',
       'organization:whitelabeling',
+      'organization:recently-deleted',
       'governance:audit-logs',
       'governance:access-control',
       'governance:sso',
-      'governance:sessions',
+      'governance:security',
       'governance:data-retention',
       'governance:data-drains',
       'sim-search:integrations',
@@ -103,7 +122,7 @@ describe('organization settings navigation', () => {
   it('hosts the account General section ahead of the organization sections', () => {
     expect(
       organizationSurfaceSettingsNavigation(false, enterprise, available).map(({ id }) => id)
-    ).toEqual(['general', 'members', 'search-mcp'])
+    ).toEqual(['general', 'members', 'recently-deleted', 'search-mcp'])
     expect(ORGANIZATION_SETTINGS_GROUPS.map(({ key }) => key)).toEqual([
       'account',
       'organization',
@@ -123,6 +142,10 @@ describe('organization settings navigation', () => {
       section: 'billing',
     })
     expect(resolveOrganizationSurfaceSection('skills')).toBeNull()
+    expect(resolveOrganizationSurfaceSection('recently-deleted')).toEqual({
+      plane: 'organization',
+      section: 'recently-deleted',
+    })
   })
   it('hides gated sections while preserving ordinary organization navigation', () => {
     const sections = organizationSurfaceSettingsNavigation(true, enterprise, {

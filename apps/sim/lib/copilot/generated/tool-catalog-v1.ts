@@ -74,7 +74,6 @@ export interface ToolCatalogEntry {
     | 'knowledge'
     | 'list_deployment_versions'
     | 'list_integration_tools'
-    | 'list_integrations'
     | 'list_workspace_mcp_servers'
     | 'load_deployment'
     | 'load_integration_tool'
@@ -213,7 +212,6 @@ export interface ToolCatalogEntry {
     | 'knowledge'
     | 'list_deployment_versions'
     | 'list_integration_tools'
-    | 'list_integrations'
     | 'list_workspace_mcp_servers'
     | 'load_deployment'
     | 'load_integration_tool'
@@ -502,12 +500,12 @@ export const BrowserClickAt: ToolCatalogEntry = {
       x: {
         type: 'number',
         description:
-          'X in CSS pixels within the current viewport. When read off a browser_screenshot, divide the image pixel value by scale and add clip.x when present.',
+          "X in CSS pixels within the current viewport. When read off a browser_screenshot, follow its caption's X mapping and crop origin.",
       },
       y: {
         type: 'number',
         description:
-          'Y in CSS pixels within the current viewport, converted from screenshot pixels the same way as x.',
+          "Y in CSS pixels within the current viewport. When read off a browser_screenshot, follow its caption's Y mapping and crop origin.",
       },
     },
     required: ['x', 'y'],
@@ -1521,7 +1519,7 @@ export const BrowserScreenshot: ToolCatalogEntry = {
       elementId: {
         type: 'number',
         description:
-          "Optional element id from the current tab's latest browser_snapshot. When present, capture only the visible portion of that top-page element without scrolling or changing layout. Scroll explicitly first if needed. Framed elements are rejected; use a viewport screenshot for them. Use the returned clip offset when converting image coordinates.",
+          "Optional element id from the current tab's latest browser_snapshot. When present, capture only the visible portion of that top-page element without scrolling or changing layout. Scroll explicitly first if needed. Framed elements are rejected; use a viewport screenshot for them. Follow the image caption's coordinate mapping, including its crop origin.",
       },
     },
   },
@@ -1628,16 +1626,27 @@ export const BrowserSelectOption: ToolCatalogEntry = {
   route: 'client',
   mode: 'async',
   parameters: {
-    type: 'object',
+    oneOf: [{ required: ['value'] }, { required: ['values'] }],
     properties: {
       elementId: {
-        type: 'number',
         description:
           "The element id to act on (from the current tab's most recent browser_snapshot). Treat refs as invalid across tab switches or later snapshots.",
+        type: 'number',
       },
-      value: { type: 'string', description: "The option's visible label or its value." },
+      value: {
+        description: "One option's visible label or value. Omit when supplying values.",
+        type: 'string',
+      },
+      values: {
+        description:
+          'The complete desired selection for a native multiple-selection control: at most 100 visible labels or values. Empty array clears the selection. Omit value when using this field.',
+        items: { type: 'string' },
+        maxItems: 100,
+        type: 'array',
+      },
     },
-    required: ['elementId', 'value'],
+    required: ['elementId'],
+    type: 'object',
   },
   resultSchema: {
     type: 'object',
@@ -1645,6 +1654,12 @@ export const BrowserSelectOption: ToolCatalogEntry = {
       effectObserved: {
         type: 'boolean',
         description: 'Whether the settled readback retained the requested selection.',
+      },
+      labels: {
+        type: 'array',
+        description:
+          'Visible labels for the complete selected set in a multiple-selection control, in option order.',
+        items: { type: 'string' },
       },
       note: { type: 'string', description: 'Guidance when the page reverted the selection.' },
       notices: {
@@ -1657,8 +1672,20 @@ export const BrowserSelectOption: ToolCatalogEntry = {
         type: 'object',
         description: 'Settled selected label and value.',
         properties: {
+          labels: {
+            type: 'array',
+            description:
+              'Visible labels for the complete selected set in a multiple-selection control, in option order.',
+            items: { type: 'string' },
+          },
           selected: { type: 'string', description: 'Settled visible option label.' },
           value: { type: 'string', description: 'Settled option value.' },
+          values: {
+            type: 'array',
+            description:
+              'Selected native option values in DOM order; included for multiple-selection controls.',
+            items: { type: 'string' },
+          },
         },
       },
       refRecovered: {
@@ -1668,6 +1695,12 @@ export const BrowserSelectOption: ToolCatalogEntry = {
       },
       selected: { type: 'string', description: 'Canonical visible label of the matched option.' },
       value: { type: 'string', description: 'Canonical value of the matched option.' },
+      values: {
+        type: 'array',
+        description:
+          'Selected native option values in DOM order; included for multiple-selection controls.',
+        items: { type: 'string' },
+      },
     },
     required: ['selected'],
   },
@@ -1820,7 +1853,7 @@ export const BrowserType: ToolCatalogEntry = {
       text: {
         type: 'string',
         description:
-          "The text to type. Replaces the element's current content. Must be non-empty — an empty string is rejected as a missing parameter; to clear a field, press Mod+A then Backspace with browser_press_key.",
+          'The replacement value. Empty text clears an ordinary text field. For structured inputs use YYYY-MM-DD (date), HH:mm (time), YYYY-MM-DDTHH:mm (datetime-local), YYYY-MM (month), YYYY-Www (week), #rrggbb (color), or a numeric range value. Alternatively use Mod+A then Backspace to clear ordinary text with browser_press_key.',
       },
     },
     required: ['elementId', 'text'],
@@ -3543,21 +3576,6 @@ export const ListIntegrationTools: ToolCatalogEntry = {
   },
 }
 
-export const ListIntegrations: ToolCatalogEntry = {
-  id: 'list_integrations',
-  name: 'list_integrations',
-  route: 'sim',
-  mode: 'async',
-  parameters: {
-    additionalProperties: false,
-    properties: {
-      connectorType: { maxLength: 100, minLength: 1, type: 'string' },
-      cursor: { maxLength: 1024, minLength: 1, type: 'string' },
-    },
-    type: 'object',
-  },
-}
-
 export const ListWorkspaceMcpServers: ToolCatalogEntry = {
   id: 'list_workspace_mcp_servers',
   name: 'list_workspace_mcp_servers',
@@ -4682,7 +4700,7 @@ export const QueryUserTable: ToolCatalogEntry = {
           filter: {
             type: 'object',
             description:
-              'Predicate filter object for query_rows. A predicate is a tree: {"all":[...]} (AND) or {"any":[...]} (OR); members are leaves {field, op, value} or nested groups. Ops: eq, ne, gt, gte, lt, lte, in, nin, like, ilike (use * as the wildcard), nlike, nilike, contains, ncontains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. in/nin take a non-empty array value. TTL filter values are absolute whole Unix epoch seconds, never milliseconds. Examples: {"all":[{"field":"status","op":"eq","value":"active"}]}; {"any":[{"field":"status","op":"eq","value":"active"},{"field":"status","op":"eq","value":"pending"}]}; {"all":[{"field":"name","op":"ilike","value":"*jo*"}]}.',
+              'Predicate filter object for query_rows. A predicate is a tree: {"all":[...]} (AND) or {"any":[...]} (OR); members are leaves {field, op, value} or nested groups. Ops: eq, ne, gt, gte, lt, lte, in, nin, like, ilike (use * as the wildcard), nlike, nilike, contains, ncontains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. in/nin take a non-empty array value. TTL filter values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00. Examples: {"all":[{"field":"status","op":"eq","value":"active"}]}; {"any":[{"field":"status","op":"eq","value":"active"},{"field":"status","op":"eq","value":"pending"}]}; {"all":[{"field":"name","op":"ilike","value":"*jo*"}]}.',
           },
           limit: {
             type: 'number',
@@ -4767,16 +4785,24 @@ export const ReadDocument: ToolCatalogEntry = {
         type: 'string',
       },
       limit: {
-        default: 20,
-        description: 'Maximum number of chunks to read.',
-        maximum: 50,
+        default: 3,
+        description:
+          'Maximum chunks to read; the server may return fewer to fit its text budget. Follow next when more context is needed.',
+        maximum: 8,
         minimum: 1,
         type: 'integer',
       },
-      offset: {
-        default: 0,
-        description: 'Number of chunks to skip.',
-        maximum: 5000,
+      startChunkIndex: {
+        description:
+          "Inclusive chunk index from search or a previous read's next object. Gaps from disabled chunks are skipped.",
+        maximum: 2147483647,
+        minimum: 0,
+        type: 'integer',
+      },
+      startOffset: {
+        description:
+          'UTF-16 character offset within startChunkIndex. Omit to read the chunk from its start, or copy next.startOffset to continue a partial chunk.',
+        maximum: 2147483647,
         minimum: 0,
         type: 'integer',
       },
@@ -5633,7 +5659,8 @@ export const SearchWorkspace: ToolCatalogEntry = {
       },
       topK: {
         default: 20,
-        description: 'Maximum number of matching chunks to return.',
+        description:
+          'Maximum number of matching passage previews to return. Retrieval ranking is independent of preview length.',
         maximum: 50,
         minimum: 1,
         type: 'integer',
@@ -6026,7 +6053,7 @@ export const TableColumns: ToolCatalogEntry = {
           column: {
             type: 'object',
             description:
-              'Column definition for add_column: { name, type, unique?, position? }; type may be string, number, boolean, date, json, select, or ttl. Select (enum) columns also take { options: [names], multiple?: true } — options is required for select. A table may have at most one ttl column; adding it enables row expiration, with cell values stored as absolute whole Unix epoch seconds rather than milliseconds.',
+              'Column definition for add_column: { name, type, unique?, position? }; type may be string, number, boolean, date, json, select, or ttl. Select (enum) columns also take { options: [names], multiple?: true } — options is required for select. A table may have at most one ttl column; adding it enables row expiration, accepting ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           columnName: {
             type: 'string',
@@ -6048,7 +6075,7 @@ export const TableColumns: ToolCatalogEntry = {
           newType: {
             type: 'string',
             description:
-              'New column type for update_column: string, number, boolean, date, json, select, ttl. Converting to select also requires options; conversion fails if an existing cell value matches no option. A multiple select round-trips through text as a comma-separated cell. Converting to ttl enables row expiration and fails if the table already has another ttl column; TTL values are absolute whole Unix epoch seconds, not milliseconds.',
+              'New column type for update_column: string, number, boolean, date, json, select, ttl. Converting to select also requires options; conversion fails if an existing cell value matches no option. A multiple select round-trips through text as a comma-separated cell. Converting to ttl enables row expiration and fails if the table already has another ttl column; TTL values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           options: {
             type: 'array',
@@ -6227,7 +6254,7 @@ export const TableManage: ToolCatalogEntry = {
           schema: {
             type: 'object',
             description:
-              'Table schema with a columns array (required for create). Each column: { name, type, unique? }; types are string, number, boolean, date, json, select, and ttl. A select (enum) column also requires options (display names) and takes multiple?. A table may have at most one ttl column; adding it enables row expiration, with cell values stored as absolute whole Unix epoch seconds rather than milliseconds.',
+              'Table schema with a columns array (required for create). Each column: { name, type, unique? }; types are string, number, boolean, date, json, select, and ttl. A select (enum) column also requires options (display names) and takes multiple?. A table may have at most one ttl column; adding it enables row expiration, accepting ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           tableId: {
             type: 'string',
@@ -6273,12 +6300,12 @@ export const TableRows: ToolCatalogEntry = {
           data: {
             type: 'object',
             description:
-              'Row data as column → value pairs (required for insert_row, update_row; the patch object for update_rows_by_filter). Select (enum) cells take the option NAME. TTL cells take absolute whole Unix epoch seconds, never JavaScript milliseconds. On insert_row, a missing or null TTL means no expiration. On update_row and update_rows_by_filter, omit the TTL to preserve its current value or set it to null to clear the expiration.',
+              'Row data as column → value pairs (required for insert_row, update_row; the patch object for update_rows_by_filter). Select (enum) cells take the option NAME. TTL cells take ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00. On insert_row, a missing or null TTL means no expiration. On update_row and update_rows_by_filter, omit the TTL to preserve its current value or set it to null to clear the expiration.',
           },
           filter: {
             type: 'object',
             description:
-              'Predicate filter for update_rows_by_filter / delete_rows_by_filter: {"all":[...]} (AND) or {"any":[...]} (OR) of {field, op, value} leaves or nested groups. Ops: eq, ne, gt, gte, lt, lte, in, nin, like, ilike (* wildcard), nlike, nilike, contains, ncontains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. in/nin take a non-empty array. Single-select columns match by eq/ne/in/nin; multiple-select by contains/ncontains — values are option NAMES. TTL filter values are absolute whole Unix epoch seconds.',
+              'Predicate filter for update_rows_by_filter / delete_rows_by_filter: {"all":[...]} (AND) or {"any":[...]} (OR) of {field, op, value} leaves or nested groups. Ops: eq, ne, gt, gte, lt, lte, in, nin, like, ilike (* wildcard), nlike, nilike, contains, ncontains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. in/nin take a non-empty array. Single-select columns match by eq/ne/in/nin; multiple-select by contains/ncontains — values are option NAMES. TTL filter values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           limit: {
             type: 'number',
@@ -6304,14 +6331,14 @@ export const TableRows: ToolCatalogEntry = {
           rows: {
             type: 'array',
             description:
-              'Array of row data objects (required for batch_insert_rows). TTL cells take absolute whole Unix epoch seconds, never JavaScript milliseconds; a missing or null TTL means no expiration.',
+              'Array of row data objects (required for batch_insert_rows). TTL cells take ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00; a missing or null TTL means no expiration.',
             items: { type: 'object' },
           },
           tableId: { type: 'string', description: 'Table ID (required for every operation)' },
           updates: {
             type: 'array',
             description:
-              "Array of per-row updates: [{ rowId, data: { col: val } }] (batch_update_rows format a). TTL values are absolute whole Unix epoch seconds, never JavaScript milliseconds; omit a row's TTL key to preserve it or set it to null to clear the expiration.",
+              "Array of per-row updates: [{ rowId, data: { col: val } }] (batch_update_rows format a). TTL values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00; omit a row's TTL key to preserve it or set it to null to clear the expiration.",
             items: {
               type: 'object',
               properties: { data: { type: 'object' }, rowId: { type: 'string' } },
@@ -6321,7 +6348,7 @@ export const TableRows: ToolCatalogEntry = {
           values: {
             type: 'object',
             description:
-              "Map of rowId → value for single-column batch update (batch_update_rows format b, with columnName). For a TTL column, values are absolute whole Unix epoch seconds, never JavaScript milliseconds; set a row's value to null to clear its expiration, and omit the row from the map to leave it unchanged.",
+              "Map of rowId → value for single-column batch update (batch_update_rows format b, with columnName). For a TTL column, values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00; set a row's value to null to clear its expiration, and omit the row from the map to leave it unchanged.",
           },
         },
         required: ['tableId'],
@@ -6647,7 +6674,7 @@ export const UserTable: ToolCatalogEntry = {
           column: {
             type: 'object',
             description:
-              'Column definition for add_column: { name, type, unique?, position? }. Type may be string, number, boolean, date, json, select, or ttl. For a select (enum) column also pass { options: ["Open", "Closed"], multiple?: true } — options is a list of display names and is required for select. A table may have at most one ttl column; adding it enables row expiration, with cell values stored as absolute whole Unix epoch seconds rather than milliseconds.',
+              'Column definition for add_column: { name, type, unique?, position? }. Type may be string, number, boolean, date, json, select, or ttl. For a select (enum) column also pass { options: ["Open", "Closed"], multiple?: true } — options is a list of display names and is required for select. A table may have at most one ttl column; adding it enables row expiration, accepting ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           columnName: {
             type: 'string',
@@ -6668,7 +6695,7 @@ export const UserTable: ToolCatalogEntry = {
           data: {
             type: 'object',
             description:
-              'Row data as key-value pairs (required for insert_row, update_row). TTL cells take absolute whole Unix epoch seconds, never JavaScript milliseconds. On insert_row, a missing or null TTL means no expiration. On update_row, omit the TTL to preserve its current value or set it to null to clear the expiration.',
+              'Row data as key-value pairs (required for insert_row, update_row). TTL cells take ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00. On insert_row, a missing or null TTL means no expiration. On update_row, omit the TTL to preserve its current value or set it to null to clear the expiration.',
           },
           dependencies: {
             type: 'object',
@@ -6697,7 +6724,7 @@ export const UserTable: ToolCatalogEntry = {
           filter: {
             type: 'object',
             description:
-              'Predicate filter object for query_rows, update_rows_by_filter, delete_rows_by_filter. A predicate is a tree: {"all":[...]} (AND) or {"any":[...]} (OR); members are leaves {field, op, value} or nested groups. Ops: eq, ne, gt, gte, lt, lte, in, nin, like, ilike (use * as the wildcard), nlike, nilike, contains, ncontains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. in/nin take a non-empty array value. TTL filter values are absolute whole Unix epoch seconds, never milliseconds. Examples: {"all":[{"field":"status","op":"eq","value":"active"}]}; {"all":[{"field":"wins","op":"gte","value":18},{"field":"status","op":"eq","value":"pending"}]}; {"any":[{"field":"status","op":"eq","value":"active"},{"field":"status","op":"eq","value":"pending"}]}; {"all":[{"field":"name","op":"ilike","value":"*jo*"}]}; {"all":[{"field":"slack_user_id","op":"in","value":["U1","U2"]}]}.',
+              'Predicate filter object for query_rows, update_rows_by_filter, delete_rows_by_filter. A predicate is a tree: {"all":[...]} (AND) or {"any":[...]} (OR); members are leaves {field, op, value} or nested groups. Ops: eq, ne, gt, gte, lt, lte, in, nin, like, ilike (use * as the wildcard), nlike, nilike, contains, ncontains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. in/nin take a non-empty array value. TTL filter values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00. Examples: {"all":[{"field":"status","op":"eq","value":"active"}]}; {"all":[{"field":"wins","op":"gte","value":18},{"field":"status","op":"eq","value":"pending"}]}; {"any":[{"field":"status","op":"eq","value":"active"},{"field":"status","op":"eq","value":"pending"}]}; {"all":[{"field":"name","op":"ilike","value":"*jo*"}]}; {"all":[{"field":"slack_user_id","op":"in","value":["U1","U2"]}]}.',
           },
           groupId: {
             type: 'string',
@@ -6786,7 +6813,7 @@ export const UserTable: ToolCatalogEntry = {
           newType: {
             type: 'string',
             description:
-              'New column type (optional for update_column). Types: string, number, boolean, date, json, select, ttl. Converting a column to select also requires options; the conversion fails if any existing cell value doesn\'t match one of them. Converting to a multiple: true select also accepts a comma-separated cell ("Open, Urgent"), which is the form a multi column converts to text as — so multiselect → text → multiselect round-trips. Converting to ttl enables row expiration and fails if the table already has another ttl column; TTL values are absolute whole Unix epoch seconds, not milliseconds.',
+              'New column type (optional for update_column). Types: string, number, boolean, date, json, select, ttl. Converting a column to select also requires options; the conversion fails if any existing cell value doesn\'t match one of them. Converting to a multiple: true select also accepts a comma-separated cell ("Open, Urgent"), which is the form a multi column converts to text as — so multiselect → text → multiselect round-trips. Converting to ttl enables row expiration and fails if the table already has another ttl column; TTL values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           options: {
             type: 'array',
@@ -6873,7 +6900,7 @@ export const UserTable: ToolCatalogEntry = {
           rows: {
             type: 'array',
             description:
-              'Array of row data objects (required for batch_insert_rows). TTL cells take absolute whole Unix epoch seconds, never JavaScript milliseconds; a missing or null TTL means no expiration.',
+              'Array of row data objects (required for batch_insert_rows). TTL cells take ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00; a missing or null TTL means no expiration.',
             items: { type: 'object' },
           },
           runMode: {
@@ -6885,7 +6912,7 @@ export const UserTable: ToolCatalogEntry = {
           schema: {
             type: 'object',
             description:
-              'Table schema with columns array (required for \'create\'). Each column: { name, type, unique? }. Types are string, number, boolean, date, json, select, and ttl. A select (enum) column also takes { options: ["Open", "Closed"], multiple?: true } — options is a list of display names and is required for select. A table may have at most one ttl column; adding it enables row expiration, with cell values stored as absolute whole Unix epoch seconds rather than milliseconds.',
+              'Table schema with columns array (required for \'create\'). Each column: { name, type, unique? }. Types are string, number, boolean, date, json, select, and ttl. A select (enum) column also takes { options: ["Open", "Closed"], multiple?: true } — options is a list of display names and is required for select. A table may have at most one ttl column; adding it enables row expiration, accepting ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00.',
           },
           scope: {
             type: 'string',
@@ -6910,7 +6937,7 @@ export const UserTable: ToolCatalogEntry = {
           updates: {
             type: 'array',
             description:
-              "Array of per-row updates: [{ rowId, data: { col: val } }] (for batch_update_rows). TTL values are absolute whole Unix epoch seconds, never JavaScript milliseconds; omit a row's TTL key to preserve it or set it to null to clear the expiration.",
+              "Array of per-row updates: [{ rowId, data: { col: val } }] (for batch_update_rows). TTL values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00; omit a row's TTL key to preserve it or set it to null to clear the expiration.",
             items: {
               type: 'object',
               properties: { data: { type: 'object' }, rowId: { type: 'string' } },
@@ -6920,7 +6947,7 @@ export const UserTable: ToolCatalogEntry = {
           values: {
             type: 'object',
             description:
-              'Map of rowId to value for single-column batch update: { "rowId1": val1, "rowId2": val2 } (for batch_update_rows with columnName). For a TTL column, values are absolute whole Unix epoch seconds, never JavaScript milliseconds; set a row\'s value to null to clear its expiration, and omit the row from the map to leave it unchanged.',
+              'Map of rowId to value for single-column batch update: { "rowId1": val1, "rowId2": val2 } (for batch_update_rows with columnName). For a TTL column, values are ISO timestamp strings with Z or an explicit UTC offset (for example, 2026-09-07T14:30:00-07:00); up to 6 fractional second digits are accepted; supplied numeric offsets are preserved, and Z is stored as -00:00; set a row\'s value to null to clear its expiration, and omit the row from the map to leave it unchanged.',
           },
           workflowId: {
             type: 'string',
@@ -7664,7 +7691,6 @@ export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
   [Knowledge.id]: Knowledge,
   [ListDeploymentVersions.id]: ListDeploymentVersions,
   [ListIntegrationTools.id]: ListIntegrationTools,
-  [ListIntegrations.id]: ListIntegrations,
   [ListWorkspaceMcpServers.id]: ListWorkspaceMcpServers,
   [LoadDeployment.id]: LoadDeployment,
   [LoadIntegrationTool.id]: LoadIntegrationTool,

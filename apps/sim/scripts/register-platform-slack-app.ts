@@ -10,12 +10,16 @@ const logger = createLogger('RegisterPlatformSlackApp')
 /** Explicit deployment preparation; never chooses an app identity from an unauthenticated event. */
 async function main() {
   const appId = process.argv[2]
+  if (process.argv.includes('--search'))
+    throw new Error(
+      'Slack Search reads its app credentials directly from SLACK_SEARCH_* environment variables'
+    )
   const clientId = process.env.SLACK_CLIENT_ID
   const clientSecret = process.env.SLACK_CLIENT_SECRET
   const signingSecret = process.env.SLACK_SIGNING_SECRET
   if (!appId || !/^A[A-Z0-9]+$/.test(appId) || !clientId || !clientSecret || !signingSecret)
     throw new Error(
-      'Supply the verified platform Slack app ID and SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_SIGNING_SECRET'
+      'Supply a verified app ID, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_SIGNING_SECRET.'
     )
   const [client, signing] = await Promise.all([
     encryptSecret(clientSecret),

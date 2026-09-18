@@ -1,9 +1,9 @@
 import type { OAuthAccessTokenPrincipal } from '@sim/auth/principal'
 import { db } from '@sim/db'
 import { oauthAccessToken, oauthClient, user } from '@sim/db/schema'
-import { createLogger } from '@sim/logger'
+import { createLogger, setRequestAuth } from '@sim/logger'
 import { sha256Hex } from '@sim/security/hash'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { isAccountBlocked } from '@/lib/auth/ban'
 import {
   OAUTH_ACCESS_TOKEN_PREFIX,
@@ -99,6 +99,7 @@ export async function verifyOAuthAccessToken(
       id: oauthAccessToken.id,
       userId: oauthAccessToken.userId,
       clientId: oauthAccessToken.clientId,
+      clientName: sql<string | null>`left(${oauthClient.name}, 256)`,
       scopes: oauthAccessToken.scopes,
       resource: oauthAccessToken.resource,
       expiresAt: oauthAccessToken.expiresAt,
@@ -137,10 +138,12 @@ export async function verifyOAuthAccessToken(
   }
 
   logger.debug('Authenticated OAuth access token', { tokenId: row.id, clientId: row.clientId })
+  setRequestAuth({ kind: 'oauth_access_token', clientId: row.clientId }, { preserveExisting: true })
   return {
     kind: 'oauth_access_token',
     userId: row.userId,
     clientId: row.clientId,
+    ...(row.clientName ? { clientName: row.clientName } : {}),
     tokenId: row.id,
     scopes: row.scopes,
     expiresAt: row.expiresAt,

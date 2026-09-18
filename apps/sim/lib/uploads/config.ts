@@ -248,7 +248,7 @@ function getS3Config(context: StorageContext): StorageConfig {
         region: S3_AGENT_GENERATED_IMAGES_CONFIG.region || S3_CONFIG.region,
       }
     case 'workspace-logos':
-    case 'org-logos':
+    case 'organization-logos':
       return {
         bucket: S3_WORKSPACE_LOGOS_CONFIG.bucket || S3_CONFIG.bucket,
         region: S3_WORKSPACE_LOGOS_CONFIG.region || S3_CONFIG.region,
@@ -318,7 +318,7 @@ function getBlobConfig(context: StorageContext): StorageConfig {
         containerName: BLOB_OG_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
       }
     case 'workspace-logos':
-    case 'org-logos':
+    case 'organization-logos':
       return {
         accountName: BLOB_WORKSPACE_LOGOS_CONFIG.accountName || BLOB_CONFIG.accountName,
         accountKey: BLOB_WORKSPACE_LOGOS_CONFIG.accountKey || BLOB_CONFIG.accountKey,
@@ -364,6 +364,7 @@ function getGcsConfig(context: StorageContext): StorageConfig {
     case 'og-images':
       return { bucket: GCS_OG_IMAGES_CONFIG.bucket || GCS_CONFIG.bucket }
     case 'workspace-logos':
+    case 'organization-logos':
       return { bucket: GCS_WORKSPACE_LOGOS_CONFIG.bucket || GCS_CONFIG.bucket }
     default:
       return { bucket: GCS_CONFIG.bucket }

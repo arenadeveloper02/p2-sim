@@ -22,6 +22,10 @@ import {
 } from '@/lib/billing/core/billing-attribution'
 import { chatOperations } from '@/lib/copilot/application/operations'
 import {
+  type AssistantImageContent,
+  prepareAssistantImages,
+} from '@/lib/copilot/chat/assistant-images'
+import {
   DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH,
   DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH,
 } from '@/lib/copilot/chat/desktop-capabilities'
@@ -46,7 +50,7 @@ import {
 } from '@/lib/copilot/chat/selection-context'
 import { finalizeAssistantTurn } from '@/lib/copilot/chat/terminal-state'
 import { generateWorkspaceSnapshot } from '@/lib/copilot/chat/workspace-context'
-import { chatPubSub } from '@/lib/copilot/chat-status'
+import { publishChatStatusChanged } from '@/lib/copilot/chat-status'
 import { COPILOT_REQUEST_MODES } from '@/lib/copilot/constants'
 import { computeWorkspaceEntitlements } from '@/lib/copilot/entitlements'
 import { prepareCopilotEnvironmentContext } from '@/lib/copilot/environment-context'
@@ -167,8 +171,8 @@ const GENERIC_RESOURCE_TITLE: Record<z.infer<typeof ResourceAttachmentSchema>['t
 
 /**
  * Synthetic client-side panels are context-only: never persisted to the chat.
- * Browser tab attachments are normalized to the singleton Browser panel before
- * persistence; their page title and URL remain request context only.
+ * Browser tabs are among them — the desktop app restores its own pages — so
+ * their page title and URL remain request context only.
  */
 function isPersistableAttachment(resource: z.infer<typeof ResourceAttachmentSchema>): boolean {
   return !isEphemeralResource({
@@ -314,65 +318,72 @@ const ChatContextSchema = z
     }
   })
 
-const ChatMessageSchema = z.object({
-  message: z.string().min(1, 'Message is required'),
-  /* Bounded because it becomes part of a Postgres key in `chatSendIdempotency`;
+const ChatMessageSchema = z
+  .object({
+    message: z.string(),
+    /* Bounded because it becomes part of a Postgres key in `chatSendIdempotency`;
      a client-supplied id longer than the btree entry limit would throw there.
      A generated id is 36 chars. */
-  userMessageId: z.string().max(128).optional(),
-  chatId: z.string().optional(),
-  workflowId: z.string().optional(),
-  workspaceId: z.string().optional(),
-  organizationId: z.string().min(1).max(200).optional(),
-  workflowName: z.string().optional(),
-  model: z.string().optional().default(DEFAULT_MODEL),
-  mode: z.enum(COPILOT_REQUEST_MODES).optional().default('agent'),
-  assistantSearch: workspaceSearchFiltersSchema.optional(),
-  prefetch: z.boolean().optional(),
-  createNewChat: z.boolean().optional().default(false),
-  implicitFeedback: z.string().optional(),
-  fileAttachments: z.array(FileAttachmentSchema).optional(),
-  resourceAttachments: z
-    .preprocess(dropUnaddressableAttachments, z.array(ResourceAttachmentSchema))
-    .optional(),
-  provider: z.string().optional(),
-  contexts: z.array(ChatContextSchema).optional(),
-  commands: z.array(z.string()).optional(),
-  userTimezone: z.string().optional(),
-  effectiveWorkspaceId: z.string(),
-  copilotBackend: z.enum(['local', 'external']).optional(),
-  desktopCapabilities: z
-    .object({
-      localFilesystem: z.boolean().optional(),
-      browser: z.boolean().optional(),
-      terminal: z.boolean().optional(),
-      terminals: z
-        .array(
-          z.object({
-            id: z.string().max(DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH),
-            cwd: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
-            running: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
-            interactive: z.boolean().optional(),
-            active: z.boolean().optional(),
-          })
-        )
-        .optional(),
-      browserSessions: z
-        .array(
-          z.object({
-            hostname: z
-              .string()
-              .max(253)
-              .regex(/^[a-z0-9.-]+$/),
-            evidence: z.enum(['sign-in-completed', 'cookies']),
-            lastObservedAt: z.string().datetime(),
-          })
-        )
-        .max(20)
-        .optional(),
-    })
-    .optional(),
-})
+    userMessageId: z.string().max(128).optional(),
+    chatId: z.string().optional(),
+    workflowId: z.string().optional(),
+    workspaceId: z.string().optional(),
+    organizationId: z.string().min(1).max(200).optional(),
+    workflowName: z.string().optional(),
+    model: z.string().optional().default(DEFAULT_MODEL),
+    mode: z.enum(COPILOT_REQUEST_MODES).optional().default('agent'),
+    assistantSearch: workspaceSearchFiltersSchema.optional(),
+    prefetch: z.boolean().optional(),
+    createNewChat: z.boolean().optional().default(false),
+    implicitFeedback: z.string().optional(),
+    fileAttachments: z.array(FileAttachmentSchema).optional(),
+    resourceAttachments: z
+      .preprocess(dropUnaddressableAttachments, z.array(ResourceAttachmentSchema))
+      .optional(),
+    provider: z.string().optional(),
+    contexts: z.array(ChatContextSchema).optional(),
+    commands: z.array(z.string()).optional(),
+    userTimezone: z.string().optional(),
+    effectiveWorkspaceId: z.string(),
+    copilotBackend: z.enum(['local', 'external']).optional(),
+    desktopCapabilities: z
+      .object({
+        localFilesystem: z.boolean().optional(),
+        browser: z.boolean().optional(),
+        terminal: z.boolean().optional(),
+        terminals: z
+          .array(
+            z.object({
+              id: z.string().max(DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH),
+              cwd: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
+              running: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
+              interactive: z.boolean().optional(),
+              active: z.boolean().optional(),
+            })
+          )
+          .optional(),
+        browserSessions: z
+          .array(
+            z.object({
+              hostname: z
+                .string()
+                .max(253)
+                .regex(/^[a-z0-9.-]+$/),
+              evidence: z.enum(['sign-in-completed', 'cookies']),
+              lastObservedAt: z.string().datetime(),
+            })
+          )
+          .max(20)
+          .optional(),
+      })
+      .optional(),
+  })
+  .refine(
+    (body) =>
+      body.message.length > 0 ||
+      (body.mode === 'assistant' && !!body.organizationId && !!body.fileAttachments?.length),
+    { message: 'Message is required', path: ['message'] }
+  )
 
 type UnifiedChatRequest = z.infer<typeof ChatMessageSchema>
 type BrowserSessions = NonNullable<UnifiedChatRequest['desktopCapabilities']>['browserSessions']
@@ -390,7 +401,7 @@ type UnifiedChatBranch =
       goRoute: '/api/copilot'
       titleModel: string
       titleProvider?: string
-      notifyWorkspaceStatus: false
+      notifyChatStatus: false
       buildPayload: (params: {
         message: string
         userId: string
@@ -436,7 +447,7 @@ type UnifiedChatBranch =
       goRoute: '/api/mothership'
       titleModel: string
       titleProvider?: undefined
-      notifyWorkspaceStatus: boolean
+      notifyChatStatus: boolean
       buildPayload: (params: {
         message: string
         userId: string
@@ -445,6 +456,7 @@ type UnifiedChatBranch =
         contexts: Array<{ type: string; content: string; tag?: string; path?: string }>
         mcpServerIds?: string[]
         fileAttachments?: UnifiedChatRequest['fileAttachments']
+        assistantImages?: AssistantImageContent[]
         userPermission?: string
         entitlements?: string[]
         userTimezone?: string
@@ -632,7 +644,9 @@ async function persistUserMessage(params: {
   fileAttachments?: UnifiedChatRequest['fileAttachments']
   contexts?: UnifiedChatRequest['contexts']
   workspaceId?: string
-  notifyWorkspaceStatus: boolean
+  notifyChatStatus: boolean
+  organizationId?: string
+  userId?: string
   requestMode?: 'assistant' | 'agent'
   /**
    * Root context for the mothership request. When present the persist
@@ -651,7 +665,9 @@ async function persistUserMessage(params: {
     fileAttachments,
     contexts,
     workspaceId,
-    notifyWorkspaceStatus,
+    organizationId,
+    userId,
+    notifyChatStatus,
     parentOtelContext,
   } = params
   if (!chatId) return
@@ -703,13 +719,15 @@ async function persistUserMessage(params: {
         updated ? CopilotChatPersistOutcome.Appended : CopilotChatPersistOutcome.ChatNotFound
       )
 
-      if (notifyWorkspaceStatus && updated && workspaceId) {
-        chatPubSub?.publishStatusChanged({
-          workspaceId,
-          chatId,
-          type: 'started',
-          streamId: userMessageId,
-        })
+      if (notifyChatStatus && updated) {
+        publishChatStatusChanged(
+          { workspaceId, organizationId, userId },
+          {
+            chatId,
+            type: 'started',
+            streamId: userMessageId,
+          }
+        )
       }
     },
     parentOtelContext
@@ -778,7 +796,9 @@ function buildOnComplete(params: {
   userMessageId: string
   requestId: string
   workspaceId?: string
-  notifyWorkspaceStatus: boolean
+  notifyChatStatus: boolean
+  organizationId?: string
+  userId?: string
   requestMode?: 'assistant' | 'agent'
   /**
    * Root agent span for this request. When present, the final
@@ -794,7 +814,16 @@ function buildOnComplete(params: {
     }) => void
   }
 }) {
-  const { chatId, userMessageId, requestId, workspaceId, notifyWorkspaceStatus, otelRoot } = params
+  const {
+    chatId,
+    userMessageId,
+    requestId,
+    workspaceId,
+    organizationId,
+    userId,
+    notifyChatStatus,
+    otelRoot,
+  } = params
 
   return async (result: OrchestratorResult) => {
     if (otelRoot && result.success) {
@@ -824,13 +853,15 @@ function buildOnComplete(params: {
           finalization.updated ||
           finalization.outcome === CopilotChatFinalizeOutcome.AssistantAlreadyPersisted
 
-        if (notifyWorkspaceStatus && workspaceId && shouldPublishCompletion) {
-          chatPubSub?.publishStatusChanged({
-            workspaceId,
-            chatId,
-            type: 'completed',
-            streamId: userMessageId,
-          })
+        if (notifyChatStatus && shouldPublishCompletion) {
+          publishChatStatusChanged(
+            { workspaceId, organizationId, userId },
+            {
+              chatId,
+              type: 'completed',
+              streamId: userMessageId,
+            }
+          )
         }
         return
       }
@@ -850,13 +881,15 @@ function buildOnComplete(params: {
         ...(result.success ? {} : { streamMarkerPolicy: 'active-or-cleared' as const }),
       })
 
-      if (notifyWorkspaceStatus && workspaceId) {
-        chatPubSub?.publishStatusChanged({
-          workspaceId,
-          chatId,
-          type: 'completed',
-          streamId: userMessageId,
-        })
+      if (notifyChatStatus) {
+        publishChatStatusChanged(
+          { workspaceId, organizationId, userId },
+          {
+            chatId,
+            type: 'completed',
+            streamId: userMessageId,
+          }
+        )
       }
     } catch (error) {
       logger.error(`[${requestId}] Failed to persist chat messages`, {
@@ -872,10 +905,20 @@ function buildOnError(params: {
   userMessageId: string
   requestId: string
   workspaceId?: string
-  notifyWorkspaceStatus: boolean
+  notifyChatStatus: boolean
+  organizationId?: string
+  userId?: string
   requestMode?: 'assistant' | 'agent'
 }) {
-  const { chatId, userMessageId, requestId, workspaceId, notifyWorkspaceStatus } = params
+  const {
+    chatId,
+    userMessageId,
+    requestId,
+    workspaceId,
+    organizationId,
+    userId,
+    notifyChatStatus,
+  } = params
 
   return async (_error: Error, result?: OrchestratorResult) => {
     if (!chatId) return
@@ -897,13 +940,15 @@ function buildOnError(params: {
         streamMarkerPolicy: 'active-or-cleared',
       })
 
-      if (notifyWorkspaceStatus && workspaceId) {
-        chatPubSub?.publishStatusChanged({
-          workspaceId,
-          chatId,
-          type: 'completed',
-          streamId: userMessageId,
-        })
+      if (notifyChatStatus) {
+        publishChatStatusChanged(
+          { workspaceId, organizationId, userId },
+          {
+            chatId,
+            type: 'completed',
+            streamId: userMessageId,
+          }
+        )
       }
     } catch (error) {
       logger.error(`[${requestId}] Failed to finalize errored chat stream`, {
@@ -955,7 +1000,7 @@ async function resolveBranch(params: {
       effectiveModel: DEFAULT_MODEL,
       goRoute: '/api/mothership',
       titleModel: DEFAULT_MODEL,
-      notifyWorkspaceStatus: false,
+      notifyChatStatus: true,
       buildPayload: async (payloadParams) =>
         buildCopilotRequestPayload(
           {
@@ -1005,7 +1050,7 @@ async function resolveBranch(params: {
       goRoute: '/api/copilot',
       titleModel: selectedModel,
       titleProvider: provider,
-      notifyWorkspaceStatus: false,
+      notifyChatStatus: false,
       buildPayload: async (payloadParams) =>
         buildCopilotRequestPayload(
           {
@@ -1236,7 +1281,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       body.mode === 'assistant' &&
       (body.workflowId ||
         body.workflowName ||
-        body.fileAttachments?.length ||
+        (body.fileAttachments?.length && !body.organizationId) ||
         body.contexts?.length)
     ) {
       return createBadRequestResponse(
@@ -1350,6 +1395,21 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         return capabilityRefusalResponse(chatCapability)
       }
 
+      const assistantImages =
+        branch.kind === 'organization' && body.fileAttachments?.length
+          ? await prepareAssistantImages({
+              principal: {
+                kind: 'session',
+                userId: authenticatedUserId,
+                sessionId: session.session.id,
+              },
+              organizationId: branch.organizationId,
+              attachments: body.fileAttachments,
+              signal: req.signal,
+            })
+          : undefined
+      const fileAttachments = assistantImages?.attachments ?? body.fileAttachments
+
       /* Prompt content is captured only once the turn is going to run. Both
          calls are internally gated on
          OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, but the gate is on
@@ -1435,9 +1495,8 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         actualChatId &&
         body.resourceAttachments?.length
       ) {
-        // Canonicalizes here, not just inside `persistChatResources`: several
-        // browser tabs collapse onto the one Browser panel before they are
-        // stored, so the chat reopens with a single tab rather than one per page.
+        // Canonicalizes here, not just inside `persistChatResources`, so the
+        // singleton terminal panel is stored once however it was attached.
         const persistable = sanitizeChatResources(
           body.resourceAttachments.filter(isPersistableAttachment).map((resource) => ({
             type: resource.type,
@@ -1679,10 +1738,12 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         chatId: actualChatId,
         userMessageId,
         message: body.message,
-        fileAttachments: body.fileAttachments,
+        fileAttachments,
         contexts: normalizedContexts,
         workspaceId,
-        notifyWorkspaceStatus: branch.notifyWorkspaceStatus,
+        notifyChatStatus: branch.notifyChatStatus,
+        organizationId: branch.kind === 'organization' ? branch.organizationId : undefined,
+        userId: authenticatedUserId,
         requestMode: body.mode === 'assistant' ? 'assistant' : 'agent',
         parentOtelContext: activeOtelRoot.context,
       })
@@ -1744,7 +1805,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 contexts: turnContexts,
                 assistantSearch: body.mode === 'assistant' ? body.assistantSearch : undefined,
                 mcpServerIds,
-                fileAttachments: body.fileAttachments,
+                fileAttachments,
                 userPermission: userPermission ?? undefined,
                 entitlements,
                 userTimezone: body.userTimezone,
@@ -1773,7 +1834,8 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 contexts: turnContexts,
                 assistantSearch: body.mode === 'assistant' ? body.assistantSearch : undefined,
                 mcpServerIds,
-                fileAttachments: body.fileAttachments,
+                fileAttachments,
+                assistantImages: assistantImages?.content,
                 userPermission: userPermission ?? undefined,
                 entitlements,
                 userTimezone: body.userTimezone,
@@ -1855,7 +1917,9 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             userMessageId,
             requestId,
             workspaceId,
-            notifyWorkspaceStatus: branch.notifyWorkspaceStatus,
+            notifyChatStatus: branch.notifyChatStatus,
+            organizationId: branch.kind === 'organization' ? branch.organizationId : undefined,
+            userId: authenticatedUserId,
             requestMode: body.mode === 'assistant' ? 'assistant' : 'agent',
             otelRoot,
           }),
@@ -1864,7 +1928,9 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             userMessageId,
             requestId,
             workspaceId,
-            notifyWorkspaceStatus: branch.notifyWorkspaceStatus,
+            notifyChatStatus: branch.notifyChatStatus,
+            organizationId: branch.kind === 'organization' ? branch.organizationId : undefined,
+            userId: authenticatedUserId,
             requestMode: body.mode === 'assistant' ? 'assistant' : 'agent',
           }),
         },
@@ -1926,6 +1992,12 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     const applicationError = asOrchestrationError(error)
     if (applicationError?.code === 'forbidden' || applicationError?.code === 'not_found') {
       return NextResponse.json({ error: 'Conversation access denied' }, { status: 403 })
+    }
+    if (applicationError?.code === 'validation' || applicationError?.code === 'payload_too_large') {
+      return NextResponse.json(
+        { error: applicationError.message },
+        { status: applicationError.code === 'validation' ? 400 : 413 }
+      )
     }
     if (isWorkspaceAccessDeniedError(error)) {
       return NextResponse.json({ error: 'Workspace access denied' }, { status: 403 })

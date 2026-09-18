@@ -36,6 +36,7 @@ const {
     isFetching: false,
   },
   lifecycle: {
+    removeOptions: { onSuccess: undefined as (() => void) | undefined },
     sync: { mutate: vi.fn(), reset: vi.fn(), error: null as Error | null, isPending: false },
     update: { mutate: vi.fn(), reset: vi.fn(), error: null as Error | null, isPending: false },
     remove: { mutate: vi.fn(), reset: vi.fn(), error: null as Error | null, isPending: false },
@@ -106,18 +107,21 @@ vi.mock('@sim/emcn', () => ({
   ChipConfirmModal: ({
     open,
     title,
+    text,
     children,
     confirm,
     onOpenChange,
   }: {
     open: boolean
     title: string
+    text?: string
     children: ReactNode
     confirm: { label: string; onClick: () => void; pending?: boolean; disabled?: boolean }
     onOpenChange: (open: boolean) => void
   }) =>
     open ? (
       <div role='dialog' aria-label={title}>
+        {text}
         {children}
         <button
           type='button'
@@ -141,12 +145,11 @@ vi.mock('@sim/emcn', () => ({
     children,
     disabled,
     onSelect,
-  }: {
-    children?: ReactNode
-    disabled?: boolean
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     onSelect: () => void
   }) => (
-    <button type='button' disabled={disabled} onClick={onSelect}>
+    <button type='button' disabled={disabled} onClick={onSelect} {...props}>
       {children}
     </button>
   ),
@@ -233,7 +236,10 @@ vi.mock('@/hooks/queries/kb/connectors', () => ({
     isPlaceholderData: lifecycle.detail.isPlaceholderData,
     refetch: lifecycle.detail.refetch,
   })),
-  useDeleteConnector: () => lifecycle.remove,
+  useDeleteConnector: (options: { onSuccess: () => void }) => {
+    lifecycle.removeOptions = options
+    return lifecycle.remove
+  },
   useTriggerSync: () => lifecycle.sync,
   useUpdateConnector: () => lifecycle.update,
 }))
@@ -249,13 +255,28 @@ vi.mock('@/hooks/use-credential-refresh-triggers', () => ({
 }))
 
 import {
-  ConnectorActions,
+  ConnectorActions as ConnectorActionMenu,
   ConnectorRecovery,
   ConnectorSyncHistory,
   ConnectorsSection,
   SyncHistory,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connectors-section'
+import { ConnectorActionFeedback } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connectors-section/connector-actions'
+import {
+  type ConnectorActionsOptions,
+  useConnectorActions,
+} from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connectors-section/use-connector-actions'
 import { type ConnectorData, useConnectorDetail } from '@/hooks/queries/kb/connectors'
+
+function ConnectorActions(props: ConnectorActionsOptions) {
+  const state = useConnectorActions(props)
+  return (
+    <>
+      <ConnectorActionMenu state={state} />
+      <ConnectorActionFeedback state={state} />
+    </>
+  )
+}
 
 let root: Root | null = null
 
@@ -370,6 +391,37 @@ afterEach(() => {
 })
 
 describe('Connector credential reauthorization', () => {
+  it('expands each connection history independently through its labeled control', () => {
+    const container = renderSection(makeConnector(), [makeConnector({ id: 'connector-2' })])
+    const controls = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-label="Sync history"]')
+    )
+    expect(controls).toHaveLength(2)
+    const historyId = controls[0].getAttribute('aria-controls')
+    expect(historyId).toBeTruthy()
+    expect(historyId).not.toBe(controls[1].getAttribute('aria-controls'))
+
+    act(() => controls[0].click())
+
+    expect(controls[0].getAttribute('aria-expanded')).toBe('true')
+    expect(controls[1].getAttribute('aria-expanded')).toBe('false')
+    const history = document.getElementById(historyId!)!
+    const collapse = findButton(history, 'Hide history')
+    expect(collapse.getAttribute('aria-controls')).toBe(historyId)
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+    act(() => {
+      collapse.focus()
+      collapse.click()
+    })
+    expect(document.getElementById(historyId!)).toBeNull()
+    expect(controls[0].getAttribute('aria-expanded')).toBe('false')
+    expect(controls[1].getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(
+      container.querySelector('button[aria-label="Connection actions"]')
+    )
+    expect(lifecycle.sync.mutate).not.toHaveBeenCalled()
+  })
+
   it('distinguishes configured sites and spaces without exposing credential fields', () => {
     const container = renderSection(
       makeConnector({
@@ -389,17 +441,43 @@ describe('Connector credential reauthorization', () => {
     expect(container.textContent).not.toContain('private-token')
   })
 
-  it('fails closed when the connector credential cannot be resolved', () => {
-    const container = renderSection(makeConnector())
-    const reconnectButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Reconnect'
+  it('routes an unavailable credential to settings without starting OAuth', () => {
+    const onEdit = vi.fn()
+    const container = renderComponent(
+      <ConnectorRecovery
+        connector={makeConnector()}
+        knowledgeBaseId='knowledge-1'
+        scope={{ kind: 'workspace', workspaceId: 'workspace-1' }}
+        canEdit
+        onEdit={onEdit}
+      />
     )
-
-    expect(reconnectButton?.disabled).toBe(true)
-
-    act(() => reconnectButton?.click())
-
+    act(() => findButton(container, 'Settings').click())
+    expect(onEdit).toHaveBeenCalledOnce()
     expect(connectOAuthModalMock).not.toHaveBeenCalled()
+  })
+
+  it('waits for credential loading before deciding how to recover', () => {
+    oauthCredentialsState.isFetching = true
+    const container = renderSection(makeConnector())
+    expect(findButton(container, 'Reconnect')).toBeDisabled()
+    expect(connectOAuthModalMock).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('renders loading and empty states with canEdit=%s', (canEdit) => {
+    const renderEmpty = (isLoading: boolean) => (
+      <ConnectorsSection
+        workspaceId='workspace-1'
+        knowledgeBaseId='knowledge-1'
+        connectors={[]}
+        canEdit={canEdit}
+        isLoading={isLoading}
+      />
+    )
+    const container = renderComponent(renderEmpty(true))
+    expect(container.textContent).toContain('Loading connections…')
+    act(() => root?.render(renderEmpty(false)))
+    expect(container.textContent).toContain('No connected sources yet.')
   })
 
   it('reauthorizes with the resolved credential provider and identity', () => {
@@ -510,6 +588,15 @@ describe('Connector credential reauthorization', () => {
 
     expect(consumeOAuthReturnContextMock).not.toHaveBeenCalled()
     expect(connectOAuthModalMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps successful-sync notices available when history is opened', () => {
+    const notice = 'Deletion reconciliation deferred until the next complete listing.'
+    const container = renderSection(makeConnector({ status: 'active', lastSyncError: notice }))
+    expect(container.textContent).not.toContain(notice)
+    act(() => findButton(container, 'Sync history').click())
+    expect(container.textContent).toContain(notice)
+    expect(lifecycle.sync.mutate).not.toHaveBeenCalled()
   })
 
   it('preserves pending OAuth return context when the recovery modal closes', () => {
@@ -738,27 +825,25 @@ describe('Connector credential reauthorization', () => {
 })
 
 describe('shared connector lifecycle actions', () => {
-  it('distinguishes an incremental sync from a supported full resync', () => {
-    const container = renderComponent(
-      <ConnectorActions
-        connector={makeConnector({ status: 'active' })}
-        knowledgeBaseId='knowledge-1'
-        canEdit
-      />
-    )
-    act(() => findButton(container, 'Sync now').click())
-    expect(lifecycle.sync.mutate).toHaveBeenLastCalledWith({
-      knowledgeBaseId: 'knowledge-1',
-      connectorId: 'connector-1',
-      rehydrate: false,
-    })
-    act(() => findButton(container, 'Full resync').click())
-    expect(lifecycle.sync.mutate).toHaveBeenLastCalledWith({
-      knowledgeBaseId: 'knowledge-1',
-      connectorId: 'connector-1',
-      rehydrate: true,
-    })
-  })
+  it.each(['confluence', 'databricks', 'github', 'gitlab'])(
+    'offers only normal sync for %s',
+    (connectorType) => {
+      const container = renderComponent(
+        <ConnectorActions
+          connector={makeConnector({ status: 'active', connectorType })}
+          knowledgeBaseId='knowledge-1'
+          canEdit
+        />
+      )
+      expect(container.textContent).not.toContain('Full resync')
+      act(() => findButton(container, 'Sync now').click())
+      expect(lifecycle.sync.mutate).toHaveBeenCalledExactlyOnceWith({
+        knowledgeBaseId: 'knowledge-1',
+        connectorId: 'connector-1',
+      })
+      expect(container.querySelector('[role="dialog"]')).toBeNull()
+    }
+  )
 
   it.each(['pending', 'running', 'disabled'] as const)(
     'does not offer content resync or dispatch work while the member engine is %s',
@@ -771,10 +856,44 @@ describe('shared connector lifecycle actions', () => {
         />
       )
       expect(container.textContent).not.toContain('Full resync')
-      const syncButton = container.querySelector('button')!
+      const syncButton = findButton(
+        container,
+        memberSyncStatus === 'pending'
+          ? 'Sync queued'
+          : memberSyncStatus === 'running'
+            ? 'Syncing…'
+            : 'Sync now'
+      )
       expect(syncButton.disabled).toBe(true)
       act(() => syncButton.click())
       expect(lifecycle.sync.mutate).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    { status: 'syncing', accessMode: 'admin', memberSyncStatus: 'idle', blocked: true },
+    { status: 'active', accessMode: 'members', memberSyncStatus: 'running', blocked: true },
+    { status: 'pending', accessMode: 'admin', memberSyncStatus: 'idle', blocked: false },
+    { status: 'active', accessMode: 'members', memberSyncStatus: 'pending', blocked: false },
+  ] as const)(
+    'only blocks pause for a running sync: $status / $memberSyncStatus',
+    ({ blocked, ...overrides }) => {
+      const container = renderComponent(
+        <ConnectorActions
+          connector={makeConnector(overrides)}
+          knowledgeBaseId='knowledge-1'
+          canEdit
+        />
+      )
+      expect(findButton(container, 'Pause syncing').disabled).toBe(blocked)
+      act(() => findButton(container, 'Pause syncing').click())
+      if (blocked) expect(lifecycle.update.mutate).not.toHaveBeenCalled()
+      else
+        expect(lifecycle.update.mutate).toHaveBeenCalledWith({
+          knowledgeBaseId: 'knowledge-1',
+          connectorId: 'connector-1',
+          updates: { status: 'paused' },
+        })
     }
   )
 
@@ -784,7 +903,7 @@ describe('shared connector lifecycle actions', () => {
       <ConnectorActions connector={connector} knowledgeBaseId='knowledge-1' canEdit />
     )
     expect(findButton(container, 'Sync now').disabled).toBe(true)
-    act(() => findButton(container, 'Resume').click())
+    act(() => findButton(container, 'Resume syncing').click())
     expect(lifecycle.update.mutate).toHaveBeenCalledWith({
       knowledgeBaseId: 'knowledge-1',
       connectorId: 'connector-1',
@@ -800,43 +919,51 @@ describe('shared connector lifecycle actions', () => {
         />
       )
     )
-    expect(findButton(container, 'Pause').disabled).toBe(true)
-    act(() => findButton(container, 'Pause').click())
+    expect(findButton(container, 'Pause syncing').disabled).toBe(true)
+    act(() => findButton(container, 'Pause syncing').click())
     expect(lifecycle.update.mutate).toHaveBeenCalledOnce()
   })
 
-  it.each([true, false])('removes member documents automatically: %s', (members) => {
-    const onRemoved = vi.fn()
-    const container = renderComponent(
-      <ConnectorActions
-        connector={makeConnector({
-          status: 'active',
-          accessMode: members ? 'members' : 'admin',
-        })}
-        knowledgeBaseId='knowledge-1'
-        onRemoved={onRemoved}
-        canEdit
-      />
-    )
-    act(() => findButton(container, 'Remove').click())
-    const dialog = container.querySelector('[role="dialog"]')!
-    expect(Boolean(dialog.querySelector('input'))).toBe(!members)
-    act(() => findButton(dialog, 'Remove').click())
-    expect(lifecycle.remove.mutate).toHaveBeenCalledWith(
-      { knowledgeBaseId: 'knowledge-1', connectorId: 'connector-1', deleteDocuments: members },
-      expect.any(Object)
-    )
-    act(() => lifecycle.remove.mutate.mock.calls[0][1].onSuccess())
-    expect(onRemoved).toHaveBeenCalledOnce()
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-  })
+  it.each(['members', 'admin', 'workspace'] as const)(
+    'matches required document removal for %s access',
+    (accessMode) => {
+      const onRemoved = vi.fn()
+      const container = renderComponent(
+        <ConnectorActions
+          connector={makeConnector({
+            status: 'active',
+            accessMode,
+          })}
+          knowledgeBaseId='knowledge-1'
+          onRemoved={onRemoved}
+          canEdit
+        />
+      )
+      act(() => findButton(container, 'Remove connection').click())
+      const dialog = container.querySelector('[role="dialog"]')!
+      expect(Boolean(dialog.querySelector('input'))).toBe(accessMode === 'workspace')
+      if (accessMode !== 'workspace') {
+        expect(dialog.textContent).toContain('deletes its synced documents from Sim')
+        expect(dialog.textContent).not.toContain('remain unless')
+      }
+      act(() => findButton(dialog, 'Remove').click())
+      expect(lifecycle.remove.mutate).toHaveBeenCalledWith({
+        knowledgeBaseId: 'knowledge-1',
+        connectorId: 'connector-1',
+        deleteDocuments: accessMode !== 'workspace',
+      })
+      act(() => lifecycle.removeOptions.onSuccess?.())
+      expect(onRemoved).toHaveBeenCalledOnce()
+      expect(container.querySelector('[role="dialog"]')).toBeNull()
+    }
+  )
 
   it('can explicitly delete content-mode documents and retains a failed removal for retry', () => {
-    const connector = makeConnector({ status: 'active' })
+    const connector = makeConnector({ status: 'active', accessMode: 'workspace' })
     const container = renderComponent(
       <ConnectorActions connector={connector} knowledgeBaseId='knowledge-1' canEdit />
     )
-    act(() => findButton(container, 'Remove').click())
+    act(() => findButton(container, 'Remove connection').click())
     const dialog = container.querySelector('[role="dialog"]')!
     act(() => dialog.querySelector<HTMLInputElement>('input')!.click())
     act(() => findButton(dialog, 'Remove').click())
@@ -858,9 +985,8 @@ describe('shared connector lifecycle actions', () => {
       />
     )
     expect(findButton(container, 'Sync now').disabled).toBe(true)
-    expect(findButton(container, 'Source actions').disabled).toBe(true)
-    expect(findButton(container, 'Pause').disabled).toBe(true)
-    expect(findButton(container, 'Remove').disabled).toBe(true)
+    expect(findButton(container, 'Pause syncing').disabled).toBe(true)
+    expect(findButton(container, 'Remove connection').disabled).toBe(true)
   })
 
   it('does not expose mutation controls to a viewer', () => {
@@ -937,6 +1063,41 @@ describe('shared connector sync history', () => {
     }
   )
 
+  it.each([
+    { docsFailed: 0, processingDispatchFailed: 0, continuing: true },
+    { docsFailed: 1, processingDispatchFailed: 0, continuing: false },
+    { docsFailed: 0, processingDispatchFailed: 1, continuing: false },
+    { docsFailed: null, processingDispatchFailed: null, continuing: false },
+    { docsFailed: undefined, processingDispatchFailed: undefined, continuing: false },
+  ])('requires known healthy member counters for continuation: %j', (fields) => {
+    lifecycle.detail.current = {
+      memberSyncLogs: [
+        {
+          ...makeLog({ status: 'partial' }),
+          membersCompleted: 1,
+          membersIncomplete: 1,
+          membersFailed: 0,
+          docsFailed: fields.docsFailed,
+          processingDispatchFailed: fields.processingDispatchFailed,
+          docsTombstoned: 0,
+          docsPurged: 0,
+        },
+      ],
+    }
+    const container = renderComponent(
+      <ConnectorSyncHistory
+        connector={makeConnector({ accessMode: 'members' })}
+        knowledgeBaseId='knowledge-1'
+      />
+    )
+    expect(container.textContent).toContain(fields.continuing ? 'Continuing' : 'Partial')
+    expect(container.textContent).not.toContain(fields.continuing ? 'Partial' : 'Continuing')
+    if (fields.continuing) expect(container.textContent).not.toContain('No changes')
+    if (fields.docsFailed) expect(container.textContent).toContain('1 failed')
+    if (fields.processingDispatchFailed)
+      expect(container.textContent).toContain('1 failed to queue')
+  })
+
   it('loads the member engine history rather than the content history', () => {
     lifecycle.detail.current = {
       syncLogs: [makeLog({ status: 'completed', docsAdded: 999 })],
@@ -1003,11 +1164,35 @@ describe('SyncHistory', () => {
     expect(container.textContent).not.toContain('No changes')
   })
 
-  it('renders a continued listing as partial with the work already completed', () => {
-    const container = render(makeLog({ status: 'partial', docsAdded: 3 }))
-    expect(container.textContent).toContain('Partial')
+  it('distinguishes a continued listing from a partial failure', () => {
+    const container = render(makeLog({ status: 'partial', docsAdded: 3, listedCount: null }))
+    expect(container.textContent).toContain('Continuing')
     expect(container.textContent).toContain('3 added')
     expect(container.textContent).not.toContain('In progress…')
+  })
+
+  it('keeps permission failures visible even when document processing succeeded', () => {
+    const container = render(
+      makeLog({
+        status: 'partial',
+        listedCount: 4,
+        errorMessage: 'Some document permissions could not be verified.',
+      })
+    )
+    expect(container.textContent).toContain('Some document permissions could not be verified.')
+    expect(container.textContent).toContain('Partial')
+    expect(container.textContent).not.toContain('No changes')
+    expect(container.textContent).not.toContain('Continuing')
+  })
+
+  it.each([
+    { docsFailed: 1, listedCount: null },
+    { docsFailed: 0, listedCount: 4 },
+    { docsFailed: 0 },
+  ])('does not label failed, finished, or legacy partial logs as continuing: %j', (fields) => {
+    const container = render(makeLog({ status: 'partial', ...fields }))
+    expect(container.textContent).toContain('Partial')
+    expect(container.textContent).not.toContain('Continuing')
   })
 
   it('keeps completion accessible without repeating decorative status on every row', () => {

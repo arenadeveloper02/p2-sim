@@ -97,6 +97,10 @@ export type ParameterVisibility =
   | 'llm-only' // Only LLM provides (computed values)
   | 'hidden' // Not shown to user or LLM
 
+export interface ToolResponseContext {
+  signal?: AbortSignal
+}
+
 export interface ToolResponse {
   success: boolean // Whether the tool execution was successful
   output: Record<string, any> // The structured output from the tool
@@ -218,6 +222,8 @@ export interface ToolConfig<P = any, R = any> {
     body?: (params: P) => Record<string, any> | string | FormData | undefined
     /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
     timeout?: number
+    /** Raw binary downloads use the bounded file-transfer budget before file processing. */
+    responseType?: 'binary'
     /**
      * Allows the resolved request URL to target this Sim instance. Reserved for generic,
      * user-directed HTTP capabilities; integration tools must use an in-process operation.
@@ -296,7 +302,7 @@ export interface ToolConfig<P = any, R = any> {
   ) => Promise<R extends ToolResponse ? R : ToolResponse>
 
   // Response handling
-  transformResponse?: (response: Response, params?: P) => Promise<R>
+  transformResponse?: (response: Response, params?: P, context?: ToolResponseContext) => Promise<R>
 
   /**
    * Optional dynamic schema enrichment for specific params.

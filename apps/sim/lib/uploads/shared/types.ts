@@ -76,7 +76,7 @@ export type StorageContext =
   | 'logs'
   | 'figma-design'
   | 'workspace-logos'
-  | 'org-logos'
+  | 'organization-logos'
 
 /**
  * The contexts stored under the `workspace/` key prefix. They share a bucket and
@@ -115,21 +115,21 @@ export const ALLOWED_UPLOAD_CONTEXTS = new Set<StorageContext>([
   'profile-pictures',
   'og-images',
   'workspace-logos',
-  'org-logos',
+  'organization-logos',
 ])
 
 /**
  * Contexts exempt from storage quota checks. Includes system-internal contexts
  * (`logs` — written by the execution pipeline, not user-initiated) and small
  * metadata assets (`profile-pictures`, `workspace-logos`, `og-images`,
- * `org-logos`). Mothership chat attachments are also exempt because they are
+ * `organization-logos`). Mothership chat attachments are also exempt because they are
  * not counted as durable workspace-file storage.
  */
 export const QUOTA_EXEMPT_STORAGE_CONTEXTS = new Set<StorageContext>([
   'mothership',
   'profile-pictures',
   'workspace-logos',
-  'org-logos',
+  'organization-logos',
   'og-images',
   'logs',
 ])
@@ -166,6 +166,8 @@ export interface UploadFileOptions {
    * Disable when a caller finalizes metadata in its own database transaction.
    */
   persistMetadata?: boolean
+  /** Only for newly allocated, unique execution or Copilot keys; never enable for replacements. */
+  cleanupOnMetadataFailure?: boolean
   /** Internal create-only upload identity when metadata and cleanup were reserved before writing bytes. */
   createOnlyUploadId?: string
   signal?: AbortSignal

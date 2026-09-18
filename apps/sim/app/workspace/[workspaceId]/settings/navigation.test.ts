@@ -31,9 +31,9 @@ describe('unified settings navigation', () => {
       { id: 'billing', label: 'Subscription', section: 'account' },
       { id: 'teammates', label: 'Teammates', section: 'workspace' },
       { id: 'organization', label: 'Members', section: 'organization' },
-      { id: 'usage', label: 'Usage tracking', section: 'organization' },
+      { id: 'usage', label: 'Insights', section: 'organization' },
       { id: 'secrets', label: 'Secrets', section: 'workspace' },
-      { id: 'connected-accounts', label: 'Connected accounts', section: 'organization' },
+      { id: 'connected-accounts', label: 'Credential Groups', section: 'organization' },
       { id: 'custom-tools', label: 'Custom tools', section: 'workspace' },
       { id: 'mcp', label: 'MCP tools', section: 'workspace' },
       { id: 'apikeys', label: 'Arena API keys', section: 'workspace' },
@@ -44,7 +44,7 @@ describe('unified settings navigation', () => {
       { id: 'recently-deleted', label: 'Recently deleted', section: 'workspace' },
       { id: 'self-host', label: 'Self hosting', section: 'platform' },
       { id: 'sso', label: 'Single sign-on', section: 'organization' },
-      { id: 'sessions', label: 'Session policies', section: 'organization' },
+      { id: 'security', label: 'Security', section: 'organization' },
       { id: 'data-retention', label: 'Data retention', section: 'organization' },
       { id: 'data-drains', label: 'Data drains', section: 'organization' },
       { id: 'whitelabeling', label: 'White-labeling', section: 'organization' },
@@ -90,7 +90,7 @@ describe('unified settings navigation', () => {
       'audit-logs',
       'whitelabeling',
       'sso',
-      'sessions',
+      'security',
       'data-retention',
       'data-drains',
     ])
@@ -125,6 +125,7 @@ describe('resolveSettingsSection', () => {
     team: 'organization',
     'api-keys': 'apikeys',
     domains: 'sso',
+    sessions: 'security',
   } as const
 
   it('keeps legacy section links working', () => {

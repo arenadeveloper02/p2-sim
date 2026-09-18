@@ -1,9 +1,11 @@
 'use client'
 
-import { Chip, ChipDropdown, ChipInput, ChipLink, Skeleton } from '@sim/emcn'
+import { Chip, ChipInput, ChipLink, Skeleton } from '@sim/emcn'
 import { RefreshCw, Search, SquareArrowUpRight } from '@sim/emcn/icons'
 import type { ConnectorDocumentFilter } from '@/lib/api/contracts/knowledge/connectors'
 import type { ResourceScope } from '@/lib/core/resource-scope'
+import { getDocumentIndexingStatus } from '@/lib/knowledge/documents/types'
+import { ConnectorDocumentStatusFilter } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/connector-documents/connector-document-status-filter'
 import {
   SettingsEmptyState,
   SettingsQueryErrorState,
@@ -24,6 +26,7 @@ interface ConnectorDocumentsProps {
   connectorId: string
   search?: string
   searchControl?: { value: string; onChange: (value: string) => void }
+  showToolbar?: boolean
   progressScope?: ResourceScope
   isSearchIndex?: boolean
   syncing?: boolean
@@ -37,6 +40,7 @@ export function ConnectorDocuments({
   filter,
   search,
   searchControl,
+  showToolbar = true,
   progressScope,
   isSearchIndex = false,
   syncing,
@@ -59,9 +63,10 @@ export function ConnectorDocuments({
   const documents = (data?.pages.flatMap((page) => page.documents) ?? []).filter((document) =>
     filter === 'excluded'
       ? document.userExcluded
-      : !document.userExcluded && (filter !== 'failed' || document.processingStatus === 'failed')
+      : !document.userExcluded &&
+        (filter === 'active' || getDocumentIndexingStatus(document) === filter)
   )
-  const counts = data?.pages[0]?.counts ?? { active: 0, excluded: 0, failed: 0 }
+  const counts = data?.pages[0]?.counts ?? { active: 0, excluded: 0, failed: 0, skipped: 0 }
   const visibleDocumentCount = counts[filter]
   const hasMoreVisibleDocuments = Boolean(hasNextPage && documents.length < visibleDocumentCount)
 
@@ -77,35 +82,26 @@ export function ConnectorDocuments({
         {isSearchIndex && (
           <p className='text-[var(--text-body)] text-sm'>Documents you can access</p>
         )}
-        <div className='flex items-center gap-2'>
-          {searchControl && (
-            <ChipInput
-              icon={Search}
-              placeholder='Search documents...'
-              value={searchControl.value}
-              onChange={(event) => searchControl.onChange(event.target.value)}
-              autoComplete='off'
-              className='min-w-0 flex-1'
+        {showToolbar && (
+          <div className='flex items-center gap-2'>
+            {searchControl && (
+              <ChipInput
+                icon={Search}
+                placeholder='Search documents...'
+                value={searchControl.value}
+                onChange={(event) => searchControl.onChange(event.target.value)}
+                autoComplete='off'
+                className='min-w-0 flex-1'
+              />
+            )}
+            <ConnectorDocumentStatusFilter
+              filter={filter}
+              onFilterChange={onFilterChange}
+              counts={counts}
+              isLoading={isLoading}
             />
-          )}
-          <ChipDropdown
-            aria-label='Document status'
-            value={filter}
-            onChange={(value) => {
-              if (value === 'active' || value === 'excluded' || value === 'failed')
-                onFilterChange(value)
-            }}
-            matchTriggerWidth={false}
-            options={[
-              { value: 'active', label: isLoading ? 'Included' : `Included (${counts.active})` },
-              {
-                value: 'excluded',
-                label: isLoading ? 'Excluded' : `Excluded (${counts.excluded})`,
-              },
-              { value: 'failed', label: isLoading ? 'Failed' : `Failed (${counts.failed})` },
-            ]}
-          />
-        </div>
+          </div>
+        )}
         <div className={RESOURCE_LIST_STACK}>
           {query.isError && !query.isFetchNextPageError ? (
             <SettingsQueryErrorState
@@ -128,7 +124,9 @@ export function ConnectorDocuments({
                   ? 'No excluded documents'
                   : filter === 'failed'
                     ? 'No failed documents'
-                    : 'No documents yet'}
+                    : filter === 'skipped'
+                      ? 'No skipped documents'
+                      : 'No documents yet'}
             </SettingsEmptyState>
           ) : (
             documents.map((doc) => (
@@ -136,13 +134,17 @@ export function ConnectorDocuments({
                 key={doc.id}
                 title={doc.filename}
                 description={
-                  doc.processingStatus === 'failed'
+                  getDocumentIndexingStatus(doc) === 'failed'
                     ? 'Indexing failed'
-                    : doc.processingStatus === 'pending'
-                      ? 'Waiting to index'
-                      : doc.processingStatus === 'processing'
-                        ? 'Indexing'
-                        : undefined
+                    : getDocumentIndexingStatus(doc) === 'skipped'
+                      ? doc.processingError
+                        ? `Skipped · ${doc.processingError}`
+                        : 'Skipped'
+                      : doc.processingStatus === 'pending'
+                        ? 'Waiting to index'
+                        : doc.processingStatus === 'processing'
+                          ? 'Indexing'
+                          : undefined
                 }
                 trailing={
                   <div className='flex items-center gap-2'>
@@ -155,7 +157,7 @@ export function ConnectorDocuments({
                         aria-label={`Open ${doc.filename}`}
                       />
                     )}
-                    {doc.processingStatus === 'failed' && !doc.userExcluded && (
+                    {getDocumentIndexingStatus(doc) === 'failed' && !doc.userExcluded && (
                       <Chip
                         disabled={isRecoveryPending}
                         onClick={() => {

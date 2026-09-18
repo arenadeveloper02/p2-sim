@@ -73,7 +73,21 @@ const SHORTCUT_FETCH_CONCURRENCY = 8
 const DRIVE_METADATA_MAX_BYTES = 1024 * 1024
 const DRIVE_PAGE_MAX_BYTES = 16 * 1024 * 1024
 const DRIVE_FILE_FIELDS =
-  'id,name,mimeType,modifiedTime,createdTime,webViewLink,owners,size,starred,trashed,parents,shortcutDetails(targetId,targetMimeType,targetResourceKey)'
+  'id,name,mimeType,modifiedTime,createdTime,webViewLink,owners,size,starred,trashed,parents,shortcutDetails(targetId,targetMimeType,targetResourceKey),capabilities(canDownload)'
+
+/**
+ * Recorded on a listed file whose owner disabled download, print, and copy for
+ * viewers. Drive rejects both `files.export` and `files.get?alt=media` for such a
+ * file (`cannotExportFile` / `cannotDownloadFile`), so the crawl skips the fetch
+ * and surfaces the restriction instead of failing hydration on every sync.
+ */
+export const DOWNLOAD_RESTRICTED_SKIP_REASON =
+  'The file owner has disabled downloading for viewers, so its content cannot be indexed'
+
+/** True when the file's metadata says the acting credential cannot read its bytes. */
+function isDownloadRestricted(file: DriveFile): boolean {
+  return file.capabilities?.canDownload === false
+}
 
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder'
 
@@ -101,6 +115,7 @@ function googleDriveErrorLogFields(error: unknown): Record<string, unknown> {
       error: error.message,
       status: error.status,
       reasons: error.reasons,
+      operation: error.diagnostic?.operation,
     }
   }
   return { error: toError(error).message }
@@ -152,10 +167,12 @@ async function exportGoogleWorkspaceFile(
 
   let response: Response
   try {
-    response = await fetchGoogleDriveWithRetry(url, {
-      method: 'GET',
-      headers: driveRequestHeaders(accessToken, fileId, resourceKey),
-    })
+    response = await fetchGoogleDriveWithRetry(
+      url,
+      { method: 'GET', headers: driveRequestHeaders(accessToken, fileId, resourceKey) },
+      {},
+      'drive.files.export'
+    )
   } catch (error) {
     if (error instanceof GoogleDriveApiError && error.kind === 'export_too_large') {
       throw new ConnectorFileTooLargeError(MAX_EXPORT_SIZE)
@@ -180,10 +197,12 @@ async function downloadFile(
   // metadata fetch in getDocument already does. (`files.export` takes no such param.)
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`
 
-  const response = await fetchGoogleDriveWithRetry(url, {
-    method: 'GET',
-    headers: driveRequestHeaders(accessToken, fileId, resourceKey),
-  })
+  const response = await fetchGoogleDriveWithRetry(
+    url,
+    { method: 'GET', headers: driveRequestHeaders(accessToken, fileId, resourceKey) },
+    {},
+    'drive.files.get'
+  )
 
   // Stream with a hard byte cap so a file with missing/under-reported listing
   // size metadata is never fully buffered into memory. Oversized files raise
@@ -427,6 +446,13 @@ function driveChangeToExternal(
   if (change.removed || !file || !isFileInScope(file, sourceConfig)) {
     return { kind: 'removed', externalId }
   }
+  if (isDownloadRestricted(file)) {
+    return {
+      kind: 'upsert',
+      externalId,
+      document: markSkipped(fileToStub(file), DOWNLOAD_RESTRICTED_SKIP_REASON),
+    }
+  }
   return {
     kind: 'upsert',
     externalId,
@@ -589,10 +615,12 @@ async function listFilePermissions(
       return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/permissions?${query.toString()}`
     },
     fetch: (url) =>
-      fetchGoogleDriveWithRetry(url, {
-        method: 'GET',
-        headers: driveRequestHeaders(accessToken, fileId, resourceKey),
-      }),
+      fetchGoogleDriveWithRetry(
+        url,
+        { method: 'GET', headers: driveRequestHeaders(accessToken, fileId, resourceKey) },
+        {},
+        'drive.permissions.list'
+      ),
     parseError: (response) => response.json().catch(() => null),
     getItems: (body) => body.permissions,
     getNextPageToken: (body) => body.nextPageToken,
@@ -731,10 +759,12 @@ async function readDriveFile(
   resourceKey?: string,
   permissions = false
 ): Promise<DriveFile> {
-  const fields = `${DRIVE_FILE_FIELDS}${permissions ? `,permissions(${DRIVE_PERMISSION_FIELDS}),capabilities(canDownload)` : ''}`
+  const fields = `${DRIVE_FILE_FIELDS}${permissions ? `,permissions(${DRIVE_PERMISSION_FIELDS})` : ''}`
   const response = await fetchGoogleDriveWithRetry(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent(fields)}&supportsAllDrives=true`,
-    { method: 'GET', headers: driveRequestHeaders(accessToken, fileId, resourceKey) }
+    { method: 'GET', headers: driveRequestHeaders(accessToken, fileId, resourceKey) },
+    {},
+    'drive.files.get'
   )
   return parseDriveFileMetadata(await readDriveJson(response, DRIVE_METADATA_MAX_BYTES), fileId)
 }
@@ -860,6 +890,8 @@ async function listedFileToDocument(
   }
   const contentFile = target ?? file
   if (!matchesFileType((sourceConfig.fileType as string) || 'all', contentFile)) return null
+  if (isDownloadRestricted(contentFile))
+    return markSkipped(fileToStub(file, acl, target), DOWNLOAD_RESTRICTED_SKIP_REASON)
   return stubOrSkipBySize(
     fileToStub(file, acl, target),
     Number(contentFile.size) || undefined,
@@ -919,7 +951,9 @@ async function listShortcutChanges(
     {
       method: 'GET',
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-    }
+    },
+    {},
+    'drive.files.list'
   )
   const page = parseDriveFileListResponse(await readDriveJson(response, DRIVE_PAGE_MAX_BYTES))
   if (page.incompleteSearch) throw new Error('Google Drive shortcut search was incomplete')
@@ -1069,7 +1103,7 @@ const listGoogleDriveDocuments: ConnectorConfig['listDocuments'] = async (
      * crawl would pull a permission array per file and discard it.
      */
     fields: `kind,nextPageToken,incompleteSearch,files(${DRIVE_FILE_FIELDS}${
-      aclContext ? `,permissions(${DRIVE_PERMISSION_FIELDS}),capabilities(canDownload)` : ''
+      aclContext ? `,permissions(${DRIVE_PERMISSION_FIELDS})` : ''
     })`,
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
@@ -1091,14 +1125,16 @@ const listGoogleDriveDocuments: ConnectorConfig['listDocuments'] = async (
 
   let response: Response
   try {
-    response = await fetchGoogleDriveWithRetry(url, {
-      method: 'GET',
-      signal: syncContext?.signal instanceof AbortSignal ? syncContext.signal : undefined,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
+    response = await fetchGoogleDriveWithRetry(
+      url,
+      {
+        method: 'GET',
+        signal: syncContext?.signal instanceof AbortSignal ? syncContext.signal : undefined,
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
       },
-    })
+      {},
+      'drive.files.list'
+    )
   } catch (error) {
     if (
       (traversal || sharedDriveId) &&
@@ -1252,6 +1288,10 @@ export const googleDriveConnector: ConnectorConfig = {
       }
     }
 
+    if (isDownloadRestricted(contentFile)) {
+      return markSkipped(stub, DOWNLOAD_RESTRICTED_SKIP_REASON)
+    }
+
     try {
       const payload = await fetchFilePayload(accessToken, contentFile, resourceKey)
       if (!payload.content.trim() && !payload.sourceFile?.bytes.length) {
@@ -1300,7 +1340,8 @@ export const googleDriveConnector: ConnectorConfig = {
           await fetchGoogleDriveWithRetry(
             'https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)&corpora=user&supportsAllDrives=true&includeItemsFromAllDrives=true',
             { headers: { Authorization: `Bearer ${sampleToken}`, Accept: 'application/json' } },
-            VALIDATE_RETRY_OPTIONS
+            VALIDATE_RETRY_OPTIONS,
+            'drive.files.list'
           )
         }
         return { valid: true }
@@ -1320,7 +1361,8 @@ export const googleDriveConnector: ConnectorConfig = {
                   Accept: 'application/json',
                 },
               },
-              VALIDATE_RETRY_OPTIONS
+              VALIDATE_RETRY_OPTIONS,
+              'drive.files.get'
             )
           } catch (error) {
             if (error instanceof GoogleDriveApiError) {
@@ -1356,7 +1398,8 @@ export const googleDriveConnector: ConnectorConfig = {
                 Accept: 'application/json',
               },
             },
-            VALIDATE_RETRY_OPTIONS
+            VALIDATE_RETRY_OPTIONS,
+            'drive.files.list'
           )
         } catch (error) {
           if (error instanceof GoogleDriveApiError) {
@@ -1407,10 +1450,15 @@ export const googleDriveConnector: ConnectorConfig = {
 
   getChangeCursor: async (accessToken: string): Promise<string> => {
     const url = 'https://www.googleapis.com/drive/v3/changes/startPageToken?supportsAllDrives=true'
-    const response = await fetchGoogleDriveWithRetry(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-    })
+    const response = await fetchGoogleDriveWithRetry(
+      url,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+      },
+      {},
+      'drive.changes.getStartPageToken'
+    )
     const data: unknown = await response.json()
     if (
       !isPlainRecord(data) ||
@@ -1454,10 +1502,15 @@ export const googleDriveConnector: ConnectorConfig = {
 
     let response: Response
     try {
-      response = await fetchGoogleDriveWithRetry(url, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-      })
+      response = await fetchGoogleDriveWithRetry(
+        url,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+        },
+        {},
+        'drive.changes.list'
+      )
     } catch (error) {
       logger.error('Failed to list Google Drive changes', googleDriveErrorLogFields(error))
       throw error

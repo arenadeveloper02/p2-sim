@@ -10,6 +10,7 @@ import {
 } from '@/lib/execution/model-input-provenance'
 import { applyAgentChatFilesToImageGeneratorTools } from '@/lib/image-generation/reference-files'
 import { readAvailableCustomToolByIdOrTitleAsExecutor } from '@/lib/internal/custom-tools/read-available-by-id-or-title'
+import { resolveExecutorFileMaterializationContext } from '@/lib/internal/file/materialization-context'
 import { discoverMcpServerToolsAsExecutor } from '@/lib/internal/mcp/discover-tools'
 import {
   readWorkflowInputFieldsForTool,
@@ -32,10 +33,18 @@ import {
   MODEL_SUPPORTED_IMAGE_MIME_TYPES,
   processFilesToUserFiles,
   type RawFileInput,
+  tryInferContextFromKey,
 } from '@/lib/uploads/utils/file-utils'
-import { selectModelBoundFileInputPaths } from '@/lib/uploads/utils/model-input'
+import {
+  appendUnavailableAttachmentNotice,
+  selectModelBoundFileInputPaths,
+} from '@/lib/uploads/utils/model-input'
 import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
 import { resolveCustomBlockToolBinding } from '@/lib/workflows/custom-blocks/operations'
+import {
+  getAgentToolUsageControlMode,
+  resolveAgentToolUsageControl,
+} from '@/lib/workflows/tool-input/usage-control'
 import { getAllBlocks, getBlock } from '@/blocks'
 import { assembleCustomBlockInputMapping, isCustomBlockType } from '@/blocks/custom/build-config'
 import type { BlockOutput } from '@/blocks/types'
@@ -54,12 +63,13 @@ import {
 } from '@/executor/handlers/agent/skills-resolver'
 import type {
   AgentInputs,
+  FileNameProjection,
   Message,
   StreamingConfig,
   ToolInput,
 } from '@/executor/handlers/agent/types'
 import { parseResponseFormat } from '@/executor/handlers/shared/response-format'
-import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/executor/types'
+import type { BlockHandler, ExecutionContext, StreamingExecution, UserFile } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
 import { stringifyJSON } from '@/executor/utils/json'
 import { projectResolvedSecretDiagnosticContent } from '@/executor/utils/resolved-secret-content-projection'
@@ -227,9 +237,6 @@ export class AgentBlockHandler implements BlockHandler {
       AGENT_RAW_PROVIDER_ERROR_INPUT_PATHS
     )
     ctx.errorResolvedSecretTraceRegistry = providerErrorRegistry
-    const toolIndexByRef = new Map<ToolInput, number>(
-      (inputs.tools || []).map((tool, index) => [tool, index] as const)
-    )
     const privateAgentSelectorInputPaths: ResolvedSecretInputPath[] = []
     let responseFormatModelInputPaths: ResolvedSecretInputPath[] = []
     let privateAgentSelectorsSettled = false
@@ -245,6 +252,10 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     try {
+      const tools = this.resolveToolUsageControls(inputs.tools || [], block.canonicalModes)
+      const toolIndexByRef = new Map<ToolInput, number>(
+        tools.map((tool, index) => [tool, index] as const)
+      )
       const privateAgentSelectors = this.getPrivateAgentSelectorInputPaths(ctx, inputs, [])
       privateAgentSelectorInputPaths.push(...privateAgentSelectors.inputPaths)
       if (!privateAgentSelectors.complete) {
@@ -298,7 +309,7 @@ export class AgentBlockHandler implements BlockHandler {
         ...modelInputProjection.value,
         responseFormat: responseFormatProjection.value,
       }
-      const projectedToolInputs = this.projectToolInputsForProvenance(ctx, inputs.tools || [])
+      const projectedToolInputs = this.projectToolInputsForProvenance(ctx, tools)
 
       await this.validateToolPermissions(ctx, filteredInputs.tools || [])
 
@@ -378,14 +389,12 @@ export class AgentBlockHandler implements BlockHandler {
       }
 
       const streamingConfig = this.getStreamingConfig(ctx, block)
-      const messages = await this.buildMessages(ctx, filteredInputs, modelInputs, skillMetadata)
-      const messagesWithInputFiles = this.attachFilesToLastUserMessage(
+      const messagesWithInputFiles = await this.buildMessages(
         ctx,
-        messages,
-        filteredInputs.files,
-        fileProjection.projectedFiles,
-        fileProjection.projectedNameByFile,
-        fileProjection.directNameInputPaths
+        filteredInputs,
+        modelInputs,
+        skillMetadata,
+        fileProjection
       )
       const messagesWithFiles = await this.hydrateMessageFilesForProvider(
         ctx,
@@ -458,6 +467,24 @@ export class AgentBlockHandler implements BlockHandler {
     } finally {
       settlePrivateAgentSelectors()
     }
+  }
+
+  private resolveToolUsageControls(
+    tools: ToolInput[],
+    canonicalModes?: Record<string, 'basic' | 'advanced'>
+  ): ToolInput[] {
+    return tools.map((tool, toolIndex) => {
+      if (getAgentToolUsageControlMode(toolIndex, canonicalModes) === 'basic') return tool
+
+      const usageControl = resolveAgentToolUsageControl(tool, toolIndex, canonicalModes)
+      if (!usageControl) {
+        throw new Error(
+          `Tool ${toolIndex + 1} mode must resolve to Auto, Force, or None before the Agent can run.`
+        )
+      }
+
+      return { ...tool, usageControl }
+    })
   }
 
   /**
@@ -623,13 +650,6 @@ export class AgentBlockHandler implements BlockHandler {
     }
   }
 
-  /**
-   * `canonicalModes` overrides are keyed by each tool's position in the ORIGINAL, unfiltered
-   * tools array (matching what the editor wrote), not by `tool.type` - so two tool entries of
-   * the same type (e.g. two Table tools) resolve independently. `toolIndexByRef` preserves that
-   * original position across the mcp-availability filter and the mcp/other split below, both of
-   * which would otherwise renumber tools by their post-filter position.
-   */
   private projectToolInputsForProvenance(
     ctx: ExecutionContext,
     inputTools: ToolInput[]
@@ -649,6 +669,10 @@ export class AgentBlockHandler implements BlockHandler {
     return projection.value.tools as ToolInput[]
   }
 
+  /**
+   * Preserve original tool indexes through disabled-tool filtering and MCP grouping
+   * so canonical modes and secret provenance stay attached to the configured tool.
+   */
   private async formatTools(
     ctx: ExecutionContext,
     inputTools: ToolInput[],
@@ -1216,10 +1240,13 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     modelInputs: AgentInputs,
-    skillMetadata: Array<{ name: string; description: string }> = []
+    skillMetadata: Array<{ name: string; description: string }>,
+    fileProjection: ReturnType<AgentBlockHandler['projectFileNamesForModel']>
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
     const memoryEnabled = inputs.memoryType && inputs.memoryType !== 'none'
+    const pendingMemoryMessages: Array<{ raw: Message; model: Message }> = []
+    let seedMessageCount = 0
 
     // 1. Extract and validate messages from messages-input subblock
     const inputMessages = this.extractValidMessages(inputs.messages)
@@ -1230,7 +1257,11 @@ export class AgentBlockHandler implements BlockHandler {
 
     // 2. Handle native memory: seed on first run, then fetch and append new user input
     if (memoryEnabled && ctx.workspaceId) {
-      const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs)
+      const memoryMessages = await memoryService.fetchMemoryMessages(
+        ctx,
+        inputs,
+        fileProjection.projectedNameByFile
+      )
       const hasExisting = memoryMessages.length > 0
 
       if (!hasExisting && conversationMessages.length > 0) {
@@ -1240,7 +1271,13 @@ export class AgentBlockHandler implements BlockHandler {
         const rawTaggedMessages = rawConversationMessages.map((m) =>
           m.role === 'user' ? { ...m, executionId: ctx.executionId } : m
         )
-        await memoryService.seedMemory(ctx, inputs, rawTaggedMessages)
+        for (let index = 0; index < taggedMessages.length; index++) {
+          pendingMemoryMessages.push({
+            raw: rawTaggedMessages[index],
+            model: taggedMessages[index],
+          })
+        }
+        seedMessageCount = taggedMessages.length
         messages.push(...taggedMessages)
       } else {
         messages.push(...memoryMessages)
@@ -1265,9 +1302,9 @@ export class AgentBlockHandler implements BlockHandler {
             if (!userMessageInThisRun) {
               const taggedMessage = { ...latestUserFromInput, executionId: ctx.executionId }
               messages.push(taggedMessage)
-              await memoryService.appendToMemory(ctx, inputs, {
-                ...latestRawUserFromInput,
-                executionId: ctx.executionId,
+              pendingMemoryMessages.push({
+                raw: { ...latestRawUserFromInput, executionId: ctx.executionId },
+                model: taggedMessage,
               })
             }
           }
@@ -1304,9 +1341,9 @@ export class AgentBlockHandler implements BlockHandler {
         const userMessages = messages.filter((m) => m.role === 'user')
         const lastUserMessage = userMessages[userMessages.length - 1]
         if (lastUserMessage) {
-          await memoryService.appendToMemory(ctx, inputs, {
-            ...lastUserMessage,
-            content: this.formatUserPrompt(inputs.userPrompt),
+          pendingMemoryMessages.push({
+            raw: { ...lastUserMessage, content: this.formatUserPrompt(inputs.userPrompt) },
+            model: lastUserMessage,
           })
         }
       }
@@ -1332,7 +1369,33 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    return messages.length > 0 ? messages : undefined
+    const messagesWithFiles = this.attachFilesToLastUserMessage(
+      ctx,
+      messages.length > 0 ? messages : undefined,
+      inputs.files,
+      fileProjection.projectedFiles,
+      fileProjection.projectedNameByFile,
+      fileProjection.directNameInputPaths
+    )
+
+    /** Persist the complete turn before provider hydration adds bytes or transient handles. */
+    const lastUserMessage = messages.filter((message) => message.role === 'user').at(-1)
+    const attachedUserMessage = messagesWithFiles
+      ?.filter((message) => message.role === 'user')
+      .at(-1)
+    const messagesToStore = pendingMemoryMessages.map(({ raw, model }) =>
+      model === lastUserMessage && attachedUserMessage?.files
+        ? { ...raw, files: attachedUserMessage.files }
+        : raw
+    )
+    if (seedMessageCount > 0) {
+      await memoryService.seedMemory(ctx, inputs, messagesToStore.slice(0, seedMessageCount))
+    }
+    for (const message of messagesToStore.slice(seedMessageCount)) {
+      await memoryService.appendToMemory(ctx, inputs, message)
+    }
+
+    return messagesWithFiles
   }
 
   private attachFilesToLastUserMessage(
@@ -1340,7 +1403,7 @@ export class AgentBlockHandler implements BlockHandler {
     messages: Message[] | undefined,
     filesInput: unknown,
     projectedFilesInput: unknown,
-    projectedNameByFile: WeakMap<object, { name: string; inputPath: ResolvedSecretInputPath }>,
+    projectedNameByFile: WeakMap<object, FileNameProjection>,
     directNameInputPaths: readonly ResolvedSecretInputPath[]
   ): Message[] | undefined {
     const normalizedFiles = normalizeFileInput(filesInput)
@@ -1401,10 +1464,13 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     const lastUserMessage = messages[lastUserMessageIndex]
+    const filesByKey = new Map(
+      [...(lastUserMessage.files ?? []), ...userFiles].map((file) => [file.key || file.id, file])
+    )
     const nextMessages = [...messages]
     nextMessages[lastUserMessageIndex] = {
       ...lastUserMessage,
-      files: [...(lastUserMessage.files ?? []), ...userFiles],
+      files: Array.from(filesByKey.values()),
     }
 
     return nextMessages
@@ -1414,7 +1480,7 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     messages: Message[] | undefined,
     providerId: string,
-    projectedNameByFile: WeakMap<object, { name: string; inputPath: ResolvedSecretInputPath }>,
+    projectedNameByFile: WeakMap<object, FileNameProjection>,
     modelBoundInputPaths: ResolvedSecretInputPath[]
   ): Promise<Message[] | undefined> {
     if (!messages?.some((message) => message.files?.length)) {
@@ -1425,7 +1491,6 @@ export class AgentBlockHandler implements BlockHandler {
       throw new Error(`File attachments are not supported for provider "${providerId}"`)
     }
 
-    const requestId = ctx.executionId || ctx.workflowId || 'agent-files'
     const nextMessages = [...messages]
 
     const inlineMaxBytes = getInlineHydrationMaxBytes(providerId)
@@ -1437,36 +1502,46 @@ export class AgentBlockHandler implements BlockHandler {
       }
 
       const unsafeGeneratedDocumentFiles = new Set<string>()
-      const hydratedFiles = await hydrateUserFilesWithBase64(message.files, {
-        requestId,
-        workspaceId: ctx.workspaceId,
-        workflowId: ctx.workflowId,
-        executionId: ctx.executionId,
-        largeValueExecutionIds: ctx.largeValueExecutionIds,
-        largeValueKeys: ctx.largeValueKeys,
-        fileKeys: ctx.fileKeys,
-        allowLargeValueWorkflowScope: ctx.allowLargeValueWorkflowScope,
-        userId: ctx.userId,
-        principal: ctx.principal,
-        logger,
-        maxBytes: inlineMaxBytes,
-        onServableFileContributors: async (file, contributors) => {
-          if (!ctx.workspaceId) return
-          for (const identity of contributors) {
-            const safe = await importWorkspaceFileSecretProvenanceForModelView({
-              workspaceId: ctx.workspaceId,
-              identity,
-              registry: ctx.resolvedSecretTraceRegistry,
-              view: 'opaque',
-              ...(ctx.userId ? { actorUserId: ctx.userId } : {}),
-            })
-            if (!safe) {
-              unsafeGeneratedDocumentFiles.add(`${file.key}:${file.id}`)
-              return
-            }
-          }
-        },
+      const groups = new Map<boolean, Array<{ file: UserFile; index: number }>>()
+      message.files.forEach((file, index) => {
+        const workspaceFile =
+          ctx.principal?.kind === 'system' && tryInferContextFromKey(file.key) === 'workspace'
+        const group = groups.get(workspaceFile) ?? []
+        group.push({ file, index })
+        groups.set(workspaceFile, group)
       })
+      const hydratedFiles = [...message.files]
+      await Promise.all(
+        [...groups.values()].map(async (group) => {
+          const hydrated = await hydrateUserFilesWithBase64(
+            group.map(({ file }) => file),
+            {
+              ...(await resolveExecutorFileMaterializationContext(ctx, group[0].file)),
+              logger,
+              maxBytes: inlineMaxBytes,
+              onServableFileContributors: async (file, contributors) => {
+                if (!ctx.workspaceId) return
+                for (const identity of contributors) {
+                  const safe = await importWorkspaceFileSecretProvenanceForModelView({
+                    workspaceId: ctx.workspaceId,
+                    identity,
+                    registry: ctx.resolvedSecretTraceRegistry,
+                    view: 'opaque',
+                    ...(ctx.userId ? { actorUserId: ctx.userId } : {}),
+                  })
+                  if (!safe) {
+                    unsafeGeneratedDocumentFiles.add(`${file.key}:${file.id}`)
+                    return
+                  }
+                }
+              },
+            }
+          )
+          group.forEach(({ index }, fileIndex) => {
+            hydratedFiles[index] = hydrated[fileIndex]
+          })
+        })
+      )
 
       const modelSafeHydratedFiles = hydratedFiles.flatMap((file, fileIndex) => {
         if (unsafeGeneratedDocumentFiles.has(`${file.key}:${file.id}`)) return []
@@ -1482,7 +1557,7 @@ export class AgentBlockHandler implements BlockHandler {
           return [file]
         }
 
-        modelBoundInputPaths.push(nameProjection.inputPath)
+        if (nameProjection.inputPath) modelBoundInputPaths.push(nameProjection.inputPath)
         const extension = getFileExtension(file.name)
         const suffix = extension ? `.${extension}` : ''
         const keepsSuffix =
@@ -1535,8 +1610,13 @@ export class AgentBlockHandler implements BlockHandler {
         )
       }
 
+      const omittedCount = hydratedFiles.length - modelSafeHydratedFiles.length
       nextMessages[messageIndex] = {
         ...message,
+        content:
+          omittedCount > 0
+            ? appendUnavailableAttachmentNotice(message.content, omittedCount)
+            : message.content,
         files: modelSafeHydratedFiles,
       }
     }
@@ -1654,6 +1734,9 @@ export class AgentBlockHandler implements BlockHandler {
     for (let toolIndex = 0; toolIndex < (inputs.tools?.length ?? 0); toolIndex++) {
       if (inputs.tools?.[toolIndex]?.customToolId) {
         candidatePaths.push(['tools', String(toolIndex), 'customToolId'])
+      }
+      if (inputs.tools?.[toolIndex]?.usageControlExpression) {
+        candidatePaths.push(['tools', String(toolIndex), 'usageControlExpression'])
       }
     }
     for (let skillIndex = 0; skillIndex < (inputs.skills?.length ?? 0); skillIndex++) {
@@ -2008,7 +2091,7 @@ export class AgentBlockHandler implements BlockHandler {
     inputs: AgentInputs
   ): {
     projectedFiles: unknown
-    projectedNameByFile: WeakMap<object, { name: string; inputPath: ResolvedSecretInputPath }>
+    projectedNameByFile: WeakMap<object, FileNameProjection>
     directNameInputPaths: ResolvedSecretInputPath[]
     modelBoundInputPaths: ResolvedSecretInputPath[]
   } {
@@ -2108,10 +2191,7 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    const projectedNameByFile = new WeakMap<
-      object,
-      { name: string; inputPath: ResolvedSecretInputPath }
-    >()
+    const projectedNameByFile = new WeakMap<object, FileNameProjection>()
     const projectedMessages = Array.isArray(projection.value.messages)
       ? projection.value.messages
       : []

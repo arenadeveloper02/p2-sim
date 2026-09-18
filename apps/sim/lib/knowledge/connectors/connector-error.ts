@@ -1,15 +1,28 @@
-import { findCause, getPostgresErrorCode } from '@sim/utils/errors'
-import { DrizzleQueryError } from 'drizzle-orm/errors'
 import {
+  findCause,
+  getPostgresCancellationReason,
+  getPostgresErrorCode,
+  type PostgresCancellationReason,
+} from '@sim/utils/errors'
+import { DrizzleQueryError } from 'drizzle-orm/errors'
+import { getEmbeddingAPIError } from '@/lib/embeddings/api-error'
+import {
+  ConnectorDirectoryError,
   ConnectorSourceError,
   type ConnectorSourceFailureCategory,
+  type ConnectorSourceReasonState,
 } from '@/connectors/source-error'
 
 export interface ConnectorFailureDiagnostic {
-  category: 'database' | ConnectorSourceFailureCategory | 'transport'
+  category: 'directory' | 'database' | 'embedding' | ConnectorSourceFailureCategory | 'transport'
   message: string
   status?: number
   code?: string
+  databaseReason?: PostgresCancellationReason
+  operation?: string
+  reasons?: readonly string[]
+  reasonState?: ConnectorSourceReasonState
+  phase?: 'directory'
 }
 
 const TRANSPORT_CODES = new Set([
@@ -30,7 +43,7 @@ const TRANSPORT_CODES = new Set([
  * SQL, bound parameters, URLs and arbitrary exception messages never enter the
  * result. Unknown failures retain the caller's domain-specific fallback.
  */
-export function getConnectorFailureDiagnostic(error: unknown): ConnectorFailureDiagnostic | null {
+function classifyFailure(error: unknown): ConnectorFailureDiagnostic | null {
   const code = getPostgresErrorCode(error)
   const databaseError = findCause(
     error,
@@ -50,14 +63,29 @@ export function getConnectorFailureDiagnostic(error: unknown): ConnectorFailureD
     }
   }
   if (code && /^(?:[0-9][0-9A-Z]|F0|HV|P0|XX)[0-9A-Z]{3}$/.test(code)) {
+    const databaseReason = getPostgresCancellationReason(error)
     return {
       category: 'database',
       code,
+      ...(databaseReason ? { databaseReason } : {}),
       message: `Database request failed (SQLSTATE ${code}).`,
     }
   }
   if (databaseError) {
     return { category: 'database', message: 'Database request failed without a driver error code.' }
+  }
+  const embeddingError = getEmbeddingAPIError(error)
+  if (
+    embeddingError &&
+    Number.isInteger(embeddingError.status) &&
+    embeddingError.status >= 400 &&
+    embeddingError.status <= 599
+  ) {
+    return {
+      category: 'embedding',
+      status: embeddingError.status,
+      message: `Embedding service request failed (HTTP ${embeddingError.status}).`,
+    }
   }
   const httpError = findCause(
     error,
@@ -104,5 +132,38 @@ export function getConnectorFailureDiagnostic(error: unknown): ConnectorFailureD
     category: 'request_rejected',
     status,
     message: `Source content request was rejected (HTTP ${status}). Check the source's download restrictions and supported content.`,
+  }
+}
+
+/** Preserves safe provider context and directory scope across wrapped failures. */
+export function getConnectorFailureDiagnostic(error: unknown): ConnectorFailureDiagnostic | null {
+  const diagnostic = classifyFailure(error)
+  const directoryError = findCause(
+    error,
+    (value): value is ConnectorDirectoryError => value instanceof ConnectorDirectoryError
+  )
+  const sourceError = findCause(
+    error,
+    (value): value is ConnectorSourceError => value instanceof ConnectorSourceError
+  )
+  const context = sourceError?.diagnostic
+  if (directoryError) {
+    const status = diagnostic?.status ? ` (HTTP ${diagnostic.status})` : ''
+    const code = diagnostic?.code ? ` Error code: ${diagnostic.code}.` : ''
+    const reason = context?.reasons.length ? ` Google reason: ${context.reasons.join(', ')}.` : ''
+    return {
+      ...diagnostic,
+      ...context,
+      category: diagnostic?.category ?? 'directory',
+      phase: 'directory',
+      message: `Directory permission sync failed${status}.${context ? ` Operation: ${context.operation}.` : ''}${reason}${code} Group membership could not be fully verified.`,
+    }
+  }
+  if (!diagnostic || !context) return diagnostic
+  const reason = context.reasons.length ? ` Google reason: ${context.reasons.join(', ')}.` : ''
+  return {
+    ...diagnostic,
+    ...context,
+    message: `Google request failed (HTTP ${diagnostic.status}). Operation: ${context.operation}.${reason}`,
   }
 }

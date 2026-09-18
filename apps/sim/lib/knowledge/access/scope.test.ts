@@ -2,7 +2,13 @@
  * @vitest-environment node
  */
 import type { Principal } from '@sim/auth/principal'
-import { dbChainMockFns, queueTableRows, resetDbChainMock, schemaMock } from '@sim/testing'
+import {
+  dbChainMockFns,
+  hasMockCondition,
+  queueTableRows,
+  resetDbChainMock,
+  schemaMock,
+} from '@sim/testing'
 import { eq, inArray } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,11 +17,19 @@ const {
   mockCheckWorkspaceAccess,
   mockGitHubReadGrants,
   mockConfluenceReadGrants,
+  mockCsvGrants,
+  mockLiveSources,
 } = vi.hoisted(() => ({
+  mockLiveSources: {
+    github: vi.fn(() => ({ type: 'github-sources' })),
+    confluence: vi.fn(() => ({ type: 'confluence-sources' })),
+    knowledgeBases: vi.fn(() => ({ type: 'live-knowledge-bases' })),
+  },
   mockAvailability: vi.fn(async () => ({ memberScoped: true, sourceMirrored: true })),
   mockCheckWorkspaceAccess: vi.fn(async () => ({ hasAccess: true })),
   mockGitHubReadGrants: vi.fn(async () => []),
   mockConfluenceReadGrants: vi.fn(async () => []),
+  mockCsvGrants: vi.fn(async () => [] as string[]),
 }))
 
 vi.mock('@/lib/knowledge/access/availability', () => ({
@@ -30,7 +44,16 @@ vi.mock('@/lib/knowledge/access/confluence-site', () => ({
 vi.mock('@/lib/knowledge/access/github-installation', () => ({
   resolveGitHubInstallationReadGrants: mockGitHubReadGrants,
 }))
+vi.mock('@/lib/knowledge/access/live-sources', () => ({
+  githubInstallationSourceCondition: mockLiveSources.github,
+  confluenceSiteSourceCondition: mockLiveSources.confluence,
+  liveSourceKnowledgeBaseCondition: mockLiveSources.knowledgeBases,
+}))
+vi.mock('@/lib/knowledge/access/connector-permissions', () => ({
+  loadConnectorPermissionGroupTokens: mockCsvGrants,
+}))
 
+import { MAX_EXTERNAL_GROUP_TOKENS } from '@/lib/knowledge/access/group-membership'
 import {
   createKnowledgeAccessProvider,
   createUserKnowledgeAccessProvider,
@@ -258,7 +281,59 @@ describe('createKnowledgeAccessProvider', () => {
     const [first, second] = await Promise.all([provider.get(), provider.get()])
 
     expect(first).toBe(second)
-    expect(dbChainMockFns.select).toHaveBeenCalledTimes(2)
+    expect(dbChainMockFns.select).toHaveBeenCalledTimes(1)
+    expect(dbChainMockFns.selectDistinct).toHaveBeenCalledTimes(1)
+  })
+
+  it('scopes live-source discovery to sources a held reader credential can prove', async () => {
+    queueSubjects([{ providerId: 'slack', providerTenantId: 'T1', providerSubjectId: 'U1' }])
+    await expect(
+      createKnowledgeAccessProvider(SESSION, WORKSPACE).liveSourceConnectorCondition()
+    ).resolves.toBeNull()
+
+    queueSubjects([
+      {
+        providerId: 'confluence',
+        providerTenantId: 'site-1',
+        providerSubjectId: 'account-1',
+        credentialId: 'credential-1',
+      },
+    ])
+    const condition = await createKnowledgeAccessProvider(
+      SESSION,
+      WORKSPACE
+    ).liveSourceConnectorCondition()
+    expect(condition).not.toBeNull()
+    expect(mockLiveSources.confluence).toHaveBeenCalledOnce()
+    expect(mockLiveSources.github).not.toHaveBeenCalled()
+    expect(mockLiveSources.knowledgeBases).toHaveBeenCalledExactlyOnceWith(
+      { kind: 'workspace', workspaceId: 'ws-1' },
+      undefined
+    )
+    expect(
+      hasMockCondition(
+        condition,
+        (node) =>
+          node.type === 'inArray' && node.column === schemaMock.knowledgeConnector.knowledgeBaseId
+      )
+    ).toBe(true)
+  })
+
+  it('has no live sources to discover when the operation is bound to no knowledge bases', async () => {
+    queueSubjects([
+      {
+        providerId: 'github-repositories',
+        providerTenantId: '-',
+        providerSubjectId: 'account-1',
+        credentialId: 'credential-1',
+      },
+    ])
+    await expect(
+      createKnowledgeAccessProvider(SESSION, {
+        ...WORKSPACE,
+        knowledgeBaseIds: [],
+      }).liveSourceConnectorCondition()
+    ).resolves.toBeNull()
   })
 
   it('retries after a failed lookup rather than caching the failure', async () => {
@@ -280,6 +355,34 @@ describe('tokens mirrored from a source directory', () => {
   function queueGroups(rows: Array<Record<string, string | null>>) {
     queueTableRows(schemaMock.knowledgeExternalGroupMember, rows)
   }
+
+  it('fails closed on the direct-group overflow sentinel before discarding malformed tokens', async () => {
+    queueSubjects([
+      { providerId: 'confluence', providerTenantId: null, providerSubjectId: 'reader' },
+    ])
+    queueGroups(
+      Array.from({ length: MAX_EXTERNAL_GROUP_TOKENS + 1 }, () => ({
+        providerId: 'invalid:provider',
+        tenantId: 'cloud',
+        externalGroupId: 'group',
+      }))
+    )
+    await expect(resolveKnowledgeAccessScope(SESSION, WORKSPACE)).rejects.toThrow('token capacity')
+    expect(dbChainMockFns.execute).not.toHaveBeenCalled()
+  })
+
+  it('fails closed on the audience overflow sentinel before merging duplicate tokens', async () => {
+    queueSubjects([
+      { providerId: 'confluence', providerTenantId: null, providerSubjectId: 'reader' },
+    ])
+    queueGroups([{ providerId: 'confluence', tenantId: 'cloud', externalGroupId: 'group' }])
+    dbChainMockFns.execute.mockResolvedValueOnce(
+      Array.from({ length: MAX_EXTERNAL_GROUP_TOKENS + 1 }, () => ({
+        token: 'g:confluence:cloud:group',
+      }))
+    )
+    await expect(resolveKnowledgeAccessScope(SESSION, WORKSPACE)).rejects.toThrow('token capacity')
+  })
 
   it('gives a person their own address and every group it belongs to', async () => {
     queueSubjects([

@@ -2,6 +2,7 @@
 
 import { forwardRef } from 'react'
 import { Chip, ChipLink, cn } from '@sim/emcn'
+import { Lock } from '@sim/emcn/icons'
 import {
   openKnowledgeBasePageEvent,
   openLogsPageEvent,
@@ -14,6 +15,7 @@ export interface SidebarNavItemData {
   icon: React.ComponentType<{ className?: string }>
   href?: string
   onClick?: () => void
+  restricted?: boolean
   /** Extra path prefixes that should also mark this item as active (e.g. sibling tabs). */
   additionalActivePaths?: string[]
 }
@@ -58,6 +60,8 @@ export const SidebarNavChip = forwardRef<HTMLElement, SidebarNavChipProps>(funct
         href={item.href}
         data-item-id={item.id}
         leftIcon={item.icon}
+        rightIcon={item.restricted ? Lock : undefined}
+        aria-label={item.restricted ? `${item.label}: access required` : undefined}
         active={active}
         fullWidth
         className={chipClassName}

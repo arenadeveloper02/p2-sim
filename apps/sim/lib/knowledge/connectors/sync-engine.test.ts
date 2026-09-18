@@ -13,6 +13,7 @@ import {
   schemaMock,
 } from '@sim/testing'
 import { generateShortId } from '@sim/utils/id'
+import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as connectorTokens from '@/lib/knowledge/connectors/access-token'
 import { executeSync, isConnectorRunnableStatus } from '@/lib/knowledge/connectors/sync-engine'
@@ -82,6 +83,12 @@ const { mockGetDocument, mockMapTags, mockListDocuments } = vi.hoisted(() => ({
   mockMapTags: vi.fn(),
   mockListDocuments: vi.fn(),
 }))
+
+const { mockLogError } = vi.hoisted(() => ({ mockLogError: vi.fn() }))
+vi.mock('@sim/logger', async () => {
+  const { createMockLogger } = await import('@sim/testing/mocks/logger.mock')
+  return { createLogger: () => ({ ...createMockLogger(), error: mockLogError }) }
+})
 
 vi.mock('@/lib/billing/core/billing-attribution', () => ({
   assertBillingAttributionOwner: vi.fn(),
@@ -276,7 +283,7 @@ describe('resolveTagMapping', () => {
 describe('classifyExternalDoc', () => {
   const base = { content: 'hello', contentDeferred: false, contentHash: 'h1' }
 
-  it('records a new skipped file as a failed row', async () => {
+  it('records a new skipped file as an intentional exclusion', async () => {
     const { classifyExternalDoc } = await import('@/lib/knowledge/connectors/sync-primitives')
     expect(
       classifyExternalDoc({ ...base, content: '', skippedReason: 'too big' }, undefined)
@@ -2107,6 +2114,25 @@ describe('completeSyncLog', () => {
   })
 })
 
+describe('isContentPassIncomplete', () => {
+  it('is true only when the listing has not finished or a source read failed', async () => {
+    const { isContentPassIncomplete } = await import('@/lib/knowledge/connectors/sync-engine')
+    const checkpoint = { startedAt: '2026-09-04T00:00:00Z', listedCount: 4 }
+    for (const complete of [true, false]) {
+      for (const unsafe of [true, false]) {
+        for (const contentFailures of [true, false, undefined]) {
+          expect(
+            isContentPassIncomplete({
+              complete,
+              checkpoint: { ...checkpoint, unsafe, contentFailures },
+            })
+          ).toBe(!complete || contentFailures === true)
+        }
+      }
+    }
+  })
+})
+
 describe('completeSuccessfulSync', () => {
   const RESULT = {
     docsAdded: 1,
@@ -2122,6 +2148,78 @@ describe('completeSuccessfulSync', () => {
     vi.clearAllMocks()
     resetDbChainMock()
   })
+
+  it.each([false, true])(
+    'preserves directory and listing notices without blocking healthy content watermarks: listing failure %s',
+    async (hasListingFailure) => {
+      const { completeSuccessfulSync } = await import('@/lib/knowledge/connectors/sync-engine')
+      queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb-1' }])
+      queueTableRows(schemaMock.knowledgeConnector, [{ id: 'c-1' }])
+      queueTableRows(schemaMock.document, [{ count: 4 }])
+      dbChainMockFns.returning
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 'log-1' }])
+        .mockResolvedValueOnce([{ id: 'c-1' }])
+      const directoryNotice =
+        'Directory refresh incomplete: 1 group membership could not be verified.'
+      const contentNotice = 'Unlisted documents were kept.'
+
+      await expect(
+        completeSuccessfulSync(
+          'c-1',
+          'kb-1',
+          'log-1',
+          60,
+          { ...RESULT, docsFailed: 0 },
+          contentNotice,
+          {
+            complete: true,
+            checkpoint: {
+              unsafe: hasListingFailure,
+              startedAt: '2026-09-04T00:00:00Z',
+              listedCount: 4,
+              listingFailures: hasListingFailure
+                ? {
+                    count: 1,
+                    samples: [
+                      {
+                        scope: 'unavailable@example.com',
+                        operation: 'gmail.threads.list',
+                        status: 400,
+                        reasons: ['failedPrecondition'],
+                      },
+                    ],
+                  }
+                : null,
+            },
+          },
+          directoryNotice
+        )
+      ).resolves.toBe(true)
+
+      const logUpdate = dbChainMockFns.set.mock.calls.find(
+        ([value]) => value.status === 'partial'
+      )?.[0]
+      const connectorUpdate = dbChainMockFns.set.mock.calls.find(
+        ([value]) => value.status === 'active'
+      )?.[0]
+      expect(logUpdate.errorMessage).toContain(directoryNotice)
+      expect(logUpdate.errorMessage).toContain(contentNotice)
+      expect(connectorUpdate.lastSyncError).toBe(logUpdate.errorMessage)
+      expect(connectorUpdate.listingCheckpoint).toBeNull()
+      expect(connectorUpdate.consecutiveFailures).toBe(0)
+      expect(connectorUpdate.nextSyncAt.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000)
+      if (hasListingFailure) {
+        expect(connectorUpdate).not.toHaveProperty('lastSyncAt')
+        expect(logUpdate.errorMessage).toContain(
+          'unavailable@example.com (gmail.threads.list, HTTP 400, failedPrecondition)'
+        )
+        expect(logUpdate.errorMessage).toContain('next scheduled sync')
+      } else {
+        expect(connectorUpdate.lastSyncAt).toEqual(new Date('2026-09-04T00:00:00Z'))
+      }
+    }
+  )
 
   it('commits the completed log and connector state in one guarded transaction', async () => {
     const { completeSuccessfulSync } = await import('@/lib/knowledge/connectors/sync-engine')
@@ -2163,7 +2261,56 @@ describe('completeSuccessfulSync', () => {
     expect(dbChainMockFns.set).not.toHaveBeenCalled()
   })
 
-  it('retains an earlier worker content failure when the final page has no errors', async () => {
+  it.each(['contentFailures', 'permissionFailures'] as const)(
+    'retains an earlier worker %s when the final page has no errors',
+    async (failure) => {
+      const { completeSuccessfulSync } = await import('@/lib/knowledge/connectors/sync-engine')
+      queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb-1' }])
+      queueTableRows(schemaMock.knowledgeConnector, [{ id: 'c-1' }])
+      queueTableRows(schemaMock.document, [{ count: 4 }])
+      dbChainMockFns.returning
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 'log-1' }])
+        .mockResolvedValueOnce([{ id: 'c-1' }])
+
+      expect(
+        await completeSuccessfulSync(
+          'c-1',
+          'kb-1',
+          'log-1',
+          60,
+          { ...RESULT, docsFailed: 0 },
+          'retry',
+          {
+            complete: true,
+            checkpoint: {
+              unsafe: false,
+              [failure]: true,
+              startedAt: '2026-09-04T00:00:00Z',
+              listedCount: 4,
+            },
+          }
+        )
+      ).toBe(true)
+      expect(dbChainMockFns.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'partial', docsFailed: 0, listedCount: 4 })
+      )
+      const connectorUpdate = dbChainMockFns.set.mock.calls.find(
+        (call) => (call[0] as Record<string, unknown> | undefined)?.status === 'active'
+      )?.[0] as Record<string, unknown>
+      expect(connectorUpdate).not.toHaveProperty('lastSyncAt')
+      expect(connectorUpdate.lastSyncError).toBe('retry')
+      expect(dbChainMockFns.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'partial', errorMessage: 'retry' })
+      )
+      expect(connectorUpdate.listingCheckpoint).toBeNull()
+      expect((connectorUpdate.nextSyncAt as Date).getTime()).toBeGreaterThan(
+        Date.now() + 50 * 60_000
+      )
+    }
+  )
+
+  it('records a held listing as a completed sync whose watermark advances', async () => {
     const { completeSuccessfulSync } = await import('@/lib/knowledge/connectors/sync-engine')
     queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb-1' }])
     queueTableRows(schemaMock.knowledgeConnector, [{ id: 'c-1' }])
@@ -2172,6 +2319,7 @@ describe('completeSuccessfulSync', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'log-1' }])
       .mockResolvedValueOnce([{ id: 'c-1' }])
+    const holdNotice = 'Source listing is incomplete; unlisted documents were kept.'
 
     expect(
       await completeSuccessfulSync(
@@ -2180,12 +2328,12 @@ describe('completeSuccessfulSync', () => {
         'log-1',
         60,
         { ...RESULT, docsFailed: 0 },
-        'retry',
+        holdNotice,
         {
           complete: true,
           checkpoint: {
-            unsafe: false,
-            contentFailures: true,
+            unsafe: true,
+            contentFailures: false,
             startedAt: '2026-09-04T00:00:00Z',
             listedCount: 4,
           },
@@ -2193,12 +2341,13 @@ describe('completeSuccessfulSync', () => {
       )
     ).toBe(true)
     expect(dbChainMockFns.set).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'partial', docsFailed: 0, listedCount: 4 })
+      expect.objectContaining({ status: 'completed', docsFailed: 0, listedCount: 4 })
     )
     const connectorUpdate = dbChainMockFns.set.mock.calls.find(
       (call) => (call[0] as Record<string, unknown> | undefined)?.status === 'active'
     )?.[0] as Record<string, unknown>
-    expect(connectorUpdate).not.toHaveProperty('lastSyncAt')
+    expect(connectorUpdate.lastSyncAt).toEqual(new Date('2026-09-04T00:00:00Z'))
+    expect(connectorUpdate.lastSyncError).toBe(holdNotice)
     expect(connectorUpdate.listingCheckpoint).toBeNull()
     expect((connectorUpdate.nextSyncAt as Date).getTime()).toBeGreaterThan(Date.now() + 50 * 60_000)
   })
@@ -2222,6 +2371,64 @@ describe('completeSuccessfulSync', () => {
       expect.objectContaining({ status: 'active' })
     )
   })
+
+  it.each([
+    { complete: true, holdNotice: null },
+    { complete: false, holdNotice: null },
+    { complete: false, holdNotice: 'Permissions could not be verified' },
+  ])(
+    'retains dispatch failures without changing listing recovery: %j',
+    async ({ complete, holdNotice }) => {
+      const { completeSuccessfulSync } = await import('@/lib/knowledge/connectors/sync-engine')
+      queueTableRows(schemaMock.knowledgeBase, [{ id: 'kb-1' }])
+      queueTableRows(schemaMock.knowledgeConnector, [{ id: 'c-1' }])
+      queueTableRows(schemaMock.document, [{ count: 4 }])
+      dbChainMockFns.returning
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 'log-1' }])
+        .mockResolvedValueOnce([{ id: 'c-1' }])
+
+      await expect(
+        completeSuccessfulSync(
+          'c-1',
+          'kb-1',
+          'log-1',
+          60,
+          {
+            ...RESULT,
+            docsFailed: 0,
+            processingDispatch: { requested: 1, accepted: 0, failed: 1 },
+          },
+          holdNotice,
+          {
+            complete,
+            checkpoint: { unsafe: false, startedAt: '2026-09-04T00:00:00Z', listedCount: 4 },
+          }
+        )
+      ).resolves.toBe(true)
+
+      const notice =
+        holdNotice ??
+        'Some documents could not be queued for indexing. They will be retried automatically.'
+      expect(dbChainMockFns.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'partial',
+          errorMessage: notice,
+          listedCount: complete ? 4 : null,
+        })
+      )
+      const update = dbChainMockFns.set.mock.calls.find(([value]) => value.status === 'active')?.[0]
+      expect(update).toMatchObject({
+        lastSyncError: notice,
+        consecutiveFailures: 0,
+        syncLockToken: null,
+      })
+      if (complete) expect(update.lastSyncAt).toEqual(new Date('2026-09-04T00:00:00Z'))
+      else expect(update).not.toHaveProperty('lastSyncAt')
+      if (complete) expect(update.nextSyncAt.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000)
+      else expect(update.nextSyncAt.getTime()).toBeLessThanOrEqual(Date.now())
+    }
+  )
 })
 
 describe('stillHoldsSyncLock', () => {
@@ -2641,6 +2848,46 @@ describe('executeSync heartbeats during the listing phase', () => {
   }
 
   it.each(['workspace', 'admin'] as const)(
+    'diagnoses a %s tombstone query failure without continuing the crawl',
+    async (accessMode) => {
+      primeSyncUpToListing()
+      dbChainMockFns.returning.mockReset()
+      dbChainMockFns.returning.mockResolvedValueOnce([{ ...CONNECTOR, accessMode }])
+      const error = new DrizzleQueryError(
+        'select private SQL',
+        ['private bound content'],
+        Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' })
+      )
+      dbChainMockFns.limit
+        .mockResolvedValueOnce([CONNECTOR])
+        .mockResolvedValueOnce([{ userId: 'u-1', workspaceId: 'ws-1' }])
+        .mockRejectedValueOnce(error)
+
+      const result = await executeSync('c-1', {
+        billingAttribution: { workspaceId: 'ws-1' } as never,
+      })
+
+      expect(result.error).toBe('Database request failed (SQLSTATE 57014).')
+      expect(mockLogError).toHaveBeenCalledWith('Connector tombstone check failed', {
+        connectorId: 'c-1',
+        operation: 'document.tombstone-check',
+        elapsedMs: expect.any(Number),
+        diagnostic: {
+          category: 'database',
+          code: '57014',
+          databaseReason: 'statement_timeout',
+          message: 'Database request failed (SQLSTATE 57014).',
+        },
+      })
+      expect(mockListDocuments).not.toHaveBeenCalled()
+      expect(JSON.stringify(mockLogError.mock.calls)).not.toContain('private')
+      expect(dbChainMockFns.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'error', consecutiveFailures: 1 })
+      )
+    }
+  )
+
+  it.each(['workspace', 'admin'] as const)(
     'uses the locked source mode %s when resolving its token',
     async (accessMode) => {
       primeSyncUpToListing()
@@ -2654,6 +2901,45 @@ describe('executeSync heartbeats during the listing phase', () => {
         expect(resolveToken).toHaveBeenCalledWith(expect.objectContaining({ accessMode }))
       } finally {
         resolveToken.mockRestore()
+      }
+    }
+  )
+
+  it.each([
+    { acl: undefined, incomplete: true },
+    { acl: ['invalid-token'], incomplete: true },
+    { acl: [], incomplete: false },
+    { acl: ['u:reader@example.com'], incomplete: false },
+  ])(
+    'reports rejected mirrored permissions without rejecting valid grants: %j',
+    async ({ acl, incomplete }) => {
+      const contentPass = await import('@/lib/knowledge/connectors/sync-content-pass')
+      primeSyncUpToListing()
+      dbChainMockFns.returning.mockReset()
+      dbChainMockFns.returning.mockResolvedValueOnce([{ ...CONNECTOR, accessMode: 'admin' }])
+      let permissionResult: { permissionsIncomplete: boolean } | undefined
+      const pass = vi
+        .spyOn(contentPass, 'runConnectorContentPass')
+        .mockImplementation(async (input) => {
+          permissionResult = await input.onPage?.(
+            [{ externalId: 'page-1', title: 'Page', content: 'Body', mimeType: 'text/plain', acl }],
+            new Date()
+          )
+          throw new Error('Stopped after permission persistence')
+        })
+      try {
+        const result = await executeSync('c-1', {
+          billingAttribution: { workspaceId: 'ws-1' } as never,
+        })
+        expect(result.error).toBe('Stopped after permission persistence')
+        expect(permissionResult).toEqual({ permissionsIncomplete: incomplete })
+        expect(dbChainMockFns.set).toHaveBeenCalledWith(
+          expect.objectContaining({
+            acl: incomplete ? [] : acl,
+          })
+        )
+      } finally {
+        pass.mockRestore()
       }
     }
   )
@@ -3183,7 +3469,7 @@ describe('executeSync terminal exits under a lost lock', () => {
     expect(dbChainMockFns.set).not.toHaveBeenCalledWith(
       expect.objectContaining({ status: 'active', consecutiveFailures: 0 })
     )
-    expect(dbChainMockFns.for).toHaveBeenCalledWith('update')
+    expect(dbChainMockFns.for).toHaveBeenCalledWith('share')
   })
 
   it.each(['checkpoint', 'batch'] as const)(

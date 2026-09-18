@@ -22,8 +22,9 @@ import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'
-import { signOut, useSession } from '@/lib/auth/auth-client'
+import { useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
+import { signOutAndRedirect } from '@/lib/auth/sign-out'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { getBrowserTimezone } from '@/lib/core/utils/timezone'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -48,7 +49,6 @@ import {
   useUpdateUserProfile,
   useUserProfile,
 } from '@/hooks/queries/user-profile'
-import { clearUserData } from '@/stores'
 
 const AuthorizedApps = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/authorized-apps/authorized-apps').then(
@@ -194,21 +194,6 @@ export function General() {
     handleUpdateName()
   }
 
-  const handleSignOut = async () => {
-    const logoutUrl = '/login?fromLogout=true'
-    let canNavigateInApp = false
-
-    try {
-      const [, inMemoryResetSucceeded] = await Promise.all([signOut(), clearUserData()])
-      canNavigateInApp = inMemoryResetSucceeded
-    } catch (error) {
-      logger.error('Error signing out:', { error })
-    }
-
-    if (canNavigateInApp) router.push(logoutUrl)
-    else window.location.assign(logoutUrl)
-  }
-
   const handleResetPasswordConfirm = async () => {
     if (!profile?.email) return
 
@@ -317,7 +302,7 @@ export function General() {
       : []),
     ...(session?.user?.id && !isAuthDisabled
       ? [
-          { id: 'sign-out', text: 'Sign out', onSelect: handleSignOut },
+          { id: 'sign-out', text: 'Sign out', onSelect: () => signOutAndRedirect(router.push) },
           {
             id: 'reset-password',
             text: 'Reset password',

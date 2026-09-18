@@ -56,6 +56,7 @@ const PAYLOAD = {
   documentId: 'document-1',
   processingOptions: { recipe: 'default', lang: 'en' },
   billingAttribution: BILLING_ATTRIBUTION,
+  processingLane: 'interactive',
 }
 
 function createContext(eventId = 'outbox-event-1'): OutboxEventContext {
@@ -120,7 +121,7 @@ describe('knowledge document processing outbox handler', () => {
     const context = { ...createContext(), deadlineAt: Date.now() + 550_000 }
     await handler()(PAYLOAD, context)
     expect(handler().timeoutMs).toBe(550_000)
-    expect(mocks.processDocumentsWithQueue.mock.calls[0][6]).toEqual({
+    expect(mocks.processDocumentsWithQueue.mock.calls[0][7]).toEqual({
       signal: context.signal,
       deadlineAt: context.deadlineAt,
     })
@@ -148,21 +149,23 @@ describe('knowledge document processing outbox handler', () => {
       { recipe: 'default', lang: 'en' },
       'outbox-event-stable',
       BILLING_ATTRIBUTION,
+      'interactive',
       undefined,
       { signal: expect.any(AbortSignal), deadlineAt: undefined }
     )
   })
 
-  it.each([null, { ...DOCUMENT, processingStatus: 'completed' }])(
-    'completes without redispatch when the document is absent or completed',
-    async (document) => {
-      mocks.getKnowledgeDocument.mockResolvedValueOnce(document)
+  it.each([
+    null,
+    { ...DOCUMENT, processingStatus: 'completed' },
+    { ...DOCUMENT, processingStatus: 'failed', processingOutcome: 'skipped' },
+  ])('completes without redispatch when the document is absent or terminal', async (document) => {
+    mocks.getKnowledgeDocument.mockResolvedValueOnce(document)
 
-      await handler()(PAYLOAD, createContext())
+    await handler()(PAYLOAD, createContext())
 
-      expect(mocks.processDocumentsWithQueue).not.toHaveBeenCalled()
-    }
-  )
+    expect(mocks.processDocumentsWithQueue).not.toHaveBeenCalled()
+  })
 
   it('keeps the event retryable while an earlier processing attempt is active', async () => {
     const processingStartedAt = new Date()
@@ -214,6 +217,7 @@ describe('knowledge document processing outbox handler', () => {
       { recipe: 'default', lang: 'en' },
       'outbox-event-retry',
       BILLING_ATTRIBUTION,
+      'interactive',
       undefined,
       { signal: expect.any(AbortSignal), deadlineAt: undefined }
     )

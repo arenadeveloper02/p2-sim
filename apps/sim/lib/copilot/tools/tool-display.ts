@@ -4,16 +4,22 @@ import { stripVersionSuffix, truncate } from '@sim/utils/string'
 /**
  * Single source of truth for copilot tool-call display titles.
  *
- * The mothership (Go) no longer emits any presentation metadata on the stream —
- * tool-call titles are derived entirely here, keyed by tool name (plus arguments
- * for the dynamic cases). The live client render layer (see
+ * Model-authored invocation descriptions take precedence when available. Fallback
+ * titles are derived here from the tool name and arguments. The live client render layer (see
  * `home/hooks/stream/stream-helpers.ts`) wraps this with workspace/block-name
  * enrichment for the run_* tools; every other surface (server persistence,
  * transcript replay, fallback rendering) calls `getToolDisplayTitle` directly.
  *
  * Icons are likewise client-owned — see `getAgentIcon` in the message-content
- * utils. Nothing about tool presentation lives on the Go side anymore.
+ * utils. Tool status, icons, and fallback wording remain deterministic.
  */
+
+/** Normalizes optional model-authored activity text using the producer's Unicode bound. */
+export function normalizeToolActivityDescription(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const description = value.replace(/[\p{White_Space}\uFEFF]+/gu, ' ').trim()
+  return description && Array.from(description).length <= 160 ? description : undefined
+}
 
 type ToolArgs = Record<string, unknown> | undefined
 
@@ -565,7 +571,6 @@ const TOOL_TITLES: Record<string, string> = {
   edit_workflow: 'Editing workflow',
   manage_knowledge_base: 'Managing knowledge base',
   search_knowledge_base: 'Searching knowledge base',
-  list_integrations: 'Checking your integrations',
   search_workspace: 'Searching documents',
   read_document: 'Reading document',
   open_resource: 'Opening resource',
@@ -1409,11 +1414,8 @@ const COMPLETED_VERB_REWRITES: Record<string, string> = {
 /**
  * Rewrite a resolved display title to its past-tense form for a successfully
  * completed tool call (e.g. "Querying logs for X" -> "Queried logs for X").
- * Operates on the already-resolved title so enriched and persisted titles both
- * work. Returns undefined when the title has no leading gerund rewrite — the
- * caller keeps the original. Integration gateway descriptions are base-form
- * verb phrases ("Read recent emails") whose first word never matches a gerund
- * key, so they intentionally pass through unchanged.
+ * Returns undefined when no leading gerund rewrite is known; status formatting
+ * handles the fallback for model-authored and legacy titles.
  */
 export function getToolCompletedTitle(title: string): string | undefined {
   const spaceIndex = title.indexOf(' ')
@@ -1423,16 +1425,7 @@ export function getToolCompletedTitle(title: string): string | undefined {
   return past + title.slice(firstWord.length)
 }
 
-/**
- * Titles that already say the work is over.
- *
- * Two layers project a terminal tense: the client tool store phrases its own
- * error and skip labels ("Attempted to read X", "Skipped reading X"), and this
- * module projects again at the render boundary. Re-projecting an
- * already-projected title stacked prefixes — "Failed: Failed: Attempted to read
- * metadata for thread_tracking" — and even a single pass over a store label
- * reads as doubly hedged. Whichever layer spoke first wins.
- */
+/** Recognize terminal wording already supplied by the tool store or persisted history. */
 const TERMINAL_TITLE_PREFIXES = new Set(['Failed', 'Attempted', 'Skipped', 'Stopped'])
 
 function firstWordOf(title: string): string {
@@ -1445,47 +1438,68 @@ function statesTerminalOutcome(title: string): boolean {
   return TERMINAL_TITLE_PREFIXES.has(firstWordOf(title).replace(/:$/, ''))
 }
 
-/**
- * Rewrite a resolved display title for a FAILED tool call. A gerund title
- * becomes "Failed <gerund>…" ("Searching for X" → "Failed searching for X");
- * anything else gets a "Failed: " prefix. Without this, an errored row kept
- * its present-tense activity title verbatim and read as still running.
- */
-export function getToolFailedTitle(title: string): string {
-  if (statesTerminalOutcome(title)) return title
+/** Apply one terminal outcome prefix while preserving already-resolved titles. */
+function getToolOutcomeTitle(
+  title: string,
+  outcome: 'Stopped' | 'Skipped',
+  preserveExistingOutcome: boolean
+): string {
+  if (preserveExistingOutcome && statesTerminalOutcome(title)) return title
   const firstWord = firstWordOf(title)
-  if (COMPLETED_VERB_REWRITES[firstWord]) {
-    return `Failed ${firstWord.charAt(0).toLowerCase()}${firstWord.slice(1)}${title.slice(firstWord.length)}`
+  const statedOutcome = firstWord.replace(/:$/, '')
+  if (
+    !preserveExistingOutcome &&
+    (TERMINAL_TITLE_PREFIXES.has(statedOutcome) || statedOutcome === 'Completed')
+  ) {
+    return outcome + title.slice(statedOutcome.length)
   }
-  return `Failed: ${title}`
+  if (COMPLETED_VERB_REWRITES[firstWord]) {
+    return `${outcome} ${firstWord.charAt(0).toLowerCase()}${firstWord.slice(1)}${title.slice(firstWord.length)}`
+  }
+  return `${outcome}: ${title}`
 }
 
-/** Rewrite a resolved display title for a CANCELLED tool call ("Stopped <gerund>…"). */
-export function getToolStoppedTitle(title: string): string {
-  if (statesTerminalOutcome(title)) return title
-  const firstWord = firstWordOf(title)
-  if (COMPLETED_VERB_REWRITES[firstWord]) {
-    return `Stopped ${firstWord.charAt(0).toLowerCase()}${firstWord.slice(1)}${title.slice(firstWord.length)}`
+/** Error rows describe the action without failure badges or claims of completion. */
+function getNeutralToolActionTitle(title: string): string {
+  let action = title
+  while (action) {
+    const firstWord = firstWordOf(action)
+    const prefix = firstWord.replace(/:$/, '').toLowerCase()
+    if (!['failed', 'stopped', 'skipped', 'completed'].includes(prefix)) break
+    action = action.slice(firstWord.length).trimStart()
   }
-  return `Stopped: ${title}`
+  if (!action) return 'Tool activity'
+  if (action === title) return title
+  const firstWord = firstWordOf(action)
+  const gerund = firstWord.charAt(0).toUpperCase() + firstWord.slice(1)
+  return COMPLETED_VERB_REWRITES[gerund] ? gerund + action.slice(firstWord.length) : action
 }
 
 /**
- * Resolve the final title for a tool status at a rendering boundary. Persisted
- * and live snapshots intentionally keep the present-tense activity title so a
- * RUNNING row remains truthful; terminal states project a tense that says the
- * work is over — completed (past tense), failed, or stopped.
+ * Resolve a tool title at the rendering boundary. Successful calls use a known
+ * past-tense rewrite when available and otherwise preserve the wording.
+ * Unsuccessful calls keep a neutral action; stopped and skipped calls retain their labels.
  */
 export function getToolStatusDisplayTitle(
   title: string,
   status: string,
-  toolName?: string
+  toolName?: string,
+  activityDescription?: string
 ): string {
+  const description = normalizeToolActivityDescription(activityDescription)
+  title = description ?? title
   if (status === 'success' && toolName === 'browser_request_takeover') {
     return 'Resumed browser control'
   }
-  if (status === 'success') return getToolCompletedTitle(title) ?? title
-  if (status === 'error' || status === 'rejected') return getToolFailedTitle(title)
-  if (status === 'cancelled' || status === 'aborted') return getToolStoppedTitle(title)
+  if (status === 'success') {
+    return getToolCompletedTitle(title) ?? title
+  }
+  if (status === 'error' || status === 'rejected') {
+    return getNeutralToolActionTitle(title)
+  }
+  if (status === 'cancelled' || status === 'aborted' || status === 'interrupted') {
+    return getToolOutcomeTitle(title, 'Stopped', !description)
+  }
+  if (status === 'skipped') return getToolOutcomeTitle(title, 'Skipped', !description)
   return title
 }
