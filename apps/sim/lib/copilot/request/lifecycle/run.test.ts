@@ -15,6 +15,7 @@ const {
   mockForceFailHungToolCall,
   mockGetMothershipBaseURL,
   mockGetMothershipSourceEnvHeaders,
+  mockLoadCopilotSearchIntegrations,
   mockPrepareCopilotEnvironmentContext,
   mockPrepareExecutionContext,
   mockRunStreamLoop,
@@ -29,6 +30,7 @@ const {
   mockForceFailHungToolCall: vi.fn(),
   mockGetMothershipBaseURL: vi.fn(),
   mockGetMothershipSourceEnvHeaders: vi.fn(),
+  mockLoadCopilotSearchIntegrations: vi.fn(),
   mockPrepareCopilotEnvironmentContext: vi.fn(),
   mockPrepareExecutionContext: vi.fn(),
   mockRunStreamLoop: vi.fn(),
@@ -41,6 +43,10 @@ const {
     COPILOT_API_KEY: undefined as string | undefined,
     MSHIP_SYSPROMPT_OVERRIDE: undefined as string | undefined,
   },
+}))
+
+vi.mock('@/lib/copilot/application/load-search-integrations', () => ({
+  loadCopilotSearchIntegrations: mockLoadCopilotSearchIntegrations,
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () => ({
@@ -172,9 +178,82 @@ describe('runCopilotLifecycle', () => {
     mockPendingToolWaitBudgetMs.mockImplementation(() => 60_000)
     mockGetMothershipBaseURL.mockResolvedValue('http://mothership.test')
     mockGetMothershipSourceEnvHeaders.mockReturnValue({})
+    mockLoadCopilotSearchIntegrations.mockResolvedValue('{"connections":[],"available":[]}')
     mockPrepareCopilotEnvironmentContext.mockResolvedValue({
       resolvedSecretTraceRegistry: new ResolvedSecretTraceRegistry(),
     })
+  })
+
+  it.each([
+    { surface: 'web Search', goRoute: '/api/mothership', interactive: true },
+    { surface: 'Slack Search', goRoute: '/api/mothership', interactive: false },
+    { surface: 'MCP Search', goRoute: '/api/mothership/execute', interactive: false },
+  ])('injects fresh trusted inventory for each $surface turn', async ({ goRoute, interactive }) => {
+    mockRunStreamLoop.mockResolvedValue(undefined)
+    const signal = new AbortController().signal
+    const payload = {
+      mode: 'assistant',
+      message: 'Is my email connected?',
+      messageId: 'message-1',
+      userId: 'untrusted-person',
+      organizationId: 'org-1',
+      workspaceContext: 'stale or untrusted inventory',
+    }
+    for (const status of ['not_connected', 'connected']) {
+      const inventory = JSON.stringify({
+        connections: [{ connectionStatus: status }],
+        available: [],
+      })
+      mockLoadCopilotSearchIntegrations.mockResolvedValueOnce(inventory)
+      const result = await runCopilotLifecycle(payload, {
+        userId: 'person-1',
+        organizationId: 'org-1',
+        chatId: 'private-chat-1',
+        executionId: 'execution-1',
+        runId: 'run-1',
+        goRoute,
+        interactive,
+        abortSignal: signal,
+      })
+      expect(result.error).toBeUndefined()
+      const body = JSON.parse(String(mockRunStreamLoop.mock.lastCall?.[1].body))
+      expect(body.workspaceContext).toBe(inventory)
+      expect(mockLoadCopilotSearchIntegrations).toHaveBeenLastCalledWith({
+        userId: 'person-1',
+        organizationId: 'org-1',
+        chatId: 'private-chat-1',
+        messageId: 'message-1',
+        signal,
+      })
+    }
+    expect(mockLoadCopilotSearchIntegrations).toHaveBeenCalledTimes(2)
+    expect(mockRunStreamLoop).toHaveBeenCalledTimes(2)
+    expect(payload.workspaceContext).toBe('stale or untrusted inventory')
+  })
+
+  it('does not call Copilot if the Search inventory cannot be loaded', async () => {
+    mockLoadCopilotSearchIntegrations.mockRejectedValueOnce(new Error('Inventory unavailable'))
+    const result = await runCopilotLifecycle(
+      { mode: 'assistant', message: 'Find my email', messageId: 'message-1' },
+      {
+        userId: 'person-1',
+        organizationId: 'org-1',
+        chatId: 'private-chat-1',
+      }
+    )
+    expect(result).toMatchObject({ success: false, error: 'Inventory unavailable' })
+    expect(mockRunStreamLoop).not.toHaveBeenCalled()
+  })
+
+  it('keeps workspace Assistant context without loading Search integrations', async () => {
+    mockRunStreamLoop.mockResolvedValueOnce(undefined)
+    await runCopilotLifecycle(
+      { mode: 'assistant', message: 'hello', workspaceContext: 'Workspace inventory' },
+      { userId: 'person-1', workspaceId: 'ws-1', chatId: 'chat-1' }
+    )
+    expect(mockLoadCopilotSearchIntegrations).not.toHaveBeenCalled()
+    const body = JSON.parse(String(mockRunStreamLoop.mock.calls[0][1].body))
+    expect(body.workspaceContext).toBe('Workspace inventory')
   })
 
   it('threads trace provenance through server execution context only', async () => {
@@ -280,6 +359,35 @@ describe('runCopilotLifecycle', () => {
       )
 
       expect(capturedExecutionContext?.copilotInteractionMode).toBe(expected)
+    }
+  )
+
+  it.each([
+    { surface: undefined, expected: 'copilot' },
+    { surface: 'slack' as const, expected: 'slack' },
+  ])(
+    'stamps trusted Search provenance as $expected over payload and context',
+    async ({ surface, expected }) => {
+      let captured: ExecutionContext | undefined
+      mockRunStreamLoop.mockImplementationOnce(async (_url, _request, _state, context) => {
+        captured = context
+      })
+      const supplied = expected === 'slack' ? 'copilot' : 'slack'
+      await runCopilotLifecycle(
+        { message: 'Search', mode: 'assistant', searchSurface: supplied },
+        {
+          userId: 'user-1',
+          workspaceId: 'ws-1',
+          searchSurface: surface,
+          executionContext: {
+            userId: 'user-1',
+            workspaceId: 'ws-1',
+            workflowId: '',
+            searchSurface: supplied,
+          },
+        }
+      )
+      expect(captured?.searchSurface).toBe(expected)
     }
   )
 
@@ -557,31 +665,110 @@ describe('runCopilotLifecycle', () => {
     expect(sent.fileAttachments).toEqual([{ name: 'TOKEN.txt', key: 'safe-key' }])
   })
 
-  it('omits only unsafe durable attachments before the initial Go request', async () => {
-    const unsafe = { id: 'wf-unsafe', name: 'unsafe.txt', key: 'workspace/ws-1/unsafe.txt' }
-    const safe = { id: 'wf-safe', name: 'safe.txt', key: 'workspace/ws-1/safe.txt' }
-    mockFilterModelSafeWorkspaceFileAttachments.mockResolvedValueOnce([safe])
-    let capturedRequestBody = ''
-    mockRunStreamLoop.mockImplementationOnce(async (_url: string, request: RequestInit) => {
-      capturedRequestBody = String(request.body)
-    })
-
-    await runCopilotLifecycle(
-      {
+  it.each([
+    { key: 'attachments', includeSafeFile: false },
+    { key: 'attachments', includeSafeFile: true },
+    { key: 'fileAttachments', includeSafeFile: false },
+    { key: 'fileAttachments', includeSafeFile: true },
+  ])(
+    'continues with an error notice for refused $key (mixed=$includeSafeFile)',
+    async ({ key, includeSafeFile }) => {
+      const unsafe = {
+        id: 'wf-private',
+        name: 'private-filename.txt',
+        key: 'private-storage-key',
+        base64: 'private-bytes',
+      }
+      const safe = { id: 'wf-safe', name: 'safe.txt', key: 'workspace/ws-1/safe.txt' }
+      const safeFiles = includeSafeFile ? [safe] : []
+      mockFilterModelSafeWorkspaceFileAttachments.mockResolvedValueOnce(safeFiles)
+      const onError = vi.fn()
+      mockRunStreamLoop.mockImplementationOnce(async (_url, _request, context) => {
+        context.accumulatedContent = 'I can continue with the available inputs.'
+        context.completionStatus = MothershipStreamV1CompletionStatus.complete
+      })
+      const payload = {
         message: 'Review files',
-        fileAttachments: [unsafe, safe],
+        [key]: [...safeFiles, unsafe],
         workspaceId: 'ws-1',
         messageId: 'stream-file-provenance',
-      },
-      {
+      }
+      const originalPayload = structuredClone(payload)
+
+      const result = await runCopilotLifecycle(payload, {
         userId: 'user-1',
         workspaceId: 'ws-1',
         executionContext: { userId: 'user-1', workflowId: '', workspaceId: 'ws-1' },
-      }
-    )
+        onError,
+      })
 
-    expect(JSON.parse(capturedRequestBody).fileAttachments).toEqual([safe])
-  })
+      expect(result).toMatchObject({
+        success: true,
+        content: 'I can continue with the available inputs.',
+      })
+      expect(onError).not.toHaveBeenCalled()
+      expect(mockRunStreamLoop).toHaveBeenCalledOnce()
+      const sent = JSON.parse(String(mockRunStreamLoop.mock.calls[0][1].body))
+      expect(sent.message).toMatch(
+        /^Review files\n\nAttachment error: 1 requested file attachment was not provided/
+      )
+      expect(sent[key] ?? []).toEqual(safeFiles)
+      expect(JSON.stringify(sent)).not.toContain('private-')
+      expect(mockFilterModelSafeWorkspaceFileAttachments).toHaveBeenCalledWith(
+        [...safeFiles, unsafe],
+        { workspaceId: 'ws-1' }
+      )
+      expect(payload).toEqual(originalPayload)
+    }
+  )
+
+  it.each(['messages', 'both', 'attachment-only', 'system-only'])(
+    'reports combined attachment refusals in %s payloads without changing history',
+    async (shape) => {
+      const history = {
+        role: 'assistant',
+        content: 'Previous response',
+        tool_calls: [{ id: 'existing-call' }],
+      }
+      const messages =
+        shape === 'system-only'
+          ? [{ role: 'system', content: 'System context' }]
+          : [history, { role: 'user', content: 'Review files' }]
+      const payload = {
+        ...(shape === 'both' ? { message: 'Review files' } : {}),
+        ...(shape === 'attachment-only' ? {} : { messages }),
+        attachments: [{ key: 'private-first-file' }],
+        fileAttachments: [{ key: 'private-second-file' }],
+      }
+      const original = structuredClone(payload)
+      mockFilterModelSafeWorkspaceFileAttachments
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+      mockRunStreamLoop.mockResolvedValueOnce(undefined)
+
+      const result = await runCopilotLifecycle(payload, {
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        executionContext: { userId: 'user-1', workflowId: '', workspaceId: 'ws-1' },
+      })
+
+      expect(result.success).toBe(true)
+      const sent = JSON.parse(String(mockRunStreamLoop.mock.calls[0][1].body))
+      const notice = 'Attachment error: 2 requested file attachments were not provided'
+      if (shape === 'both' || shape === 'attachment-only') expect(sent.message).toContain(notice)
+      if (shape !== 'attachment-only') {
+        expect(sent.messages[0]).toEqual(messages[0])
+        expect(sent.messages.at(-1)).toMatchObject({
+          role: 'user',
+          content: expect.stringContaining(notice),
+        })
+      }
+      expect(sent).not.toHaveProperty('attachments')
+      expect(sent).not.toHaveProperty('fileAttachments')
+      expect(JSON.stringify(sent)).not.toContain('private-')
+      expect(payload).toEqual(original)
+    }
+  )
 
   it('rejects when durable attachment provenance cannot be verified', async () => {
     mockFilterModelSafeWorkspaceFileAttachments.mockRejectedValueOnce(new Error('db unavailable'))
@@ -1609,6 +1796,7 @@ describe('runCopilotLifecycle', () => {
     expect(billingRequestId).not.toBe('caller-controlled')
 
     expect(mockRunStreamLoop).toHaveBeenCalledTimes(2)
+    expect(mockLoadCopilotSearchIntegrations).toHaveBeenCalledTimes(owner.organizationId ? 1 : 0)
     for (const call of mockRunStreamLoop.mock.calls) {
       const body = JSON.parse(String(call[1].body))
       expect(body).toMatchObject(

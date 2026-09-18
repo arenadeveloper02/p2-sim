@@ -13,6 +13,7 @@ import { ApiClientError } from '@/lib/api/client/errors'
 import {
   disconnectPersonalOrganizationAccountContract,
   listOrganizationAccountPeopleContract,
+  revokeOrganizationAccountEnrollmentContract,
   updateOrganizationAccountsContract,
 } from '@/lib/api/contracts/organization-accounts'
 import { resourceScopeKey } from '@/lib/core/resource-scope'
@@ -20,11 +21,13 @@ import {
   organizationAccountsKeys,
   useDisconnectPersonalOrganizationAccount,
   useOrganizationAccountPeople,
+  useRevokeOrganizationAccountEnrollment,
   useUpdateOrganizationAccounts,
 } from '@/hooks/queries/organization-accounts'
 import { slackSearchKeys } from '@/hooks/queries/slack-search'
 import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
 import { searchSourceKeys } from '@/hooks/queries/utils/search-source-keys'
+import { selectorKeys, selectorQueryRoots } from '@/hooks/queries/utils/selector-keys'
 
 describe('personal account disconnect', () => {
   it.each([true, false])(
@@ -161,6 +164,20 @@ describe('organization account setup updates', () => {
       const other = slackSearchKeys.manifest('org-2', 'Sim Search')
       const overview = searchSourceKeys.organizationOverview('org-1')
       const otherOverview = searchSourceKeys.organizationOverview('org-2')
+      const providerSelectors = [
+        selectorKeys.scoped(
+          'workspace.credentialGroupProviders',
+          { kind: 'workspace', workspaceId: 'workspace-1' },
+          'block-1'
+        ),
+        selectorKeys.scoped(
+          'workspace.organizationMcpProviders',
+          { kind: 'workspace', workspaceId: 'workspace-1' },
+          'block-2'
+        ),
+        [...selectorQueryRoots.workflowSearchReplace, 'workflow-1'],
+      ]
+      for (const key of providerSelectors) client.setQueryData(key, { options: ['cached'] })
       for (const key of [current, renamed, other]) client.setQueryData(key, { existingApp: 'A1' })
       for (const key of [overview, otherOverview]) client.setQueryData(key, { providers: [] })
       try {
@@ -198,6 +215,92 @@ describe('organization account setup updates', () => {
         expect(client.getQueryState(other)?.isInvalidated).toBe(false)
         expect(client.getQueryState(overview)?.isInvalidated).toBe(success)
         expect(client.getQueryState(otherOverview)?.isInvalidated).toBe(false)
+        for (const key of providerSelectors)
+          expect(client.getQueryState(key)?.isInvalidated).toBe(success)
+      } finally {
+        await act(async () => root.unmount())
+        client.clear()
+        vi.unstubAllGlobals()
+      }
+    }
+  )
+})
+
+describe('organization account revocation', () => {
+  it.each([true, false])(
+    'clears Search content and refreshes affected account projections only on success=%s',
+    async (success) => {
+      vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+      mocks.request.mockReset()
+      const response = Promise.withResolvers<object>()
+      mocks.request.mockReturnValueOnce(response.promise)
+      const client = new QueryClient()
+      const root = createRoot(document.createElement('div'))
+      let mutation: ReturnType<typeof useRevokeOrganizationAccountEnrollment>
+      function Probe() {
+        mutation = useRevokeOrganizationAccountEnrollment()
+        return null
+      }
+      const orgScope = { kind: 'organization', organizationId: 'org-1' } as const
+      const results = knowledgeKeys.search(resourceScopeKey(orgScope), 'private content')
+      const documentKey = knowledgeKeys.document('kb-1', 'doc-1')
+      const sources = searchSourceKeys.pages(orgScope, { mine: true, search: '' })
+      const accounts = organizationAccountsKeys.detail('org-1')
+      const people = organizationAccountsKeys.peopleList('org-1', '', 'jira-option')
+      const overview = searchSourceKeys.organizationOverview('org-1')
+      const otherAccounts = organizationAccountsKeys.detail('org-2')
+      const otherResults = knowledgeKeys.search(
+        resourceScopeKey({ kind: 'organization', organizationId: 'org-2' }),
+        'private content'
+      )
+      for (const key of [
+        results,
+        documentKey,
+        sources,
+        accounts,
+        people,
+        overview,
+        otherAccounts,
+        otherResults,
+      ])
+        client.setQueryData(key, { content: 'cached' })
+      try {
+        await act(async () =>
+          root.render(
+            <QueryClientProvider client={client}>
+              <Probe />
+            </QueryClientProvider>
+          )
+        )
+        let pending: Promise<unknown>
+        await act(async () => {
+          pending = mutation.mutateAsync({ organizationId: 'org-1', enrollmentId: 'person-1' })
+        })
+        await act(async () =>
+          root.render(<QueryClientProvider client={client}>{null}</QueryClientProvider>)
+        )
+        await act(async () => {
+          if (success) {
+            response.resolve({})
+            await pending
+          } else {
+            const rejected = expect(pending).rejects.toThrow('Revocation failed')
+            response.reject(new Error('Revocation failed'))
+            await rejected
+          }
+        })
+        expect(mocks.request).toHaveBeenCalledExactlyOnceWith(
+          revokeOrganizationAccountEnrollmentContract,
+          { params: { id: 'org-1', enrollmentId: 'person-1' } }
+        )
+        for (const key of [results, documentKey, sources]) {
+          if (success) expect(client.getQueryData(key)).toBeUndefined()
+          else expect(client.getQueryData(key)).toEqual({ content: 'cached' })
+        }
+        for (const key of [accounts, people, overview])
+          expect(client.getQueryState(key)?.isInvalidated).toBe(success)
+        expect(client.getQueryState(otherAccounts)?.isInvalidated).toBe(false)
+        expect(client.getQueryData(otherResults)).toEqual({ content: 'cached' })
       } finally {
         await act(async () => root.unmount())
         client.clear()

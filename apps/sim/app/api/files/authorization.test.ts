@@ -63,6 +63,14 @@ function grantAccess(cloudKey: string) {
 }
 
 describe('verifyKBFileAccess (binding-only)', () => {
+  it.each(['mothership', 'profile-pictures', 'general'] as const)(
+    'refuses organization image keys through legacy %s authorization',
+    async (context) => {
+      await expect(
+        verifyFileAccess('assistant/org-1/user-1/upload-1/image.png', USER_ID, undefined, context)
+      ).resolves.toBe(false)
+    }
+  )
   beforeEach(() => {
     vi.clearAllMocks()
     // Default liveness query result: one active document references the exact storage key.
@@ -173,6 +181,22 @@ describe('public-context access (profile-pictures / og-images / workspace-logos)
   function write(cloudKey: string, context: 'profile-pictures' | 'og-images' | 'workspace-logos') {
     return verifyFileAccess(cloudKey, USER_ID, undefined, context, false, { requireWrite: true })
   }
+
+  it('allows organization logo reads and denies generic deletes even for the uploader', async () => {
+    const key = 'organization-logos/org-1/logo.png'
+    mockGetFileMetadata.mockResolvedValue({ userId: USER_ID })
+    await expect(verifyFileAccess(key, USER_ID, undefined, 'organization-logos')).resolves.toBe(
+      true
+    )
+    await expect(
+      verifyFileAccess(key, USER_ID, undefined, 'organization-logos', false, { requireWrite: true })
+    ).resolves.toBe(false)
+    await expect(
+      verifyFileAccess(key, USER_ID, undefined, 'general', false, { requireWrite: true })
+    ).resolves.toBe(false)
+    expect(mockGetFileMetadata).not.toHaveBeenCalled()
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
+  })
 
   it('grants public reads without any ownership check', async () => {
     await expect(read('og-images/banner.png', 'og-images')).resolves.toBe(true)
@@ -412,13 +436,15 @@ describe('KB file live source authorization', () => {
     async (allowed) => {
       const scope = { kind: 'user' as const, userId: USER_ID, tokens: ['reader-token'] }
       const getForConnectors = vi.fn().mockResolvedValue(scope)
+      const liveSources = { type: 'live-sources' }
       const access: KnowledgeAccessProvider = {
         get: async () => scope,
         getForConnectors,
         getForDocuments: async () => scope,
+        liveSourceConnectorCondition: async () => liveSources as never,
       }
       queueTableRows(schemaMock.document, [])
-      queueTableRows(schemaMock.document, [{ connectorId: 'confluence-source' }])
+      queueTableRows(schemaMock.knowledgeConnector, [{ connectorId: 'confluence-source' }])
       queueTableRows(schemaMock.document, allowed ? [{ id: 'doc-1' }] : [])
       await expect(
         verifyFileAccess(CLOUD_KEY, USER_ID, undefined, 'knowledge-base', false, {
@@ -426,7 +452,12 @@ describe('KB file live source authorization', () => {
         })
       ).resolves.toBe(allowed)
       expect(getForConnectors).toHaveBeenCalledExactlyOnceWith(['confluence-source'], undefined)
+      const discovery = dbChainMockFns.where.mock.calls.filter(([condition]) =>
+        hasMockCondition(condition, (node) => node === liveSources)
+      )
+      expect(discovery).toHaveLength(1)
       for (const [condition] of dbChainMockFns.where.mock.calls) {
+        if (discovery.some(([live]) => live === condition)) continue
         expect(
           hasMockCondition(
             condition,
@@ -458,5 +489,50 @@ describe('KB file live source authorization', () => {
       })
     ).resolves.toBe(false)
     expect(get).not.toHaveBeenCalled()
+  })
+})
+
+/** Execution downloads share the logs endpoint's current workspace permission check. */
+describe('execution file download authorization', () => {
+  const executionKey = 'execution/owner-workspace/workflow/run/image.png'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('allows a current reader of the workspace named by the storage key', async () => {
+    mockGetUserEntityPermissions.mockResolvedValue('read')
+    await expect(verifyFileAccess(executionKey, USER_ID, undefined, 'execution')).resolves.toBe(
+      true
+    )
+    expect(mockGetUserEntityPermissions).toHaveBeenCalledExactlyOnceWith(
+      USER_ID,
+      'workspace',
+      'owner-workspace'
+    )
+  })
+
+  it('denies a caller without access to the file workspace', async () => {
+    mockGetUserEntityPermissions.mockResolvedValue(null)
+    await expect(verifyFileAccess(executionKey, USER_ID, undefined, 'execution')).resolves.toBe(
+      false
+    )
+  })
+
+  it('rechecks access after membership is revoked', async () => {
+    mockGetUserEntityPermissions.mockResolvedValueOnce('read').mockResolvedValueOnce(null)
+    await expect(verifyFileAccess(executionKey, USER_ID, undefined, 'execution')).resolves.toBe(
+      true
+    )
+    await expect(verifyFileAccess(executionKey, USER_ID, undefined, 'execution')).resolves.toBe(
+      false
+    )
+  })
+
+  it('denies a malformed execution key before looking up workspace access', async () => {
+    await expect(
+      verifyFileAccess('execution/image.png', USER_ID, undefined, 'execution')
+    ).resolves.toBe(false)
+    expect(mockGetUserEntityPermissions).not.toHaveBeenCalled()
   })
 })

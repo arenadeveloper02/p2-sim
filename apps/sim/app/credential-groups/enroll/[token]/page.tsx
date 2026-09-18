@@ -11,6 +11,7 @@ import { authenticateCredentialGroupEnrollment } from '@/lib/credential-groups/a
 import { readPublicCredentialGroupEnrollment } from '@/lib/credential-groups/application/public-enrollment'
 import { CredentialGroupEnrollmentError } from '@/lib/credential-groups/enrollments'
 import { getManagedMcpConnectorIcon } from '@/lib/credential-groups/managed-mcp-connector-icons'
+import { CREDENTIAL_GROUP_OAUTH_FAILURE_MESSAGES } from '@/lib/credential-groups/oauth-completion'
 import { CredentialGroupProviderConfigurationError } from '@/lib/credential-groups/provider-adapter'
 import { getCredentialGroupProviderService } from '@/lib/credential-groups/providers'
 import { enforcePublicCredentialGroupIpRateLimit } from '@/lib/credential-groups/rate-limit'
@@ -107,11 +108,10 @@ function UnavailableSearchConnection({
 }
 
 const OAUTH_MESSAGES = {
+  ...CREDENTIAL_GROUP_OAUTH_FAILURE_MESSAGES,
   denied: 'Authorization was canceled. Nothing was connected.',
-  account_mismatch: 'Choose the account matching the email address on this invitation.',
   permissions_required: 'All requested permissions are required to connect this account.',
   configuration_changed: 'This credential option changed. Reload the page and try again.',
-  rate_limited: 'Too many authorization attempts. Wait a few minutes and try again.',
   unavailable: 'Account authorization is temporarily unavailable. Please try again.',
   failed: 'Account authorization did not complete. Please try again.',
 } as const
@@ -183,8 +183,12 @@ export default async function CredentialGroupEnrollmentPage({
   const canReturnToSearch =
     returnToSearch &&
     ('canSearch' in enrollmentResult ? enrollmentResult.canSearch : !principal.organizationId)
-  const returnHref = canReturnToSearch ? searchReturnPath(principal) : APP_ENTRY_PATH
-  const returnLabel = canReturnToSearch ? 'Return to Search' : 'Open Sim'
+  const returnHref = canReturnToSearch ? sourceReturnPath(principal) : APP_ENTRY_PATH
+  const returnLabel = canReturnToSearch
+    ? principal.organizationId
+      ? 'Return to Search'
+      : 'Open knowledge bases'
+    : 'Open Sim'
   if (!enrollment)
     return <UnavailableSearchConnection returnHref={returnHref} returnLabel={returnLabel} />
 
@@ -327,9 +331,9 @@ export default async function CredentialGroupEnrollmentPage({
   )
 }
 
-function searchReturnPath(owner: ResourceOwner): string {
+function sourceReturnPath(owner: ResourceOwner): string {
   const scope = resourceScopeFromOwner(owner)
   return scope.kind === 'workspace'
-    ? `/workspace/${encodeURIComponent(scope.workspaceId)}/search`
+    ? `/workspace/${encodeURIComponent(scope.workspaceId)}/knowledge`
     : organizationRoutes(scope.organizationId).search
 }

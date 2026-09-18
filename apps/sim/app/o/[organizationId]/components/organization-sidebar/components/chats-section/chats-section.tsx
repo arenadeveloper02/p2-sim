@@ -1,14 +1,6 @@
 'use client'
 
-import {
-  ChipInput,
-  chipVariants,
-  cn,
-  DropdownMenuItem,
-  Loader,
-  OverflowText,
-  Skeleton,
-} from '@sim/emcn'
+import { chipVariants, cn, DropdownMenuItem, Loader, OverflowText, Skeleton } from '@sim/emcn'
 import { MoreHorizontal, Pin, Task } from '@sim/emcn/icons'
 import type { OrganizationChat } from '@/app/o/[organizationId]/components/organization-sidebar/hooks'
 import { useOrganizationChatActions } from '@/app/o/[organizationId]/components/organization-sidebar/hooks/use-organization-chat-actions'
@@ -16,9 +8,12 @@ import {
   ChatNavigationLink,
   CollapsedChatFlyoutItem,
   CollapsedSidebarMenu,
+  SidebarRowActions,
   SidebarSection,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
+import { SidebarRenameRow } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-rename-row'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
+import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import {
   SIDEBAR_ITEM_GAP_CLASS,
   SIDEBAR_SECTION_GAP_CLASS,
@@ -62,30 +57,27 @@ function ChatRow({
       href={chat.href}
       chatId={chat.id}
       isCurrentRoute={isCurrentRoute}
-      className={chipVariants({ active: isCurrentRoute || isMenuOpen, fullWidth: true })}
+      className={cn(
+        chipVariants({ active: isCurrentRoute || isMenuOpen, fullWidth: true }),
+        'group/sidebar-row'
+      )}
       onContextMenu={(e) => onContextMenu(e, chat.id)}
     >
       <OverflowText label={chat.name} className='flex-1 text-[var(--text-body)]' />
-      <div className='relative flex size-[18px] shrink-0 items-center justify-center'>
-        {showStatusDot && (
-          <span
-            aria-hidden='true'
-            className={cn(
-              'size-[6px] rounded-full transition-opacity',
-              isMenuOpen ? 'opacity-0' : 'group-focus-within:opacity-0 group-hover:opacity-0'
-            )}
-            style={{ backgroundColor: chat.isActive ? '#EAB308' : 'var(--brand-accent)' }}
-          />
-        )}
-        {!showStatusDot && chat.isPinned && (
-          <Pin
-            aria-hidden='true'
-            className={cn(
-              'absolute size-[12px] text-[var(--text-icon)] transition-opacity',
-              isMenuOpen ? 'opacity-0' : 'group-focus-within:opacity-0 group-hover:opacity-0'
-            )}
-          />
-        )}
+      <SidebarRowActions
+        open={isMenuOpen}
+        indicator={
+          showStatusDot ? (
+            <span
+              aria-hidden='true'
+              className='size-[6px] rounded-full'
+              style={{ backgroundColor: chat.isActive ? '#EAB308' : 'var(--brand-accent)' }}
+            />
+          ) : chat.isPinned ? (
+            <Pin aria-hidden='true' className='size-[12px] text-[var(--text-icon)]' />
+          ) : undefined
+        }
+      >
         <button
           type='button'
           aria-label='Chat options'
@@ -95,14 +87,11 @@ function ChatRow({
             e.stopPropagation()
             onMoreClick(e, chat.id)
           }}
-          className={cn(
-            'absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100',
-            isMenuOpen && 'opacity-100'
-          )}
+          className='flex size-[18px] items-center justify-center rounded-sm'
         >
           <MoreHorizontal className='size-[14px] text-[var(--text-icon)]' />
         </button>
-      </div>
+      </SidebarRowActions>
     </ChatNavigationLink>
   )
 }
@@ -186,7 +175,7 @@ export function ChatsSection({
                 )}
                 {chats.map((chat) =>
                   rename.editingId === chat.id ? (
-                    <ChipInput
+                    <SidebarRenameRow
                       key={chat.id}
                       ref={rename.inputRef}
                       aria-label={`Rename chat ${chat.name}`}
@@ -195,8 +184,6 @@ export function ChatsSection({
                       onKeyDown={rename.handleKeyDown}
                       onBlur={saveRename}
                       disabled={rename.isSaving}
-                      maxLength={100}
-                      autoComplete='off'
                     />
                   ) : (
                     <ChatRow
@@ -233,8 +220,17 @@ export function ChatsSection({
         isPinned={Boolean(selectedChat?.isPinned)}
         showMarkAsRead={Boolean(selectedChat?.isUnread)}
         showMarkAsUnread={Boolean(selectedChat) && !selectedChat?.isUnread}
-        showDelete={false}
+        onDelete={actions.startDelete}
+        showDelete={Boolean(selectedChat)}
         showDuplicate={false}
+      />
+      <DeleteModal
+        isOpen={actions.chatToDelete !== null}
+        onClose={actions.cancelDelete}
+        onConfirm={actions.confirmDelete}
+        isDeleting={actions.isDeleting}
+        itemType='task'
+        itemName={actions.chatToDelete?.name}
       />
     </>
   )

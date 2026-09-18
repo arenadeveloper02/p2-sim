@@ -1,6 +1,9 @@
 import type { MirroredDocumentAcl } from '@/lib/knowledge/access/types'
+import type { ConnectorAccessMode } from '@/lib/knowledge/connectors/access-modes'
+import type { ConnectorPermissionConfigCapability } from '@/lib/knowledge/connectors/permission-config'
 import type { OAuthService } from '@/lib/oauth/types'
 import type { SelectorKey } from '@/lib/selectors/manifest'
+import type { ConnectorSourceReasonState } from '@/connectors/source-error'
 
 /**
  * Authentication configuration for a connector.
@@ -66,7 +69,7 @@ export interface ConnectorDirectoryGroup {
 
 export interface ConnectorDirectoryMembership {
   group: ConnectorDirectoryGroup
-  /** Canonical u:email or provider-attested s: identity tokens, with nested groups flattened. */
+  /** Canonical identities; Confluence space audiences may also name same-site native groups. */
   memberTokens: string[]
   /**
    * False when the walk could not be completed. A partial membership must never
@@ -74,6 +77,19 @@ export interface ConnectorDirectoryMembership {
    * enumerate silently revokes everyone in the part that did not.
    */
   complete: boolean
+}
+
+/** A complete source audience observed while resolving a bounded batch of document ACLs. */
+export interface ConnectorAclGroupMembership {
+  providerId: string
+  tenantId: string
+  group: ConnectorDirectoryGroup
+  memberTokens: string[]
+}
+
+/** Persistence capabilities bound by the engine to the canonical resource owner and sync lease. */
+export interface ConnectorAclContext {
+  persistGroupMembership: (membership: ConnectorAclGroupMembership) => Promise<void>
 }
 
 /**
@@ -180,9 +196,19 @@ export interface ExternalDocument {
   metadata?: Record<string, unknown>
 }
 
-/**
- * Paginated result from listing documents in an external source.
- */
+/** Bounded provider evidence for scopes that could not be fully listed. */
+export interface ExternalListingFailures {
+  count: number
+  samples: {
+    scope: string
+    operation: string
+    status?: number
+    reasons: string[]
+    reasonState?: ConnectorSourceReasonState
+  }[]
+}
+
+/** Paginated result from listing documents in an external source. */
 export interface ExternalDocumentList {
   documents: ExternalDocument[]
   nextCursor?: string
@@ -195,6 +221,12 @@ export interface ExternalDocumentList {
    * provider pagination must set this to false.
    */
   reconciliationSafe?: boolean
+  /** Cumulative, bounded failure evidence for this listing generation; replay must not add it twice. */
+  listingFailures?: ExternalListingFailures | null
+  /** Refreshes existing permissions and repairs changed stored bodies, without discovering new content or reconciling absence. */
+  permissionsOnly?: boolean
+  /** A durable user-work queue can yield until the next bounded retry becomes due. */
+  resumeAt?: string
 }
 
 /**
@@ -301,6 +333,8 @@ export interface ConnectorConfigField {
   mode?: 'basic' | 'advanced'
   /** Links selector + manual input fields that resolve to the same config key */
   canonicalParamId?: string
+  /** Both modes use the same provider identifiers, so switching carries the current selection. */
+  preserveValueOnModeChange?: boolean
 
   /**
    * When true, the field accepts multiple values.
@@ -309,6 +343,10 @@ export interface ConnectorConfigField {
    * Connector handlers receive `string | string[]` and should normalize via `parseMultiValue`.
    */
   multi?: boolean
+  /** Offers selection of all items, using selectAllValue when configured. */
+  allowSelectAll?: boolean
+  /** Stores a provider-supported scope marker instead of the currently loaded option IDs. */
+  selectAllValue?: string
 }
 
 /**
@@ -321,7 +359,9 @@ export interface ConnectorConfigField {
  * mirroring the `XBlockMeta` pattern in `blocks/`.
  */
 export interface ConnectorMeta {
-  /** Opts a source into workspace Search after its indexing and permission paths are verified. */
+  /** Restricts new setup and mode changes; existing sources keep their stored access policy. */
+  supportedAccessModes?: readonly ConnectorAccessMode[]
+  /** Opts a source into Sim Search after its indexing and permission paths are verified. */
   search?: true
   /** Source setup guide shown only in Search connection flows. */
   searchDocsUrl?: string
@@ -425,6 +465,8 @@ export interface ConnectorMeta {
  * Adding a new connector = creating one of these + registering it.
  */
 export interface ConnectorConfig extends ConnectorMeta {
+  /** Optional private permission setup, including transactional replacement and worker context. */
+  permissionConfig?: ConnectorPermissionConfigCapability
   /** Bounds local hydration fan-out to avoid queueing siblings behind a serial provider gate. */
   contentConcurrency?: 1 | 2 | 3 | 4 | 5
   /**
@@ -556,7 +598,8 @@ export interface ConnectorConfig extends ConnectorMeta {
     accessToken: string,
     sourceConfig: Record<string, unknown>,
     documents: readonly ExternalDocument[],
-    syncContext?: Record<string, unknown>
+    syncContext?: Record<string, unknown>,
+    aclContext?: ConnectorAclContext
   ) => Promise<Record<string, MirroredDocumentAcl>>
 
   /** Map source metadata to semantic tag keys (translated to slots by the sync engine) */

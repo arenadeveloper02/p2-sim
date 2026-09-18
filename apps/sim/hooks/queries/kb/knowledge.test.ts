@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   useMutation: vi.fn(),
   useQuery: vi.fn(),
   invalidateQueries: vi.fn(),
+  getQueryData: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-query', () => ({
@@ -16,7 +17,14 @@ vi.mock('@tanstack/react-query', () => ({
   useInfiniteQuery: vi.fn(),
   useMutation: mocks.useMutation,
   useQuery: mocks.useQuery,
-  useQueryClient: vi.fn(() => ({ invalidateQueries: mocks.invalidateQueries })),
+  useQueryClient: vi.fn(() => ({
+    invalidateQueries: mocks.invalidateQueries,
+    getQueryData: mocks.getQueryData,
+  })),
+}))
+
+vi.mock('@/lib/auth/auth-client', () => ({
+  useSession: () => ({ data: { user: { id: 'reader' } } }),
 }))
 
 vi.mock('@sim/emcn', () => ({
@@ -132,12 +140,17 @@ describe('knowledge query placeholder scope', () => {
   })
 
   it('forwards search cancellation and leaves provider retries to the server', async () => {
-    mocks.requestJson.mockResolvedValueOnce({ data: { results: [] } })
+    const data = {
+      query: 'query',
+      results: [],
+      retrieval: { status: 'partial', timedOutLegs: ['vector'] },
+    }
+    mocks.requestJson.mockResolvedValueOnce({ data })
     const query = captureQuery(() =>
       useWorkspaceKnowledgeSearch('workspace-1', ' query ', { source: 'slack' })
     )
     const controller = new AbortController()
-    await query.queryFn({ signal: controller.signal })
+    await expect(query.queryFn({ signal: controller.signal })).resolves.toEqual(data)
 
     expect(query.retry).toBe(false)
     expect(mocks.requestJson).toHaveBeenLastCalledWith(
@@ -197,13 +210,18 @@ describe('knowledge query placeholder scope', () => {
     ).toBeUndefined()
   })
 
-  it('does not reuse results from a different query, workspace, or filter', () => {
+  it('partitions search cache entries by filter and reader', () => {
     const query = captureQuery(() =>
       useWorkspaceKnowledgeSearch('workspace-1', 'new query', { source: 'slack' })
     )
-    expect(query.placeholderData).toBeUndefined()
+    expect(query.queryKey).toEqual(
+      knowledgeKeys.search('workspace-1', 'new query', { source: 'slack' }, 'reader')
+    )
     expect(knowledgeKeys.search('workspace-1', 'query', { source: 'slack' })).not.toEqual(
       knowledgeKeys.search('workspace-1', 'query', { source: 'gitlab' })
+    )
+    expect(knowledgeKeys.search('workspace-1', 'query', {}, 'reader')).not.toEqual(
+      knowledgeKeys.search('workspace-1', 'query', {}, 'another-reader')
     )
   })
 })

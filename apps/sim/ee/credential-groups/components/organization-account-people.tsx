@@ -1,11 +1,10 @@
 'use client'
 
 import { type ReactNode, useState } from 'react'
-import { Chip, ChipConfirmModal, ChipModalError, toast } from '@sim/emcn'
+import { Avatar, AvatarFallback, Chip, ChipConfirmModal, ChipModalError, toast } from '@sim/emcn'
 import { Plus } from '@sim/emcn/icons'
 import type { SettingsAction, SettingsBackAction } from '@/components/settings/settings-header'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
-import { MemberAvatar } from '@/app/workspace/[workspaceId]/settings/components/member-list'
 import { RowActionsMenu } from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
 import {
   SettingsEmptyState,
@@ -16,8 +15,8 @@ import {
   RESOURCE_LIST_STACK,
   SettingsResourceRow,
 } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
-import { EnrollmentConnections } from '@/ee/credential-groups/components/credential-group-enrollment-connections'
 import { OrganizationAccountInviteModal } from '@/ee/credential-groups/components/organization-account-invite-modal'
+import { OrganizationPersonConnections } from '@/ee/credential-groups/components/organization-person-connections'
 import {
   useOrganizationAccountPeople,
   useResendOrganizationAccountInvitation,
@@ -37,6 +36,8 @@ interface OrganizationAccountPeopleProps {
     actions?: SettingsAction[]
   }
   enabled?: boolean
+  requestDisabled?: boolean
+  filters?: ReactNode
   setupFallback?: ReactNode
 }
 export function OrganizationAccountPeople({
@@ -45,6 +46,8 @@ export function OrganizationAccountPeople({
   panel,
   enabled = true,
   setupFallback,
+  filters,
+  requestDisabled = false,
 }: OrganizationAccountPeopleProps) {
   const resend = useResendOrganizationAccountInvitation()
   const revoke = useRevokeOrganizationAccountEnrollment()
@@ -69,12 +72,13 @@ export function OrganizationAccountPeople({
           text: 'Request connections',
           icon: Plus,
           variant: 'primary',
-          disabled: pending || awaitingSetup,
+          disabled: pending || awaitingSetup || requestDisabled,
           onSelect: () => setInviteOpen(true),
         },
         ...(panel?.actions ?? []),
       ]}
     >
+      {filters}
       {awaitingSetup ? (
         setupFallback
       ) : (
@@ -107,41 +111,23 @@ export function OrganizationAccountPeople({
                   {enrollments.map((person) => (
                     <SettingsResourceRow
                       key={person.id}
-                      icon={<MemberAvatar name={person.email} image={null} />}
+                      icon={
+                        <div className='self-start'>
+                          <Avatar size='sm' aria-hidden>
+                            <AvatarFallback>{person.email.charAt(0).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                        </div>
+                      }
                       iconVariant='custom'
                       title={person.email}
-                      description={
-                        searchConnection && person.status === 'revoked' ? (
-                          'Access revoked'
-                        ) : searchConnection &&
-                          !person.connections.some(
-                            (connection) => connection.status === 'active'
-                          ) ? (
-                          person.connections.some(
-                            (connection) => connection.status === 'needs_reauth'
-                          ) ? (
-                            'Reconnect required'
-                          ) : person.connections.some(
-                              (connection) => connection.status === 'revoked'
-                            ) ? (
-                            'Disconnected'
-                          ) : (
-                            'Not connected'
-                          )
-                        ) : (
-                          <EnrollmentConnections
-                            connections={person.connections}
-                            mcpConnections={person.mcpConnections}
-                          />
-                        )
-                      }
+                      description={<OrganizationPersonConnections person={person} />}
                       trailing={
                         <RowActionsMenu
                           label={`${person.email} actions`}
                           actions={[
                             {
                               label: 'Resend',
-                              disabled: pending || person.status === 'revoked',
+                              disabled: pending || requestDisabled || person.status === 'revoked',
                               onSelect: () =>
                                 resend.mutate(
                                   {

@@ -1,8 +1,8 @@
 import { db } from '@sim/db'
-import { type WorkspaceFileRow, workspaceFileColumns, workspaceFiles } from '@sim/db/schema'
+import { type WorkspaceFileRow, workspaceFiles } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { DbOrTx, DbTransaction } from '@/lib/db/types'
 import {
   getWorkspaceFileSize,
@@ -94,7 +94,7 @@ async function findActiveFileMetadataByKey(
   key: string
 ): Promise<FileMetadataRecord | undefined> {
   const [record] = await executor
-    .select(workspaceFileColumns)
+    .select()
     .from(workspaceFiles)
     .where(and(eq(workspaceFiles.key, key), isNull(workspaceFiles.deletedAt)))
     /** Wait for in-flight cleanup before accepting an active identity for newly uploaded bytes. */
@@ -140,7 +140,7 @@ async function insertFileMetadataWithExecutor(
   }
 
   const [existingDeleted] = await executor
-    .select(workspaceFileColumns)
+    .select()
     .from(workspaceFiles)
     .where(and(eq(workspaceFiles.key, key), isNotNull(workspaceFiles.deletedAt)))
     .limit(1)
@@ -166,7 +166,7 @@ async function insertFileMetadataWithExecutor(
         contentUpdatedAt: sql<Date>`GREATEST(CURRENT_TIMESTAMP, ${workspaceFiles.contentUpdatedAt} + INTERVAL '1 millisecond')`,
       })
       .where(and(eq(workspaceFiles.id, existingDeleted.id), isNotNull(workspaceFiles.deletedAt)))
-      .returning(workspaceFileColumns)
+      .returning()
 
     if (restored) {
       return restored
@@ -195,7 +195,7 @@ async function insertFileMetadataWithExecutor(
         deletedAt: null,
         uploadedAt: new Date(),
       })
-      .returning(workspaceFileColumns)
+      .returning()
 
     if (!inserted) {
       throw new Error(`Failed to insert file metadata for key: ${key}`)
@@ -252,7 +252,7 @@ async function insertImmutableFileMetadataWithExecutor(
       uploadedAt: new Date(),
     })
     .onConflictDoNothing()
-    .returning(workspaceFileColumns)
+    .returning()
 
   if (inserted) return inserted
 
@@ -335,13 +335,13 @@ export async function insertFileMetadataMany(
       }))
     )
     .onConflictDoNothing()
-    .returning(workspaceFileColumns)
+    .returning()
 
   const insertedKeys = new Set(inserted.map((record) => record.key))
   const conflictingRows = uniqueRows.filter((row) => !insertedKeys.has(row.key))
   if (conflictingRows.length > 0) {
     const activeRows = await db
-      .select(workspaceFileColumns)
+      .select()
       .from(workspaceFiles)
       .where(
         and(
@@ -383,7 +383,7 @@ export async function getFileMetadataByKey(
   }
 
   const [record] = await db
-    .select(workspaceFileColumns)
+    .select()
     .from(workspaceFiles)
     .where(conditions.length > 1 ? and(...conditions) : conditions[0])
     // Prefer the active row when includeDeleted lets both an active and a
@@ -423,20 +423,33 @@ export async function resolveStoredFileContext(key: string): Promise<StorageCont
 }
 
 /**
- * Get active (non-deleted) file metadata for multiple keys in a single query.
- * Batches what would otherwise be N `getFileMetadataByKey` calls.
+ * Gets one canonical file record per key, active by default. Historical provenance reads may
+ * include deleted records; an active record wins, followed by the newest historical revision.
+ * Selecting that record in SQL bounds the result independently of each key's history.
  */
 export async function getFileMetadataByKeys(
   keys: string[],
   context: StorageContext,
-  executor: Pick<typeof db, 'select'> = db,
-  options?: { lock?: 'share' }
+  executor: Pick<typeof db, 'select' | 'selectDistinctOn'> = db,
+  options?: { lock?: 'share'; includeDeleted?: false } | { lock?: never; includeDeleted: true }
 ): Promise<FileMetadataRecord[]> {
   if (keys.length === 0) {
     return []
   }
+  if (options?.includeDeleted) {
+    return executor
+      .selectDistinctOn([workspaceFiles.key])
+      .from(workspaceFiles)
+      .where(and(inArray(workspaceFiles.key, keys), eq(workspaceFiles.context, context)))
+      .orderBy(
+        workspaceFiles.key,
+        sql`${workspaceFiles.deletedAt} IS NULL DESC`,
+        desc(workspaceFiles.contentUpdatedAt),
+        workspaceFiles.id
+      )
+  }
   const query = executor
-    .select(workspaceFileColumns)
+    .select()
     .from(workspaceFiles)
     .where(
       and(
@@ -459,7 +472,7 @@ export async function getFileMetadataById(
   const conditions = [eq(workspaceFiles.id, id)]
   if (!includeDeleted) conditions.push(isNull(workspaceFiles.deletedAt))
   const [record] = await db
-    .select(workspaceFileColumns)
+    .select()
     .from(workspaceFiles)
     .where(conditions.length > 1 ? and(...conditions) : conditions[0])
     .limit(1)

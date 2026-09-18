@@ -1,10 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { isLoopbackIp, unwrapIpv6Brackets } from '@sim/security/ssrf'
-import { describeError, findCause, getErrorMessage, toError } from '@sim/utils/errors'
+import { describeError, getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { isPlainRecord, isRecordLike } from '@sim/utils/object'
 import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
-import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import type { FunctionExecuteBody } from '@/lib/api/contracts'
@@ -17,7 +16,7 @@ import {
   serializeBillingAttributionHeader,
 } from '@/lib/billing/core/billing-attribution'
 import { isHosted } from '@/lib/core/config/env-flags'
-import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
+import { findDatabaseQueryError } from '@/lib/core/errors/database-query-error'
 import {
   createTimeoutAbortController,
   DEFAULT_EXECUTION_TIMEOUT_MS,
@@ -67,12 +66,19 @@ import {
   RESOLVED_SECRET_PROVENANCE_METADATA_V1,
 } from '@/lib/execution/private-tool-metadata'
 import { executeFunctionTool } from '@/lib/internal/function/execute'
+import { createInternalToolFileResult } from '@/lib/internal/tool-operations/file-result'
+import {
+  presentInternalToolOperationResult,
+  storeInternalToolFileResult,
+} from '@/lib/internal/tool-operations/file-result.server'
 import { getInternalToolOperationHandler } from '@/lib/internal/tool-operations/registry.server'
+import { MAX_TOOL_RESPONSE_BODY_BYTES } from '@/lib/internal/tool-operations/response-limits'
 import type { InternalToolOperationContext } from '@/lib/internal/tool-operations/types'
 import { hostedKeyMetrics } from '@/lib/monitoring/metrics'
 import type { CredentialTokenPayload } from '@/lib/oauth/token-resolution'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { markWorkspaceFileSecretProvenanceUnknown } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
+import { MAX_FILE_SIZE } from '@/lib/uploads/utils/validation'
 import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-check'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
@@ -109,8 +115,6 @@ const logger = createLogger('Tools')
 const PRIVATE_TOOL_METADATA_ERROR_MESSAGE = 'Internal tool response metadata could not be verified'
 const INTERNAL_DATABASE_ERROR_MESSAGE =
   'An internal error occurred while executing the tool. Please try again.'
-const PERMISSION_PREFLIGHT_MAX_ATTEMPTS = 3
-const PERMISSION_PREFLIGHT_RETRY_BACKOFF = { baseMs: 25, maxMs: 100 } as const
 
 function projectToolLogMetadata(
   metadata: Record<string, unknown>,
@@ -125,53 +129,6 @@ function projectToolLogMetadata(
   return projection.safe && isPlainRecord(projection.value)
     ? projection.value
     : { ...structuralFallback, redacted: true }
-}
-
-interface ToolPermissionPreflight {
-  userId: string
-  workspaceId: string
-  toolId: string
-  toolKind?: 'skill' | 'custom' | 'mcp'
-  ctx?: ExecutionContext
-  requestId: string
-  signal?: AbortSignal
-}
-
-async function assertToolPermissionsWithRetry({
-  requestId,
-  signal,
-  ...permission
-}: ToolPermissionPreflight): Promise<void> {
-  for (let attempt = 1; ; attempt += 1) {
-    signal?.throwIfAborted()
-    try {
-      await assertPermissionsAllowed(permission)
-      return
-    } catch (error) {
-      signal?.throwIfAborted()
-      const isDatabaseQueryError = Boolean(
-        findCause(error, (cause): cause is DrizzleQueryError => cause instanceof DrizzleQueryError)
-      )
-      if (
-        attempt >= PERMISSION_PREFLIGHT_MAX_ATTEMPTS ||
-        !isDatabaseQueryError ||
-        !isRetryableInfrastructureError(error)
-      ) {
-        throw error
-      }
-
-      const delayMs = backoffWithJitter(attempt, null, PERMISSION_PREFLIGHT_RETRY_BACKOFF)
-      logger.warn(`[${requestId}] Retrying tool permission preflight after database error`, {
-        toolId: permission.toolId,
-        attempt,
-        maxAttempts: PERMISSION_PREFLIGHT_MAX_ATTEMPTS,
-        delayMs,
-        cause: describeError(error),
-      })
-      await sleep(delayMs)
-      signal?.throwIfAborted()
-    }
-  }
 }
 
 /**
@@ -464,8 +421,10 @@ async function resolveToolEnvReferences(
 
   const completePendingActivation = resolvedSecretTraceRegistry?.beginPendingActivation()
   try {
-    const { getEffectiveDecryptedEnv } = await import('@/lib/environment/utils')
-    const envVars = await getEffectiveDecryptedEnv(scope.userId, scope.workspaceId)
+    const environmentScope = { userId: scope.userId, workspaceId: scope.workspaceId }
+    const { getEffectiveEnvironmentSnapshot } = await import('@/lib/environment/utils')
+    const environment = await getEffectiveEnvironmentSnapshot(scope.userId, scope.workspaceId)
+    const envVars = { ...environment.personalDecrypted, ...environment.workspaceDecrypted }
 
     for (const { paramId, value, soft } of pending) {
       const missingKeys: string[] = []
@@ -473,9 +432,12 @@ async function resolveToolEnvReferences(
         allowEmbedded: false,
         missingKeys,
         onResolved: (name, resolvedValue) => {
-          resolvedSecretTraceRegistry?.recordResolvedAtInputPath(name, resolvedValue, [paramId], {
-            propagated: true,
-          })
+          resolvedSecretTraceRegistry?.recordResolvedFromEnvironment(
+            name,
+            resolvedValue,
+            { ...environment, scope: environmentScope },
+            { path: [paramId], propagated: true }
+          )
         },
       })
       if (missingKeys.length > 0) {
@@ -1069,7 +1031,6 @@ import { normalizeToolId } from '@/tools/normalize'
  * Next.js 16 has a default middleware/proxy body limit of 10MB.
  */
 const MAX_REQUEST_BODY_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
-const MAX_TOOL_RESPONSE_BODY_BYTES = 10 * 1024 * 1024 // 10MB
 
 /**
  * User-friendly error message for body size limit exceeded
@@ -1170,6 +1131,7 @@ function handleResponseSizeLimitError(error: unknown, requestId: string, context
     maxBytes: error.maxBytes,
     observedBytes: error.observedBytes,
   })
+  if (error.maxBytes !== MAX_TOOL_RESPONSE_BODY_BYTES) throw error
   throw new Error(RESPONSE_SIZE_LIMIT_ERROR_MESSAGE)
 }
 
@@ -1240,41 +1202,42 @@ function createTransformedErrorFromErrorInfo(errorInfo?: ErrorInfo, extractorId?
 }
 
 /**
- * Process file outputs for a tool result if execution context is available
+ * Store declared file outputs using the trusted workflow or Copilot context.
  * Uses dynamic imports to avoid client-side bundling issues
  */
 async function processFileOutputs(
   result: ToolResponse,
   tool: ToolDefinition,
-  executionContext?: ExecutionContext
+  executionContext?: ExecutionContext,
+  operationContext?: InternalToolOperationContext,
+  signal?: AbortSignal
 ): Promise<ToolResponse> {
-  // Skip file processing if no execution context or not successful
-  if (!executionContext || !result.success) {
+  if (!result.success) {
     return result
   }
 
-  // Skip file processing on client-side (no Node.js modules available)
   if (typeof window !== 'undefined') {
     return result
   }
 
   try {
-    // Dynamic import to avoid client-side bundling issues
     const { FileToolProcessor } = await import('@/executor/utils/file-tool-processor')
 
-    // Check if tool has file outputs
     if (!FileToolProcessor.hasFileOutputs(tool)) {
       return result
     }
 
+    const context = operationContext ?? executionContext
+    if (!context) throw new Error('File output requires trusted execution context')
     const processedOutput = await FileToolProcessor.processToolOutputs(
       result.output,
       tool,
-      executionContext
+      context,
+      signal
     )
 
-    // Indexed so a later tool call in this run can name any of these by id.
-    recordExecutionFiles(executionContext, processedOutput)
+    /** Index stored files so later calls in the run can resolve their IDs. */
+    if (executionContext) recordExecutionFiles(executionContext, processedOutput)
 
     return {
       ...result,
@@ -1289,7 +1252,8 @@ async function processFileOutputs(
           error: normalizedError.message,
           stack: error instanceof Error ? error.stack : undefined,
         },
-        executionContext.resolvedSecretTraceRegistry,
+        executionContext?.resolvedSecretTraceRegistry ??
+          operationContext?.resolvedSecretTraceRegistry,
         {
           errorName: normalizedError.name,
           hasStack: Boolean(error instanceof Error && error.stack),
@@ -1297,10 +1261,7 @@ async function processFileOutputs(
         tool.id === 'function_execute' || isCustomTool(tool.id)
       )
     )
-    // Falling back to the original result leaves the raw file payload in place:
-    // the caller would see success while the declared file objects are actually
-    // undelivered bytes, which then flow into logs and any downstream model
-    // prompt. Reporting the failure is the only honest outcome.
+    /** Returning the original output would leak unstored file bytes into logs and model inputs. */
     return {
       ...result,
       success: false,
@@ -1785,15 +1746,20 @@ async function executeToolImplementation(
     // Runs for ALL tools (not just kinded ones) so the per-tool `deniedTools`
     // denylist is enforced alongside the existing mcp/custom/skill gates.
     if (scope.userId && scope.workspaceId) {
-      await assertToolPermissionsWithRetry({
-        userId: scope.userId,
-        workspaceId: scope.workspaceId,
-        toolId: normalizedToolId,
-        toolKind,
-        ctx: executionContext,
-        requestId,
-        signal: effectiveSignal,
-      })
+      effectiveSignal?.throwIfAborted()
+      try {
+        await assertPermissionsAllowed({
+          userId: scope.userId,
+          workspaceId: scope.workspaceId,
+          toolId: normalizedToolId,
+          toolKind,
+          ctx: executionContext,
+          signal: effectiveSignal,
+        })
+      } catch (error) {
+        effectiveSignal?.throwIfAborted()
+        throw error
+      }
     }
 
     if (normalizedToolId === 'load_skill') {
@@ -2171,7 +2137,13 @@ async function executeToolImplementation(
           })
         }
       }
-      finalResult = await processFileOutputs(finalResult, tool, executionContext)
+      finalResult = await processFileOutputs(
+        finalResult,
+        tool,
+        executionContext,
+        operationContext,
+        effectiveSignal
+      )
 
       if (hostedKeyInfo.isUsingHostedKey && finalResult.success) {
         await applyHostedKeyCostToResult(
@@ -2206,6 +2178,7 @@ async function executeToolImplementation(
               toolId,
               tool,
               contextParams,
+              operationContext,
               effectiveSignal,
               resolvedSecretTraceRegistry
             ),
@@ -2231,6 +2204,7 @@ async function executeToolImplementation(
                   toolId,
                   tool,
                   contextParams,
+                  operationContext,
                   effectiveSignal,
                   resolvedSecretTraceRegistry
                 )
@@ -2241,6 +2215,7 @@ async function executeToolImplementation(
           toolId,
           tool,
           contextParams,
+          operationContext,
           effectiveSignal,
           resolvedSecretTraceRegistry
         )
@@ -2267,8 +2242,14 @@ async function executeToolImplementation(
       }
     }
 
-    // Process file outputs if execution context is available
-    finalResult = await processFileOutputs(finalResult, tool, executionContext)
+    /** Persist declared file outputs before returning the tool result. */
+    finalResult = await processFileOutputs(
+      finalResult,
+      tool,
+      executionContext,
+      operationContext,
+      effectiveSignal
+    )
 
     // Add timing data to the result
     const endTime = new Date()
@@ -2301,10 +2282,7 @@ async function executeToolImplementation(
     }
   } catch (error: any) {
     const normalizedError = toError(error)
-    const databaseQueryError = findCause(
-      error,
-      (cause): cause is DrizzleQueryError => cause instanceof DrizzleQueryError
-    )
+    const databaseQueryError = findDatabaseQueryError(error)
     const databaseErrorCause = databaseQueryError ? describeError(error) : undefined
     logger.error(
       `[${requestId}] Error executing tool ${toolId}:`,
@@ -2729,7 +2707,7 @@ async function executeDeclaredInternalOperation({
           : DEFAULT_EXECUTION_TIMEOUT_MS
     const operationController = createTimeoutAbortController(operationTimeout, signal)
     try {
-      response = await handler({
+      const result = await handler({
         toolId,
         input: operationInput,
         headers,
@@ -2737,6 +2715,11 @@ async function executeDeclaredInternalOperation({
         requestId,
         signal: operationController.signal,
       })
+      response = await presentInternalToolOperationResult(
+        result,
+        context,
+        operationController.signal
+      )
     } finally {
       operationController.cleanup()
     }
@@ -2779,7 +2762,7 @@ async function executeDeclaredInternalOperation({
     )
   }
 
-  if (tool.transformResponse) return tool.transformResponse(response, params)
+  if (tool.transformResponse) return tool.transformResponse(response, params, { signal })
   const responseData = await response.json()
   if (isToolResponse(responseData)) return responseData
   return {
@@ -2796,6 +2779,7 @@ async function executeToolRequest(
   toolId: string,
   tool: ToolConfig,
   params: Record<string, any>,
+  context: InternalToolOperationContext | undefined,
   signal?: AbortSignal,
   resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
 ): Promise<ToolResponse> {
@@ -2832,6 +2816,8 @@ async function executeToolRequest(
 
     let response: Response | undefined
     let lastError: unknown
+    const maxResponseBytes =
+      tool.request.responseType === 'binary' ? MAX_FILE_SIZE : MAX_TOOL_RESPONSE_BODY_BYTES
     const nullBodyStatuses = new Set([101, 204, 205, 304])
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -2858,7 +2844,7 @@ async function executeToolRequest(
           headers: headersRecord,
           body: requestParams.body ?? undefined,
           timeout: requestParams.timeout,
-          maxResponseBytes: MAX_TOOL_RESPONSE_BODY_BYTES,
+          maxResponseBytes,
           signal,
           proxyUrl: proxyOption,
           stripAuthOnRedirect: requestParams.stripAuthOnRedirect,
@@ -2895,6 +2881,7 @@ async function executeToolRequest(
             requestId,
             toolId,
             signal,
+            maxBytes: secureResponse.ok ? maxResponseBytes : MAX_TOOL_RESPONSE_BODY_BYTES,
           })
           response = new Response(new Uint8Array(bodyBuffer), {
             status: secureResponse.status,
@@ -3095,7 +3082,31 @@ async function executeToolRequest(
           blob: () => response.blob(),
         } as Response
 
-        const data = await tool.transformResponse(mockResponse, params)
+        const data = await tool.transformResponse(mockResponse, params, { signal })
+        if (tool.request.responseType === 'binary' && data.success) {
+          if (!context) throw new Error('Binary file output requires trusted execution context')
+          const file = data.output?.file
+          if (
+            !isRecordLike(file) ||
+            !Buffer.isBuffer(file.data) ||
+            typeof file.name !== 'string' ||
+            typeof file.mimeType !== 'string'
+          ) {
+            throw new Error('Binary download tools must return a buffered file output')
+          }
+          return await storeInternalToolFileResult(
+            createInternalToolFileResult(
+              { buffer: file.data, name: file.name, mimeType: file.mimeType },
+              (stored) => ({ ...data, output: { ...data.output, file: stored } })
+            ),
+            context,
+            (body) => {
+              if (!isToolResponse(body)) throw new Error('Invalid binary tool response')
+              return body
+            },
+            signal
+          )
+        }
         return data
       } catch (transformError) {
         const normalizedError = toError(transformError)
@@ -3242,7 +3253,7 @@ async function executeMcpTool(
     validateRequestBodySize(JSON.stringify(params), actualRequestId, `mcp:${toolId}`)
     const handler = await getInternalToolOperationHandler(toolId)
     if (!handler) throw new Error(`No internal operation registered for ${toolId}`)
-    const response = await handler({
+    const resultResponse = await handler({
       toolId,
       input: params,
       headers: new Headers(),
@@ -3250,6 +3261,11 @@ async function executeMcpTool(
       requestId: actualRequestId,
       signal,
     })
+    const response = await presentInternalToolOperationResult(
+      resultResponse,
+      context ?? { workflowId: '' },
+      signal
+    )
     const responseBody = await readToolResponseBody(response, {
       requestId: actualRequestId,
       toolId,

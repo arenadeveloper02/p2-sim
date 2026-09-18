@@ -1,13 +1,15 @@
 'use client'
 
-import { useMemo } from 'react'
-import { Chip, ChipLink } from '@sim/emcn'
+import { useState } from 'react'
+import { Chip, ChipLink, cn } from '@sim/emcn'
 import { useQueryStates } from 'nuqs'
+import { ActivityStatus } from '@/components/ui/activity-status'
 import type {
   WorkspaceKnowledgeSearchResult,
   WorkspaceSearchFilters,
 } from '@/lib/api/contracts/knowledge'
-import type { ResourceScope } from '@/lib/core/resource-scope'
+import { useSession } from '@/lib/auth/auth-client'
+import { type ResourceScope, resourceScopeKey } from '@/lib/core/resource-scope'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { matchSnippet } from '@/lib/knowledge/search/snippet'
 import { connectorDisplayName } from '@/lib/sim-search/connectors'
@@ -24,8 +26,6 @@ import {
 import { useSearchIndex, useSearchSourceOverview } from '@/hooks/queries/kb/connectors'
 import { useWorkspaceKnowledgeSearch } from '@/hooks/queries/kb/knowledge'
 
-/** Filters appear only once a list is long and mixed enough for them to help. */
-const FILTERS_MIN_RESULTS = 10
 const DAY_MS = 24 * 60 * 60 * 1000
 /** Every result without a connector is an upload; the filter names them so. */
 const UPLOAD_SOURCE = 'upload'
@@ -81,6 +81,7 @@ function handleResultsKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
   const links = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>('a[data-source-link]')]
   if (links.length === 0) return
   const index = links.findIndex((link) => link === document.activeElement)
+  if (index < 0) return
   const next =
     event.key === 'ArrowDown' ? Math.min(index + 1, links.length - 1) : Math.max(index - 1, 0)
   if (next === index) return
@@ -97,15 +98,7 @@ type KnowledgeSearchResultsProps = (
   onSummarize: (prompt: string, filters: WorkspaceSearchFilters) => void
 }
 
-/**
- * The composer's Search mode: the documents the signed-in person may read that
- * match their query in the canonical Enterprise Search index, as rows
- * that open the source. A header says how many and that the search ran as
- * them; while a connected source is still indexing it says so, and the list
- * grows as documents land. Filters by source and recency appear only once the
- * list is long and mixed enough to need them, and live in the URL beside the
- * query so a filtered search is a shareable link.
- */
+/** A new query or access scope starts a fresh search and rolling-date anchor. */
 export function KnowledgeSearchResults({
   workspaceId,
   scope: suppliedScope,
@@ -113,6 +106,27 @@ export function KnowledgeSearchResults({
   onSummarize,
 }: KnowledgeSearchResultsProps) {
   const scope: ResourceScope = suppliedScope ?? { kind: 'workspace', workspaceId: workspaceId! }
+  const { data: session } = useSession()
+  const trimmed = query.trim()
+  return (
+    <SearchResults
+      key={JSON.stringify([resourceScopeKey(scope), session?.user?.id, trimmed])}
+      scope={scope}
+      query={trimmed}
+      onSummarize={onSummarize}
+    />
+  )
+}
+
+interface SearchResultsProps {
+  scope: ResourceScope
+  query: string
+  onSummarize: KnowledgeSearchResultsProps['onSummarize']
+}
+
+function SearchResults({ scope, query, onSummarize }: SearchResultsProps) {
+  const [hasShownFilters, setHasShownFilters] = useState(false)
+  const [searchedAt] = useState(Date.now)
   const {
     data: index,
     isPending: basesPending,
@@ -120,21 +134,19 @@ export function KnowledgeSearchResults({
     isFetching: basesFetching,
     refetch: refetchIndex,
   } = useSearchIndex(scope)
-  const knowledgeBaseIds = index?.knowledgeBaseId ? [index.knowledgeBaseId] : []
   const [filters, setFilters] = useQueryStates(searchFilterParsers, resourceUrlKeys)
-  const searchFilters = useMemo<WorkspaceSearchFilters>(() => {
-    const window = UPDATED_WINDOWS.find((entry) => entry.id === filters.updated)
-    return {
-      ...(filters.source ? { source: filters.source } : {}),
-      ...(window?.days
-        ? { modifiedAfter: new Date(Date.now() - window.days * DAY_MS).toISOString() }
-        : {}),
-    }
-  }, [filters.source, filters.updated])
+  const window = UPDATED_WINDOWS.find((entry) => entry.id === filters.updated)
+  const searchFilters: WorkspaceSearchFilters = {
+    ...(filters.source ? { source: filters.source } : {}),
+    ...(window?.days
+      ? { modifiedAfter: new Date(searchedAt - window.days * DAY_MS).toISOString() }
+      : {}),
+  }
   const {
-    data: results,
+    data: search,
     isPending,
     isFetching,
+    isPlaceholderData,
     isError: searchFailed,
     refetch: refetchSearch,
   } = useWorkspaceKnowledgeSearch(scope, query, searchFilters)
@@ -142,76 +154,87 @@ export function KnowledgeSearchResults({
   const indexing = (overview?.providers ?? [])
     .filter((provider) => provider.isSyncing)
     .map((provider) => connectorDisplayName(provider.connectorType))
-  const documents = useMemo(() => groupResultsByDocument(results ?? []), [results])
+  const documents = groupResultsByDocument(search?.results ?? [])
   const sourceTypes = [
     ...new Set([
       ...(filters.source ? [filters.source] : []),
-      ...documents.map((result) => result.connectorType ?? UPLOAD_SOURCE),
+      ...(overview?.providers.map((provider) => provider.connectorType) ?? []),
+      UPLOAD_SOURCE,
     ]),
-  ]
-  const filtersActive = filters.source !== null || filters.updated !== 'any'
-  /** The controls appear once the list is long and mixed, and stay while a filter from the link is active. */
-  const showFilters =
-    filtersActive || (documents.length >= FILTERS_MIN_RESULTS && sourceTypes.length > 1)
-
-  /* A failed search says so in one quiet line and offers to run again; the cause is
-     the server's to log, never the reader's to parse. */
-  if (basesFailed || searchFailed) {
-    const retrying = basesFetching || isFetching
-    return (
-      <div className='flex items-center gap-2 px-2 py-2'>
-        <p className='text-[var(--text-muted)] text-caption'>Search couldn’t run.</p>
-        <Chip
-          variant='border'
-          disabled={retrying}
-          onClick={() => void (basesFailed ? refetchIndex() : refetchSearch())}
-        >
-          {retrying ? 'Retrying…' : 'Try again'}
-        </Chip>
-      </div>
-    )
-  }
-  if (!basesPending && knowledgeBaseIds.length === 0) {
-    return (
-      <div className='flex items-center gap-2 px-2 py-2'>
-        <p className='text-[var(--text-muted)] text-caption'>No sources are set up yet.</p>
-        <ChipLink
-          href={
-            scope.kind === 'organization'
-              ? `/o/${scope.organizationId}/integrations`
-              : `/workspace/${scope.workspaceId}/search`
-          }
-        >
-          View sources
-        </ChipLink>
-      </div>
-    )
-  }
-  if (isPending || (isFetching && !results)) {
-    return <p className='px-2 py-2 text-[var(--text-muted)] text-caption'>Searching…</p>
-  }
+  ].sort((left, right) => connectorDisplayName(left).localeCompare(connectorDisplayName(right)))
+  const failed = basesFailed || searchFailed
+  const pending = basesPending || isPending
+  const fetching = basesFetching || isFetching
+  const noSources = !basesPending && !basesFailed && !index?.knowledgeBaseId
+  const partial = search?.retrieval.status === 'partial'
+  const documentCount = documents.length === 1 ? '1 document' : `${documents.length} documents`
 
   const indexingNote =
     indexing.length > 0
       ? `Still indexing ${indexing.join(', ')}; results grow as documents land.`
       : null
 
-  return (
+  const showResults = !noSources && !failed && !basesPending && documents.length > 0
+  const showFilters =
+    hasShownFilters || showResults || (!noSources && !pending && !failed && !!search && !partial)
+  if (showFilters && !hasShownFilters) setHasShownFilters(true)
+
+  return noSources ? (
+    <div className='flex items-center gap-2 px-2 py-2'>
+      <p className='text-[var(--text-muted)] text-caption'>No sources are set up yet.</p>
+      <ChipLink
+        href={
+          scope.kind === 'organization'
+            ? `/o/${scope.organizationId}/integrations`
+            : `/workspace/${scope.workspaceId}/knowledge`
+        }
+      >
+        View sources
+      </ChipLink>
+    </div>
+  ) : (
     <div className='flex flex-col'>
       <div className='flex items-center gap-2 px-2 py-2'>
-        <span className='min-w-0 flex-1 text-[var(--text-muted)] text-caption'>
-          <span className='tabular-nums'>
-            {documents.length === 1 ? '1 document' : `${documents.length} documents`}
-          </span>
-          {' · searched as you'}
-          {indexingNote && <span className='block'>{indexingNote}</span>}
-        </span>
+        <div className='min-w-0 flex-1'>
+          {fetching || (pending && !failed) ? (
+            <ActivityStatus label={pending ? 'Searching…' : 'Updating results…'} isActive />
+          ) : (
+            <p role='status' className='text-[var(--text-muted)] text-caption'>
+              {failed
+                ? 'Search couldn’t run.'
+                : partial
+                  ? documents.length === 0
+                    ? 'Search timed out.'
+                    : `${documentCount} · some results may be missing.`
+                  : documents.length === 0
+                    ? 'Search found no results.'
+                    : `${documentCount} · searched as you`}
+            </p>
+          )}
+          {indexingNote && !failed && !partial && (
+            <p className='text-[var(--text-muted)] text-caption'>{indexingNote}</p>
+          )}
+        </div>
+        {(failed || partial) && (
+          <Chip
+            variant='border'
+            disabled={fetching}
+            onClick={() => void (basesFailed ? refetchIndex() : refetchSearch())}
+          >
+            {fetching ? 'Retrying…' : 'Try again'}
+          </Chip>
+        )}
       </div>
       {showFilters && (
-        <div className='flex flex-wrap items-center gap-1.5 px-2 pb-2'>
+        <div
+          role='group'
+          aria-label='Search filters'
+          className='flex flex-wrap items-center gap-1.5 px-2 pb-2'
+        >
           <Chip
             shape='round'
             active={filters.source === null}
+            aria-pressed={filters.source === null}
             onClick={() => setFilters({ source: null })}
           >
             All sources
@@ -221,6 +244,7 @@ export function KnowledgeSearchResults({
               key={type}
               shape='round'
               active={filters.source === type}
+              aria-pressed={filters.source === type}
               onClick={() => setFilters({ source: filters.source === type ? null : type })}
             >
               {type === UPLOAD_SOURCE ? 'Uploads' : connectorDisplayName(type)}
@@ -232,6 +256,7 @@ export function KnowledgeSearchResults({
               key={window.id}
               shape='round'
               active={filters.updated === window.id}
+              aria-pressed={filters.updated === window.id}
               onClick={() => setFilters({ updated: window.id })}
             >
               {window.label}
@@ -239,14 +264,14 @@ export function KnowledgeSearchResults({
           ))}
         </div>
       )}
-      {documents.length === 0 ? (
-        <p className='px-2 py-2 text-[var(--text-muted)] text-caption'>
-          {filtersActive
-            ? 'No documents match these filters.'
-            : `No documents you can read match “${query}”.`}
-        </p>
-      ) : (
-        <div className='flex flex-col' onKeyDown={handleResultsKeyDown}>
+      {showResults && (
+        <div
+          role='region'
+          aria-label='Search results'
+          aria-busy={isFetching}
+          className={cn('flex flex-col', isPlaceholderData && 'opacity-60')}
+          onKeyDown={handleResultsKeyDown}
+        >
           {documents.map((result) => {
             const source = toSource(result, query, scope)
             return (
@@ -254,11 +279,14 @@ export function KnowledgeSearchResults({
                 key={result.documentId}
                 source={source}
                 query={query}
-                onSummarize={(cited) =>
-                  onSummarize(`Summarize "${cited.title ?? cited.url}"`, {
-                    ...searchFilters,
-                    documentIds: [result.documentId],
-                  })
+                onSummarize={
+                  isPlaceholderData
+                    ? undefined
+                    : (cited) =>
+                        onSummarize(`Summarize "${cited.title ?? cited.url}"`, {
+                          ...searchFilters,
+                          documentIds: [result.documentId],
+                        })
                 }
               />
             )

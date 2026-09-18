@@ -124,7 +124,7 @@ describe('connection method selection', () => {
     )
     expect(dropdown).toBeDisabled()
     expect(dropdown).toHaveTextContent(label)
-    expect(container.textContent).toContain('Create a new source to change the sync method.')
+    expect(container.textContent).toContain('Add a new connection to change the sync method.')
     expect(container.querySelector('[role="radiogroup"]')).toBeNull()
     await act(async () => dropdown!.click())
     expect(document.querySelector('[role="menu"]')).toBeNull()
@@ -155,10 +155,20 @@ describe('connection method selection', () => {
     expect(onChange).toHaveBeenCalledWith({ accessMode: 'admin' })
   })
 
-  it('summarizes a single supported method without a selector', async () => {
+  it('omits the field when the connector supports only the selected method', async () => {
     await render({ connectorConfig: gitlabConnectorMeta, value: { accessMode: 'admin' } })
     expect(container.querySelector('[role="radiogroup"]')).toBeNull()
-    expect(container.textContent).toContain('Admin or service account')
+    expect(container.textContent).toBe('')
+  })
+
+  it('keeps pending upgrade actions without restoring the redundant selector', async () => {
+    await render({
+      connectorConfig: gitlabConnectorMeta,
+      value: { accessMode: 'admin' },
+      footer: <button type='button'>Apply changes</button>,
+    })
+    expect(container.querySelector('[role="radiogroup"]')).toBeNull()
+    expect(container.querySelector('button')?.textContent).toBe('Apply changes')
   })
 
   it('shows ordinary members a summary without editable or disabled choices', async () => {
@@ -223,33 +233,40 @@ describe('connection method selection', () => {
 })
 
 describe('Slack setup continuity', () => {
-  it('keeps the setup link and draft callback when the method selector is hidden', async () => {
-    const onNavigate = vi.fn()
-    await render({
-      connectorConfig: slackConnectorMeta,
-      allowAdmin: false,
-      searchSetupSource: 'slack',
-      slackSetupOnly: true,
-      onSetupNavigate: onNavigate,
-      footer: <button type='button'>Apply changes</button>,
-    })
-    expect(container.querySelector('[role="radiogroup"]')).toBeNull()
-    expect(container.textContent).toContain('Slack app')
-    expect(container.textContent).not.toContain('Member accounts')
-    const link = container.querySelector('a')
-    const target = new URL(link?.getAttribute('href') ?? '', 'http://localhost')
-    expect(target.pathname).toBe('/workspace/workspace-1/settings/credential-groups')
-    expect(target.searchParams.get('search-setup')).toBe('slack')
-    expect(target.searchParams.get('credential-group-provider')).toBe('slack')
-    link?.addEventListener('click', (event) => event.preventDefault())
-    await act(async () => link?.click())
-    expect(onNavigate).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('Apply changes')
-    expect(mocks.accounts).toHaveBeenLastCalledWith({
-      kind: 'workspace',
-      workspaceId: 'workspace-1',
-    })
-  })
+  it.each([
+    {
+      scope: { kind: 'workspace', workspaceId: 'workspace-1' },
+      href: '/workspace/workspace-1/settings/credential-groups',
+    },
+    {
+      scope: { kind: 'organization', organizationId: 'org-1' },
+      href: '/o/org-1/settings/integrations?search-setup=slack&connectedAccounts=slack',
+    },
+  ] as const)(
+    'keeps the $scope.kind setup link and draft callback when the method selector is hidden',
+    async ({ scope, href }) => {
+      const onNavigate = vi.fn()
+      await render({
+        scope,
+        connectorConfig: slackConnectorMeta,
+        allowAdmin: false,
+        searchSetupSource: 'slack',
+        slackSetupOnly: true,
+        onSetupNavigate: onNavigate,
+        footer: <button type='button'>Apply changes</button>,
+      })
+      expect(container.querySelector('[role="radiogroup"]')).toBeNull()
+      expect(container.textContent).toContain('Slack app')
+      expect(container.textContent).not.toContain('Member accounts')
+      const link = container.querySelector('a')
+      expect(link).toHaveAttribute('href', href)
+      link?.addEventListener('click', (event) => event.preventDefault())
+      await act(async () => link?.click())
+      expect(onNavigate).toHaveBeenCalledOnce()
+      expect(container.textContent).toContain('Apply changes')
+      expect(mocks.accounts).toHaveBeenLastCalledWith(scope)
+    }
+  )
 
   it.each(['loading', 'configured'] as const)('hides the Slack detour while %s', async (state) => {
     mocks.loading = state === 'loading'

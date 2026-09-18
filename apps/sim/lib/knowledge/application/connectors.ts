@@ -12,7 +12,7 @@ import {
   knowledgeConnectorSyncLog,
 } from '@sim/db/schema'
 import { truncate } from '@sim/utils/string'
-import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { ConnectorDocumentFilter } from '@/lib/api/contracts/knowledge/connectors'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { requireCurrentHumanRole } from '@/lib/core/application'
@@ -43,12 +43,14 @@ import {
   resolveActiveKnowledgeResourceContext,
   resolveKnowledgeWorkspaceContext,
 } from '@/lib/knowledge/application/contexts'
+import { rethrowGitHubInstallationSourceError } from '@/lib/knowledge/application/github-installation-error'
 import { prepareGitHubInstallationSource } from '@/lib/knowledge/application/github-installation-source'
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
 import {
   type ConnectorAccessMode,
   isConnectorAccessMode,
   mirrorsSourceAcls,
+  supportsConnectorAccessMode,
 } from '@/lib/knowledge/connectors/access-modes'
 import {
   type ConnectorAccessToken,
@@ -61,6 +63,16 @@ import {
   type ViewerConnectorMembership,
 } from '@/lib/knowledge/connectors/member-provisioning'
 import { assertConnectorMirrorsSourceAcls } from '@/lib/knowledge/connectors/mirrored-access'
+import type {
+  ConnectorPermissionConfig,
+  PreparedConnectorPermissions,
+} from '@/lib/knowledge/connectors/permission-config'
+import {
+  hasConnectorPermissionConfig,
+  prepareConnectorPermissions,
+  readConnectorPermissionSummaries,
+  readConnectorPermissionSummary,
+} from '@/lib/knowledge/connectors/permission-config.server'
 import { MEMBER_OBSERVATION_STALE_AFTER_HOURS } from '@/lib/knowledge/connectors/sync-limits'
 import {
   DEFAULT_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE,
@@ -68,6 +80,11 @@ import {
   MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE,
   MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_SEARCH_LENGTH,
 } from '@/lib/knowledge/constants'
+import {
+  documentProcessingOutcomeSelection,
+  failedDocumentCondition,
+  skippedDocumentCondition,
+} from '@/lib/knowledge/documents/processing-status'
 import {
   type ResolvedMembersBinding,
   resolveKnowledgeConnectorMembersBinding,
@@ -90,6 +107,7 @@ import { requireOrganizationSearchApproval } from '@/lib/knowledge/search/integr
 import { escapeLikePattern } from '@/lib/knowledge/tags/utils'
 import { isMemberSyncStatus } from '@/lib/knowledge/types'
 import { credentialProviderMatchesService, type ServiceProviderIdentity } from '@/lib/oauth'
+import { ServiceAccountTokenError } from '@/lib/oauth/credential-service'
 import { CAPABILITY_RULES, refuseCapability } from '@/lib/permission-groups/capabilities'
 import { resolvePermissionGroupConfig } from '@/lib/permission-groups/config-scope.server'
 import { getUserPermissionConfigForOrganization } from '@/lib/permission-groups/resolve.server'
@@ -129,6 +147,7 @@ export interface CreateKnowledgeConnectorInput extends KnowledgeConnectorApplica
   connectorType: string
   credentialId?: string
   apiKey?: string
+  permissionConfig?: ConnectorPermissionConfig
   sourceConfig: Record<string, unknown>
   syncIntervalMinutes: number
   /**
@@ -144,6 +163,8 @@ export interface CreateKnowledgeConnectorInput extends KnowledgeConnectorApplica
 export interface UpdateKnowledgeConnectorInput extends KnowledgeConnectorApplicationInput {
   connectorId: string
   updates: {
+    apiKey?: string
+    permissionConfig?: ConnectorPermissionConfig
     sourceConfig?: Record<string, unknown>
     syncIntervalMinutes?: number
     status?: 'active' | 'paused'
@@ -301,7 +322,7 @@ export async function resolveConnectorCredentialAccessToken(input: {
 }): Promise<ConnectorAccessToken | null> {
   const identity = await resolveAuthorizedConnectorCredentialIdentity(input)
   if (!identity) return null
-  const resolved = await resolveConnectorAccessToken({
+  return resolveConnectorValidationAccessToken({
     auth: input.auth,
     accessMode: input.accessMode,
     connector: { credentialId: input.credentialId, encryptedApiKey: null },
@@ -309,7 +330,51 @@ export async function resolveConnectorCredentialAccessToken(input: {
     requestId: input.requestId,
     sourceConfig: input.sourceConfig,
   })
-  return resolved
+}
+
+/** Exposes actionable credential refusals without returning raw provider payloads. */
+function rethrowConnectorCredentialError(error: unknown): never {
+  if (error instanceof ServiceAccountTokenError && [400, 401, 403].includes(error.statusCode)) {
+    let message: string
+    switch (error.errorCode) {
+      case 'unauthorized_client':
+        message =
+          "Google rejected service-account authorization (unauthorized_client). In Google Admin, authorize the JSON key's numeric client ID with the exact domain-wide delegation scopes in this connector's service-account setup section. Verify the delegated user's Workspace email and allow time for recent delegation changes to propagate."
+        break
+      case 'invalid_grant':
+        message =
+          "Google rejected the service-account grant (invalid_grant). Check that the JSON key is valid and the delegated user's primary Workspace email is correct."
+        break
+      case 'invalid_scope':
+        message =
+          "Google rejected the service-account scopes (invalid_scope). In Google Admin, authorize the exact domain-wide delegation scopes in this connector's service-account setup section."
+        break
+      case 'access_denied':
+        message =
+          'Google denied service-account access (access_denied). Ask your Workspace administrator to check API access policies and domain-wide delegation.'
+        break
+      default:
+        throw error
+    }
+    throw new OrchestrationError('validation', message)
+  }
+  rethrowGitHubInstallationSourceError(error)
+}
+
+/** Applies setup error handling to initial tokens and later delegated user probes. */
+async function resolveConnectorValidationAccessToken(
+  params: Parameters<typeof resolveConnectorAccessToken>[0]
+): Promise<ConnectorAccessToken | null> {
+  const resolved = await resolveConnectorAccessToken(params).catch(rethrowConnectorCredentialError)
+  const getDelegatedAccessToken = resolved?.getDelegatedAccessToken
+  if (!resolved || !getDelegatedAccessToken) return resolved
+  return {
+    ...resolved,
+    getDelegatedAccessToken: (subject, signal) =>
+      (signal ? getDelegatedAccessToken(subject, signal) : getDelegatedAccessToken(subject)).catch(
+        rethrowConnectorCredentialError
+      ),
+  }
 }
 
 export async function validateConnectorSourceConfig(input: {
@@ -320,6 +385,7 @@ export async function validateConnectorSourceConfig(input: {
   organizationId?: string
   actingUserId: string
   requestId: string
+  permissionChange?: PreparedConnectorPermissions
 }): Promise<SourceConfigRejection | null> {
   const accessMode = input.connector.accessMode
   if (!isConnectorAccessMode(accessMode)) {
@@ -398,7 +464,7 @@ export async function validateConnectorSourceConfig(input: {
     if (identity.kind === 'oauth') tokenUserId = identity.userId
   }
 
-  const resolved = await resolveConnectorAccessToken({
+  const resolved = await resolveConnectorValidationAccessToken({
     auth: connectorConfig.auth,
     accessMode,
     connector: input.connector,
@@ -413,14 +479,25 @@ export async function validateConnectorSourceConfig(input: {
     }
   }
 
+  const validationContext = {
+    ...syncContextForToken(resolved),
+    mirrorsSourceAcls: mirrorsSourceAcls(input.connector.accessMode),
+    ...(input.connector.accessMode === 'members' ? PER_MEMBER_LISTING_CONTEXT : {}),
+  }
+  if (validationContext.mirrorsSourceAcls) {
+    if (input.permissionChange) {
+      input.permissionChange.populateSyncContext(validationContext, input.connector.id)
+    } else {
+      await connectorConfig.permissionConfig?.populateSyncContext(
+        input.connector.id,
+        validationContext
+      )
+    }
+  }
   const validation = await connectorConfig.validateConfig(
     resolved.accessToken,
     input.sourceConfig,
-    {
-      ...syncContextForToken(resolved),
-      mirrorsSourceAcls: mirrorsSourceAcls(input.connector.accessMode),
-      ...(input.connector.accessMode === 'members' ? PER_MEMBER_LISTING_CONTEXT : {}),
-    }
+    validationContext
   )
   return validation.valid
     ? null
@@ -462,6 +539,7 @@ export const listKnowledgeConnectors = defineAuthorizedKnowledgeUseCase({
         : await orderedQuery.limit(input.limit + 1).offset(offset)
     const hasMore = input.limit !== undefined && rows.length > input.limit
     const page = input.limit === undefined ? rows : rows.slice(0, input.limit)
+    const permissionSummaries = await readConnectorPermissionSummaries(page)
     const viewerUserId = principal.kind === 'session' ? principal.userId : null
     const memberships =
       viewerUserId && (context.workspaceId || context.organizationId)
@@ -475,6 +553,7 @@ export const listKnowledgeConnectors = defineAuthorizedKnowledgeUseCase({
     return {
       connectors: page.map(({ encryptedApiKey: _encryptedApiKey, ...rest }) => ({
         ...rest,
+        permissionConfig: permissionSummaries.get(rest.id),
         viewerMembership: memberships.get(rest.id) ?? null,
       })),
       hasMore,
@@ -647,6 +726,10 @@ export const readKnowledgeConnector = defineAuthorizedKnowledgeUseCase({
     return {
       connector: {
         ...connectorData,
+        permissionConfig: await readConnectorPermissionSummary(
+          connector.connectorType,
+          connector.id
+        ),
         viewerMembership: memberships.get(connector.id) ?? null,
         syncLogs,
         memberSyncLogs,
@@ -712,6 +795,12 @@ async function executeCreateKnowledgeConnector(
   const connectorMeta = getConnectorMeta(input.connectorType)
   if (!connectorMeta) {
     throw new OrchestrationError('validation', `Unknown connector type: ${input.connectorType}`)
+  }
+  if (!supportsConnectorAccessMode(connectorMeta, input.accessMode ?? 'workspace')) {
+    throw new OrchestrationError(
+      'validation',
+      `${connectorMeta.name} requires source permission access.`
+    )
   }
   if (
     input.apiKey &&
@@ -792,11 +881,20 @@ async function executeCreateKnowledgeConnector(
     sourceConfig: membersBinding?.sourceConfig ?? input.sourceConfig,
   })
   if (membersBinding) membersBinding = { ...membersBinding, sourceConfig }
+  const permissionChange = input.permissionConfig
+    ? await prepareConnectorPermissions(input.connectorType, {
+        accessMode: input.accessMode ?? 'workspace',
+        sourceConfig,
+        permissionConfig: input.permissionConfig,
+        apiKey: input.apiKey,
+      })
+    : undefined
   const outcome = await performCreateKnowledgeConnector({
     knowledgeBase: connectorTarget(context),
     connectorType: input.connectorType,
     credentialId: input.credentialId,
     apiKey: input.apiKey,
+    permissionChange,
     /** Members mode stores the config with its listing caps cleared. */
     sourceConfig,
     syncIntervalMinutes: input.syncIntervalMinutes,
@@ -826,7 +924,13 @@ async function executeCreateKnowledgeConnector(
   })
   requireSuccessfulOutcome(outcome, 'Knowledge connector creation failed')
   return {
-    connector: outcome.connector,
+    connector: {
+      ...outcome.connector,
+      permissionConfig: await readConnectorPermissionSummary(
+        outcome.connector.connectorType,
+        outcome.connector.id
+      ),
+    },
     workspaceId,
     ...(outcome.reused ? { reused: true } : {}),
   }
@@ -952,10 +1056,64 @@ export const updateKnowledgeConnector = defineAuthorizedKnowledgeUseCase({
   async execute({ principal, input, context, request }) {
     const requestId = generateRequestId()
     const actingUserId = resolveKnowledgeAttributedUserId(principal, context)
+    const { apiKey, permissionConfig, ...updates } = input.updates
+    let permissionChange: PreparedConnectorPermissions | undefined
+    let expectedUpdatedAt: Date | undefined
+    if (
+      permissionConfig ||
+      apiKey !== undefined ||
+      (updates.sourceConfig !== undefined &&
+        (await hasConnectorPermissionConfig(context.connector.connectorType)))
+    ) {
+      if (permissionConfig || apiKey !== undefined) {
+        const subjectUserId = resolvePrincipalSubjectUserId(principal)
+        if (!subjectUserId)
+          throw new OrchestrationError(
+            'forbidden',
+            'Permission settings require a signed-in administrator.'
+          )
+        if (context.organizationId)
+          await requireOrganizationMembership(
+            principal,
+            context.organizationId,
+            'admin',
+            'knowledge.use'
+          )
+        else if (context.workspaceId) await requireCurrentHumanRole(subjectUserId, context, 'admin')
+      }
+      const connector = await getKnowledgeConnector(context.knowledgeBaseId, context.connectorId)
+      if (!connector) throw new OrchestrationError('not_found', 'Connector not found')
+      expectedUpdatedAt = connector.updatedAt
+      permissionChange = await prepareConnectorPermissions(connector.connectorType, {
+        accessMode: connector.accessMode,
+        sourceConfig: updates.sourceConfig ?? (connector.sourceConfig as Record<string, unknown>),
+        permissionConfig,
+        apiKey,
+        existing: connector,
+      })
+      if (permissionChange && !permissionConfig && apiKey === undefined) {
+        const subjectUserId = resolvePrincipalSubjectUserId(principal)
+        if (!subjectUserId)
+          throw new OrchestrationError(
+            'forbidden',
+            'Permission settings require a signed-in administrator.'
+          )
+        if (context.organizationId)
+          await requireOrganizationMembership(
+            principal,
+            context.organizationId,
+            'admin',
+            'knowledge.use'
+          )
+        else if (context.workspaceId) await requireCurrentHumanRole(subjectUserId, context, 'admin')
+      }
+    }
     const outcome = await performUpdateKnowledgeConnector({
       knowledgeBase: connectorTarget(context),
       connectorId: context.connectorId,
-      updates: input.updates,
+      updates,
+      permissionChange,
+      expectedUpdatedAt,
       prepareSourceConfig: (connector, sourceConfig) =>
         prepareGitHubInstallationSource({
           principal,
@@ -981,7 +1139,10 @@ export const updateKnowledgeConnector = defineAuthorizedKnowledgeUseCase({
         const owner = resourceScopeFields(resourceScopeFromOwner(context))
         return validateConnectorSourceConfig({
           principal,
-          connector,
+          connector: permissionChange?.encryptedApiKey
+            ? { ...connector, encryptedApiKey: permissionChange.encryptedApiKey }
+            : connector,
+          permissionChange,
           sourceConfig,
           ...owner,
           actingUserId,
@@ -995,7 +1156,15 @@ export const updateKnowledgeConnector = defineAuthorizedKnowledgeUseCase({
       recordSemanticAudit: false,
     })
     requireSuccessfulOutcome(outcome, 'Knowledge connector update failed')
-    return { connector: outcome.connector }
+    return {
+      connector: {
+        ...outcome.connector,
+        permissionConfig: await readConnectorPermissionSummary(
+          outcome.connector.connectorType,
+          outcome.connector.id
+        ),
+      },
+    }
   },
   projectAudit: ({ input, context, result }) => ({
     action: AuditAction.CONNECTOR_UPDATED,
@@ -1150,6 +1319,8 @@ const connectorDocumentSelection = {
   userExcluded: document.userExcluded,
   uploadedAt: document.uploadedAt,
   processingStatus: document.processingStatus,
+  processingOutcome: documentProcessingOutcomeSelection(),
+  processingError: document.processingError,
 }
 
 export const listKnowledgeConnectorDocuments = defineAuthorizedKnowledgeUseCase({
@@ -1198,50 +1369,47 @@ export const listKnowledgeConnectorDocuments = defineAuthorizedKnowledgeUseCase(
         ? sql`${document.filename} ILIKE ${`%${escapeLikePattern(search)}%`} ESCAPE '\\'`
         : undefined,
     ] as const
-    const [[activeCount], excludedCountRows, [failedCount]] = await Promise.all([
+    const active = sql`${document.userExcluded} = false`
+    /** One pass over the source's readable documents; excluded rows are scanned only when counted. */
+    const [[counts], rows] = await Promise.all([
       db
-        .select({ value: count() })
-        .from(document)
-        .where(and(...baseConditions, eq(document.userExcluded, false))),
-      input.filter || input.includeExcluded
-        ? db
-            .select({ value: count() })
-            .from(document)
-            .where(and(...baseConditions, eq(document.userExcluded, true)))
-        : Promise.resolve([{ value: 0 }]),
-      db
-        .select({ value: count() })
+        .select({
+          active: sql<number>`count(*) FILTER (WHERE ${active})::int`,
+          excluded: sql<number>`count(*) FILTER (WHERE ${document.userExcluded} = true)::int`,
+          failed: sql<number>`count(*) FILTER (WHERE ${active} AND ${failedDocumentCondition()})::int`,
+          skipped: sql<number>`count(*) FILTER (WHERE ${active} AND ${skippedDocumentCondition()})::int`,
+        })
         .from(document)
         .where(
           and(
             ...baseConditions,
-            eq(document.userExcluded, false),
-            eq(document.processingStatus, 'failed')
+            input.filter || input.includeExcluded ? undefined : eq(document.userExcluded, false)
           )
         ),
-    ])
-    const excludedCount = excludedCountRows[0]
-    const rows = await db
-      .select(connectorDocumentSelection)
-      .from(document)
-      .where(
-        and(
-          ...baseConditions,
-          filter ? eq(document.userExcluded, filter === 'excluded') : undefined,
-          filter === 'failed' ? eq(document.processingStatus, 'failed') : undefined
+      db
+        .select(connectorDocumentSelection)
+        .from(document)
+        .where(
+          and(
+            ...baseConditions,
+            filter ? eq(document.userExcluded, filter === 'excluded') : undefined,
+            filter === 'failed' ? failedDocumentCondition() : undefined,
+            filter === 'skipped' ? skippedDocumentCondition() : undefined
+          )
         )
-      )
-      .orderBy(asc(document.userExcluded), asc(document.filename), asc(document.id))
-      .limit(limit + 1)
-      .offset(offset)
+        .orderBy(asc(document.userExcluded), asc(document.filename), asc(document.id))
+        .limit(limit + 1)
+        .offset(offset),
+    ])
     const hasMore = rows.length > limit
     const documents = rows.slice(0, limit)
     return {
       documents,
       counts: {
-        active: activeCount?.value ?? 0,
-        excluded: excludedCount?.value ?? 0,
-        failed: failedCount?.value ?? 0,
+        active: counts?.active ?? 0,
+        excluded: counts?.excluded ?? 0,
+        failed: counts?.failed ?? 0,
+        skipped: counts?.skipped ?? 0,
       },
       hasMore,
       offset,

@@ -15,7 +15,7 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   createKnowledgeAclFixtureIds,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/knowledge/__integration__/seed-source-access-fixture'
 import { readOrganizationSearchOverview } from '@/lib/knowledge/application/organization-search-overview'
 import { listSearchSources } from '@/lib/knowledge/application/search-sources'
+import { SOURCE_PERMISSION_ERROR } from '@/lib/knowledge/connectors/sync-limits'
 
 const ids = createKnowledgeAclFixtureIds()
 const indexId = generateId()
@@ -153,7 +154,14 @@ beforeEach(async () => {
     .where(eq(knowledgeConnectorMember.id, memberId))
   await db
     .update(document)
-    .set({ processingStatus: 'completed', enabled: true, userExcluded: false })
+    .set({
+      processingStatus: 'completed',
+      enabled: true,
+      userExcluded: false,
+      contentHash: null,
+      storageKey: null,
+      fileUrl: 'https://fixture.test/private',
+    })
     .where(eq(document.id, documentId))
 })
 
@@ -170,6 +178,44 @@ async function provider(connectorType: string) {
 }
 
 describe('organization operational overview with real SQL', () => {
+  it.each([
+    SOURCE_PERMISSION_ERROR,
+    `Directory refresh incomplete: fixture\n${SOURCE_PERMISSION_ERROR}`,
+    `${SOURCE_PERMISSION_ERROR}\nSource listing failed for a fixture account`,
+    `Directory refresh incomplete: fixture\n${SOURCE_PERMISSION_ERROR}\nSource listing failed for a fixture account`,
+  ])(
+    'recognizes a complete permission notice within composed diagnostics: %s',
+    async (lastSyncError) => {
+      await db
+        .update(knowledgeConnector)
+        .set({ lastSyncError })
+        .where(eq(knowledgeConnector.id, driveId))
+      expect(await provider('google_drive')).toMatchObject({
+        status: 'needs_attention',
+        issue: 'permission_sync_incomplete',
+      })
+    }
+  )
+
+  it('does not classify a provider message containing the permission text as its own notice', async () => {
+    await db
+      .update(knowledgeConnector)
+      .set({ lastSyncError: `Provider message: ${SOURCE_PERMISSION_ERROR}` })
+      .where(eq(knowledgeConnector.id, driveId))
+    expect(await provider('google_drive')).toMatchObject({
+      status: 'needs_attention',
+      issue: 'sync_failed',
+    })
+  })
+
+  it('ignores permission notices on paused sources', async () => {
+    await db
+      .update(knowledgeConnector)
+      .set({ lastSyncError: `Directory refresh incomplete: fixture\n${SOURCE_PERMISSION_ERROR}` })
+      .where(eq(knowledgeConnector.id, pausedDriveId))
+    expect(await provider('google_drive')).toMatchObject({ status: 'active', issue: null })
+  })
+
   it('counts configured sources independently of viewer ACLs, and excludes workspace and untouched providers', async () => {
     const result = await readOrganizationSearchOverview.execute({ principal, input })
     expect(result.providers).toEqual(
@@ -181,6 +227,7 @@ describe('organization operational overview with real SQL', () => {
           status: 'active',
           issue: null,
           isSyncing: false,
+          hasPendingSync: false,
         },
         {
           connectorType: 'gmail',
@@ -189,6 +236,7 @@ describe('organization operational overview with real SQL', () => {
           status: 'active',
           issue: null,
           isSyncing: false,
+          hasPendingSync: false,
         },
       ])
     )
@@ -199,7 +247,7 @@ describe('organization operational overview with real SQL', () => {
       input: { ...input, connectorType: 'google_drive' },
     })
     expect(visible.sources).toHaveLength(2)
-    expect(visible.sources.every((source) => source.viewerDocumentCount === 0)).toBe(true)
+    expect(visible.sources.every((source) => !source.hasViewerDocuments)).toBe(true)
   })
   it('keeps explicit approvals and deactivations visible before source creation', async () => {
     await db.insert(organizationSearchIntegration).values([
@@ -230,7 +278,7 @@ describe('organization operational overview with real SQL', () => {
       .where(eq(knowledgeConnector.id, gmailId))
     expect(await provider('gmail')).toMatchObject({ status: 'waiting_for_connections' })
   })
-  it('distinguishes normal member continuation from partial failure without treating idle as success', async () => {
+  it('distinguishes queued member continuation from active indexing and partial failure', async () => {
     await db
       .update(knowledgeConnectorMember)
       .set({ listingCheckpoint: { cursor: 'fixture' } })
@@ -241,9 +289,15 @@ describe('organization operational overview with real SQL', () => {
       connectorId: gmailId,
       status: 'partial',
       membersIncomplete: 1,
+      docsFailed: 0,
+      processingDispatchFailed: 0,
       completedAt: new Date(),
     })
-    expect(await provider('gmail')).toMatchObject({ status: 'indexing' })
+    expect(await provider('gmail')).toMatchObject({
+      status: 'active',
+      isSyncing: false,
+      hasPendingSync: true,
+    })
     await db
       .update(knowledgeConnectorMemberSyncLog)
       .set({ membersFailed: 1 })
@@ -260,9 +314,13 @@ describe('organization operational overview with real SQL', () => {
     expect(await provider('gmail')).toMatchObject({ status: 'needs_attention' })
     await db
       .update(knowledgeConnector)
-      .set({ nextMemberSyncAt: new Date() })
+      .set({ nextMemberSyncAt: sql`statement_timestamp() - interval '1 second'` })
       .where(eq(knowledgeConnector.id, gmailId))
-    expect(await provider('gmail')).toMatchObject({ status: 'indexing' })
+    expect(await provider('gmail')).toMatchObject({
+      status: 'active',
+      isSyncing: false,
+      hasPendingSync: true,
+    })
     await db
       .update(knowledgeConnector)
       .set({ nextMemberSyncAt: null })
@@ -271,14 +329,51 @@ describe('organization operational overview with real SQL', () => {
       id: generateId(),
       connectorId: gmailId,
       status: 'completed',
+      docsFailed: 0,
+      processingDispatchFailed: 0,
       startedAt: new Date(Date.now() + 1000),
       completedAt: new Date(),
     })
     expect(await provider('gmail')).toMatchObject({ status: 'active' })
   })
-  it('reports inaccessible processing failures without exposing documents, and ignores excluded failures', async () => {
-    await db.update(document).set({ processingStatus: 'failed' }).where(eq(document.id, documentId))
-    expect(await provider('google_drive')).toMatchObject({ status: 'needs_attention' })
+  it('ignores intentional skips while reporting inaccessible source and indexing failures', async () => {
+    await db
+      .update(document)
+      .set({ processingStatus: 'failed', contentHash: 'immutable-sha', fileUrl: '' })
+      .where(eq(document.id, documentId))
+    expect(await provider('google_drive')).toMatchObject({
+      status: 'active',
+      issue: null,
+      isSyncing: false,
+    })
+    await db
+      .update(knowledgeConnector)
+      .set({ lastSyncError: 'previous sync failed' })
+      .where(eq(knowledgeConnector.id, driveId))
+    expect(await provider('google_drive')).toMatchObject({
+      status: 'needs_attention',
+      issue: 'sync_failed',
+      isSyncing: false,
+    })
+    await db
+      .update(knowledgeConnector)
+      .set({ lastSyncError: null })
+      .where(eq(knowledgeConnector.id, driveId))
+    await db.update(document).set({ contentHash: null }).where(eq(document.id, documentId))
+    expect(await provider('google_drive')).toMatchObject({
+      status: 'needs_attention',
+      issue: 'document_indexing_failed',
+      isSyncing: false,
+    })
+    await db
+      .update(document)
+      .set({ contentHash: 'immutable-sha', storageKey: 'fixture-retained-artifact' })
+      .where(eq(document.id, documentId))
+    expect(await provider('google_drive')).toMatchObject({
+      status: 'needs_attention',
+      issue: 'document_indexing_failed',
+      isSyncing: false,
+    })
     await db.update(document).set({ userExcluded: true }).where(eq(document.id, documentId))
     expect(await provider('google_drive')).toMatchObject({ status: 'active' })
     await db

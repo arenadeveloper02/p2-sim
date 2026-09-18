@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import {
   ChartColumn,
   ClipboardList,
-  Clock,
   Credit,
   Database,
   Globe,
@@ -44,6 +43,7 @@ export type AccountSettingsSection = 'general' | 'billing' | 'api-keys' | 'admin
 export type SelfHostSettingsSection = 'general' | 'billing' | 'chat-keys'
 
 export type OrganizationSettingsSection =
+  | 'recently-deleted'
   | 'integrations'
   | 'connected-accounts'
   | 'search-mcp'
@@ -54,7 +54,7 @@ export type OrganizationSettingsSection =
   | 'access-control'
   | 'audit-logs'
   | 'sso'
-  | 'sessions'
+  | 'security'
   | 'data-retention'
   | 'data-drains'
   | 'whitelabeling'
@@ -114,7 +114,7 @@ export type UnifiedSettingsSection =
   | 'inbox'
   | 'sandboxes'
   | 'admin'
-  | 'sessions'
+  | 'security'
   | 'data-retention'
   | 'data-drains'
   | 'mothership'
@@ -138,7 +138,6 @@ export interface UnifiedSettingsNavigationItem {
   section: UnifiedNavigationSection
   order: number
   hideWhenBillingDisabled?: boolean
-  requiresTeam?: boolean
   requiresEnterprise?: boolean
   requiresMax?: boolean
   requiresHosted?: boolean
@@ -473,36 +472,22 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       description: 'Members and workspace access in your organization.',
       group: 'organization',
       order: 0,
-      hideWhenBillingDisabled: true,
-      requiresHosted: true,
-      requiresTeam: true,
-      /**
-       * A plain member sees the roster read-only — `resolveOrganizationSectionAccess`
-       * grants them `'view'` on this one section, and `TeamManagement` renders
-       * without management controls. Every other organization section stays
-       * admin-only.
-       */
-      allowNonOrgAdmin: true,
       organizationSection: 'members',
     },
   },
   {
-    label: 'Usage tracking',
+    label: 'Insights',
     icon: ChartColumn,
     unified: {
       id: 'usage',
-      description: 'Monitor credit usage across your organization.',
+      description: 'Explore usage and activity across your organization.',
       group: 'organization',
       order: 1,
       /**
-       * Deliberately no `hideWhenBillingDisabled`, unlike Members above.
-       *
-       * The sidebar applies that filter *before* it consults `selfHostedOverride`,
-       * so pairing the two hid this section from exactly the deployment the
-       * override exists to serve: self-hosted, billing off, `USAGE_MONITORING_ENABLED`
-       * on. Members can carry the flag because it has no override to reach. Here the
-       * two gates below already answer both cases — hosted needs the plan, and
-       * self-hosted needs the flag.
+       * Do not add `hideWhenBillingDisabled`: the sidebar applies it before
+       * `selfHostedOverride`, which would hide usage monitoring on self-hosted
+       * deployments with billing disabled. Hosted deployments require the plan;
+       * self-hosted deployments require the feature flag.
        */
       requiresHosted: true,
       requiresEnterprise: true,
@@ -524,11 +509,11 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
   },
   {
-    label: 'Connected accounts',
+    label: 'Credential Groups',
     icon: GridOffset,
     unified: {
       id: 'connected-accounts',
-      description: 'Manage accounts shared with your organization’s workflows.',
+      description: 'Manage integrations and workspace access for workflows and Chat.',
       group: 'organization',
       order: 1,
       organizationSection: 'connected-accounts',
@@ -700,18 +685,18 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
   },
   {
-    label: 'Session policies',
-    icon: Clock,
-    docsLink: 'https://docs.sim.ai/platform/enterprise/session-policies',
+    label: 'Security',
+    icon: Lock,
+    docsLink: 'https://docs.sim.ai/platform/enterprise/security',
     unified: {
-      id: 'sessions',
-      description: 'Limit session lifetimes and sign out members org-wide.',
+      id: 'security',
+      description: 'Manage session policies and view outbound IP addresses.',
       group: 'organization',
       order: 8,
       requiresHosted: true,
       requiresEnterprise: true,
-      selfHostedOverride: 'sessionPolicies',
-      organizationSection: 'sessions',
+      selfHostedOverride: 'always',
+      organizationSection: 'security',
     },
   },
   {
@@ -900,10 +885,11 @@ const ORGANIZATION_SECTION_GROUPS: Record<OrganizationSettingsSection, Organizat
     'connected-accounts': 'organization',
     usage: 'organization',
     whitelabeling: 'organization',
+    'recently-deleted': 'organization',
     'audit-logs': 'governance',
     'access-control': 'governance',
     sso: 'governance',
-    sessions: 'governance',
+    security: 'governance',
     'data-retention': 'governance',
     'data-drains': 'governance',
     integrations: 'sim-search',
@@ -915,11 +901,20 @@ export const ORGANIZATION_SETTINGS_ITEMS: SettingsNavigationItem<OrganizationSet
   Object.keys(ORGANIZATION_SECTION_GROUPS) as OrganizationSettingsSection[]
 ).map((id) => {
   const group = ORGANIZATION_SECTION_GROUPS[id]
+  if (id === 'recently-deleted') {
+    return {
+      id,
+      label: 'Recently deleted',
+      description: 'Restore your deleted chats.',
+      icon: Trash,
+      group,
+    }
+  }
   if (id === 'connected-accounts') {
     return {
       id,
-      label: 'Connected accounts',
-      description: 'Manage accounts shared with your organization’s workflows.',
+      label: 'Credential Groups',
+      description: 'Manage integrations and workspace access for workflows and Chat.',
       icon: GridOffset,
       group,
     }
@@ -1011,7 +1006,7 @@ export function resolveOrganizationSectionAccess({
   isTargetOrganizationAdmin,
 }: ResolveOrganizationSectionAccessOptions): OrganizationSectionAccess {
   if (!isTargetOrganizationMember) return 'unavailable'
-  if (section === 'search-mcp') return 'view'
+  if (section === 'search-mcp' || section === 'recently-deleted') return 'view'
   if (section === 'members') return isTargetOrganizationAdmin ? 'manage' : 'view'
   return isTargetOrganizationAdmin ? 'manage' : 'unavailable'
 }
@@ -1019,25 +1014,34 @@ export function resolveOrganizationSectionAccess({
 export interface OrganizationSettingsFeatures {
   billingEnabled: boolean
   hasEnterprisePlan: boolean
+  /**
+   * Whether the organization's permission-group regime is in force, which outlives the plan gate
+   * through a failing payment — see `isOrganizationGovernanceActive`. Only Access Control reads
+   * it, because only that section edits something that keeps applying while the gate is closed.
+   */
+  governanceActive: boolean
   hosted: boolean
   selfHosted: Partial<Record<OrganizationSettingsSection, boolean>>
 }
 
 export function getOrganizationSettingsFeatures(
   hasEnterprisePlan: boolean,
-  deployment: DeploymentShape
+  deployment: DeploymentShape,
+  /** Defaults to the plan gate, so a caller with no reason to distinguish the two keeps its behavior. */
+  governanceActive: boolean = hasEnterprisePlan
 ): OrganizationSettingsFeatures {
   const { features } = deployment
   return {
     billingEnabled: deployment.billingEnabled,
     hasEnterprisePlan,
+    governanceActive,
     hosted: deployment.hosted,
     selfHosted: {
       'connected-accounts': true,
       'access-control': features.accessControl,
       'audit-logs': features.auditLogs,
       sso: features.sso,
-      sessions: features.sessionPolicies,
+      security: true,
       'data-retention': features.dataRetention,
       'data-drains': features.dataDrains,
       usage: features.usageMonitoring,
@@ -1054,11 +1058,18 @@ export function isOrganizationSettingsSectionAvailable(
   section: OrganizationSettingsSection,
   features: OrganizationSettingsFeatures
 ): boolean {
-  if (section === 'members' || section === 'search-mcp') return true
+  if (section === 'members' || section === 'search-mcp' || section === 'recently-deleted')
+    return true
   if (section === 'billing') return features.billingEnabled
   /* Sim Search itself is enterprise on the hosted product; self-hosted gates it by flag, not by section. */
   if (section === 'integrations' || section === 'search-slack')
     return !features.hosted || features.hasEnterprisePlan
+  /**
+   * Access Control follows governance rather than the plan gate: its restrictions keep applying
+   * through a failing payment, so hiding the page that edits them would leave an organization
+   * governed by rules it cannot see or loosen until the invoice clears.
+   */
+  if (section === 'access-control' && features.hosted) return features.governanceActive
   if (features.hosted) return features.hasEnterprisePlan
   return features.selfHosted[section] ?? false
 }
@@ -1072,7 +1083,7 @@ export interface WorkspacePermissionConfig {
   hideSandboxesTab?: boolean
 }
 
-const WORKSPACE_PERMISSION_CONFIG_KEYS: Partial<
+export const WORKSPACE_PERMISSION_CONFIG_KEYS: Partial<
   Record<WorkspaceSettingsSection, keyof WorkspacePermissionConfig>
 > = {
   secrets: 'hideSecretsTab',
@@ -1085,6 +1096,11 @@ const WORKSPACE_PERMISSION_CONFIG_KEYS: Partial<
 
 export function workspaceSectionUsesPermissionConfig(section: WorkspaceSettingsSection): boolean {
   return WORKSPACE_PERMISSION_CONFIG_KEYS[section] !== undefined
+}
+
+export function getSettingsPermissionConfigKey(section: UnifiedSettingsSection) {
+  const workspaceSection = UNIFIED_TO_WORKSPACE_SECTION[section]
+  return workspaceSection ? WORKSPACE_PERMISSION_CONFIG_KEYS[workspaceSection] : undefined
 }
 
 export interface WorkspaceSettingsEntitlements {

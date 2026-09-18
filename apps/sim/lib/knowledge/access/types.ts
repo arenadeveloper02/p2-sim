@@ -1,3 +1,5 @@
+import type { SQL } from 'drizzle-orm'
+
 /** Held by every principal in the workspace; the default ACL of an upload. */
 export const WORKSPACE_ACCESS_TOKEN = 'ws' as const
 
@@ -93,6 +95,13 @@ export interface KnowledgeAccessProvider {
     documentIds: readonly string[],
     signal?: AbortSignal
   ): Promise<KnowledgeAccessScope>
+  /**
+   * A `knowledge_connector` predicate for the sources whose live authorization (GitHub,
+   * Confluence) could admit this reader beyond the stored ACL: those a held reader credential
+   * can prove, within the operation's knowledge bases. Null when there are none, so readers
+   * skip candidate discovery.
+   */
+  liveSourceConnectorCondition(): Promise<SQL | null>
 }
 
 /** Two existing search legs each contribute at most 200 candidates to one authorization batch. */
@@ -101,8 +110,9 @@ export const MAX_KNOWLEDGE_ACCESS_CANDIDATES = 400
 declare const systemAccessScopeBrand: unique symbol
 
 /**
- * The one exemption from access filtering: a background job acting on rows it
- * owns (document processing, connector sync). It is a branded type so it cannot
+ * The exemption from ACL filtering for a background job acting on rows it
+ * owns (document processing, connector sync). Removed sources remain inaccessible.
+ * It is a branded type so it cannot
  * be assembled from a literal, and this module is its only source, so every
  * caller is one grep away. Never construct it on a request path.
  */

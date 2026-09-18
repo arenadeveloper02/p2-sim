@@ -11,30 +11,9 @@ vi.mock('@/app/workspace/[workspaceId]/integrations/components/integrations-show
   IntegrationTile: () => null,
 }))
 
-import type { SearchSourceSummary } from '@/lib/api/contracts/knowledge/connectors'
 import { DisconnectAccountMenu } from '@/app/o/[organizationId]/integrations/disconnect-account-menu'
-import { SearchSourceRow } from '@/app/workspace/[workspaceId]/search/components/search-source-row'
 
 const accounts = [{ credentialId: 'my-gmail', displayName: 'me@example.test' }]
-const source: SearchSourceSummary = {
-  knowledgeBaseId: 'kb',
-  connectorId: 'gmail',
-  connectorType: 'gmail',
-  sourceDescription: '',
-  accessMode: 'members',
-  availability: 'available',
-  enabled: true,
-  isSyncing: true,
-  lastSyncAt: null,
-  hasSyncError: false,
-  viewerDocumentCount: 0,
-  viewerFailedDocumentCount: 0,
-  viewerEmailVerified: true,
-  connectionRequired: true,
-  viewerMembership: 'connected',
-  viewerAccounts: accounts,
-}
-
 describe('personal integration disconnect', () => {
   let root: Root
   let container: HTMLDivElement
@@ -56,31 +35,16 @@ describe('personal integration disconnect', () => {
     container.remove()
     vi.unstubAllGlobals()
   })
-  async function render(overrides: Partial<SearchSourceSummary> = {}) {
+  async function render() {
     await act(async () =>
       root.render(
-        <SearchSourceRow
-          source={{ ...source, ...overrides } as SearchSourceSummary}
-          scope={{ kind: 'organization', organizationId: 'org' }}
-          canAdmin={false}
-          available={false}
-          waiting
-          isPending
-          onConnect={vi.fn()}
-          accountActions={
-            <DisconnectAccountMenu
-              organizationId='org'
-              integrationName='Gmail'
-              accounts={accounts}
-            />
-          }
-        />
+        <DisconnectAccountMenu organizationId='org' integrationName='Gmail' accounts={accounts} />
       )
     )
   }
   async function openDisconnect() {
     const trigger = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Gmail account actions"]'
+      '[aria-label="Gmail integration actions"]'
     )!
     await act(async () =>
       trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
@@ -96,18 +60,15 @@ describe('personal integration disconnect', () => {
     )!
   }
 
-  it.each([
-    ['indexing', {}],
-    ['failed', { hasSyncError: true }],
-    ['paused', { enabled: false }],
-    ['deactivated', { approved: false }],
-    ['reconnect', { viewerMembership: 'needs_reauth' }],
-    ['unavailable', { availability: 'unavailable', viewerMembership: null }],
-  ] as const)('allows disconnect while %s without requiring admin access', async (_, overrides) => {
-    await render(overrides)
+  it('requires confirmation before disconnecting an account', async () => {
+    await render()
     await openDisconnect()
-    expect(document.body.textContent).toContain('Sim will stop using me@example.test for Search.')
-    expect(document.body.textContent).not.toContain('workflows')
+    expect(document.body.textContent).toContain(
+      'Disconnect me@example.test from all Gmail connections in this organization.'
+    )
+    expect(document.body.textContent).toContain(
+      'Workflows using this account will also lose access.'
+    )
     expect(mocks.mutate).not.toHaveBeenCalled()
     expect(confirm().disabled).toBe(false)
     await act(async () => confirm().click())
@@ -131,5 +92,40 @@ describe('personal integration disconnect', () => {
       'Could not disconnect. Try again.'
     )
     expect(confirm().disabled).toBe(false)
+  })
+
+  it('uses the same distinguishing account label in the menu and confirmation', async () => {
+    await act(async () =>
+      root.render(
+        <DisconnectAccountMenu
+          organizationId='org'
+          integrationName='Gmail'
+          accounts={[accounts[0], { ...accounts[0], credentialId: 'second' }]}
+          accountLabels={
+            new Map([
+              ['my-gmail', 'me@example.test · Inbox'],
+              ['second', 'me@example.test · Archive'],
+            ])
+          }
+        />
+      )
+    )
+    const trigger = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Gmail integration actions"]'
+    )!
+    await act(async () =>
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    )
+    const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Disconnect me@example.test · Inbox',
+      'Disconnect me@example.test · Archive',
+    ])
+    await act(async () => items[1].click())
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Disconnect me@example.test · Archive from all Gmail connections'
+    )
+    await act(async () => confirm().click())
+    expect(mocks.mutate).toHaveBeenCalledWith('second', expect.any(Object))
   })
 })

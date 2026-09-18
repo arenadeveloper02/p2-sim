@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { MOTHERSHIP_STREAM_V1_SCHEMA } from '@/lib/copilot/generated/mothership-stream-v1-schema'
 import {
   FfmpegOperationValues,
   ManageKnowledgeBaseOperationValues,
@@ -20,6 +21,7 @@ import {
   getWaitCountdownTitle,
   humanizeToolName,
   mvDisplayVerb,
+  normalizeToolActivityDescription,
 } from '@/lib/copilot/tools/tool-display'
 
 function representativeToolArgs(entry: ToolCatalogEntry): Record<string, unknown> {
@@ -198,26 +200,19 @@ describe('getToolCompletedTitle', () => {
     expect(getToolCompletedTitle('Custom title from the model')).toBeUndefined()
   })
 
-  it('projects a terminal tense for every settled row, present tense only while running', () => {
+  it('keeps unsuccessful actions neutral without rewriting them as completed', () => {
     expect(getToolStatusDisplayTitle('Comparing workflows', 'success')).toBe('Compared workflows')
     expect(getToolStatusDisplayTitle('Comparing workflows', 'executing')).toBe(
       'Comparing workflows'
     )
-    // An errored row must not read as still running — the frozen present-tense
-    // title ("Searching for X" forever) was reported as a stuck tool call.
-    expect(getToolStatusDisplayTitle('Comparing workflows', 'error')).toBe(
-      'Failed comparing workflows'
-    )
+    expect(getToolStatusDisplayTitle('Comparing workflows', 'error')).toBe('Comparing workflows')
     expect(getToolStatusDisplayTitle('Searching for admin mentions', 'error')).toBe(
-      'Failed searching for admin mentions'
+      'Searching for admin mentions'
     )
     expect(getToolStatusDisplayTitle('Comparing workflows', 'cancelled')).toBe(
       'Stopped comparing workflows'
     )
-    // Non-gerund titles get a prefix rather than a bad rewrite.
-    expect(getToolStatusDisplayTitle('Read recent emails', 'error')).toBe(
-      'Failed: Read recent emails'
-    )
+    expect(getToolStatusDisplayTitle('Read recent emails', 'error')).toBe('Read recent emails')
   })
 })
 
@@ -686,11 +681,28 @@ describe('terminal-title projection is idempotent', () => {
     expect(getToolStatusDisplayTitle(storeErrorLabel, 'rejected')).toBe(storeErrorLabel)
   })
 
-  it('never stacks a second Failed prefix', () => {
+  it('removes historical failure prefixes idempotently', () => {
     const once = getToolStatusDisplayTitle('Reading table', 'error')
-    expect(once).toBe('Failed reading table')
+    expect(once).toBe('Reading table')
     expect(getToolStatusDisplayTitle(once, 'error')).toBe(once)
-    expect(getToolStatusDisplayTitle('Failed: Something', 'error')).toBe('Failed: Something')
+    expect(getToolStatusDisplayTitle('Failed: Something', 'error')).toBe('Something')
+  })
+
+  it.each([
+    ['Failed: Failed reading notes', 'Reading notes'],
+    ['Failed: Locating reference material', 'Locating reference material'],
+    ['Failed', 'Tool activity'],
+    ['Reading failed runs', 'Reading failed runs'],
+    ['FailedJobs report', 'FailedJobs report'],
+    ['iPhone metadata', 'iPhone metadata'],
+    ['Failed: eBay metadata', 'eBay metadata'],
+    ['failed reading notes', 'Reading notes'],
+    ['Failed failed reading notes', 'Reading notes'],
+  ])('normalizes only leading outcome wording: %s', (title, expected) => {
+    expect(getToolStatusDisplayTitle(title, 'error')).toBe(expected)
+    expect(getToolStatusDisplayTitle(title, 'rejected')).toBe(expected)
+    expect(getToolStatusDisplayTitle(expected, 'error')).toBe(expected)
+    expect(getToolStatusDisplayTitle(expected, 'rejected')).toBe(expected)
   })
 
   it('leaves a store-phrased skip label alone when cancelled', () => {
@@ -700,10 +712,8 @@ describe('terminal-title projection is idempotent', () => {
     expect(getToolStatusDisplayTitle(stopped, 'cancelled')).toBe(stopped)
   })
 
-  it('still projects an ordinary present-tense title', () => {
-    expect(getToolStatusDisplayTitle('Searching Sim docs', 'error')).toBe(
-      'Failed searching Sim docs'
-    )
+  it('leaves unsuccessful action wording intact and labels cancellation', () => {
+    expect(getToolStatusDisplayTitle('Searching Sim docs', 'error')).toBe('Searching Sim docs')
     expect(getToolStatusDisplayTitle('Running workflow', 'cancelled')).toBe(
       'Stopped running workflow'
     )
@@ -793,5 +803,75 @@ describe('resource-naming titles', () => {
     expect(getToolDisplayTitle('generate_image', { path: 'files/hero.png' })).toBe(
       'Generating hero.png'
     )
+  })
+})
+
+/** Skipped live calls and interrupted history must not retain running titles. */
+describe('getToolStatusDisplayTitle for skipped and interrupted calls', () => {
+  it.each([
+    ['skipped', 'Skipped running checks'],
+    ['interrupted', 'Stopped running checks'],
+  ] as const)('projects %s titles once', (status, expected) => {
+    expect(getToolStatusDisplayTitle('Running checks', status)).toBe(expected)
+    expect(getToolStatusDisplayTitle(expected, status)).toBe(expected)
+  })
+
+  it('preserves titles already describing a terminal outcome', () => {
+    expect(getToolStatusDisplayTitle('Skipped reading notes', 'interrupted')).toBe(
+      'Skipped reading notes'
+    )
+    expect(getToolStatusDisplayTitle('Attempted to run checks', 'skipped')).toBe(
+      'Attempted to run checks'
+    )
+    expect(getToolStatusDisplayTitle('Checks', 'skipped')).toBe('Skipped: Checks')
+  })
+})
+
+describe('normalizeToolActivityDescription', () => {
+  it('matches the bound published by the producer contract', () => {
+    expect(MOTHERSHIP_STREAM_V1_SCHEMA).toHaveProperty(
+      '$defs.MothershipStreamV1ToolCallDescriptor.properties.activityDescription.maxLength',
+      160
+    )
+  })
+
+  it('normalizes a phrase without rewriting its meaning', () => {
+    expect(
+      normalizeToolActivityDescription('\uFEFF Checking\n\tthe\u00a0latest\u0085invoices  ')
+    ).toBe('Checking the latest invoices')
+  })
+
+  it.each([undefined, null, false, 42, {}, [], '', ' \n\t ', 'a'.repeat(161)])(
+    'ignores an invalid description: %j',
+    (value) => expect(normalizeToolActivityDescription(value)).toBeUndefined()
+  )
+
+  it('counts Unicode codepoints after whitespace normalization', () => {
+    expect(normalizeToolActivityDescription(`  ${'🧪'.repeat(160)}  `)).toBe('🧪'.repeat(160))
+    expect(normalizeToolActivityDescription('🧪'.repeat(161))).toBeUndefined()
+  })
+})
+
+describe('model-authored activity outcomes', () => {
+  it.each([
+    ['success', 'Checking invoices', 'Checked invoices'],
+    ['success', 'Read the latest inbox emails', 'Read the latest inbox emails'],
+    ['success', 'Checked invoices', 'Checked invoices'],
+    ['success', 'Check invoices', 'Check invoices'],
+    ['success', 'Reconciling invoices', 'Reconciling invoices'],
+    ['success', 'Revisando facturas', 'Revisando facturas'],
+    ['success', 'Stopped checking invoices', 'Stopped checking invoices'],
+    ['success', 'Completed: Check invoices', 'Completed: Check invoices'],
+    ['error', 'Failed: Fetching invoices', 'Fetching invoices'],
+    ['error', 'Stopped checking invoices', 'Checking invoices'],
+    ['error', 'Completed checking invoices', 'Checking invoices'],
+    ['rejected', 'Failed checking invoices', 'Checking invoices'],
+    ['cancelled', 'Stopped reading notes', 'Stopped reading notes'],
+    ['interrupted', 'Completed: Check invoices', 'Stopped: Check invoices'],
+    ['skipped', 'Failed: Checking invoices', 'Skipped: Checking invoices'],
+  ])('projects %s once onto "%s"', (status, description, expected) => {
+    const title = getToolStatusDisplayTitle('Fallback', status, 'read', description)
+    expect(title).toBe(expected)
+    expect(getToolStatusDisplayTitle(title, status, 'read', description)).toBe(expected)
   })
 })

@@ -107,6 +107,10 @@ export const env = createEnv({
   skipValidation: true,
 
   server: {
+    OUTBOUND_ROUTING_SOURCE: z.enum(['env', 'appconfig']).optional(),
+    OUTBOUND_ROUTING_CONFIG: z.string().optional(),
+    OUTBOUND_GATEWAYS: z.string().optional(),
+    OUTBOUND_GATEWAY_CREDENTIALS: z.string().optional(),
     // Core Database & Authentication
     DATABASE_URL:                          z.string().url(),                       // Primary database connection string
     DATABASE_REPLICA_URL:                  z.string().url().optional(),            // Read-replica connection string; opt-in reads fall back to the primary when unset
@@ -185,7 +189,6 @@ export const env = createEnv({
     BILLING_CONCURRENCY_LIMIT_ENTERPRISE:   z.string().optional(),                  // In-flight executions per Enterprise billing account (metadata-overridable)
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
     TRIGGER_EU_REGION:                     z.boolean().optional(),                 // Route Trigger.dev runs to eu-central-1 instead of the default us-east-1 (fallback for the trigger-eu-region flag when AppConfig is not the source of truth)
-    DURABLE_SECRET_PROVENANCE_ENFORCED_SURFACES: z.string().optional(),            // Durable surfaces where unrecorded secret provenance fails the run instead of logging a warning: "all", or a comma-separated subset of memory,table-row,knowledge,workspace-file (default: none enforced)
 
     // Table feature limits (per plan). Apply when billing is disabled (free tier defaults) or for billed plans.
     FREE_TABLES_LIMIT:                     z.number().optional(),                  // Max user tables per workspace on free tier (default: 5)
@@ -455,7 +458,8 @@ export const env = createEnv({
     KB_CONFIG_RETRY_FACTOR:                z.number().optional().default(2),       // Retry backoff factor
     KB_CONFIG_MIN_TIMEOUT:                 z.number().optional().default(1000),    // Min timeout in ms
     KB_CONFIG_MAX_TIMEOUT:                 z.number().optional().default(10000),   // Max timeout in ms
-    KB_CONFIG_CONCURRENCY_LIMIT:           z.number().optional().default(20),      // Concurrent document-processing task runs (Trigger.dev queue depth)
+    KB_CONFIG_CONCURRENCY_LIMIT:           z.number().optional().default(20),      // Per-tenant concurrent document-processing runs in the interactive lane
+    KB_CONFIG_BACKFILL_CONCURRENCY_LIMIT:  z.number().optional().default(20),      // Per-tenant concurrent document-processing runs in the connector-backfill lane
     KB_CONFIG_EMBEDDING_CONCURRENCY:       z.number().optional().default(8),       // Concurrent embedding API requests within one embed call
     /** Deployment operating budgets shared by every caller using the same provider credential. */
     KB_CONFIG_EMBEDDING_REQUESTS_PER_MINUTE: z.number().positive().optional().default(600),
@@ -467,7 +471,10 @@ export const env = createEnv({
     KB_CONFIG_MISTRAL_OCR_MAX_CONCURRENT:    z.number().int().positive().max(64).optional().default(2),
     /** JSON map from API-key SHA-256 fingerprints to organization IDs; keys in one org share capacity. */
     MISTRAL_OCR_QUOTA_GROUPS:               z.string().optional(),
-    KB_CONFIG_RERANK_REQUESTS_PER_MINUTE:    z.number().positive().optional().default(60),
+    /** Explicit override for all rerank credentials; otherwise defaults to 60, or 600 for hosted Cohere. */
+    KB_CONFIG_RERANK_REQUESTS_PER_MINUTE:    z.number().positive().optional(),
+    /** Overrides the shared rerank setting only for Sim-hosted Cohere credentials. */
+    KB_CONFIG_HOSTED_RERANK_REQUESTS_PER_MINUTE: z.number().positive().optional(),
     KB_CONFIG_DOCUMENT_CONCURRENCY:        z.number().optional().default(4),       // Concurrent documents in the in-process (non-Trigger) path
     KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(2000),    // Chunks to process per embedding batch
     KB_CONFIG_DOCUMENT_BATCH_SIZE:         z.number().optional().default(10),      // Documents per batch in the in-process (non-Trigger) path
@@ -547,6 +554,11 @@ export const env = createEnv({
     DROPBOX_CLIENT_ID:                     z.string().optional(),                  // Dropbox OAuth client ID
     DROPBOX_CLIENT_SECRET:                 z.string().optional(),                  // Dropbox OAuth client secret
     SLACK_CLIENT_ID:                       z.string().optional(),                  // Slack OAuth client ID
+    SLACK_SEARCH_APP_ID:                   z.string().optional(),
+    SLACK_SEARCH_CLIENT_ID:                z.string().optional(),
+    SLACK_SEARCH_CLIENT_SECRET:            z.string().optional(),
+    SLACK_SEARCH_SIGNING_SECRET:           z.string().optional(),
+    SLACK_SEARCH_SHARED_APP:               z.boolean().optional(),
     SLACK_CLIENT_SECRET:                   z.string().optional(),                  // Slack OAuth client secret
     SLACK_SIGNING_SECRET:                  z.string().optional(),                  // Official Sim Slack app signing secret (verifies inbound events for the native OAuth trigger)
     SLACK_EXTENDED_SCOPES:                 z.boolean().optional(),                 // Request app_mentions:read, assistant:write, im:history — only where the Slack app is approved for them
@@ -614,6 +626,7 @@ export const env = createEnv({
     FORKING_ENABLED:                      z.boolean().optional(),                 // Enable workspace forking on self-hosted (bypasses hosted requirements)
     TABLES_V2_API:                        z.boolean().optional(),                 // Enable the v2 tables HTTP API (public /api/v2/tables + internal /api/table/[tableId]/query predicate-grammar route)
     TABLE_ROW_TTL:                        z.boolean().optional(),
+    PERMISSION_ACCESS_REQUESTS_ENABLED:  z.boolean().optional(),
     CREDENTIAL_GROUPS:                    z.boolean().optional(),                 // Enable enterprise Credential Groups globally
     KNOWLEDGE_MEMBER_ACCESS:              z.boolean().optional(),                 // Enable per-member knowledge connectors and hybrid-by-default retrieval globally
 

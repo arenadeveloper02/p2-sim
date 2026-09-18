@@ -8,7 +8,7 @@ import { Step, Steps } from 'fumadocs-ui/components/steps'
 import { Image } from '@/components/ui/image'
 import { FAQ } from '@/components/ui/faq'
 
-For workspace Search with each person's source permissions, use the [Search connector guides](/search). This page covers connectors inside general knowledge bases.
+For organization Search with each person's source permissions, use the [Search connector guides](/search). This page covers connectors inside general knowledge bases.
 
 Connectors continuously sync documents from external services into your knowledge base, so you never have to upload files manually. New content is added, changed content is re-processed, and deleted content is removed — all automatically.
 
@@ -16,11 +16,11 @@ Connectors continuously sync documents from external services into your knowledg
 
 <Image src="/static/connectors/connectors-sources.png" alt="The current Connect Source picker showing searchable connectors including Airtable, Asana, Ashby, Azure DevOps, Bitbucket, Box, and ClickUp" width={750} height={680} className="mx-auto h-auto w-full max-w-md" />
 
-Sim ships with 64 built-in connectors:
+Sim ships with 66 built-in connectors:
 
 | Category | Connectors |
 |----------|-----------|
-| **Productivity** | Notion, Confluence, Asana, Linear, Jira, Jira Service Management, Monday, Trello, ClickUp, Google Calendar, Google Sheets, Google Forms, Microsoft Excel, Typeform |
+| **Productivity** | Coda, Notion, Confluence, Asana, Linear, Jira, Jira Service Management, Monday, Trello, ClickUp, Google Calendar, Google Sheets, Google Forms, Microsoft Excel, Typeform |
 | **Cloud Storage** | Google Drive, Dropbox, OneDrive, SharePoint, Box, Amazon S3, SFTP |
 | **Documents** | Google Docs, Google Slides, Mintlify, WordPress, Webflow, DocuSign |
 | **Development** | GitHub, GitLab, Bitbucket, Azure DevOps, Sentry |
@@ -31,7 +31,7 @@ Sim ships with 64 built-in connectors:
 | **Incident Management** | incident.io, Rootly, PagerDuty |
 | **Data** | Airtable, Databricks |
 | **Note-taking** | Obsidian |
-| **Meetings** | Zoom, Google Meet, Gong, Grain, Granola, Fathom, Fireflies |
+| **Meetings** | Zoom, Google Meet, Gong, Grain, Granola, Fathom, Fireflies, Circleback |
 | **Recruiting** | Greenhouse, Ashby |
 | **HR** | Workday Help |
 | **Compliance** | Google Vault |
@@ -52,6 +52,7 @@ Other connectors use **API keys** or **personal access tokens** instead. The set
 | Connector | Where to get the key |
 |-----------|---------------------|
 | **Obsidian** | Install the [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) plugin, then copy the key from its settings |
+| **Coda** | API token from Account settings → API connections, saved as a Coda service account credential |
 | **Fireflies** | Generate from the Integrations page in your Fireflies account |
 | **Typeform** | Personal access token from your Typeform account settings |
 | **Azure DevOps** | Personal access token with Wiki (Read), Work Items (Read), and Code (Read) scopes |
@@ -77,7 +78,7 @@ Each connector has source-specific fields that control what gets synced. Example
 
 - **Notion** — sync an entire workspace, a specific database, or a single page tree
 - **GitHub** — specify a repository, branch, and optional file extension filter
-- **Confluence** — enter your Atlassian domain and optionally filter by space key or content type
+- **Confluence** — enter your Atlassian domain and choose spaces, or **All** for all spaces accessible at each sync. Optionally filter by content type or label. PDF and Word (`.docx`, Word 97–2003 `.doc`) attachments on matching pages and blog posts are included as separate documents.
 - **Azure DevOps** — choose what to sync (wiki pages, work items, repository files, or all), with optional work item type/state filters, a custom WIQL query, and repository/branch/path filters
 - **Amazon S3** — point at a bucket with an optional key prefix and a customizable file extension allowlist; S3-compatible stores (Cloudflare R2, MinIO) are supported via a custom endpoint
 - **YouTube** — sync a channel (by `@handle` or ID) or playlist, with an optional published-after date filter and the option to exclude Shorts
@@ -86,6 +87,8 @@ Each connector has source-specific fields that control what gets synced. Example
 - **Fireflies** — optionally filter by host email or cap the number of transcripts synced
 
 Configuration is validated on save — if a repository doesn't exist or a domain is unreachable, you'll see an error immediately.
+
+Confluence attachment indexing requires `read:attachment:confluence`. For a service account, include it when creating the scoped API token; see the [Confluence scope list](/search/confluence#using-a-service-account). Attachments are checked even when the parent page has not changed. Files over 100 MB appear as skipped; convert Word 6/95 files to `.docx` before attaching them.
 
 </Step>
 <Step>

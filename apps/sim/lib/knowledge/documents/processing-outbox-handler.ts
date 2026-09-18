@@ -8,6 +8,10 @@ import {
 import { isBYOKEmbeddingCredentialRejection, isEmbeddingQuotaExhaustion } from '@/lib/embeddings'
 import { SYSTEM_ACCESS_SCOPE } from '@/lib/knowledge/access/types'
 import {
+  cleanupKnowledgeConnector,
+  KNOWLEDGE_CONNECTOR_CLEANUP_EVENT,
+} from '@/lib/knowledge/connectors/deletion'
+import {
   getOcrRequestRejection,
   isPermanentDocumentProcessingError,
   isUsageLimitDocumentProcessingError,
@@ -31,6 +35,7 @@ import {
 } from '@/lib/knowledge/documents/processing-outbox-event'
 import {
   assertDocumentProcessingPayload,
+  resolveDocumentProcessingLane,
   shouldRefundDocumentProcessingPredecessor,
 } from '@/lib/knowledge/documents/processing-payload'
 import { scheduleDocumentProcessingProviderContinuation } from '@/lib/knowledge/documents/processing-provider-continuation'
@@ -96,6 +101,7 @@ function parsePayload(payload: unknown): KnowledgeDocumentProcessingOutboxPayloa
     documentId: requireNonEmptyString(record.documentId, 'documentId'),
     processingOptions: parseProcessingOptions(record.processingOptions),
     billingAttribution: assertBillingAttributionSnapshot(record.billingAttribution),
+    processingLane: resolveDocumentProcessingLane(record.processingLane),
   }
 }
 
@@ -108,7 +114,12 @@ const processKnowledgeDocument: OutboxHandler<unknown> = async (rawPayload, cont
     payload.documentId,
     SYSTEM_ACCESS_SCOPE
   )
-  if (!document || document.processingStatus === 'completed') return
+  if (
+    !document ||
+    document.processingStatus === 'completed' ||
+    document.processingOutcome === 'skipped'
+  )
+    return
   if (document.processingStatus === 'processing') {
     const reclaimed = await reclaimStaleDocumentProcessingClaim({
       knowledgeBaseId: payload.knowledgeBaseId,
@@ -135,6 +146,7 @@ const processKnowledgeDocument: OutboxHandler<unknown> = async (rawPayload, cont
     payload.processingOptions,
     context.eventId,
     payload.billingAttribution,
+    payload.processingLane,
     undefined,
     { signal: context.signal, deadlineAt: context.deadlineAt }
   )
@@ -223,6 +235,7 @@ const KNOWLEDGE_HANDLER_TIMEOUT_MS = Math.min(
 )
 
 export const knowledgeDocumentProcessingOutboxHandlers = {
+  [KNOWLEDGE_CONNECTOR_CLEANUP_EVENT]: cleanupKnowledgeConnector,
   [KNOWLEDGE_STORAGE_CLEANUP_EVENT]: cleanupKnowledgeStorage,
   [OCR_CHECKPOINT_CLEANUP_OUTBOX_EVENT]: cleanupOcrCheckpoint,
   [EMBEDDING_CHECKPOINT_CLEANUP_EVENT]: cleanupEmbeddingCheckpoint,

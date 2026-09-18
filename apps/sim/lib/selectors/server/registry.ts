@@ -8,7 +8,9 @@ import { bitbucketSelectorAttachments } from '@/lib/selectors/server/providers/b
 import { calcomSelectorAttachments } from '@/lib/selectors/server/providers/calcom'
 import { clickupSelectorAttachments } from '@/lib/selectors/server/providers/clickup'
 import { cloudWatchSelectorAttachments } from '@/lib/selectors/server/providers/cloudwatch'
+import { codaSelectorAttachments } from '@/lib/selectors/server/providers/coda'
 import { confluenceSelectorAttachments } from '@/lib/selectors/server/providers/confluence'
+import { githubSelectorAttachments } from '@/lib/selectors/server/providers/github'
 import { googleSelectorAttachments } from '@/lib/selectors/server/providers/google'
 import { harmonicSelectorAttachments } from '@/lib/selectors/server/providers/harmonic'
 import { hubspotSelectorAttachments } from '@/lib/selectors/server/providers/hubspot'
@@ -44,8 +46,10 @@ export const serverSelectorRegistry = {
   ...calcomSelectorAttachments,
   ...clickupSelectorAttachments,
   ...cloudWatchSelectorAttachments,
+  ...codaSelectorAttachments,
   ...confluenceSelectorAttachments,
   ...googleSelectorAttachments,
+  ...githubSelectorAttachments,
   ...harmonicSelectorAttachments,
   ...hubspotSelectorAttachments,
   ...imapSelectorAttachments,

@@ -1,11 +1,13 @@
 /**
  * @vitest-environment node
  */
+import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockAssertBillingAttributionSnapshot,
   mockProcessDocumentAsync,
+  mockQueue,
   mockResolveTriggerRegion,
   mockTask,
   mockTrigger,
@@ -13,11 +15,16 @@ const {
   mockAssertBillingAttributionSnapshot: vi.fn(),
   mockProcessDocumentAsync: vi.fn(),
   mockResolveTriggerRegion: vi.fn(),
+  mockQueue: vi.fn((config) => config),
   mockTask: vi.fn((config) => config),
   mockTrigger: vi.fn(),
 }))
 
-vi.mock('@trigger.dev/sdk', () => ({ task: mockTask, tasks: { trigger: mockTrigger } }))
+vi.mock('@trigger.dev/sdk', () => ({
+  queue: mockQueue,
+  task: mockTask,
+  tasks: { trigger: mockTrigger },
+}))
 vi.mock('@/lib/core/async-jobs/region', () => ({ resolveTriggerRegion: mockResolveTriggerRegion }))
 vi.mock('@/lib/billing/core/billing-attribution', () => ({
   assertBillingAttributionSnapshot: mockAssertBillingAttributionSnapshot,
@@ -27,7 +34,8 @@ vi.mock('@/lib/knowledge/documents/service', () => ({
 }))
 
 import { ProviderCapacityDeferredError } from '@/lib/core/rate-limiter/provider-capacity-error'
-import { EmbeddingAPIError, EmbeddingQuotaExhaustedError } from '@/lib/embeddings/client'
+import { EmbeddingAPIError } from '@/lib/embeddings/api-error'
+import { EmbeddingQuotaExhaustedError } from '@/lib/embeddings/client'
 import { EMBEDDING_QUOTA_CIRCUIT_TTL_MS } from '@/lib/embeddings/quota-circuit'
 import {
   OcrRequestRejectedError,
@@ -564,6 +572,22 @@ describe('knowledge processing worker', () => {
       error: expect.stringContaining('then retry this document'),
     })
     expect(mockTrigger).not.toHaveBeenCalled()
+  })
+
+  it('keeps database failures retryable without sending SQL or parameters to Trigger', async () => {
+    const error = new DrizzleQueryError(
+      'insert private SQL',
+      ['private bound content'],
+      Object.assign(new Error('private database detail'), { code: '57014' })
+    )
+    mockProcessDocumentAsync.mockRejectedValueOnce(error)
+    const failure = await runDocumentProcessing(WORKSPACE_PAYLOAD).catch(
+      (caught: unknown) => caught
+    )
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure).toMatchObject({ message: 'Database request failed (SQLSTATE 57014).' })
+    expect(failure).not.toHaveProperty('cause')
+    expect(JSON.stringify(failure)).not.toContain('private')
   })
 
   it('retries failed provider continuation dispatch instead of reporting a successful deferral', async () => {

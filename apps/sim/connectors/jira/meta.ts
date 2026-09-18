@@ -1,4 +1,5 @@
 import { JiraIcon } from '@/components/icons'
+import { ALL_SOURCE_ITEMS } from '@/connectors/selection'
 import type { ConnectorMeta } from '@/connectors/types'
 
 export const jiraConnectorMeta: ConnectorMeta = {
@@ -16,7 +17,7 @@ export const jiraConnectorMeta: ConnectorMeta = {
   configFields: [
     {
       id: 'domain',
-      title: 'Jira Domain',
+      title: 'Jira site',
       type: 'short-input',
       placeholder: 'yoursite.atlassian.net',
       required: true,
@@ -29,6 +30,9 @@ export const jiraConnectorMeta: ConnectorMeta = {
       canonicalParamId: 'projectKey',
       mode: 'basic',
       multi: true,
+      allowSelectAll: true,
+      selectAllValue: ALL_SOURCE_ITEMS,
+      preserveValueOnModeChange: true,
       dependsOn: ['domain'],
       placeholder: 'Select one or more projects',
       required: true,

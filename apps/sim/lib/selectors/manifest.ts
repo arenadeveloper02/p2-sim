@@ -125,6 +125,49 @@ export const selectorManifest = {
       any: ['folderId', 'spaceId', 'listSpaceId'],
     },
   }),
+  'coda.docs': providerSelector([], {
+    listMode: 'paginated',
+    search: true,
+    detail: true,
+    unknownDetail: true,
+    staleTime: SEARCH_SELECTOR_STALE_TIME,
+  }),
+  'coda.pages': providerSelector(['docId'], {
+    readiness: { all: ['oauthCredential', 'docId'] },
+    detail: true,
+    unknownDetail: true,
+  }),
+  'coda.tables': providerSelector(['docId'], {
+    readiness: { all: ['oauthCredential', 'docId'] },
+    detail: true,
+    unknownDetail: true,
+  }),
+  'coda.columns': providerSelector(['docId', 'tableId'], {
+    readiness: { all: ['oauthCredential', 'docId', 'tableId'] },
+    detail: true,
+    unknownDetail: true,
+  }),
+  'coda.rows': providerSelector(['docId', 'tableId'], {
+    readiness: { all: ['oauthCredential', 'docId', 'tableId'] },
+    listMode: 'paginated',
+    detail: true,
+    unknownDetail: true,
+  }),
+  'coda.formulas': providerSelector(['docId'], {
+    readiness: { all: ['oauthCredential', 'docId'] },
+    detail: true,
+    unknownDetail: true,
+  }),
+  'coda.controls': providerSelector(['docId'], {
+    readiness: { all: ['oauthCredential', 'docId'] },
+    detail: true,
+    unknownDetail: true,
+  }),
+  'coda.folders': providerSelector([], { detail: true, unknownDetail: true }),
+  'coda.permissions': providerSelector(['docId'], {
+    readiness: { all: ['oauthCredential', 'docId'] },
+    detail: true,
+  }),
   'confluence.spaces': providerSelector(['domain'], {
     readiness: { all: ['oauthCredential', 'domain'] },
     listMode: 'paginated',
@@ -147,6 +190,10 @@ export const selectorManifest = {
     detail: true,
   }),
   'gmail.labels': providerSelector(['impersonateUserEmail']),
+  'github.installationRepositories': {
+    ...providerSelector([], { listMode: 'paginated', detail: true, unknownDetail: true }),
+    scopeKinds: ['organization'],
+  },
   'google.calendar': providerSelector(['impersonateUserEmail'], {
     listMode: 'paginated',
     detail: true,

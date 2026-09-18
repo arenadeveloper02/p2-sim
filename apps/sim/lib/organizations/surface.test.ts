@@ -16,6 +16,8 @@ vi.mock('@/lib/credential-groups/scoped-availability', () => ({
 
 vi.mock('@/lib/permission-groups/resolve.server', () => ({
   getUserPermissionConfigForOrganization: mockPermissionConfig,
+  /** The nav lists Access Control on the regime; these tests drive it from the plan knob. */
+  isOrganizationPermissionRegimeActive: mockEnterprisePlan,
 }))
 vi.mock('@/lib/billing/core/subscription', () => ({
   isOrganizationOnEnterprisePlan: mockEnterprisePlan,
@@ -72,6 +74,7 @@ describe('getOrganizationSurfaceContext', () => {
         billingEnabled: true,
         hasEnterprisePlan: true,
       }),
+      deployment: expect.objectContaining({ hosted: true, billingEnabled: true }),
     })
     expect(mockSearchAccess).toHaveBeenCalledWith({ organizationId: 'org-1' })
     expect(mockEnterprisePlan).toHaveBeenCalledWith('org-1')
@@ -102,6 +105,7 @@ describe('getOrganizationSurfaceContext', () => {
         billingEnabled: false,
         selfHosted: { 'audit-logs': true },
       },
+      deployment: { hosted: false, billingEnabled: false, features: { auditLogs: true } },
     })
     expect(mockEnterprisePlan).not.toHaveBeenCalled()
   })

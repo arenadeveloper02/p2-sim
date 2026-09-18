@@ -17,10 +17,13 @@ import {
   organizationSearchUrlKeys,
 } from '@/app/o/[organizationId]/search/search-params'
 import { KnowledgeSearchResults } from '@/app/workspace/[workspaceId]/home/components/knowledge-search-results'
+import { MicButton } from '@/app/workspace/[workspaceId]/home/components/user-input/components/mic-button/mic-button'
+import { MicrophonePermissionHelp } from '@/app/workspace/[workspaceId]/home/components/user-input/components/microphone-permission-help/microphone-permission-help'
 import {
   SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
   SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
+import { useVoiceInput } from '@/hooks/use-voice-input'
 
 const SUBMIT_BUTTON_BASE = 'size-[28px] shrink-0 rounded-full border-0 p-0 transition-colors'
 const SUBMIT_BUTTON_ACTIVE =
@@ -49,7 +52,13 @@ function SearchField({
   docked = false,
 }: SearchFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const { organization } = useOrganizationContext()
   const [value, setValue] = useState(initialValue)
+  const voice = useVoiceInput({
+    organizationId: organization.id,
+    getValue: () => value,
+    onChange: setValue,
+  })
   const canSubmit = value.trim().length > 0
 
   useEffect(() => {
@@ -79,21 +88,34 @@ function SearchField({
         aria-label='Search your sources'
         autoComplete='off'
         spellCheck={false}
-        className='h-full w-full bg-transparent font-body text-[14px] text-[var(--text-primary)] tracking-[-0.015em] outline-hidden placeholder:text-[var(--text-muted)] [&::-webkit-search-cancel-button]:hidden'
+        className='h-full min-w-0 flex-1 bg-transparent font-body text-[14px] text-[var(--text-primary)] tracking-[-0.015em] outline-hidden placeholder:text-[var(--text-muted)] [&::-webkit-search-cancel-button]:hidden'
       />
-      <Button
-        type='button'
-        variant='ghost'
-        onClick={() => onSubmit(value)}
-        disabled={!canSubmit}
-        aria-label='Search'
-        className={cn(
-          SUBMIT_BUTTON_BASE,
-          canSubmit ? SUBMIT_BUTTON_ACTIVE : SUBMIT_BUTTON_DISABLED
+      <div className='flex shrink-0 items-center gap-1.5'>
+        {voice.isSupported && (
+          <MicButton
+            audioLevelsRef={voice.audioLevelsRef}
+            isListening={voice.isListening}
+            onToggle={voice.toggleListening}
+          />
         )}
-      >
-        <ArrowUp className='block size-[16px] text-white dark:text-black' />
-      </Button>
+        <Button
+          type='button'
+          variant='ghost'
+          onClick={() => onSubmit(value)}
+          disabled={!canSubmit}
+          aria-label='Search'
+          className={cn(
+            SUBMIT_BUTTON_BASE,
+            canSubmit ? SUBMIT_BUTTON_ACTIVE : SUBMIT_BUTTON_DISABLED
+          )}
+        >
+          <ArrowUp className='block size-[16px] text-white dark:text-black' />
+        </Button>
+      </div>
+      <MicrophonePermissionHelp
+        open={voice.permissionHelpOpen}
+        onOpenChange={voice.setPermissionHelpOpen}
+      />
     </div>
   )
 }
@@ -121,7 +143,10 @@ function OrganizationSearchContent() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
-  const scrollEdges = useScrollEdges(scrollContainerRef, { contentRef: scrollContentRef })
+  const scrollEdges = useScrollEdges(scrollContainerRef, {
+    contentRef: scrollContentRef,
+    enabled: query.length > 0,
+  })
 
   const summarize = (message: string, assistantSearch: WorkspaceSearchFilters) => {
     MothershipHandoffStorage.store(
@@ -141,7 +166,6 @@ function OrganizationSearchContent() {
 
   return (
     <div className='flex h-full min-h-0 flex-col bg-[var(--bg)]'>
-      {/* Reserved even while empty so the field docks where the page header sits. */}
       <div className={PAGE_HEADER_BAR}>
         <div className={HEADER_ACTION_CLUSTER} />
       </div>
@@ -160,8 +184,6 @@ function OrganizationSearchContent() {
             )}
             {...scrollFadeAttributes(scrollEdges)}
           >
-            {/* The rows carry their own `px-2`; this gutter brings each row's mark under the
-                field's own search glyph, so results read as a column hanging from the field. */}
             <div ref={scrollContentRef} className={cn(PAGE_COLUMN_CLASS, 'px-8')}>
               <KnowledgeSearchResults scope={scope} query={query} onSummarize={summarize} />
             </div>
@@ -169,9 +191,8 @@ function OrganizationSearchContent() {
         </>
       ) : (
         <div className='min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]'>
-          {/* Asymmetric padding biases the group up so heading and field sit at the optical center, as on Home */}
           <div className='flex min-h-full flex-col items-center justify-center px-6 pt-[2vh] pb-[22vh]'>
-            <h1 className='mb-7 max-w-chat text-balance font-season text-[26px] text-[var(--text-primary)] leading-[1.15] tracking-[-0.01em] sm:text-[28px]'>
+            <h1 className='mb-7 max-w-chat text-balance text-center font-season text-[26px] text-[var(--text-primary)] leading-[1.15] tracking-[-0.01em] sm:text-[28px]'>
               Search {organization.name}
             </h1>
             <div className='w-full max-w-chat'>

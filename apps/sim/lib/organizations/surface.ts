@@ -7,6 +7,7 @@ import {
   type OrganizationSettingsFeatures,
 } from '@/components/settings/navigation'
 import type { OrganizationRole } from '@/lib/api/contracts/primitives'
+import type { DeploymentShape } from '@/lib/api/contracts/workspaces'
 import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { isInvitationsDisabled } from '@/lib/core/config/env-flags'
@@ -17,7 +18,10 @@ import {
 } from '@/lib/knowledge/access/availability'
 import { getOrganizationSettingsAccess } from '@/lib/organizations/settings-access'
 import { capabilityDeniedBy } from '@/lib/permission-groups/capability-assertions'
-import { getUserPermissionConfigForOrganization } from '@/lib/permission-groups/resolve.server'
+import {
+  getUserPermissionConfigForOrganization,
+  isOrganizationPermissionRegimeActive,
+} from '@/lib/permission-groups/resolve.server'
 
 export interface OrganizationSurfaceOrganization {
   id: string
@@ -37,7 +41,8 @@ interface OrganizationSurfaceViewer {
 
 /**
  * Everything the organization surface (`/o/[organizationId]`) needs before it renders:
- * the routed organization's identity and the viewer's standing in it. A `null`
+ * the routed organization's identity, the viewer's standing in it, and the
+ * server-resolved deployment shape its client code reads. A `null`
  * result is an explicit access denial — the viewer is not a member, or there is no
  * such organization.
  */
@@ -47,6 +52,7 @@ export interface OrganizationSurfaceContext {
   connectedAccountsAvailable: boolean
   searchAccess: KnowledgeAccessAvailability
   settingsFeatures: OrganizationSettingsFeatures
+  deployment: DeploymentShape
 }
 
 /**
@@ -74,19 +80,36 @@ async function resolveOrganizationSurfaceContext(
   if (!row) return null
 
   const deployment = getDeploymentShape()
-  const [config, [{ memberCount }], connectedAccountsAvailable, searchAccess, hasEnterprisePlan] =
-    await Promise.all([
-      getUserPermissionConfigForOrganization(organizationId),
-      db
-        .select({ memberCount: count() })
-        .from(member)
-        .where(eq(member.organizationId, organizationId)),
-      isScopedCredentialGroupsAvailable({ kind: 'organization', organizationId }),
-      resolveKnowledgeAccessAvailability({ organizationId }),
-      deployment.hosted && access.isAdmin
-        ? isOrganizationOnEnterprisePlan(organizationId)
-        : Promise.resolve(false),
-    ])
+  const [
+    config,
+    [{ memberCount }],
+    connectedAccountsAvailable,
+    searchAccess,
+    hasEnterprisePlan,
+    governanceActive,
+  ] = await Promise.all([
+    getUserPermissionConfigForOrganization(organizationId),
+    db
+      .select({ memberCount: count() })
+      .from(member)
+      .where(eq(member.organizationId, organizationId)),
+    isScopedCredentialGroupsAvailable({ kind: 'organization', organizationId }),
+    resolveKnowledgeAccessAvailability({ organizationId }),
+    deployment.hosted && access.isAdmin
+      ? isOrganizationOnEnterprisePlan(organizationId)
+      : Promise.resolve(false),
+    /**
+     * Access Control stays listed while a payment is failing, because its rules still apply.
+     *
+     * Resolved rather than rejected on a read failure: this value only decides whether a nav item
+     * is drawn, and it is shared by every organization page — letting it throw would take home,
+     * chat and search down with the billing table. The page and the management API read the same
+     * regime and still fail closed, so a listed item cannot be used to reach anything.
+     */
+    deployment.hosted && access.isAdmin
+      ? isOrganizationPermissionRegimeActive(organizationId).catch(() => false)
+      : Promise.resolve(false),
+  ])
   return {
     organization: {
       id: row.id,
@@ -109,7 +132,12 @@ async function resolveOrganizationSurfaceContext(
     },
     connectedAccountsAvailable,
     searchAccess,
-    settingsFeatures: getOrganizationSettingsFeatures(hasEnterprisePlan, deployment),
+    settingsFeatures: getOrganizationSettingsFeatures(
+      hasEnterprisePlan,
+      deployment,
+      governanceActive
+    ),
+    deployment,
   }
 }
 

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   checkActorUsage: vi.fn(),
   generateEmbedding: vi.fn(),
   executeSearch: vi.fn(),
+  retrieval: vi.fn(),
   getDocumentMetadata: vi.fn(),
   getTagDefinitions: vi.fn(),
   getTagDefinitionsBatch: vi.fn(),
@@ -26,10 +27,15 @@ const mocks = vi.hoisted(() => ({
   importProvenance: vi.fn(),
   rerank: vi.fn(),
   searched: vi.fn(),
+  recordActivity: vi.fn(),
 }))
 
 vi.mock('@/lib/core/telemetry', () => ({
   PlatformEvents: { knowledgeBaseSearched: mocks.searched },
+}))
+
+vi.mock('@/lib/knowledge/search/activity', () => ({
+  recordOrganizationSearchActivity: mocks.recordActivity,
 }))
 
 vi.mock('@/lib/knowledge/reranker', () => ({
@@ -84,7 +90,10 @@ vi.mock('@/lib/knowledge/embeddings', () => ({
 
 vi.mock('@/lib/knowledge/search/queries', () => ({
   generateSearchEmbedding: mocks.generateEmbedding,
-  executeKnowledgeSearch: mocks.executeSearch,
+  retrieveKnowledgeSearch: async (...args: unknown[]) => ({
+    rows: await mocks.executeSearch(...args),
+    retrieval: mocks.retrieval(),
+  }),
   getDocumentMetadataByIds: mocks.getDocumentMetadata,
 }))
 
@@ -121,6 +130,7 @@ const knowledgeBase = {
 
 describe('knowledge search application use case', () => {
   beforeEach(() => {
+    mocks.retrieval.mockReturnValue({ status: 'complete', timedOutLegs: [] })
     vi.clearAllMocks()
     mocks.rerank.mockReset()
     resetDbChainMock()
@@ -196,6 +206,53 @@ describe('knowledge search application use case', () => {
     expect(result.totalResults).toBe(0)
   })
 
+  it.each([false, true])(
+    'requires explicit partial-result support for empty incomplete searches (allowPartialResults=%s)',
+    async (allowPartialResults) => {
+      mocks.retrieval.mockReturnValue({ status: 'partial', timedOutLegs: ['vector', 'keyword'] })
+      mocks.executeSearch.mockResolvedValue([])
+      const result = searchKnowledge.execute({
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        input: {
+          workspaceId: 'workspace-1',
+          knowledgeBaseIds: ['knowledge-1'],
+          query: 'canaries',
+          topK: 20,
+          allowPartialResults,
+        },
+      })
+
+      if (!allowPartialResults) {
+        await expect(result).rejects.toThrow('retrieval deadline')
+        return
+      }
+      await expect(result).resolves.toMatchObject({
+        results: [],
+        totalResults: 0,
+        retrieval: { status: 'partial', timedOutLegs: ['vector', 'keyword'] },
+      })
+    }
+  )
+
+  it.each([
+    { surface: 'dashboard' as const, vectorBudgetMs: 3000 },
+    { surface: 'copilot' as const, vectorBudgetMs: undefined },
+    { surface: 'workflow' as const, vectorBudgetMs: undefined },
+  ])('forwards only the configured vector budget for $surface', async (options) => {
+    await searchKnowledge.execute({
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      input: {
+        knowledgeBaseIds: ['knowledge-1'],
+        query: 'release',
+        topK: 10,
+        ...options,
+      },
+    })
+    expect(mocks.executeSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ vectorBudgetMs: options.vectorBudgetMs })
+    )
+  })
+
   describe.each(['workspace', 'organization'] as const)('%s ranking policy', (scope) => {
     beforeEach(() => {
       if (scope === 'organization') {
@@ -206,6 +263,23 @@ describe('knowledge search application use case', () => {
           isSearchIndex: true,
         })
         queueTableRows(member, [{ role: 'member' }])
+      }
+    })
+
+    it('meters only successful organization calls under the acting person', async () => {
+      await searchKnowledge.execute({
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        input: { knowledgeBaseIds: ['knowledge-1'], query: 'answer', topK: 10, surface: 'mcp' },
+      })
+      if (scope === 'organization') {
+        expect(mocks.recordActivity).toHaveBeenCalledExactlyOnceWith({
+          organizationId: 'org-canonical',
+          userId: 'user-1',
+          surface: 'mcp',
+          results: expect.any(Array),
+        })
+      } else {
+        expect(mocks.recordActivity).not.toHaveBeenCalled()
       }
     })
 
@@ -274,6 +348,7 @@ describe('knowledge search application use case', () => {
         input: { knowledgeBaseIds: ['knowledge-1'], query: 'answer', topK: 5 },
       })
     ).rejects.toThrow('Search is not enabled for this organization')
+    expect(mocks.recordActivity).not.toHaveBeenCalled()
     expect(mocks.requireOrganizationSearch).toHaveBeenCalledExactlyOnceWith('org-canonical')
     expect(mocks.resolveBilling).not.toHaveBeenCalled()
     expect(mocks.generateEmbedding).not.toHaveBeenCalled()

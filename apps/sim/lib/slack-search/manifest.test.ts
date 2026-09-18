@@ -1,7 +1,9 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
-import { OrchestrationError } from '@/lib/core/orchestration/types'
-import { createSlackSearchManifest } from '@/lib/slack-search/manifest'
+import {
+  createSharedSlackSearchManifest,
+  createSlackSearchManifest,
+} from '@/lib/slack-search/manifest'
 
 describe('Search app manifest', () => {
   it('combines bot conversations and member indexing in one app with separate grants', () => {
@@ -82,9 +84,75 @@ describe('Search app manifest', () => {
     expect(manifest.features.agent_view).toEqual({ agent_description: 'Search with sources' })
     expect(manifest.display_information.name).toBe('Sim Search')
   })
-  it('requires HTTPS before directing the admin to Slack', () => {
-    expect(() =>
-      createSlackSearchManifest('Sim Search', 'Search', 'http://localhost:3003')
-    ).toThrow(OrchestrationError)
+  it('uses the configured origin without blocking local setup', () => {
+    const manifest = createSlackSearchManifest('Sim Search', 'Search', 'http://localhost:3000')
+    expect(manifest.settings.event_subscriptions.request_url).toBe(
+      'http://localhost:3000/api/webhooks/slack'
+    )
   })
+})
+
+it('official app declares expanded permissions without subscribing to member message events', () => {
+  const manifest = createSharedSlackSearchManifest('https://www.sim.ai')
+  expect(manifest.oauth_config.scopes.user).toEqual([
+    'channels:history',
+    'channels:read',
+    'groups:history',
+    'groups:read',
+    'im:history',
+    'im:read',
+    'mpim:history',
+    'mpim:read',
+    'users:read',
+    'users:read.email',
+    'canvases:read',
+    'canvases:write',
+    'chat:write',
+    'files:read',
+    'search:read.files',
+    'search:read.im',
+    'search:read.mpim',
+    'search:read.private',
+    'search:read.public',
+    'search:read.users',
+    'team:read',
+    'usergroups:read',
+  ])
+  expect(manifest.oauth_config.scopes.bot).toEqual([
+    'assistant:write',
+    'chat:write',
+    'im:history',
+    'im:write',
+    'app_mentions:read',
+    'users:read',
+    'users:read.email',
+    'commands',
+    'channels:history',
+    'channels:manage',
+    'channels:read',
+    'channels:write.invites',
+    'chat:write.public',
+    'groups:history',
+    'groups:read',
+    'groups:write',
+    'groups:write.invites',
+    'links:read',
+    'links:write',
+    'mpim:history',
+    'mpim:read',
+    'mpim:write',
+    'reactions:write',
+  ])
+  expect(manifest.features.slash_commands.map((command) => command.command)).toEqual([
+    '/query',
+    '/connect',
+  ])
+  expect(
+    manifest.features.slash_commands.every(
+      (command) => command.url === 'https://www.sim.ai/api/webhooks/slack'
+    )
+  ).toBe(true)
+  expect(manifest.settings.event_subscriptions.bot_events).toContain('tokens_revoked')
+  expect(manifest.settings.event_subscriptions.bot_events).not.toContain('message.channels')
+  expect(manifest.settings.event_subscriptions).not.toHaveProperty('user_events')
 })

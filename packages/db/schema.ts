@@ -1,8 +1,8 @@
-import { omit } from '@sim/utils/object'
-import { getTableColumns, type SQL, sql } from 'drizzle-orm'
+import { type SQL, sql } from 'drizzle-orm'
 import {
   type AnyPgColumn,
   bigint,
+  bit,
   boolean,
   check,
   customType,
@@ -10,6 +10,7 @@ import {
   decimal,
   doublePrecision,
   foreignKey,
+  halfvec,
   index,
   integer,
   json,
@@ -523,14 +524,6 @@ export const workflowExecutionLogs = pgTable(
      * `materializeExecutionData`, which resolves the pointer.
      */
     executionData: jsonb('execution_data').notNull().default('{}'),
-    // contract-pending(after #7134 is fully deployed to production): DROP COLUMN
-    // cost. Same procedure and argless-read lint as the user_stats marker
-    // (scripts/check-pending-drop-tables.ts). Script migration
-    // 0009_backfill_wel_residual_cost_total projects the ~23 straggler rows
-    // whose json still held a numeric total into cost_total before the drop;
-    // the contract PR must ALSO deregister that script (it reads this column).
-    /** @deprecated Not written/read; cost lives in usage_log + the `cost_total` projection. */
-    cost: jsonb('cost'),
     // Faithful, write-once projection of the run's usage_log ledger sum (dollars).
     // Backs list cost display/filter/sort without live aggregation; never an
     // independently-computed value (cost_total == SUM(usage_log) for the run).
@@ -562,6 +555,17 @@ export const workflowExecutionLogs = pgTable(
       table.workspaceId,
       table.startedAt
     ),
+    /** Supports index-only activity summaries and breakdowns. */
+    workspaceActivityIdx: index('workflow_execution_logs_workspace_activity_idx')
+      .on(
+        table.workspaceId,
+        table.startedAt,
+        table.status,
+        table.totalDurationMs,
+        table.workflowId,
+        table.trigger
+      )
+      .concurrently(),
     workspaceStartedAtIdDescIdx: index(
       'workflow_execution_logs_workspace_started_at_id_desc_idx'
     ).on(table.workspaceId, sql`${table.startedAt} DESC NULLS LAST`, sql`${table.id} DESC`),
@@ -594,12 +598,6 @@ export const workflowExecutionLogs = pgTable(
       ),
   })
 )
-
-/**
- * Live columns of `workflow_execution_logs` while the `cost` drop is
- * outstanding — see `userStatsColumns` for the pattern.
- */
-export const workflowExecutionLogColumns = omit(getTableColumns(workflowExecutionLogs), ['cost'])
 
 export const executionLargeValueReferenceSourceEnum = pgEnum(
   'execution_large_value_reference_source',
@@ -1247,36 +1245,8 @@ export const userStats = pgTable('user_stats', {
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' })
     .unique(), // One record per user
-  // contract-pending(after #7134 is fully deployed to production): DROP COLUMN
-  // the 19 @deprecated columns in this table. Their last readers/writers were
-  // removed by the ledger cutover (#7078/#7113) and #7134; the declarations
-  // remain ONLY so the app schema keeps matching the deployed database until
-  // the drop. Argless select()/relational reads of this table are forbidden
-  // meanwhile — they would put these columns back into generated SQL and break
-  // the old task set when the contract deploy drops them mid-cutover — enforced
-  // by scripts/check-pending-drop-tables.ts. The follow-up PR deletes the
-  // @deprecated declarations plus this marker and ships the generated DROP
-  // migration in the same change.
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalManualExecutions: integer('total_manual_executions').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalApiCalls: integer('total_api_calls').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalWebhookTriggers: integer('total_webhook_triggers').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalScheduledExecutions: integer('total_scheduled_executions').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalChatExecutions: integer('total_chat_executions').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalMcpExecutions: integer('total_mcp_executions').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
-  totalTokensUsed: bigint('total_tokens_used', { mode: 'number' }).notNull().default(0),
-  /** @deprecated No readers or writers; report cost from usage_log. */
-  totalCost: decimal('total_cost').notNull().default('0'),
   currentUsageLimit: decimal('current_usage_limit').default(DEFAULT_FREE_CREDITS.toString()), // Default $5 (1,000 credits) for free plan, null for team/enterprise
   usageLimitUpdatedAt: timestamp('usage_limit_updated_at').defaultNow(),
-  /** @deprecated No readers or writers; usage is the attributed usage_log ledger. Drop via DROP COLUMN in a follow-up migration. */
-  currentPeriodCost: decimal('current_period_cost').notNull().default('0'),
   /** Previous-period usage; written by the cycle-close sweep from ledger sums. */
   lastPeriodCost: decimal('last_period_cost').default('0'),
   /**
@@ -1287,10 +1257,6 @@ export const userStats = pgTable('user_stats', {
    * by the ordinary per-usage ledger write path.
    */
   billedOverageThisPeriod: decimal('billed_overage_this_period').notNull().default('0'), // Amount of overage already billed via threshold billing
-  /** @deprecated No readers or writers; ledger entity stamps attribute pre/post-join usage. Drop via DROP COLUMN in a follow-up migration. */
-  proPeriodCostSnapshot: decimal('pro_period_cost_snapshot').default('0'),
-  /** @deprecated No readers or writers; see proPeriodCostSnapshot. Drop via DROP COLUMN in a follow-up migration. */
-  proPeriodCostSnapshotAt: timestamp('pro_period_cost_snapshot_at'),
   /**
    * Credit balance tracker.
    *
@@ -1298,22 +1264,8 @@ export const userStats = pgTable('user_stats', {
    * overage collection. It is not a per-usage aggregate counter.
    */
   creditBalance: decimal('credit_balance').notNull().default('0'),
-  /** @deprecated No readers or writers; report Copilot cost from usage_log. */
-  totalCopilotCost: decimal('total_copilot_cost').notNull().default('0'),
-  /** @deprecated No readers or writers; Copilot usage is the copilot-source usage_log ledger. Drop via DROP COLUMN in a follow-up migration. */
-  currentPeriodCopilotCost: decimal('current_period_copilot_cost').notNull().default('0'),
   /** Previous-period Copilot cost; written by the cycle-close sweep from copilot-source ledger sums. */
   lastPeriodCopilotCost: decimal('last_period_copilot_cost').default('0'),
-  /** @deprecated No readers or writers; report Copilot tokens from usage_log. */
-  totalCopilotTokens: bigint('total_copilot_tokens', { mode: 'number' }).notNull().default(0),
-  /** @deprecated No readers or writers; report Copilot calls from usage_log. */
-  totalCopilotCalls: integer('total_copilot_calls').notNull().default(0),
-  /** @deprecated No readers or writers; report MCP Copilot calls from usage_log. */
-  totalMcpCopilotCalls: integer('total_mcp_copilot_calls').notNull().default(0),
-  /** @deprecated No readers or writers; report MCP Copilot cost from usage_log. */
-  totalMcpCopilotCost: decimal('total_mcp_copilot_cost').notNull().default('0'),
-  /** @deprecated No writer (never incremented or reset). MCP copilot usage lives in usage_log (source 'mcp_copilot'); read it from there, not this column. */
-  currentPeriodMcpCopilotCost: decimal('current_period_mcp_copilot_cost').notNull().default('0'),
   /**
    * Storage upload/delete hot-path tracker for personal plans.
    *
@@ -1321,8 +1273,6 @@ export const userStats = pgTable('user_stats', {
    * org-scoped storage writes update `organization.storageUsedBytes`.
    */
   storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
-  /** @deprecated No readers or writers; not updated since execution stopped writing user_stats. */
-  lastActive: timestamp('last_active').notNull().defaultNow(),
   billingBlocked: boolean('billing_blocked').notNull().default(false),
   billingBlockedReason: billingBlockedReasonEnum('billing_blocked_reason'),
   /**
@@ -1341,35 +1291,6 @@ export const userStats = pgTable('user_stats', {
     .notNull()
     .default({}),
 })
-
-/**
- * Live columns of `user_stats` — the selection every read of this table goes
- * through while the contract-pending drop (see the marker inside the table) is
- * outstanding, so generated SQL never names the doomed columns. Enforced by
- * `scripts/check-pending-drop-tables.ts`; the contract PR deletes this helper
- * together with the deprecated declarations.
- */
-export const userStatsColumns = omit(getTableColumns(userStats), [
-  'totalManualExecutions',
-  'totalApiCalls',
-  'totalWebhookTriggers',
-  'totalScheduledExecutions',
-  'totalChatExecutions',
-  'totalMcpExecutions',
-  'totalTokensUsed',
-  'totalCost',
-  'currentPeriodCost',
-  'proPeriodCostSnapshot',
-  'proPeriodCostSnapshotAt',
-  'totalCopilotCost',
-  'currentPeriodCopilotCost',
-  'totalCopilotTokens',
-  'totalCopilotCalls',
-  'totalMcpCopilotCalls',
-  'totalMcpCopilotCost',
-  'currentPeriodMcpCopilotCost',
-  'lastActive',
-])
 
 export const customTools = pgTable(
   'custom_tools',
@@ -1685,6 +1606,13 @@ export const organization = pgTable('organization', {
    * cache TTL instead of the 24h cookie-cache lifetime.
    */
   securityPolicyVersion: integer('security_policy_version').notNull().default(1),
+  /**
+   * Whether members must sign in through this organization's identity provider.
+   * Checked only when a session is created, so turning it on ends no session that
+   * already exists; signing everyone out stays the separate revoke action. Owners
+   * keep password sign-in as a break-glass path for a broken identity provider.
+   */
+  requireSso: boolean('require_sso').notNull().default(false),
   whitelabelSettings: json('whitelabel_settings').$type<{
     brandName?: string
     logoUrl?: string
@@ -1716,12 +1644,6 @@ export const organization = pgTable('organization', {
     .$type<Record<string, number>>()
     .notNull()
     .default({}),
-  // contract-pending(after #7134 is fully deployed to production): DROP COLUMN
-  // departed_member_usage. The last readers/writers (v1 admin exposure,
-  // cycle-close resets) were removed in #7134; same procedure and argless-read
-  // lint as the user_stats marker (scripts/check-pending-drop-tables.ts).
-  /** @deprecated No readers or writers; a departed member's ledger rows stay stamped to the org's period, so nothing needs capturing. */
-  departedMemberUsage: decimal('departed_member_usage').notNull().default('0'),
   /**
    * Organization credit balance tracker.
    *
@@ -1732,12 +1654,6 @@ export const organization = pgTable('organization', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
-
-/**
- * Live columns of `organization` while the `departed_member_usage` drop is
- * outstanding — see `userStatsColumns` for the pattern.
- */
-export const organizationColumns = omit(getTableColumns(organization), ['departedMemberUsage'])
 
 export const member = pgTable(
   'member',
@@ -1792,6 +1708,70 @@ export const organizationMemberUsageLimit = pgTable(
       table.userId
     ),
     organizationIdIdx: index('org_member_usage_limit_organization_id_idx').on(table.organizationId),
+  })
+)
+
+/** Organization opt-out; an absent row keeps access requests enabled. */
+export const organizationAccessRequestSettings = pgTable('organization_access_request_settings', {
+  organizationId: text('organization_id')
+    .primaryKey()
+    .references(() => organization.id, { onDelete: 'cascade' }),
+  allowRequests: boolean('allow_requests').default(true).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  updatedBy: text('updated_by').references(() => user.id, { onDelete: 'set null' }),
+})
+
+/** Durable review history, scoped to the organization that owned the request at creation. */
+export const permissionAccessRequest = pgTable(
+  'permission_access_request',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    requesterId: text('requester_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id'),
+    scopeKey: text('scope_key').notNull(),
+    targetKey: text('target_key').notNull(),
+    target: jsonb('target').notNull(),
+    targetLabel: text('target_label').notNull(),
+    membershipId: text('membership_id').notNull(),
+    groupId: text('group_id'),
+    groupName: text('group_name'),
+    reason: text('reason').default('').notNull(),
+    status: text('status', { enum: ['pending', 'fulfilled', 'declined', 'cancelled', 'closed'] })
+      .default('pending')
+      .notNull(),
+    decisionReason: text('decision_reason'),
+    decidedBy: text('decided_by').references(() => user.id, { onDelete: 'set null' }),
+    decision: jsonb('decision'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    decidedAt: timestamp('decided_at'),
+  },
+  (table) => ({
+    pendingUnique: uniqueIndex('permission_access_request_pending_unique')
+      .on(table.organizationId, table.requesterId, table.scopeKey, table.targetKey)
+      .where(sql`${table.status} = 'pending'`),
+    organizationQueue: index('permission_access_request_org_queue_idx').on(
+      table.organizationId,
+      table.status,
+      table.createdAt,
+      table.id
+    ),
+    requesterHistory: index('permission_access_request_requester_idx').on(
+      table.organizationId,
+      table.requesterId,
+      table.scopeKey,
+      table.createdAt,
+      table.id
+    ),
+    statusCheck: check(
+      'permission_access_request_status_check',
+      sql`${table.status} in ('pending', 'fulfilled', 'declined', 'cancelled', 'closed')`
+    ),
   })
 )
 
@@ -2260,9 +2240,7 @@ export const workspaceFiles = pgTable(
      */
     displayName: text('display_name'),
     contentType: text('content_type').notNull(),
-    /** contract-pending(after the cutover is fully deployed and size_bytes has no NULLs): drop size, workspace_files_sync_size_columns, and the temporary dev cutover runner — all application reads and writes use size_bytes */
-    size: integer('size').notNull().default(0),
-    /** Exact byte size. The deploy migration backfills existing rows before this release serves traffic. */
+    /** Exact byte size. */
     sizeBytes: bigint('size_bytes', { mode: 'number' }),
     /**
      * Intrinsic pixel dimensions of an image file, captured lazily on first view (and stored so later
@@ -2283,8 +2261,20 @@ export const workspaceFiles = pgTable(
      * with a `now()` default: Postgres applies this as a fast-default (no table rewrite), existing rows
      * get a stable timestamp that — like every metadata write — never advances it, and every insert path
      * is covered without per-call plumbing. Only a content write (upload / overwrite) advances it.
+     *
+     * MILLISECOND precision is an invariant, not an incidental detail. This value is a revision identity
+     * that round-trips through JavaScript `Date` and JSON — search-index dispatch payloads, If-Match
+     * tokens, realtime versions — all of which truncate to milliseconds, while `now()` stores
+     * microseconds. A sub-millisecond value therefore stops comparing equal to its own round-trip, and
+     * every SQL equality keyed on it matches zero rows: a file whose
+     * `workspace_file_search_index.source_content_updated_at` came from such a round trip can never be
+     * claimed, indexed, or cleaned up. The default truncates, and the
+     * `workspace_files_content_version_millisecond` trigger enforces it for the writers a default cannot
+     * reach — explicit `CURRENT_TIMESTAMP` expressions, raw SQL inserts, and any UPDATE.
      */
-    contentUpdatedAt: timestamp('content_updated_at').notNull().defaultNow(),
+    contentUpdatedAt: timestamp('content_updated_at')
+      .notNull()
+      .default(sql`date_trunc('milliseconds', now())`),
     /**
      * Durable cutover marker for content secret provenance. NULL is reserved for legacy rows and
      * writes from app versions that predate tracking. Provenance-aware writers set version 1 in the
@@ -2301,6 +2291,24 @@ export const workspaceFiles = pgTable(
       'workspace_files_workspace_folder_name_active_unique'
     )
       .on(table.workspaceId, sql`coalesce(${table.folderId}, '')`, table.originalName)
+      .where(
+        sql`${table.deletedAt} IS NULL AND ${table.context} = 'workspace' AND ${table.workspaceId} IS NOT NULL`
+      ),
+    /**
+     * Serves the search backfill's hourly keyset walk over every live workspace file, which pages
+     * by `(workspace_id, id)`.
+     *
+     * Without this index nothing supplies that order under that filter, so each page sorts the
+     * whole remaining set and the dispatcher's statement timeout aborts the transaction before any
+     * page commits. The column order must match the walk's `ORDER BY`, and the predicate must match
+     * its filter exactly, or the planner cannot prove the partial index covers the query.
+     *
+     * The walk must also compare its cursor row-wise (`(workspace_id, id) > (:ws, :id)`) to seek
+     * with this index; `a > x OR (a = x AND b > y)` is only ever a filter. See `seedBackfillPage`.
+     */
+    workspaceActiveKeysetIdx: index('workspace_files_workspace_active_keyset_idx')
+      .on(table.workspaceId, table.id)
+      .concurrently()
       .where(
         sql`${table.deletedAt} IS NULL AND ${table.context} = 'workspace' AND ${table.workspaceId} IS NOT NULL`
       ),
@@ -2333,9 +2341,7 @@ export const workspaceFiles = pgTable(
   })
 )
 
-/** Canonical application projection; the legacy `size` bridge is migration-only. */
-export const workspaceFileColumns = omit(getTableColumns(workspaceFiles), ['size'])
-export type WorkspaceFileRow = Omit<typeof workspaceFiles.$inferSelect, 'size'>
+export type WorkspaceFileRow = typeof workspaceFiles.$inferSelect
 
 export const workspaceFileSearchIndexStatusEnum = pgEnum('workspace_file_search_index_status', [
   'pending',
@@ -2344,7 +2350,7 @@ export const workspaceFileSearchIndexStatusEnum = pgEnum('workspace_file_search_
   'failed',
 ])
 
-/** Current and historical search-index state for one immutable workspace-file content revision. */
+/** contract-pending(chunk search fully deployed): retire legacy index state and segments after rollback window. */
 export const workspaceFileSearchIndex = pgTable(
   'workspace_file_search_index',
   {
@@ -2462,6 +2468,101 @@ export const workspaceFileSearchSegment = pgTable(
   })
 )
 
+/** Builds outlive file deletion so their text can be reclaimed in bounded background batches. */
+export const workspaceFileSearchBuild = pgTable(
+  'workspace_file_search_build',
+  {
+    id: text('id').primaryKey(),
+    fileId: text('file_id').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    sourceContentUpdatedAt: timestamp('source_content_updated_at').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    /** Null only for a completely published build; abandoned workers expire automatically. */
+    expiresAt: timestamp('expires_at'),
+  },
+  (table) => ({
+    fileIdx: index('workspace_file_search_build_file_idx').on(table.fileId),
+    cleanupIdx: index('workspace_file_search_build_cleanup_idx')
+      .on(table.expiresAt, table.id)
+      .where(sql`${table.expiresAt} IS NOT NULL`),
+  })
+)
+
+/** One current revision per file. The build identity fences retries and publishes complete coverage. */
+export const workspaceFileSearchRevision = pgTable(
+  'workspace_file_search_revision',
+  {
+    fileId: text('file_id')
+      .primaryKey()
+      .references(() => workspaceFiles.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').notNull(),
+    sourceContentUpdatedAt: timestamp('source_content_updated_at').notNull(),
+    status: workspaceFileSearchIndexStatusEnum('status').notNull().default('pending'),
+    buildId: text('build_id').references(() => workspaceFileSearchBuild.id, {
+      onDelete: 'set null',
+    }),
+    failureReason: text('failure_reason'),
+    lineCount: integer('line_count').notNull().default(0),
+    indexedBytes: integer('indexed_bytes').notNull().default(0),
+    chunkCount: integer('chunk_count').notNull().default(0),
+    dispatchedAt: timestamp('dispatched_at'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceStatusIdx: index('workspace_file_search_revision_workspace_status_idx').on(
+      table.workspaceId,
+      table.status
+    ),
+    buildIdx: index('workspace_file_search_revision_build_idx').on(table.buildId),
+    pendingIdx: index('workspace_file_search_revision_pending_idx')
+      .on(table.workspaceId, table.updatedAt, table.fileId, table.sourceContentUpdatedAt)
+      .where(sql`${table.status} = 'pending' AND ${table.dispatchedAt} IS NULL`),
+    activeIdx: index('workspace_file_search_revision_active_idx')
+      .on(table.dispatchedAt, table.workspaceId)
+      .where(sql`${table.status} = 'pending' AND ${table.dispatchedAt} IS NOT NULL`),
+  })
+)
+
+/** UTF-8 byte-bounded blocks; long-line fragments overlap only for conservative candidate lookup. */
+export const workspaceFileSearchChunk = pgTable(
+  'workspace_file_search_chunk',
+  {
+    buildId: text('build_id')
+      .notNull()
+      .references(() => workspaceFileSearchBuild.id),
+    workspaceId: text('workspace_id').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    lineStart: integer('line_start').notNull(),
+    fragment: boolean('fragment').notNull(),
+    overlap: integer('overlap').notNull().default(0),
+    content: text('content').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      name: 'workspace_file_search_chunk_pk',
+      columns: [table.buildId, table.ordinal],
+    }),
+    lineIdx: index('workspace_file_search_chunk_line_idx').on(
+      table.buildId,
+      table.lineStart,
+      table.ordinal
+    ),
+    contentIdx: index('workspace_file_search_chunk_content_idx').using(
+      'gin',
+      table.workspaceId.asc().op('text_ops'),
+      table.content.asc().op('gin_trgm_ops')
+    ),
+    contentSize: check(
+      'workspace_file_search_chunk_content_size',
+      sql`octet_length(${table.content}) <= 8192`
+    ),
+    position: check(
+      'workspace_file_search_chunk_position',
+      sql`${table.ordinal} >= 0 AND ${table.lineStart} > 0 AND ${table.overlap} BETWEEN 0 AND 2`
+    ),
+  })
+)
+
 export const uploadSessionStatusEnum = pgEnum('upload_session_status', [
   'uploading',
   'completing',
@@ -2488,6 +2589,7 @@ export const uploadSessionPurposeEnum = pgEnum('upload_session_purpose', [
   'knowledge_document',
   'profile_picture',
   'workspace_logo',
+  'organization_logo',
   'mothership_attachment',
   'execution_attachment',
 ])
@@ -3017,6 +3119,16 @@ export const document = pgTable(
       .where(
         sql`${table.processingStatus} IN ('pending', 'processing', 'failed') AND ${table.connectorId} IS NOT NULL AND ${table.contentHash} IS NOT NULL AND ${table.storageKey} IS NOT NULL AND ${table.userExcluded} = false AND ${table.archivedAt} IS NULL AND ${table.deletedAt} IS NULL`
       ),
+    /**
+     * Per-source processing probes (any failed, pending or processing document) behind the
+     * source status, progress and overview reads. Partial on the rare non-terminal states so a
+     * healthy source proves absence without walking every completed document.
+     */
+    connectorProcessingStatusIdx: index('doc_connector_processing_status_idx')
+      .on(table.connectorId, table.processingStatus)
+      .where(
+        sql`${table.processingStatus} IN ('pending', 'processing', 'failed') AND ${table.connectorId} IS NOT NULL AND ${table.userExcluded} = false AND ${table.archivedAt} IS NULL AND ${table.deletedAt} IS NULL`
+      ),
     // Connector document uniqueness (partial — only non-deleted rows)
     connectorExternalIdIdx: uniqueIndex('doc_connector_external_id_idx')
       .on(table.connectorId, table.externalId)
@@ -3215,55 +3327,20 @@ export const embedding = pgTable(
     kbEnabledIdx: index('emb_kb_enabled_idx').on(table.knowledgeBaseId, table.enabled),
     docEnabledIdx: index('emb_doc_enabled_idx').on(table.documentId, table.enabled),
 
-    // Vector similarity search indexes (HNSW), one per stored width
-    embeddingVectorHnswIdx: index('embedding_vector_hnsw_idx')
-      .using('hnsw', table.embedding.op('vector_cosine_ops'))
-      .with({
-        m: 16,
-        ef_construction: 64,
-      }),
-    embedding384VectorHnswIdx: index('embedding_384_vector_hnsw_idx')
-      .using('hnsw', table.embedding384.op('vector_cosine_ops'))
-      .with({
-        m: 16,
-        ef_construction: 64,
-      }),
-    embedding768VectorHnswIdx: index('embedding_768_vector_hnsw_idx')
-      .using('hnsw', table.embedding768.op('vector_cosine_ops'))
-      .with({
-        m: 16,
-        ef_construction: 64,
-      }),
-    embedding1024VectorHnswIdx: index('embedding_1024_vector_hnsw_idx')
-      .using('hnsw', table.embedding1024.op('vector_cosine_ops'))
-      .with({
-        m: 16,
-        ef_construction: 64,
-      }),
     /**
-     * pgvector indexes `vector` only up to 2,000 dimensions and `halfvec` up to
-     * 4,000, so the 3,072 column is indexed through a `halfvec` cast — the
-     * recipe pgvector documents for wider vectors.
+     * `embedding` deliberately carries no ANN index.
      *
-     * Postgres matches an expression index by its expression, so a query must
-     * repeat the cast to use this index. That makes the comparison itself
-     * half-precision, not just the index scan; only the stored vector keeps its
-     * full width. The cost is nil in practice and bounded in principle: every
-     * component of a `text-embedding-3-large` vector is already exactly
-     * representable in binary16 as OpenAI serves it (measured across 27,648
-     * components: zero changed by the cast), and even a model that is not would
-     * move a cosine distance by binary16's ~5e-4 relative error, orders below
-     * what reorders a result.
+     * Approximate retrieval is served by the compact `embedding_search`
+     * projection and its own HNSW indexes. The only vector ordering this table
+     * still takes is the search layer's exact rerank, which wraps its distance
+     * (`(distance) + 0`) precisely so the planner cannot match an index
+     * expression and must rank the bounded candidate set exhaustively.
      *
-     * The search layer derives its distance expression per width from one place
-     * so the query and this index cannot drift apart.
+     * An HNSW index here would therefore never be scanned while still being
+     * maintained on every chunk write, so the per-width vector and
+     * `binary_quantize` expression indexes were dropped once the last app
+     * version that ordered by a bare distance had drained.
      */
-    embedding3072VectorHnswIdx: index('embedding_3072_vector_hnsw_idx')
-      .using('hnsw', sql`(${table.embedding3072}::halfvec(3072)) halfvec_cosine_ops`)
-      .with({
-        m: 16,
-        ef_construction: 64,
-      }),
 
     // Text tag indexes
     tag1Idx: index('emb_kb_tag1_lower_idx').on(table.knowledgeBaseId, sql`lower(${table.tag1})`),
@@ -3298,6 +3375,98 @@ export const embedding = pgTable(
     embeddingWidthCheck: check(
       'embedding_width_check',
       sql`num_nonnulls("embedding", "embedding_384", "embedding_768", "embedding_1024", "embedding_3072") = 1`
+    ),
+  })
+)
+
+/** Keyword ranking reads text-search vectors independently of chunk content and semantic vectors. */
+export const embeddingKeywordSearch = pgTable(
+  'embedding_keyword_search',
+  {
+    id: text('id')
+      .primaryKey()
+      .references(() => embedding.id, { onDelete: 'cascade' }),
+    knowledgeBaseId: text('knowledge_base_id').notNull(),
+    documentId: text('document_id').notNull(),
+    enabled: boolean('enabled').notNull(),
+    contentTsv: tsvector('content_tsv').notNull(),
+  },
+  (table) => ({
+    knowledgeBaseIdx: index('embedding_keyword_search_kb_idx').on(table.knowledgeBaseId),
+    documentIdx: index('embedding_keyword_search_document_idx').on(table.documentId),
+    contentIdx: index('embedding_keyword_search_content_idx').using('gin', table.contentTsv),
+  })
+)
+
+/**
+ * Transactionally maintained candidate projection. Keeping identities and half-precision vectors apart
+ * from content prevents candidate scans from fetching full-precision TOAST values.
+ * The embedding write trigger owns this projection; application writers only change embedding.
+ */
+export const embeddingSearch = pgTable(
+  'embedding_search',
+  {
+    id: text('id')
+      .primaryKey()
+      .references(() => embedding.id, { onDelete: 'cascade' }),
+    knowledgeBaseId: text('knowledge_base_id').notNull(),
+    documentId: text('document_id').notNull(),
+    enabled: boolean('enabled').notNull(),
+    /** contract-pending(after half-precision search is fully deployed): drop binary columns and indexes — the previous app is their final reader. */
+    binary: bit('binary', { dimensions: 1536 }),
+    binary384: bit('binary_384', { dimensions: 384 }),
+    binary768: bit('binary_768', { dimensions: 768 }),
+    binary1024: bit('binary_1024', { dimensions: 1024 }),
+    binary3072: bit('binary_3072', { dimensions: 3072 }),
+    vector: halfvec('vector', { dimensions: 1536 }),
+    vector384: halfvec('vector_384', { dimensions: 384 }),
+    vector512: halfvec('vector_512', { dimensions: 512 }),
+    vector768: halfvec('vector_768', { dimensions: 768 }),
+    vector1024: halfvec('vector_1024', { dimensions: 1024 }),
+    vector3072: halfvec('vector_3072', { dimensions: 3072 }),
+  },
+  (table) => ({
+    knowledgeBaseIdx: index('embedding_search_kb_idx').on(table.knowledgeBaseId),
+    documentLookupIdx: index('embedding_search_document_lookup_idx')
+      .on(table.documentId, table.knowledgeBaseId, table.id)
+      .concurrently()
+      .where(sql`${table.enabled}`),
+    binaryIdx: index('embedding_search_binary_hnsw_idx')
+      .using('hnsw', table.binary.op('bit_hamming_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    binary384Idx: index('embedding_search_384_binary_hnsw_idx')
+      .using('hnsw', table.binary384.op('bit_hamming_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    binary768Idx: index('embedding_search_768_binary_hnsw_idx')
+      .using('hnsw', table.binary768.op('bit_hamming_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    binary1024Idx: index('embedding_search_1024_binary_hnsw_idx')
+      .using('hnsw', table.binary1024.op('bit_hamming_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    binary3072Idx: index('embedding_search_3072_binary_hnsw_idx')
+      .using('hnsw', table.binary3072.op('bit_hamming_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    vectorIdx: index('embedding_search_cosine_hnsw_idx')
+      .using('hnsw', table.vector.op('halfvec_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    vector512Idx: index('embedding_search_512_cosine_hnsw_idx')
+      .using('hnsw', table.vector512.op('halfvec_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    vector384Idx: index('embedding_search_384_cosine_hnsw_idx')
+      .using('hnsw', table.vector384.op('halfvec_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    vector768Idx: index('embedding_search_768_cosine_hnsw_idx')
+      .using('hnsw', table.vector768.op('halfvec_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    vector1024Idx: index('embedding_search_1024_cosine_hnsw_idx')
+      .using('hnsw', table.vector1024.op('halfvec_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    vector3072Idx: index('embedding_search_3072_cosine_hnsw_idx')
+      .using('hnsw', table.vector3072.op('halfvec_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
+    widthCheck: check(
+      'embedding_search_width_check',
+      sql`num_nonnulls("binary", "binary_384", "binary_768", "binary_1024", "binary_3072") = 1`
     ),
   })
 )
@@ -3645,6 +3814,7 @@ export const copilotRuns = pgTable(
     executionIdIdx: index('copilot_runs_execution_id_idx').on(table.executionId),
     parentRunIdIdx: index('copilot_runs_parent_run_id_idx').on(table.parentRunId),
     chatIdIdx: index('copilot_runs_chat_id_idx').on(table.chatId),
+    chatStartedAtIdx: index('copilot_runs_chat_started_at_idx').on(table.chatId, table.startedAt),
     userIdIdx: index('copilot_runs_user_id_idx').on(table.userId),
     workflowIdIdx: index('copilot_runs_workflow_id_idx').on(table.workflowId),
     workspaceIdIdx: index('copilot_runs_workspace_id_idx').on(table.workspaceId),
@@ -4097,15 +4267,6 @@ export const ssoProvider = pgTable(
     // Better Auth resolves providers by `providerId` alone (no org scoping), so
     // a duplicate makes registration and updates ambiguous across tenants.
     providerIdUnique: uniqueIndex('sso_provider_provider_id_unique').on(table.providerId),
-    /**
-     * Sign-in routes by email domain, so an organization's providers must serve
-     * distinct domains. Expression-keyed the way the verify and resolve paths
-     * compare domains, so a legacy `*.` prefix or stray case cannot slip a
-     * second provider onto a domain already routed.
-     */
-    orgDomainUnique: uniqueIndex('sso_provider_org_domain_unique')
-      .on(table.organizationId, sql`lower(regexp_replace(btrim(${table.domain}), '^\\*\\.', ''))`)
-      .where(sql`${table.organizationId} is not null`),
     domainIdx: index('sso_provider_domain_idx').on(table.domain),
     userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
     organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
@@ -4136,6 +4297,16 @@ export const ssoDomain = pgTable(
     /** High-entropy token placed in the domain's `_sim-challenge` TXT record. */
     verificationToken: text('verification_token').notNull(),
     verifiedAt: timestamp('verified_at'),
+    /**
+     * The provider sign-in uses for this domain when the organization has more
+     * than one on it, such as while moving from one identity provider to
+     * another. Holds the provider id, not a foreign key: it is honored only
+     * while that provider still belongs to this organization and serves this
+     * domain, and deleting the provider clears it. Null means the domain's
+     * first verified provider by id, which is also the only one when there is
+     * just one. See `sso-primary-provider.ts`.
+     */
+    primaryProviderId: text('primary_provider_id'),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -4502,6 +4673,12 @@ export const auditLog = pgTable(
     metadata: jsonb('metadata').default('{}'),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    /**
+     * The official client the request came from (`web`, `desktop`, `cli`,
+     * `sdk-js`, `sdk-python`), as resolved from `X-Sim-Client-Info`. Null for
+     * background work and callers that do not identify themselves.
+     */
+    surface: text('surface'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({
@@ -4549,6 +4726,95 @@ export const usageLogSourceEnum = pgEnum('usage_log_source', [
   'voice-output',
   'api-tool',
 ])
+
+/** Content-free organization Search activity, independent of billable model usage. */
+export const organizationSearchInvocation = pgTable(
+  'organization_search_invocation',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    surface: text('surface').notNull(),
+    sourceTypes: text('source_types').array().notNull(),
+    resultCount: integer('result_count').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationCreatedAtIdx: index('organization_search_invocation_org_created_idx').on(
+      table.organizationId,
+      table.createdAt
+    ),
+    userIdIdx: index('organization_search_invocation_user_idx').on(table.userId),
+    resultCountBounds: check(
+      'organization_search_invocation_result_count_bounds',
+      sql`${table.resultCount} BETWEEN 0 AND 100`
+    ),
+    sourceTypesBounds: check(
+      'organization_search_invocation_source_types_bounds',
+      sql`cardinality(${table.sourceTypes}) <= 100`
+    ),
+  })
+)
+
+/** MCP tool attempts, separate from successful Search invocations and billable usage. */
+export const organizationSearchMcpInvocation = pgTable(
+  'organization_search_mcp_invocation',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id').notNull(),
+    userId: text('user_id'),
+    authKind: text('auth_kind')
+      .$type<'oauth_access_token' | 'personal_api_key' | 'workspace_api_key'>()
+      .notNull(),
+    /** Snapshots survive OAuth client deletion; names are client-declared, not verified branding. */
+    oauthClientId: text('oauth_client_id'),
+    clientName: text('client_name'),
+    toolName: text('tool_name').$type<'search' | 'read_document' | 'chat'>().notNull(),
+    outcome: text('outcome').$type<'success' | 'error' | 'cancelled' | 'rate_limited'>().notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationFk: foreignKey({
+      name: 'org_search_mcp_invocation_org_fk',
+      columns: [table.organizationId],
+      foreignColumns: [organization.id],
+    }).onDelete('cascade'),
+    userFk: foreignKey({
+      name: 'org_search_mcp_invocation_user_fk',
+      columns: [table.userId],
+      foreignColumns: [user.id],
+    }).onDelete('set null'),
+    organizationCreatedAtIdx: index('organization_search_mcp_invocation_org_created_idx').on(
+      table.organizationId,
+      table.createdAt
+    ),
+    userIdIdx: index('organization_search_mcp_invocation_user_idx').on(table.userId),
+    toolNameCheck: check(
+      'organization_search_mcp_invocation_tool_check',
+      sql`${table.toolName} IN ('search', 'read_document', 'chat')`
+    ),
+    outcomeCheck: check(
+      'organization_search_mcp_invocation_outcome_check',
+      sql`${table.outcome} IN ('success', 'error', 'cancelled', 'rate_limited')`
+    ),
+    durationBounds: check(
+      'organization_search_mcp_invocation_duration_check',
+      sql`${table.durationMs} >= 0`
+    ),
+    clientNameBounds: check(
+      'organization_search_mcp_invocation_client_name_check',
+      sql`length(${table.clientName}) <= 256`
+    ),
+    authCheck: check(
+      'organization_search_mcp_invocation_auth_check',
+      sql`(${table.authKind} = 'oauth_access_token' AND ${table.oauthClientId} IS NOT NULL)
+        OR (${table.authKind} IN ('personal_api_key', 'workspace_api_key') AND ${table.oauthClientId} IS NULL AND ${table.clientName} IS NULL)`
+    ),
+  })
+)
 
 export const usageLog = pgTable(
   'usage_log',
@@ -4935,9 +5201,10 @@ export const slackApp = pgTable(
       onDelete: 'cascade',
     }),
     kind: text('kind').$type<'custom' | 'shared'>().notNull(),
-    clientId: text('client_id').notNull(),
-    encryptedClientSecret: text('encrypted_client_secret').notNull(),
-    encryptedSigningSecret: text('encrypted_signing_secret').notNull(),
+    /** Custom app credentials; company app credentials come from the deployment environment. */
+    clientId: text('client_id'),
+    encryptedClientSecret: text('encrypted_client_secret'),
+    encryptedSigningSecret: text('encrypted_signing_secret'),
     revision: text('revision').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -4946,6 +5213,10 @@ export const slackApp = pgTable(
     ownerCheck: check(
       'slack_app_owner_check',
       sql`(${table.kind} = 'custom' AND ${table.organizationId} IS NOT NULL) OR (${table.kind} = 'shared' AND ${table.organizationId} IS NULL)`
+    ),
+    customCredentialsCheck: check(
+      'slack_app_custom_credentials_check',
+      sql`${table.kind} = 'shared' OR (${table.clientId} IS NOT NULL AND ${table.encryptedClientSecret} IS NOT NULL AND ${table.encryptedSigningSecret} IS NOT NULL)`
     ),
   })
 )
@@ -5500,6 +5771,113 @@ export const knowledgeConnector = pgTable(
   })
 )
 
+/** Bounded provider partitions, committed atomically with their owning connector listing checkpoint. */
+export const knowledgeConnectorPartition = pgTable(
+  'knowledge_connector_partition',
+  {
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => knowledgeConnector.id, { onDelete: 'cascade' }),
+    partitionKey: text('partition_key').notNull(),
+    generationId: text('generation_id').notNull(),
+    context: jsonb('context').$type<Record<string, unknown>>().notNull(),
+    cursor: text('cursor'),
+    status: text('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    retryAt: timestamp('retry_at').notNull().defaultNow(),
+    lastServedAt: timestamp('last_served_at'),
+    failure: jsonb('failure').$type<Record<string, unknown>>(),
+    permissionCursor: text('permission_cursor'),
+    permissionAttempts: integer('permission_attempts').notNull().default(0),
+    permissionRetryAt: timestamp('permission_retry_at').notNull(),
+    permissionLastServedAt: timestamp('permission_last_served_at'),
+    permissionStartedAt: timestamp('permission_started_at'),
+    permissionFailure: jsonb('permission_failure').$type<Record<string, unknown>>(),
+  },
+  (table) => ({
+    pk: primaryKey({ name: 'kcp_pk', columns: [table.connectorId, table.partitionKey] }),
+    contentDueIdx: index('kcp_content_due_idx').on(
+      table.connectorId,
+      table.generationId,
+      table.status,
+      table.retryAt,
+      table.lastServedAt
+    ),
+    permissionDueIdx: index('kcp_permission_due_idx').on(
+      table.connectorId,
+      table.generationId,
+      table.permissionRetryAt,
+      table.permissionLastServedAt
+    ),
+    partitionKeyCheck: check(
+      'kcp_partition_key_check',
+      sql`octet_length(${table.partitionKey}) BETWEEN 1 AND 1024`
+    ),
+    contextCheck: check(
+      'kcp_context_check',
+      sql`jsonb_typeof(${table.context}) = 'object' AND octet_length(${table.context}::text) <= 16384`
+    ),
+    statusCheck: check(
+      'kcp_status_check',
+      sql`${table.status} IN ('pending', 'complete', 'blocked')`
+    ),
+    cursorCheck: check(
+      'kcp_cursor_check',
+      sql`(${table.cursor} IS NULL OR octet_length(${table.cursor}) <= 393216) AND (${table.permissionCursor} IS NULL OR octet_length(${table.permissionCursor}) <= 393216)`
+    ),
+    attemptsCheck: check(
+      'kcp_attempts_check',
+      sql`${table.attempts} >= 0 AND ${table.permissionAttempts} >= 0`
+    ),
+  })
+)
+
+/** Private provider configuration; metadata reads never materialize the larger normalized payload. */
+export const knowledgeConnectorPermissionSnapshot = pgTable(
+  'knowledge_connector_permission_snapshot',
+  {
+    connectorId: text('connector_id').primaryKey(),
+    revision: integer('revision').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  },
+  (table) => ({
+    revisionCheck: check('kcps_revision_check', sql`${table.revision} > 0`),
+    connectorFk: foreignKey({
+      name: 'kcps_connector_fk',
+      columns: [table.connectorId],
+      foreignColumns: [knowledgeConnector.id],
+    }).onDelete('cascade'),
+  })
+)
+
+/** Administrator-managed connector groups; provider directory crawls never write these grants. */
+export const knowledgeConnectorPermissionGrant = pgTable(
+  'knowledge_connector_permission_grant',
+  {
+    connectorId: text('connector_id').notNull(),
+    groupKey: text('group_key').notNull(),
+    subjectToken: text('subject_token').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      name: 'kcpg_pk',
+      columns: [table.connectorId, table.groupKey, table.subjectToken],
+    }),
+    subjectIdx: index('kcpg_subject_idx').on(table.subjectToken, table.connectorId, table.groupKey),
+    snapshotFk: foreignKey({
+      name: 'kcpg_snapshot_fk',
+      columns: [table.connectorId],
+      foreignColumns: [knowledgeConnectorPermissionSnapshot.connectorId],
+    }).onDelete('cascade'),
+    groupCheck: check('kcpg_group_check', sql`length(${table.groupKey}) BETWEEN 1 AND 255`),
+    subjectCheck: check(
+      'kcpg_subject_check',
+      sql`${table.subjectToken} ~ '^u:[^[:space:]A-Z]+@[^[:space:]A-Z]+$'`
+    ),
+  })
+)
+
 /**
  * One row per (members-mode connector, member credential). Membership is
  * derived from the credential-group option on every run: `active` while the
@@ -5732,8 +6110,8 @@ export const knowledgeExternalGroup = pgTable(
 /**
  * External group membership keyed by canonical identity tokens: verified
  * addresses (`u:`) or provider account identities (`s:`). Provider identities
- * preserve permissions when a directory hides email addresses. Nested groups
- * are flattened by directory sync, without requiring members to have Sim accounts.
+ * preserve permissions when a directory hides email addresses. Confluence space
+ * audiences may also reference native groups, whose members remain identities.
  */
 export const knowledgeExternalGroupMember = pgTable(
   'knowledge_external_group_member',
@@ -5776,6 +6154,9 @@ export const knowledgeConnectorMemberSyncLog = pgTable(
     membersCompleted: integer('members_completed').notNull().default(0),
     membersIncomplete: integer('members_incomplete').notNull().default(0),
     membersFailed: integer('members_failed').notNull().default(0),
+    /** Null on historical runs that did not record document failure counts. */
+    docsFailed: integer('docs_failed'),
+    processingDispatchFailed: integer('processing_dispatch_failed'),
     docsListed: integer('docs_listed').notNull().default(0),
     docsAdded: integer('docs_added').notNull().default(0),
     docsUpdated: integer('docs_updated').notNull().default(0),

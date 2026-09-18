@@ -13,11 +13,13 @@ const { frost, setMenuOpen } = vi.hoisted(() => {
   return { frost: { setMenuOpen }, setMenuOpen }
 })
 
-vi.mock('@sim/emcn', () => ({
+vi.mock('@sim/emcn', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sim/emcn')>()),
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' '),
   chipVariants: () => '',
   chipContentLabelClass: '',
   ChipChevronDown: () => null,
+  SimWordmark: () => <svg data-testid='sim-wordmark' />,
   ChipTag: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }))
 vi.mock('next/link', () => ({
@@ -25,12 +27,17 @@ vi.mock('next/link', () => ({
     <a {...props} data-prefetch={prefetch === false ? 'disabled' : 'auto'} />
   ),
 }))
+vi.mock('next/dynamic', () => ({
+  default:
+    () =>
+    ({ item }: { item: NavMenuItemData }) => (
+      <output aria-label='Feature preview'>{item.preview.kind}</output>
+    ),
+}))
 vi.mock('@/app/(landing)/components/chevron-arrow', () => ({
   ChevronArrow: () => null,
 }))
-vi.mock('@/app/(landing)/components/navbar/components/sim-wordmark', () => ({
-  SimWordmark: () => null,
-}))
+
 vi.mock('@/app/(landing)/components/navbar/components/navbar-shell', () => ({
   NAVBAR_GLASS_SURFACE: '',
   useNavbarFrost: () => frost,
@@ -104,6 +111,17 @@ function expectSelected(href: string, kind: string) {
 }
 
 describe('NavMenuCluster feature selection', () => {
+  it('mounts the preview on first opening and preserves it during the exit transition', () => {
+    expect(host.querySelector('output')).toBeNull()
+    hover(element('#nav-platform-menu-trigger'))
+    expect(host.querySelector('output')).not.toBeNull()
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(element('#primary-navigation-mega-menu').getAttribute('aria-hidden')).toBe('true')
+    expect(host.querySelector('output')).not.toBeNull()
+  })
+
   it('prefetches destinations only while their menu is open', () => {
     const overview = element('a[href="/platform"]')
     const customers = element('#nav-customers-menu a[href="/customers/rivian"]')

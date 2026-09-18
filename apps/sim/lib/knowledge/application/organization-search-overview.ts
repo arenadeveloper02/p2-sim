@@ -8,14 +8,19 @@ import {
   knowledgeConnectorSyncLog,
   organizationSearchIntegration,
 } from '@sim/db/schema'
-import { and, eq, exists, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, eq, exists, inArray, isNotNull, isNull, type SQL, sql } from 'drizzle-orm'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { resolveKnowledgeAccessAvailability } from '@/lib/knowledge/access/availability'
 import { SOURCE_ACL_MAX_AGE_MS } from '@/lib/knowledge/access/freshness'
 import { defineAuthorizedKnowledgeUseCase } from '@/lib/knowledge/application/authorized-knowledge-use-case'
 import { resolveKnowledgeOwnerContext } from '@/lib/knowledge/application/contexts'
 import { knowledgeOperations } from '@/lib/knowledge/application/operations'
+import {
+  SOURCE_CONTENT_ERROR,
+  SOURCE_PERMISSION_ERROR,
+} from '@/lib/knowledge/connectors/sync-limits'
 import { MAX_SEARCH_SOURCE_PROVIDER_TYPES } from '@/lib/knowledge/constants'
+import { failedDocumentCondition } from '@/lib/knowledge/documents/processing-status'
 import { canConnectWithDefaults, SEARCH_SOURCE_TYPES } from '@/lib/sim-search/connectors'
 
 interface OrganizationSearchOverviewInput {
@@ -28,7 +33,9 @@ interface ProviderHealth {
   hasError: boolean
   hasAccountError: boolean
   hasDocumentError: boolean
+  hasPermissionError: boolean
   hasIndexing: boolean
+  hasPendingSync: boolean
   hasWaiting: boolean
   hasUnstarted: boolean
 }
@@ -100,6 +107,11 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
       ))
     )`
     const cutoff = sql`statement_timestamp() - (${SOURCE_ACL_MAX_AGE_MS} * interval '1 millisecond')`
+    /**
+     * A member whose last run only had per-document content failures carries
+     * {@link SOURCE_CONTENT_ERROR} as a marker so its next run lists fully; the
+     * member itself is healthy and the documents are reported separately.
+     */
     const hasMemberError = exists(
       db
         .select({ id: knowledgeConnectorMember.id })
@@ -110,7 +122,7 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
             sql`(
             ${knowledgeConnectorMember.status} = 'suspended'
             OR (${knowledgeConnectorMember.status} = 'active' AND (
-              ${knowledgeConnectorMember.lastError} IS NOT NULL
+              (${knowledgeConnectorMember.lastError} IS NOT NULL AND ${knowledgeConnectorMember.lastError} <> ${SOURCE_CONTENT_ERROR})
               OR ${knowledgeConnectorMember.consecutiveFailures} > 0
               OR coalesce(${knowledgeConnectorMember.memberSyncedThrough}, ${knowledgeConnectorMember.lastCompleteListingAt}, ${knowledgeConnectorMember.createdAt}) < ${cutoff}
             ))
@@ -130,7 +142,7 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
           )
         )
     )
-    const hasDocumentsInState = (statuses: string[]) =>
+    const hasDocumentsInState = (condition: SQL) =>
       exists(
         db
           .select({ id: document.id })
@@ -143,7 +155,7 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
               eq(document.userExcluded, false),
               isNull(document.archivedAt),
               isNull(document.deletedAt),
-              inArray(document.processingStatus, statuses)
+              condition
             )
           )
       )
@@ -151,7 +163,10 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
     const latestMemberRunHasError = sql`coalesce((
       SELECT ${knowledgeConnectorMemberSyncLog.status} = 'failed'
         OR (${knowledgeConnectorMemberSyncLog.status} = 'partial' AND (
-          ${knowledgeConnectorMemberSyncLog.membersFailed} > 0 OR NOT ${continuing}
+          ${knowledgeConnectorMemberSyncLog.membersFailed} > 0
+          OR ${knowledgeConnectorMemberSyncLog.docsFailed} > 0
+          OR ${knowledgeConnectorMemberSyncLog.processingDispatchFailed} > 0
+          OR NOT ${continuing}
         ))
       FROM ${knowledgeConnectorMemberSyncLog}
       WHERE ${knowledgeConnectorMemberSyncLog.connectorId} = ${knowledgeConnector.id}
@@ -188,7 +203,7 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
           hasError: sql<boolean>`bool_or(NOT ${paused} AND (
           ${knowledgeConnector.status} = 'error'
           OR ${knowledgeConnector.lastSyncError} IS NOT NULL
-          OR ${hasDocumentsInState(['failed'])}
+          OR ${hasDocumentsInState(failedDocumentCondition())}
           OR (${knowledgeConnector.accessMode} = 'admin' AND ${latestCentralRunHasError})
           OR (${knowledgeConnector.accessMode} = 'members' AND (
             ${knowledgeConnector.memberSyncStatus} = 'error'
@@ -197,18 +212,25 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
           ))
         ))`,
           hasAccountError: sql<boolean>`bool_or(NOT ${paused} AND ${knowledgeConnector.accessMode} = 'members' AND ${hasMemberError})`,
-          hasDocumentError: sql<boolean>`bool_or(NOT ${paused} AND ${hasDocumentsInState(['failed'])})`,
+          hasDocumentError: sql<boolean>`bool_or(NOT ${paused} AND ${hasDocumentsInState(failedDocumentCondition())})`,
+          hasPermissionError: sql<boolean>`bool_or(NOT ${paused} AND ${SOURCE_PERMISSION_ERROR} = ANY(string_to_array(${knowledgeConnector.lastSyncError}, ${'\n'})))`,
           hasIndexing: sql<boolean>`bool_or(NOT ${paused}
             AND (${knowledgeConnector.accessMode} <> 'members' OR ${hasActiveMembers} OR ${knowledgeConnector.credentialId} IS NOT NULL)
             AND (
           ${knowledgeConnector.status} IN ('pending', 'syncing')
-          OR ${continuing} OR ${hasDocumentsInState(['pending', 'processing'])}
+          OR ${hasDocumentsInState(inArray(document.processingStatus, ['pending', 'processing']))}
           OR (${knowledgeConnector.accessMode} = 'members' AND (
-            ${knowledgeConnector.memberSyncStatus} IN ('pending', 'running') OR ${hasMemberFirstListing}
+            ${knowledgeConnector.memberSyncStatus} IN ('pending', 'running')
           ))
         ))`,
           hasWaiting: sql<boolean>`bool_or(NOT ${paused} AND ${knowledgeConnector.accessMode} = 'members' AND NOT ${hasActiveMembers})`,
-          hasUnstarted: sql<boolean>`bool_or(NOT ${paused} AND ${knowledgeConnector.accessMode} = 'admin' AND ${knowledgeConnector.lastSyncAt} IS NULL)`,
+          hasPendingSync: sql<boolean>`bool_or(NOT ${paused} AND (
+            ${continuing} OR (${knowledgeConnector.accessMode} = 'members' AND ${hasMemberFirstListing})
+          ))`,
+          hasUnstarted: sql<boolean>`bool_or(NOT ${paused} AND (
+            (${knowledgeConnector.accessMode} = 'admin' AND ${knowledgeConnector.lastSyncAt} IS NULL)
+            OR (${knowledgeConnector.accessMode} = 'members' AND ${hasMemberFirstListing})
+          ))`,
         })
         .from(knowledgeConnector)
         .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
@@ -269,11 +291,14 @@ export const readOrganizationSearchOverview = defineAuthorizedKnowledgeUseCase({
               status === 'needs_attention'
                 ? state?.hasAccountError
                   ? ('account_sync_incomplete' as const)
-                  : state?.hasDocumentError
-                    ? ('document_indexing_failed' as const)
-                    : ('sync_failed' as const)
+                  : state?.hasPermissionError
+                    ? ('permission_sync_incomplete' as const)
+                    : state?.hasDocumentError
+                      ? ('document_indexing_failed' as const)
+                      : ('sync_failed' as const)
                 : null,
             isSyncing: status !== 'paused' && Boolean(state?.hasIndexing),
+            hasPendingSync: status !== 'paused' && Boolean(state?.hasPendingSync),
           },
         ]
       }),

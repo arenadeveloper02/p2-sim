@@ -9,6 +9,12 @@ import {
 import { SettingsSectionProvider } from '@/components/settings/settings-panel'
 import { useOrganizationContext } from '@/app/o/[organizationId]/providers/organization-provider'
 
+const OrganizationRecentlyDeleted = dynamic(() =>
+  import('@/app/o/[organizationId]/settings/components/organization-recently-deleted').then(
+    (m) => m.OrganizationRecentlyDeleted
+  )
+)
+
 const OrganizationIntegrationsSettings = dynamic(() =>
   import(
     '@/app/o/[organizationId]/settings/components/integrations/organization-integrations-settings'
@@ -45,11 +51,6 @@ const AuditLogs = dynamic(() =>
   import('@/ee/audit-logs/components/audit-logs').then((m) => m.AuditLogs)
 )
 const SSO = dynamic(() => import('@/ee/sso/components/sso-settings').then((m) => m.SSO))
-const SessionPolicySettings = dynamic(() =>
-  import('@/ee/session-policy/components/session-policy-settings').then(
-    (m) => m.SessionPolicySettings
-  )
-)
 const DataRetentionSettings = dynamic(() =>
   import('@/ee/data-retention/components/data-retention-settings').then(
     (m) => m.DataRetentionSettings
@@ -57,6 +58,9 @@ const DataRetentionSettings = dynamic(() =>
 )
 const DataDrainsSettings = dynamic(() =>
   import('@/ee/data-drains/components/data-drains-settings').then((m) => m.DataDrainsSettings)
+)
+const OrganizationSecuritySettings = dynamic(() =>
+  import('@/components/settings/organization-security').then((m) => m.OrganizationSecuritySettings)
 )
 const UsageMonitoring = dynamic(() =>
   import('@/ee/organization-usage/components/usage-monitoring').then((m) => m.UsageMonitoring)
@@ -78,6 +82,9 @@ export function OrganizationSettings({ section }: OrganizationSettingsProps) {
 
   return (
     <SettingsSectionProvider section={section} meta={meta}>
+      {section === 'recently-deleted' && (
+        <OrganizationRecentlyDeleted key={organizationId} organizationId={organizationId} />
+      )}
       {section === 'integrations' && <OrganizationIntegrationsSettings />}
       {section === 'connected-accounts' && (
         <OrganizationConnectedAccounts organizationId={organizationId} />
@@ -104,7 +111,7 @@ export function OrganizationSettings({ section }: OrganizationSettingsProps) {
         />
       )}
       {section === 'sso' && <SSO organizationId={organizationId} />}
-      {section === 'sessions' && <SessionPolicySettings organizationId={organizationId} />}
+      {section === 'security' && <OrganizationSecuritySettings organizationId={organizationId} />}
       {section === 'data-retention' && <DataRetentionSettings organizationId={organizationId} />}
       {section === 'data-drains' && <DataDrainsSettings organizationId={organizationId} />}
       {section === 'whitelabeling' && <WhitelabelingSettings organizationId={organizationId} />}

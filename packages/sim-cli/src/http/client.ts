@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 import type { ResolvedProfile, StoredCredential, StoredOAuthCredential } from '../config/index'
-import { USER_AGENT } from '../version'
+import { identityHeaders } from '../telemetry/client-info'
 import { warnIfCredentialOverCleartext, warnIfProxyIgnored } from './environment'
 
 /**
@@ -618,7 +618,7 @@ export class SimClient {
             ? { authorization: `Bearer ${credential.oauth.accessToken}` }
             : {}),
           accept: 'application/json',
-          'user-agent': USER_AGENT,
+          ...identityHeaders(),
           ...(hasBody ? { 'content-type': 'application/json' } : {}),
           ...options.headers,
         },
