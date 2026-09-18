@@ -1218,7 +1218,7 @@ describe('enrichTraceSpansForReprice', () => {
     const enriched = enrichTraceSpansForReprice([
       {
         type: 'tool',
-        name: 'semrush_query',
+        name: 'semrush_domain_overview',
         output: { data: { result: 'ok' } },
       },
     ])
