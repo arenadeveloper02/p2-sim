@@ -26,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import {
   resolveEChartsOptionsFromContent,
   stripEChartsJsonFromContent,
+  stripIncompleteTrailingChartJson,
 } from '@/lib/chart-generation/echarts-option'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
@@ -252,14 +253,21 @@ export const ArenaClientChatMessage = memo(
       return typeof message.content === 'object' && message.content !== null
     }, [message.content])
 
-    const messageChartOptions = useMemo(
-      () => resolveEChartsOptionsFromContent(message.content),
-      [message.content]
-    )
-
     // Since tool calls are now handled via SSE events and stored in message.toolCalls,
-    // we can use the content directly without parsing
-    const cleanTextContent = message.content
+    // we can use the content directly without parsing. While streaming, hide a
+    // partially received trailing chart JSON payload so raw JSON never flashes
+    // as text; the chart renders as soon as its payload completes.
+    const cleanTextContent = useMemo(() => {
+      if (message.isStreaming && typeof message.content === 'string') {
+        return stripIncompleteTrailingChartJson(message.content)
+      }
+      return message.content
+    }, [message.content, message.isStreaming])
+
+    const messageChartOptions = useMemo(
+      () => resolveEChartsOptionsFromContent(cleanTextContent),
+      [cleanTextContent]
+    )
 
     // Close this feedback box when another message opens theirs
     useEffect(() => {
@@ -401,7 +409,7 @@ export const ArenaClientChatMessage = memo(
         return null
       }
 
-      if (content === message.content && messageChartOptions) {
+      if (content === cleanTextContent && messageChartOptions) {
         const prose = typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
         return (
           <>
