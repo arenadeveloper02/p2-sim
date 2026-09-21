@@ -26,7 +26,7 @@ import { useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
 import { signOutAndRedirect } from '@/lib/auth/sign-out'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
-import { getBrowserTimezone } from '@/lib/core/utils/timezone'
+import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezone'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { DeleteAccountModal } from '@/app/workspace/[workspaceId]/settings/components/general/components/delete-account-modal'
 import { PrivacyView } from '@/app/workspace/[workspaceId]/settings/components/general/components/privacy-view'
@@ -59,7 +59,7 @@ const AuthorizedApps = dynamic(() =>
 const logger = createLogger('General')
 
 /** Human-friendly timezone options for the picker, common zones first. */
-// const TIMEZONE_OPTIONS = getTimezoneOptions()
+const TIMEZONE_OPTIONS = getTimezoneOptions()
 
 /**
  * Shared trigger width for the appearance dropdowns (Theme, Timezone, Snap

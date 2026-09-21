@@ -189,11 +189,6 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     setLocalCopilotCatalogId !== undefined
 
   const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
-  const [mode] = useMothershipMode()
-  const isSearch = canSearch && mode === 'search'
-  const contextsEnabled = !canSearch || mode === 'build'
-  const contextsEnabledRef = useRef(contextsEnabled)
-  contextsEnabledRef.current = contextsEnabled
   const [microphonePermissionHelpOpen, setMicrophonePermissionHelpOpen] = useState(false)
 
   const [initialValue] = useState(() => {
@@ -679,43 +674,39 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-1'>
-          {contextsEnabled && (
-            <>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <Chip
-                    shape='round'
-                    leftIcon={Plus}
-                    onClick={handlePlusClick}
-                    aria-label='Add resources'
-                  />
-                </Tooltip.Trigger>
-                <Tooltip.Content side='top'>Add resources</Tooltip.Content>
-              </Tooltip.Root>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <Chip
-                    shape='round'
-                    leftIcon={Paperclip}
-                    onClick={handleFileSelectStable}
-                    aria-label='Attach file'
-                  />
-                </Tooltip.Trigger>
-                <Tooltip.Content side='top'>Attach file</Tooltip.Content>
-              </Tooltip.Root>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <Chip
-                    shape='round'
-                    leftIcon={Slash}
-                    onClick={handleSlashTriggerClick}
-                    aria-label='Skills'
-                  />
-                </Tooltip.Trigger>
-                <Tooltip.Content side='top'>Skills</Tooltip.Content>
-              </Tooltip.Root>
-            </>
-          )}
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Chip
+                shape='round'
+                leftIcon={Plus}
+                onClick={handlePlusClick}
+                aria-label='Add resources'
+              />
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Add resources</Tooltip.Content>
+          </Tooltip.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Chip
+                shape='round'
+                leftIcon={Paperclip}
+                onClick={handleFileSelectStable}
+                aria-label='Attach file'
+              />
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Attach file</Tooltip.Content>
+          </Tooltip.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Chip
+                shape='round'
+                leftIcon={Slash}
+                onClick={handleSlashTriggerClick}
+                aria-label='Skills'
+              />
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Skills</Tooltip.Content>
+          </Tooltip.Root>
           {canSwitchCopilotBackend && copilotBackend && setCopilotBackend ? (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
