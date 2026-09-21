@@ -4260,10 +4260,10 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'bedrock/anthropic.claude-opus-4-6-v1',
         pricing: {
-          input: 5.0,
-          cachedInput: 0.5,
-          output: 25.0,
-          updatedAt: '2026-08-20',
+          input: 5.5,
+          cachedInput: 0.55,
+          output: 27.5,
+          updatedAt: '2026-09-14',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -4290,22 +4290,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-02-17',
-      },
-      {
-        id: 'bedrock/anthropic.claude-opus-4-6-v1',
-        pricing: {
-          input: 5.5,
-          cachedInput: 0.55,
-          output: 27.5,
-          updatedAt: '2026-09-14',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          nativeStructuredOutputs: true,
-          maxOutputTokens: 128000,
-        },
-        contextWindow: 1000000,
-        releaseDate: '2026-02-05',
       },
       {
         id: 'bedrock/anthropic.claude-opus-4-5-20251101-v1:0',
@@ -4474,6 +4458,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2026-09-14',
         },
         capabilities: {
+          temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
         },
@@ -4502,8 +4487,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2026-09-14',
         },
         capabilities: {
+          temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
-          maxOutputTokens: 8000,
+          maxOutputTokens: 8192,
         },
         contextWindow: 164000,
         releaseDate: '2025-12-01',
@@ -4883,35 +4869,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 262144,
         releaseDate: '2026-03-18',
-      },
-      {
-        id: 'bedrock/zai.glm-5',
-        pricing: {
-          input: 1.0,
-          output: 3.2,
-          updatedAt: '2026-08-14',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          nativeStructuredOutputs: true,
-          maxOutputTokens: 128000,
-        },
-        contextWindow: 200000,
-        releaseDate: '2026-02-11',
-      },
-      {
-        id: 'bedrock/deepseek.v3.2',
-        pricing: {
-          input: 0.62,
-          output: 1.85,
-          updatedAt: '2026-09-01',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 8192,
-        },
-        contextWindow: 164000,
-        releaseDate: '2025-12-01',
       },
     ],
   },
