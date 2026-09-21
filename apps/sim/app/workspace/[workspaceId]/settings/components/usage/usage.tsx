@@ -48,6 +48,7 @@ import {
   formatPeriodLabel,
   formatTokenCount,
   formatToolLabel,
+  hasBillableCredits,
   MOTHERSHIP_USAGE_SOURCES,
   resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
@@ -158,7 +159,7 @@ function UsageDashboardContent({
   const showMothership = tab === 'all' || tab === 'mothership'
   const { openGroups, setGroupOpen } = useUsageCollapsibleGroups(tab)
   const toolRows = data.byTool.filter(
-    (row) => row.billableCost > 0 && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
+    (row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
   )
 
   const workflowChartRows = useMemo(

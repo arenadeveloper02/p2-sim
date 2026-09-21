@@ -25,6 +25,7 @@ import {
   formatSourceLabel,
   formatTokenCount,
   formatToolLabel,
+  hasBillableCredits,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
   isLegacyUnattributedChatId,
@@ -78,7 +79,7 @@ export function UserUsageContent({
   const showMothership = tab === 'all' || tab === 'mothership'
   const { openGroups, setGroupOpen } = useUsageCollapsibleGroups(tab)
   const toolRows = data.byTool.filter(
-    (row) => row.billableCost > 0 && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
+    (row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
   )
 
   const userNameById = useMemo(() => new Map<string, string>(), [])

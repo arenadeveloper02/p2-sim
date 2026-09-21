@@ -23,6 +23,7 @@ import {
   formatBillableWithCredits,
   formatTokenCount,
   formatToolLabel,
+  hasBillableCredits,
   resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
@@ -74,7 +75,7 @@ export function OrganizationUsageContent({
   const showMothership = tab === 'all' || tab === 'mothership'
   const { openGroups, setGroupOpen } = useUsageCollapsibleGroups(tab)
   const toolRows = data.byTool.filter(
-    (row) => row.billableCost > 0 && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
+    (row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
   )
 
   const workflowChartRows = useMemo(
