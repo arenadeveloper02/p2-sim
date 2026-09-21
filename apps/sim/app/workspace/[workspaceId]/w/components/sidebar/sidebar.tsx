@@ -38,6 +38,7 @@ import {
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useWorkspaceAccessRequestFeatures } from '@/components/access-requests/permission-access-boundary'
 import { useSession } from '@/lib/auth/auth-client'
 import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
@@ -48,6 +49,8 @@ import { isStatusNoticePreviewEnabled } from '@/lib/core/config/env-flags'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPathNames } from '@/lib/folders/tree'
+import { DOCS_URL, SLACK_COMMUNITY_URL } from '@/lib/help-links'
+import { captureEvent } from '@/lib/posthog/client'
 import { LOGO_ACCEPT_ATTRIBUTE } from '@/lib/uploads/client/logo-file'
 import { getWorkspaceOrganizationHref } from '@/lib/workspaces/organization-navigation'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -371,6 +374,7 @@ export const Sidebar = memo(function Sidebar() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const posthog = usePostHog()
   const hideSidebarForArenaV3 = searchParams.get('from') === 'arena_v3'
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -848,6 +852,18 @@ export const Sidebar = memo(function Sidebar() {
     }
     navigateToSettings({ section })
   }
+
+  const handleOpenDocs = () => {
+    window.open(DOCS_URL, '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
+  }
+
+  const handleOpenSlackCommunity = () => {
+    window.open(SLACK_COMMUNITY_URL, '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
+  }
+
+  const handleOpenHelpFromMenu = () => setIsHelpModalOpen(true)
 
   const profileNavigationLinks = allNavigationItems
     .filter(
