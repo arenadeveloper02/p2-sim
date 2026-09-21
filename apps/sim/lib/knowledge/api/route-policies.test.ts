@@ -12,7 +12,8 @@ import {
   WorkspaceApiKeyScopeAuthorizationError,
 } from '@/lib/core/application'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
-import { EmbeddingAPIError, EmbeddingOutputLimitError } from '@/lib/embeddings/client'
+import { EmbeddingAPIError } from '@/lib/embeddings/api-error'
+import { EmbeddingOutputLimitError } from '@/lib/embeddings/client'
 import {
   internalKnowledgeErrorPolicies,
   v2KnowledgeErrorPolicies,

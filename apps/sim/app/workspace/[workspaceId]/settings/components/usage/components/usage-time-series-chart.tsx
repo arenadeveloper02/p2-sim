@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { LineChart, type LineChartMultiSeries, type LineChartPoint } from '@/components/charts'
+import { LineChart, type LineChartMultiSeries, type LineChartPoint } from '@sim/emcn'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 
 interface UsageTimeSeriesPoint {

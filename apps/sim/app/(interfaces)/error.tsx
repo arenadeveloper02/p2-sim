@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Chip } from '@sim/emcn'
+import { Chip, StatusPageContent } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
-import { StatusPageContent } from '@/components/status-page'
 
 interface InterfacesErrorProps {
   error: Error & { digest?: string }

@@ -28,12 +28,12 @@ import {
 import { getDesktopBridge } from '@/lib/desktop'
 import { organizationRoutes } from '@/lib/navigation/paths'
 import { stripMicrosoftDataverseEnvironmentFromOAuthCallback } from '@/lib/oauth/microsoft-dataverse'
+import { searchSetupAccessParam } from '@/lib/sim-search/search-params'
 import { organizationSearchSetupPath } from '@/lib/sim-search/setup-navigation'
 import {
   handleUnipileHostedRedirect,
   readAndClearUnipileHostedRedirectParams,
 } from '@/lib/unipile/hosted-return-client'
-import { searchSetupAccessParam } from '@/app/workspace/[workspaceId]/search/search-params'
 import { oauthConnectionsKeys } from '@/hooks/queries/oauth/oauth-connections'
 import {
   organizationCredentialKeys,
