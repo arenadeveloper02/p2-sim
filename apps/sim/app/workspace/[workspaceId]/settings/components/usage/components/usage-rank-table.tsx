@@ -23,7 +23,6 @@ export interface UsageRankTableProps<T> {
   getBillableCost: (row: T) => number
   /**
    * Optional rank/filter value. Defaults to billable cost.
-   * Use for tools so ledger rows with count but $0 still appear.
    */
   getRankValue?: (row: T) => number
   emptyMessage?: string

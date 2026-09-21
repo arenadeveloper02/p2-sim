@@ -42,6 +42,7 @@ import {
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import { UserMemberUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-member-usage-content'
 import {
+  COPILOT_USAGE_TOOL_BUCKET_ID,
   formatAdminPeriodChipLabel,
   formatBillableWithCredits,
   formatPeriodLabel,
@@ -156,6 +157,9 @@ function UsageDashboardContent({
   const showWorkflow = tab === 'all' || tab === 'workflow'
   const showMothership = tab === 'all' || tab === 'mothership'
   const { openGroups, setGroupOpen } = useUsageCollapsibleGroups(tab)
+  const toolRows = data.byTool.filter(
+    (row) => row.billableCost > 0 && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
+  )
 
   const workflowChartRows = useMemo(
     () =>
@@ -671,7 +675,7 @@ function UsageDashboardContent({
         )}
 
         {tab === 'all' &&
-          (data.byModel.length > 0 || data.byProvider.length > 0 || data.byTool.length > 0) && (
+          (data.byModel.length > 0 || data.byProvider.length > 0 || toolRows.length > 0) && (
             <SettingsSection label='Model & tool usage'>
               {data.byModel.length > 0 && (
                 <CostBreakdownTable
@@ -722,11 +726,11 @@ function UsageDashboardContent({
                   />
                 </div>
               )}
-              {data.byTool.length > 0 && (
+              {toolRows.length > 0 && (
                 <div className='mt-6'>
                   <p className='mb-2 text-[var(--text-muted)] text-small'>By tool</p>
                   <CostBreakdownTable
-                    rows={data.byTool}
+                    rows={toolRows}
                     getRowKey={(row) => row.toolId}
                     columns={[
                       {
