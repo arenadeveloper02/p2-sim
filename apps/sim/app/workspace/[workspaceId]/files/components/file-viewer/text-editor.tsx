@@ -76,7 +76,7 @@ const MonacoEditor = dynamic(
   async () => {
     const [{ default: Editor, loader }, monaco] = await Promise.all([
       import('@monaco-editor/react'),
-      import('monaco-editor'),
+      import('monaco-editor/esm/vs/editor/editor.api'),
     ])
 
     if (typeof window !== 'undefined' && !window.MonacoEnvironment) {

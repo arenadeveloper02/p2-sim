@@ -1,3 +1,5 @@
+'use client'
+
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChipTag, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
 import { Ban, Lock, Repeat, Split } from '@sim/emcn/icons'

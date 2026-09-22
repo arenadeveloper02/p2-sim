@@ -139,8 +139,13 @@ const nextConfig: NextConfig = {
     },
   },
   webpack: (config) => {
+    const monacoEditorApi = path.join(
+      packageRootFromEntry(require.resolve('monaco-editor'), 'monaco-editor'),
+      'esm/vs/editor/editor.api.js'
+    )
     config.resolve.alias = {
       ...config.resolve.alias,
+      'monaco-editor$': monacoEditorApi,
       'entities/decode$': entitiesDecodeAbsolute,
       'entities/escape$': entitiesEscapeAbsolute,
       ...(useMinimalRegistry
