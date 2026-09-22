@@ -1,10 +1,13 @@
 import { isValidEmailSyntax, normalizeEmail } from '@sim/utils/string'
 import { defineAuthorizedWorkspaceUseCase } from '@/lib/core/application'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
-import { credentialGroupDelegationPolicy } from '@/lib/credential-groups/application/authorization'
+import {
+  credentialGroupDelegationPolicy,
+  requireCredentialGroupWorkflowActor,
+} from '@/lib/credential-groups/application/authorization'
 import {
   requireCredentialGroupsAvailable,
-  resolveCredentialGroupContext,
+  resolveWorkspaceAccountsContext,
 } from '@/lib/credential-groups/application/context'
 import { credentialGroupOperations } from '@/lib/credential-groups/application/operations'
 import {
@@ -22,7 +25,7 @@ export const CREDENTIAL_GROUP_PEOPLE_STATUSES = [
 ] as const satisfies readonly CredentialGroupEnrollmentStatus[]
 
 export interface ListCredentialGroupPeopleInput {
-  credentialGroupId: string
+  workspaceId: string
   limit: number
   cursor?: string
   email?: string
@@ -32,8 +35,11 @@ export interface ListCredentialGroupPeopleInput {
 export const listCredentialGroupPeople = defineAuthorizedWorkspaceUseCase({
   operation: credentialGroupOperations.listPeople,
   resolveContext: ({ input }: { input: ListCredentialGroupPeopleInput }) =>
-    resolveCredentialGroupContext(input.credentialGroupId),
+    resolveWorkspaceAccountsContext(input.workspaceId),
   authorizationOptions: { delegation: credentialGroupDelegationPolicy },
+  authorizeResource({ principal }) {
+    requireCredentialGroupWorkflowActor(principal)
+  },
   execute: async ({ input, context }) => {
     if (context.status !== 'active') {
       throw new OrchestrationError('conflict', 'Credential group is disabled')

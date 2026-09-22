@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  */
 import { act } from 'react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ReactFlowProvider } from 'reactflow'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getWorkflowTypeAccent,
@@ -26,7 +26,7 @@ function createView(
   isEnabled = true,
   isLocked = false,
   isExecutionHighlighted = false,
-  isWorkflowRunning = false
+  cursorConnectionsEnabled = true
 ) {
   return (
     <ReactFlowProvider>
@@ -39,7 +39,6 @@ function createView(
         hasRing={false}
         ringStyles=''
         isRunning={isRunning}
-        isWorkflowRunning={isWorkflowRunning}
         isExecutionHighlighted={isExecutionHighlighted}
         Icon={TestIcon}
         iconBgColor='var(--surface-2)'
@@ -50,6 +49,7 @@ function createView(
         conditionRows={[]}
         routerRows={[]}
         wouldCreateConnectionCycle={() => false}
+        cursorConnectionsEnabled={cursorConnectionsEnabled}
         onSelect={() => {}}
         actionBar={<div data-workflow-action-bar-swell='' />}
         rows={null}
@@ -103,6 +103,50 @@ afterEach(() => {
 })
 
 describe('WorkflowBlockView action menu', () => {
+  it('keeps the preview edge swell without mounting a transient connector handle', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    mountedRoots.add(root)
+    mountedHosts.add(host)
+
+    act(() => root.render(createView(false, true, false, false, false)))
+
+    const card = host.querySelector<HTMLElement>('.workflow-drag-handle')
+    expect(card).toBeTruthy()
+    if (!card) return
+
+    const cardRect = {
+      left: 100,
+      top: 100,
+      right: 350,
+      bottom: 196,
+      width: 250,
+      height: 96,
+      x: 100,
+      y: 100,
+      toJSON: () => ({}),
+    } as DOMRect
+    card.getBoundingClientRect = () => cardRect
+    document.elementFromPoint = () => card
+
+    const silhouette = card.querySelector<SVGPathElement>('svg > path[fill="var(--border-1)"]')
+    const restingPath = silhouette?.getAttribute('d')
+
+    act(() => {
+      card.dispatchEvent(
+        new MouseEvent('pointerenter', { bubbles: true, clientX: 350, clientY: 148 })
+      )
+      window.dispatchEvent(
+        new MouseEvent('pointermove', { bubbles: true, clientX: 350, clientY: 148 })
+      )
+    })
+    flushAnimationFrames()
+
+    expect(silhouette?.getAttribute('d')).not.toBe(restingPath)
+    expect(card.querySelector('[data-handleid^="source-cursor"]')).toBeNull()
+  })
+
   it('keeps an executing block visually unselected while its actions stay available', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -130,7 +174,7 @@ describe('WorkflowBlockView action menu', () => {
     mountedRoots.add(root)
     mountedHosts.add(host)
 
-    act(() => root.render(createView(false, true, false, false, true)))
+    act(() => root.render(createView(false, true, false, false)))
     flushAnimationFrames()
 
     const actionMenuRoot = host.querySelector<HTMLElement>('.group.relative')
@@ -149,7 +193,7 @@ describe('WorkflowBlockView action menu', () => {
     mountedRoots.add(root)
     mountedHosts.add(host)
 
-    act(() => root.render(createView(false, true, false, true, true)))
+    act(() => root.render(createView(false, true, false, true)))
     flushAnimationFrames()
 
     const actionMenuRoot = host.querySelector<HTMLElement>('.group.relative')

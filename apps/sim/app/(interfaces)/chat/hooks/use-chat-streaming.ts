@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { filterUndefined } from '@sim/utils/object'
 import {
   anyToolCallRunning,
   applyToolCallPhase,
@@ -16,68 +17,78 @@ import {
   formatChartsForChat,
 } from '@/lib/chart-generation/echarts-option'
 import {
-  type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
 import { readSSEEvents } from '@/lib/core/utils/sse'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import {
+  isChatBlockCompleteFrame,
   isChatChunkFrame,
   isChatChunkResetFrame,
   isChatErrorFrame,
   isChatFinalFrame,
+  isChatOutputFrame,
   isChatStreamErrorFrame,
   isChatThinkingFrame,
   isChatToolFrame,
 } from '@/lib/workflows/streaming/agent-stream-protocol'
-import type { ChatMessage, ChatToolCall } from '@/app/(interfaces)/chat/components/message/message'
+import type {
+  ChatFile,
+  ChatMessage,
+  ChatOutputSegment,
+  ChatToolCall,
+} from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
 const logger = createLogger('UseChatStreaming')
 
-function extractFilesFromData(
-  data: any,
-  files: ChatFile[] = [],
-  seenIds = new Set<string>()
-): ChatFile[] {
-  if (!data || typeof data !== 'object') {
-    return files
+/** Separates file attachments from visible output, omitting empty containers. */
+function extractChatOutput(value: unknown, files: Map<string, ChatFile>): unknown {
+  if (value === null || value === undefined) return value
+  if (isUserFileWithMetadata(value)) {
+    files.set(value.id, {
+      id: value.id,
+      name: value.name,
+      url: value.url,
+      key: value.key,
+      size: value.size,
+      type: value.type,
+      context: value.context,
+      base64: value.base64,
+    })
+    return undefined
   }
-
-  if (isUserFileWithMetadata(data)) {
-    if (!seenIds.has(data.id)) {
-      seenIds.add(data.id)
-      files.push({
-        id: data.id,
-        name: data.name,
-        url: data.url,
-        key: data.key,
-        size: data.size,
-        type: data.type,
-        context: data.context,
-      })
-    }
-    return files
+  if (Array.isArray(value)) {
+    const items = value
+      .map((item) => extractChatOutput(item, files))
+      .filter((item) => item !== undefined)
+    return items.length > 0 ? items : undefined
   }
-
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      extractFilesFromData(item, files, seenIds)
-    }
-    return files
+  if (typeof value === 'object') {
+    const content = filterUndefined(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, extractChatOutput(entry, files)])
+      )
+    )
+    return Object.keys(content).length > 0 ? content : undefined
   }
+  return value
+}
 
-  for (const value of Object.values(data)) {
-    extractFilesFromData(value, files, seenIds)
+function formatChatOutput(value: unknown, files: Map<string, ChatFile>): string {
+  const content = extractChatOutput(value, files)
+  if (content === null || content === undefined) return ''
+  if (typeof content === 'string') return content
+  if (typeof content === 'object') {
+    return `\`\`\`json\n${JSON.stringify(content, null, 2)}\n\`\`\``
   }
-
-  return files
+  return String(content)
 }
 
 export interface StreamingOptions {
-  outputConfigs?: Array<{ blockId: string; path?: string }>
+  outputConfigs?: Array<{ workflowId?: string; blockId: string; path?: string }>
   /**
    * Shared AbortController for fetch + SSE body reads. When provided (preferred),
    * Stop aborts the in-flight request server-side as well as the reader.
@@ -140,6 +151,7 @@ export function useChatStreaming() {
               isStreaming: false,
               isThinkingStreaming: false,
               isToolStreaming: false,
+              outputSegments: undefined,
             },
           ]
         }
@@ -184,6 +196,45 @@ export function useChatStreaming() {
      */
     const blockTextOrder: string[] = []
     const blockTextSegments = new Map<string, string>()
+    const segmentOrder: string[] = []
+    const segmentRuntime = new Map<string, OutputSegmentRuntime>()
+    for (const blockId of uniqueOutputBlockIds(streamingOptions?.outputConfigs)) {
+      segmentOrder.push(blockId)
+      segmentRuntime.set(blockId, {
+        status: 'waiting',
+        thinking: '',
+        isThinkingStreaming: false,
+      })
+    }
+    const activateSegment = (blockId: string) => {
+      const existing = segmentRuntime.get(blockId)
+      if (!existing) {
+        segmentOrder.push(blockId)
+        segmentRuntime.set(blockId, {
+          status: 'streaming',
+          thinking: '',
+          isThinkingStreaming: false,
+        })
+        return
+      }
+      if (existing.status === 'waiting') {
+        existing.status = 'streaming'
+      }
+    }
+    const completeSegment = (blockId: string) => {
+      const existing = segmentRuntime.get(blockId)
+      if (!existing) return
+      existing.status = 'done'
+      existing.isThinkingStreaming = false
+    }
+    const snapshotSegments = (): ChatOutputSegment[] | undefined => {
+      if (segmentOrder.length === 0) return undefined
+      return snapshotOutputSegments(segmentOrder, segmentRuntime, blockTextSegments, {
+        toolCallOrder,
+        toolCallsMap,
+      })
+    }
+    const outputFiles = new Map<string, ChatFile>()
     let accumulatedText = ''
     const recomputeAccumulatedText = () => {
       accumulatedText = blockTextOrder.map((id) => blockTextSegments.get(id) ?? '').join('')
@@ -224,6 +275,8 @@ export function useChatStreaming() {
       const thinkingStreamingSnapshot = isThinkingStreaming
       const toolCallsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
       const toolStreamingSnapshot = anyToolCallRunning(toolCallsMap)
+      const outputSegmentsSnapshot = snapshotSegments()
+      const filesSnapshot = Array.from(outputFiles.values())
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== messageId) return msg
@@ -235,6 +288,8 @@ export function useChatStreaming() {
             isThinkingStreaming: thinkingStreamingSnapshot,
             toolCalls: toolCallsSnapshot,
             isToolStreaming: toolStreamingSnapshot,
+            outputSegments: outputSegmentsSnapshot,
+            files: filesSnapshot.length > 0 ? filesSnapshot : undefined,
           }
         })
       )
@@ -265,6 +320,7 @@ export function useChatStreaming() {
         timestamp: new Date(),
         isStreaming: true,
         liked: null,
+        outputSegments: snapshotSegments(),
       },
     ])
 
@@ -306,6 +362,7 @@ export function useChatStreaming() {
                         isToolStreaming: false,
                         thinking: accumulatedThinking || msg.thinking,
                         toolCalls: toolsSnapshot ?? msg.toolCalls,
+                        outputSegments: undefined,
                       }
                     : msg
                 )
@@ -330,6 +387,7 @@ export function useChatStreaming() {
                       isStreaming: false,
                       isThinkingStreaming: false,
                       isToolStreaming: false,
+                      outputSegments: undefined,
                       type: 'assistant' as const,
                     }
                   : msg
@@ -352,6 +410,13 @@ export function useChatStreaming() {
           }
 
           if (isChatThinkingFrame(json)) {
+            const { blockId } = json
+            activateSegment(blockId)
+            const segment = segmentRuntime.get(blockId)
+            if (segment) {
+              segment.thinking += json.data
+              segment.isThinkingStreaming = true
+            }
             accumulatedThinking += json.data
             accumulatedThinkingRef.current = accumulatedThinking
             isThinkingStreaming = true
@@ -362,10 +427,15 @@ export function useChatStreaming() {
 
           if (isChatToolFrame(json)) {
             const { blockId } = json
-            // Tools starting means the turn's thinking phase is over — settle
+            activateSegment(blockId)
+            const segment = segmentRuntime.get(blockId)
+            // Tools starting means this block's thinking phase is over — settle
             // the thinking chrome (it re-opens if more thinking streams later).
-            if (json.phase === 'start' && isThinkingStreaming) {
-              isThinkingStreaming = false
+            if (json.phase === 'start') {
+              if (segment) segment.isThinkingStreaming = false
+              if (isThinkingStreaming) {
+                isThinkingStreaming = false
+              }
             }
             applyToolCallPhase(
               toolCallsMap,
@@ -389,6 +459,29 @@ export function useChatStreaming() {
             return false
           }
 
+          if (isChatBlockCompleteFrame(json)) {
+            completeSegment(json.blockId)
+            uiDirty = true
+            scheduleUIFlush()
+            return false
+          }
+
+          if (isChatOutputFrame(json)) {
+            const content = formatChatOutput(json.data, outputFiles)
+            if (content.trim()) {
+              if (!blockTextSegments.has(json.blockId)) {
+                blockTextOrder.push(json.blockId)
+              }
+              const previous = blockTextSegments.get(json.blockId) ?? ''
+              const separator = accumulatedText.trim() ? '\n\n' : ''
+              blockTextSegments.set(json.blockId, previous + separator + content)
+              recomputeAccumulatedText()
+            }
+            uiDirty = true
+            scheduleUIFlush()
+            return false
+          }
+
           if (isChatFinalFrame(json)) {
             flushUI()
             const finalData = json.data as ChatFinalData
@@ -405,6 +498,11 @@ export function useChatStreaming() {
               outputConfigs: streamingOptions?.outputConfigs,
               pendingKnowledgeResults,
             })
+            const filesByKey = new Map<string, ChatFile>()
+            for (const file of [...outputFiles.values(), ...(forkFinal.files ?? [])]) {
+              filesByKey.set(file.id || file.key, file)
+            }
+            const mergedFiles = Array.from(filesByKey.values())
 
             setMessages((prev) =>
               prev.map((msg) =>
@@ -418,9 +516,10 @@ export function useChatStreaming() {
                       thinking: accumulatedThinking || msg.thinking,
                       toolCalls: toolsSnapshot ?? msg.toolCalls,
                       executionId: forkFinal.executionId ?? msg.executionId,
-                      files: forkFinal.files,
+                      files: mergedFiles.length > 0 ? mergedFiles : undefined,
                       generatedImages: forkFinal.generatedImages,
                       knowledgeResults: forkFinal.knowledgeResults,
+                      outputSegments: undefined,
                     }
                   : msg
               )
@@ -442,6 +541,7 @@ export function useChatStreaming() {
             // re-registers at the end, keeping render order = arrival order
             // (the server re-computes the cross-block separator on re-stream).
             const { blockId } = json
+            activateSegment(blockId)
             if (blockTextSegments.has(blockId)) {
               blockTextSegments.delete(blockId)
               const orderIndex = blockTextOrder.indexOf(blockId)
@@ -458,6 +558,9 @@ export function useChatStreaming() {
           // Answer text only — never append thinking/tool/unknown chunk frames blindly.
           if (isChatChunkFrame(json)) {
             const { blockId, chunk: contentChunk } = json
+            activateSegment(blockId)
+            const segment = segmentRuntime.get(blockId)
+            if (segment) segment.isThinkingStreaming = false
 
             // First answer chunk settles thinking chrome (still visible, no longer “live”).
             if (isThinkingStreaming) {
@@ -505,6 +608,7 @@ export function useChatStreaming() {
                 isToolStreaming: false,
                 thinking: accumulatedThinking || msg.thinking,
                 toolCalls: toolsSnapshot ?? msg.toolCalls,
+                outputSegments: undefined,
               }
             }
             return {
@@ -515,6 +619,7 @@ export function useChatStreaming() {
               content: accumulatedText || msg.content,
               thinking: accumulatedThinking || msg.thinking,
               toolCalls: toolsSnapshot ?? msg.toolCalls,
+              outputSegments: undefined,
             }
           })
         )
@@ -542,6 +647,7 @@ export function useChatStreaming() {
                 isToolStreaming: false,
                 thinking: accumulatedThinking || msg.thinking,
                 toolCalls: toolsSnapshot ?? msg.toolCalls,
+                outputSegments: undefined,
               }
             : msg
         )
@@ -565,6 +671,53 @@ export function useChatStreaming() {
     stopStreaming,
     handleStreamedResponse,
   }
+}
+
+interface OutputSegmentRuntime {
+  status: ChatOutputSegment['status']
+  thinking: string
+  isThinkingStreaming: boolean
+}
+
+/**
+ * Unique selected-output block ids in deployment order. Knowledge `results`
+ * are rendered as references, not text segments, so they are omitted.
+ */
+function uniqueOutputBlockIds(outputConfigs: StreamingOptions['outputConfigs']): string[] {
+  if (!outputConfigs?.length) return []
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const config of outputConfigs) {
+    if (!config.blockId || seen.has(config.blockId) || config.path === 'results') continue
+    seen.add(config.blockId)
+    ids.push(config.blockId)
+  }
+  return ids
+}
+
+function snapshotOutputSegments(
+  segmentOrder: string[],
+  segmentRuntime: Map<string, OutputSegmentRuntime>,
+  blockTextSegments: Map<string, string>,
+  tools: {
+    toolCallOrder: string[]
+    toolCallsMap: Map<string, ChatToolCall>
+  }
+): ChatOutputSegment[] {
+  const allTools = snapshotToolCalls(tools.toolCallOrder, tools.toolCallsMap) ?? []
+  return segmentOrder.map((blockId) => {
+    const runtime = segmentRuntime.get(blockId)
+    const toolCalls = allTools.filter((tool) => tool.blockId === blockId)
+    return {
+      blockId,
+      content: blockTextSegments.get(blockId) ?? '',
+      status: runtime?.status ?? 'waiting',
+      thinking: runtime?.thinking || undefined,
+      isThinkingStreaming: runtime?.isThinkingStreaming ?? false,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      isToolStreaming: toolCalls.some((tool) => tool.status === 'running'),
+    }
+  })
 }
 
 interface ForkFinalStreamInput {

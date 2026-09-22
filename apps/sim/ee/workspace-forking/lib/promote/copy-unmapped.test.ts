@@ -36,6 +36,7 @@ vi.mock('@/ee/workspace-forking/lib/copy/copy-files', () => ({
   executeForkFileBlobCopies: vi.fn(),
 }))
 
+import type { ForkRemapKind } from '@/lib/workflows/references/remap-references'
 import type { ForkEdge } from '@/ee/workspace-forking/lib/lineage/lineage'
 import {
   augmentForkResolver,
@@ -45,7 +46,6 @@ import {
   hasPromoteCopySelection,
 } from '@/ee/workspace-forking/lib/promote/copy-unmapped'
 import { isForkCopyableKind } from '@/ee/workspace-forking/lib/promote/promote-plan'
-import type { ForkRemapKind } from '@/ee/workspace-forking/lib/remap/remap-references'
 
 const candidates: ForkCopyableUnmapped[] = [
   {
@@ -235,7 +235,7 @@ describe('augmentForkResolver', () => {
 describe('copyPromoteUnmappedResources - files + folder content-refs', () => {
   const tx = {} as DbOrTx
   // Only edge.childWorkspaceId is read by the copy path.
-  const edge = { childWorkspaceId: 'edge-child' } as unknown as ForkEdge
+  const edge: ForkEdge = { childWorkspaceId: 'edge-child', parentWorkspaceId: 'src-ws' }
   // The promote-built persisted-pair resolver; the copy must forward it verbatim so copied
   // tables' workflow-group outputs land on the same block ids the workflow writes assign.
   const resolveBlockId = (workflowId: string, blockId: string) => `${workflowId}:${blockId}`
@@ -315,6 +315,7 @@ describe('copyPromoteUnmappedResources - files + folder content-refs', () => {
     mockPlanForkFileCopies.mockResolvedValue({
       keyMap: new Map([['workspace/SRC/a.png', 'workspace/DST/a.png']]),
       folderIdMap: new Map(),
+      folderPathMap: new Map(),
       idMap: new Map([['file-src', 'file-dst']]),
       blobTasks: [
         {
@@ -413,6 +414,7 @@ describe('copyPromoteUnmappedResources - files + folder content-refs', () => {
     mockPlanForkFileCopies.mockResolvedValue({
       keyMap: new Map<string, string>(),
       folderIdMap: new Map(),
+      folderPathMap: new Map(),
       idMap: new Map<string, string>(),
       blobTasks: [],
     })
@@ -512,7 +514,12 @@ describe('fork copyable kind drift', () => {
     for (const kind of forkCopyableKindSchema.options) {
       expect(isForkCopyableKind(kind)).toBe(true)
     }
-    const nonCopyable: ForkRemapKind[] = ['credential', 'env-var', 'knowledge-document']
+    const nonCopyable: ForkRemapKind[] = [
+      'credential',
+      'env-var',
+      'knowledge-document',
+      'file-folder',
+    ]
     for (const kind of nonCopyable) {
       expect(isForkCopyableKind(kind)).toBe(false)
     }

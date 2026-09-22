@@ -1,5 +1,4 @@
 import { Suspense } from 'react'
-import { ToastProvider } from '@sim/emcn'
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { cookies, headers } from 'next/headers'
@@ -11,8 +10,8 @@ import {
 } from '@/lib/auth/arena-sim-resume'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
 import { isDev } from '@/lib/core/config/env-flags'
+import { isTableRowTtlEnabled } from '@/lib/table/ttl-availability'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
-import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/components/impersonation-banner'
 import { SessionExpired } from '@/app/workspace/[workspaceId]/components/session-expired'
 import { WorkspaceAccessDenied } from '@/app/workspace/[workspaceId]/components/workspace-access-denied'
@@ -21,16 +20,19 @@ import {
   prefetchWorkspaceHostContext,
   prefetchWorkspaceSidebar,
 } from '@/app/workspace/[workspaceId]/prefetch'
+import { prefetchWorkspaceAccess } from '@/app/workspace/[workspaceId]/prefetch-access'
 import { ArenaThemeSync } from '@/app/workspace/[workspaceId]/providers/arena-theme-sync'
 import { BlockVisibilityLoader } from '@/app/workspace/[workspaceId]/providers/block-visibility-loader'
 import { CustomBlocksLoader } from '@/app/workspace/[workspaceId]/providers/custom-blocks-loader'
 import { DesktopOAuthConnectListener } from '@/app/workspace/[workspaceId]/providers/desktop-oauth-connect-listener'
+import { FeatureFlagsProvider } from '@/app/workspace/[workspaceId]/providers/feature-flags-provider'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
 import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
 import { WorkspaceHostProvider } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { WorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { WorkspaceScopeSync } from '@/app/workspace/[workspaceId]/providers/workspace-scope-sync'
+import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { WorkspaceRouteLoading } from '@/app/workspace/workspace-route-loading'
 import { getBrandConfig } from '@/ee/whitelabeling/branding'
 import { BrandingProvider } from '@/ee/whitelabeling/components/branding-provider'
@@ -102,7 +104,7 @@ async function WorkspaceLayoutInner({
   }
 
   const activeOrganizationId = getActiveOrganizationId(session)
-  const [cookieStore, initialOrgSettings] = await Promise.all([
+  const [cookieStore, initialOrgSettings, , tableRowTtlEnabled] = await Promise.all([
     cookies(),
     hostContext.hostOrganizationId
       ? getOrgWhitelabelSettings(hostContext.hostOrganizationId)
@@ -114,18 +116,24 @@ async function WorkspaceLayoutInner({
       hostContext,
       activeOrganizationId
     ),
+    isTableRowTtlEnabled(),
+    prefetchWorkspaceAccess(queryClient, workspaceId, {
+      kind: 'session',
+      userId: session.user.id,
+      sessionId: session.session.id,
+    }),
   ])
   const initialSidebarCollapsed = cookieStore.get('sidebar_collapsed')?.value === '1'
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <WorkspaceHostProvider workspaceId={workspaceId} initialContext={hostContext}>
-        <BrandingProvider
-          hostOrganizationId={hostContext.hostOrganizationId}
-          viewerIsHostOrganizationMember={hostContext.viewer.isHostOrganizationMember}
-          initialOrgSettings={initialOrgSettings}
-        >
-          <ToastProvider>
+      <FeatureFlagsProvider flags={{ 'table-row-ttl': tableRowTtlEnabled }}>
+        <WorkspaceHostProvider workspaceId={workspaceId} initialContext={hostContext}>
+          <BrandingProvider
+            hostOrganizationId={hostContext.hostOrganizationId}
+            viewerIsHostOrganizationMember={hostContext.viewer.isHostOrganizationMember}
+            initialOrgSettings={initialOrgSettings}
+          >
             <DesktopOAuthConnectListener />
             <SettingsLoader />
             <ArenaThemeSync />
@@ -134,20 +142,22 @@ async function WorkspaceLayoutInner({
             <BlockVisibilityLoader />
             <GlobalCommandsProvider>
               <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
-                <AppBanner />
                 <ImpersonationBanner />
                 <SessionExpired />
                 <WorkspacePermissionsProvider>
                   <WorkspaceScopeSync />
-                  <WorkspaceChrome initialSidebarCollapsed={initialSidebarCollapsed}>
+                  <WorkspaceChrome
+                    sidebar={<Sidebar />}
+                    initialSidebarCollapsed={initialSidebarCollapsed}
+                  >
                     {children}
                   </WorkspaceChrome>
                 </WorkspacePermissionsProvider>
               </div>
             </GlobalCommandsProvider>
-          </ToastProvider>
-        </BrandingProvider>
-      </WorkspaceHostProvider>
+          </BrandingProvider>
+        </WorkspaceHostProvider>
+      </FeatureFlagsProvider>
     </HydrationBoundary>
   )
 }

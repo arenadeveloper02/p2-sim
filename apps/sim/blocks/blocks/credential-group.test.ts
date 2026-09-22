@@ -1,142 +1,31 @@
 /**
  * @vitest-environment node
  */
-import { QueryClient } from '@tanstack/react-query'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SubBlockConfig } from '@/blocks/types'
-import { credentialGroupKeys } from '@/hooks/queries/utils/credential-group-queries'
+import { describe, expect, it, vi } from 'vitest'
 
-interface PendingRequest {
-  resolve: (value: unknown) => void
-  reject: (reason: unknown) => void
-}
-
-const { requestJsonMock, capturedSignals, pending, getTestQueryClient, setTestQueryClient } =
-  vi.hoisted(() => {
-    const capturedSignals: Array<AbortSignal | undefined> = []
-    const pending: PendingRequest[] = []
-    let client: unknown = null
-    return {
-      capturedSignals,
-      pending,
-      getTestQueryClient: () => client,
-      setTestQueryClient: (next: unknown) => {
-        client = next
-      },
-      requestJsonMock: vi.fn((_contract: unknown, input: { signal?: AbortSignal }) => {
-        capturedSignals.push(input.signal)
-        return new Promise((resolve, reject) => {
-          pending.push({ resolve, reject })
-          input.signal?.addEventListener('abort', () => {
-            reject(new DOMException('The operation was aborted.', 'AbortError'))
-          })
-        })
-      }),
-    }
-  })
-
-vi.mock('@/lib/api/client/request', () => ({ requestJson: requestJsonMock }))
-
-vi.mock('@/app/_shell/providers/get-query-client', () => ({
-  getQueryClient: () => getTestQueryClient(),
-}))
-
-vi.mock('@/stores/workflows/registry/store', () => ({
-  useWorkflowRegistry: {
-    getState: () => ({ hydration: { workspaceId: 'workspace-1' }, activeWorkflowId: null }),
-  },
-}))
-
-vi.mock('@/stores/workflows/subblock/store', () => ({
-  useSubBlockStore: { getState: () => ({ workflowValues: {} }) },
-}))
-
-vi.mock('@/stores/workflows/workflow/store', () => ({
-  useWorkflowStore: { getState: () => ({ blocks: {} }) },
-}))
+vi.mock('@/triggers', () => ({ getTrigger: () => ({ subBlocks: [] }) }))
 
 import { CredentialGroupBlock } from '@/blocks/blocks/credential-group'
 
-const WORKSPACE_LIST_KEY = credentialGroupKeys.list('workspace-1')
-
-const GROUPS = [
-  {
-    id: 'group-1',
-    name: 'Support accounts',
-    status: 'active',
-    options: [],
-  },
-]
-
-function getCredentialGroupSubBlock(): SubBlockConfig {
-  const subBlock = CredentialGroupBlock.subBlocks.find((entry) => entry.id === 'credentialGroup')
-  if (!subBlock) throw new Error('credentialGroup subBlock is missing')
-  return subBlock
-}
-
-async function waitForRequestCount(count: number) {
-  await vi.waitFor(() => expect(capturedSignals.length).toBe(count), { interval: 1, timeout: 1000 })
-}
-
-describe('credential group dynamic option resolution', () => {
-  let queryClient: QueryClient
-
-  beforeEach(() => {
-    capturedSignals.length = 0
-    pending.length = 0
-    requestJsonMock.mockClear()
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    setTestQueryClient(queryClient)
-  })
-
-  afterEach(() => {
-    queryClient.clear()
-  })
-
-  it('keeps the shared workspace credential-group list alive when one option resolution is cancelled', async () => {
-    const subBlock = getCredentialGroupSubBlock()
-    const fetchOptionById = subBlock.fetchOptionById
-    const fetchOptions = subBlock.fetchOptions
-    if (!fetchOptionById || !fetchOptions) throw new Error('credentialGroup resolvers are missing')
-
-    const controller = new AbortController()
-    const optionResolution = Promise.resolve(
-      fetchOptionById('block-1', 'group-1', controller.signal)
-    ).catch(() => null)
-
-    await waitForRequestCount(1)
-
-    const sharedListConsumer = fetchOptions('block-1')
-
-    controller.abort()
-    await Promise.resolve()
-
-    pending[0].resolve({ credentialGroups: GROUPS })
-
-    await expect(sharedListConsumer).resolves.toEqual([
-      { label: 'Support accounts', id: 'group-1' },
+describe('Connected Accounts block', () => {
+  it('uses the workspace container without selectable or manual group inputs', () => {
+    expect(CredentialGroupBlock.name).toBe('Connected Accounts (Legacy)')
+    expect(CredentialGroupBlock.hideFromToolbar).toBe(true)
+    const operation = CredentialGroupBlock.subBlocks.find((field) => field.id === 'operation')
+    expect(operation?.options).toEqual([
+      { label: 'List Credentials', id: 'list_credentials' },
+      { label: 'List MCP Connections', id: 'list_mcp_connections' },
+      { label: 'Send Invite', id: 'send_invite' },
+      { label: 'Get Invite Link', id: 'get_invite_link' },
+      { label: 'List People', id: 'list_people' },
     ])
-    expect(queryClient.getQueryState(WORKSPACE_LIST_KEY)?.status).not.toBe('error')
-
-    await optionResolution
-  })
-
-  it('still cancels the underlying request when React Query cancels the shared list query', async () => {
-    const subBlock = getCredentialGroupSubBlock()
-    const fetchOptionById = subBlock.fetchOptionById
-    if (!fetchOptionById) throw new Error('credentialGroup fetchOptionById is missing')
-
-    const controller = new AbortController()
-    const optionResolution = Promise.resolve(
-      fetchOptionById('block-1', 'group-1', controller.signal)
-    ).catch(() => null)
-
-    await waitForRequestCount(1)
-
-    await queryClient.cancelQueries({ queryKey: WORKSPACE_LIST_KEY })
-
-    expect(capturedSignals[0]?.aborted).toBe(true)
-
-    await optionResolution
+    expect(CredentialGroupBlock.inputs).not.toHaveProperty('credentialGroupId')
+    expect(CredentialGroupBlock.outputs).not.toHaveProperty('credentialGroups')
+    expect(
+      CredentialGroupBlock.subBlocks.some((field) => field.canonicalParamId === 'credentialGroupId')
+    ).toBe(false)
+    expect(
+      CredentialGroupBlock.subBlocks.find((field) => field.id === 'providerFilter')?.dependsOn
+    ).toBeUndefined()
   })
 })

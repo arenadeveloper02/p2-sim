@@ -11,7 +11,6 @@ import type {
 } from '@/lib/execution/code-placeholders/types'
 
 const MAX_PLACEHOLDERS = 10_000
-const PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g
 
 export class CodePlaceholderCompileError extends Error {
   readonly line?: number
@@ -28,17 +27,43 @@ export class CodePlaceholderCompileError extends Error {
   }
 }
 
+/**
+ * Scans `{{name}}` placeholders, accepting exactly what `/\{\{([^}]+)\}\}/g` accepts —
+ * a name may contain `{`, because parameter keys are arbitrary strings rather than
+ * identifiers.
+ *
+ * Written as a scan rather than that regex because the regex is quadratic: `[^}]`
+ * admits `{`, so every offset in a run of `{` restarts a full backtracking scan, and
+ * this runs on user-authored code during execution. No regex is both linear and this
+ * permissive. The scan is linear because a failure at one `{{` predicts failure for
+ * every `{{` before the same closing brace: they share a body run and therefore the
+ * same terminator check, so the cursor jumps past them instead of retrying each.
+ */
 export function collectCodePlaceholderOccurrences(code: string): CodePlaceholderOccurrence[] {
   const occurrences: CodePlaceholderOccurrence[] = []
-  let match: RegExpExecArray | null
-  PLACEHOLDER_PATTERN.lastIndex = 0
-  while ((match = PLACEHOLDER_PATTERN.exec(code)) !== null) {
-    const name = match[1].trim()
+  let cursor = 0
+  while (cursor < code.length) {
+    const start = code.indexOf('{{', cursor)
+    if (start === -1) break
+
+    const bodyStart = start + 2
+    const bodyEnd = code.indexOf('}', bodyStart)
+    if (bodyEnd === -1) break
+
+    if (bodyEnd === bodyStart || code[bodyEnd + 1] !== '}') {
+      cursor = bodyEnd - 1
+      continue
+    }
+
+    const raw = code.slice(start, bodyEnd + 2)
+    cursor = bodyEnd + 2
+
+    const name = code.slice(bodyStart, bodyEnd).trim()
     if (!name) continue
     occurrences.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      raw: match[0],
+      start,
+      end: start + raw.length,
+      raw,
       name,
     })
     if (occurrences.length > MAX_PLACEHOLDERS) {
@@ -120,6 +145,40 @@ export function createCodePlaceholderCompilationContext(
     }
   }
 
+  /**
+   * The gate {@link recordDirectEnvironmentRead} applies, exposed so a scanner can drop
+   * candidates before classifying them. Deciding whether an expansion really runs costs a
+   * lex or a quote-frame pass over the whole document, and the overwhelming majority of
+   * `$VAR` / `environmentVariables[...]` reads in real code name something that is not a
+   * configured secret — so answering "would this even be recorded" first keeps those passes
+   * off the common path entirely.
+   */
+  const tracksDirectEnvironmentRead = (name: string): boolean =>
+    !input.analysisOnly && Object.hasOwn(environmentVariables, name)
+
+  /**
+   * Records a secret the code reads straight off the runtime environment —
+   * `environmentVariables.NAME` / `environmentVariables['NAME']` in JavaScript and Python,
+   * `$NAME` in shell — rather than through a `{{NAME}}` placeholder.
+   *
+   * Those reads reach the same value but were invisible to this compiler, so nothing
+   * downstream knew the secret was live: it never entered the run's active provenance, and
+   * execution-log masking is activated by that entry. A direct read was therefore a secret
+   * the logs would not redact. Reporting it here fixes that at the source, because
+   * `resolvedSecretNames` is already the channel the runtime boundary reads back.
+   *
+   * Deliberately inert under `analysisOnly`. That mode drives Copilot's secret mount, whose
+   * policy is that code receives a value only for an explicit `{{NAME}}` reference; widening
+   * it here would mount secrets on the strength of an identifier appearing in a string.
+   */
+  const recordDirectEnvironmentRead = (name: string, offset: number): void => {
+    if (!tracksDirectEnvironmentRead(name)) return
+    const currentOffset = resolvedSecretNameOffsets.get(name)
+    if (currentOffset === undefined || offset < currentOffset) {
+      resolvedSecretNameOffsets.set(name, offset)
+    }
+  }
+
   const resolveValue = (
     occurrence: CodePlaceholderOccurrence
   ): ResolvedCodePlaceholderValueOccurrence | undefined => {
@@ -147,6 +206,8 @@ export function createCodePlaceholderCompilationContext(
     occurrences,
     hasValue,
     resolveValue,
+    recordDirectEnvironmentRead,
+    tracksDirectEnvironmentRead,
     runtimeBindingFor(kind) {
       const existing = runtimeBindingByKind.get(kind)
       if (existing) return existing

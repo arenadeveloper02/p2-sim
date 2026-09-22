@@ -1,22 +1,27 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activeElementSecrecy,
   clickElement,
   collectSnapshot,
+  describeFocusedEditable,
+  describePointTarget,
   focusElementForTyping,
+  getElementScreenshotRect,
   getViewportInfo,
   hoverElement,
   pageContainsText,
   pressKeyOnPage,
   readActiveElementState,
+  readCheckableElementState,
   readChildFrameElementState,
   readPageActionState,
   readPageText,
   readSelectElementState,
   scrollPage,
   selectOptionInElement,
+  setFocusedInputValue,
   typeIntoElement,
 } from '@/main/browser-agent/page-functions'
 
@@ -128,6 +133,72 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('conditional click scrolling', () => {
+  it('leaves a reachable target in place', () => {
+    const target = visible(document.createElement('button'))
+    document.body.append(target)
+    register(target)
+    target.scrollIntoView = vi.fn()
+    expect(runSerialized(clickElement, [0, false])).toMatchObject({ x: 50, y: 10 })
+    expect(target.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('rechecks the hit target after scrolling past a sticky obstruction', () => {
+    const target = visible(document.createElement('button'))
+    const obstruction = visible(document.createElement('div'))
+    document.body.append(target, obstruction)
+    register(target)
+    let scrolled = false
+    target.scrollIntoView = vi.fn(() => {
+      scrolled = true
+    })
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: () => (scrolled ? target : obstruction),
+    })
+    expect(runSerialized(clickElement, [0, false])).toMatchObject({ x: 50, y: 10 })
+    expect(target.scrollIntoView).toHaveBeenCalledOnce()
+  })
+
+  it('reveals a parent control when only its nested button is initially reachable', () => {
+    const card = visible(document.createElement('div'))
+    card.setAttribute('role', 'button')
+    const nested = visible(document.createElement('button'))
+    card.append(nested)
+    document.body.append(card)
+    register(card)
+    let scrolled = false
+    card.scrollIntoView = vi.fn(() => {
+      scrolled = true
+    })
+    const nestedClick = vi.fn()
+    nested.addEventListener('click', nestedClick)
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: () => (scrolled ? card : nested),
+    })
+    expect(runSerialized(clickElement, [0, false])).toMatchObject({ x: 50, y: 10 })
+    expect(card.scrollIntoView).toHaveBeenCalledOnce()
+    expect(nestedClick).not.toHaveBeenCalled()
+  })
+
+  it('rejects a target removed by scrolling without dispatching input', () => {
+    const target = visible(document.createElement('button'))
+    const obstruction = visible(document.createElement('div'))
+    document.body.append(target, obstruction)
+    register(target)
+    const click = vi.fn()
+    target.addEventListener('click', click)
+    target.scrollIntoView = () => target.remove()
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: () => obstruction,
+    })
+    expect(runSerialized(clickElement, [0])).toMatchObject({ error: 'stale' })
+    expect(click).not.toHaveBeenCalled()
+  })
+})
+
 describe('serialization contract', () => {
   // The driver ships each of these to the page as `String(fn)`, so a reference
   // to anything in module scope — a shared helper, an import, a constant —
@@ -148,6 +219,7 @@ describe('serialization contract', () => {
     ],
     ['pressKeyOnPage', pressKeyOnPage, ['a', 'KeyA', 65, false, false, false, false]],
     ['readPageActionState', readPageActionState, []],
+    ['readCheckableElementState', readCheckableElementState, [0]],
     ['scrollPage', scrollPage, ['down', 100]],
     ['selectOptionInElement', selectOptionInElement, [0, 'value']],
     ['readSelectElementState', readSelectElementState, [0]],
@@ -155,6 +227,9 @@ describe('serialization contract', () => {
     ['readPageText', readPageText, []],
     ['pageContainsText', pageContainsText, ['needle']],
     ['getViewportInfo', getViewportInfo, []],
+    ['getElementScreenshotRect', getElementScreenshotRect, [0]],
+    ['describePointTarget', describePointTarget, [10, 10]],
+    ['describeFocusedEditable', describeFocusedEditable, []],
   ]
 
   it.each(cases)('%s is self-contained', (_name, fn, args) => {
@@ -257,8 +332,11 @@ describe('secret-field detection', () => {
     expect(typeIntoElement(0, 'change', false)).toEqual({ error: 'readonly' })
     expect(focusElementForTyping(1)).toEqual({ error: 'disabled' })
     expect(typeIntoElement(1, 'change', false)).toEqual({ error: 'disabled' })
-    expect(focusElementForTyping(2)).toEqual({ error: 'not-editable' })
-    expect(typeIntoElement(2, 'change', false)).toEqual({ error: 'not-editable' })
+    expect(focusElementForTyping(2)).toMatchObject({ error: 'not-editable', elementTag: 'input' })
+    expect(typeIntoElement(2, 'change', false)).toMatchObject({
+      error: 'not-editable',
+      elementTag: 'input',
+    })
   })
 
   it('detects a password field reached through a same-origin iframe', () => {
@@ -379,7 +457,12 @@ describe('combobox typing surfaces', () => {
     for (const input of Array.from(document.querySelectorAll('input'))) visible(input)
     register(ambiguous, secret)
 
-    expect(focusElementForTyping(0)).toEqual({ error: 'ambiguous-editable' })
+    // The candidate list is the whole point of this error — it is the only
+    // thing that lets the agent pick a narrower target.
+    expect(focusElementForTyping(0)).toMatchObject({
+      error: 'ambiguous-editable',
+      candidates: expect.arrayContaining([expect.stringContaining('input')]),
+    })
     expect(focusElementForTyping(1)).toEqual({ error: 'password' })
     expect(typeIntoElement(1, 'nope', false)).toEqual({ error: 'password' })
   })
@@ -589,8 +672,11 @@ describe('collectSnapshot', () => {
     })
 
     expect(card.contains(nestedButton)).toBe(true)
+    // Nothing is covering the card — its own button owns the point. Reporting
+    // this as an obstruction told the agent to close an overlay that does not
+    // exist; the recovery is to target the nested control instead.
     expect(clickElement(ref, false)).toEqual({
-      error: 'obstructed',
+      error: 'nested-control',
       blocker: 'Delete channel',
     })
   })
@@ -608,6 +694,32 @@ describe('collectSnapshot', () => {
     visible(document.querySelector('[role="gridcell"]') as HTMLDivElement)
 
     expect(outlineOf(collectSnapshot())).toContain('gridcell "party-parrot"')
+  })
+
+  it('reports native and ARIA control state in the snapshot', () => {
+    document.body.innerHTML = `
+      <input type="checkbox" aria-label="Email alerts" />
+      <input type="radio" aria-label="Weekly" checked />
+      <input type="checkbox" aria-label="Partial selection" />
+      <button aria-expanded="false" aria-pressed="true">Filters</button>
+      <div role="switch" aria-label="Dark mode" aria-checked="mixed"></div>
+      <div role="tab" aria-selected="true">Activity</div>
+      <textarea aria-label="Notes" readonly required></textarea>
+      <div role="textbox" aria-label="Summary" aria-readonly="true" aria-required="true"></div>
+    `
+    for (const element of document.body.children) visible(element as HTMLElement)
+    document.querySelector<HTMLInputElement>('[aria-label="Partial selection"]')!.indeterminate =
+      true
+    const outline = outlineOf(collectSnapshot())
+
+    expect(outline).toMatch(/checkbox "Email alerts" \[ref=\d+\] unchecked/)
+    expect(outline).toMatch(/radio "Weekly" \[ref=\d+\] checked/)
+    expect(outline).toMatch(/checkbox "Partial selection" \[ref=\d+\] mixed/)
+    expect(outline).toMatch(/button "Filters" \[ref=\d+\] aria-expanded=false aria-pressed=true/)
+    expect(outline).toMatch(/switch "Dark mode" \[ref=\d+\] aria-checked=mixed/)
+    expect(outline).toMatch(/tab "Activity" \[ref=\d+\] aria-selected=true/)
+    expect(outline).toMatch(/textbox "Notes" \[ref=\d+\] readonly required/)
+    expect(outline).toMatch(/textbox "Summary" \[ref=\d+\] aria-readonly aria-required/)
   })
 
   it('does not duplicate every descendant of an inherited pointer target', () => {
@@ -645,6 +757,23 @@ describe('collectSnapshot', () => {
     expect(lines).toHaveLength(1)
     expect(lines[0]).toMatch(/^- [a-zA-Z0-9_-]+ "Safe control" \[ref=\d+\]$/)
     expect(lines[0]).not.toContain('[ref=999]')
+  })
+
+  it('shares the text budget across inline fragments and leaves room for later controls', () => {
+    document.body.innerHTML = `${Array.from(
+      { length: 650 },
+      (_, index) => `<p>Before ${index} <span>inline ${index}</span> after ${index}</p>`
+    ).join(
+      ''
+    )}${Array.from({ length: 100 }, (_, index) => `<button>Action ${index}</button>`).join('')}<input aria-label="Final field">`
+    for (const element of document.querySelectorAll('*')) visible(element)
+
+    const snapshot = collectSnapshot() as { outline: string; truncated: boolean }
+    expect(snapshot.truncated).toBe(true)
+    expect(snapshot.outline.match(/^- text /gm)).toHaveLength(120)
+    expect(snapshot.outline.match(/^- button /gm)).toHaveLength(100)
+    expect(snapshot.outline).toMatch(/button "Action 99" \[ref=\d+\]/)
+    expect(snapshot.outline).toMatch(/textbox "Final field" \[ref=\d+\]/)
   })
 
   it('indexes only refs that were emitted before snapshot line truncation', () => {
@@ -688,11 +817,118 @@ describe('collectSnapshot', () => {
     expect(clickElement(ref)).toEqual({ error: 'file-input' })
   })
 
+  it('sets a complete multiple selection atomically and can clear it', () => {
+    document.body.innerHTML =
+      '<select multiple><option value="a" selected>A</option><option value="b">B</option><option value="c">C</option><option disabled value="d">D</option></select>'
+    const select = document.querySelector('select') as HTMLSelectElement
+    register(select)
+    const events = vi.fn()
+    select.addEventListener('change', events)
+    expect(selectOptionInElement(0, ['B', 'D'])).toEqual({ error: 'disabled' })
+    expect(readSelectElementState(0)).toMatchObject({ values: ['a'] })
+    expect(events).not.toHaveBeenCalled()
+    expect(selectOptionInElement(0, ['C', 'missing'])).toMatchObject({ error: 'no-option' })
+    expect(readSelectElementState(0)).toMatchObject({ values: ['a'] })
+    expect(selectOptionInElement(0, ['C', 'B'])).toMatchObject({ values: ['b', 'c'] })
+    expect(readSelectElementState(0)).toMatchObject({ values: ['b', 'c'] })
+    expect(events).toHaveBeenCalledOnce()
+    expect(selectOptionInElement(0, [])).toMatchObject({ selected: '', value: '', values: [] })
+    expect(readSelectElementState(0)).toMatchObject({ values: [] })
+  })
+
+  it('captures requested labels before event handlers replace a duplicate-value option', () => {
+    document.body.innerHTML =
+      '<select multiple><option value="fixed">Fixed</option><option value="shared">Wanted</option><option value="shared">Other</option></select>'
+    const select = document.querySelector('select') as HTMLSelectElement
+    register(select)
+    select.addEventListener('change', () => {
+      select.options[1].selected = false
+      select.options[2].selected = true
+      select.options[1].label = 'Rewritten'
+    })
+    expect(selectOptionInElement(0, ['Fixed', 'Wanted'])).toMatchObject({
+      values: ['fixed', 'shared'],
+      labels: ['Fixed', 'Wanted'],
+    })
+    expect(readSelectElementState(0)).toMatchObject({
+      values: ['fixed', 'shared'],
+      labels: ['Fixed', 'Other'],
+    })
+  })
+
+  it('does not use multiple-selection arguments on a single-selection dropdown', () => {
+    document.body.innerHTML =
+      '<select><option value="a">A</option><option value="b">B</option></select>'
+    const select = document.querySelector('select') as HTMLSelectElement
+    register(select)
+    expect(selectOptionInElement(0, ['B'])).toHaveProperty('error')
+    expect(select.value).toBe('a')
+    expect(selectOptionInElement(0, 'B')).toMatchObject({ value: 'b' })
+  })
+
   it('keeps plain visible leaf text available as an actionable ref', () => {
     document.body.innerHTML = '<div><span>announce</span></div>'
     visible(document.querySelector('span') as HTMLSpanElement)
 
     expect(outlineOf(collectSnapshot())).toContain('text "announce" [ref=')
+  })
+
+  it('preserves mixed inline text in reading order without duplicating control labels', () => {
+    document.body.innerHTML =
+      '<div>Type "<strong>hello</strong>" in upper case.</div><button>Save <span>draft</span></button><div hidden>Hidden <b>text</b></div>'
+    for (const el of document.querySelectorAll('body, div, strong, button, span, b')) visible(el)
+    const outline = outlineOf(collectSnapshot())
+    const labels = Array.from(outline.matchAll(/- text ("(?:[^"\\]|\\.)*")/g), (match) =>
+      JSON.parse(match[1])
+    )
+    expect(labels).toEqual(['Type "', 'hello', '" in upper case.'])
+    expect(outline).toContain('button "Save draft"')
+    expect(outline).not.toContain('Hidden')
+  })
+
+  it('does not emit stale textarea defaults after the current value changes', () => {
+    document.body.innerHTML = '<textarea aria-label="Draft">Old draft</textarea>'
+    const input = visible(document.querySelector('textarea') as HTMLTextAreaElement)
+    input.value = 'Current draft'
+    expect(outlineOf(collectSnapshot())).not.toContain('Old draft')
+    input.value = ''
+    expect(outlineOf(collectSnapshot())).not.toContain('Old draft')
+  })
+
+  it('preserves direct text in open shadow roots and respects hidden hosts', () => {
+    document.body.innerHTML = '<div></div>'
+    const host = visible(document.querySelector('div') as HTMLDivElement)
+    const shadow = host.attachShadow({ mode: 'open' })
+    shadow.innerHTML = 'Before <strong>middle</strong> after'
+    visible(shadow.querySelector('strong') as HTMLElement)
+    const outline = outlineOf(collectSnapshot())
+    expect(outline.indexOf('text "Before"')).toBeLessThan(outline.indexOf('text "middle"'))
+    expect(outline.indexOf('text "middle"')).toBeLessThan(outline.indexOf('text "after"'))
+    host.hidden = true
+    expect(outlineOf(collectSnapshot())).not.toContain('Before')
+  })
+
+  it('gives interactive headings actionable refs while preserving static headings', () => {
+    document.body.innerHTML =
+      '<h3 role="tab" tabindex="0" aria-expanded="false">Details</h3><h2>Overview</h2>'
+    for (const el of document.querySelectorAll('h3, h2')) visible(el)
+    const clicked = vi.fn()
+    document.querySelector('h3')?.addEventListener('click', clicked)
+    const outline = outlineOf(collectSnapshot())
+    expect(outline).toContain('tab "Details"')
+    expect(outline).toContain('aria-expanded=false')
+    expect(outline).toContain('heading "Overview" (h2)')
+    expect(clickElement(refFor(outline, 'Details'))).toMatchObject({ dispatched: true })
+    expect(clicked).toHaveBeenCalledOnce()
+  })
+
+  it('exposes structured input types and multiple-selection controls', () => {
+    document.body.innerHTML =
+      '<input aria-label="Date" type="date"><select multiple aria-label="Countries"><option>A</option></select>'
+    for (const el of document.querySelectorAll('input, select')) visible(el)
+    const outline = outlineOf(collectSnapshot())
+    expect(outline).toContain('type="date"')
+    expect(outline).toMatch(/combobox "Countries" \[ref=\d+\] multiple/)
   })
 
   it('retains sender and timestamp text omitted from a row accessibility label', () => {
@@ -766,7 +1002,39 @@ describe('collectSnapshot', () => {
       document.body.append(replacement)
     }
 
-    expect(focusElementForTyping(ref)).toEqual({ error: 'stale' })
+    expect(focusElementForTyping(ref)).toMatchObject({ error: 'stale' })
+  })
+
+  it('keeps a connected ref usable after a same-document URL change', () => {
+    document.body.innerHTML = '<button data-testid="composer-send">Send</button>'
+    const button = visible(document.querySelector('button') as HTMLButtonElement)
+    const ref = refFor(outlineOf(collectSnapshot()), 'Send')
+    let clicked = false
+    button.addEventListener('click', () => {
+      clicked = true
+    })
+
+    window.history.pushState({}, '', '/client/T123/C456')
+
+    expect(clickElement(ref)).toMatchObject({ dispatched: true, refRecovered: false })
+    expect(clicked).toBe(true)
+  })
+
+  it('recovers a replaced ref after a same-document URL change', () => {
+    document.body.innerHTML = '<button data-testid="messages-tab">Messages</button>'
+    const original = visible(document.querySelector('button') as HTMLButtonElement)
+    const ref = refFor(outlineOf(collectSnapshot()), 'Messages')
+    const replacement = visible(original.cloneNode(true) as HTMLButtonElement)
+    let clicked = false
+    replacement.addEventListener('click', () => {
+      clicked = true
+    })
+
+    window.history.pushState({}, '', '/client/T123/C456')
+    original.replaceWith(replacement)
+
+    expect(clickElement(ref)).toMatchObject({ dispatched: true, refRecovered: true })
+    expect(clicked).toBe(true)
   })
 
   it('refuses to recover a ref when replacement is ambiguous', () => {
@@ -777,7 +1045,7 @@ describe('collectSnapshot', () => {
     const second = visible(original.cloneNode(true) as HTMLButtonElement)
     original.replaceWith(first, second)
 
-    expect(clickElement(ref)).toEqual({ error: 'stale' })
+    expect(clickElement(ref)).toMatchObject({ error: 'stale' })
   })
 
   it('invalidates a connected virtual row when its identity is recycled in place', () => {
@@ -788,7 +1056,7 @@ describe('collectSnapshot', () => {
     row.textContent = 'random'
     row.dataset.key = 'channel-2'
 
-    expect(clickElement(ref)).toEqual({ error: 'stale' })
+    expect(clickElement(ref)).toMatchObject({ error: 'stale' })
   })
 
   it('invalidates a generic connected row action when its surrounding item is recycled', () => {
@@ -802,7 +1070,7 @@ describe('collectSnapshot', () => {
     ;(document.querySelector('span') as HTMLSpanElement).textContent = 'random'
 
     expect(button.isConnected).toBe(true)
-    expect(clickElement(ref)).toEqual({ error: 'stale' })
+    expect(clickElement(ref)).toMatchObject({ error: 'stale' })
   })
 
   it('never recycles numeric refs across snapshots', () => {
@@ -812,9 +1080,68 @@ describe('collectSnapshot', () => {
     const secondRef = refFor(outlineOf(collectSnapshot()), 'Pins')
 
     expect(secondRef).toBeGreaterThan(firstRef)
-    expect(clickElement(firstRef)).toEqual({ error: 'stale' })
+    expect(clickElement(firstRef)).toMatchObject({ error: 'stale' })
     expect(clickElement(secondRef)).toMatchObject({ dispatched: true })
   })
+
+  // The exact shape of the reported failure: hovering a Slack message mounts an
+  // action bar, but it is a role="toolbar"/"group" — none of the three roles the
+  // popup scan used to match. The hover therefore observed no popup change, no
+  // target change, and so no effect at all, and the agent concluded hovering
+  // did not work and fell back to clicking pixels off screenshots.
+  it('sees a row action bar that mounts on hover', () => {
+    document.body.innerHTML = '<div data-testid="message">Hello</div>'
+    visible(document.querySelector('[data-testid="message"]') as HTMLElement)
+
+    const before = readPageActionState(true) as { popups: string[] }
+    expect(before.popups).toEqual([])
+
+    const toolbar = visible(document.createElement('div'))
+    toolbar.setAttribute('role', 'toolbar')
+    toolbar.setAttribute('aria-label', 'Message shortcuts')
+    document.body.append(toolbar)
+
+    const after = readPageActionState(false) as { popups: string[] }
+    expect(after.popups).toEqual(['Message shortcuts'])
+    expect(after.popups).not.toEqual(before.popups)
+  })
+
+  it.each([
+    { role: 'dialog', field: 'dialogs' },
+    { role: 'toolbar', field: 'popups' },
+  ] as const)(
+    'reports truncation when visible $field exceed the summary limit',
+    ({ role, field }) => {
+      for (let index = 0; index < 10; index++) {
+        const element = visible(document.createElement('div'))
+        element.setAttribute('role', role)
+        element.setAttribute('aria-label', `Existing ${index}`)
+        document.body.append(element)
+      }
+      const before = readPageActionState() as {
+        dialogs: string[]
+        popups: string[]
+        observationTruncated: boolean
+      }
+      expect(before[field]).toHaveLength(10)
+      expect(before.observationTruncated).toBe(false)
+
+      const additional = visible(document.createElement('div'))
+      additional.setAttribute('role', role === 'toolbar' ? 'listbox' : role)
+      additional.setAttribute('aria-label', 'New overlay')
+      document.body.append(additional)
+      expect(readPageActionState()).toMatchObject({
+        [field]: before[field],
+        observationTruncated: true,
+      })
+
+      additional.setAttribute('aria-hidden', 'true')
+      expect(readPageActionState()).toMatchObject({
+        [field]: before[field],
+        observationTruncated: false,
+      })
+    }
+  )
 
   it('reports a targeted control semantic disappearance after its panel closes', () => {
     document.body.innerHTML = `
@@ -854,6 +1181,305 @@ describe('collectSnapshot', () => {
   })
 })
 
+describe('semantic control state', () => {
+  it('scopes a fresh snapshot to one card without reading sibling geometry', () => {
+    document.body.innerHTML =
+      '<div role="group" tabindex="0" aria-label="Selected card"><button>Save card</button><input type="password" value="private" /></div><button>Outside card</button>'
+    for (const element of document.querySelectorAll('*')) visible(element)
+    const full = outlineOf(collectSnapshot())
+    const oldRootRef = refFor(full, 'Selected card')
+    const outside = document.querySelector('body > button')!
+    const outsideGeometry = vi.spyOn(outside, 'getBoundingClientRect')
+
+    const scoped = runSerialized(collectSnapshot, [100, oldRootRef]) as {
+      scoped: boolean
+      outline: string
+      refIds: number[]
+    }
+    expect(scoped.scoped).toBe(true)
+    expect(scoped.outline).toContain('Selected card')
+    expect(scoped.outline).toContain('Save card')
+    expect(scoped.outline).not.toContain('Outside card')
+    expect(scoped.outline).not.toContain('private')
+    expect(scoped.refIds.every((id) => id >= 100)).toBe(true)
+    expect(window.__simAgentResolveElement?.(oldRootRef)).toBeNull()
+    expect(outsideGeometry).not.toHaveBeenCalled()
+  })
+
+  it('rejects stale or framed snapshot roots without replacing the page registry', () => {
+    const button = document.createElement('button')
+    document.body.append(visible(button))
+    register(button)
+    button.remove()
+    expect(collectSnapshot(10, 0)).toMatchObject({ error: 'stale' })
+    expect(window.__simAgentElements?.[0]).toBe(button)
+
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const child = frame.contentDocument!.createElement('button')
+    frame.contentDocument!.body.append(visible(child))
+    register(child)
+    expect(collectSnapshot(10, 0)).toEqual({ error: 'framed-snapshot' })
+  })
+
+  it.each(['detached', 'hidden', 'renamed'])(
+    'rejects a %s root before scoped capture without adopting a lookalike',
+    (change) => {
+      document.body.innerHTML =
+        '<div id="card" tabindex="0" aria-label="Selected card"><button>Save card</button></div>'
+      for (const element of document.querySelectorAll('*')) visible(element)
+      const root = document.querySelector('#card')!
+      const rootRef = refFor(outlineOf(collectSnapshot()), 'Selected card')
+      const replacement = root.cloneNode(true) as HTMLElement
+      for (const element of [replacement, ...replacement.querySelectorAll('*')]) visible(element)
+      if (change === 'detached') root.replaceWith(replacement)
+      else {
+        root.after(replacement)
+        if (change === 'hidden') root.setAttribute('hidden', '')
+        else root.setAttribute('aria-label', 'Different card')
+      }
+
+      expect(runSerialized(collectSnapshot, [100, rootRef])).toMatchObject({ error: 'stale' })
+      expect(window.__simAgentElements?.[rootRef]).toBe(root)
+      expect(runSerialized(collectSnapshot, [100, rootRef])).toMatchObject({ error: 'stale' })
+    }
+  )
+
+  it('marks unreadable scoped frame content truncated', () => {
+    const root = visible(document.createElement('div'))
+    const frame = visible(document.createElement('iframe'))
+    root.append(frame)
+    document.body.append(root)
+    register(root)
+    Object.defineProperty(frame, 'contentDocument', { value: null })
+    expect(collectSnapshot(10, 0)).toMatchObject({ scoped: true, truncated: true })
+  })
+
+  it('does not recover scoped refs into a different card after the original closes', () => {
+    document.body.innerHTML =
+      '<div tabindex="0" aria-label="Selected card"><button id="save">Save card</button></div>'
+    for (const element of document.querySelectorAll('*')) visible(element)
+    const root = document.querySelector('body > div')!
+    const rootRef = refFor(outlineOf(collectSnapshot()), 'Selected card')
+    const saveRef = refFor(outlineOf(collectSnapshot(10, rootRef)), 'Save card')
+    const replacement = root.cloneNode(true) as HTMLElement
+    for (const element of [replacement, ...replacement.querySelectorAll('*')]) visible(element)
+    root.replaceWith(replacement)
+
+    expect(window.__simAgentResolveElement?.(saveRef)).toBeNull()
+    expect(window.__simAgentStaleReason).toContain('scoped snapshot root')
+  })
+
+  it('keeps scoped snapshots bounded when a selected container is very large', () => {
+    const root = document.createElement('div')
+    root.tabIndex = 0
+    root.setAttribute('aria-label', 'Large card')
+    document.body.append(visible(root))
+    register(root)
+    for (let index = 0; index < 400; index++) {
+      const button = visible(document.createElement('button'))
+      button.textContent = `Action ${index}`
+      root.append(button)
+    }
+    const scoped = collectSnapshot(10, 0) as { refIds: number[]; truncated: boolean }
+    expect(scoped.refIds).toHaveLength(300)
+    expect(scoped.truncated).toBe(true)
+  })
+
+  it('distinguishes hidden registered nodes from detached nodes without action recovery', () => {
+    const button = visible(document.createElement('button'))
+    document.body.append(button)
+    register(button)
+    window.__simAgentResolveElement = vi.fn(() => null)
+    button.style.display = 'none'
+
+    expect(readPageActionState(false, 0, 'registered')).toMatchObject({
+      targetState: { present: true, rendered: false },
+    })
+    button.remove()
+    expect(readPageActionState(false, 0, 'registered')).toMatchObject({
+      targetState: { present: false, rendered: false },
+    })
+    expect(window.__simAgentResolveElement).not.toHaveBeenCalled()
+  })
+
+  it('does not report a text input as an unchecked control', () => {
+    const input = visible(document.createElement('input'))
+    document.body.append(input)
+    register(input)
+
+    expect(readPageActionState(false, 0, 'registered')).toMatchObject({
+      targetState: { present: true, checked: undefined },
+    })
+    expect(readPageActionState(false, 1, 'registered')).toEqual({ error: 'stale' })
+  })
+
+  it.each([true, false])(
+    'reports native disclosure state as %s without inventing it on other elements',
+    (open) => {
+      document.body.innerHTML =
+        '<details><summary>Details</summary></details><dialog></dialog><button>Other</button>'
+      const details = document.querySelector('details')!
+      const dialog = document.querySelector('dialog')!
+      details.open = open
+      dialog.open = open
+      const elements = [
+        details,
+        document.querySelector('summary')!,
+        dialog,
+        document.querySelector('button')!,
+      ]
+      register(...elements.map(visible))
+      for (let id = 0; id < elements.length; id++) {
+        expect(runSerialized(readPageActionState, [false, id, 'registered'])).toMatchObject({
+          targetState: { open: id === 3 ? undefined : open },
+        })
+      }
+    }
+  )
+
+  it.each(['checkbox', 'radio'])('reads native %s state with XHTML tag casing', (type) => {
+    const input = visible(document.createElement('input'))
+    input.type = type
+    input.checked = true
+    Object.defineProperty(input, 'tagName', { value: 'input' })
+    document.body.append(input)
+    register(input)
+
+    expect(runSerialized(readPageActionState, [false, 0, 'registered'])).toMatchObject({
+      targetState: { checked: true },
+    })
+  })
+
+  it('preserves native and ARIA mixed states instead of reporting unchecked', () => {
+    document.body.innerHTML =
+      '<input type="checkbox" /><div role="checkbox" aria-checked="mixed"></div>'
+    const checkbox = visible(document.querySelector('input') as HTMLInputElement)
+    checkbox.indeterminate = true
+    register(checkbox, visible(document.querySelector('div') as HTMLDivElement))
+
+    expect(readCheckableElementState(0)).toMatchObject({ checked: 'mixed' })
+    expect(readCheckableElementState(1)).toMatchObject({ checked: 'mixed' })
+  })
+
+  it('honors disabled fieldsets and ARIA-disabled ancestors', () => {
+    document.body.innerHTML =
+      '<fieldset disabled><input type="checkbox" /></fieldset><div aria-disabled="true"><button role="switch" aria-checked="false"></button></div>'
+    register(
+      visible(document.querySelector('input') as HTMLInputElement),
+      visible(document.querySelector('button') as HTMLButtonElement)
+    )
+
+    expect(readCheckableElementState(0)).toMatchObject({ disabled: true })
+    expect(readCheckableElementState(1)).toMatchObject({ disabled: true })
+  })
+
+  it.each([true, false])(
+    'reads ARIA-disabled=%s across shadow boundaries for waits and checked state',
+    (disabled) => {
+      const host = visible(document.createElement('div'))
+      host.setAttribute('aria-disabled', String(disabled))
+      const nestedHost = visible(document.createElement('div'))
+      host.attachShadow({ mode: 'open' }).append(nestedHost)
+      const checkbox = visible(document.createElement('input'))
+      checkbox.type = 'checkbox'
+      nestedHost.attachShadow({ mode: 'open' }).append(checkbox)
+      document.body.append(host)
+      register(checkbox)
+
+      expect(runSerialized(readCheckableElementState, [0])).toMatchObject({ disabled })
+      expect(runSerialized(readPageActionState, [false, 0, 'registered'])).toMatchObject({
+        targetState: { disabled },
+      })
+    }
+  )
+
+  it('reads native and ARIA checkable controls without mutating them', () => {
+    document.body.innerHTML = `
+      <input type="checkbox" checked />
+      <button role="switch" aria-checked="false" aria-disabled="true">Alerts</button>
+    `
+    const checkbox = visible(document.querySelector('input') as HTMLInputElement)
+    const toggle = visible(document.querySelector('button') as HTMLButtonElement)
+    register(checkbox, toggle)
+
+    expect(readCheckableElementState(0)).toMatchObject({
+      checked: true,
+      disabled: false,
+      kind: 'input:checkbox',
+    })
+    expect(readCheckableElementState(1)).toMatchObject({
+      checked: false,
+      disabled: true,
+      kind: 'role:switch',
+    })
+    expect(checkbox.checked).toBe(true)
+  })
+
+  it('returns a viewport-clamped element screenshot rectangle', () => {
+    const button = visible(document.createElement('button'))
+    button.scrollIntoView = vi.fn()
+    button.getBoundingClientRect = () =>
+      ({
+        x: -10,
+        y: 5,
+        width: 120,
+        height: 20,
+        top: 5,
+        left: -10,
+        right: 110,
+        bottom: 25,
+      }) as DOMRect
+    document.body.append(button)
+    register(button)
+
+    expect(getElementScreenshotRect(0)).toMatchObject({
+      x: 0,
+      y: 5,
+      width: 110,
+      height: 20,
+      element: 'button',
+    })
+    expect(button.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('rejects a replacement screenshot target even when its geometry matches', () => {
+    const button = visible(document.createElement('button'))
+    button.id = 'save'
+    button.textContent = 'Save'
+    document.body.append(button)
+    const ref = refFor(outlineOf(collectSnapshot()), 'Save')
+    expect(getElementScreenshotRect(ref)).toMatchObject({ width: 100, height: 20 })
+    button.replaceWith(visible(button.cloneNode(true) as HTMLElement))
+
+    expect(runSerialized(getElementScreenshotRect, [ref])).toMatchObject({ error: 'stale' })
+    expect(window.__simAgentElements?.[ref]).toBe(button)
+  })
+
+  it('rejects same-origin frame crops rather than using frame-local coordinates', () => {
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const button = frame.contentDocument!.createElement('button')
+    frame.contentDocument!.body.append(button)
+    register(visible(button))
+
+    expect(getElementScreenshotRect(0)).toEqual({ error: 'framed-screenshot' })
+    expect(readPageActionState(false, 0, 'registered')).toEqual({ error: 'framed-wait' })
+  })
+
+  it('does not scroll an offscreen element into view for a screenshot', () => {
+    const button = visible(document.createElement('button'))
+    button.scrollIntoView = vi.fn()
+    document.body.append(button)
+    button.getBoundingClientRect = () =>
+      ({ left: 0, right: 20, top: 5000, bottom: 5020, width: 20, height: 20 }) as DOMRect
+    register(button)
+
+    expect(getElementScreenshotRect(0)).toEqual({ error: 'not-visible' })
+    expect(button.scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
 describe('scrollPage', () => {
   function makeScroller(scrollTop: number): {
     scroller: HTMLDivElement
@@ -877,6 +1503,163 @@ describe('scrollPage', () => {
     })
     return { scroller, child }
   }
+
+  function makeHorizontalScroller(
+    scrollLeft = 0,
+    rtl = false
+  ): {
+    scroller: HTMLDivElement
+    child: HTMLDivElement
+  } {
+    const { scroller, child } = makeScroller(300)
+    scroller.style.overflowX = 'auto'
+    scroller.style.direction = rtl ? 'rtl' : 'ltr'
+    Object.defineProperties(scroller, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 1_000 },
+      scrollLeft: { configurable: true, writable: true, value: scrollLeft },
+    })
+    Object.defineProperty(scroller, 'scrollBy', {
+      configurable: true,
+      value: ({ left, top }: ScrollToOptions) => {
+        const extent = scroller.scrollWidth - scroller.clientWidth
+        const min = rtl ? -extent : 0
+        const max = rtl ? 0 : extent
+        scroller.scrollLeft = Math.max(min, Math.min(max, scroller.scrollLeft + (left || 0)))
+        scroller.scrollTop += top || 0
+      },
+    })
+    return { scroller, child }
+  }
+
+  it('scrolls a referenced horizontal region without changing its vertical position', () => {
+    const { scroller, child } = makeHorizontalScroller(100)
+    register(child)
+
+    expect(runSerialized(scrollPage, ['right', 125, 0])).toMatchObject({
+      target: 'Message history',
+      targetSource: 'element',
+      scrollLeft: 225,
+      scrollWidth: 1_000,
+      clientWidth: 200,
+      movedBy: 125,
+      atLeft: false,
+      atRight: false,
+      scrollTop: 300,
+      atTop: false,
+      atBottom: false,
+    })
+    expect(scroller.scrollTop).toBe(300)
+  })
+
+  it('uses viewport width for the default horizontal distance', () => {
+    const { scroller, child } = makeHorizontalScroller()
+    Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 10_000 })
+    register(child)
+
+    expect(scrollPage('right', undefined, 0)).toMatchObject({
+      movedBy: Math.round(window.innerWidth * 0.85),
+    })
+  })
+
+  it('skips a vertical-only descendant when targeting a horizontal ancestor', () => {
+    const { scroller, child } = makeHorizontalScroller(200)
+    child.style.overflowY = 'auto'
+    Object.defineProperties(child, {
+      clientHeight: { configurable: true, value: 50 },
+      scrollHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, writable: true, value: 100 },
+    })
+    register(child)
+
+    expect(scrollPage('left', 75, 0)).toMatchObject({
+      target: 'Message history',
+      targetSource: 'element',
+      movedBy: -75,
+      scrollLeft: 125,
+    })
+    expect(scroller.scrollTop).toBe(300)
+    expect(child.scrollTop).toBe(100)
+  })
+
+  it('keeps a centered horizontal pane at its boundary instead of scrolling another pane', () => {
+    const { scroller, child } = makeHorizontalScroller(800)
+    const other = visible(document.createElement('div'))
+    other.style.overflowX = 'auto'
+    other.setAttribute('aria-label', 'Unrelated pane')
+    Object.defineProperties(other, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 1_000 },
+    })
+    document.body.prepend(other)
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [child, scroller],
+    })
+
+    expect(scrollPage('right', 100)).toMatchObject({
+      target: 'Message history',
+      targetSource: 'viewport-center-boundary',
+      movedBy: 0,
+      atRight: true,
+    })
+    expect(other.scrollLeft).toBe(0)
+  })
+
+  it.each([
+    { direction: 'left', before: 0, after: -100, movedBy: -100, atLeft: false, atRight: false },
+    { direction: 'left', before: -750, after: -800, movedBy: -50, atLeft: true, atRight: false },
+    { direction: 'left', before: -800, after: -800, movedBy: 0, atLeft: true, atRight: false },
+    { direction: 'right', before: -50, after: 0, movedBy: 50, atLeft: false, atRight: true },
+    { direction: 'right', before: 0, after: 0, movedBy: 0, atLeft: false, atRight: true },
+  ])('scrolls RTL $direction from $before with physical boundaries', (test) => {
+    const { child } = makeHorizontalScroller(test.before, true)
+    register(child)
+
+    expect(scrollPage(test.direction, 100, 0)).toMatchObject({
+      scrollLeft: test.after,
+      movedBy: test.movedBy,
+      atLeft: test.atLeft,
+      atRight: test.atRight,
+    })
+  })
+
+  it('scrolls the document root containing an explicit same-origin iframe ref', () => {
+    document.body.innerHTML = '<iframe></iframe>'
+    const frame = visible(document.querySelector('iframe') as HTMLIFrameElement)
+    const frameDocument = frame.contentDocument as Document
+    const frameWindow = frame.contentWindow as Window
+    frameDocument.body.innerHTML = '<div>wide table</div>'
+    const child = visible(frameDocument.body.firstElementChild as HTMLDivElement)
+    const root = visible(frameDocument.documentElement)
+    Object.defineProperties(root, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 1_000 },
+      scrollLeft: { configurable: true, writable: true, value: 0 },
+    })
+    Object.defineProperty(frameWindow, 'scrollX', { configurable: true, writable: true, value: 0 })
+    Object.defineProperty(frameWindow, 'scrollBy', {
+      configurable: true,
+      value: ({ left }: ScrollToOptions) => {
+        root.scrollLeft = Math.max(0, Math.min(800, root.scrollLeft + (left || 0)))
+        Object.defineProperty(frameWindow, 'scrollX', {
+          configurable: true,
+          value: root.scrollLeft,
+        })
+      },
+    })
+    register(child)
+
+    expect(scrollPage('right', 100, 0)).toMatchObject({
+      target: 'html',
+      targetSource: 'element',
+      scrollLeft: 100,
+      movedBy: 100,
+      atLeft: false,
+      atRight: false,
+      windowScrollX: 0,
+    })
+  })
 
   it('scrolls the movable internal container under the viewport center', () => {
     const { scroller, child } = makeScroller(600)
@@ -1339,5 +2122,202 @@ describe('pressKeyOnPage', () => {
       pressed: 'a',
     })
     expect(seen).toEqual(['a'])
+  })
+})
+
+describe('describePointTarget', () => {
+  function pointAt(el: Element | null): void {
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: () => el,
+    })
+  }
+
+  it('describes the element at a viewport point', () => {
+    document.body.innerHTML = '<button aria-label="Send message">Send</button>'
+    pointAt(document.querySelector('button'))
+
+    expect(describePointTarget(10, 10)).toMatchObject({
+      found: true,
+      tag: 'button',
+      element: 'button "Send message"',
+      editable: false,
+      fileInput: false,
+      secret: false,
+    })
+  })
+
+  it('flags file inputs and password fields at the point', () => {
+    document.body.innerHTML = '<input type="file" />'
+    pointAt(document.querySelector('input'))
+    expect(describePointTarget(10, 10)).toMatchObject({ found: true, fileInput: true })
+
+    document.body.innerHTML = '<input type="password" />'
+    pointAt(document.querySelector('input'))
+    expect(describePointTarget(10, 10)).toMatchObject({
+      found: true,
+      secret: true,
+      editable: true,
+    })
+  })
+
+  it('rejects points outside the viewport', () => {
+    expect(describePointTarget(-5, 10)).toEqual({ error: 'outside-viewport' })
+    expect(describePointTarget(10, window.innerHeight + 5)).toEqual({
+      error: 'outside-viewport',
+    })
+  })
+})
+
+describe('describeFocusedEditable', () => {
+  it('reports no focus when the body holds focus', () => {
+    setActiveElement(document, document.body)
+    expect(describeFocusedEditable()).toEqual({ editable: false, reason: 'none' })
+  })
+
+  // The bug this pins: focus inside a same-origin frame surfaces on the outer
+  // document as the FRAME element, which is not an input, not contentEditable,
+  // not a canvas, and carries no textbox role — so a composer that press-key
+  // typed into fine was reported `not-editable` and insert_text refused. The
+  // descent here must match activeElementReadback's exactly.
+  it('descends a same-origin frame to the editable that really holds focus', () => {
+    document.body.innerHTML = ''
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const inner = frame.contentDocument as Document
+    inner.body.innerHTML = '<div contenteditable="true">composer</div>'
+    const composer = inner.querySelector('div') as HTMLElement
+    Object.defineProperty(composer, 'isContentEditable', { value: true, configurable: true })
+    setActiveElement(inner, composer)
+    setActiveElement(document, frame)
+
+    expect(describeFocusedEditable()).toEqual({ editable: true, kind: 'contenteditable' })
+  })
+
+  it('names the focused element when it refuses, so the agent can recover', () => {
+    document.body.innerHTML = '<div role="button">Send</div>'
+    setActiveElement(document, document.querySelector('div'))
+
+    expect(describeFocusedEditable()).toEqual({
+      editable: false,
+      reason: 'not-editable',
+      focusedTag: 'div',
+      focusedRole: 'button',
+      contentEditable: 'unset',
+    })
+  })
+
+  it('reports a writable input as insertable', () => {
+    document.body.innerHTML = '<input type="text" />'
+    setActiveElement(document, document.querySelector('input'))
+    expect(describeFocusedEditable()).toEqual({ editable: true, kind: 'input:text' })
+  })
+
+  it('reports a read-only input as not insertable', () => {
+    document.body.innerHTML = '<input type="text" readonly />'
+    setActiveElement(document, document.querySelector('input'))
+    expect(describeFocusedEditable()).toEqual({ editable: false, reason: 'readonly' })
+  })
+
+  it('reports a focused contenteditable editor as insertable', () => {
+    document.body.innerHTML = '<div></div>'
+    const editor = document.querySelector('div') as HTMLElement
+    Object.defineProperty(editor, 'isContentEditable', { get: () => true })
+    setActiveElement(document, editor)
+    expect(describeFocusedEditable()).toEqual({ editable: true, kind: 'contenteditable' })
+  })
+
+  it('treats a focused canvas editor surface as insertable', () => {
+    document.body.innerHTML = '<canvas></canvas>'
+    setActiveElement(document, document.querySelector('canvas'))
+    expect(describeFocusedEditable()).toEqual({ editable: true, kind: 'canvas' })
+  })
+})
+
+describe('setFocusedInputValue', () => {
+  for (const [type, value] of [
+    ['date', '2026-09-15'],
+    ['time', '15:48'],
+    ['datetime-local', '2026-09-15T15:48'],
+    ['month', '2026-09'],
+    ['week', '2026-W38'],
+    ['color', '#aabbcc'],
+    ['range', '42'],
+  ]) {
+    it(`sets a validated ${type} value through the native setter`, () => {
+      document.body.innerHTML = `<input type="${type}">`
+      const input = visible(document.querySelector('input') as HTMLInputElement)
+      register(input)
+      input.focus()
+      const events: string[] = []
+      input.addEventListener('input', () => events.push('input'))
+      input.addEventListener('change', () => events.push('change'))
+      expect(focusElementForTyping(0)).toMatchObject({ valueInput: true })
+      expect(runSerialized(setFocusedInputValue, [0, value])).toEqual({ dispatched: true })
+      expect(input.value).toBe(value)
+      expect(events).toEqual(['input', 'change'])
+    })
+  }
+
+  it('accepts native datetime normalization and bypasses an overridden value setter', () => {
+    document.body.innerHTML = '<input type="datetime-local">'
+    const input = document.querySelector('input') as HTMLInputElement
+    register(input)
+    input.focus()
+    const setter = vi.fn()
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get() {
+        return Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.get?.call(this)
+      },
+      set: setter,
+    })
+    expect(setFocusedInputValue(0, '2026-09-15T15:48:00')).toEqual({ dispatched: true })
+    expect(input.value).toBe('2026-09-15T15:48')
+    expect(setter).not.toHaveBeenCalled()
+  })
+
+  it('does not write to a newly focused input inside a registered container', () => {
+    document.body.innerHTML = '<div tabindex="0"><input type="date"></div>'
+    const container = visible(document.querySelector('div') as HTMLDivElement)
+    visible(document.querySelector('input') as HTMLInputElement)
+    register(container)
+    expect(focusElementForTyping(0)).toMatchObject({ valueInput: true })
+    const other = document.createElement('input')
+    other.type = 'date'
+    container.append(other)
+    other.focus()
+    expect(setFocusedInputValue(0, '2026-09-15')).toHaveProperty('error')
+    expect(other.value).toBe('')
+  })
+
+  it('rejects malformed values before changing the field or emitting events', () => {
+    document.body.innerHTML = '<input type="date" value="2026-01-01">'
+    const input = document.querySelector('input') as HTMLInputElement
+    register(input)
+    input.focus()
+    const changed = vi.fn()
+    input.addEventListener('input', changed)
+    expect(setFocusedInputValue(0, '2026-02-30')).toMatchObject({
+      error: expect.stringContaining('Invalid value'),
+    })
+    expect(input.value).toBe('2026-01-01')
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('refuses changed focus, readonly fields, and credential hints', () => {
+    document.body.innerHTML = '<input type="date"><input type="date">'
+    const [input, other] = Array.from(document.querySelectorAll('input'))
+    register(input)
+    other.focus()
+    expect(setFocusedInputValue(0, '2026-09-15')).toEqual({ error: 'different' })
+    input.focus()
+    input.readOnly = true
+    expect(setFocusedInputValue(0, '2026-09-15')).toEqual({ error: 'readonly' })
+    input.readOnly = false
+    input.autocomplete = 'current-password'
+    expect(setFocusedInputValue(0, '2026-09-15')).toEqual({ error: 'password' })
+    expect(input.value).toBe('')
+    expect(other.value).toBe('')
   })
 })

@@ -2,14 +2,40 @@ import { env } from '@/lib/core/config/env'
 import { LLM_KEY_POOLS } from '@/lib/core/config/env-capabilities'
 
 /**
+ * Server-only Google keys used when the Gemini pool is empty.
+ * `NEXT_PUBLIC_GOOGLE_API_KEY` is last because it ships to the browser and Google
+ * rejects it once the key is reported as leaked.
+ */
+function legacyGoogleGenerativeLanguageKeys(): string[] {
+  const keys: string[] = []
+  const google = process.env.GOOGLE_API_KEY?.trim()
+  if (google) keys.push(google)
+  const nextPublic = process.env.NEXT_PUBLIC_GOOGLE_API_KEY?.trim()
+  if (nextPublic && !keys.includes(nextPublic)) keys.push(nextPublic)
+  return keys
+}
+
+/**
+ * Picks the Gemini key to send. A caller-supplied key is used only when it is
+ * not the public browser key; otherwise the server env pool (`GEMINI_API_KEY*`) wins.
+ */
+export function resolveGoogleGenerativeLanguageApiKey(suppliedKey?: string): string {
+  const trimmed = suppliedKey?.trim()
+  const nextPublic = process.env.NEXT_PUBLIC_GOOGLE_API_KEY?.trim()
+  if (trimmed && trimmed !== nextPublic) return trimmed
+  return getRotatingApiKey('google')
+}
+
+/**
  * Rotates through available API keys for a provider
  * @param provider - The provider to get a key for (e.g., 'openai')
  * @returns The selected API key
  * @throws Error if no API keys are configured for rotation
  */
 export function getRotatingApiKey(provider: string): string {
-  // Arena custom: Generative Language uses GEMINI_API_KEY*, never NEXT_PUBLIC_GOOGLE_API_KEY
-  const poolProvider = provider === 'google' || provider === 'vertex' ? 'gemini' : provider
+  const isGoogleGenerativeLanguage =
+    provider === 'google' || provider === 'gemini' || provider === 'vertex'
+  const poolProvider = isGoogleGenerativeLanguage ? 'gemini' : provider
 
   if (!(poolProvider in LLM_KEY_POOLS)) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
@@ -22,10 +48,14 @@ export function getRotatingApiKey(provider: string): string {
     if (fallback) keys.push(fallback)
   }
 
+  if (keys.length === 0 && isGoogleGenerativeLanguage) {
+    keys.push(...legacyGoogleGenerativeLanguageKeys())
+  }
+
   if (keys.length === 0) {
-    if (provider === 'google' || provider === 'gemini' || provider === 'vertex') {
+    if (isGoogleGenerativeLanguage) {
       throw new Error(
-        'No API keys configured for rotation. Please configure GEMINI_API_KEY (or GEMINI_API_KEY_1..3).'
+        'No API keys configured for rotation. Please configure GEMINI_API_KEY (or GEMINI_API_KEY_1..3), GOOGLE_API_KEY, or NEXT_PUBLIC_GOOGLE_API_KEY.'
       )
     }
 

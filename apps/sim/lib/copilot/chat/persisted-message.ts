@@ -1,5 +1,6 @@
 import { generateId } from '@sim/utils/id'
 import { isPlainRecord } from '@sim/utils/object'
+import { compactRetrievalCitations } from '@/lib/copilot/chat/retrieval-citations'
 import {
   mergeAndRedactPersistedBlocks,
   redactSensitiveContent,
@@ -15,12 +16,13 @@ import {
   MothershipStreamV1ToolOutcome,
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
-import { BrowserRequestTakeover } from '@/lib/copilot/generated/tool-catalog-v1'
 import type {
   ContentBlock,
   LocalToolCallStatus,
   OrchestratorResult,
 } from '@/lib/copilot/request/types'
+import { RETIRED_BROWSER_REQUEST_TAKEOVER_ID } from '@/lib/copilot/tools/retired-tools'
+import { normalizeToolActivityDescription } from '@/lib/copilot/tools/tool-display'
 import type { BrowserTextSelection, TerminalTextSelection } from '@/stores/panel/types'
 
 export type PersistedToolState = LocalToolCallStatus | MothershipStreamV1ToolOutcome | 'interrupted'
@@ -35,6 +37,7 @@ interface PersistedToolCall {
   calledBy?: string
   durationMs?: number
   display?: { title?: string }
+  activityDescription?: string
 }
 
 export interface PersistedContentBlock {
@@ -53,6 +56,8 @@ export interface PersistedContentBlock {
   lifecycle?: MothershipStreamV1SpanLifecycleEvent
   status?: MothershipStreamV1CompletionStatus
   content?: string
+  /** Orchestrator-chosen display name on a subagent start block. */
+  name?: string
   toolCall?: PersistedToolCall
   timestamp?: number
   endedAt?: number
@@ -119,6 +124,7 @@ function copyTextSelection(
 export interface PersistedMessage {
   id: string
   role: 'user' | 'assistant'
+  requestMode?: 'agent' | 'assistant'
   content: string
   timestamp: string
   requestId?: string
@@ -131,7 +137,7 @@ export interface PersistedMessage {
 
 /**
  * Drop persisted tool outputs, keeping `success` and `error`. The one narrow
- * UI-state exception is a browser takeover's user-authored instruction, which
+ * UI-state exceptions are bounded retrieval citations and a browser takeover's user-authored instruction, which
  * restores its answered question recap after reload. Other outputs are never
  * rendered or replayed to the model (the upstream service owns conversation
  * memory), so storing them only bloats
@@ -151,8 +157,9 @@ export function stripToolResultOutput(message: PersistedMessage): PersistedMessa
     const result = toolCall?.result
     if (!toolCall || !result || typeof result !== 'object' || !('output' in result)) return block
     const output = result.output
+    const citations = result.success ? compactRetrievalCitations(toolCall.name, output) : undefined
     const userInstruction =
-      toolCall.name === BrowserRequestTakeover.id && isPlainRecord(output)
+      toolCall.name === RETIRED_BROWSER_REQUEST_TAKEOVER_ID && isPlainRecord(output)
         ? output.userInstruction
         : undefined
     const normalizedInstruction = typeof userInstruction === 'string' ? userInstruction.trim() : ''
@@ -167,6 +174,7 @@ export function stripToolResultOutput(message: PersistedMessage): PersistedMessa
     changed = true
     const strippedResult: { success: boolean; output?: unknown; error?: string } = {
       success: result.success,
+      ...(citations ? { output: citations } : {}),
       ...(normalizedInstruction ? { output: { userInstruction: normalizedInstruction } } : {}),
     }
     if (result.error !== undefined) strippedResult.error = result.error
@@ -245,6 +253,7 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
         kind: MothershipStreamV1SpanPayloadKind.subagent,
         lifecycle: MothershipStreamV1SpanLifecycleEvent.start,
         content: block.content,
+        ...(block.subagentName ? { name: block.subagentName } : {}),
       }
     case 'subagent_text':
       return {
@@ -279,10 +288,14 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
 
       const redactedResult = redactToolCallResult(block.toolCall.name, block.toolCall.result)
 
+      const activityDescription = normalizeToolActivityDescription(
+        block.toolCall.activityDescription
+      )
       const toolCall: PersistedToolCall = {
         id: block.toolCall.id,
         name: block.toolCall.name,
         state,
+        ...(activityDescription ? { activityDescription } : {}),
         ...(isSubagentTool && isNonTerminal ? {} : { result: redactedResult }),
         ...(isSubagentTool && isNonTerminal
           ? {}
@@ -312,11 +325,13 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
 
 export function buildPersistedAssistantMessage(
   result: OrchestratorResult,
-  requestId?: string
+  requestId?: string,
+  requestMode?: 'agent' | 'assistant'
 ): PersistedMessage {
   const message: PersistedMessage = {
     id: generateId(),
     role: 'assistant',
+    ...(requestMode ? { requestMode } : {}),
     content: redactSensitiveContent(result.content),
     timestamp: new Date().toISOString(),
   }
@@ -382,6 +397,7 @@ export function withStoppedContentBlock(message: PersistedMessage): PersistedMes
 }
 
 export interface UserMessageParams {
+  requestMode?: 'agent' | 'assistant'
   id: string
   content: string
   fileAttachments?: PersistedFileAttachment[]
@@ -392,6 +408,7 @@ export function buildPersistedUserMessage(params: UserMessageParams): PersistedM
   const message: PersistedMessage = {
     id: params.id,
     role: 'user',
+    ...(params.requestMode ? { requestMode: params.requestMode } : {}),
     content: params.content,
     timestamp: new Date().toISOString(),
   }
@@ -434,6 +451,9 @@ interface RawBlock {
   type: string
   lane?: string
   agent?: string
+  /** Orchestrator-chosen subagent display name (legacy blocks store it as `subagentName`). */
+  name?: string
+  subagentName?: string
   content?: string
   /** Go persists text blocks with key "text" instead of "content" */
   text?: string
@@ -454,6 +474,7 @@ interface RawBlock {
     params?: Record<string, unknown>
     result?: { success: boolean; output?: unknown; error?: string }
     display?: { text?: string; title?: string; phaseLabel?: string }
+    activityDescription?: string
     calledBy?: string
     durationMs?: number
     error?: string
@@ -501,6 +522,7 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
     result.lane = block.lane
   }
   if (block.agent) result.agent = block.agent
+  if (block.name) result.name = block.name
   const blockContent = block.content ?? block.text
   if (blockContent !== undefined) result.content = blockContent
   if (block.channel) result.channel = block.channel as MothershipStreamV1TextChannel
@@ -510,10 +532,12 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
   if (block.status) result.status = block.status as MothershipStreamV1CompletionStatus
   if (block.parentToolCallId) result.parentToolCallId = block.parentToolCallId
   if (block.toolCall) {
+    const activityDescription = normalizeToolActivityDescription(block.toolCall.activityDescription)
     result.toolCall = {
       id: block.toolCall.id ?? '',
       name: block.toolCall.name ?? '',
       state: normalizeToolState(block.toolCall.state),
+      ...(activityDescription ? { activityDescription } : {}),
       ...(block.toolCall.params ? { params: block.toolCall.params } : {}),
       ...(block.toolCall.result ? { result: block.toolCall.result } : {}),
       ...(block.toolCall.calledBy ? { calledBy: block.toolCall.calledBy } : {}),
@@ -536,6 +560,7 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
 
 function normalizeLegacyBlock(block: RawBlock): PersistedContentBlock {
   if (block.type === 'tool_call' && block.toolCall) {
+    const activityDescription = normalizeToolActivityDescription(block.toolCall.activityDescription)
     return {
       type: MothershipStreamV1EventType.tool,
       phase: MothershipStreamV1ToolPhase.call,
@@ -543,6 +568,7 @@ function normalizeLegacyBlock(block: RawBlock): PersistedContentBlock {
         id: block.toolCall.id ?? '',
         name: block.toolCall.name ?? '',
         state: normalizeToolState(block.toolCall.state),
+        ...(activityDescription ? { activityDescription } : {}),
         ...(block.toolCall.params ? { params: block.toolCall.params } : {}),
         ...(block.toolCall.result ? { result: block.toolCall.result } : {}),
         ...(block.toolCall.calledBy ? { calledBy: block.toolCall.calledBy } : {}),
@@ -582,6 +608,7 @@ function normalizeLegacyBlock(block: RawBlock): PersistedContentBlock {
       kind: MothershipStreamV1SpanPayloadKind.subagent,
       lifecycle: MothershipStreamV1SpanLifecycleEvent.start,
       content: block.content,
+      ...(block.subagentName ? { name: block.subagentName } : {}),
     }
   }
 
@@ -691,6 +718,9 @@ export function normalizeMessage(raw: Record<string, unknown>): PersistedMessage
     content: (raw.content as string) ?? '',
     timestamp: (raw.timestamp as string) ?? new Date().toISOString(),
   }
+
+  if (raw.requestMode === 'assistant' || raw.requestMode === 'agent')
+    msg.requestMode = raw.requestMode
 
   if (raw.requestId && typeof raw.requestId === 'string') {
     msg.requestId = raw.requestId

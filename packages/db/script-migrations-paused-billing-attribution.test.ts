@@ -441,6 +441,17 @@ describe('script migration registry', () => {
       '0002_backfill_paused_billing_attribution',
       '0003_backfill_workspace_storage_usage',
       '0004_backfill_fork_kb_file_ownership',
+      '0005_repair_unknown_table_row_provenance',
+      '0006_repair_unknown_table_row_provenance_second_pass',
+      '0007_repair_unknown_workspace_file_provenance',
+      '0010_backfill_credential_group_resource_policies',
+      '0011_remap_legacy_knowledge_connector_credentials',
+      '0012_reconcile_oauth_provider_lifecycle',
+      '0013_backfill_legacy_knowledge_base_workspaces',
+      '0014_require_knowledge_base_owner',
+      '0016_backfill_search_vectors',
+      '0017_index_search_documents',
+      '0018_repair_workspace_file_content_revision',
     ])
   })
 })

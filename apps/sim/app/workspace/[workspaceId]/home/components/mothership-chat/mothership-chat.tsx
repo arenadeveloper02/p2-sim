@@ -1,7 +1,9 @@
 'use client'
 
+import type { ComponentType } from 'react'
 import {
   memo,
+  type ReactNode,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -10,14 +12,17 @@ import {
   useRef,
   useState,
 } from 'react'
-import { cn } from '@sim/emcn'
+import { type ClipboardContent, cn } from '@sim/emcn'
+import { useQueryClient } from '@tanstack/react-query'
 import { defaultRangeExtractor, type Range, useVirtualizer } from '@tanstack/react-virtual'
 import { SMOOTH_CHASE_RATE } from '@/lib/core/utils/smooth-bottom-chase'
+import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { MessageActions } from '@/app/workspace/[workspaceId]/components'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components/chat-message-attachments'
 import { ChatSurfaceProvider } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import {
   assistantMessageHasRenderableContent,
+  getOrchestratorMessageText,
   MessageContent,
   type MessagePhase,
 } from '@/app/workspace/[workspaceId]/home/components/message-content'
@@ -29,6 +34,11 @@ import {
   parseLastCredentialTag,
   parseLastQuestionTag,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
+import type { SearchIntegrationConnectionProps } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/search-integration-connection'
+import {
+  prepareCopyableMarkdown,
+  toCopyableMarkdown,
+} from '@/app/workspace/[workspaceId]/home/components/mothership-chat/copyable-markdown'
 import { nextSizerFloor } from '@/app/workspace/[workspaceId]/home/components/mothership-chat/sizer-floor'
 import { QueuedMessages } from '@/app/workspace/[workspaceId]/home/components/queued-messages'
 import {
@@ -45,7 +55,8 @@ import type {
   QueuedMessage,
   WorkspaceResourceRef,
 } from '@/app/workspace/[workspaceId]/home/types'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useOptionalWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { getWorkspaceFilesQueryOptions, workspaceFilesKeys } from '@/hooks/queries/workspace-files'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
@@ -54,6 +65,9 @@ import { MothershipChatSkeleton } from './components/mothership-chat-skeleton'
 import { shouldShowAssistantMessageActions } from './message-actions-visibility'
 
 interface MothershipChatProps {
+  SearchConnectionComponent?: ComponentType<SearchIntegrationConnectionProps>
+  workspaceId?: string
+  composer?: ReactNode
   messages: ChatMessage[]
   isSending: boolean
   isReconnecting?: boolean
@@ -137,7 +151,7 @@ const LAYOUT_STYLES = {
     attachmentWidth: 'max-w-[70%]',
     userBubble: 'max-w-[70%] overflow-hidden rounded-[16px] bg-[var(--surface-5)] px-3.5 py-2',
     assistantRow: 'group/msg',
-    footer: 'flex-shrink-0 px-[24px] pb-[16px]',
+    footer: 'shrink-0 px-[24px] pb-[16px]',
     footerInner: 'mx-auto max-w-chat',
   },
   'copilot-view': {
@@ -149,12 +163,13 @@ const LAYOUT_STYLES = {
     attachmentWidth: 'max-w-[85%]',
     userBubble: 'max-w-[85%] overflow-hidden rounded-[16px] bg-[var(--surface-5)] px-3 py-2',
     assistantRow: 'group/msg',
-    footer: 'flex-shrink-0 px-3 pb-3',
+    footer: 'shrink-0 px-3 pb-3',
     footerInner: '',
   },
 } as const
 
 const EMPTY_BLOCKS: ContentBlock[] = []
+const EMPTY_WORKSPACE_FILES: readonly WorkspaceFileRecord[] = []
 
 interface UserMessageRowProps {
   content: string
@@ -192,9 +207,11 @@ const UserMessageRow = memo(function UserMessageRow({
 
 interface AssistantMessageRowProps {
   message: ChatMessage
+  prepareContentForCopy: (content: string) => ClipboardContent
   isStreaming: boolean
   isLast: boolean
-  precedingUserContent?: string
+  precedingUserContent: string | undefined
+  requestMode?: ChatMessage['requestMode']
   /** Transcript-derived answers for this message's question card (renders the recap). */
   questionAnswers?: string[]
   /** Transcript-derived status payload for this message's credential card. */
@@ -208,9 +225,11 @@ interface AssistantMessageRowProps {
 
 const AssistantMessageRow = memo(function AssistantMessageRow({
   message,
+  prepareContentForCopy,
   isStreaming,
   isLast,
   precedingUserContent,
+  requestMode,
   questionAnswers,
   credentialSubmission,
   credentialAbandoned,
@@ -218,7 +237,8 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   onOptionSelect,
   onAnimatingChange,
 }: AssistantMessageRowProps) {
-  const { canEdit } = useUserPermissionsContext()
+  const permissions = useOptionalWorkspacePermissionsContext()
+  const canEdit = permissions?.userPermissions.canEdit ?? false
   const blocks = message.contentBlocks ?? EMPTY_BLOCKS
   const hasAnyBlocks = blocks.length > 0
   const trimmedContent = message.content?.trim() ?? ''
@@ -232,6 +252,10 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
     onAnimatingChangeRef.current?.(phase !== 'settled')
   }, [phase])
 
+  const getCopyContent = useCallback(
+    () => getOrchestratorMessageText(blocks, message.content),
+    [blocks, message.content]
+  )
   const hasRenderableAssistant = assistantMessageHasRenderableContent(blocks, message.content ?? '')
   if (!hasRenderableAssistant && !trimmedContent && !isStreaming) {
     return null
@@ -244,7 +268,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   const endsWithCredential = trimmedContent.endsWith('</credential>')
   const trailingCredentials = endsWithCredential ? parseLastCredentialTag(trimmedContent) : null
   const showsCredentialCard = trailingCredentials
-    ? credentialTagHasVisibleCard(trailingCredentials, canEdit)
+    ? credentialTagHasVisibleCard(trailingCredentials, canEdit, message.requestMode ?? requestMode)
     : false
   const questionTag = endsWithQuestion
     ? trimmedContent.slice(trimmedContent.lastIndexOf('<question>'))
@@ -274,6 +298,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
     <div className={cn(rowClassName, showsInteractionCard && 'pb-3')}>
       <MessageContent
         messageId={message.id}
+        requestMode={message.requestMode ?? requestMode}
         blocks={blocks}
         fallbackContent={message.content}
         isStreaming={isStreaming}
@@ -289,6 +314,9 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
           actionsEligible ? (
             <MessageActions
               content={message.content}
+              getCopyContent={getCopyContent}
+              hasCopyContent={Boolean(getOrchestratorMessageText(blocks, message.content).trim())}
+              prepareContentForCopy={prepareContentForCopy}
               userQuery={precedingUserContent}
               requestId={message.requestId}
               messageId={message.id}
@@ -301,6 +329,9 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
 })
 
 export function MothershipChat({
+  SearchConnectionComponent,
+  workspaceId,
+  composer,
   messages: messagesProp,
   isSending,
   isReconnecting = false,
@@ -331,6 +362,7 @@ export function MothershipChat({
   onInputAnimationEnd,
   className,
 }: MothershipChatProps) {
+  const queryClient = useQueryClient()
   const styles = LAYOUT_STYLES[layout]
   const isStreamActive = isSending || isReconnecting
   /**
@@ -349,6 +381,23 @@ export function MothershipChat({
   const heldHighWaterRef = useRef(0)
   const floorChatRef = useRef<string | undefined>(undefined)
   const floorDrainRafRef = useRef(0)
+  const prepareContentForCopy = useCallback(
+    (content: string) =>
+      workspaceId
+        ? prepareCopyableMarkdown(
+            content,
+            queryClient.getQueryData<readonly WorkspaceFileRecord[]>(
+              workspaceFilesKeys.list(workspaceId)
+            ) ?? EMPTY_WORKSPACE_FILES,
+            () =>
+              queryClient.fetchQuery({
+                ...getWorkspaceFilesQueryOptions(workspaceId),
+                staleTime: 0,
+              })
+          )
+        : toCopyableMarkdown(content),
+    [queryClient, workspaceId]
+  )
   useEffect(() => () => cancelAnimationFrame(floorDrainRafRef.current), [])
 
   /**
@@ -522,12 +571,12 @@ export function MothershipChat({
     return out
   }, [messages])
 
-  const precedingUserContentByIndex = useMemo(() => {
-    const out: Array<string | undefined> = []
-    let lastUserContent: string | undefined
+  const precedingUserByIndex = useMemo(() => {
+    const out: Array<ChatMessage | undefined> = []
+    let lastUser: ChatMessage | undefined
     for (const [index, message] of messages.entries()) {
-      out[index] = lastUserContent
-      if (message.role === 'user') lastUserContent = message.content
+      out[index] = lastUser
+      if (message.role === 'user') lastUser = message
     }
     return out
   }, [messages])
@@ -666,9 +715,10 @@ export function MothershipChat({
   const handleEditQueued = useCallback(
     (id: string) => {
       const msg = onEditQueuedMessage(id)
-      if (msg) userInputRef.current?.loadQueuedMessage(msg)
+      if (!msg) return
+      userInputRef.current?.loadQueuedMessage(msg)
     },
-    [onEditQueuedMessage]
+    [onEditQueuedMessage, userInputRef]
   )
 
   const handleEditQueuedTail = useCallback(() => {
@@ -676,6 +726,28 @@ export function MothershipChat({
     if (!tail) return
     handleEditQueued(tail.id)
   }, [handleEditQueued])
+
+  /**
+   * A drag-selection that overshoots a message's last line crosses the row
+   * wrappers' block boundaries, which the clipboard serializer renders as
+   * trailing newlines — every copied response pasted with blank lines
+   * appended. Rewrite the plain-text flavor trimmed; the rich flavor is
+   * re-serialized from the selection so formatted pastes keep working.
+   */
+  const handleCopy = useCallback((event: React.ClipboardEvent) => {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || !event.clipboardData) return
+    const text = selection.toString()
+    const trimmed = text.replace(/\s+$/, '')
+    if (trimmed === text) return
+    event.preventDefault()
+    event.clipboardData.setData('text/plain', trimmed)
+    const html = document.createElement('div')
+    for (let i = 0; i < selection.rangeCount; i++) {
+      html.appendChild(selection.getRangeAt(i).cloneContents())
+    }
+    event.clipboardData.setData('text/html', html.innerHTML)
+  }, [])
 
   /**
    * Land at the most recent message once per chat — on open and when switching
@@ -702,6 +774,7 @@ export function MothershipChat({
 
   return (
     <ChatSurfaceProvider
+      SearchConnectionComponent={SearchConnectionComponent}
       chatId={chatId}
       userId={userId}
       onContextAdd={onContextAdd}
@@ -714,7 +787,7 @@ export function MothershipChat({
       setLocalCopilotCatalogId={setLocalCopilotCatalogId}
     >
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
-        <div ref={setScrollElement} className={styles.scrollContainer}>
+        <div ref={setScrollElement} className={styles.scrollContainer} onCopy={handleCopy}>
           {isLoading && !hasMessages ? (
             <MothershipChatSkeleton layout={layout} />
           ) : (
@@ -732,8 +805,15 @@ export function MothershipChat({
                     key={virtualItem.key}
                     data-index={index}
                     ref={virtualizer.measureElement}
-                    className='absolute top-0 left-0 w-full'
-                    style={{ transform: `translateY(${virtualItem.start}px)` }}
+                    /* Positioned with a real `top`, NOT `top-0` + translateY:
+                       text selection maps a drag's start point to a text
+                       position via the rows' LAYOUT boxes, and with every row
+                       laid out at y=0 a drag starting in the gutter anchors in
+                       the wrong row — selections ran upward from a downward
+                       drag. Transforms move paint and hit-testing but not the
+                       layout box that mapping falls back to. */
+                    className='absolute left-0 w-full'
+                    style={{ top: virtualItem.start }}
                   >
                     {msg.role === 'user' ? (
                       interactionPairing.hiddenUserByIndex[index] ? null : (
@@ -749,9 +829,11 @@ export function MothershipChat({
                     ) : (
                       <AssistantMessageRow
                         message={msg}
+                        prepareContentForCopy={prepareContentForCopy}
                         isStreaming={isStreamActive && isLast}
                         isLast={isLast}
-                        precedingUserContent={precedingUserContentByIndex[index]}
+                        precedingUserContent={precedingUserByIndex[index]?.content}
+                        requestMode={precedingUserByIndex[index]?.requestMode}
                         questionAnswers={interactionPairing.answersByIndex[index]}
                         credentialSubmission={interactionPairing.credentialSubmissionByIndex[index]}
                         credentialAbandoned={interactionPairing.credentialAbandonedByIndex[index]}
@@ -781,16 +863,20 @@ export function MothershipChat({
               onEdit={handleEditQueued}
               onCancelEdit={onCancelQueueEdit}
             />
-            <UserInput
-              ref={userInputRef}
-              onSubmit={onSubmit}
-              isSending={isStreamActive}
-              onStopGeneration={onStopGeneration}
-              isInitialView={false}
-              onSendQueuedHead={handleSendQueuedHead}
-              onEditQueuedTail={handleEditQueuedTail}
-              draftScopeKey={draftScopeKey}
-            />
+            {!isLoading &&
+              (composer ?? (
+                <UserInput
+                  key={draftScopeKey}
+                  ref={userInputRef}
+                  onSubmit={onSubmit}
+                  isSending={isStreamActive}
+                  onStopGeneration={onStopGeneration}
+                  isInitialView={false}
+                  onSendQueuedHead={handleSendQueuedHead}
+                  onEditQueuedTail={handleEditQueuedTail}
+                  draftScopeKey={draftScopeKey}
+                />
+              ))}
           </div>
         </div>
       </div>

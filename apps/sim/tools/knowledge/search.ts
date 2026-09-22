@@ -2,12 +2,12 @@ import { DEFAULT_RERANKER_MODEL } from '@/lib/knowledge/reranker-models'
 import type { KnowledgeSearchResponse } from '@/tools/knowledge/types'
 import { enrichKBTagFiltersSchema } from '@/tools/schema-enrichers'
 import { parseTagFilters } from '@/tools/shared/tags'
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
+export const knowledgeSearchTool: InternalToolConfig<any, KnowledgeSearchResponse> = {
   id: 'knowledge_search',
   name: 'Knowledge Search',
-  description: 'Search for similar content in a knowledge base using vector similarity',
+  description: 'Search for similar content in a knowledge base by relevance',
   version: '1.0.0',
 
   params: {
@@ -47,7 +47,7 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
       required: false,
       visibility: 'user-only',
       description:
-        "Retrieval mode: 'vector' (default) uses semantic similarity only, 'hybrid' also runs a full-text leg and fuses both",
+        "Retrieval mode: 'hybrid' fuses a full-text leg with semantic similarity, 'vector' uses semantic similarity only; omit for the workspace's default",
     },
     rerank: {
       type: 'object',
@@ -99,19 +99,13 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
     },
   },
 
-  request: {
-    internalAuth: 'executor_delegation',
-    url: () => '/api/knowledge/search',
-    method: 'POST',
+  operation: {
     modelInput: {
       mode: 'private-provenance',
       inputPaths: () => [['query']],
     },
     secretProvenance: { response: { incomplete: 'reject' } },
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params) => {
+    input: (params) => {
       const workflowId = params._context?.workflowId
 
       // Use single knowledge base ID
@@ -154,7 +148,9 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         query: params.query,
         topK: params.topK ? Math.max(1, Math.min(100, Number(params.topK))) : 10,
         ...(structuredFilters.length > 0 && { tagFilters: structuredFilters }),
-        ...(params.searchMode === 'hybrid' && { searchMode: 'hybrid' }),
+        ...((params.searchMode === 'hybrid' || params.searchMode === 'vector') && {
+          searchMode: params.searchMode,
+        }),
         ...(rerankerEnabled && {
           rerankerEnabled: true,
           rerankerModel,

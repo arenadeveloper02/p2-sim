@@ -1,3 +1,4 @@
+import { CONSENT_BACKEND_URL } from '../../consent/constants'
 import { env, getEnv } from '../config/env'
 import { isDev, isHosted, isReactGrabEnabled } from '../config/env-flags'
 
@@ -29,7 +30,8 @@ const LOCAL_DEV_FRAME_ANCESTORS = ['http://localhost:3001'] as const
  *
  * NOTE: This file is loaded by next.config.ts at build time, before @/ path
  * aliases are resolved. Do NOT import from ../utils/urls (which uses @/ imports).
- * Keep all URL constants local to this file.
+ * Keep URL constants local to this file, or in a leaf module reachable by a
+ * relative import that itself pulls in no `@/` paths (../../consent/constants).
  */
 
 const DEFAULT_SOCKET_URL = 'http://localhost:3002'
@@ -100,13 +102,11 @@ const STATIC_SCRIPT_SRC = [
     ? [
         'https://www.googletagmanager.com',
         'https://www.google-analytics.com',
+        // Google Ads conversion tag — gtag.js pulls conversion_async.js from
+        // googleadservices and the remarketing tag from googleads.doubleclick
+        'https://www.googleadservices.com',
+        'https://googleads.g.doubleclick.net',
         'https://analytics.ahrefs.com',
-        // HubSpot tracking (landing pages) — loader plus the
-        // analytics/form-tracking/banner scripts it injects as <script> tags
-        'https://*.hs-scripts.com',
-        'https://*.hs-analytics.net',
-        'https://*.hscollectedforms.net',
-        'https://*.hs-banner.com',
         // X (Twitter) conversion pixel (landing pages) — the base code injects
         // uwt.js as a <script> tag from static.ads-twitter.com
         'https://static.ads-twitter.com',
@@ -137,6 +137,7 @@ const STATIC_CONNECT_SRC = [
   'https://*.supabase.co',
   'https://api.github.com',
   'https://github.com/*',
+  'https://status.sim.ai',
   'https://challenges.cloudflare.com',
   'https://quickchart.io',
   // Cal.com booking embed (landing /demo) — embed XHR/availability calls
@@ -146,6 +147,9 @@ const STATIC_CONNECT_SRC = [
   ...(isDev ? ['ws://localhost:4722'] : []),
   ...(isHosted
     ? [
+        // Blocked here, the consent runtime silently falls back to an offline
+        // policy and the banner shows to every visitor worldwide.
+        CONSENT_BACKEND_URL,
         'https://www.googletagmanager.com',
         'https://*.google-analytics.com',
         'https://*.analytics.google.com',
@@ -153,10 +157,8 @@ const STATIC_CONNECT_SRC = [
         'https://www.google.com',
         'https://analytics.ahrefs.com',
         'https://*.g.doubleclick.net',
-        // HubSpot tracking — form-tracking API (hscollectedforms.js).
-        // The visitor beacon itself is an image pixel (img-src, already
-        // permitted below), not a connect-src request.
-        'https://*.hscollectedforms.net',
+        // Google Ads conversion tag — conversion beacons
+        'https://www.googleadservices.com',
         // X (Twitter) conversion pixel — uwt.js sends conversion beacons here
         // via fetch/sendBeacon. The t.co image-pixel fallback is already
         // covered by the `https:` wildcard in img-src.
@@ -175,6 +177,12 @@ const STATIC_FRAME_SRC = [
   'https://drive.google.com',
   'https://docs.google.com',
   'https://*.google.com',
+  // Google Ads conversion tag — the conversion linker writes its cookie from
+  // a hidden iframe on these origins; without them the ping still fires but
+  // cross-domain click attribution silently drops. Hosted-only, like the
+  // script-src and connect-src entries: the consent provider that loads the
+  // tag never mounts off hosted, so nothing self-hosted can frame these.
+  ...(isHosted ? ['https://td.doubleclick.net', 'https://www.googleadservices.com'] : []),
   'https://www.youtube.com',
   'https://player.vimeo.com',
   'https://www.dailymotion.com',
@@ -196,7 +204,6 @@ const STATIC_FRAME_SRC = [
   'https://www.mixcloud.com',
   'https://tenor.com',
   'https://giphy.com',
-  ...(isHosted ? ['https://www.googletagmanager.com'] : []),
 ] as const
 
 // Build-time CSP directives (for next.config.ts)

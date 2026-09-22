@@ -1,5 +1,6 @@
 import { Container, Link, Section } from '@react-email/components'
 import { baseStyles, colors, spacing } from '@/components/emails/_styles'
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from '@/lib/branding/defaults'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { getBrandConfig } from '@/ee/whitelabeling'
@@ -227,7 +228,7 @@ export function EmailFooter({
               </td>
               <td style={baseStyles.footerText}>
                 <Link
-                  href={`${baseUrl}/privacy`}
+                  href={brand.privacyUrl ?? DEFAULT_PRIVACY_URL}
                   style={baseStyles.footerLink}
                   rel='noopener noreferrer'
                 >
@@ -235,7 +236,7 @@ export function EmailFooter({
                 </Link>{' '}
                 •{' '}
                 <Link
-                  href={`${baseUrl}/terms`}
+                  href={brand.termsUrl ?? DEFAULT_TERMS_URL}
                   style={baseStyles.footerLink}
                   rel='noopener noreferrer'
                 >

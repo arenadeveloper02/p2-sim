@@ -2,7 +2,6 @@ export { Avatar, AvatarFallback, AvatarImage } from './avatar/avatar'
 export { Badge, type BadgeProps } from './badge/badge'
 export { Banner } from './banner/banner'
 export { Button, buttonVariants } from './button/button'
-export { ButtonGroup, ButtonGroupItem } from './button-group/button-group'
 export {
   CalendarDayCell,
   type CalendarDayCellProps,
@@ -30,11 +29,21 @@ export {
   chipFilledFillTokens,
   chipFilledSurfaceTokens,
   chipGeometryClass,
+  chipGeometryUnroundedClass,
   chipHoverSurfaceClass,
   chipIconSlotClass,
   chipPrimaryFillTokens,
+  chipRadiusClass,
   disclosureChevronClass,
 } from './chip/chip-chrome'
+export {
+  ChipButtonGroup,
+  ChipButtonGroupItem,
+  type ChipButtonGroupItemProps,
+  type ChipButtonGroupProps,
+  chipButtonGroupItemVariants,
+  chipButtonGroupVariants,
+} from './chip-button-group/chip-button-group'
 export { ChipCombobox } from './chip-combobox/chip-combobox'
 export {
   ChipCopyInput,
@@ -53,21 +62,27 @@ export {
 export { ChipInput, type ChipInputProps } from './chip-input/chip-input'
 export {
   type ChipConfirmAction,
+  type ChipConfirmDefaultAction,
   ChipConfirmModal,
   type ChipConfirmModalProps,
   type ChipConfirmText,
   type ChipConfirmTextSegment,
   ChipModal,
   ChipModalBody,
+  type ChipModalBodyProps,
+  ChipModalDescription,
+  type ChipModalDescriptionProps,
   type ChipModalDropdownOption,
   type ChipModalEmailsFieldProps,
   ChipModalError,
   type ChipModalErrorProps,
   ChipModalField,
+  type ChipModalFieldAria,
   type ChipModalFieldProps,
   ChipModalFooter,
   type ChipModalFooterAction,
   type ChipModalFooterCustomAction,
+  type ChipModalFooterDefaultAction,
   type ChipModalFooterProps,
   type ChipModalFooterSlotAction,
   ChipModalHeader,
@@ -76,9 +91,11 @@ export {
   type ChipModalPromptBodyProps,
   type ChipModalProps,
   ChipModalSeparator,
+  ChipModalSurface,
   type ChipModalTab,
   ChipModalTabs,
   type ChipModalTabsProps,
+  focusChipModalContent,
 } from './chip-modal/chip-modal'
 export { ChipSelect, type ChipSelectOption, type ChipSelectProps } from './chip-select/chip-select'
 export {
@@ -102,6 +119,7 @@ export {
   Combobox,
   type ComboboxOption,
   type ComboboxOptionGroup,
+  comboboxVariants,
 } from './combobox/combobox'
 export {
   DropdownMenu,
@@ -110,6 +128,8 @@ export {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuItemAction,
+  DropdownMenuItemLabel,
+  type DropdownMenuItemLabelProps,
   DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuRadioGroup,
@@ -121,6 +141,7 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  dropdownMenuRowClass,
 } from './dropdown-menu/dropdown-menu'
 export { Expandable, ExpandableContent } from './expandable/expandable'
 export { DashedDividerLine, FieldDivider } from './field-divider/field-divider'
@@ -136,6 +157,7 @@ export {
 export { Input, type InputProps } from './input/input'
 export { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from './input-otp/input-otp'
 export { Label } from './label/label'
+export { Lightbox, type LightboxProps } from './lightbox/lightbox'
 export { focusFirstTextInput, focusFirstTextInputIn } from './modal/auto-focus'
 export {
   MODAL_SIZES,
@@ -160,6 +182,12 @@ export {
   useNativeSurfaceOcclusionReady,
 } from './modal/modal'
 export {
+  OverflowText,
+  type OverflowTextProps,
+  overflowTextClipClass,
+  overflowTextFadeClass,
+} from './overflow-text/overflow-text'
+export {
   Popover,
   PopoverAnchor,
   PopoverBackButton,
@@ -177,16 +205,29 @@ export { POPOVER_ANIMATION_CLASSES } from './popover/popover-animation'
 export { ProgressItem } from './progress-item/progress-item'
 export { SecretInput } from './secret-input/secret-input'
 export { SecretReveal } from './secret-reveal/secret-reveal'
+export { WORDMARK_PATHS, WORDMARK_VIEW_BOX } from './sim-wordmark/paths'
+export { SimWordmark, type SimWordmarkProps } from './sim-wordmark/sim-wordmark'
 export { Skeleton } from './skeleton/skeleton'
 export { Slider } from './slider/slider'
+export {
+  LogoPage,
+  type LogoPageProps,
+  PAGE_CONTENT_WIDTH,
+  PAGE_GUTTER,
+  StatusPageContent,
+  type StatusPageContentProps,
+} from './status-page/status-page'
 export { Switch } from './switch/switch'
 export {
   isTabTitleTruncated,
   TabStrip,
+  type TabStripDragContext,
   type TabStripItem,
   type TabStripProps,
   type TabStripSelectionSource,
+  type TabStripVariant,
   tabDropIndex,
+  tabStripItemSelector,
   tabStripWheelPosition,
 } from './tab-strip/tab-strip'
 export {

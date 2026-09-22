@@ -1,204 +1,133 @@
+import { createInternalToolOperationInput } from '@/tools/operation-input'
 import type { SlackListChannelsParams, SlackListChannelsResponse } from '@/tools/slack/types'
-import { CHANNEL_OUTPUT_PROPERTIES } from '@/tools/slack/types'
-import type { ToolConfig } from '@/tools/types'
+import { CONVERSATION_LIST_OUTPUT_PROPERTIES } from '@/tools/slack/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackListChannelsResponse> =
-  {
-    id: 'slack_list_channels',
-    name: 'Slack List Channels',
-    description:
-      'List all channels in a Slack workspace. Returns public and private channels the bot has access to.',
-    version: '1.0.0',
+/** Default Slack conversations.list page size. */
+export const DEFAULT_CONVERSATION_PAGE_LIMIT = 100
 
-    oauth: {
-      required: true,
-      provider: 'slack',
+/** Slack's recommended upper bound for conversations.list page size. */
+export const MAX_CONVERSATION_PAGE_LIMIT = 200
+
+export const slackListChannelsTool: InternalToolConfig<
+  SlackListChannelsParams,
+  SlackListChannelsResponse
+> = {
+  id: 'slack_list_channels',
+  name: 'Slack List Channels',
+  description:
+    'List one page of accessible Slack conversations. Credential-group user tokens also return one-to-one and group direct messages. Pass the returned nextCursor as cursor to fetch the next page.',
+  version: '1.3.1',
+
+  oauth: {
+    required: true,
+    provider: 'slack',
+    authoritativeParams: ['credentialType'],
+    /** Slack enforces the required scope for the target conversation type. */
+    requiredScopes: [],
+  },
+
+  params: {
+    authMethod: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Authentication method: oauth or bot_token',
     },
-
-    params: {
-      authMethod: {
-        type: 'string',
-        required: false,
-        visibility: 'user-only',
-        description: 'Authentication method: oauth or bot_token',
-      },
-      botToken: {
-        type: 'string',
-        required: false,
-        visibility: 'user-only',
-        description: 'Bot token for Custom Bot',
-      },
-      accessToken: {
-        type: 'string',
-        required: false,
-        visibility: 'hidden',
-        description: 'OAuth access token or bot token for Slack API',
-      },
-      includePrivate: {
-        type: 'boolean',
-        required: false,
-        visibility: 'user-or-llm',
-        description: 'Include private channels the bot is a member of (default: true)',
-      },
-      includeDMs: {
-        type: 'boolean',
-        required: false,
-        visibility: 'user-or-llm',
-        description:
-          'Include 1:1 direct message conversations (requires im:read scope; default: false)',
-      },
-      includeGroupDMs: {
-        type: 'boolean',
-        required: false,
-        visibility: 'user-or-llm',
-        description:
-          'Include multi-person direct messages / group DMs (requires mpim:read scope; default: false)',
-      },
-      excludeArchived: {
-        type: 'boolean',
-        required: false,
-        visibility: 'user-or-llm',
-        description: 'Exclude archived channels (default: true)',
-      },
-      limit: {
-        type: 'number',
-        required: false,
-        visibility: 'user-or-llm',
-        description: 'Maximum number of channels to return (default: 200, max: 200)',
-      },
-      cursor: {
-        type: 'string',
-        required: false,
-        visibility: 'user-or-llm',
-        description: 'Pagination cursor from a previous response.next_cursor',
-      },
+    botToken: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Bot token for Custom Bot',
     },
-
-    request: {
-      url: (params: SlackListChannelsParams) => {
-        const url = new URL('https://slack.com/api/conversations.list')
-
-        // Accept both booleans and their string representations, because the
-        // block wiring may forward raw form values ('true' / 'false') through
-        // the tool runner depending on the caller path.
-        const isTrue = (v: unknown): boolean => v === true || v === 'true'
-        const isFalse = (v: unknown): boolean => v === false || v === 'false'
-
-        // Build conversation types list. public_channel is always on;
-        // private_channel defaults on (opt-out); im/mpim are opt-in because
-        // they require extra scopes (im:read / mpim:read).
-        const types: string[] = ['public_channel']
-        if (!isFalse(params.includePrivate)) types.push('private_channel')
-        if (isTrue(params.includeDMs)) types.push('im')
-        if (isTrue(params.includeGroupDMs)) types.push('mpim')
-        url.searchParams.append('types', types.join(','))
-
-        // Exclude archived by default (opt-out).
-        const excludeArchived = !isFalse(params.excludeArchived)
-        url.searchParams.append('exclude_archived', String(excludeArchived))
-
-        // Set limit (default 200, max 200 per Slack; use cursor for more pages).
-        const limit = params.limit ? Math.min(Number(params.limit), 200) : 200
-        url.searchParams.append('limit', String(limit))
-
-        const cursor = params.cursor?.trim()
-        if (cursor) {
-          url.searchParams.append('cursor', cursor)
-        }
-
-        return url.toString()
-      },
-      method: 'GET',
-      headers: (params: SlackListChannelsParams) => ({
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.accessToken || params.botToken}`,
-      }),
+    accessToken: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'OAuth access token or bot token for Slack API',
     },
-
-    transformResponse: async (response: Response) => {
-      const data = await response.json()
-
-      if (!data.ok) {
-        if (data.error === 'missing_scope') {
-          const needed = data.needed ? ` Missing scope: ${data.needed}.` : ''
-          throw new Error(
-            `Missing required permissions. Please reconnect your Slack account with the necessary scopes (channels:read for public channels, groups:read for private channels, im:read for DMs, mpim:read for group DMs).${needed}`
-          )
-        }
-        if (data.error === 'invalid_auth') {
-          throw new Error('Invalid authentication. Please check your Slack credentials.')
-        }
-        throw new Error(data.error || 'Failed to list channels from Slack')
-      }
-
-      const channels = (data.channels || []).map((channel: any) => {
-        const isIm = Boolean(channel.is_im)
-        const isMpim = Boolean(channel.is_mpim)
-        return {
-          id: channel.id,
-          // DMs have no `name`; fall back to a stable label so downstream
-          // consumers that expect a string don't break.
-          name: channel.name || (isIm ? `dm:${channel.user || ''}` : isMpim ? 'group_dm' : ''),
-          is_private: channel.is_private || isIm || isMpim,
-          is_archived: channel.is_archived || false,
-          is_member: channel.is_member || false,
-          num_members: channel.num_members,
-          topic: channel.topic?.value || '',
-          purpose: channel.purpose?.value || '',
-          created: channel.created,
-          creator: channel.creator,
-          is_im: isIm,
-          is_mpim: isMpim,
-          user: channel.user,
-        }
-      })
-
-      const ids = channels.map((channel: { id: string }) => channel.id)
-      const names = channels.map((channel: { name: string }) => channel.name)
-
-      const nextCursorRaw = data.response_metadata?.next_cursor
-      const cursor =
-        typeof nextCursorRaw === 'string' && nextCursorRaw.length > 0 ? nextCursorRaw : null
-
-      return {
-        success: true,
-        output: {
-          channels,
-          ids,
-          names,
-          count: channels.length,
-          nextCursor: cursor,
-        },
-      }
+    credentialType: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'Credential type supplied by authorized token resolution',
     },
+    includePrivate: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Include private channels the connected account can access (default: true)',
+    },
+    includeDMs: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Include 1:1 direct message conversations (requires im:read scope; default: false)',
+    },
+    includeGroupDMs: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Include multi-person direct messages / group DMs (requires mpim:read scope; default: false)',
+    },
+    excludeArchived: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Exclude archived channels (default: true)',
+    },
+    limit: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Conversations to request per Slack page (default: 100, max: 200)',
+    },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Pagination cursor from a previous response.nextCursor to resume from',
+    },
+  },
 
-    outputs: {
-      channels: {
-        type: 'array',
-        description: 'Array of channel objects from the workspace',
-        items: {
-          type: 'object',
-          properties: CHANNEL_OUTPUT_PROPERTIES,
-        },
-      },
-      ids: {
-        type: 'array',
-        description: 'Array of channel IDs for easy access',
-        items: { type: 'string', description: 'Channel ID' },
-      },
-      names: {
-        type: 'array',
-        description: 'Array of channel names for easy access',
-        items: { type: 'string', description: 'Channel name' },
-      },
-      count: {
-        type: 'number',
-        description: 'Total number of channels returned',
-      },
-      nextCursor: {
-        type: 'string',
-        description: 'Cursor for the next page; null if no more pages',
-        optional: true,
+  operation: {
+    input: createInternalToolOperationInput,
+  },
+
+  outputs: {
+    channels: {
+      type: 'array',
+      description:
+        'One page of accessible public and private channels, plus direct and group DMs for credential-group user tokens',
+      items: {
+        type: 'object',
+        properties: CONVERSATION_LIST_OUTPUT_PROPERTIES,
       },
     },
-  }
+    ids: {
+      type: 'array',
+      description: 'Conversation IDs for every returned channel or DM',
+      items: { type: 'string', description: 'Slack conversation ID' },
+    },
+    names: {
+      type: 'array',
+      description: 'Names of returned channels and group DMs; synthesized names for one-to-one DMs',
+      items: { type: 'string', description: 'Slack conversation name' },
+    },
+    count: {
+      type: 'number',
+      description: 'Number of conversations returned in this page',
+    },
+    hasMore: {
+      type: 'boolean',
+      description: 'Whether a next cursor is available to fetch more Slack conversations',
+    },
+    nextCursor: {
+      type: 'string',
+      description: 'Cursor to fetch the next page; null when there are no more pages',
+      optional: true,
+    },
+  },
+}

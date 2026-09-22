@@ -2,10 +2,108 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { sanitizeChatDisplayContent } from '@/app/workspace/[workspaceId]/home/components/message-content/components/chat-content/chat-sanitize'
 import { scalingRatioOver4x } from '@/app/workspace/[workspaceId]/home/components/message-content/components/scaling-test-helpers'
-import { sanitizeChatDisplayContent } from './chat-sanitize'
 
 describe('sanitizeChatDisplayContent', () => {
+  it.each(['source', 'workspace_resource'])(
+    'unwraps %s JSON that mentions the other chip tag',
+    (name) => {
+      const otherTag = name === 'source' ? 'workspace_resource' : 'source'
+      const tag = `<${name}>${JSON.stringify({ title: `Use <${otherTag}>` })}</${name}>`
+
+      expect(sanitizeChatDisplayContent(`\`${tag}\``)).toBe(tag)
+    }
+  )
+
+  it.each([2, 3, 4])('preserves a %i-backtick code span containing a chip', (length) => {
+    const delimiter = '`'.repeat(length)
+    const tag = '<source>{"url":"https://example.com","title":"Use `config`"}</source>'
+    const content = `${delimiter}${tag}${delimiter}`
+
+    expect(sanitizeChatDisplayContent(content)).toBe(content)
+    expect(sanitizeChatDisplayContent(`${delimiter}json\n\`${tag}\`\n${delimiter}`)).toBe(
+      `${delimiter}json\n\`${tag}\`\n${delimiter}`
+    )
+    expect(sanitizeChatDisplayContent(`${content} then \`${tag}\``)).toBe(`${content} then ${tag}`)
+  })
+
+  it('does not let an unmatched backtick run suppress later citations', () => {
+    const prefix = 'Use `` for two backticks.\n'
+    const tag = '<source>{"url":"https://example.com"}</source>'
+
+    expect(sanitizeChatDisplayContent(`${prefix}\`${tag}\``)).toBe(`${prefix}${tag}`)
+  })
+
+  it.each(['\n\n', '\r\n\r\n', '\n \t\n'])(
+    'does not pair prose runs across paragraph break %j',
+    (separator) => {
+      const tag = '<source>{"url":"https://example.com"}</source>'
+      const before = `Use \`\` as a delimiter.${separator}`
+      const after = `${separator}Another \`\` marker.`
+
+      expect(sanitizeChatDisplayContent(`${before}\`${tag}\`${after}`)).toBe(
+        `${before}${tag}${after}`
+      )
+    }
+  )
+
+  it('preserves matched multi-backtick spans across a soft line break', () => {
+    const content = '``Literal\n`<source>{"url":"https://example.com"}</source>`\nexample``'
+
+    expect(sanitizeChatDisplayContent(content)).toBe(content)
+  })
+
+  it('does not treat blank lines inside chip JSON as paragraph breaks', () => {
+    const tag = '<source>{\n\n"url":"https://example.com",\n\n"title":"Use `code`"\n}</source>'
+
+    expect(sanitizeChatDisplayContent(`\`${tag}\``)).toBe(tag)
+  })
+
+  it.each(['```', '~~~'])(
+    'preserves a %s fence closed by a longer run and unwraps citations after it',
+    (fence) => {
+      const tag = '<source>{"url":"https://example.com"}</source>'
+      const block = `${fence}json\n\`${tag}\`\n${fence}${fence[0]}\n`
+
+      expect(sanitizeChatDisplayContent(`${block}\`${tag}\``)).toBe(`${block}${tag}`)
+    }
+  )
+
+  it.each(['```', '~~~'])('leaves an unclosed %s streaming fence literal', (fence) => {
+    const content = `${fence}json\n\`<source>{"url":"https://example.com"}</source>\``
+
+    expect(sanitizeChatDisplayContent(content)).toBe(content)
+  })
+
+  it.each(['source', 'workspace_resource'])(
+    'preserves tilde-fenced %s chips with backticks in the info string',
+    (name) => {
+      const tag = `<${name}>{"title":"Example"}</${name}>`
+      const block = `~~~example \`code\`\n\`${tag}\`\n~~~\n`
+
+      expect(sanitizeChatDisplayContent(`${block}\`${tag}\``)).toBe(`${block}${tag}`)
+    }
+  )
+
+  it.each(['```', '~~~'])(
+    'does not close a %s fence with a different character or a shorter run',
+    (fence) => {
+      const tag = '<source>{"url":"https://example.com"}</source>'
+      const otherFence = fence === '```' ? '~~~~' : '````'
+      const block = `${fence}${fence[0]}\n${otherFence}\n\`${tag}\`\n${fence}\n\`${tag}\`\n${fence}${fence[0]}\n`
+
+      expect(sanitizeChatDisplayContent(`${block}\`${tag}\``)).toBe(`${block}${tag}`)
+    }
+  )
+
+  it('does not open a backtick fence with backticks in its info string', () => {
+    const prefix = '```example `code`\n\n'
+    const tag = '<source>{"url":"https://example.com"}</source>'
+
+    expect(sanitizeChatDisplayContent(`${prefix}\`${tag}\``)).toBe(`${prefix}${tag}`)
+  })
+
   it('unwraps workspace resource tags from inline code spans', () => {
     const content =
       '`I updated <workspace_resource>{"type":"workflow","id":"wf-1","title":"Workflow"}</workspace_resource>.`'
@@ -13,6 +111,43 @@ describe('sanitizeChatDisplayContent', () => {
     expect(sanitizeChatDisplayContent(content)).toBe(
       'I updated <workspace_resource>{"type":"workflow","id":"wf-1","title":"Workflow"}</workspace_resource>.'
     )
+  })
+
+  it('unwraps source tags from inline code spans', () => {
+    const content = '`Block them first. <source>{"url":"https://docs.github.com/a"}</source>`'
+
+    expect(sanitizeChatDisplayContent(content)).toBe(
+      'Block them first. <source>{"url":"https://docs.github.com/a"}</source>'
+    )
+  })
+
+  it.each(['source', 'workspace_resource'])('preserves backticks inside %s JSON strings', (tag) => {
+    const payload = JSON.stringify({
+      title: 'Run `bun test`',
+      snippet: 'Quoted "commands" and a \\path with `backticks`',
+    })
+    const chip = `<${tag}>${payload}</${tag}>`
+
+    expect(sanitizeChatDisplayContent(`\`Evidence ${chip}.\``)).toBe(`Evidence ${chip}.`)
+    expect(sanitizeChatDisplayContent(`\`${chip} done`)).toBe(`${chip} done`)
+    expect(sanitizeChatDisplayContent(`${chip}\` done`)).toBe(`${chip} done`)
+    expect(sanitizeChatDisplayContent(`\`before\`${chip}\`after\``)).toBe(
+      `\`before\`${chip}\`after\``
+    )
+  })
+
+  it('treats tag markers inside JSON strings as payload', () => {
+    const payload = JSON.stringify({ snippet: 'Use `<source>` and `</source>` markers' })
+    const chip = `<source>${payload}</source>`
+
+    expect(sanitizeChatDisplayContent(`\`See ${chip}\``)).toBe(`See ${chip}`)
+  })
+
+  it('leaves a fenced source example with payload backticks intact', () => {
+    const payload = JSON.stringify({ snippet: 'Run `bun test`' })
+    const content = `Example:\n\`\`\`json\n<source>${payload}</source>\n\`\`\`\nDone.`
+
+    expect(sanitizeChatDisplayContent(content)).toBe(content)
   })
 
   it('removes hidden internal references wrapped in inline code', () => {
@@ -97,6 +232,16 @@ describe('sanitizeChatDisplayContent', () => {
     expect(scalingRatioOver4x((content) => sanitizeChatDisplayContent(content))).toBeLessThan(8)
   })
 
+  it('stays linear on repeated unclosed JSON chip bodies', () => {
+    expect(
+      scalingRatioOver4x((content) =>
+        sanitizeChatDisplayContent(
+          content.replaceAll('The <workspace_resource> tag is used here. ', '<source>{"snippet":"')
+        )
+      )
+    ).toBeLessThan(8)
+  })
+
   it('still unwraps a real tag that carries a stray backtick on one side only', () => {
     // The case the unpaired strip is actually for: the model backticked the
     // opener but not the closer (or vice versa), which would block the chip.
@@ -112,4 +257,24 @@ describe('sanitizeChatDisplayContent', () => {
       '<workspace_resource>{"type":"file","path":"a.md","title":"a"}</workspace_resource> done'
     )
   })
+
+  it.each(['source', 'workspace_resource'])(
+    'stays linear on repeated %s tags with unterminated JSON strings',
+    (name) => {
+      expect(
+        scalingRatioOver4x(sanitizeChatDisplayContent, (times) =>
+          `<${name}>{${String.fromCharCode(92, 34)}`.repeat(times)
+        )
+      ).toBeLessThan(8)
+    }
+  )
+
+  it.each(['<source>"', '<source>{"key":"'])(
+    'stays linear on repeated quoted payload prefix %s',
+    (prefix) => {
+      expect(
+        scalingRatioOver4x(sanitizeChatDisplayContent, (times) => prefix.repeat(times))
+      ).toBeLessThan(8)
+    }
+  )
 })

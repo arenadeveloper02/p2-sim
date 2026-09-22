@@ -92,7 +92,7 @@ export const togetherProvider: ProviderConfig = {
       baseURL: 'https://api.together.ai/v1',
     })
 
-    const requestedModel = request.model.replace(/^together\//, '')
+    const requestedModel = request.model.replace(/^together\//i, '')
 
     logger.info('Preparing Together request', {
       model: requestedModel,
@@ -291,7 +291,12 @@ export const togetherProvider: ProviderConfig = {
               }
             }
 
-            const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+            const { toolParams, executionParams } = prepareToolExecution(
+              tool,
+              toolArgs,
+              request,
+              toolCall.id
+            )
             const { rawResponse, modelResponse } = await executeProviderTool(
               toolName,
               executionParams,

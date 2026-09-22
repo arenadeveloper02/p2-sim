@@ -1,8 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import { listOAuthCredentialsContract } from '@/lib/api/contracts'
+import {
+  listOrganizationCredentialsContract,
+  listOrganizationOAuthCredentialsContract,
+} from '@/lib/api/contracts/organization-credentials'
 import { isHubSpotSharedAccountAlias } from '@/lib/hubspot/env-aliases'
-import type { Credential } from '@/lib/oauth'
+import {
+  type Credential,
+  getServiceAccountProviderForProviderId,
+  type OAuthProvider,
+} from '@/lib/oauth'
 import { useWorkspaceCredential } from '@/hooks/queries/credentials'
 
 export const OAUTH_CREDENTIAL_LIST_STALE_TIME = 60 * 1000
@@ -11,12 +19,20 @@ export const OAUTH_CREDENTIAL_DETAIL_STALE_TIME = 60 * 1000
 export const oauthCredentialKeys = {
   all: ['oauthCredentials'] as const,
   lists: () => [...oauthCredentialKeys.all, 'list'] as const,
-  list: (providerId?: string, workspaceId?: string, workflowId?: string) =>
+  list: (
+    providerId?: string,
+    workspaceId?: string,
+    workflowId?: string,
+    organizationId?: string,
+    purpose?: 'browsing'
+  ) =>
     [
       ...oauthCredentialKeys.lists(),
       providerId ?? 'none',
       workspaceId ?? 'none',
       workflowId ?? 'none',
+      organizationId ?? 'none',
+      purpose ?? 'indexing',
     ] as const,
   details: () => [...oauthCredentialKeys.all, 'detail'] as const,
   detail: (credentialId?: string, workflowId?: string) =>
@@ -26,15 +42,49 @@ export const oauthCredentialKeys = {
 interface FetchOAuthCredentialsParams {
   providerId: string
   workspaceId?: string
+  organizationId?: string
   workflowId?: string
+  purpose?: 'browsing'
 }
 
 export async function fetchOAuthCredentials(
   params: FetchOAuthCredentialsParams,
   signal?: AbortSignal
 ): Promise<Credential[]> {
-  const { providerId, workspaceId, workflowId } = params
+  const { providerId, workspaceId, workflowId, organizationId, purpose } = params
   if (!providerId) return []
+  if (organizationId) {
+    if (workspaceId || workflowId)
+      throw new Error('Organization credential listing cannot include a workspace or workflow')
+    const serviceAccountProviderId = getServiceAccountProviderForProviderId(providerId)
+    const [oauth, serviceAccounts] = await Promise.all([
+      requestJson(listOrganizationOAuthCredentialsContract, {
+        query: { organizationId, providerId, ...(purpose ? { purpose } : {}) },
+        signal,
+      }),
+      serviceAccountProviderId
+        ? requestJson(listOrganizationCredentialsContract, {
+            query: {
+              organizationId,
+              providerId: serviceAccountProviderId,
+              type: 'service_account',
+            },
+            signal,
+          })
+        : Promise.resolve({ credentials: [] }),
+    ])
+    return [
+      ...oauth.credentials,
+      ...serviceAccounts.credentials.map(
+        (credential): Credential => ({
+          id: credential.id,
+          name: credential.displayName,
+          provider: credential.providerId as OAuthProvider,
+          type: 'service_account',
+        })
+      ),
+    ]
+  }
   const data = await requestJson(listOAuthCredentialsContract, {
     signal,
     query: {
@@ -65,16 +115,20 @@ export async function fetchOAuthCredentialDetail(
 interface UseOAuthCredentialsOptions {
   enabled?: boolean
   workspaceId?: string
+  organizationId?: string
   workflowId?: string
+  purpose?: 'browsing'
 }
 
 function resolveOptions(
   enabledOrOptions?: boolean | UseOAuthCredentialsOptions
-): Required<UseOAuthCredentialsOptions> {
+): Required<Omit<UseOAuthCredentialsOptions, 'purpose'>> &
+  Pick<UseOAuthCredentialsOptions, 'purpose'> {
   if (typeof enabledOrOptions === 'boolean') {
     return {
       enabled: enabledOrOptions,
       workspaceId: '',
+      organizationId: '',
       workflowId: '',
     }
   }
@@ -82,7 +136,9 @@ function resolveOptions(
   return {
     enabled: enabledOrOptions?.enabled ?? true,
     workspaceId: enabledOrOptions?.workspaceId ?? '',
+    organizationId: enabledOrOptions?.organizationId ?? '',
     workflowId: enabledOrOptions?.workflowId ?? '',
+    purpose: enabledOrOptions?.purpose,
   }
 }
 
@@ -90,16 +146,25 @@ export function useOAuthCredentials(
   providerId?: string,
   enabledOrOptions?: boolean | UseOAuthCredentialsOptions
 ) {
-  const { enabled, workspaceId, workflowId } = resolveOptions(enabledOrOptions)
+  const { enabled, workspaceId, workflowId, organizationId, purpose } =
+    resolveOptions(enabledOrOptions)
 
   return useQuery<Credential[]>({
-    queryKey: oauthCredentialKeys.list(providerId, workspaceId, workflowId),
+    queryKey: oauthCredentialKeys.list(
+      providerId,
+      workspaceId,
+      workflowId,
+      organizationId,
+      purpose
+    ),
     queryFn: ({ signal }) =>
       fetchOAuthCredentials(
         {
           providerId: providerId ?? '',
           workspaceId: workspaceId || undefined,
+          organizationId: organizationId || undefined,
           workflowId: workflowId || undefined,
+          purpose,
         },
         signal
       ),

@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { cn } from '@sim/emcn'
+import { bindPreviewWheelZoom, cn } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sanitizeRenderedHyperlinks, stripEmbeddedFrames } from '@/lib/core/security/url-safety'
@@ -11,7 +11,6 @@ import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty
 import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { PREVIEW_LOADING_OVERLAY, PreviewError, resolvePreviewError } from './preview-shared'
 import { PreviewToolbar } from './preview-toolbar'
-import { bindPreviewWheelZoom } from './preview-wheel-zoom'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
 import { useLocalGeneratingPreviewEngagement } from './use-local-generating-preview-engagement'
 

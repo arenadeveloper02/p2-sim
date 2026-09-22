@@ -18,6 +18,15 @@ import * as documentsUtilsModule from '@/lib/knowledge/documents/utils'
 import { runWithKnowledgeModelInputProvenance } from '@/lib/knowledge/model-input-provenance'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
+vi.mock('@/lib/core/rate-limiter/provider-admission', () => ({
+  PROVIDER_QUOTA_COOLDOWN_MS: 300_000,
+  ProviderQuotaExhaustedError: class ProviderQuotaExhaustedError extends Error {},
+  ProviderAdmissionTimeoutError: class ProviderAdmissionTimeoutError extends Error {},
+  isProviderQuotaExhausted: vi.fn().mockResolvedValue(false),
+  recordProviderCooldown: vi.fn().mockResolvedValue(undefined),
+  waitForProviderAdmission: vi.fn().mockResolvedValue(undefined),
+}))
+
 /**
  * Spy on the real documents/utils namespace instead of vi.mock: the shared
  * `@/lib/knowledge/embeddings` module may be cached bound to the real module,
@@ -47,18 +56,26 @@ afterEach(() => {
   Object.assign(env, envSnapshot)
 })
 
+import { WORKSPACE_ACCESS_SCOPE } from '@/lib/knowledge/access/scope'
+import { generateSearchEmbedding, type KbEmbeddingTarget } from '@/lib/knowledge/embeddings'
+
+/** The platform default model and vector width, as a knowledge base records them. */
+const DEFAULT_EMBEDDING_TARGET: KbEmbeddingTarget = {
+  model: 'text-embedding-3-small',
+  dimensions: 1536,
+}
+
 import {
   executeKeywordSearch,
   executeKnowledgeSearch,
   fuseByReciprocalRank,
-  generateSearchEmbedding,
   getQueryStrategy,
   handleTagAndVectorSearch,
   handleTagOnlySearch,
   handleVectorOnlySearch,
-  RRF_K,
   type SearchResult,
 } from '@/lib/knowledge/search/queries'
+import { RRF_K } from '@/lib/knowledge/search/recency'
 
 /** Minimal SearchResult builder — only the fields fusion and ordering read. */
 function makeResult(id: string, distance = 0.1): SearchResult {
@@ -89,6 +106,25 @@ function makeResult(id: string, distance = 0.1): SearchResult {
   }
 }
 
+const TEST_EMBEDDING = [0.1, 0.2, 0.3, ...Array.from({ length: 1533 }, () => 0)].map(Math.fround)
+
+function mockNextEmbeddingResponse(): void {
+  vi.mocked(fetch).mockImplementationOnce(async (_url, init) => {
+    const request = JSON.parse(String(init?.body))
+    const embedding =
+      request.encoding_format === 'base64'
+        ? Buffer.from(new Float32Array(TEST_EMBEDDING).buffer).toString('base64')
+        : TEST_EMBEDDING
+    return new Response(
+      JSON.stringify({
+        data: [{ embedding, index: 0 }],
+        usage: { prompt_tokens: 1, total_tokens: 1 },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )
+  })
+}
+
 describe('Knowledge Search Utils', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -103,6 +139,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when no filters provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [],
       }
@@ -115,6 +152,7 @@ describe('Knowledge Search Utils', () => {
     it('should accept valid parameters for tag-only search', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
       }
@@ -131,6 +169,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when queryVector not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         distanceThreshold: 0.8,
       }
@@ -143,6 +182,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when distanceThreshold not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
       }
@@ -155,6 +195,7 @@ describe('Knowledge Search Utils', () => {
     it('should accept valid parameters for vector-only search', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
         distanceThreshold: 0.8,
@@ -169,9 +210,38 @@ describe('Knowledge Search Utils', () => {
   })
 
   describe('handleTagAndVectorSearch', () => {
+    it('returns only bounded ranked rows without first materializing every matching tag ID', async () => {
+      resetDbChainMock()
+      queueTableRows(
+        schemaMock.embedding,
+        Array.from({ length: 201 }, (_, index) => ({ id: `candidate-${index}` }))
+      )
+      queueTableRows(schemaMock.embedding, [makeResult('second', 0.2), makeResult('first', 0.1)])
+      queueTableRows(schemaMock.embedding, [makeResult('second', 0.2), makeResult('first', 0.1)])
+
+      const results = await handleTagAndVectorSearch({
+        knowledgeBaseIds: ['kb-1', 'kb-2'],
+        access: WORKSPACE_ACCESS_SCOPE,
+        topK: 2,
+        structuredFilters: [
+          { tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'common' },
+        ],
+        queryVector: { vector: JSON.stringify(TEST_EMBEDDING), dimensions: 1536 },
+        distanceThreshold: 0.8,
+      })
+
+      expect(results.map((row) => row.id)).toEqual(['first', 'second'])
+      expect(dbChainMockFns.select).toHaveBeenCalledTimes(3)
+      expect(Object.keys(dbChainMockFns.select.mock.calls[0][0])).toEqual(['id'])
+      expect(dbChainMockFns.limit).toHaveBeenNthCalledWith(1, 400)
+      expect(dbChainMockFns.select.mock.calls[1][0]).toHaveProperty('distance')
+      expect(dbChainMockFns.limit).toHaveBeenCalledWith(20)
+    })
+
     it('should throw error when no filters provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [],
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -186,6 +256,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when queryVector not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
         distanceThreshold: 0.8,
@@ -199,6 +270,7 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when distanceThreshold not provided', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -212,6 +284,7 @@ describe('Knowledge Search Utils', () => {
     it('should accept valid parameters for tag and vector search', async () => {
       const params = {
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         structuredFilters: [{ tagSlot: 'tag1', fieldType: 'text', operator: 'eq', value: 'api' }],
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -368,6 +441,7 @@ describe('Knowledge Search Utils', () => {
     it('returns nothing for a whitespace-only query without touching the database', async () => {
       const results = await executeKeywordSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: '   ',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -383,16 +457,13 @@ describe('Knowledge Search Utils', () => {
 
       await executeKeywordSearch({
         knowledgeBaseIds,
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: 'PROJ-1234',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
       })
 
-      /**
-       * A single global LIMIT would let the lexically strongest base consume
-       * every slot, so an exact-token hit in a smaller base never reaches
-       * fusion. The vector leg already fans out here; both legs must match.
-       */
+      /** Keyword retrieval preserves its existing per-base lexical candidate selection. */
       expect(dbChainMockFns.select).toHaveBeenCalledTimes(knowledgeBaseIds.length)
     })
 
@@ -402,6 +473,7 @@ describe('Knowledge Search Utils', () => {
 
       const results = await executeKeywordSearch({
         knowledgeBaseIds: ['kb-1'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: 'PROJ-1234',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -427,6 +499,7 @@ describe('Knowledge Search Utils', () => {
 
       await executeKeywordSearch({
         knowledgeBaseIds,
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         query: 'PROJ-1234',
         queryVector: JSON.stringify([0.1, 0.2, 0.3]),
@@ -445,6 +518,7 @@ describe('Knowledge Search Utils', () => {
       await expect(
         executeKnowledgeSearch({
           knowledgeBaseIds: ['kb-123'],
+          access: WORKSPACE_ACCESS_SCOPE,
           topK: 10,
           searchMode: 'hybrid',
         })
@@ -455,6 +529,7 @@ describe('Knowledge Search Utils', () => {
       await expect(
         executeKnowledgeSearch({
           knowledgeBaseIds: ['kb-123'],
+          access: WORKSPACE_ACCESS_SCOPE,
           topK: 10,
           searchMode: 'hybrid',
           query: 'PROJ-1234',
@@ -463,65 +538,70 @@ describe('Knowledge Search Utils', () => {
     })
 
     it('runs a single retrieval leg in vector mode', async () => {
+      dbChainMockFns.execute.mockResolvedValue([{ id: 'vector-hit' }])
+      queueTableRows(schemaMock.embedding, [{ id: 'vector-hit' }])
       queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'vector',
         query: 'PROJ-1234',
-        queryVector: JSON.stringify([0.1, 0.2, 0.3]),
+        queryVector: { vector: JSON.stringify(TEST_EMBEDDING), dimensions: 1536 },
       })
 
       expect(results.map((r) => r.id)).toEqual(['vector-hit'])
-      expect(dbChainMockFns.select).toHaveBeenCalledTimes(1)
+      expect(dbChainMockFns.select).toHaveBeenCalledTimes(2)
     })
 
     it('runs both legs and fuses them in hybrid mode', async () => {
-      // Vector leg, then the keyword leg's ranking pass, then its hydration pass.
-      queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
+      /**
+       * The raw vector probe does not consume a table chain. Keyword ranking and
+       * hydration complete before vector exact ranking and content hydration.
+       */
+      dbChainMockFns.execute.mockResolvedValue([{ id: 'vector-hit' }])
       queueTableRows(schemaMock.embedding, [{ id: 'keyword-hit', keywordRank: 0.9 }])
       queueTableRows(schemaMock.embedding, [makeResult('keyword-hit')])
+      queueTableRows(schemaMock.embedding, [{ id: 'vector-hit' }])
+      queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'hybrid',
         query: 'PROJ-1234',
-        queryVector: JSON.stringify([0.1, 0.2, 0.3]),
+        queryVector: { vector: JSON.stringify(TEST_EMBEDDING), dimensions: 1536 },
       })
 
       expect(results.map((r) => r.id).sort()).toEqual(['keyword-hit', 'vector-hit'])
-      expect(dbChainMockFns.select).toHaveBeenCalledTimes(3)
+      expect(dbChainMockFns.select).toHaveBeenCalledTimes(4)
     })
 
-    it('falls back to vector results when the keyword leg fails', async () => {
+    it('propagates unexpected keyword errors after the vector leg finishes', async () => {
+      /** The failing ranking chain is still built first and takes the first queued set. */
+      dbChainMockFns.execute.mockResolvedValue([{ id: 'vector-hit' }])
+      queueTableRows(schemaMock.embedding, [{ id: 'never-ranked', keywordRank: 0 }])
+      queueTableRows(schemaMock.embedding, [{ id: 'vector-hit' }])
       queueTableRows(schemaMock.embedding, [makeResult('vector-hit')])
 
-      /**
-       * Both legs share one `orderBy` spy, so target the keyword leg by its
-       * ranking expression. Calling the untouched spy first captures the
-       * sentinel that tells the mock to build its normal chain, which the
-       * vector leg still needs.
-       */
-      const chainDefault = dbChainMockFns.orderBy()
-      dbChainMockFns.orderBy.mockImplementation((fragment: unknown) => {
-        const text = (fragment as { strings?: string[] })?.strings?.join('') ?? ''
-        if (text.includes('ts_rank_cd')) {
-          throw new Error('tsquery blew up')
-        }
-        return chainDefault
+      const failure = new Error('tsquery failed')
+      dbChainMockFns.orderBy.mockImplementationOnce(() => {
+        throw failure
       })
 
-      const results = await executeKnowledgeSearch({
-        knowledgeBaseIds: ['kb-123'],
-        topK: 10,
-        searchMode: 'hybrid',
-        query: 'PROJ-1234',
-        queryVector: JSON.stringify([0.1, 0.2, 0.3]),
-      })
-
-      expect(results.map((r) => r.id)).toEqual(['vector-hit'])
+      await expect(
+        executeKnowledgeSearch({
+          knowledgeBaseIds: ['kb-123'],
+          access: WORKSPACE_ACCESS_SCOPE,
+          topK: 10,
+          searchMode: 'hybrid',
+          query: 'PROJ-1234',
+          queryVector: { vector: JSON.stringify(TEST_EMBEDDING), dimensions: 1536 },
+        })
+      ).rejects.toBe(failure)
+      expect(dbChainMockFns.select).toHaveBeenCalledTimes(3)
     })
 
     it('skips both query legs when only tag filters are provided', async () => {
@@ -529,6 +609,7 @@ describe('Knowledge Search Utils', () => {
 
       const results = await executeKnowledgeSearch({
         knowledgeBaseIds: ['kb-123'],
+        access: WORKSPACE_ACCESS_SCOPE,
         topK: 10,
         searchMode: 'hybrid',
         structuredFilters: [
@@ -553,14 +634,9 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
-      const result = await generateSearchEmbedding('test query')
+      const result = await generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://test.openai.azure.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2024-12-01-preview',
@@ -570,7 +646,7 @@ describe('Knowledge Search Utils', () => {
           }),
         })
       )
-      expect(result.embedding).toEqual([0.1, 0.2, 0.3])
+      expect(result.embedding).toEqual(TEST_EMBEDDING)
 
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
@@ -583,14 +659,9 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
-      const result = await generateSearchEmbedding('test query')
+      const result = await generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://api.openai.com/v1/embeddings',
@@ -600,7 +671,7 @@ describe('Knowledge Search Utils', () => {
           }),
         })
       )
-      expect(result.embedding).toEqual([0.1, 0.2, 0.3])
+      expect(result.embedding).toEqual(TEST_EMBEDDING)
 
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
@@ -616,14 +687,9 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
-      await generateSearchEmbedding('test query')
+      await generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://api.openai.com/v1/embeddings',
@@ -645,14 +711,9 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
-      await generateSearchEmbedding('test query', 'text-embedding-3-small')
+      await generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://test.openai.azure.com/openai/deployments/custom-embedding-model/embeddings?api-version=2024-12-01-preview',
@@ -674,7 +735,7 @@ describe('Knowledge Search Utils', () => {
         OPENROUTER_API_KEY: undefined,
       })
 
-      await expect(generateSearchEmbedding('test query')).rejects.toThrow(
+      await expect(generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)).rejects.toThrow(
         'OPENAI_API_KEY is not configured'
       )
     })
@@ -696,7 +757,9 @@ describe('Knowledge Search Utils', () => {
         text: 'Deployment not found',
       })
 
-      await expect(generateSearchEmbedding('test query')).rejects.toThrow('Embedding API failed')
+      await expect(generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)).rejects.toThrow(
+        'Embedding API failed'
+      )
 
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
@@ -717,7 +780,9 @@ describe('Knowledge Search Utils', () => {
         text: 'Rate limit exceeded',
       })
 
-      await expect(generateSearchEmbedding('test query')).rejects.toThrow('Embedding API failed')
+      await expect(generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)).rejects.toThrow(
+        'Embedding API failed'
+      )
 
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
@@ -733,14 +798,9 @@ describe('Knowledge Search Utils', () => {
         KB_OPENAI_MODEL_NAME: 'text-embedding-ada-002',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
-      await generateSearchEmbedding('test query')
+      await generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         expect.any(String),
@@ -764,14 +824,9 @@ describe('Knowledge Search Utils', () => {
         OPENAI_API_KEY: 'test-openai-key',
       })
 
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
-      await generateSearchEmbedding('test query', 'text-embedding-3-small')
+      await generateSearchEmbedding('test query', DEFAULT_EMBEDDING_TARGET)
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         expect.any(String),
@@ -779,7 +834,7 @@ describe('Knowledge Search Utils', () => {
           body: JSON.stringify({
             input: ['test query'],
             model: 'text-embedding-3-small',
-            encoding_format: 'float',
+            encoding_format: 'base64',
             dimensions: 1536,
           }),
         })
@@ -792,12 +847,7 @@ describe('Knowledge Search Utils', () => {
     it('projects verified provenance only in the model-bound embedding payload', async () => {
       Object.keys(env).forEach((key) => delete (env as any)[key])
       Object.assign(env, { OPENAI_API_KEY: 'test-openai-key' })
-      mockNextFetchResponse({
-        json: {
-          data: [{ embedding: [0.1, 0.2, 0.3] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        },
-      })
+      mockNextEmbeddingResponse()
 
       const registry = new ResolvedSecretTraceRegistry([
         { name: 'TOKEN', plaintext: 'secret-value', encryptedValue: 'encrypted-token' },
@@ -805,7 +855,7 @@ describe('Knowledge Search Utils', () => {
       registry.recordResolved('TOKEN', 'secret-value')
 
       await runWithKnowledgeModelInputProvenance(registry, () =>
-        generateSearchEmbedding('prefix secret-value suffix', 'text-embedding-3-small')
+        generateSearchEmbedding('prefix secret-value suffix', DEFAULT_EMBEDDING_TARGET)
       )
 
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
@@ -814,7 +864,7 @@ describe('Knowledge Search Utils', () => {
           body: JSON.stringify({
             input: ['prefix {{TOKEN}} suffix'],
             model: 'text-embedding-3-small',
-            encoding_format: 'float',
+            encoding_format: 'base64',
             dimensions: 1536,
           }),
         })

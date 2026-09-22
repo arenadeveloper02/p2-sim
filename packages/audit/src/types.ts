@@ -2,12 +2,18 @@
  * All auditable actions in the platform, grouped by resource type.
  */
 export const AuditAction = {
+  // Accounts
+  ACCOUNT_DELETED: 'account.deleted',
+
   // API Keys
   API_KEY_CREATED: 'api_key.created',
   API_KEY_UPDATED: 'api_key.updated',
   API_KEY_REVOKED: 'api_key.revoked',
   PERSONAL_API_KEY_CREATED: 'personal_api_key.created',
   PERSONAL_API_KEY_REVOKED: 'personal_api_key.revoked',
+
+  // OAuth apps (Sim as the authorization server)
+  OAUTH_APP_REVOKED: 'oauth_app.revoked',
 
   // BYOK Keys
   BYOK_KEY_CREATED: 'byok_key.created',
@@ -49,6 +55,7 @@ export const AuditAction = {
   // Subscriptions
   SUBSCRIPTION_CREATED: 'subscription.created',
   SUBSCRIPTION_CANCELLED: 'subscription.cancelled',
+  SUBSCRIPTION_REFUNDED: 'subscription.refunded',
   SUBSCRIPTION_TRANSFERRED: 'subscription.transferred',
   ENTERPRISE_SUBSCRIPTION_PROVISIONED: 'subscription.enterprise_provisioned',
 
@@ -65,10 +72,25 @@ export const AuditAction = {
   ENVIRONMENT_UPDATED: 'environment.updated',
   ENVIRONMENT_DELETED: 'environment.deleted',
 
+  /**
+   * Secret provenance
+   *
+   * Recorded when a run proceeded on data whose secret provenance nobody wrote down. The value
+   * crossing into a model could not be checked against the workspace's secrets, so a secret it
+   * carries would not have been redacted. Deliberately an audit entry rather than a refusal:
+   * blocking the run would strand the workspace on data it can no longer read, so the risk is
+   * surfaced to the people who own the secrets instead.
+   */
+  SECRET_PROVENANCE_UNRECORDED: 'secret_provenance.unrecorded',
+
   // Files
   FILE_UPLOADED: 'file.uploaded',
   FILE_UPDATED: 'file.updated',
   FILE_DELETED: 'file.deleted',
+  /**
+   * Irreversible destruction of a file's row and stored bytes. Deliberately not
+   * a reuse of {@link FILE_DELETED}, which records the recoverable archive step.
+   */
   FILE_RESTORED: 'file.restored',
   FILE_MOVED: 'file.moved',
   FILE_SHARED: 'file.shared',
@@ -101,6 +123,7 @@ export const AuditAction = {
   KNOWLEDGE_BASE_UPDATED: 'knowledge_base.updated',
   KNOWLEDGE_BASE_DELETED: 'knowledge_base.deleted',
   KNOWLEDGE_BASE_RESTORED: 'knowledge_base.restored',
+  KNOWLEDGE_BASE_EXPORTED: 'knowledge_base.exported',
 
   // MCP Servers
   MCP_SERVER_ADDED: 'mcp_server.added',
@@ -135,10 +158,12 @@ export const AuditAction = {
   ORGANIZATION_UPDATED: 'organization.updated',
   ORGANIZATION_DELETED: 'organization.deleted',
   ORGANIZATION_SESSION_POLICY_UPDATED: 'organization.session_policy.updated',
+  ORGANIZATION_SSO_POLICY_UPDATED: 'organization.sso_policy.updated',
   ORGANIZATION_SESSIONS_REVOKED: 'organization.sessions.revoked',
   ORGANIZATION_DOMAIN_ADDED: 'organization.domain.added',
   ORGANIZATION_DOMAIN_VERIFIED: 'organization.domain.verified',
   ORGANIZATION_DOMAIN_REMOVED: 'organization.domain.removed',
+  ORGANIZATION_SSO_PRIMARY_PROVIDER_CHANGED: 'organization.sso.primary_provider_changed',
   ORG_MEMBER_ADDED: 'org_member.added',
   ORG_MEMBER_REMOVED: 'org_member.removed',
   ORG_MEMBER_ROLE_CHANGED: 'org_member.role_changed',
@@ -160,6 +185,17 @@ export const AuditAction = {
   PERMISSION_GROUP_DELETED: 'permission_group.deleted',
   PERMISSION_GROUP_MEMBER_ADDED: 'permission_group_member.added',
   PERMISSION_GROUP_MEMBER_REMOVED: 'permission_group_member.removed',
+  PERMISSION_ACCESS_REQUEST_CREATED: 'permission_access_request.created',
+  PERMISSION_ACCESS_REQUEST_FULFILLED: 'permission_access_request.fulfilled',
+  PERMISSION_ACCESS_REQUEST_DECLINED: 'permission_access_request.declined',
+  PERMISSION_ACCESS_REQUEST_CANCELLED: 'permission_access_request.cancelled',
+  PERMISSION_ACCESS_REQUEST_CLOSED: 'permission_access_request.closed',
+  PERMISSION_ACCESS_REQUEST_SETTINGS_CHANGED: 'permission_access_request.settings_changed',
+
+  // Sandboxes
+  SANDBOX_CREATED: 'sandbox.created',
+  SANDBOX_UPDATED: 'sandbox.updated',
+  SANDBOX_DELETED: 'sandbox.deleted',
 
   // Skills
   SKILL_CREATED: 'skill.created',
@@ -212,6 +248,23 @@ export const AuditAction = {
   WORKSPACE_FORK_ROLLED_BACK: 'workspace.fork_rolled_back',
   WORKSPACE_FORK_UNLINKED: 'workspace.fork_unlinked',
   WORKSPACE_EXPORTED: 'workspace.exported',
+  // SCIM directory provisioning
+  SCIM_CONNECTION_ENABLED: 'scim_connection.enabled',
+  SCIM_CONNECTION_DISABLED: 'scim_connection.disabled',
+  SCIM_CONNECTION_SETTINGS_UPDATED: 'scim_connection.settings_updated',
+  SCIM_CREDENTIAL_ISSUED: 'scim_credential.issued',
+  SCIM_CREDENTIAL_REVOKED: 'scim_credential.revoked',
+  SCIM_USER_PROVISIONED: 'scim_user.provisioned',
+  SCIM_USER_UPDATED: 'scim_user.updated',
+  SCIM_USER_DEACTIVATED: 'scim_user.deactivated',
+  SCIM_USER_REACTIVATED: 'scim_user.reactivated',
+  SCIM_USER_DEPROVISIONED: 'scim_user.deprovisioned',
+  SCIM_GROUP_CREATED: 'scim_group.created',
+  SCIM_GROUP_UPDATED: 'scim_group.updated',
+  SCIM_GROUP_MEMBERSHIP_CHANGED: 'scim_group.membership_changed',
+  SCIM_GROUP_DELETED: 'scim_group.deleted',
+  SCIM_GROUP_MAPPING_UPSERTED: 'scim_group_mapping.upserted',
+  SCIM_GROUP_MAPPING_DELETED: 'scim_group_mapping.deleted',
 } as const
 
 export type AuditActionType = (typeof AuditAction)[keyof typeof AuditAction]
@@ -220,6 +273,7 @@ export type AuditActionType = (typeof AuditAction)[keyof typeof AuditAction]
  * All resource types that can appear in audit log entries.
  */
 export const AuditResourceType = {
+  ACCOUNT: 'account',
   API_KEY: 'api_key',
   BILLING: 'billing',
   BYOK_KEY: 'byok_key',
@@ -237,13 +291,21 @@ export const AuditResourceType = {
   KNOWLEDGE_BASE: 'knowledge_base',
   MCP_SERVER: 'mcp_server',
   OAUTH: 'oauth',
+  OAUTH_CLIENT: 'oauth_client',
   ORGANIZATION: 'organization',
   PASSWORD: 'password',
   PERMISSION_GROUP: 'permission_group',
+  PERMISSION_ACCESS_REQUEST: 'permission_access_request',
+  SANDBOX: 'sandbox',
   SCHEDULE: 'schedule',
+  SCIM_CONNECTION: 'scim_connection',
+  SCIM_GROUP: 'scim_group',
+  /** Not a stored resource: the workspace's secrets, as the thing put at risk. */
+  SECRET_PROVENANCE: 'secret_provenance',
   SKILL: 'skill',
   SUBSCRIPTION: 'subscription',
   TABLE: 'table',
+  USER: 'user',
   WEBHOOK: 'webhook',
   WORKFLOW: 'workflow',
   WORKSPACE: 'workspace',

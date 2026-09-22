@@ -6,13 +6,12 @@ import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navig
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   allNavigationItems,
-  isBillingEnabled,
   type NavigationItem,
   type SettingsSection,
   sectionConfig,
@@ -93,10 +92,13 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
 
-      if (
-        (item.id === 'billing' || item.id === 'arena-billing') &&
-        !canManageWorkspaceBilling(hostContext, userId)
-      ) {
+      // Arena billing is the Subscription entry. The upstream billing section stays
+      // routable for legacy links and account settings, and is omitted from this sidebar.
+      if (item.id === 'billing') {
+        return false
+      }
+
+      if (item.id === 'arena-billing' && !canManageWorkspaceBilling(hostContext, userId)) {
         return false
       }
 

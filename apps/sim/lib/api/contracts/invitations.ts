@@ -1,7 +1,10 @@
 import { z } from 'zod'
-import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import { organizationIdSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { workspacePermissionSchema } from '@/lib/api/contracts/workspaces'
+import { MAX_INVITE_EMAILS, MAX_INVITE_WORKSPACES } from '@/lib/invitations/limits'
+
+export { MAX_INVITE_EMAILS, MAX_INVITE_WORKSPACES } from '@/lib/invitations/limits'
 
 /**
  * Shared cap for the disclosure token: the preview's id list and the accept
@@ -9,10 +12,6 @@ import { workspacePermissionSchema } from '@/lib/api/contracts/workspaces'
  * preview the accept endpoint rejects as over-long.
  */
 export const DISCLOSED_WORKSPACE_ID_LIMIT = 500
-
-/** One invitation authorizes and stamps each workspace, so the fan-out is bounded. */
-export const MAX_INVITE_WORKSPACES = 50
-export const MAX_INVITE_EMAILS = 100
 
 export const invitationParamsSchema = z.object({
   id: z.string({ error: 'Invitation ID is required' }).min(1, 'Invitation ID is required'),
@@ -41,7 +40,8 @@ export const pendingWorkspaceInvitationSchema = z
     id: z.string(),
     workspaceId: z.string(),
     email: z.string(),
-    token: z.string(),
+    /** Present only for a caller who may manage the workspace — it is an admin affordance. */
+    token: z.string().optional(),
     permission: workspacePermissionSchema,
     membershipIntent: z.enum(['internal', 'external']).optional(),
     status: z.string(),
@@ -56,19 +56,32 @@ export const pendingWorkspaceInvitationSchema = z
  */
 export const invitationMembershipSchema = z.enum(['member', 'admin', 'external'])
 
-export const batchWorkspaceInvitationBodySchema = z.object({
-  workspaceIds: z
-    .array(workspaceIdSchema)
-    .min(1, 'Select at least one workspace')
-    .max(MAX_INVITE_WORKSPACES, `Select at most ${MAX_INVITE_WORKSPACES} workspaces`),
-  emails: z
-    .array(z.string().trim().min(1, 'Invitation email is required'))
-    .min(1, 'At least one invitation is required')
-    .max(MAX_INVITE_EMAILS, `Invite at most ${MAX_INVITE_EMAILS} people at a time`),
-  /** Workspace access level applied to every selected workspace. */
-  permission: workspacePermissionSchema.optional(),
-  membership: invitationMembershipSchema.optional(),
-})
+export const batchWorkspaceInvitationBodySchema = z
+  .object({
+    workspaceIds: z
+      .array(workspaceIdSchema)
+      .max(MAX_INVITE_WORKSPACES, `Select at most ${MAX_INVITE_WORKSPACES} workspaces`),
+    emails: z
+      .array(z.string().trim().min(1, 'Invitation email is required'))
+      .min(1, 'At least one invitation is required')
+      .max(MAX_INVITE_EMAILS, `Invite at most ${MAX_INVITE_EMAILS} people at a time`),
+    /** Workspace access level applied to every selected workspace. */
+    permission: workspacePermissionSchema.optional(),
+    membership: invitationMembershipSchema.optional(),
+    organizationId: organizationIdSchema.optional(),
+  })
+  .superRefine((body, context) => {
+    if (
+      body.workspaceIds.length === 0 &&
+      (!body.organizationId || body.membership === 'external')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['workspaceIds'],
+        message: 'Select at least one workspace, or invite a member to an organization',
+      })
+    }
+  })
 
 export const batchInvitationResultSchema = z.object({
   success: z.boolean(),
@@ -85,7 +98,7 @@ export const batchInvitationResultSchema = z.object({
       permission: workspacePermissionSchema,
       membershipIntent: z.enum(['internal', 'external']),
       instantAdd: z.boolean().optional(),
-      outcome: z.enum(['added', 'unchanged']).optional(),
+      outcome: z.enum(['added', 'updated', 'unchanged']).optional(),
     })
   ),
 })
@@ -330,4 +343,5 @@ export const removeWorkspaceMemberContract = defineRouteContract({
 
 export type PendingInvitationRow = z.infer<typeof pendingWorkspaceInvitationSchema>
 export type BatchInvitationResult = z.infer<typeof batchInvitationResultSchema>
+export type BatchWorkspaceInvitationBody = z.input<typeof batchWorkspaceInvitationBodySchema>
 export type InvitationDetails = z.infer<typeof invitationDetailsSchema>

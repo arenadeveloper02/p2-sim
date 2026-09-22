@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react'
 import {
-  Button,
+  Chip,
   ChipSwitch,
   cn,
   DropdownMenu,
@@ -21,18 +21,14 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Paperclip,
-  Plus,
-  Slash,
   Tooltip,
   toast,
 } from '@sim/emcn'
-import { ChevronDown } from '@sim/emcn/icons'
+import { ChevronDown, Paperclip, Plus, Slash } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { isDesktopApp } from '@/lib/desktop'
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
@@ -41,6 +37,7 @@ import {
   AttachedFilesList,
   DropOverlay,
   MicButton,
+  MicrophonePermissionHelp,
   PromptEditor,
   SendButton,
   usePromptEditor,
@@ -54,8 +51,9 @@ import type {
 import { useFileAttachments } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks'
 import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
+import { useChatInputFocus } from '@/hooks/use-chat-input-focus'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { type SpeechToTextError, useSpeechToText } from '@/hooks/use-speech-to-text'
+import { useVoiceInput } from '@/hooks/use-voice-input'
 import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 import {
   getLocalCopilotCatalogEntriesForGroup,
@@ -64,7 +62,7 @@ import {
   LOCAL_COPILOT_PROVIDER_GROUPS,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
-import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
+import { type DraftPayload, useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
@@ -125,16 +123,6 @@ function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotM
       </DropdownMenuContent>
     </DropdownMenu>
   )
-}
-
-/**
- * Whether the element is somewhere the user could be typing. Focusing the composer on mount
- * must not steal focus from another field, but may take it from a link or button — opening a
- * chat leaves the sidebar link focused, and the composer should win.
- */
-function isTextEntry(element: HTMLElement): boolean {
-  const tag = element.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable
 }
 
 interface UserInputProps {
@@ -201,6 +189,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     setLocalCopilotCatalogId !== undefined
 
   const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
+  const [microphonePermissionHelpOpen, setMicrophonePermissionHelpOpen] = useState(false)
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -214,7 +203,6 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const files = useFileAttachments({
     userId,
     workspaceId,
-    disabled: false,
     isLoading: isSending,
   })
   const hasFiles = files.attachedFiles.some((f) => !f.uploading && f.key)
@@ -236,6 +224,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const editorRef = useRef(editor)
   editorRef.current = editor
   const textareaRef = editor.textareaRef
+  useChatInputFocus({ textareaRef })
 
   /**
    * Attaches context chips pushed from elsewhere in the app (browser/terminal
@@ -300,6 +289,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only restore
 
   const isFirstSaveRef = useRef(true)
+  const draftSaveTimerRef = useRef<number | null>(null)
+  const pendingDraftRef = useRef<{ key: string; payload: DraftPayload } | null>(null)
   useEffect(() => {
     if (isFirstSaveRef.current) {
       isFirstSaveRef.current = false
@@ -316,12 +307,31 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         size: f.size,
         ...(f.path ? { path: f.path } : {}),
       }))
-    useMothershipDraftsStore.getState().setDraft(draftScopeKeyRef.current, {
-      text: editor.value,
-      fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
-      contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
-    })
+    pendingDraftRef.current = {
+      key: draftScopeKeyRef.current,
+      payload: {
+        text: editor.value,
+        fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+        contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
+      },
+    }
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+      pendingDraftRef.current = null
+      draftSaveTimerRef.current = null
+    }, 200)
   }, [editor.value, files.attachedFiles, editor.contexts])
+
+  useEffect(
+    () => () => {
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+    },
+    []
+  )
 
   const onContextRemoveRef = useRef(onContextRemove)
   onContextRemoveRef.current = onContextRemove
@@ -367,20 +377,13 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
    * landing prompt panel as well as curated CTAs. Curated producers opt their
    * bare names in at the store seam (`storeCuratedPrompt`), so prose seeded here
    * is never bare-chipped (the scunthorpe constraint).
+   * An empty seed must not erase a queued message loaded for editing.
    */
   useEffect(() => {
     if (defaultValue === prevDefaultValueRef.current) return
     prevDefaultValueRef.current = defaultValue
     if (defaultValue) editorRef.current.setValue(defaultValue)
   }, [defaultValue])
-
-  const sttPrefixRef = useRef('')
-
-  function handleTranscript(text: string) {
-    const prefix = sttPrefixRef.current
-    const newVal = prefix ? `${prefix} ${text}` : text
-    editorRef.current.setValue(newVal)
-  }
 
   function handleUsageLimitExceeded(message?: string, isMemberLimit?: boolean) {
     // A per-member cap can only be raised by an org admin, so don't offer Upgrade
@@ -398,40 +401,20 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     )
   }
 
-  function handleSpeechError(error: SpeechToTextError) {
-    if (error === 'microphone-blocked') {
-      toast.error(
-        isDesktopApp()
-          ? 'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.'
-          : 'Microphone access is blocked. Allow it for this site and try again.'
-      )
-      return
-    }
-    if (error === 'microphone-unavailable') {
-      toast.error('No microphone found. Connect one and try again.')
-      return
-    }
-    toast.error('Could not start voice input. Try again.')
-  }
-
   const {
+    audioLevelsRef,
     isListening,
     isSupported: isSttSupported,
-    toggleListening: rawToggle,
+    toggleListening,
     resetTranscript,
-  } = useSpeechToText({
-    onTranscript: handleTranscript,
-    onUsageLimitExceeded: handleUsageLimitExceeded,
-    onError: handleSpeechError,
+    permissionHelpOpen,
+    setPermissionHelpOpen,
+  } = useVoiceInput({
     workspaceId,
+    getValue: () => editorRef.current.getValue(),
+    onChange: (value) => editorRef.current.setValue(value),
+    onUsageLimitExceeded: handleUsageLimitExceeded,
   })
-
-  const toggleListening = useCallback(() => {
-    if (!isListening) {
-      sttPrefixRef.current = editorRef.current.getValue()
-    }
-    rawToggle()
-  }, [isListening, rawToggle])
 
   const onSendQueuedHeadRef = useRef(onSendQueuedHead)
   onSendQueuedHeadRef.current = onSendQueuedHead
@@ -560,23 +543,31 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     wasSendingRef.current = isSending
   }, [isSending, textareaRef])
 
-  useEffect(() => {
-    const raf = window.requestAnimationFrame(() => {
-      if (!document.hasFocus()) return
-      const active = document.activeElement
-      if (active instanceof HTMLElement && isTextEntry(active)) return
-      textareaRef.current?.focus()
-    })
-    return () => window.cancelAnimationFrame(raf)
-  }, [textareaRef])
+  /**
+   * Portaled dialogs and menus still bubble clicks through the React tree;
+   * they must keep focus rather than returning it to the composer.
+   */
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, [role="dialog"], [role="menu"]')) return
+    textareaRef.current?.focus()
+  }
 
-  const handleContainerClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest('button')) return
-      textareaRef.current?.focus()
-    },
-    [textareaRef]
-  )
+  /** Empties the text, chips, attachments, transcript, and the saved draft in one step. */
+  const clearComposer = useCallback(() => {
+    editorRef.current.clear()
+    if (draftSaveTimerRef.current !== null) {
+      window.clearTimeout(draftSaveTimerRef.current)
+      draftSaveTimerRef.current = null
+    }
+    pendingDraftRef.current = null
+    if (draftScopeKeyRef.current) {
+      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
+    }
+    /** The chips are gone with the text, and clearing is not a removal to report. */
+    prevSelectedContextsRef.current = []
+    resetTranscript()
+    filesRef.current.clearAttachedFiles()
+  }, [resetTranscript])
 
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
@@ -602,15 +593,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
       activeContexts.length > 0 ? activeContexts : undefined
     )
-    currentEditor.clear()
-    sttPrefixRef.current = ''
-    if (draftScopeKeyRef.current) {
-      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
-    }
-    resetTranscript()
-    currentFiles.clearAttachedFiles()
-    prevSelectedContextsRef.current = []
-  }, [onSubmit, resetTranscript])
+    clearComposer()
+  }, [onSubmit, clearComposer])
 
   /**
    * Enter policy for the editor: mirror canSubmit's uploading guard (Enter
@@ -672,11 +656,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
-      <AnimatedPlaceholderEffect
-        textareaRef={textareaRef}
-        isInitialView={isInitialView}
-        isSending={isSending}
-      />
+      <AnimatedPlaceholderEffect textareaRef={textareaRef} isInitialView={isInitialView} />
 
       <AttachedFilesList
         attachedFiles={files.attachedFiles}
@@ -686,7 +666,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
       <PromptEditor
         editor={editor}
-        placeholder='Ask Arena to '
+        placeholder='Ask Areana to '
         onSubmit={handleEnterSubmit}
         onArrowUpOnEmpty={handleArrowUpOnEmpty}
         className={cn('max-h-[200px]', isInitialView && 'min-h-[56px]')}
@@ -696,43 +676,34 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         <div className='flex items-center gap-1'>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
+              <Chip
+                shape='round'
+                leftIcon={Plus}
                 onClick={handlePlusClick}
                 aria-label='Add resources'
-                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Plus className='size-[16px] text-[var(--text-icon)]' />
-              </Button>
+              />
             </Tooltip.Trigger>
             <Tooltip.Content side='top'>Add resources</Tooltip.Content>
           </Tooltip.Root>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
+              <Chip
+                shape='round'
+                leftIcon={Paperclip}
                 onClick={handleFileSelectStable}
                 aria-label='Attach file'
-                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Paperclip className='size-[16px] text-[var(--text-icon)]' />
-              </Button>
+              />
             </Tooltip.Trigger>
             <Tooltip.Content side='top'>Attach file</Tooltip.Content>
           </Tooltip.Root>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
+              <Chip
+                shape='round'
+                leftIcon={Slash}
                 onClick={handleSlashTriggerClick}
                 aria-label='Skills'
-                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
-              >
-                <Slash className='size-[16px] text-[var(--text-icon)]' />
-              </Button>
+              />
             </Tooltip.Trigger>
             <Tooltip.Content side='top'>Skills</Tooltip.Content>
           </Tooltip.Root>
@@ -765,7 +736,13 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
           {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
         </div>
         <div className='flex items-center gap-1.5'>
-          {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
+          {isSttSupported && (
+            <MicButton
+              audioLevelsRef={audioLevelsRef}
+              isListening={isListening}
+              onToggle={toggleListening}
+            />
+          )}
           <SendButton
             isSending={isSending}
             canSubmit={canSubmit}
@@ -785,6 +762,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       />
 
       {files.isDragging && <DropOverlay />}
+
+      <MicrophonePermissionHelp open={permissionHelpOpen} onOpenChange={setPermissionHelpOpen} />
     </div>
   )
 })

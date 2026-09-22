@@ -1016,7 +1016,7 @@ async function executeLocalCopilotToolInner(
       })
 
       const { formatWorkflowLintMessage, hasWorkflowLintIssues, lintEditedWorkflowState } =
-        await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
+        await import('@/lib/workflows/editing/lint')
       const workflowLint = lintEditedWorkflowState({
         blocks: state.blocks ?? {},
         edges: state.edges ?? [],

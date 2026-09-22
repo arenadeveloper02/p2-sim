@@ -5,10 +5,14 @@ import { describe, expect, it } from 'vitest'
 import {
   AGENT_STREAM_PROTOCOL_HEADER,
   AGENT_STREAM_PROTOCOL_V1,
+  CHAT_OUTPUT_PROTOCOL_V1,
   clientAcceptsAgentStreamProtocol,
+  clientAcceptsChatOutputProtocol,
   hasAgentStreamPolicy,
+  isChatBlockCompleteFrame,
   isChatChunkFrame,
   isChatChunkResetFrame,
+  isChatOutputFrame,
   isChatToolFrame,
   shouldEmitAgentStreamEvents,
 } from '@/lib/workflows/streaming/agent-stream-protocol'
@@ -16,6 +20,33 @@ import {
 function headers(init?: Record<string, string>): Headers {
   return new Headers(init)
 }
+
+describe('structured chat outputs', () => {
+  it('requires the separate output capability so older chat clients retain text chunks', () => {
+    expect(
+      clientAcceptsChatOutputProtocol(
+        headers({
+          [AGENT_STREAM_PROTOCOL_HEADER]: AGENT_STREAM_PROTOCOL_V1,
+        })
+      )
+    ).toBe(false)
+    expect(
+      clientAcceptsChatOutputProtocol(
+        headers({
+          [AGENT_STREAM_PROTOCOL_HEADER]: `${AGENT_STREAM_PROTOCOL_V1}, ${CHAT_OUTPUT_PROTOCOL_V1}`,
+        })
+      )
+    ).toBe(true)
+  })
+
+  it('accepts empty structured data without classifying it as answer text', () => {
+    const frame = { event: 'output', blockId: 'agent', data: [] }
+    expect(isChatOutputFrame(frame)).toBe(true)
+    expect(isChatChunkFrame(frame)).toBe(false)
+    expect(isChatOutputFrame({ event: 'output', blockId: 'agent' })).toBe(false)
+    expect(isChatOutputFrame({ event: 'output', data: [] })).toBe(false)
+  })
+})
 
 describe('clientAcceptsAgentStreamProtocol', () => {
   it('depends on the header alone, never on a policy', () => {
@@ -57,6 +88,16 @@ describe('tool frame guard', () => {
   it('rejects an unrecognized status instead of letting it settle as success', () => {
     expect(isChatToolFrame({ ...base, status: 'timeout' })).toBe(false)
     expect(isChatToolFrame({ ...base, status: 42 })).toBe(false)
+  })
+})
+
+describe('block_complete frame guard', () => {
+  it('identifies complete frames and keeps them out of the chunk guard', () => {
+    const complete = { blockId: 'agent-1', event: 'block_complete' }
+    expect(isChatBlockCompleteFrame(complete)).toBe(true)
+    expect(isChatChunkFrame(complete)).toBe(false)
+    expect(isChatBlockCompleteFrame({ event: 'block_complete' })).toBe(false)
+    expect(isChatBlockCompleteFrame({ blockId: 'agent-1', chunk: 'text' })).toBe(false)
   })
 })
 

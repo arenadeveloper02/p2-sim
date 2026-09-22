@@ -1,18 +1,9 @@
-import { loggerMock } from '@sim/testing'
+import { loggerMock, queueTableRows, resetDbChainMock, schemaMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDecryptSecret, mockRedactObjectStrings, mockIsEnforced, mockReportUnrecorded } =
-  vi.hoisted(() => ({
-    mockDecryptSecret: vi.fn(),
-    mockRedactObjectStrings: vi.fn(async (value: unknown) => value),
-    mockIsEnforced: vi.fn(() => false),
-    mockReportUnrecorded: vi.fn(),
-  }))
-
-vi.mock('@/lib/execution/durable-secret-provenance-enforcement', () => ({
-  DURABLE_SECRET_PROVENANCE_SURFACES: ['memory', 'table-row', 'knowledge'],
-  isDurableSecretProvenanceEnforced: mockIsEnforced,
-  reportUnrecordedDurableProvenance: mockReportUnrecorded,
+const { mockDecryptSecret, mockRedactObjectStrings } = vi.hoisted(() => ({
+  mockDecryptSecret: vi.fn(),
+  mockRedactObjectStrings: vi.fn(async (value: unknown) => value),
 }))
 
 vi.mock('@/lib/core/security/encryption', () => ({
@@ -24,16 +15,27 @@ vi.mock('@/lib/logs/execution/pii-redaction', () => ({
 }))
 
 import { hashDurableSecretProvenanceValue } from '@/lib/execution/durable-secret-provenance'
+import { assertUserFileContentAccess } from '@/lib/execution/payloads/materialization.server'
 import { MEMORY } from '@/executor/constants'
 import { Memory } from '@/executor/handlers/agent/memory'
 import type { Message } from '@/executor/handlers/agent/types'
+import type { ExecutionContext, UserFile } from '@/executor/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
+import {
+  buildAnthropicMessageContent,
+  buildBedrockMessageContent,
+  buildGeminiMessageParts,
+  buildOpenAICompatibleChatContent,
+  buildOpenAIMessageContent,
+  buildOpenRouterMessageContent,
+  prepareProviderAttachments,
+} from '@/providers/attachments'
 
 const mockMemoryLogger = vi.mocked(loggerMock.createLogger).mock.results[
   vi.mocked(loggerMock.createLogger).mock.calls.findIndex(([name]) => name === 'Memory')
 ].value
 
-vi.mock('@/lib/tokenization/estimators', () => ({
+vi.mock('@/lib/tokenization/accurate', () => ({
   getAccurateTokenCount: vi.fn((text: string) => {
     return Math.ceil(text.length / 4)
   }),
@@ -44,7 +46,7 @@ describe('Memory', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockIsEnforced.mockReturnValue(false)
+    resetDbChainMock()
     mockDecryptSecret.mockImplementation(async (encryptedValue: string) => ({
       decrypted: `decrypted:${encryptedValue}`,
     }))
@@ -214,7 +216,7 @@ describe('Memory', () => {
   })
 
   describe('sanitizeMessageForStorage', () => {
-    it('should strip file payloads but preserve tool-call fields before memory persistence', () => {
+    it('preserves storage references and tool calls without file payloads or provider handles', () => {
       const message: Message = {
         role: 'user',
         content: 'Analyze this file',
@@ -228,6 +230,9 @@ describe('Memory', () => {
             size: 128,
             type: 'image/png',
             base64: 'iVBORw0KGgo=',
+            providerFileId: 'expired-provider-file',
+            providerFileUri: 'expired-provider-uri',
+            remoteUrl: 'https://storage.example.com/expired',
           },
         ],
         tool_calls: [{ id: 'call-1' }],
@@ -237,8 +242,177 @@ describe('Memory', () => {
         role: 'user',
         content: 'Analyze this file',
         executionId: 'exec-1',
+        files: [
+          {
+            id: 'file-1',
+            key: 'workspace/ws-1/example.png',
+            name: 'example.png',
+            url: '',
+            size: 128,
+            type: 'image/png',
+          },
+        ],
         tool_calls: [{ id: 'call-1' }],
       })
+    })
+  })
+
+  describe('provider-independent file references', () => {
+    const storedFile: UserFile = {
+      id: 'file-1',
+      key: 'workspace/workspace-1/image.png',
+      name: 'image.png',
+      url: '',
+      type: 'image/png',
+      size: 8,
+      context: 'workspace',
+    }
+    const bytes = 'iVBORw0KGgo='
+    const renderers: Array<{
+      providers: string[]
+      render: (content: string, files: UserFile[], provider: string) => unknown
+    }> = [
+      { providers: ['openai', 'azure-openai'], render: buildOpenAIMessageContent },
+      { providers: ['anthropic', 'azure-anthropic'], render: buildAnthropicMessageContent },
+      { providers: ['google', 'vertex'], render: buildGeminiMessageParts },
+      { providers: ['bedrock'], render: buildBedrockMessageContent },
+      { providers: ['openrouter'], render: buildOpenRouterMessageContent },
+      {
+        providers: [
+          'mistral',
+          'groq',
+          'fireworks',
+          'together',
+          'baseten',
+          'ollama',
+          'ollama-cloud',
+          'vllm',
+          'litellm',
+          'xai',
+          'kimi',
+        ],
+        render: buildOpenAICompatibleChatContent,
+      },
+    ]
+    const providers = renderers.flatMap(({ providers, render }) =>
+      providers.map((provider) => ({ provider, render }))
+    )
+
+    it.each(providers)(
+      'keeps the same attachment wire content for $provider',
+      async ({ provider, render }) => {
+        queueTableRows(schemaMock.memory, [
+          {
+            secretProvenanceVersion: null,
+            data: [
+              {
+                role: 'user',
+                content: 'Describe the image',
+                files: [
+                  {
+                    ...storedFile,
+                    url: 'https://expired.example/file',
+                    base64: 'stale-bytes',
+                    providerFileId: 'stale-id',
+                    providerFileUri: 'stale-uri',
+                    remoteUrl: 'https://expired.example/provider-file',
+                  },
+                ],
+              },
+            ],
+          },
+        ])
+        const [message] = await memoryService.fetchMemoryMessages(
+          { workspaceId: 'workspace-1' } as ExecutionContext,
+          { memoryType: 'conversation', conversationId: 'conversation-1' }
+        )
+        expect(message.files).toEqual([storedFile])
+        const hydrated = message.files!.map((file) => ({ ...file, base64: bytes }))
+        expect(render(message.content, hydrated, provider)).toEqual(
+          render('Describe the image', [{ ...storedFile, base64: bytes }], provider)
+        )
+      }
+    )
+
+    it.each(['deepseek', 'cerebras', 'sakana', 'nvidia', 'meta', 'zai'])(
+      'keeps the explicit unsupported-attachment error for %s',
+      (provider) => {
+        expect(() =>
+          prepareProviderAttachments([{ ...storedFile, base64: bytes }], provider)
+        ).toThrow('File attachments are not supported')
+      }
+    )
+
+    it('admits only the remembered execution file and preserves workspace and workflow scope', async () => {
+      const file = {
+        ...storedFile,
+        key: 'execution/workspace-1/workflow-1/exec-1/image.png',
+        context: 'execution',
+      }
+      queueTableRows(schemaMock.memory, [
+        { secretProvenanceVersion: null, data: [{ role: 'user', content: 'File', files: [file] }] },
+      ])
+      const context = {
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        executionId: 'exec-2',
+      } as ExecutionContext
+      await memoryService.fetchMemoryMessages(context, {
+        memoryType: 'conversation',
+        conversationId: 'conversation-1',
+      })
+      await expect(assertUserFileContentAccess(file, context)).resolves.toBeUndefined()
+      await expect(
+        assertUserFileContentAccess(
+          { ...file, key: 'execution/workspace-1/workflow-1/exec-1/other.png' },
+          context
+        )
+      ).rejects.toThrow('File is not available')
+      await expect(
+        assertUserFileContentAccess(file, { ...context, workspaceId: 'workspace-2' })
+      ).rejects.toThrow('File is not available')
+      await expect(
+        assertUserFileContentAccess(file, { ...context, workflowId: 'workflow-2' })
+      ).rejects.toThrow('File is not available')
+    })
+
+    it('bounds historical file loading even when the messages contain no text', async () => {
+      queueTableRows(schemaMock.memory, [
+        {
+          secretProvenanceVersion: null,
+          data: Array.from({ length: MEMORY.MAX_REPLAY_FILE_REFERENCES + 1 }, () => ({
+            role: 'user',
+            content: '',
+            files: [storedFile],
+          })),
+        },
+      ])
+      await expect(
+        memoryService.fetchMemoryMessages({ workspaceId: 'workspace-1' } as ExecutionContext, {
+          memoryType: 'conversation',
+          conversationId: 'conversation-1',
+        })
+      ).rejects.toThrow('Use a smaller memory window')
+    })
+
+    it('does not carry inline-only or malformed file objects into a later turn', async () => {
+      queueTableRows(schemaMock.memory, [
+        {
+          secretProvenanceVersion: null,
+          data: [
+            {
+              role: 'user',
+              content: '',
+              files: [null, { name: 'invalid.png' }, { ...storedFile, key: '', base64: bytes }],
+            },
+          ],
+        },
+      ])
+      const messages = await memoryService.fetchMemoryMessages(
+        { workspaceId: 'workspace-1' } as ExecutionContext,
+        { memoryType: 'conversation', conversationId: 'conversation-1' }
+      )
+      expect(messages).toEqual([{ role: 'user', content: '' }])
     })
   })
 
@@ -514,33 +688,7 @@ describe('Memory', () => {
       expect(mockDecryptSecret).not.toHaveBeenCalled()
     })
 
-    /** Trace 2's shape: a stored memory a previous run could not vouch for. */
-    it('reads a memory with unrecorded provenance while the surface stays open', async () => {
-      const registry = new ResolvedSecretTraceRegistry([], {
-        userId: 'user-1',
-        workspaceId: 'workspace-1',
-      })
-      vi.spyOn(memoryService as any, 'fetchMemory').mockResolvedValueOnce({
-        messages: [{ role: 'user', content: 'how do i see my tickets?' }],
-        provenance: { status: 'unknown' },
-      })
-
-      const messages = await memoryService.fetchMemoryMessages(
-        createContext(registry) as never,
-        inputs
-      )
-
-      expect(messages).toEqual([{ role: 'user', content: 'how do i see my tickets?' }])
-      expect(registry.isPermanentlyIncomplete()).toBe(false)
-      expect(mockReportUnrecorded).toHaveBeenCalledWith({
-        surface: 'memory',
-        cause: 'stored-memory-provenance-unknown',
-        workspaceId: 'workspace-1',
-      })
-    })
-
-    it('refuses that same memory once the memory surface is closed', async () => {
-      mockIsEnforced.mockReturnValue(true)
+    it('refuses tracked memory with unknown provenance', async () => {
       const registry = new ResolvedSecretTraceRegistry([], {
         userId: 'user-1',
         workspaceId: 'workspace-1',
@@ -553,7 +701,6 @@ describe('Memory', () => {
       await expect(
         memoryService.fetchMemoryMessages(createContext(registry) as never, inputs)
       ).rejects.toThrow()
-      expect(mockReportUnrecorded).not.toHaveBeenCalled()
     })
   })
 
