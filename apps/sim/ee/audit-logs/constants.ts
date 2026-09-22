@@ -1,4 +1,4 @@
-import { AuditResourceType } from '@sim/audit'
+import { AuditResourceType } from '@sim/audit/types'
 import type { ComboboxOption } from '@sim/emcn'
 
 const ACRONYMS = new Set(['API', 'BYOK', 'MCP', 'OAUTH'])

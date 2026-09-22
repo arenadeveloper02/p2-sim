@@ -13,22 +13,36 @@ interface Storage<T> {
   run<R>(store: T, fn: () => R): R
 }
 
-let storage: Storage<RequestContext>
-
-if (typeof globalThis.process !== 'undefined' && globalThis.process.versions?.node) {
-  // Node.js — use real AsyncLocalStorage. webpackIgnore keeps `node:async_hooks`
-  // out of the client graph; webpack still statically follows a plain require
-  // even behind the process.versions.node check.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AsyncLocalStorage } = require(/* webpackIgnore: true */ 'node:async_hooks') as typeof import('node:async_hooks')
-  storage = new AsyncLocalStorage<RequestContext>()
-} else {
-  // Edge / browser — no-op
-  storage = {
+function createNoopStorage(): Storage<RequestContext> {
+  return {
     getStore: () => undefined,
     run: <R>(_store: RequestContext, fn: () => R) => fn(),
   }
 }
+
+function loadNodeStorage(): Storage<RequestContext> | null {
+  if (typeof globalThis.process === 'undefined' || !globalThis.process.versions?.node) {
+    return null
+  }
+
+  try {
+    /**
+     * Build the specifier at runtime. A static `node:async_hooks` string —
+     * even behind `webpackIgnore` or `typeof import('node:async_hooks')` —
+     * is still followed by webpack's client compiler (UnhandledSchemeError).
+     */
+    const specifier = ['node', 'async_hooks'].join(':')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const hooks = require(/* webpackIgnore: true */ specifier) as {
+      AsyncLocalStorage: new <T>() => Storage<T>
+    }
+    return new hooks.AsyncLocalStorage<RequestContext>()
+  } catch {
+    return null
+  }
+}
+
+const storage = loadNodeStorage() ?? createNoopStorage()
 
 /**
  * Runs a callback within a request context. All loggers called inside

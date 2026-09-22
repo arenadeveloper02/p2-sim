@@ -98,8 +98,12 @@ async function fetchWorkflowMetadata(
     if (!executionContext?.userId) {
       throw new Error('Workflow metadata enrichment requires a trusted execution subject')
     }
-    const { buildAPIUrl, buildExecutorDelegationHeaders } = await import('@/executor/utils/http')
-    const { executionScopeForTarget } = await import('@/executor/utils/delegation')
+    const { buildAPIUrl, buildExecutorDelegationHeaders } = await import(
+      /* webpackIgnore: true */ '@/executor/utils/http'
+    )
+    const { executionScopeForTarget } = await import(
+      /* webpackIgnore: true */ '@/executor/utils/delegation'
+    )
 
     const headers = await buildExecutorDelegationHeaders({
       subjectUserId: executionContext.userId,
