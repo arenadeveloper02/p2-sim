@@ -1148,7 +1148,6 @@ export function resolveOrganizationSectionAccess({
 }: ResolveOrganizationSectionAccessOptions): OrganizationSectionAccess {
   if (!isTargetOrganizationMember) return 'unavailable'
   if (section === 'search-mcp' || section === 'recently-deleted') return 'view'
-  if (section === 'members') return isTargetOrganizationAdmin ? 'manage' : 'view'
   return isTargetOrganizationAdmin ? 'manage' : 'unavailable'
 }
 

@@ -26,10 +26,10 @@ const enterprise: OrganizationSettingsFeatures = {
 const available = { connectedAccounts: true, search: true }
 
 describe('organization settings navigation', () => {
-  it('exposes MCP setup and the read-only roster to an ordinary organization member', () => {
+  it('exposes MCP setup to an ordinary organization member and keeps the roster for admins', () => {
     expect(
       organizationSettingsNavigation(false, enterprise, available).map(({ id }) => id)
-    ).toEqual(['members', 'recently-deleted', 'search-mcp'])
+    ).toEqual(['recently-deleted', 'search-mcp'])
   })
 
   it('uses Sources for administration when Search is available', () => {
@@ -90,6 +90,7 @@ describe('organization settings navigation', () => {
     expect(resolveOrganizationSettingsSection('subscription')).toBe('billing')
     expect(resolveOrganizationSettingsSection('domains')).toBe('sso')
     expect(resolveOrganizationSettingsSection('sessions')).toBe('security')
+    expect(resolveOrganizationSettingsSection('credential-groups')).toBe('connected-accounts')
     expect(resolveOrganizationSettingsSection('/o/one/settings/network')).toBeNull()
     expect(resolveOrganizationSettingsSection('skills')).toBeNull()
     expect(buildOrganizationNavItems('org', true).map(({ id }) => id)).toEqual([
@@ -122,7 +123,7 @@ describe('organization settings navigation', () => {
   it('hosts the account General section ahead of the organization sections', () => {
     expect(
       organizationSurfaceSettingsNavigation(false, enterprise, available).map(({ id }) => id)
-    ).toEqual(['general', 'members', 'recently-deleted', 'search-mcp'])
+    ).toEqual(['general', 'recently-deleted', 'search-mcp'])
     expect(ORGANIZATION_SETTINGS_GROUPS.map(({ key }) => key)).toEqual([
       'account',
       'organization',

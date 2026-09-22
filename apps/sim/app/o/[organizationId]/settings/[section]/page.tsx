@@ -65,7 +65,7 @@ export default async function OrganizationSettingsSectionPage({
         section: resolved.section,
       }))
     ) {
-      notFound()
+      redirect(routes.settingsSection('general'))
     }
     return <OrganizationSettings section={resolved.section} />
   }

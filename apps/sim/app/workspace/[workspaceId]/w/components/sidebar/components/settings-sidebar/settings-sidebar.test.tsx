@@ -254,7 +254,7 @@ describe('workspace SettingsSidebar organization rollout', () => {
     hostContext = makeHostContext('member', false)
     renderSidebar()
 
-    expect(workspaceLink('organization')).toHaveTextContent('Members')
+    expect(workspaceLink('organization')).toBeNull()
     for (const section of ['billing', 'usage', 'sso', 'connected-accounts']) {
       expect(workspaceLink(section)).toBeNull()
     }
@@ -284,10 +284,10 @@ describe('workspace SettingsSidebar organization rollout', () => {
 
       expect(container.querySelector('a[href^="/o/"]')).toBeNull()
       expect(workspaceLink('billing')).toBeNull()
-      if (role === 'external') {
-        expect(workspaceLink('organization')).toBeNull()
-      } else {
+      if (role === 'admin') {
         expect(workspaceLink('organization')).toHaveTextContent('Members')
+      } else {
+        expect(workspaceLink('organization')).toBeNull()
       }
       for (const section of ['connected-accounts', 'access-control', 'usage', 'sso', 'security']) {
         if (role === 'admin') {

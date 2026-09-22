@@ -65,11 +65,11 @@ describe('organization settings access', () => {
     )
   })
 
-  it('allows members to view the roster but reserves control-plane sections for admins', async () => {
+  it('reserves the roster and control-plane sections for organization admins', async () => {
     queueTableRows(member, [{ role: 'member' }])
     await expect(
       canOpenOrganizationSettingsSection('organization-route', 'viewer', 'members')
-    ).resolves.toBe(true)
+    ).resolves.toBe(false)
 
     queueTableRows(member, [{ role: 'member' }])
     await expect(

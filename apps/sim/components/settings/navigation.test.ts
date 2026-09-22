@@ -428,7 +428,7 @@ describe('settings navigation boundaries', () => {
         isTargetOrganizationMember: true,
         isTargetOrganizationAdmin: false,
       })
-    ).toBe('view')
+    ).toBe('unavailable')
     expect(
       resolveOrganizationSectionAccess({
         section: 'sso',

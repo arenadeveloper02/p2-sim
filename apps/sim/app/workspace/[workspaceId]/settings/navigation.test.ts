@@ -81,6 +81,7 @@ describe('resolveSettingsSection', () => {
   const LEGACY_SEGMENTS = {
     subscription: 'billing',
     team: 'organization',
+    'credential-groups': 'connected-accounts',
     'api-keys': 'apikeys',
     domains: 'sso',
     sessions: 'security',
@@ -107,7 +108,7 @@ describe('resolveSettingsSection', () => {
   })
 
   it('resolves organization connected accounts in the unified settings shell', () => {
-    expect(resolveSettingsSection('credential-groups')).toBeNull()
+    expect(resolveSettingsSection('credential-groups')?.id).toBe('connected-accounts')
     expect(resolveSettingsSection('connected-accounts')?.id).toBe('connected-accounts')
   })
 

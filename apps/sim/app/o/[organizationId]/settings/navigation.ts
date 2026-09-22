@@ -40,6 +40,7 @@ export function resolveOrganizationSettingsSection(
     aliases: {
       organization: 'members',
       team: 'members',
+      'credential-groups': 'connected-accounts',
       subscription: 'billing',
       domains: 'sso',
       sessions: 'security',
