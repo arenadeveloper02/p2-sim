@@ -29,8 +29,8 @@ import { Globe } from 'lucide-react'
 import { CodeIcon, McpIcon, SlackIcon } from '@/components/icons'
 import type { SettingsHeaderMeta } from '@/components/settings/settings-header'
 import type { DeploymentFeatures, DeploymentShape } from '@/lib/api/contracts/workspaces'
-import { DEFAULT_WORKSPACE_DOCS_PATH } from '@/ee/whitelabeling/org-branding-utils'
 import { organizationRoutes } from '@/lib/navigation/paths'
+import { DEFAULT_WORKSPACE_DOCS_PATH } from '@/ee/whitelabeling/org-branding-utils'
 
 export type SettingsPlane = 'account' | 'selfhost' | 'workspace'
 

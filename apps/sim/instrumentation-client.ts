@@ -1,5 +1,5 @@
-import { prepareConsentStorage } from '@/lib/consent/storage'
 import { randomFloat } from '@sim/utils/random'
+import { prepareConsentStorage } from '@/lib/consent/storage'
 import { env } from './lib/core/config/env'
 import { sanitizeEventData } from './lib/core/security/redaction'
 
@@ -104,7 +104,6 @@ if (typeof window !== 'undefined') {
   /**
    * Global event tracking function
    */
-
   ;(window as any).__SIM_TELEMETRY_ENABLED = telemetryEnabled
   ;(window as any).__SIM_TRACK_EVENT = (eventName: string, properties?: any) => {
     if (!telemetryEnabled) return
