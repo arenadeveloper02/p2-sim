@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import type { ContractBodyInput, ContractQueryInput } from '@/lib/api/contracts'
 import {
@@ -45,6 +45,13 @@ export type {
   WorkspaceCredentialMember,
   WorkspaceCredentialRole,
   WorkspaceCredentialType,
+}
+
+/**
+ * Warm the workspace credential list before the secrets settings page opens.
+ */
+export function prefetchWorkspaceCredentials(queryClient: QueryClient, workspaceId: string) {
+  return queryClient.prefetchQuery(workspaceCredentialListQueryOptions(workspaceId))
 }
 
 export function useWorkspaceCredentials(params: {

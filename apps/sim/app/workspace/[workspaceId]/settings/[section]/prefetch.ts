@@ -11,6 +11,14 @@ export interface SettingsSectionPrefetchContext {
  * must preserve authorization and route projection, and must match the client hook's cache shape.
  * Never bypass a route that redacts sensitive fields.
  */
+/**
+ * Server prefetch for the standalone Arena general settings page.
+ * Uses the same cache key and freshness window as the client settings query.
+ */
+export function prefetchGeneralSettings(queryClient: QueryClient) {
+  return prefetchCurrentUserSettings(queryClient)
+}
+
 export const SECTION_PREFETCHERS: Partial<
   Record<
     SettingsSection,
