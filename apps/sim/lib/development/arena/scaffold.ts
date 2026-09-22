@@ -1,13 +1,12 @@
 import { createLogger } from '@sim/logger'
-import {
-  ARENA_DS_TOKENS_CSS,
-  ARENA_DS_TOKENS_CSS_PATH,
-} from '@/lib/development/arena/ds-tokens-css'
+import { SIM_TOKENS_CSS, SIM_TOKENS_CSS_PATH } from '@/lib/development/arena/sim-tokens-css'
 
 const logger = createLogger('ArenaDevelopmentScaffold')
 
 export const ARENA_EMAIL_COOKIE_NAME = 'arena_email_id'
+export const ARENA_THEME_COOKIE_NAME = 'arena_theme'
 export const ARENA_ACCESS_DENIED_MESSAGE = 'Do not have access'
+export const ARENA_DEFAULT_THEME = 'light' as const
 
 interface GeneratedAppFile {
   path: string
@@ -28,17 +27,29 @@ function arenaPaths(useSrcDir: boolean) {
     middleware: useSrcDir ? 'src/middleware.ts' : 'middleware.ts',
     arenaEmailConstants: `${prefix}lib/arena-email-constants.ts`,
     arenaEmail: `${prefix}lib/arena-email.ts`,
-    provider: `${prefix}components/arena-email-provider.tsx`,
+    emailProvider: `${prefix}components/arena-email-provider.tsx`,
+    themeProvider: `${prefix}components/arena-theme-provider.tsx`,
     accessDeniedPage: useSrcDir ? 'src/app/access-denied/page.tsx' : 'app/access-denied/page.tsx',
     layout: useSrcDir ? 'src/app/layout.tsx' : 'app/layout.tsx',
     globalsCss: useSrcDir ? 'src/app/globals.css' : 'app/globals.css',
-    dsTokensCss: useSrcDir ? `src/${ARENA_DS_TOKENS_CSS_PATH}` : ARENA_DS_TOKENS_CSS_PATH,
+    simTokensCss: useSrcDir ? `src/${SIM_TOKENS_CSS_PATH}` : SIM_TOKENS_CSS_PATH,
   } as const
 }
 
 function buildMiddlewareContent(): string {
   return `import { type NextRequest, NextResponse } from 'next/server'
-import { ARENA_EMAIL_COOKIE_NAME } from '@/lib/arena-email-constants'
+import {
+  ARENA_EMAIL_COOKIE_NAME,
+  ARENA_THEME_COOKIE_NAME,
+  normalizeArenaTheme,
+} from '@/lib/arena-email-constants'
+
+const COOKIE_OPTIONS = {
+  path: '/',
+  secure: true,
+  sameSite: 'none' as const,
+  httpOnly: true,
+}
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
@@ -46,9 +57,22 @@ export function middleware(request: NextRequest) {
     'Content-Security-Policy': 'frame-ancestors *',
   } as const
 
+  const themeFromQuery = request.nextUrl.searchParams.get('theme')?.trim() ?? ''
+  const themeFromCookie = request.cookies.get(ARENA_THEME_COOKIE_NAME)?.value?.trim() ?? ''
+  const theme = normalizeArenaTheme(themeFromQuery || themeFromCookie)
+
+  const applyThemeCookie = (response: NextResponse) => {
+    if (themeFromQuery) {
+      response.cookies.set(ARENA_THEME_COOKIE_NAME, theme, COOKIE_OPTIONS)
+    } else if (!themeFromCookie) {
+      response.cookies.set(ARENA_THEME_COOKIE_NAME, theme, COOKIE_OPTIONS)
+    }
+  }
+
   if (pathname === '/access-denied' || pathname.startsWith('/access-denied/')) {
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', frameHeaders['Content-Security-Policy'])
+    applyThemeCookie(response)
     return response
   }
 
@@ -62,19 +86,16 @@ export function middleware(request: NextRequest) {
     deniedUrl.search = ''
     const response = NextResponse.rewrite(deniedUrl)
     response.headers.set('Content-Security-Policy', frameHeaders['Content-Security-Policy'])
+    applyThemeCookie(response)
     return response
   }
 
   const response = NextResponse.next()
   response.headers.set('Content-Security-Policy', frameHeaders['Content-Security-Policy'])
+  applyThemeCookie(response)
 
   if (fromQuery) {
-    response.cookies.set(ARENA_EMAIL_COOKIE_NAME, fromQuery, {
-      path: '/',
-      secure: true,
-      sameSite: 'none',
-      httpOnly: true,
-    })
+    response.cookies.set(ARENA_EMAIL_COOKIE_NAME, fromQuery, COOKIE_OPTIONS)
   }
 
   return response
@@ -91,30 +112,18 @@ function buildAccessDeniedPageContent(): string {
 
 /**
  * Shown when the Arena iframe is opened without a valid emailId.
+ * Uses Sim UI tokens; respects \`?theme=\` / arena_theme cookie via root layout.
  */
 export default function AccessDeniedPage() {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--ds-color-surface-subtle)] px-[var(--ds-spacing-component-lg)] py-[var(--ds-spacing-layout-md)]">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--bg)] px-6 py-8">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--ds-color-brand-surface)_0%,_transparent_55%)]"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -left-24 top-1/3 size-64 rounded-full bg-[var(--ds-color-brand-default)] opacity-[0.06] blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-16 bottom-1/4 size-56 rounded-full bg-[var(--ds-color-brand-default)] opacity-[0.08] blur-3xl"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_color-mix(in_srgb,var(--brand-500)_12%,transparent)_0%,_transparent_55%)]"
       />
 
-      <section
-        className="relative w-full max-w-[440px] rounded-[var(--ds-radius-lg)] border border-[var(--ds-color-border-default)] bg-[var(--ds-color-surface-raised)] p-[var(--ds-spacing-component-xl)] shadow-[var(--ds-elevation-md)]"
-        style={{
-          animation: 'arena-access-in var(--ds-motion-duration-slow) var(--ds-motion-easing-decelerate) both',
-        }}
-      >
-        <div className="mb-[var(--ds-spacing-component-lg)] flex size-14 items-center justify-center rounded-[var(--ds-radius-md)] bg-[var(--ds-color-brand-surface)] text-[var(--ds-color-brand-default)]">
+      <section className="relative w-full max-w-[440px] rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-8 shadow-sm">
+        <div className="mb-6 flex size-14 items-center justify-center rounded-lg bg-[var(--surface-5)] text-[var(--brand-500)]">
           <svg
             aria-hidden
             viewBox="0 0 24 24"
@@ -131,38 +140,24 @@ export default function AccessDeniedPage() {
           </svg>
         </div>
 
-        <p className="mb-[var(--ds-spacing-component-xs)] text-xs font-medium tracking-wide text-[var(--ds-color-text-link)]">
-          Arena
-        </p>
-        <h1 className="text-[length:var(--ds-type-heading-font-size)] font-semibold leading-[var(--ds-type-heading-line-height)] text-[var(--ds-color-text-primary)]">
+        <p className="mb-2 text-xs font-medium tracking-wide text-[var(--brand-500)]">Arena</p>
+        <h1 className="text-2xl font-semibold leading-8 text-[var(--text-primary)]">
           {ARENA_ACCESS_DENIED_MESSAGE}
         </h1>
-        <p className="mt-[var(--ds-spacing-component-sm)] text-[length:var(--ds-type-body-font-size)] leading-[var(--ds-type-body-line-height)] text-[var(--ds-color-text-secondary)]">
+        <p className="mt-3 text-base leading-6 text-[var(--text-secondary)]">
           This experience only opens from a valid Arena invite link. Ask your host to resend the
           link that includes your email access token.
         </p>
 
-        <div className="mt-[var(--ds-spacing-component-lg)] rounded-[var(--ds-radius-sm)] border border-[var(--ds-color-border-subtle)] bg-[var(--ds-color-surface-subtle)] px-[var(--ds-spacing-component-md)] py-[var(--ds-spacing-component-sm)]">
-          <p className="text-[length:var(--ds-type-caption-font-size)] leading-[var(--ds-type-caption-line-height)] tracking-wide text-[var(--ds-color-text-tertiary)]">
+        <div className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3">
+          <p className="text-xs leading-4 tracking-wide text-[var(--text-muted)]">
             Missing or empty{' '}
-            <span className="font-medium text-[var(--ds-color-text-secondary)]">emailId</span> in
-            the iframe URL.
+            <span className="font-medium text-[var(--text-secondary)]">emailId</span> in the iframe
+            URL. Theme still follows <span className="font-medium text-[var(--text-secondary)]">theme</span>{' '}
+            when present (default light / white).
           </p>
         </div>
       </section>
-
-      <style>{\`
-        @keyframes arena-access-in {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      \`}</style>
     </main>
   )
 }
@@ -171,7 +166,21 @@ export default function AccessDeniedPage() {
 
 function buildArenaEmailConstantsContent(): string {
   return `export const ARENA_EMAIL_COOKIE_NAME = '${ARENA_EMAIL_COOKIE_NAME}'
+export const ARENA_THEME_COOKIE_NAME = '${ARENA_THEME_COOKIE_NAME}'
 export const ARENA_ACCESS_DENIED_MESSAGE = '${ARENA_ACCESS_DENIED_MESSAGE}'
+export const ARENA_DEFAULT_THEME = '${ARENA_DEFAULT_THEME}' as const
+
+export type ArenaTheme = 'light' | 'dark'
+
+/**
+ * Normalizes iframe \`?theme=\` / cookie values. \`white\` and \`light\` → light; \`dark\` → dark;
+ * anything else (including empty) → light (white default).
+ */
+export function normalizeArenaTheme(raw: string | null | undefined): ArenaTheme {
+  const value = raw?.trim().toLowerCase() ?? ''
+  if (value === 'dark') return 'dark'
+  return 'light'
+}
 `
 }
 
@@ -179,12 +188,20 @@ function buildArenaEmailLibContent(): string {
   return `import { cookies } from 'next/headers'
 import {
   ARENA_ACCESS_DENIED_MESSAGE,
+  ARENA_DEFAULT_THEME,
   ARENA_EMAIL_COOKIE_NAME,
+  ARENA_THEME_COOKIE_NAME,
+  normalizeArenaTheme,
+  type ArenaTheme,
 } from '@/lib/arena-email-constants'
 
 export {
   ARENA_ACCESS_DENIED_MESSAGE,
+  ARENA_DEFAULT_THEME,
   ARENA_EMAIL_COOKIE_NAME,
+  ARENA_THEME_COOKIE_NAME,
+  normalizeArenaTheme,
+  type ArenaTheme,
 } from '@/lib/arena-email-constants'
 
 /**
@@ -206,6 +223,15 @@ export async function requireArenaEmailId(): Promise<string> {
   }
   return emailId
 }
+
+/**
+ * Reads theme from the httpOnly cookie (set by middleware from ?theme=). Defaults to light.
+ */
+export async function getArenaTheme(): Promise<ArenaTheme> {
+  const jar = await cookies()
+  const value = jar.get(ARENA_THEME_COOKIE_NAME)?.value
+  return normalizeArenaTheme(value || ARENA_DEFAULT_THEME)
+}
 `
 }
 
@@ -218,15 +244,18 @@ import { ARENA_ACCESS_DENIED_MESSAGE } from '@/lib/arena-email-constants'
 const ArenaEmailContext = createContext<string | null>(null)
 
 interface ArenaEmailProviderProps {
-  emailId: string | null
+  emailId?: string | null
+  /** @deprecated Prefer \`emailId\` — accepted for LLM prop-name drift (Context-style \`value\`). */
+  value?: string | null
   children: ReactNode
 }
 
 /**
  * Provides the Arena iframe emailId to client components.
  */
-export function ArenaEmailProvider({ emailId, children }: ArenaEmailProviderProps) {
-  return <ArenaEmailContext.Provider value={emailId}>{children}</ArenaEmailContext.Provider>
+export function ArenaEmailProvider({ emailId, value, children }: ArenaEmailProviderProps) {
+  const resolved = emailId ?? value ?? null
+  return <ArenaEmailContext.Provider value={resolved}>{children}</ArenaEmailContext.Provider>
 }
 
 /**
@@ -249,30 +278,80 @@ export function useOptionalArenaEmailId(): string | null {
 `
 }
 
+function buildArenaThemeProviderContent(): string {
+  return `'use client'
+
+import { createContext, useContext, type ReactNode } from 'react'
+import type { ArenaTheme } from '@/lib/arena-email-constants'
+
+const ArenaThemeContext = createContext<ArenaTheme>('light')
+
+interface ArenaThemeProviderProps {
+  theme?: ArenaTheme
+  /** @deprecated Prefer \`theme\` — accepted for LLM prop-name drift. */
+  initialTheme?: ArenaTheme
+  children: ReactNode
+}
+
 /**
- * Ensures root layout wraps children with ArenaEmailProvider and loads emailId on the server.
+ * Provides the Arena iframe theme (from ?theme= / cookie) to client components.
  */
-export function ensureArenaEmailProviderInLayout(content: string): string {
-  if (
-    content.includes('ArenaEmailProvider') &&
-    content.includes('getArenaEmailId') &&
-    content.includes('emailId={emailId}')
-  ) {
-    return content
-  }
+export function ArenaThemeProvider({ theme, initialTheme, children }: ArenaThemeProviderProps) {
+  const value = theme ?? initialTheme ?? 'light'
+  return <ArenaThemeContext.Provider value={value}>{children}</ArenaThemeContext.Provider>
+}
 
-  let next = content
+/**
+ * Client hook for the active Arena theme (\`light\` or \`dark\`).
+ */
+export function useArenaTheme(): ArenaTheme {
+  return useContext(ArenaThemeContext)
+}
+`
+}
 
-  if (!next.includes("from '@/components/arena-email-provider'")) {
-    next = `import { ArenaEmailProvider } from '@/components/arena-email-provider'\n${next}`
-  }
-  if (!next.includes("from '@/lib/arena-email'")) {
-    next = `import { getArenaEmailId } from '@/lib/arena-email'\n${next}`
-  }
+/**
+ * Removes import statements that pull Arena scaffold symbols from any module so
+ * re-wiring is idempotent. Handles single- and multi-line imports and either quote style.
+ * Prevents TS2300 Duplicate identifier when the LLM already wired providers.
+ */
+function stripArenaLayoutImports(content: string): string {
+  // Full import blocks from known Arena modules (including multi-line).
+  let next = content.replace(
+    /^import\s+(?:type\s+)?(?:\{[\s\S]*?\}|\*\s+as\s+\w+|\w+)\s+from\s+['"]@\/(?:components\/(?:arena-email-provider|arena-theme-provider|ArenaProviders)|lib\/arena-email)['"]\s*;?\s*\n?/gm,
+    ''
+  )
 
-  if (!next.includes("from 'next/font/google'") && !next.includes('Poppins')) {
-    next = `import { Poppins } from 'next/font/google'\n\nconst poppins = Poppins({ subsets: ['latin'], weight: ['400', '500', '600', '700'] })\n${next}`
-  }
+  // Any remaining import that binds scaffold symbols from a custom barrel.
+  next = next.replace(
+    /^import\s+(?:type\s+)?\{[\s\S]*?\b(?:ArenaEmailProvider|ArenaThemeProvider|getArenaEmailId|getArenaTheme)\b[\s\S]*?\}\s+from\s+['"][^'"]+['"]\s*;?\s*\n?/gm,
+    ''
+  )
+
+  return next
+}
+
+/**
+ * Ensures root layout wires email + theme providers and sets html class from theme.
+ * Idempotent — safe when the LLM already imported/wired the same symbols (any quote style).
+ */
+export function ensureArenaProvidersInLayout(content: string): string {
+  let next = stripArenaLayoutImports(content)
+
+  const canonicalImports = [
+    "import { getArenaEmailId, getArenaTheme } from '@/lib/arena-email'",
+    "import { ArenaEmailProvider } from '@/components/arena-email-provider'",
+    "import { ArenaThemeProvider } from '@/components/arena-theme-provider'",
+  ].join('\n')
+
+  next = `${canonicalImports}\n${next.trimStart()}`
+
+  // Drop Poppins / Arena font forcing — Sim UI uses system defaults.
+  next = next.replace(
+    /import\s*\{\s*Poppins\s*\}\s*from\s*['"]next\/font\/google['"]\s*\n*/g,
+    ''
+  )
+  next = next.replace(/const\s+poppins\s*=\s*Poppins\s*\([^)]*\)\s*\n*/g, '')
 
   next = next.replace(
     /export\s+default\s+(?:async\s+)?function\s+(\w+)/,
@@ -286,37 +365,107 @@ export function ensureArenaEmailProviderInLayout(content: string): string {
     )
   }
 
-  if (!next.includes('<ArenaEmailProvider')) {
+  if (!/const\s+theme\s*=\s*await\s+getArenaTheme\s*\(/.test(next)) {
     next = next.replace(
-      /\{children\}/g,
-      '<ArenaEmailProvider emailId={emailId}>{children}</ArenaEmailProvider>'
+      /(const\s+emailId\s*=\s*await\s+getArenaEmailId\s*\(\s*\))/,
+      '$1\n  const theme = await getArenaTheme()'
     )
   }
 
-  if (
-    next.includes('poppins') &&
-    /<body([^>]*)>/.test(next) &&
-    !next.includes('poppins.className')
-  ) {
-    next = next.replace(/<body([^>]*)>/, '<body$1 className={poppins.className}>')
+  // Normalize LLM prop-name drift on Arena providers.
+  next = next.replace(
+    /(<ArenaThemeProvider\b[^>]*?)\binitialTheme=/g,
+    '$1theme='
+  )
+  next = next.replace(/(<ArenaEmailProvider\b[^>]*?)\bvalue=/g, '$1emailId=')
+
+  // Ensure <html> carries light|dark class from theme.
+  if (/<html([^>]*)>/.test(next)) {
+    if (!next.includes('className={theme}') && !next.includes('className={`${theme}')) {
+      next = next.replace(/<html([^>]*)>/, (_match, attrs: string) => {
+        const cleaned = attrs
+          .replace(/\s*className=\{[^}]+\}/g, '')
+          .replace(/\s*className="[^"]*"/g, '')
+        return `<html${cleaned} className={theme}>`
+      })
+    }
   }
 
-  return next
+  // Nest providers around children — only if missing.
+  if (!next.includes('<ArenaThemeProvider') || !next.includes('<ArenaEmailProvider')) {
+    next = next.replace(
+      /\{children\}/g,
+      '<ArenaThemeProvider theme={theme}><ArenaEmailProvider emailId={emailId}>{children}</ArenaEmailProvider></ArenaThemeProvider>'
+    )
+  } else if (next.includes('<ArenaEmailProvider') && !next.includes('<ArenaThemeProvider')) {
+    next = next.replace(
+      /<ArenaEmailProvider([^>]*)>([\s\S]*?)<\/ArenaEmailProvider>/,
+      '<ArenaThemeProvider theme={theme}><ArenaEmailProvider$1>$2</ArenaEmailProvider></ArenaThemeProvider>'
+    )
+  }
+
+  // Body should use Sim surface tokens when possible.
+  if (/<body([^>]*)>/.test(next) && !next.includes('bg-[var(--bg)]')) {
+    next = next.replace(/<body([^>]*)>/, (_match, attrs: string) => {
+      const withoutClass = attrs
+        .replace(/\s*className=\{[^}]+\}/g, '')
+        .replace(/\s*className="[^"]*"/g, '')
+      return `<body${withoutClass} className="min-h-screen bg-[var(--bg)] text-[var(--text-body)] antialiased">`
+    })
+  }
+
+  return ensureNextMetadataImport(next)
 }
 
 /**
- * Ensures globals.css imports the Arena DS tokens stylesheet.
+ * Ensures `import type { Metadata } from 'next'` when the layout references Metadata.
+ * LLM layouts often export \`const metadata: Metadata\` without the import; Arena
+ * rewiring prepends imports and leaves that TS2304 intact through repair rounds.
  */
-export function ensureArenaDsTokensImportInGlobals(content: string): string {
-  if (content.includes('arena-ds-tokens.css')) {
+function ensureNextMetadataImport(content: string): string {
+  if (!/\bMetadata\b/.test(content)) {
     return content
   }
 
-  const importLine = "@import './arena-ds-tokens.css';\n"
-  if (content.trimStart().startsWith('@tailwind')) {
-    return `${importLine}${content}`
+  if (/import\s+(?:type\s+)?\{[^}]*\bMetadata\b[^}]*\}\s*from\s*['"]next['"]/.test(content)) {
+    return content
   }
-  return `${importLine}${content}`
+
+  const importLine = "import type { Metadata } from 'next'"
+  const afterArenaTheme =
+    /import\s+\{\s*ArenaThemeProvider\s*\}\s+from\s+['"]@\/components\/arena-theme-provider['"]\s*;?\s*\n/
+  if (afterArenaTheme.test(content)) {
+    return content.replace(afterArenaTheme, (match) => `${match}${importLine}\n`)
+  }
+
+  return `${importLine}\n${content.trimStart()}`
+}
+
+/** @deprecated Use {@link ensureArenaProvidersInLayout} */
+export function ensureArenaEmailProviderInLayout(content: string): string {
+  return ensureArenaProvidersInLayout(content)
+}
+
+/**
+ * Ensures globals.css imports Sim tokens (and drops legacy Arena DS import).
+ */
+export function ensureSimTokensImportInGlobals(content: string): string {
+  let next = content.replace(/@import\s+['"]\.\/arena-ds-tokens\.css['"];?\s*\n?/g, '')
+
+  if (next.includes('sim-tokens.css')) {
+    return next
+  }
+
+  const importLine = "@import './sim-tokens.css';\n"
+  if (next.trimStart().startsWith('@tailwind')) {
+    return `${importLine}${next}`
+  }
+  return `${importLine}${next}`
+}
+
+/** @deprecated Use {@link ensureSimTokensImportInGlobals} */
+export function ensureArenaDsTokensImportInGlobals(content: string): string {
+  return ensureSimTokensImportInGlobals(content)
 }
 
 function upsertFile(files: GeneratedAppFile[], path: string, content: string): GeneratedAppFile[] {
@@ -332,31 +481,56 @@ function upsertFile(files: GeneratedAppFile[], path: string, content: string): G
 }
 
 /**
- * Injects Arena iframe emailId middleware, helpers, provider, layout wiring, and DS tokens.
+ * Rewrites LLM prop-name drift on Arena providers across all TSX files.
+ */
+function normalizeArenaProviderPropNames(content: string): string {
+  return content
+    .replace(/(<ArenaThemeProvider\b[^>]*?)\binitialTheme=/g, '$1theme=')
+    .replace(/(<ArenaEmailProvider\b[^>]*?)\bvalue=/g, '$1emailId=')
+}
+
+/**
+ * Injects Arena iframe emailId + theme middleware, Sim tokens, helpers, and layout wiring.
  */
 export function ensureArenaScaffoldFiles(files: GeneratedAppFile[]): GeneratedAppFile[] {
   const useSrcDir = projectUsesSrcAppDir(files)
   const paths = arenaPaths(useSrcDir)
 
-  let result = files
+  let result = files.map((file) => {
+    const path = normalizePath(file.path)
+    if (!/\.(tsx|jsx)$/.test(path)) {
+      return file
+    }
+    const next = normalizeArenaProviderPropNames(file.content)
+    return next === file.content ? file : { ...file, content: next }
+  })
   result = upsertFile(result, paths.middleware, buildMiddlewareContent())
   result = upsertFile(result, paths.arenaEmailConstants, buildArenaEmailConstantsContent())
   result = upsertFile(result, paths.arenaEmail, buildArenaEmailLibContent())
-  result = upsertFile(result, paths.provider, buildArenaEmailProviderContent())
+  result = upsertFile(result, paths.emailProvider, buildArenaEmailProviderContent())
+  result = upsertFile(result, paths.themeProvider, buildArenaThemeProviderContent())
   result = upsertFile(result, paths.accessDeniedPage, buildAccessDeniedPageContent())
-  result = upsertFile(result, paths.dsTokensCss, ARENA_DS_TOKENS_CSS)
+  result = upsertFile(result, paths.simTokensCss, SIM_TOKENS_CSS)
+
+  // Drop legacy Arena DS token file and LLM-invented provider barrels.
+  result = result.filter((file) => {
+    const path = normalizePath(file.path)
+    if (path.endsWith('arena-ds-tokens.css')) return false
+    if (/(^|\/)components\/ArenaProviders\.tsx$/.test(path)) return false
+    return true
+  })
 
   const globalsIndex = result.findIndex((file) => normalizePath(file.path) === paths.globalsCss)
   if (globalsIndex === -1) {
     result = upsertFile(
       result,
       paths.globalsCss,
-      ensureArenaDsTokensImportInGlobals(
+      ensureSimTokensImportInGlobals(
         '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n'
       )
     )
   } else {
-    const patchedGlobals = ensureArenaDsTokensImportInGlobals(result[globalsIndex].content)
+    const patchedGlobals = ensureSimTokensImportInGlobals(result[globalsIndex].content)
     result = upsertFile(result, paths.globalsCss, patchedGlobals)
   }
 
@@ -368,9 +542,9 @@ export function ensureArenaScaffoldFiles(files: GeneratedAppFile[]): GeneratedAp
     return result
   }
 
-  const patchedLayout = ensureArenaEmailProviderInLayout(result[layoutIndex].content)
+  const patchedLayout = ensureArenaProvidersInLayout(result[layoutIndex].content)
   if (patchedLayout !== result[layoutIndex].content) {
-    logger.info('Arena scaffold: wired ArenaEmailProvider into root layout', {
+    logger.info('Arena scaffold: wired email + theme providers into root layout', {
       layout: paths.layout,
     })
   }

@@ -939,7 +939,7 @@ export function validateGoogleCloudLocation(
   }
 
   const googleLocationPattern =
-    /^(global|(africa|asia|australia|europe|me|northamerica|southamerica|us)-(central|east|north|northeast|northwest|south|southeast|southwest|west)\d{1,2})$/
+    /^(global|us|eu|(africa|asia|australia|europe|me|northamerica|southamerica|us)-(central|east|north|northeast|northwest|south|southeast|southwest|west)\d{1,2})$/
 
   if (!googleLocationPattern.test(value)) {
     logger.warn('Invalid Google Cloud location format', {

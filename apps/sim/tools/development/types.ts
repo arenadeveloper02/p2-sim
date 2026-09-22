@@ -6,6 +6,8 @@ export interface DevelopmentGenerateAppParams {
   repoName?: string
   privateRepo?: boolean
   referenceImage?: object
+  /** Block UI Model selection: `vertex` (Gemini 3.8 Flash) or `anthropic` (Claude). */
+  llmProvider?: 'vertex' | 'anthropic'
   /** Injected at runtime by the tool executor for billing attribution. */
   _context?: WorkflowToolExecutionContext
 }
@@ -14,6 +16,8 @@ export interface DevelopmentEditAppParams {
   userInput: string
   repoName: string
   referenceImage?: object
+  /** Block UI Model selection: `vertex` (Gemini 3.8 Flash) or `anthropic` (Claude). */
+  llmProvider?: 'vertex' | 'anthropic'
   /** Injected at runtime by the tool executor for billing attribution. */
   _context?: WorkflowToolExecutionContext
 }

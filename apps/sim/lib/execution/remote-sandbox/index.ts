@@ -844,3 +844,60 @@ export async function withPiSandbox<T>(
     }
   }
 }
+
+/** Runs commands and writes files inside a live shell sandbox. */
+export interface ShellSandboxRunner {
+  readonly sandboxId: string
+  run(
+    command: string,
+    options: {
+      envs?: Record<string, string>
+      timeoutMs: number
+    }
+  ): Promise<PiSandboxCommandResult>
+  writeFile(path: string, content: string): Promise<void>
+}
+
+/**
+ * Default lifetime for long-lived shell sessions (generated-app validate/repair).
+ * Covers create + several typecheck/repair rounds + one production build while
+ * the sandbox sits idle during LLM repair calls.
+ */
+export const DEFAULT_SHELL_SANDBOX_LIFETIME_MS = 45 * 60 * 1000
+
+/**
+ * Creates a shell sandbox, keeps it alive for the duration of `fn` (so
+ * node_modules and written files persist across typecheck → repair → build),
+ * and always kills the sandbox afterward.
+ */
+export async function withShellSandbox<T>(
+  options: { lifetimeMs?: number },
+  fn: (runner: ShellSandboxRunner) => Promise<T>
+): Promise<T> {
+  const lifetimeMs =
+    options.lifetimeMs !== undefined ? options.lifetimeMs : DEFAULT_SHELL_SANDBOX_LIFETIME_MS
+  const sandbox = await createSandbox('shell', { lifetimeMs })
+  logger.info('Started shell sandbox', { sandboxId: sandbox.sandboxId, lifetimeMs })
+
+  const runner: ShellSandboxRunner = {
+    sandboxId: sandbox.sandboxId,
+    run: (command, options) =>
+      sandbox.runCommand(command, {
+        envs: options.envs,
+        timeoutMs: options.timeoutMs,
+        maxOutputBytes: MAX_SANDBOX_PROCESS_OUTPUT_BYTES,
+        rootUser: true,
+      }),
+    writeFile: (path, content) => sandbox.writeFile(path, content),
+  }
+
+  try {
+    return await fn(runner)
+  } finally {
+    try {
+      await sandbox.kill()
+    } catch {
+      await sandbox.kill().catch(() => {})
+    }
+  }
+}

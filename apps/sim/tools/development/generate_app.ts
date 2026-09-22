@@ -41,6 +41,13 @@ export const developmentGenerateAppTool: ToolConfig<
       visibility: 'user-only',
       description: 'Optional design PDF — layout, theme, and styling follow the reference',
     },
+    llmProvider: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'LLM backend: vertex (Gemini 3.8 Flash) or anthropic (Claude Fable)',
+      default: 'vertex',
+    },
   },
 
   request: {
@@ -54,6 +61,10 @@ export const developmentGenerateAppTool: ToolConfig<
       repoName: params.repoName,
       privateRepo: params.privateRepo,
       ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
+      llmProvider:
+        params.llmProvider === 'anthropic' || params.llmProvider === 'vertex'
+          ? params.llmProvider
+          : 'vertex',
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,
