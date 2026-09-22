@@ -5,7 +5,7 @@ import Cookies from 'js-cookie'
 import { Check, Copy, Eye, EyeOff, Loader2, Plus, RefreshCw } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { generatePassword } from '@/lib/core/security/encryption'
+import { generatePassword } from '@/lib/core/security/generate-password'
 import type { AuthType } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-form'
 
 interface AuthSelectorProps {

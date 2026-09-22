@@ -24,7 +24,7 @@ import {
   Users,
   Wrench,
 } from '@sim/emcn/icons'
-import { type PermissionType, permissionSatisfies } from '@sim/platform-authz/workspace'
+import { type PermissionType, permissionSatisfies } from '@sim/platform-authz/predicates'
 import { Globe } from 'lucide-react'
 import { CodeIcon, McpIcon } from '@/components/icons'
 import { getEnv, isTruthy } from '@/lib/core/config/env'

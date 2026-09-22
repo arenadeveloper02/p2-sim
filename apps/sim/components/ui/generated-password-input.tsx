@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button, ChipInput, Loader, Tooltip, useCopyToClipboard } from '@sim/emcn'
 import { Check, Clipboard, Eye, EyeOff, RefreshCw } from '@sim/emcn/icons'
-import { generatePassword } from '@/lib/core/security/encryption'
+import { generatePassword } from '@/lib/core/security/generate-password'
 
 const MASKED_PASSWORD = '••••••••'
 

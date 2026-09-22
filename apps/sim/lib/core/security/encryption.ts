@@ -1,8 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { decrypt, encrypt } from '@sim/security/encryption'
 import { toError } from '@sim/utils/errors'
-import { randomInt } from '@sim/utils/random'
 import { env } from '@/lib/core/config/env'
+import { generatePassword } from '@/lib/core/security/generate-password'
+
+export { generatePassword }
 
 const logger = createLogger('Encryption')
 
@@ -36,18 +38,3 @@ export async function decryptSecret(encryptedValue: string): Promise<{ decrypted
   }
 }
 
-/**
- * Generates a secure random password
- * @param length - The length of the password (default: 24)
- * @returns A new secure password string
- */
-export function generatePassword(length = 24): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_-+='
-  let result = ''
-
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(randomInt(0, chars.length))
-  }
-
-  return result
-}

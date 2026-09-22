@@ -16,9 +16,11 @@ interface Storage<T> {
 let storage: Storage<RequestContext>
 
 if (typeof globalThis.process !== 'undefined' && globalThis.process.versions?.node) {
-  // Node.js — use real AsyncLocalStorage
+  // Node.js — use real AsyncLocalStorage. webpackIgnore keeps `node:async_hooks`
+  // out of the client graph; webpack still statically follows a plain require
+  // even behind the process.versions.node check.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AsyncLocalStorage } = require('node:async_hooks') as typeof import('node:async_hooks')
+  const { AsyncLocalStorage } = require(/* webpackIgnore: true */ 'node:async_hooks') as typeof import('node:async_hooks')
   storage = new AsyncLocalStorage<RequestContext>()
 } else {
   // Edge / browser — no-op
