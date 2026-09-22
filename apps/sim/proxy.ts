@@ -7,7 +7,7 @@ import {
   buildArenaSimResumeUrl,
 } from './lib/auth/arena-sim-resume'
 import { getEnv } from './lib/core/config/env'
-import { isAuthDisabled, isDev } from './lib/core/config/env-flags'
+import { isAuthDisabled, isLocalLoginEnabled } from './lib/core/config/env-flags'
 import { apiCorsPatch } from './lib/core/security/api-cors'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getClientIp } from './lib/core/utils/request'
@@ -17,14 +17,14 @@ const logger = createLogger('Proxy')
 
 /**
  * No Better Auth session: send the browser to Arena hub to mint an SSO code.
- * Local/dev falls back to `/login`. Non-local falls back to `/session-required`
- * when the hub URL cannot be resolved.
+ * Local login (dev, or NEXT_PUBLIC_LOCAL_LOGIN_ENABLED) falls back to `/login`.
+ * Otherwise falls back to `/session-required` when the hub URL cannot be resolved.
  *
  * `returnTo` uses `NEXT_PUBLIC_APP_URL` + path — not `request.nextUrl.href`, which
  * becomes `https://0.0.0.0:3000/...` when the container sets `HOSTNAME=0.0.0.0`.
  */
 function redirectUnauthenticated(request: NextRequest): NextResponse {
-  if (isDev) {
+  if (isLocalLoginEnabled) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
   const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
@@ -309,11 +309,17 @@ function handleInvitationRedirects(
   ) {
     const token = request.nextUrl.searchParams.get('token')
     const inviteId = request.nextUrl.pathname.split('/').pop()
-    const callbackParam = encodeURIComponent(`/invite/${inviteId}${token ? `?token=${token}` : ''}`)
+    const callbackPath = `/invite/${inviteId}${token ? `?token=${token}` : ''}`
+    if (isLocalLoginEnabled) {
+      const loginUrl = new URL('/login', request.url)
+      loginUrl.searchParams.set('callbackUrl', callbackPath)
+      loginUrl.searchParams.set('invite_flow', 'true')
+      return NextResponse.redirect(loginUrl)
+    }
     const hostname = request.nextUrl.hostname
     const externalLoginUrl = getLoginRedirectUrl(hostname)
     const loginUrl = new URL(externalLoginUrl)
-    loginUrl.searchParams.set('callbackUrl', callbackParam)
+    loginUrl.searchParams.set('callbackUrl', encodeURIComponent(callbackPath))
     loginUrl.searchParams.set('invite_flow', 'true')
     return NextResponse.redirect(loginUrl.toString())
   }
@@ -399,8 +405,8 @@ export async function proxy(request: NextRequest) {
     if (hasActiveSession) {
       return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
     }
-    // Non-local: Arena SSO resume (Agent has no product login UI)
-    if (!isDev) {
+    // Arena SSO resume unless this deployment serves the in-app login page
+    if (!isLocalLoginEnabled) {
       return track(request, redirectUnauthenticated(request))
     }
     const response = NextResponse.next()
