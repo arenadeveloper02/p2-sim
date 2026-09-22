@@ -4,7 +4,7 @@ import type {
   UsageLogSourceValue,
   WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
-import { formatCreditCost } from '@/lib/billing/credits/conversion'
+import { dollarsToCredits, formatCreditCost } from '@/lib/billing/credits/conversion'
 import {
   formatEmbeddedToolLabel,
   isImageGenerationBillingKey,
@@ -179,9 +179,14 @@ interface UsageToolBucketRow {
   rawCost?: number
 }
 
+/** True when Usage tables would show at least 1 credit for this amount. */
+export function hasBillableCredits(billableCost: number): boolean {
+  return dollarsToCredits(billableCost) > 0
+}
+
 /**
  * Aggregates By Tools rows after {@link resolveUsageToolFamilyId} normalization.
- * Drops buckets with no billable credits.
+ * Drops Copilot tools and buckets that display as 0 credits.
  */
 export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: T[]): T[] {
   const merged = new Map<string, T>()
@@ -207,7 +212,7 @@ export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: 
   }
 
   return [...merged.values()]
-    .filter((row) => row.billableCost > 0)
+    .filter((row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID)
     .sort((a, b) => b.billableCost - a.billableCost)
 }
 
