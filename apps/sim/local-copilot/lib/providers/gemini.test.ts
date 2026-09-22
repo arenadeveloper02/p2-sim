@@ -17,6 +17,7 @@ import {
   convertMessagesToGemini,
   isGeminiResourceExhaustedError,
   streamGoogleGenAiChatCompletion,
+  VERTEX_PRIORITY_PAYGO_HEADERS,
 } from '@/local-copilot/lib/providers/gemini'
 import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig } from '@/local-copilot/lib/types'
@@ -318,6 +319,51 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
     expect(refreshAi).toHaveBeenCalledTimes(1)
     expect(mockSleep).toHaveBeenCalledTimes(1)
     expect(chunks.some((chunk) => chunk.type === 'text' && chunk.content === 'ok')).toBe(true)
+  })
+
+  it('escalates Vertex retries to Priority PayGo headers', async () => {
+    const exhausted = Object.assign(new Error('Resource exhausted'), {
+      status: 'RESOURCE_EXHAUSTED',
+      code: 429,
+    })
+    const generateContentStream = vi
+      .fn()
+      .mockRejectedValueOnce(exhausted)
+      .mockResolvedValueOnce(
+        (async function* () {
+          yield {
+            candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+            usageMetadata: {
+              promptTokenCount: 1,
+              candidatesTokenCount: 1,
+              trafficType: 'ON_DEMAND_PRIORITY',
+            },
+          }
+        })()
+      )
+    const ai = { models: { generateContentStream } }
+
+    for await (const _chunk of streamGoogleGenAiChatCompletion({
+      // double-cast-allowed: test double for GoogleGenAI stream client
+      ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+      priorityPayGoOnRetry: true,
+      config,
+      request: { messages: [{ role: 'user', content: 'hi' }] },
+      logLabel: 'Vertex',
+      stripVertexPrefix: true,
+    })) {
+      // drain
+    }
+
+    expect(generateContentStream).toHaveBeenCalledTimes(2)
+    const firstConfig = generateContentStream.mock.calls[0]?.[0]?.config as
+      | { httpOptions?: { headers?: Record<string, string> } }
+      | undefined
+    const retryConfig = generateContentStream.mock.calls[1]?.[0]?.config as
+      | { httpOptions?: { headers?: Record<string, string> } }
+      | undefined
+    expect(firstConfig?.httpOptions?.headers).toBeUndefined()
+    expect(retryConfig?.httpOptions?.headers).toEqual({ ...VERTEX_PRIORITY_PAYGO_HEADERS })
   })
 
   it('surfaces a clearer error after exhausting retries', async () => {

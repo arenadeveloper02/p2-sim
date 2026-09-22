@@ -436,6 +436,7 @@ export async function duplicateWorkflow(
             updatedConfig = structuredClone(subflow.config) as LoopConfig | ParallelConfig
 
             // Update the config ID to match the new subflow ID
+
             ;(updatedConfig as any).id = newSubflowId
 
             /**

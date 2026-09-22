@@ -559,11 +559,7 @@ export async function getUserUsageAnalytics(
         .from(usageLog)
         .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
         .where(
-          and(
-            ...scopedLedgerConditions,
-            eq(usageLog.category, 'tool'),
-            isNotNull(usageLog.toolId)
-          )
+          and(...scopedLedgerConditions, eq(usageLog.category, 'tool'), isNotNull(usageLog.toolId))
         )
         .groupBy(toolBucketId),
 

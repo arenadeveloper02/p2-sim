@@ -4,6 +4,7 @@ import {
   type SegmentSelectionMode,
   useDashboardSegments,
 } from '@/app/workspace/[workspaceId]/logs/components/dashboard/dashboard-segments-context'
+import { useTimezone } from '@/hooks/queries/general-settings'
 
 export interface StatusBarSegment {
   successRate: number
@@ -36,6 +37,11 @@ function StatusBarInner({
   preferBelow = false,
 }: StatusBarInnerProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  /**
+   * Segment tooltip ranges are converted into the account timezone so dashboard
+   * hover labels match list/detail timestamps.
+   */
+  const timezone = useTimezone()
 
   const labels = useMemo(() => {
     return segments.map((segment) => {
@@ -43,14 +49,24 @@ function StatusBarInner({
       const end = new Date(start.getTime() + (segmentDurationMs || 0))
       const rangeLabel = Number.isNaN(start.getTime())
         ? ''
-        : `${start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+        : `${start.toLocaleString('en-US', {
+            timeZone: timezone,
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })} – ${end.toLocaleString('en-US', {
+            timeZone: timezone,
+            hour: 'numeric',
+            minute: '2-digit',
+          })}`
       return {
         rangeLabel,
         successLabel: `${segment.successRate.toFixed(1)}%`,
         countsLabel: `${segment.successfulExecutions ?? 0}/${segment.totalExecutions ?? 0} succeeded`,
       }
     })
-  }, [segments, segmentDurationMs])
+  }, [segments, segmentDurationMs, timezone])
 
   return (
     <div className='relative'>

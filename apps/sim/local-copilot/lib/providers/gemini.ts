@@ -42,6 +42,18 @@ const GEMINI_NOT_CONFIGURED =
 const MAX_RESOURCE_EXHAUSTED_RETRIES = 4
 
 /**
+ * Vertex Priority PayGo headers for 429 capacity retries.
+ * Forces the shared priority pool (`shared` + `priority`) rather than PT spillover —
+ * standard/PT already failed with RESOURCE_EXHAUSTED.
+ *
+ * @see https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo
+ */
+export const VERTEX_PRIORITY_PAYGO_HEADERS = {
+  'X-Vertex-AI-LLM-Request-Type': 'shared',
+  'X-Vertex-AI-LLM-Shared-Request-Type': 'priority',
+} as const
+
+/**
  * True when the Google GenAI / Vertex SDK failed due to quota or rate limits.
  */
 export function isGeminiResourceExhaustedError(error: unknown): boolean {
@@ -450,17 +462,36 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
 /**
  * Shared Gemini / Vertex streaming path for Local Copilot.
  * Caller owns client construction (API key vs Vertex project + ADC).
+ *
+ * Before the stream opens, 429 RESOURCE_EXHAUSTED retries with exponential
+ * backoff. Vertex callers can escalate retries to Priority PayGo via
+ * {@link VERTEX_PRIORITY_PAYGO_HEADERS}.
  */
 export async function* streamGoogleGenAiChatCompletion(params: {
   ai: GoogleGenAI
+  /** Rebuilds the client between 429 retries (next Vertex slot / Gemini key). */
+  refreshAi?: () => GoogleGenAI
   config: LocalCopilotConfig
   request: ChatCompletionRequest
   /** Log label, e.g. `Gemini` or `Vertex`. */
   logLabel: string
   /** Strip optional `vertex/` prefix from the model id before the API call. */
   stripVertexPrefix?: boolean
+  /**
+   * On 429 retries, attach Vertex Priority PayGo headers so capacity retries
+   * escalate to the shared priority pool. Vertex (`global` / `us` / `eu`) only.
+   */
+  priorityPayGoOnRetry?: boolean
 }): AsyncGenerator<ChatCompletionChunk, void, undefined> {
-  const { ai, config, request, logLabel, stripVertexPrefix = false } = params
+  const {
+    config,
+    request,
+    logLabel,
+    stripVertexPrefix = false,
+    refreshAi,
+    priorityPayGoOnRetry = false,
+  } = params
+  let client = params.ai
   const rawModel = request.model || config.model
   const model = stripVertexPrefix ? rawModel.replace(/^vertex\//, '') : rawModel
   const { systemInstruction, contents } = convertMessagesToGemini(request.messages)
@@ -539,11 +570,57 @@ export async function* streamGoogleGenAiChatCompletion(params: {
     // every turn, so a non-streaming tool path would appear as "no
     // streaming" in chat. generateContentStream supports functionCall
     // parts alongside text deltas.
-    const stream = await ai.models.generateContentStream({
-      model,
-      contents,
-      config: generateConfig,
-    })
+    let stream: Awaited<ReturnType<GoogleGenAI['models']['generateContentStream']>> | undefined
+    let openAttempt = 0
+    for (; openAttempt <= MAX_RESOURCE_EXHAUSTED_RETRIES; openAttempt++) {
+      const usePriorityPayGo = priorityPayGoOnRetry && openAttempt > 0
+      try {
+        stream = await client.models.generateContentStream({
+          model,
+          contents,
+          config: {
+            ...generateConfig,
+            ...(usePriorityPayGo
+              ? {
+                  httpOptions: {
+                    headers: { ...VERTEX_PRIORITY_PAYGO_HEADERS },
+                  },
+                }
+              : {}),
+          },
+        })
+        break
+      } catch (error) {
+        if (request.signal?.aborted || !isGeminiResourceExhaustedError(error)) {
+          throw toError(error)
+        }
+        if (openAttempt >= MAX_RESOURCE_EXHAUSTED_RETRIES) {
+          throw formatResourceExhaustedError(logLabel, error)
+        }
+        logger.warn(`${logLabel} RESOURCE_EXHAUSTED before stream open; retrying`, {
+          model,
+          attempt: openAttempt + 1,
+          maxRetries: MAX_RESOURCE_EXHAUSTED_RETRIES,
+          escalateToPriorityPayGo: priorityPayGoOnRetry,
+          error: getErrorMessage(error, 'resource exhausted'),
+        })
+        await sleep(backoffWithJitter(openAttempt + 1, null, { baseMs: 500, maxMs: 8_000 }))
+        if (refreshAi) {
+          client = refreshAi()
+        }
+      }
+    }
+
+    if (!stream) {
+      throw new Error(`${logLabel} failed to open generateContentStream`)
+    }
+
+    if (priorityPayGoOnRetry && openAttempt > 0) {
+      logger.info(`${logLabel} stream opened after Priority PayGo retry`, {
+        model,
+        openAttempt,
+      })
+    }
 
     let inputTokens = 0
     let outputTokens = 0
@@ -553,6 +630,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
     let yieldedThinkingChars = 0
     let apiFinishReason: string | undefined
     let partCount = 0
+    let loggedTrafficType = false
     const historyParts: GeminiHistoryPart[] = []
 
     for await (const chunk of stream) {
@@ -566,6 +644,14 @@ export async function* streamGoogleGenAiChatCompletion(params: {
         // Gemini 2.5+ implicit context cache hits (subset of promptTokenCount).
         cacheReadTokens = chunk.usageMetadata.cachedContentTokenCount ?? cacheReadTokens
         thoughtsTokenCount = chunk.usageMetadata.thoughtsTokenCount ?? thoughtsTokenCount
+        if (!loggedTrafficType && chunk.usageMetadata.trafficType) {
+          loggedTrafficType = true
+          logger.info(`${logLabel} traffic type`, {
+            model,
+            trafficType: chunk.usageMetadata.trafficType,
+            priorityPayGoRetry: priorityPayGoOnRetry && openAttempt > 0,
+          })
+        }
       }
 
       const candidate = chunk.candidates?.[0]
@@ -659,22 +745,27 @@ export async function* streamGoogleGenAiChatCompletion(params: {
  *
  * Each stream request resolves a fresh API key from `GEMINI_API_KEY_1..3`
  * (round-robin) so parent rounds and specialists distribute across keys.
+ * 429 retries also advance to the next key.
  */
 export function createGeminiProvider(config: LocalCopilotConfig): LocalCopilotProvider {
   if (!config.apiKey && listLocalCopilotGeminiApiKeys().length === 0) {
     throw new Error(GEMINI_NOT_CONFIGURED)
   }
 
+  const buildClient = (): GoogleGenAI => {
+    const apiKey = resolveLocalCopilotGeminiApiKey()
+    if (!apiKey) {
+      throw new Error(GEMINI_NOT_CONFIGURED)
+    }
+    return new GoogleGenAI({ apiKey })
+  }
+
   return {
     id: 'gemini',
     async *chatCompletionStream(request: ChatCompletionRequest) {
-      const apiKey = resolveLocalCopilotGeminiApiKey()
-      if (!apiKey) {
-        throw new Error(GEMINI_NOT_CONFIGURED)
-      }
-      const ai = new GoogleGenAI({ apiKey })
       yield* streamGoogleGenAiChatCompletion({
-        ai,
+        ai: buildClient(),
+        refreshAi: buildClient,
         config,
         request,
         logLabel: 'Gemini',
