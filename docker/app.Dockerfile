@@ -94,10 +94,13 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy pruned source tree (apps/sim + workspace packages it depends on)
 COPY --from=pruner /app/out/full/ ./
 
-# Next.js 16 / Turbopack workspace-root detection looks for a lockfile next to
-# the workspace package.json. Without it, `next build` fails with
+# Next.js 16 workspace-root detection looks for a lockfile next to the
+# workspace package.json. Without it, `next build` fails with
 # "couldn't find next/package.json from /app/apps/sim". turbo also warns
 # "Lockfile not found at /app/bun.lock" without it.
+# Production compile is webpack (`next build --webpack`): Turbopack 16.2.12
+# collides `[root-of-the-server]` chunk names on this branch (7-char ident hash).
+# version-6-main's smaller graph does not hit that collision.
 COPY --from=pruner /app/bun.lock ./bun.lock
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
@@ -118,18 +121,22 @@ ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 # only; runtime overrides at deploy. (SecretsUsedInArgOrEnv skipped at file top.)
 ENV BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
 
-# Docker builders are memory-constrained (GH Actions ~7GB RAM). BuildKit's sandbox
-# blocks swapon() without the security.insecure entitlement, which many CI setups
-# don't (and shouldn't have to) grant. Instead of provisioning swap inside the
-# build container, cap the heap via BUILD_MAX_OLD_SPACE_MB — package.json's
-# `build` script reads this directly (defaults to 8192 if unset) and passes it
-# to `next build` as NODE_OPTIONS itself, so set it here rather than NODE_OPTIONS
-# directly (an ENV NODE_OPTIONS here would just get overridden by that script).
-# Keep this well under the cgroup limit so V8 GCs before the kernel OOM-kills
-# the process (a high ceiling + static-page RSS is what caused exit 137 at
-# ~304/1218 pages). next.config also sets experimental.cpus=1 and
+# Docker builders are memory-constrained. BuildKit's sandbox blocks swapon()
+# without the security.insecure entitlement, which many CI setups don't (and
+# shouldn't have to) grant. Cap the heap via BUILD_MAX_OLD_SPACE_MB —
+# package.json's `build` script reads this directly (defaults to 8192 if unset)
+# and passes it to `next build` as NODE_OPTIONS itself, so set it here rather
+# than NODE_OPTIONS directly (an ENV NODE_OPTIONS here would just get overridden
+# by that script).
+# version-6-main keeps 3072 because it compiles with Turbopack. This branch
+# must use webpack (Turbopack 16.2.12 chunk-name collision), and webpack's JS
+# heap peaks above 3GB (V8 OOM at 3072). 8192 matches the package.json default
+# and fits GH Actions ubuntu-latest (16GB + host swap). Override at build time:
+#   docker build --build-arg BUILD_MAX_OLD_SPACE_MB=6144 ...
+# Keep native RSS in mind: next.config sets experimental.cpus=1 and
 # staticGenerationMaxConcurrency=1 under DOCKER_BUILD.
-ENV BUILD_MAX_OLD_SPACE_MB=3072
+ARG BUILD_MAX_OLD_SPACE_MB=8192
+ENV BUILD_MAX_OLD_SPACE_MB=${BUILD_MAX_OLD_SPACE_MB}
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
