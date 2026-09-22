@@ -120,8 +120,9 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Safe here since this repo's source is already fully public on GitHub -
   // no additional exposure versus Next's default (disabled to avoid leaking
-  // source on the client).
-  productionBrowserSourceMaps: true,
+  // source on the client). Off under DOCKER_BUILD: webpack source-map
+  // generation is what pushed the heap past 8GB (V8 OOM at 8192).
+  productionBrowserSourceMaps: !isTruthy(env.DOCKER_BUILD),
   /**
    * Production `next build` uses webpack (`package.json` `build` passes `--webpack`).
    * Next 16.2.12 Turbopack truncates chunk idents to 7 base38 chars; this branch's
@@ -151,6 +152,9 @@ const nextConfig: NextConfig = {
             ),
           }
         : {}),
+    }
+    if (isTruthy(env.DOCKER_BUILD)) {
+      config.parallelism = 1
     }
     return config
   },
