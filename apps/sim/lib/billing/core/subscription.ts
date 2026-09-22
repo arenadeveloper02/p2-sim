@@ -19,8 +19,8 @@ import {
   isEnterprise as isPlanEnterprise,
   isPro as isPlanPro,
   isTeam as isPlanTeam,
-  sqlIsPaid,
 } from '@/lib/billing/plan-helpers'
+import { sqlIsPaid } from '@/lib/billing/plan-helpers.sql'
 import { getCustomerId } from '@/lib/billing/stripe-payment-method'
 import {
   checkEnterprisePlan,

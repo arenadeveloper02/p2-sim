@@ -1,4 +1,4 @@
-import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS, getNoteBlockHeight } from '@sim/workflow-renderer'
+import { BLOCK_DIMENSIONS, CONTAINER_DIMENSIONS, getNoteBlockHeight } from '@sim/workflow-renderer/dimensions'
 import type { Edge, Node } from 'reactflow'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { clampPositionToContainer } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils/node-position-utils'

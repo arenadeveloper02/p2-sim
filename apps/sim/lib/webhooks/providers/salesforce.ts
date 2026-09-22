@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { isRecordLike, toRecord } from '@sim/utils/object'
 import { NextResponse } from 'next/server'
+import { extractSalesforceObjectTypeFromPayload } from '@/lib/webhooks/providers/salesforce-payload'
 import type {
   AuthContext,
   EventMatchContext,
@@ -10,36 +11,7 @@ import type {
 } from '@/lib/webhooks/providers/types'
 import { buildFallbackDeliveryFingerprint, verifyTokenAuth } from '@/lib/webhooks/providers/utils'
 
-export function extractSalesforceObjectTypeFromPayload(
-  body: Record<string, unknown>
-): string | undefined {
-  const direct =
-    (typeof body.objectType === 'string' && body.objectType) ||
-    (typeof body.sobjectType === 'string' && body.sobjectType) ||
-    undefined
-  if (direct) {
-    return direct
-  }
-
-  const attrs = body.attributes as Record<string, unknown> | undefined
-  if (typeof attrs?.type === 'string') {
-    return attrs.type
-  }
-
-  const record = body.record
-  if (isRecordLike(record)) {
-    const r = record as Record<string, unknown>
-    if (typeof r.sobjectType === 'string') {
-      return r.sobjectType
-    }
-    const ra = r.attributes as Record<string, unknown> | undefined
-    if (typeof ra?.type === 'string') {
-      return ra.type
-    }
-  }
-
-  return undefined
-}
+export { extractSalesforceObjectTypeFromPayload }
 
 const logger = createLogger('WebhookProvider:Salesforce')
 

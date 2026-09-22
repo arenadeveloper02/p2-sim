@@ -10,8 +10,6 @@
  * and map to their original dollar amounts ($20 / $40).
  */
 
-import type { AnyColumn } from 'drizzle-orm'
-import { eq, like, or, type SQL } from 'drizzle-orm'
 import { getArenaPlanTypeForLimits } from '@/lib/billing/arena/plan-limits'
 import { isStarterActive, isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { getArenaPlanTierDollars, isArenaMaxPlan } from '@/lib/billing/arena/tier-config'
@@ -165,26 +163,6 @@ export function buildPlanName(type: 'pro' | 'team', credits: number): string {
  * @example getDisplayPlanName('team_6000') => 'Pro for Teams'
  * @example getDisplayPlanName('pro') => 'Legacy Pro'
  */
-/**
- * SQL-level plan filters for Drizzle queries.
- * These are the SQL equivalents of the JS helpers above.
- *
- * The `_` in the plan-name separator is escaped because it is a single-character
- * wildcard in SQL `LIKE`. Unescaped, `'pro_%'` would also match `proX…`, making
- * these filters admit a wider set than their JS counterparts.
- */
-export function sqlIsPro(column: AnyColumn): SQL | undefined {
-  return or(eq(column, 'pro'), like(column, 'pro\\_%'))
-}
-
-export function sqlIsTeam(column: AnyColumn): SQL | undefined {
-  return or(eq(column, 'team'), like(column, 'team\\_%'))
-}
-
-export function sqlIsPaid(column: AnyColumn): SQL | undefined {
-  return or(sqlIsPro(column)!, sqlIsTeam(column)!, eq(column, 'enterprise'))
-}
-
 export function getDisplayPlanName(plan: string | null | undefined): string {
   if (!plan || isFree(plan)) return 'Free'
   if (isStarterPlan(plan)) return 'Starter'

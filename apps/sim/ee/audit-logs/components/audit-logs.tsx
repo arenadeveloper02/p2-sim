@@ -22,7 +22,7 @@ import { formatDateTime } from '@sim/utils/formatting'
 import { isRecordLike } from '@sim/utils/object'
 import { useQueryStates } from 'nuqs'
 import { formatDateShort } from '@/lib/core/utils/date-display'
-import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filters'
+import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filter-time'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import type { EnterpriseAuditLogEntry } from '@/app/api/v1/audit-logs/format'
 import {

@@ -26,7 +26,7 @@ import {
   type WorkflowStats,
 } from '@/lib/api/contracts/logs'
 import { cancelWorkflowExecutionContract } from '@/lib/api/contracts/workflows'
-import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filters'
+import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filter-time'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import type { TimeRange } from '@/stores/logs/filters/types'
 

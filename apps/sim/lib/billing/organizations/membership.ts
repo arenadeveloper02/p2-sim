@@ -33,7 +33,8 @@ import {
 } from '@/lib/billing/enterprise-outbox'
 import { acquireUserBillingIdentityLock } from '@/lib/billing/organizations/billing-identity-lock'
 import { setOrgMemberUsageLimit } from '@/lib/billing/organizations/member-limits'
-import { hasOrganizationSeatEntitlement, isPaid, sqlIsPro } from '@/lib/billing/plan-helpers'
+import { hasOrganizationSeatEntitlement, isPaid } from '@/lib/billing/plan-helpers'
+import { sqlIsPro } from '@/lib/billing/plan-helpers.sql'
 import { changeOrganizationWorkspaceBilledAccountsInTx } from '@/lib/billing/storage/payer-transfer'
 import {
   ENTITLED_SUBSCRIPTION_STATUSES,

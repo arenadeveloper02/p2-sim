@@ -56,18 +56,20 @@ export {
   type WorkflowBorderPort,
 } from './workflow-block/workflow-block-border'
 export {
+  getWorkflowTypeAccent,
+  getWorkflowTypeRole,
+  hasWorkflowTypeRole,
+  type WorkflowTypeRole,
+} from './workflow-type-roles'
+export {
   ERROR_SOURCE_HANDLE_POSITION,
   getErrorBorderPort,
   getErrorSourceHandleStyle,
   getNearestBranchCursorHandleId,
-  getWorkflowTypeAccent,
-  getWorkflowTypeRole,
-  hasWorkflowTypeRole,
   WorkflowBlockView,
   type WorkflowBlockViewProps,
   WorkflowTypeIcon,
   type WorkflowTypeIconProps,
-  type WorkflowTypeRole,
   WorkflowTypeTag,
   type WorkflowTypeTagProps,
 } from './workflow-block/workflow-block-view'

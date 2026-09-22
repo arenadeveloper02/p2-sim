@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { generateRandomHex } from '@sim/utils/random'
 
 /** S3 prefix for organization whitelabel logos and wordmarks. */
 export const ORG_LOGOS_S3_PREFIX = 'SIM_ORG_LOGOS'
@@ -8,7 +8,7 @@ export const ORG_LOGOS_S3_PREFIX = 'SIM_ORG_LOGOS'
  */
 export function generateOrgLogoFileKey(organizationId: string, fileName: string): string {
   const timestamp = Date.now()
-  const uniqueId = randomBytes(8).toString('hex')
+  const uniqueId = generateRandomHex(16)
   const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
   return `${ORG_LOGOS_S3_PREFIX}/${organizationId}/${timestamp}-${uniqueId}-${safeFileName}`
 }

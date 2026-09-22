@@ -39,7 +39,7 @@ import {
   getEndDateFromTimeRange,
   getStartDateFromTimeRange,
   hasActiveFilters,
-} from '@/lib/logs/filters'
+} from '@/lib/logs/filter-time'
 import { getTriggerOptions } from '@/lib/logs/get-trigger-options'
 import { type ParsedFilter, parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import {

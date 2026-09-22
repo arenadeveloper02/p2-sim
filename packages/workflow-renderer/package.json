@@ -28,6 +28,10 @@
     "./note-content": {
       "types": "./src/note/note-content.ts",
       "default": "./src/note/note-content.ts"
+    },
+    "./workflow-type-roles": {
+      "types": "./src/workflow-type-roles.ts",
+      "default": "./src/workflow-type-roles.ts"
     }
   },
   "scripts": {

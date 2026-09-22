@@ -26,7 +26,7 @@ import {
   type WorkflowBorderCursorHandle,
   type WorkflowBorderPort,
 } from '../workflow-block/workflow-block-border'
-import { getWorkflowTypeAccent } from '../workflow-block/workflow-block-view'
+import { getWorkflowTypeAccent } from '../workflow-type-roles'
 
 /** Data attached to loop/parallel container nodes. */
 export interface SubflowNodeData {

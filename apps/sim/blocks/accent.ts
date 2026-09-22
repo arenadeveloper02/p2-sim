@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 import { Repeat, Split } from '@sim/emcn/icons'
-import { hasWorkflowTypeRole } from '@sim/workflow-renderer'
+import { hasWorkflowTypeRole } from '@sim/workflow-renderer/workflow-type-roles'
 import { getBlock } from '@/blocks/registry'
 
 /** Tile fill for a block that has no config of its own to colour it. */

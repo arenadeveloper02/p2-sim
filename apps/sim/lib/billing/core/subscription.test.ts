@@ -43,6 +43,9 @@ vi.mock('@/lib/billing/plan-helpers', () => ({
     plan === 'enterprise' || plan === 'team' || Boolean(plan?.startsWith('team_')),
   isPro: vi.fn(),
   isTeam: vi.fn(),
+}))
+
+vi.mock('@/lib/billing/plan-helpers.sql', () => ({
   sqlIsPaid: vi.fn(() => ({ type: 'sqlIsPaid' })),
 }))
 
