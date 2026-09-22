@@ -81,7 +81,7 @@ const mockGetSession = authMockFns.mockGetSession
 
 const SURFACE_CONTEXT = {
   organization: { id: 'org-1', name: 'Acme', slug: 'acme', logo: null, memberCount: 1 },
-  viewer: { role: 'member', isAdmin: false },
+  viewer: { role: 'admin', isAdmin: true },
   searchAccess: { memberScoped: true, sourceMirrored: true },
   deployment: resolveDeploymentShape(),
 }
@@ -109,7 +109,7 @@ describe('OrganizationLayout', () => {
     expect(mockPrefetchOrganizationSidebar).not.toHaveBeenCalled()
   })
 
-  it('renders the surface for a member and seeds the chrome from the collapse cookie', async () => {
+  it('renders the surface for an owner or admin and seeds the chrome from the collapse cookie', async () => {
     mockGetOrganizationSurfaceContext.mockResolvedValue(SURFACE_CONTEXT)
 
     const element = await OrganizationLayout({
@@ -185,6 +185,22 @@ describe('OrganizationLayout', () => {
       'customer-org',
       'customer-member'
     )
+    expect(mockWorkspaceChrome).not.toHaveBeenCalled()
+    expect(mockPrefetchOrganizationSidebar).not.toHaveBeenCalled()
+  })
+
+  it('returns a member to workspace settings even when Search is rolled out', async () => {
+    mockGetOrganizationSurfaceContext.mockResolvedValue({
+      ...SURFACE_CONTEXT,
+      viewer: { role: 'member', isAdmin: false },
+    })
+
+    await expect(
+      OrganizationLayout({
+        children: <div>Organization child</div>,
+        params: Promise.resolve({ organizationId: 'org-1' }),
+      })
+    ).rejects.toThrow('redirect:/workspace?redirect=settings')
     expect(mockWorkspaceChrome).not.toHaveBeenCalled()
     expect(mockPrefetchOrganizationSidebar).not.toHaveBeenCalled()
   })

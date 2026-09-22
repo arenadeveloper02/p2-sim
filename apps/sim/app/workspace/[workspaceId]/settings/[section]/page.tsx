@@ -82,7 +82,11 @@ export default async function WorkspaceSettingsSectionPage({
   const organizationSection = UNIFIED_TO_ORGANIZATION_SECTION[parsed]
   if (organizationSection) {
     const hostContext = await getWorkspaceHostContextForViewer(workspaceId, session.user.id)
-    if (hostContext?.hostOrganizationId && hostContext.features?.organizationSearch) {
+    if (
+      hostContext?.hostOrganizationId &&
+      hostContext.viewer?.isHostOrganizationAdmin &&
+      hostContext.features?.organizationSearch
+    ) {
       const query = new URLSearchParams()
       for (const [key, value] of Object.entries((await searchParams) ?? {})) {
         for (const entry of Array.isArray(value) ? value : value === undefined ? [] : [value]) {

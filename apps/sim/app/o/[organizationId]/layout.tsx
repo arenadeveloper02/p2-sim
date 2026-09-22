@@ -17,10 +17,11 @@ import { WorkspaceChrome } from '@/app/workspace/[workspaceId]/components/worksp
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 
 /**
- * The organization surface: the viewer's own view of one organization, outside
- * any workspace. Requires membership and the organization's Search rollout.
- * Non-members get an explicit denial; members outside the rollout retain
- * workspace settings, including when following a saved organization link.
+ * The organization surface: an owner or admin's view of one organization, outside
+ * any workspace. Requires an owner or admin role and the organization's Search
+ * rollout. Non-members get an explicit denial. Members, and owners or admins
+ * outside the rollout, stay in workspace settings, including when following a
+ * saved organization link.
  */
 export default async function OrganizationLayout({
   children,
@@ -48,7 +49,9 @@ export default async function OrganizationLayout({
   if (!context) {
     return <OrganizationAccessDenied />
   }
-  if (!context.searchAccess.memberScoped) redirect(WORKSPACE_SETTINGS_PATH)
+  if (!context.searchAccess.memberScoped || !context.viewer.isAdmin) {
+    redirect(WORKSPACE_SETTINGS_PATH)
+  }
 
   await prefetchOrganizationSidebar(
     queryClient,

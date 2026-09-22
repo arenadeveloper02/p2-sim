@@ -101,6 +101,7 @@ describe('WorkspaceSettingsSectionPage', () => {
   it('preserves legacy organization settings query state on the canonical org destination', async () => {
     mockGetHostContext.mockResolvedValue({
       hostOrganizationId: 'org-target',
+      viewer: { isHostOrganizationAdmin: true },
       features: { organizationSearch: true },
     })
     await expect(
@@ -151,6 +152,7 @@ describe('WorkspaceSettingsSectionPage', () => {
     async (section, organizationSection) => {
       mockGetHostContext.mockResolvedValue({
         hostOrganizationId: 'org-target',
+        viewer: { isHostOrganizationAdmin: true },
         features: { organizationSearch: true, knowledgeMemberAccess: false },
       })
 
@@ -160,6 +162,20 @@ describe('WorkspaceSettingsSectionPage', () => {
       expect(mockSectionPrefetch).not.toHaveBeenCalled()
     }
   )
+
+  it('keeps organization settings in the workspace for a member', async () => {
+    mockGetHostContext.mockResolvedValue({
+      hostOrganizationId: 'org-target',
+      viewer: { isHostOrganizationAdmin: false },
+      features: { organizationSearch: true },
+    })
+
+    const element = await WorkspaceSettingsSectionPage(pageProps('billing'))
+
+    expect(element).toBeTruthy()
+    expect(mockRedirect).not.toHaveBeenCalled()
+    expect(mockSectionPrefetch).toHaveBeenCalledTimes(1)
+  })
 
   it('conceals inaccessible workspaces and platform-only sections', async () => {
     mockAuthorizeSection.mockResolvedValue({ allowed: false, disposition: 'not-found' })

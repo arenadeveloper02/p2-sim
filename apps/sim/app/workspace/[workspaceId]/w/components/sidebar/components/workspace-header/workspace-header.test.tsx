@@ -10,7 +10,7 @@ const { mockNavigateToSettings, mockWorkspacePermissions, hostContext } = vi.hoi
   mockNavigateToSettings: vi.fn(),
   hostContext: {
     hostOrganizationId: null as string | null,
-    viewer: { isHostOrganizationMember: false },
+    viewer: { isHostOrganizationMember: false, isHostOrganizationAdmin: false },
     features: { organizationSearch: false as boolean | undefined },
   },
   mockWorkspacePermissions: { canAdmin: true, canEdit: true, canRead: true },
@@ -172,6 +172,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   hostContext.hostOrganizationId = null
   hostContext.viewer.isHostOrganizationMember = false
+  hostContext.viewer.isHostOrganizationAdmin = false
   hostContext.features.organizationSearch = false
   Object.assign(mockWorkspacePermissions, { canAdmin: true, canEdit: true, canRead: true })
   // jsdom implements neither; the component scrolls the active row into view.
@@ -415,9 +416,10 @@ describe('WorkspaceHeader workspace switcher highlight', () => {
 })
 
 describe('WorkspaceHeader context navigation', () => {
-  it('links to the current host organization for enrolled members', () => {
+  it('links to the current host organization for an owner or admin', () => {
     hostContext.hostOrganizationId = 'host-org'
     hostContext.viewer.isHostOrganizationMember = true
+    hostContext.viewer.isHostOrganizationAdmin = true
     hostContext.features.organizationSearch = true
     render()
     expect(document.querySelector('a[href="/o/host-org"]')).toHaveTextContent(
@@ -426,13 +428,15 @@ describe('WorkspaceHeader context navigation', () => {
   })
 
   it.each([
-    { org: null, member: true, enabled: true },
-    { org: 'host-org', member: false, enabled: true },
-    { org: 'host-org', member: true, enabled: false },
-    { org: 'host-org', member: true, enabled: undefined },
-  ])('hides inaccessible organization navigation: %j', ({ org, member, enabled }) => {
+    { org: null, member: true, admin: true, enabled: true },
+    { org: 'host-org', member: false, admin: false, enabled: true },
+    { org: 'host-org', member: true, admin: false, enabled: true },
+    { org: 'host-org', member: true, admin: true, enabled: false },
+    { org: 'host-org', member: true, admin: true, enabled: undefined },
+  ])('hides inaccessible organization navigation: %j', ({ org, member, admin, enabled }) => {
     hostContext.hostOrganizationId = org
     hostContext.viewer.isHostOrganizationMember = member
+    hostContext.viewer.isHostOrganizationAdmin = admin
     hostContext.features.organizationSearch = enabled
     render()
     expect(document.querySelector('a[href^="/o/"]')).toBeNull()

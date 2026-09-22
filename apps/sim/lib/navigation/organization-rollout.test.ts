@@ -7,11 +7,15 @@ const mocks = vi.hoisted(() => ({
   appConfig: vi.fn(),
   landing: vi.fn(),
   platformAdmin: vi.fn(),
+  settingsAccess: vi.fn(),
 }))
 
 vi.mock('@/lib/core/config/appconfig', () => ({ fetchAppConfigProfile: mocks.appConfig }))
 vi.mock('@/lib/permissions/super-user', () => ({ isPlatformAdmin: mocks.platformAdmin }))
 vi.mock('@/lib/organizations/surface', () => ({ resolveOrganizationLanding: mocks.landing }))
+vi.mock('@/lib/organizations/settings-access', () => ({
+  getOrganizationSettingsAccess: mocks.settingsAccess,
+}))
 vi.mock('@/lib/billing/core/subscription', () => ({
   isOrganizationOnEnterprisePlan: vi.fn().mockResolvedValue(true),
   getOrganizationSubscriptionUsable: vi
@@ -34,6 +38,11 @@ describe('organization rollout during impersonation', () => {
     mocks.landing.mockImplementation(async (userId: string) =>
       userId === 'platform-admin' ? 'admin-org' : 'customer-org'
     )
+    mocks.settingsAccess.mockImplementation(async (_organizationId: string, userId: string) => ({
+      isAdmin: userId !== 'customer-member',
+      isMember: true,
+      role: userId === 'customer-member' ? 'member' : 'admin',
+    }))
     mocks.platformAdmin.mockImplementation(async (userId: string) => userId === 'platform-admin')
   })
 
@@ -65,9 +74,7 @@ describe('organization rollout during impersonation', () => {
       user: { id: 'customer-member' },
       session: { impersonatedBy: 'platform-admin', activeOrganizationId: 'customer-org' },
     }
-    await expect(resolveAppEntryPath(impersonatedSession)).resolves.toBe(
-      knowledge && groups ? '/o/customer-org/home' : '/workspace'
-    )
+    await expect(resolveAppEntryPath(impersonatedSession)).resolves.toBe('/workspace')
     expect(mocks.landing).toHaveBeenLastCalledWith('customer-member', 'customer-org')
     expect(mocks.platformAdmin).not.toHaveBeenCalled()
 
