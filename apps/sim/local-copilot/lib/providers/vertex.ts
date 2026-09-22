@@ -22,7 +22,9 @@ const logger = createLogger('LocalCopilotVertexProvider')
  *
  * Round-robins `VERTEX_PROJECT` / `_1` / `_2` with matching
  * `VERTEX_SERVICE_ACCOUNT_JSON*` and `VERTEX_LOCATION*` when set. On 429,
- * retries advance to the next slot.
+ * retries advance to the next slot and escalate to Vertex Priority PayGo
+ * (`X-Vertex-AI-LLM-Request-Type: shared` +
+ * `X-Vertex-AI-LLM-Shared-Request-Type: priority`).
  */
 export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotProvider {
   if (!isLocalCopilotVertexConfigured()) {
@@ -40,6 +42,7 @@ export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotPr
       yield* streamGoogleGenAiChatCompletion({
         ai: createLocalCopilotVertexClient(),
         refreshAi: createLocalCopilotVertexClient,
+        priorityPayGoOnRetry: true,
         config,
         request,
         logLabel: 'Vertex',
