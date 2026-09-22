@@ -1,11 +1,15 @@
-import type { HelpSupportIssueAttachment } from '@sim/db/schema'
+import { db } from '@sim/db'
+import { type HelpSupportIssueAttachment, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { normalizeEmail } from '@sim/utils/string'
+import { eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { renderHelpConfirmationEmail } from '@/components/emails'
 import { helpFormBodySchema } from '@/lib/api/contracts/common'
 import { validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { verifyCronAuth } from '@/lib/auth/internal'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -19,17 +23,60 @@ import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 
 const logger = createLogger('HelpAPI')
 
+interface HelpRequester {
+  userId: string | null
+  email: string
+}
+
+/**
+ * Resolves a Sim user from an email address for cron-authenticated help requests.
+ * Unknown emails are stored with a null user id.
+ */
+async function resolveUserByEmail(emailId: string): Promise<HelpRequester> {
+  const normalizedEmail = normalizeEmail(emailId)
+  const [userRecord] = await db
+    .select({ id: user.id, email: user.email })
+    .from(user)
+    .where(or(eq(user.email, normalizedEmail), eq(user.normalizedEmail, normalizedEmail)))
+    .limit(1)
+
+  if (!userRecord) {
+    return { userId: null, email: emailId }
+  }
+
+  return { userId: userRecord.id, email: userRecord.email }
+}
+
+function readFormString(formData: FormData, key: string): string | null {
+  const value = formData.get(key)
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * POST /api/help/arena-help
+ * Submits a help/support issue.
+ * Auth: logged-in Sim session, or `Authorization: Bearer <CRON_SECRET>`.
+ * Cron requests must include `email` (or `emailId`). Unknown emails are stored with a null user id.
+ */
 export const POST = withRouteHandler(async (req: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
     const session = await getSession()
-    if (!session?.user?.email) {
-      logger.warn(`[${requestId}] Unauthorized help request attempt`)
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
+    const sessionRequester: HelpRequester | null =
+      session?.user?.id && session.user.email
+        ? { userId: session.user.id, email: session.user.email }
+        : null
 
-    const email = session.user.email
+    if (!sessionRequester) {
+      const authError = verifyCronAuth(req, 'Arena help request')
+      if (authError) {
+        logger.warn(`[${requestId}] Unauthorized help request attempt`)
+        return authError
+      }
+    }
 
     const formData = await req.formData()
 
@@ -39,11 +86,6 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const workflowId = formData.get('workflowId') as string | null
     const workspaceId = formData.get('workspaceId') as string
     const userAgent = formData.get('userAgent') as string | null
-
-    logger.info(`[${requestId}] Processing help request`, {
-      type,
-      email: `${email.substring(0, 3)}***`, // Log partial email for privacy
-    })
 
     const validationResult = helpFormBodySchema.safeParse({
       subject,
@@ -57,6 +99,27 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       })
       return validationErrorResponse(validationResult.error)
     }
+
+    let requester = sessionRequester
+    if (!requester) {
+      const formEmail = readFormString(formData, 'email') ?? readFormString(formData, 'emailId')
+      if (!formEmail) {
+        return NextResponse.json(
+          { error: 'email is required when authenticating with CRON_SECRET' },
+          { status: 400 }
+        )
+      }
+
+      requester = await resolveUserByEmail(formEmail)
+    }
+
+    const { userId, email } = requester
+
+    logger.info(`[${requestId}] Processing help request`, {
+      type,
+      auth: sessionRequester ? 'session' : 'cron',
+      email: `${email.substring(0, 3)}***`, // Log partial email for privacy
+    })
 
     const images: { filename: string; content: Buffer; contentType: string }[] = []
 
@@ -75,7 +138,6 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       }
     }
 
-    const userId = session.user.id
     const issueId = generateId()
     const validatedType = validationResult.data.type
 
@@ -107,7 +169,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     let emailText = `
 Type: ${validatedType}
 From: ${email}
-User ID: ${userId}
+User ID: ${userId ?? 'N/A'}
 Workspace ID: ${workspaceId ?? 'N/A'}
 Workflow ID: ${workflowId ?? 'N/A'}
 Browser: ${userAgent ?? 'N/A'}

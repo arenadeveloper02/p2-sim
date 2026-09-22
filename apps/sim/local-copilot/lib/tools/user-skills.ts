@@ -54,9 +54,7 @@ export async function buildLocalCopilotUserSkillTool(
   workspaceId: string
 ): Promise<LocalCopilotToolDefinition | null> {
   if (!workspaceId) return null
-  return buildLocalCopilotUserSkillToolFromSummaries(
-    await loadWorkspaceSkillSummaries(workspaceId)
-  )
+  return buildLocalCopilotUserSkillToolFromSummaries(await loadWorkspaceSkillSummaries(workspaceId))
 }
 
 /**

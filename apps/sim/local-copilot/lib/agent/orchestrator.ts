@@ -6,7 +6,6 @@ import {
   type BillingAttributionSnapshot,
   resolveBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
-import { resolveLocalCopilotSpendCap } from '@/local-copilot/lib/billing/resolve-spend-cap'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import {
@@ -47,6 +46,7 @@ import { formatUxPhaseStatus, type LocalUxPhase } from '@/local-copilot/lib/agen
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { sanitizeToolIoForPersistence } from '@/local-copilot/lib/audit/sanitize-persistence'
 import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
+import { resolveLocalCopilotSpendCap } from '@/local-copilot/lib/billing/resolve-spend-cap'
 import { assertSpendCapAllows } from '@/local-copilot/lib/billing/spend-cap'
 import {
   LocalTurnCostAccumulator,
@@ -694,6 +694,29 @@ export async function* runLocalCopilotAgent(
   ) {
     throw new Error('Arena Copilot billing attribution does not match its actor and workspace')
   }
+  let resolvedSecretTraceRegistry: ToolExecutionContext['resolvedSecretTraceRegistry']
+  try {
+    const { prepareCopilotEnvironmentContext } = await import('@/lib/copilot/environment-context')
+    const environmentContext = await prepareCopilotEnvironmentContext(
+      params.userId,
+      params.workspaceId
+    )
+    resolvedSecretTraceRegistry = environmentContext.resolvedSecretTraceRegistry
+  } catch (error) {
+    logger.warn('Failed to build Arena Copilot model-egress secret catalog', {
+      error: getErrorMessage(error),
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+    })
+    const { createIncompleteResolvedSecretTraceRegistry } = await import(
+      '@/executor/utils/resolved-secret-trace-registry'
+    )
+    resolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+    })
+  }
+
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
@@ -713,6 +736,7 @@ export async function* runLocalCopilotAgent(
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
     turnMutations: createTurnMutations(),
+    resolvedSecretTraceRegistry,
     ...(relevantSkills.message ? { relevantSkillGuidance: relevantSkills.message.content } : {}),
   }
 

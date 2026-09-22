@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
 import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
@@ -158,6 +159,11 @@ export interface ToolExecutionContext {
     startBlockId?: string
     workflowName?: string
   }
+  /**
+   * Turn-scoped model-egress secret registry. Required by server tools that
+   * project queries/results through secret provenance (e.g. knowledge_base query).
+   */
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
 }
 
 export interface ToolExecutionResult {

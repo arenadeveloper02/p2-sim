@@ -3,6 +3,7 @@ import {
   IMAGE_BLOCK_MODEL_IDS,
 } from '@/lib/image-generation/block-model-config'
 import type { TraceSpan } from '@/lib/logs/types'
+import { normalizeUsageToolBucketId } from '@/tools/normalize'
 
 export const UNATTRIBUTED_AGENT_TOOLS_ID = 'unattributed_agent_tools'
 
@@ -88,6 +89,53 @@ export function resolveEmbeddedToolCostKey(toolName: string, output?: unknown): 
   return extractToolOutputModel(output) ?? normalizedTool
 }
 
+/**
+ * Registry operation id from span input (`exa_search`), when present.
+ * Does not fall back to canvas display names — those stay on `tool_id`.
+ */
+export function resolveBillableToolOperationId(span: {
+  input?: unknown
+  output?: unknown
+}): string | undefined {
+  if (!span.input || typeof span.input !== 'object' || Array.isArray(span.input)) {
+    return undefined
+  }
+
+  const record = span.input as Record<string, unknown>
+  for (const field of ['operation', 'toolId', 'tool'] as const) {
+    const value = record[field]
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!trimmed) continue
+    return resolveEmbeddedToolCostKey(trimmed, span.output)
+  }
+
+  return undefined
+}
+
+/**
+ * Display / charge key for a billable tool span (canvas title or type).
+ * Prefer {@link resolveBillableToolOperationId} for the registry operation stored
+ * on `usage_log.tool_name`.
+ */
+export function resolveBillableToolChargeKey(span: {
+  type?: string
+  name?: string
+  input?: unknown
+  output?: unknown
+}): string {
+  const operationId = resolveBillableToolOperationId(span)
+  if (operationId) return operationId
+
+  const rawName = span.name?.trim() || span.type?.trim() || 'tool'
+  return resolveEmbeddedToolCostKey(rawName, span.output)
+}
+
+/** Canvas / block display label for ledger `tool_id` / `description`. */
+export function resolveBillableToolDisplayName(span: { type?: string; name?: string }): string {
+  return span.name?.trim() || span.type?.trim() || 'tool'
+}
+
 export function hasLegacyAggregatedImageToolCosts(
   embeddedToolCosts: Record<string, number> | undefined
 ): boolean {
@@ -158,6 +206,46 @@ export function mergeEmbeddedToolCosts(
   return merged
 }
 
+/**
+ * Canonical Usage By Tools bucket for an embedded cost key.
+ * Prefers an explicit `embeddedToolIds` entry when present (new writes);
+ * otherwise falls back to pattern-based {@link normalizeUsageToolBucketId}.
+ */
+function resolveEmbeddedToolBucketId(
+  costKey: string,
+  embeddedToolIds?: Record<string, string>
+): string {
+  const explicit = embeddedToolIds?.[costKey]?.trim()
+  if (explicit) return explicit
+  return normalizeUsageToolBucketId(costKey)
+}
+
+/**
+ * Builds `embeddedToolIds` for every cost key. Preserves existing explicit ids;
+ * fills missing keys via {@link normalizeUsageToolBucketId}.
+ */
+export function buildEmbeddedToolIds(
+  costs: Record<string, number>,
+  existingIds?: Record<string, string>
+): Record<string, string> {
+  const ids: Record<string, string> = {}
+  for (const key of Object.keys(costs)) {
+    const existing = existingIds?.[key]?.trim()
+    ids[key] = existing && existing.length > 0 ? existing : normalizeUsageToolBucketId(key)
+  }
+  return ids
+}
+
+/** Merges explicit bucket-id maps; incoming wins on key conflict. */
+export function mergeEmbeddedToolIds(
+  existing: Record<string, string> | undefined,
+  incoming: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (!existing && !incoming) return undefined
+  const merged = { ...(existing ?? {}), ...(incoming ?? {}) }
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
 /** Extracts per-tool costs for a model from trace spans (legacy runs without metadata). */
 export function extractEmbeddedToolCostsFromTrace(
   spans: TraceSpan[] | undefined,
@@ -194,6 +282,8 @@ export function resolveEmbeddedToolsForModel(params: {
   model: string
   toolCost?: number
   embeddedToolCosts?: Record<string, number>
+  /** Optional map from cost key → Usage bucket id (new metadata writes). */
+  embeddedToolIds?: Record<string, string>
   traceSpans?: TraceSpan[]
 }): ResolvedEmbeddedTools {
   const toolCost = params.toolCost ?? 0
@@ -215,7 +305,10 @@ export function resolveEmbeddedToolsForModel(params: {
 
   const tools = Object.entries(named)
     .filter(([, cost]) => cost > 0)
-    .map(([name, cost]) => ({ name, cost }))
+    .map(([name, cost]) => ({
+      name: resolveEmbeddedToolBucketId(name, params.embeddedToolIds),
+      cost,
+    }))
     .sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name))
 
   const namedTotal = tools.reduce((sum, tool) => sum + tool.cost, 0)

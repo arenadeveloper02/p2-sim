@@ -1,8 +1,8 @@
-import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import {
   checkOrganizationMemberUsageLimit,
   checkServerSideUsageLimits,
 } from '@/lib/billing/calculations/usage-monitor'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import type { SpendCapSnapshot } from '@/local-copilot/lib/billing/spend-cap'
 
@@ -31,14 +31,10 @@ export async function resolveLocalCopilotSpendCap(params: {
       const attribution = params.billingAttribution
       const payerPromise = checkServerSideUsageLimits(attribution.billedAccountUserId)
       const memberPromise = attribution.organizationId
-        ? checkOrganizationMemberUsageLimit(
-            attribution.actorUserId,
-            attribution.organizationId,
-            {
-              start: new Date(attribution.billingPeriod.start),
-              end: new Date(attribution.billingPeriod.end),
-            }
-          )
+        ? checkOrganizationMemberUsageLimit(attribution.actorUserId, attribution.organizationId, {
+            start: new Date(attribution.billingPeriod.start),
+            end: new Date(attribution.billingPeriod.end),
+          })
         : null
 
       const payer = await payerPromise

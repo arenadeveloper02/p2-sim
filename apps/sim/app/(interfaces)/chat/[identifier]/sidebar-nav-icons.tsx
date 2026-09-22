@@ -33,7 +33,7 @@ export function CollapseNavIcon({ className }: SidebarNavIconProps) {
         'size-6 shrink-0 text-[var(--color-ds-icon-default,#575A66)] transition-colors',
         'group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]',
         '[&_.collapse-icon-plate]:fill-[var(--color-ds-brand-surface,#F3F8FE)]',
-        'group-hover:[&_.collapse-icon-plate]:fill-white',
+        'group-hover:[&_.collapse-icon-plate]:fill-[var(--color-ds-surface-raised)]',
         className
       )}
       aria-hidden='true'

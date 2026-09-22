@@ -153,7 +153,9 @@ async function loadWorkspaceRow(
   return workspaceRow
 }
 
-async function loadLegacyWorkspaceInventory(workspaceId: string): Promise<LegacyWorkspaceInventory> {
+async function loadLegacyWorkspaceInventory(
+  workspaceId: string
+): Promise<LegacyWorkspaceInventory> {
   const [resources, skills, workflowRows] = await Promise.all([
     loadWorkspaceResourceSummaries(workspaceId),
     loadWorkspaceSkillSummaries(workspaceId),
@@ -259,8 +261,7 @@ export async function buildLocalCopilotContext(
           value: { id: snapshotWorkspace.id, name: snapshotWorkspace.name },
           ms: 0,
         })
-      : (workspaceRowFallbackPromise ??
-        timed('workspaceRow', () => loadWorkspaceRow(workspaceId))),
+      : (workspaceRowFallbackPromise ?? timed('workspaceRow', () => loadWorkspaceRow(workspaceId))),
     hasCallerSnapshot && snapshot
       ? Promise.resolve({ value: mapSnapshotToWorkspaceIntegrations(snapshot), ms: 0 })
       : (integrationsPromise ??
