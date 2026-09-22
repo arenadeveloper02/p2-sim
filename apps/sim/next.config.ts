@@ -261,6 +261,11 @@ const nextConfig: NextConfig = {
     '@json-render/core',
     '@json-render/react',
     '@json-render/react-email',
+    // Webpack bundles `@trigger.dev/core` and fails on `z.ZodSchema` (removed as
+    // a named export in Zod 4). Turbopack never analyzed that path. Leave the
+    // SDK as a Node require — it is server-only.
+    '@trigger.dev/sdk',
+    '@trigger.dev/core',
     // The collab-doc seed converter lazily `require`s jsdom for a headless TipTap editor. Keep it
     // external so webpack doesn't try to bundle jsdom's dynamic internal requires.
     'jsdom',
