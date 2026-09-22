@@ -10,7 +10,7 @@ import { requestJson } from '@/lib/api/client/request'
 import type { FunctionExecuteBody } from '@/lib/api/contracts'
 import { oauthTokenPostContract } from '@/lib/api/contracts/oauth-connections'
 import { getBYOKKey } from '@/lib/api-key/byok'
-import type { InternalSandboxProfile } from '@/lib/auth/internal'
+import { generateInternalToken, type InternalSandboxProfile } from '@/lib/auth/internal'
 import {
   BILLING_ATTRIBUTION_HEADER,
   type BillingAttributionSnapshot,
@@ -3212,6 +3212,54 @@ async function executeDeclaredInternalOperation({
   }
 }
 
+const USER_DIRECTED_URL_TOOL_IDS = new Set(['http_request', 'webhook_request'])
+
+/**
+ * First-party tool configs declare relative `/api/tools/...` routes. The external
+ * transport only accepts absolute URLs, and those routes require an internal JWT.
+ * User-directed HTTP tools keep their URL so a relative path is still rejected.
+ */
+async function resolveFirstPartyToolRoute(
+  tool: ToolConfig,
+  params: Record<string, any>
+): Promise<ToolConfig> {
+  if (USER_DIRECTED_URL_TOOL_IDS.has(tool.id)) return tool
+
+  const rawUrl =
+    typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
+  if (typeof rawUrl !== 'string' || !rawUrl.startsWith('/api/tools/')) {
+    if (typeof tool.request.url === 'function' && typeof rawUrl === 'string') {
+      return { ...tool, request: { ...tool.request, url: rawUrl } }
+    }
+    return tool
+  }
+
+  const absoluteUrl = new URL(rawUrl, getInternalApiBaseUrl()).toString()
+  const contextUserId = params._context?.userId
+  const userId =
+    typeof contextUserId === 'string' && contextUserId.length > 0
+      ? contextUserId
+      : typeof params.userId === 'string' && params.userId.length > 0
+        ? params.userId
+        : undefined
+  const token = await generateInternalToken(userId)
+  const existingHeaders = tool.request.headers
+
+  return {
+    ...tool,
+    request: {
+      ...tool.request,
+      url: absoluteUrl,
+      allowSameOrigin: true,
+      headers: (headerParams) => {
+        const base = existingHeaders(headerParams)
+        if (base.Authorization || base.authorization) return base
+        return { ...base, Authorization: `Bearer ${token}` }
+      },
+    },
+  }
+}
+
 /** Executes one external tool request with DNS validation and IP pinning. */
 async function executeToolRequest(
   toolId: string,
@@ -3224,12 +3272,13 @@ async function executeToolRequest(
   const requestId = generateRequestId()
   const structuralOnlyToolLogs = false
   try {
-    const requestParams = prepareToolRequest(tool, params, resolvedSecretTraceRegistry)
+    const requestTool = await resolveFirstPartyToolRoute(tool, params)
+    const requestParams = prepareToolRequest(requestTool, params, resolvedSecretTraceRegistry)
     const { headers } = requestParams
     const fullUrl = new URL(requestParams.url).toString()
     const targetsThisSimInstance = isSelfOriginUrl(fullUrl)
 
-    if (targetsThisSimInstance && tool.request.allowSameOrigin !== true) {
+    if (targetsThisSimInstance && requestTool.request.allowSameOrigin !== true) {
       throw new Error(SAME_ORIGIN_EXTERNAL_TOOL_ERROR_MESSAGE)
     }
 
@@ -3288,7 +3337,7 @@ async function executeToolRequest(
           stripAuthOnRedirect: requestParams.stripAuthOnRedirect,
           redirectPolicy: requestParams.redirectPolicy,
           assertRedirectTarget:
-            tool.request.allowSameOrigin === true
+            requestTool.request.allowSameOrigin === true
               ? undefined
               : (redirectUrl) => {
                   if (isSelfOriginUrl(redirectUrl)) {

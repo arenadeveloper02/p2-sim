@@ -127,8 +127,10 @@ function resolveEnvKeys(prefix: string): string[] {
 }
 
 /**
- * Google image/LLM tools accept several env names. Prefer `NEXT_PUBLIC_GOOGLE_API_KEY`
- * when set (local Arena), then `GEMINI_API_KEY*`, then leftover `GOOGLE_API_KEY*`.
+ * Google image/LLM tools accept several env names. Prefer `GEMINI_API_KEY*`,
+ * then leftover `GOOGLE_API_KEY*`. `NEXT_PUBLIC_GOOGLE_API_KEY` is only used when
+ * no server Gemini key is configured, because that public key is rejected once
+ * Google reports it as leaked.
  */
 function preferGeminiKeysForGoogle(
   envKeyPrefix: string,
@@ -138,13 +140,16 @@ function preferGeminiKeysForGoogle(
     return availableKeys
   }
 
-  const nextPublicKeys = availableKeys.filter(
-    (entry) => entry.envVarName === 'NEXT_PUBLIC_GOOGLE_API_KEY'
-  )
-  if (nextPublicKeys.length > 0) return nextPublicKeys
-
   const geminiKeys = availableKeys.filter((entry) => entry.envVarName.startsWith('GEMINI_API_KEY'))
-  return geminiKeys.length > 0 ? geminiKeys : availableKeys
+  if (geminiKeys.length > 0) return geminiKeys
+
+  const serverGoogleKeys = availableKeys.filter(
+    (entry) =>
+      entry.envVarName === 'GOOGLE_API_KEY' || entry.envVarName.startsWith('GOOGLE_API_KEY_')
+  )
+  if (serverGoogleKeys.length > 0) return serverGoogleKeys
+
+  return availableKeys
 }
 
 /** Dimension name for per-billing-actor request rate limiting */

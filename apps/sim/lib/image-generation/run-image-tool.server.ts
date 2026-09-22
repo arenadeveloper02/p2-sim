@@ -3,7 +3,10 @@ import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
 import { type ImageToolBody, imageProviders } from '@/lib/api/contracts/tools/media/image'
-import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import {
+  getRotatingApiKey,
+  resolveGoogleGenerativeLanguageApiKey,
+} from '@/lib/core/config/api-keys'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   secureFetchWithPinnedIP,
@@ -148,16 +151,17 @@ export interface StoredImageResponse {
 
 function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | undefined): string {
   const trimmedKey = apiKey?.trim()
+
+  if (provider === 'gemini') {
+    return resolveGoogleGenerativeLanguageApiKey(trimmedKey)
+  }
+
   if (trimmedKey) {
     return trimmedKey
   }
 
   if (provider === 'openai') {
     return getRotatingApiKey('openai')
-  }
-
-  if (provider === 'gemini') {
-    return getRotatingApiKey('google')
   }
 
   throw new Error('API key is required')

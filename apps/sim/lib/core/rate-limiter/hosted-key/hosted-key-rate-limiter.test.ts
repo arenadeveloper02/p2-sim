@@ -165,7 +165,7 @@ describe('HostedKeyRateLimiter', () => {
       expect(result.envVarName).toBe('GEMINI_API_KEY')
     })
 
-    it('prefers NEXT_PUBLIC_GOOGLE_API_KEY over GEMINI_API_KEY for Google image tools', async () => {
+    it('prefers GEMINI_API_KEY over NEXT_PUBLIC_GOOGLE_API_KEY for Google image tools', async () => {
       mockAdapter.consumeTokens.mockResolvedValue({
         allowed: true,
         tokensRemaining: 9,
@@ -191,8 +191,8 @@ describe('HostedKeyRateLimiter', () => {
       )
 
       expect(result.success).toBe(true)
-      expect(result.key).toBe('next-public-google-key')
-      expect(result.envVarName).toBe('NEXT_PUBLIC_GOOGLE_API_KEY')
+      expect(result.key).toBe('valid-gemini-key')
+      expect(result.envVarName).toBe('GEMINI_API_KEY')
     })
 
     it('prefers GEMINI_API_KEY over an invalid leftover GOOGLE_API_KEY', async () => {

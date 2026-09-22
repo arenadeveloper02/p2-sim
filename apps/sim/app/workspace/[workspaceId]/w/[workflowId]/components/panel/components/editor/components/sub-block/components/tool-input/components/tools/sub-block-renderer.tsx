@@ -85,13 +85,8 @@ export function ToolSubBlockRenderer({
       const newVal = state.workflowValues[wfId]?.[blockId]?.[syntheticId]
       const oldVal = prevState.workflowValues[wfId]?.[blockId]?.[syntheticId]
       if (newVal === oldVal) return
-      const processed = preprocessSyntheticToolStoreValue({
-        storeValue: newVal,
-        effectiveParamId,
-        subBlock,
-        isObjectType,
-      })
-      const result = resolveToolParamSync(processed, syncedRef.current)
+
+      const result = resolveToolParamSync(newVal, syncedRef.current)
       if (result.action === 'noop') return
 
       if (result.action === 'reproject') {
@@ -107,51 +102,12 @@ export function ToolSubBlockRenderer({
       onParamChangeRef.current(toolIndex, effectiveParamId, result.value)
     })
     return unsub
-  }, [
-    blockId,
-    subBlockId,
-    syntheticId,
-    toolIndex,
-    effectiveParamId,
-    isObjectType,
-    subBlock.mode,
-    subBlock.id,
-    subBlock.type,
-    subBlock.canonicalParamId,
-  ])
+  }, [blockId, subBlockId, syntheticId, toolIndex, effectiveParamId])
 
   useEffect(() => {
-    const isAdvanced = subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced'
-    syncToolParamValueToSyntheticStore({
-      toolParamValue,
-      isObjectType,
-      isAdvanced,
-      effectiveParamId,
-      subBlock,
-      blockId,
-      syntheticId,
-      subBlockId,
-      toolIndex,
-      pushParamValueToStore,
-      onParamChange: onParamChangeRef.current,
-      syncedValue: syncedRef.current,
-      setSyncedValue: (value) => {
-        syncedRef.current = value
-      },
-    })
-  }, [
-    toolParamValue,
-    blockId,
-    syntheticId,
-    isObjectType,
-    subBlock.mode,
-    effectiveParamId,
-    subBlock.type,
-    subBlock.canonicalParamId,
-    pushParamValueToStore,
-    toolIndex,
-    subBlockId,
-  ])
+    if (toolParamValue === syncedRef.current) return
+    pushParamValueToStore(toolParamValue)
+  }, [toolParamValue, pushParamValueToStore])
 
   // Shared with the fork-sync gate so "is this the user's to fill?" is answered the same way
   // in the editor and when a sync decides whether a blank value blocks. `required` itself

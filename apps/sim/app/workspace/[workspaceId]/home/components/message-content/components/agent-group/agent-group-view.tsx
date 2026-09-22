@@ -3,7 +3,6 @@
 import { type ComponentType, type ReactNode, useState } from 'react'
 import { ThinkingLoader } from '@/components/ui/thinking-loader'
 import { isBrowserAgentAvailable } from '@/lib/browser-agent/transport'
-import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import { RETIRED_BROWSER_REQUEST_TAKEOVER_ID } from '@/lib/copilot/tools/retired-tools'
 import { getToolStatusDisplayTitle } from '@/lib/copilot/tools/tool-display'
 import { ActivityStream } from '@/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/activity-stream'
@@ -150,7 +149,6 @@ export function AgentGroupView({
   ToolCallComponent,
   renderBrowserTakeover,
 }: AgentGroupViewProps) {
-  const resolvedAgentLabel = resolveAssistantDisplayLabel(agentLabel)
   const AgentIcon = getAgentIcon(agentName)
   const isMainAgent = agentName === 'mothership'
   const tools = isMainAgent ? [] : collectGroupTools(items)
