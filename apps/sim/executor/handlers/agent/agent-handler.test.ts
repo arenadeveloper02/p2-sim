@@ -420,6 +420,7 @@ describe('AgentBlockHandler', () => {
       ).applyRoutingCost(streaming, 0.002)
 
       // The drain settles the model cost afterwards.
+
       ;(output as { cost: unknown }).cost = { input: 0.01, output: 0.02, total: 0.03 }
 
       expect(output.cost).toEqual({

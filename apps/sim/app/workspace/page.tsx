@@ -20,7 +20,7 @@ import {
   isUpgradeReason,
   UPGRADE_REASON_PARAM,
 } from '@/lib/billing/upgrade-reasons'
-import { isDev } from '@/lib/core/config/env-flags'
+import { isLocalLoginEnabled } from '@/lib/core/config/env-flags'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
@@ -90,7 +90,7 @@ export default function WorkspacePage() {
     if (isSessionPending || hasRedirectedRef.current) return
 
     if (!session?.user) {
-      if (isDev) {
+      if (isLocalLoginEnabled) {
         logger.info('User not authenticated, redirecting to login')
         router.replace('/login')
         return
@@ -278,7 +278,7 @@ async function handleNoWorkspaces(
     }
     logger.error('Error creating default workspace:', error)
   }
-  if (isDev) {
+  if (isLocalLoginEnabled) {
     router.replace('/login')
     return
   }

@@ -4,15 +4,15 @@ import type {
   UsageLogSourceValue,
   WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
-import { formatCreditCost } from '@/lib/billing/credits/conversion'
+import { dollarsToCredits, formatCreditCost } from '@/lib/billing/credits/conversion'
 import {
   formatEmbeddedToolLabel,
   isImageGenerationBillingKey,
   UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
+import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 import { normalizeUsageToolBucketId } from '@/tools/normalize'
 import { getToolIds } from '@/tools/tool-ids'
-import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 
 /**
  * Synthetic By Tools bucket for mothership / Copilot ledger tool rows.
@@ -141,7 +141,9 @@ function getUsageToolServiceFamilies(): string[] {
  * roll up to the longest registered service family (`exa_search` / `exaindnewssearch` → `exa`).
  */
 export function resolveUsageToolFamilyId(toolId: string): string {
-  const normalized = normalizeUsageToolBucketId(toolId).toLowerCase().replace(/[\s-]+/g, '_')
+  const normalized = normalizeUsageToolBucketId(toolId)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
   if (!normalized) return toolId
   if (normalized === COPILOT_USAGE_TOOL_BUCKET_ID) return COPILOT_USAGE_TOOL_BUCKET_ID
   if (normalized === UNATTRIBUTED_AGENT_TOOLS_ID) return UNATTRIBUTED_AGENT_TOOLS_ID
@@ -177,9 +179,14 @@ interface UsageToolBucketRow {
   rawCost?: number
 }
 
+/** True when Usage tables would show at least 1 credit for this amount. */
+export function hasBillableCredits(billableCost: number): boolean {
+  return dollarsToCredits(billableCost) > 0
+}
+
 /**
  * Aggregates By Tools rows after {@link resolveUsageToolFamilyId} normalization.
- * Drops buckets with no billable credits.
+ * Drops Copilot tools and buckets that display as 0 credits.
  */
 export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: T[]): T[] {
   const merged = new Map<string, T>()
@@ -205,7 +212,7 @@ export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: 
   }
 
   return [...merged.values()]
-    .filter((row) => row.billableCost > 0)
+    .filter((row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID)
     .sort((a, b) => b.billableCost - a.billableCost)
 }
 

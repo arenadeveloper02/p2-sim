@@ -205,7 +205,7 @@ export function GoldenQueriesModal({
                             ? 'bg-[#E6EEF9] opacity-70 shadow-sm ring-1 ring-[var(--border-200)]'
                             : isDragOver
                               ? 'bg-[#E6EEF9] ring-2 ring-[var(--brand-primary-hover-hex)]'
-                              : 'bg-[#F3F8FE] hover:bg-[#E6EEF9]'
+                              : 'bg-[var(--color-ds-brand-surface)] hover:bg-[var(--color-ds-blue-200)]'
                         }`}
                         draggable={mode === null && !disabled && !isSaving}
                         onDragStart={(event) => {
@@ -371,7 +371,7 @@ export function GoldenQueriesModal({
               )}
 
               {mode === 'add' && (
-                <div className='rounded-[8px] border border-[var(--border-200)] bg-white p-3'>
+                <div className='rounded-[8px] border border-[var(--border-200)] bg-[var(--color-ds-surface-raised)] p-3'>
                   <div className='flex items-center gap-2'>
                     <input
                       value={draftValue}

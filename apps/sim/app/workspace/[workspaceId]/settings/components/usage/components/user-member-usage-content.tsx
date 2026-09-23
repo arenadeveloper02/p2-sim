@@ -59,9 +59,7 @@ export function UserMemberUsageContent({
 
       <UsageRankTable
         rows={workflowRows}
-        getRowKey={(row, index) =>
-          `${row.workspaceId}:${row.workflowId ?? `workflow-${index}`}`
-        }
+        getRowKey={(row, index) => `${row.workspaceId}:${row.workflowId ?? `workflow-${index}`}`}
         getBillableCost={(row) => row.billableCost}
         emptyMessage='No workflow usage in this period.'
         columns={[
@@ -102,7 +100,6 @@ export function UserMemberUsageContent({
         rows={toolRows}
         getRowKey={(row) => row.toolId}
         getBillableCost={(row) => row.billableCost}
-        getRankValue={(row) => (row.billableCost > 0 ? row.billableCost : row.count)}
         emptyMessage='No hosted tool usage in this period.'
         columns={[
           {

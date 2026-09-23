@@ -131,7 +131,6 @@ export function OrganizationAdminUsageContent({
         rows={toolRows}
         getRowKey={(row) => row.toolId}
         getBillableCost={(row) => row.billableCost}
-        getRankValue={(row) => (row.billableCost > 0 ? row.billableCost : row.count)}
         emptyMessage='No hosted tool usage in this period.'
         columns={[
           {

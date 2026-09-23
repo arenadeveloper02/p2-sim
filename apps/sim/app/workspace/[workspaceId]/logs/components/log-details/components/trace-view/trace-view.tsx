@@ -29,7 +29,7 @@ import {
   Search,
   X,
 } from '@sim/emcn/icons'
-import { formatDuration } from '@sim/utils/formatting'
+import { formatDuration, formatInUserTimezone } from '@sim/utils/formatting'
 import { createPortal } from 'react-dom'
 import type { TraceSpan } from '@/lib/logs/types'
 import {
@@ -47,6 +47,7 @@ import {
 } from '@/app/workspace/[workspaceId]/logs/components/log-details/utils'
 import { BlockTile } from '@/blocks/block-tile'
 import { isCustomBlockType } from '@/blocks/custom/build-config'
+import { useTimezone } from '@/hooks/queries/general-settings'
 import { useCodeViewerFeatures } from '@/hooks/use-code-viewer'
 
 const DEFAULT_TREE_PANE_WIDTH = 240
@@ -644,6 +645,12 @@ function MetaRow({ label, value }: { label: string; value: string }) {
  * the selected span: metadata, input, output, thinking, tool calls, error.
  */
 const TraceDetailPane = memo(function TraceDetailPane({ span }: { span: TraceSpan | null }) {
+  /**
+   * Span start/end times are stored as UTC instants; render them in the
+   * account timezone via `formatInUserTimezone` so Trace matches Overview.
+   */
+  const timezone = useTimezone()
+
   if (!span) {
     return (
       <div className='flex h-full items-center justify-center p-6 text-[var(--text-tertiary)] text-caption'>
@@ -734,7 +741,7 @@ const TraceDetailPane = memo(function TraceDetailPane({ span }: { span: TraceSpa
               <>
                 <span>·</span>
                 <span title={new Date(startedAt).toISOString()} suppressHydrationWarning>
-                  {new Date(startedAt).toLocaleTimeString()}
+                  {formatInUserTimezone(startedAt, timezone, { style: 'time' })}
                 </span>
               </>
             )}
@@ -781,10 +788,10 @@ const TraceDetailPane = memo(function TraceDetailPane({ span }: { span: TraceSpa
       {Number.isFinite(startedAt) && Number.isFinite(endedAt) && startedAt > 0 && endedAt > 0 && (
         <div className='flex items-center justify-between text-[var(--text-tertiary)] text-caption'>
           <span title={new Date(startedAt).toISOString()} suppressHydrationWarning>
-            Started {new Date(startedAt).toLocaleTimeString()}
+            Started {formatInUserTimezone(startedAt, timezone, { style: 'time' })}
           </span>
           <span title={new Date(endedAt).toISOString()} suppressHydrationWarning>
-            Ended {new Date(endedAt).toLocaleTimeString()}
+            Ended {formatInUserTimezone(endedAt, timezone, { style: 'time' })}
           </span>
         </div>
       )}

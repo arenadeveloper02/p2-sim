@@ -104,6 +104,7 @@ if (typeof window !== 'undefined') {
   /**
    * Global event tracking function
    */
+
   ;(window as any).__SIM_TELEMETRY_ENABLED = telemetryEnabled
   ;(window as any).__SIM_TRACK_EVENT = (eventName: string, properties?: any) => {
     if (!telemetryEnabled) return

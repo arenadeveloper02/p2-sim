@@ -686,6 +686,29 @@ export async function* runLocalCopilotAgent(
   ) {
     throw new Error('Arena Copilot billing attribution does not match its actor and workspace')
   }
+  let resolvedSecretTraceRegistry: ToolExecutionContext['resolvedSecretTraceRegistry']
+  try {
+    const { prepareCopilotEnvironmentContext } = await import('@/lib/copilot/environment-context')
+    const environmentContext = await prepareCopilotEnvironmentContext(
+      params.userId,
+      params.workspaceId
+    )
+    resolvedSecretTraceRegistry = environmentContext.resolvedSecretTraceRegistry
+  } catch (error) {
+    logger.warn('Failed to build Arena Copilot model-egress secret catalog', {
+      error: getErrorMessage(error),
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+    })
+    const { createIncompleteResolvedSecretTraceRegistry } = await import(
+      '@/executor/utils/resolved-secret-trace-registry'
+    )
+    resolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+    })
+  }
+
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
@@ -705,6 +728,7 @@ export async function* runLocalCopilotAgent(
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
     turnMutations: createTurnMutations(),
+    resolvedSecretTraceRegistry,
     ...(relevantSkills.message ? { relevantSkillGuidance: relevantSkills.message.content } : {}),
   }
 

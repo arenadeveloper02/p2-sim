@@ -47,6 +47,11 @@ import type {
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
+import {
+  ConversationTimeline,
+  CONVERSATION_TIMELINE_GUTTER_CLASS,
+  shouldShowConversationTimeline,
+} from '@/components/conversation-timeline/conversation-timeline'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
@@ -700,6 +705,21 @@ export function MothershipChat({
 
   const virtualItems = virtualizer.getVirtualItems()
 
+  /**
+   * Timeline jump must go through the virtualizer: off-screen rows are not in
+   * the DOM, so a `querySelector('[data-message-id]')` scroll would miss.
+   */
+  const handleTimelineJump = useCallback(
+    (messageId: string) => {
+      const index = messages.findIndex((message) => message.id === messageId)
+      if (index < 0) return
+      virtualizer.scrollToIndex(index, { align: 'center' })
+    },
+    [messages, virtualizer]
+  )
+
+  const showTimeline = shouldShowConversationTimeline(messages)
+
   return (
     <ChatSurfaceProvider
       chatId={chatId}
@@ -714,57 +734,79 @@ export function MothershipChat({
       setLocalCopilotCatalogId={setLocalCopilotCatalogId}
     >
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
-        <div ref={setScrollElement} className={styles.scrollContainer}>
-          {isLoading && !hasMessages ? (
-            <MothershipChatSkeleton layout={layout} />
-          ) : (
-            <div
-              ref={sizerRef}
-              className={styles.sizer}
-              style={{ height: virtualizer.getTotalSize() }}
-            >
-              {virtualItems.map((virtualItem) => {
-                const index = virtualItem.index
-                const msg = messages[index]
-                const isLast = index === lastIndex
-                return (
-                  <div
-                    key={virtualItem.key}
-                    data-index={index}
-                    ref={virtualizer.measureElement}
-                    className='absolute top-0 left-0 w-full'
-                    style={{ transform: `translateY(${virtualItem.start}px)` }}
-                  >
-                    {msg.role === 'user' ? (
-                      interactionPairing.hiddenUserByIndex[index] ? null : (
-                        <UserMessageRow
-                          content={msg.content}
-                          contexts={msg.contexts}
-                          attachments={msg.attachments}
-                          rowClassName={cn(styles.userRow, styles.rowGap)}
-                          bubbleClassName={styles.userBubble}
-                          attachmentWidthClassName={styles.attachmentWidth}
+        {/* Relative wrapper anchors the timeline to the scroll viewport, not the composer. */}
+        <div className='relative flex min-h-0 flex-1 flex-col'>
+          <div
+            ref={setScrollElement}
+            className={cn(styles.scrollContainer, showTimeline && CONVERSATION_TIMELINE_GUTTER_CLASS)}
+          >
+            {isLoading && !hasMessages ? (
+              <MothershipChatSkeleton layout={layout} />
+            ) : (
+              <div
+                ref={sizerRef}
+                className={styles.sizer}
+                style={{ height: virtualizer.getTotalSize() }}
+              >
+                {virtualItems.map((virtualItem) => {
+                  const index = virtualItem.index
+                  const msg = messages[index]
+                  const isLast = index === lastIndex
+                  /**
+                   * `data-message-id` anchors ConversationTimeline active-marker
+                   * lookups and jump targets for mounted virtual rows.
+                   */
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      data-index={index}
+                      data-message-id={msg.id}
+                      ref={virtualizer.measureElement}
+                      className='absolute top-0 left-0 w-full'
+                      style={{ transform: `translateY(${virtualItem.start}px)` }}
+                    >
+                      {msg.role === 'user' ? (
+                        interactionPairing.hiddenUserByIndex[index] ? null : (
+                          <UserMessageRow
+                            content={msg.content}
+                            contexts={msg.contexts}
+                            attachments={msg.attachments}
+                            rowClassName={cn(styles.userRow, styles.rowGap)}
+                            bubbleClassName={styles.userBubble}
+                            attachmentWidthClassName={styles.attachmentWidth}
+                          />
+                        )
+                      ) : (
+                        <AssistantMessageRow
+                          message={msg}
+                          isStreaming={isStreamActive && isLast}
+                          isLast={isLast}
+                          precedingUserContent={precedingUserContentByIndex[index]}
+                          questionAnswers={interactionPairing.answersByIndex[index]}
+                          credentialSubmission={
+                            interactionPairing.credentialSubmissionByIndex[index]
+                          }
+                          credentialAbandoned={
+                            interactionPairing.credentialAbandonedByIndex[index]
+                          }
+                          rowClassName={cn(styles.assistantRow, styles.rowGap)}
+                          onOptionSelect={isLast ? stableOnOptionSelect : undefined}
+                          onAnimatingChange={isLast ? setLastRowAnimating : undefined}
                         />
-                      )
-                    ) : (
-                      <AssistantMessageRow
-                        message={msg}
-                        isStreaming={isStreamActive && isLast}
-                        isLast={isLast}
-                        precedingUserContent={precedingUserContentByIndex[index]}
-                        questionAnswers={interactionPairing.answersByIndex[index]}
-                        credentialSubmission={interactionPairing.credentialSubmissionByIndex[index]}
-                        credentialAbandoned={interactionPairing.credentialAbandonedByIndex[index]}
-                        rowClassName={cn(styles.assistantRow, styles.rowGap)}
-                        onOptionSelect={isLast ? stableOnOptionSelect : undefined}
-                        onAnimatingChange={isLast ? setLastRowAnimating : undefined}
-                      />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Shared timeline — same component as arena deployed chat. */}
+          <ConversationTimeline
+            messages={messages}
+            scrollContainerRef={scrollElementRef}
+            onJumpToMessage={handleTimelineJump}
+          />
         </div>
 
         <div
