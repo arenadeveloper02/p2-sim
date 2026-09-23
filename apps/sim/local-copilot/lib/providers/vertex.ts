@@ -22,9 +22,10 @@ const logger = createLogger('LocalCopilotVertexProvider')
  *
  * Round-robins `VERTEX_PROJECT` / `_1` / `_2` with matching
  * `VERTEX_SERVICE_ACCOUNT_JSON*` and `VERTEX_LOCATION*` when set. On 429,
- * retries advance to the next slot and escalate to Vertex Priority PayGo
+ * the first retry flips to Vertex Priority PayGo on the same slot
  * (`X-Vertex-AI-LLM-Request-Type: shared` +
- * `X-Vertex-AI-LLM-Shared-Request-Type: priority`).
+ * `X-Vertex-AI-LLM-Shared-Request-Type: priority`); further 429s keep
+ * Priority sticky and rotate slots.
  */
 export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotProvider {
   if (!isLocalCopilotVertexConfigured()) {

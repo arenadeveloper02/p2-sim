@@ -341,11 +341,18 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
           }
         })()
       )
+    const refreshAi = vi.fn(() => ({
+      models: { generateContentStream },
+    }))
     const ai = { models: { generateContentStream } }
 
     for await (const _chunk of streamGoogleGenAiChatCompletion({
       // double-cast-allowed: test double for GoogleGenAI stream client
       ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+      // double-cast-allowed: test double for GoogleGenAI stream client refresh
+      refreshAi: refreshAi as unknown as NonNullable<
+        Parameters<typeof streamGoogleGenAiChatCompletion>[0]['refreshAi']
+      >,
       priorityPayGoOnRetry: true,
       config,
       request: { messages: [{ role: 'user', content: 'hi' }] },
@@ -356,6 +363,8 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
     }
 
     expect(generateContentStream).toHaveBeenCalledTimes(2)
+    // First 429 flips Priority on the same client — do not rotate yet.
+    expect(refreshAi).not.toHaveBeenCalled()
     const firstConfig = generateContentStream.mock.calls[0]?.[0]?.config as
       | { httpOptions?: { headers?: Record<string, string> } }
       | undefined
@@ -364,6 +373,52 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
       | undefined
     expect(firstConfig?.httpOptions?.headers).toBeUndefined()
     expect(retryConfig?.httpOptions?.headers).toEqual({ ...VERTEX_PRIORITY_PAYGO_HEADERS })
+  })
+
+  it('keeps Priority sticky and rotates the client on a second 429', async () => {
+    const exhausted = Object.assign(new Error('Resource exhausted'), {
+      status: 'RESOURCE_EXHAUSTED',
+      code: 429,
+    })
+    const generateContentStream = vi
+      .fn()
+      .mockRejectedValueOnce(exhausted)
+      .mockRejectedValueOnce(exhausted)
+      .mockResolvedValueOnce(
+        (async function* () {
+          yield {
+            candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+            usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+          }
+        })()
+      )
+    const refreshAi = vi.fn(() => ({
+      models: { generateContentStream },
+    }))
+    const ai = { models: { generateContentStream } }
+
+    for await (const _chunk of streamGoogleGenAiChatCompletion({
+      // double-cast-allowed: test double for GoogleGenAI stream client
+      ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+      // double-cast-allowed: test double for GoogleGenAI stream client refresh
+      refreshAi: refreshAi as unknown as NonNullable<
+        Parameters<typeof streamGoogleGenAiChatCompletion>[0]['refreshAi']
+      >,
+      priorityPayGoOnRetry: true,
+      config,
+      request: { messages: [{ role: 'user', content: 'hi' }] },
+      logLabel: 'Vertex',
+    })) {
+      // drain
+    }
+
+    expect(generateContentStream).toHaveBeenCalledTimes(3)
+    expect(refreshAi).toHaveBeenCalledTimes(1)
+    expect(refreshAi).toHaveBeenCalledWith({ priorityPayGo: true })
+    const thirdConfig = generateContentStream.mock.calls[2]?.[0]?.config as
+      | { httpOptions?: { headers?: Record<string, string> } }
+      | undefined
+    expect(thirdConfig?.httpOptions?.headers).toEqual({ ...VERTEX_PRIORITY_PAYGO_HEADERS })
   })
 
   it('surfaces a clearer error after exhausting retries', async () => {
@@ -378,13 +433,14 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
       for await (const _chunk of streamGoogleGenAiChatCompletion({
         // double-cast-allowed: test double for GoogleGenAI stream client
         ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+        priorityPayGoOnRetry: true,
         config,
         request: { messages: [{ role: 'user', content: 'hi' }] },
-        logLabel: 'Gemini',
+        logLabel: 'Vertex',
       })) {
         // drain
       }
-    }).rejects.toThrow(/quota exceeded \(429 RESOURCE_EXHAUSTED\) after retries/)
+    }).rejects.toThrow(/Retries included Vertex Priority PayGo/)
 
     expect(generateContentStream).toHaveBeenCalledTimes(5)
     expect(mockSleep).toHaveBeenCalledTimes(4)

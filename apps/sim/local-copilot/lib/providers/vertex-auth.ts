@@ -194,12 +194,34 @@ export function resetLocalCopilotVertexSlotRotation(): void {
   vertexSlotRotationCounter = 0
 }
 
-function buildVertexClient(slot: LocalCopilotVertexSlot): GoogleGenAI {
+/** Options when constructing a Local Copilot Vertex client. */
+export interface LocalCopilotVertexClientOptions {
+  /**
+   * Bake Priority PayGo headers into client `httpOptions` so every request
+   * on this client hits the shared priority pool.
+   */
+  priorityPayGo?: boolean
+}
+
+const VERTEX_PRIORITY_PAYGO_HTTP_OPTIONS = {
+  headers: {
+    'X-Vertex-AI-LLM-Request-Type': 'shared',
+    'X-Vertex-AI-LLM-Shared-Request-Type': 'priority',
+  },
+} as const
+
+function buildVertexClient(
+  slot: LocalCopilotVertexSlot,
+  options?: LocalCopilotVertexClientOptions
+): GoogleGenAI {
+  const httpOptions = options?.priorityPayGo ? VERTEX_PRIORITY_PAYGO_HTTP_OPTIONS : undefined
+
   if (slot.credentials) {
     return new GoogleGenAI({
       vertexai: true,
       project: slot.project,
       location: slot.location,
+      ...(httpOptions ? { httpOptions } : {}),
       googleAuthOptions: {
         credentials: slot.credentials,
         scopes: [VERTEX_CLOUD_PLATFORM_SCOPE],
@@ -211,6 +233,7 @@ function buildVertexClient(slot: LocalCopilotVertexSlot): GoogleGenAI {
     vertexai: true,
     project: slot.project,
     location: slot.location,
+    ...(httpOptions ? { httpOptions } : {}),
   })
 }
 
@@ -219,7 +242,11 @@ function buildVertexClient(slot: LocalCopilotVertexSlot): GoogleGenAI {
  *
  * Round-robins up to three slots, each with its own project, location, and
  * service-account JSON (`VERTEX_*`, `VERTEX_*_1`, `VERTEX_*_2`).
+ * Pass `{ priorityPayGo: true }` after a 429 to pin the next slot to the
+ * shared priority pool.
  */
-export function createLocalCopilotVertexClient(): GoogleGenAI {
-  return buildVertexClient(resolveLocalCopilotVertexSlot())
+export function createLocalCopilotVertexClient(
+  options?: LocalCopilotVertexClientOptions
+): GoogleGenAI {
+  return buildVertexClient(resolveLocalCopilotVertexSlot(), options)
 }
