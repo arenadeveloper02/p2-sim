@@ -81,6 +81,7 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "0.479.0" (React 19 compatible) — never 0.395.x
+- lucide-react icons: NEVER pass \`title={...}\` (TS2322 vs LucideProps) — use wrapping \`<span title="...">\` or \`aria-label\` / \`aria-hidden\` instead
 - NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
 - NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
@@ -222,8 +223,10 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - Do NOT reference scalar fields absent from the model unless defined in schema.prisma
    - Aggregate/stat types are NOT database rows — do not add a required \`id\` field unless the return object includes one
    - NEVER compress datasource/generator onto one line — multi-line blocks only or \`prisma generate\` fails with P1012
+   - P1012 "not a valid field or attribute definition" on a \`model Name {\` line: a previous model/enum/datasource/generator is missing its closing \`}\` — close every block before starting the next top-level model (models are never nested)
 7. Missing third-party dependencies (TS2307 "Cannot find module"):
    - When any file imports a package (lucide-react, recharts, jsonwebtoken, bcryptjs, zod, etc.), package.json dependencies MUST include it, with matching @types/* in devDependencies when the package ships no types
+   - lucide-react icons accept LucideProps only (className, size, strokeWidth, color, aria-*, etc.) — NEVER pass HTML \`title={...}\` to an icon (TS2322 IntrinsicAttributes & LucideProps). For tooltips use a wrapping \`<span title="...">\` or visible text, not an icon prop
 8. Missing component files ("Missing file for import @/components/X" in structure validation):
    - Every page/layout that imports @/components/Foo MUST have components/Foo.tsx in files[] with complete UI — generate the component, do not delete the import
    - Reuse one shared component across similar routes (one components/Foo.tsx file) rather than dangling per-route imports
@@ -282,7 +285,11 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
 22. Missing Next.js Metadata import (TS2304 Cannot find name 'Metadata' in app/layout.tsx):
    - Whenever you write \`export const metadata: Metadata = {...}\`, you MUST also have \`import type { Metadata } from 'next'\` in the same file
    - Metadata is a Next.js type — NEVER import it from @/lib/types or invent a local type named Metadata
-   - RIGHT: \`import type { Metadata } from 'next'\` then \`export const metadata: Metadata = { title: '...', description: '...' }\``
+   - RIGHT: \`import type { Metadata } from 'next'\` then \`export const metadata: Metadata = { title: '...', description: '...' }\`
+23. Lucide icon props (TS2322 IntrinsicAttributes & LucideProps — \`title\` not assignable):
+   - WRONG: \`<Settings className="h-4 w-4" title="Settings" />\` — lucide-react 0.479 does not accept \`title\`
+   - RIGHT: \`<span title="Settings"><Settings className="h-4 w-4" aria-hidden /></span>\` or \`<Settings className="h-4 w-4" aria-label="Settings" />\`
+   - Only pass props Lucide icons declare (className, size, strokeWidth, color, absoluteStrokeWidth, aria-*). Never invent HTML attribute props like \`title\`, \`alt\`, or \`loading\` on icons`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -461,6 +468,9 @@ generator client {
 
   - Single-line forms like \`datasource db { provider = "postgresql" url = env("DATABASE_URL") }\` FAIL \`prisma generate\` (P1012: "not a valid definition within a datasource" / "provider is missing")
   - Each model block must be multi-line: \`model Name {\` on its own line, fields indented, closing \`}\` alone on a line
+  - Every \`{\` MUST have a matching \`}\` before the next top-level \`model\` / \`enum\` / \`datasource\` / \`generator\` — NEVER nest a \`model\` inside another model or leave a previous block unclosed
+  - P1012 "This line is not a valid field or attribute definition" pointing at \`model Foo {\` means a prior block is still open (missing \`}\`) — close it, then start the next model at the top level
+  - File order: datasource → generator → models/enums only — no markdown fences, no explanatory prose, no truncated mid-line fields above the first model
 - Datasource: provider = "postgresql" and url = env("DATABASE_URL") only — Do NOT add directUrl, DATABASE_URL_UNPOOLED, or DIRECT_URL — Vercel Neon injects DATABASE_URL only
 - Generator: always include \`generator client { provider = "prisma-client-js" }\` as a multi-line block before the first model
 - Generate lib/prisma.ts with the PrismaClient singleton (globalForPrisma pattern for dev hot reload)

@@ -1219,7 +1219,7 @@ async function repairAppSpecWithLlm(
 
 Respond ONLY with JSON matching the provided schema.
 
-The user message contains the CURRENT contents of every repository file. Treat them as the source of truth: read the files named in the build log, fix the reported errors with minimal targeted edits, and keep every cross-file contract (types, exports, prop names, Prisma fields) consistent with the files you are NOT changing.
+The user message contains the CURRENT contents of SELECTED repository files (not the full tree) plus a complete path index. Treat the selected files as the source of truth: read the files named in the build log, fix the reported errors with minimal targeted edits, and keep every cross-file contract (types, exports, prop names, Prisma fields) consistent with the files you are NOT changing.
 Return ONLY the files you change or add — complete final contents for each returned file. Unchanged files are preserved automatically; do NOT echo them back, and do NOT rewrite files the build log does not implicate unless a fix requires it.
 
 ${GENERATED_APP_GENERATION_MANDATES}
@@ -1250,6 +1250,8 @@ Common TypeScript error codes and their generic fixes:
 - TS2300 Duplicate identifier (getArenaEmailId / ArenaEmailProvider / ArenaThemeProvider): keep a SINGLE import of each Arena symbol from the canonical modules (\`@/lib/arena-email\`, \`@/components/arena-email-provider\`, \`@/components/arena-theme-provider\`) — delete duplicate import lines and any custom ArenaProviders barrel imports
 - TS7034 / TS7005 implicit any[]: annotate empty arrays — \`let messages: Message[] = []\` (type from lib/types.ts), never bare \`=[]\`
 - Prisma P1012 ("not a valid definition within a datasource" / "provider is missing"): expand prisma/schema.prisma so datasource and generator are MULTI-LINE blocks (never \`datasource db { provider = ... url = ... }\` on one line)
+- Prisma P1012 ("This line is not a valid field or attribute definition" on \`model Foo {\`): a prior model/enum/datasource/generator is missing \`}\` — close every block, then place each \`model\` at the top level (never nested); rewrite the full schema file if braces are unbalanced
+- TS2322 LucideProps (\`title\` / unknown props on lucide-react icons): remove \`title={...}\` from \`<Icon />\` — wrap with \`<span title="...">\` or use \`aria-label\` / \`aria-hidden\` only
 - TS2353/TS2339/TS2551 in lib/actions.ts: align Prisma include/select keys and field access with prisma/schema.prisma; keep lib/types.ts in sync
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
@@ -1276,19 +1278,57 @@ Keep the same app purpose and repo name unless a rename is required to fix the b
 Prefer minimal, targeted file changes over rewriting unrelated files.
 Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
 
+  const requiresDatabase = resolveRequiresDatabase(spec)
+  const contextPaths = resolveRepairContextPaths(buildLog, spec.files, requiresDatabase)
+  logger.info('Repair context files selected', {
+    contextCount: contextPaths.length,
+    totalFiles: spec.files.length,
+    paths: contextPaths,
+  })
+
   const schemaBaseline = buildPrismaSchemaBaselineContext(spec.files, options.originalPrismaSchema)
+  const byPath = indexGeneratedAppFiles(spec.files)
+  const selectedFiles = contextPaths
+    .map((path) => byPath.get(normalizeGeneratedAppPath(path)))
+    .filter((file): file is GeneratedAppFile => Boolean(file))
+  const repoSummary = buildRepoSummaryForEdit(
+    spec.repoName,
+    {
+      appName: spec.appName,
+      description: spec.description,
+      features: spec.features,
+      requiresDatabase,
+    },
+    spec.files
+  )
+  const fileIndex = spec.files
+    .map((file) => normalizeGeneratedAppPath(file.path))
+    .sort()
+    .join('\n')
 
   const userPrompt = `Original request:\n${userInput}
 
 App name: ${spec.appName}
 Repository name: ${spec.repoName}
 
+Repository summary (architecture, routes, and scope):
+
+${repoSummary}
+
 ${schemaBaseline ? `${schemaBaseline}\n\n` : ''}Build log (errors to fix):
 ${truncateBuildLog(buildLog)}
 
-Current repository files (source of truth — fix the errors above IN this code):
+Complete file index (${spec.files.length} paths — bodies below are SELECTED only):
+${fileIndex}
 
-${buildRepairFileContext(spec.files)}
+Selected file index (${selectedFiles.length} of ${spec.files.length} paths):
+${contextPaths.join('\n')}
+
+Selected repository files (source of truth — fix the errors above IN this code; keep cross-file contracts consistent with files you do not change):
+
+${buildRepairFileContext(selectedFiles, {
+  extraSkipPaths: schemaBaseline ? ['prisma/schema.prisma'] : undefined,
+})}
 
 Return ONLY the files you changed or added (complete final contents each) so the app passes npm install, prisma generate (when used), and next build.`
 
@@ -2248,6 +2288,86 @@ function resolveEditContextPaths(
   }
 
   return [...pins, ...others]
+}
+
+/**
+ * Pulls repo-relative paths named in tsc / Prisma / structure-validation logs so
+ * repair context can stay selective (same idea as edit's select pass).
+ */
+function extractPathsFromBuildLog(
+  buildLog: string,
+  existingPaths: Iterable<string>
+): string[] {
+  const byLower = new Map<string, string>()
+  for (const path of existingPaths) {
+    const normalized = normalizeGeneratedAppPath(path)
+    byLower.set(normalized.toLowerCase(), normalized)
+  }
+
+  const resolveCandidate = (raw: string): string | undefined => {
+    const cleaned = normalizeGeneratedAppPath(
+      raw.replace(/^\.\//, '').replace(/^\/+/, '').replace(/\\/g, '/')
+    )
+    if (!cleaned) return undefined
+    const direct = byLower.get(cleaned.toLowerCase())
+    if (direct) return direct
+
+    const withoutExt = cleaned.replace(/\.(tsx?|jsx?|css|json|prisma|mjs|cjs)$/i, '')
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js', '.css', '.json', '.prisma']) {
+      const hit = byLower.get(`${withoutExt}${ext}`.toLowerCase())
+      if (hit) return hit
+    }
+    const indexHit = byLower.get(`${withoutExt}/index.ts`.toLowerCase())
+    if (indexHit) return indexHit
+    const indexTsx = byLower.get(`${withoutExt}/index.tsx`.toLowerCase())
+    if (indexTsx) return indexTsx
+    return undefined
+  }
+
+  const found: string[] = []
+  const seen = new Set<string>()
+  const add = (raw: string) => {
+    const resolved = resolveCandidate(raw)
+    if (!resolved || seen.has(resolved)) return
+    seen.add(resolved)
+    found.push(resolved)
+  }
+
+  // tsc: path(line,col) / path: line / Prisma --> path:line
+  for (const match of buildLog.matchAll(
+    /(?:^|[\s"'`(>\]])((?:app|components|lib|prisma|hooks|types|utils|public)\/[\w./@-]+\.(?:tsx?|jsx?|css|json|prisma|mjs|cjs))(?=[\s:(]|$)/gim
+  )) {
+    add(match[1])
+  }
+
+  // Structure: Missing file for import @/components/X (referenced in app/page.tsx)
+  for (const match of buildLog.matchAll(/referenced in\s+([\w./@-]+\.(?:tsx?|jsx?|css|json))/gi)) {
+    add(match[1])
+  }
+
+  // Alias imports in logs: @/lib/actions → lib/actions.ts
+  for (const match of buildLog.matchAll(
+    /@\/((?:app|components|lib|hooks|types|utils)\/[\w./-]+)/gi
+  )) {
+    add(match[1])
+  }
+
+  return found
+}
+
+/**
+ * Repair context paths: build-log hits + edit pins/DB anchors + heuristic fill.
+ */
+function resolveRepairContextPaths(
+  buildLog: string,
+  existingFiles: GeneratedAppFile[],
+  requiresDatabase: boolean
+): string[] {
+  const fromLog = extractPathsFromBuildLog(
+    buildLog,
+    existingFiles.map((file) => file.path)
+  )
+  return resolveEditContextPaths(fromLog, existingFiles, requiresDatabase, buildLog)
 }
 
 function buildRepoSummaryForEdit(
