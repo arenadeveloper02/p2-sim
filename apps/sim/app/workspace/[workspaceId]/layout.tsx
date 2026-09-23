@@ -10,7 +10,7 @@ import {
   buildArenaSimResumeUrl,
 } from '@/lib/auth/arena-sim-resume'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
-import { isDev } from '@/lib/core/config/env-flags'
+import { isLocalLoginEnabled } from '@/lib/core/config/env-flags'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/components/impersonation-banner'
@@ -80,7 +80,7 @@ async function WorkspaceLayoutInner({
   const { workspaceId } = await params
   const session = await getSession()
   if (!session?.user) {
-    if (isDev) {
+    if (isLocalLoginEnabled) {
       redirect('/login')
     }
     const headerStore = await headers()
