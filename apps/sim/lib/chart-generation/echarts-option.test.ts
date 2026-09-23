@@ -13,6 +13,7 @@ import {
   resolveEChartsOptionsFromContent,
   sanitizeEChartsOption,
   stripEChartsJsonFromContent,
+  stripIncompleteTrailingChartJson,
 } from '@/lib/chart-generation/echarts-option'
 
 const validOption = {
@@ -315,5 +316,52 @@ describe('sanitizeEChartsOption', () => {
     const result = sanitizeEChartsOption(pie)
     expect(result.grid).toBeUndefined()
     expect(result.series).toEqual(pie.series)
+  })
+
+  it('disables intro animation by default but respects explicit setting', () => {
+    expect(sanitizeEChartsOption(validOption).animation).toBe(false)
+    expect(sanitizeEChartsOption({ ...validOption, animation: true }).animation).toBe(true)
+  })
+})
+
+describe('stripIncompleteTrailingChartJson', () => {
+  it('leaves plain prose untouched', () => {
+    const content = 'Spend was up 12% week over week.'
+    expect(stripIncompleteTrailingChartJson(content)).toBe(content)
+  })
+
+  it('leaves a complete fenced chart block untouched', () => {
+    const content = `Here is the chart:\n\`\`\`json\n${JSON.stringify(validOption)}\n\`\`\``
+    expect(stripIncompleteTrailingChartJson(content)).toBe(content)
+  })
+
+  it('strips an unclosed json fence at the end of streamed content', () => {
+    const content = `Spend summary below.\n\`\`\`json\n{"series": [{"type": "bar", "data": [1, 2`
+    expect(stripIncompleteTrailingChartJson(content)).toBe('Spend summary below.')
+  })
+
+  it('strips an unclosed bare fence with chart-like body', () => {
+    const content = `Analysis done.\n\`\`\`\n{"xAxis": {"type": "category"`
+    expect(stripIncompleteTrailingChartJson(content)).toBe('Analysis done.')
+  })
+
+  it('keeps an unclosed non-chart language fence', () => {
+    const content = 'Example:\n```python\nprint("hello")'
+    expect(stripIncompleteTrailingChartJson(content)).toBe(content)
+  })
+
+  it('strips a trailing unbalanced bare JSON object that looks like a chart', () => {
+    const content = `Numbers first.\n{"series": [{"type": "line", "data": [1, 2, 3`
+    expect(stripIncompleteTrailingChartJson(content)).toBe('Numbers first.')
+  })
+
+  it('keeps a balanced bare JSON chart object', () => {
+    const content = `Numbers first.\n${JSON.stringify(validOption)}`
+    expect(stripIncompleteTrailingChartJson(content)).toBe(content)
+  })
+
+  it('keeps trailing non-chart JSON-ish text', () => {
+    const content = 'Config sample:\n{"name": "test", "value": 42'
+    expect(stripIncompleteTrailingChartJson(content)).toBe(content)
   })
 })

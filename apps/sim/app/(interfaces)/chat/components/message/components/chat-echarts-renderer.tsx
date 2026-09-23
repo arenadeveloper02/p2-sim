@@ -9,6 +9,35 @@ import {
 
 const logger = createLogger('ChatEChartsRenderer')
 
+/**
+ * Single shared ECharts module promise so the bundle is fetched once and every
+ * chart on the page reuses the same in-flight download.
+ */
+let echartsModulePromise: Promise<typeof import('echarts')> | null = null
+
+function loadECharts(): Promise<typeof import('echarts')> {
+  echartsModulePromise ??= import('echarts')
+  return echartsModulePromise
+}
+
+// Prefetch the ECharts bundle as soon as this module loads on the client
+// (i.e. when a chat surface mounts), during idle time. By the time the first
+// chart arrives the bundle is already downloaded, instead of the first chart
+// paying the download cost.
+if (typeof window !== 'undefined') {
+  const prefetch = () => {
+    loadECharts().catch(() => {
+      // Allow a later render attempt to retry the import.
+      echartsModulePromise = null
+    })
+  }
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(prefetch, { timeout: 3000 })
+  } else {
+    window.setTimeout(prefetch, 1000)
+  }
+}
+
 interface ChatEChartsRendererProps {
   option: EChartsOptionLike
   height?: number
@@ -30,7 +59,7 @@ export function ChatEChartsRenderer({ option, height = 400 }: ChatEChartsRendere
     let chart: import('echarts').ECharts | undefined
     let resizeObserver: ResizeObserver | undefined
 
-    void import('echarts')
+    void loadECharts()
       .then((echarts) => {
         if (disposed || !container) return
         chart = echarts.init(container)
