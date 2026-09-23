@@ -53,6 +53,12 @@ export const VERTEX_PRIORITY_PAYGO_HEADERS = {
   'X-Vertex-AI-LLM-Shared-Request-Type': 'priority',
 } as const
 
+/** Options for rebuilding a Vertex/Gemini client between 429 retries. */
+export interface GoogleGenAiClientRefreshOptions {
+  /** When true, bake Priority PayGo headers into the client httpOptions. */
+  priorityPayGo?: boolean
+}
+
 /**
  * True when the Google GenAI / Vertex SDK failed due to quota or rate limits.
  */
@@ -79,9 +85,16 @@ export function isGeminiResourceExhaustedError(error: unknown): boolean {
   )
 }
 
-function formatResourceExhaustedError(logLabel: string, error: unknown): Error {
+function formatResourceExhaustedError(
+  logLabel: string,
+  error: unknown,
+  options?: { triedPriorityPayGo?: boolean }
+): Error {
+  const priorityNote = options?.triedPriorityPayGo
+    ? ' Retries included Vertex Priority PayGo.'
+    : ''
   return new Error(
-    `${logLabel} quota exceeded (429 RESOURCE_EXHAUSTED) after retries. Wait a minute and try again, switch catalog models, or raise the Vertex/Gemini quota. Set COPILOT_THINKING_LEVEL=low|none to reduce load. Original: ${getErrorMessage(error, 'resource exhausted')}`
+    `${logLabel} quota exceeded (429 RESOURCE_EXHAUSTED) after retries.${priorityNote} Wait a minute and try again, switch catalog models (Gemini / Claude / Bedrock), or raise the Vertex quota. Set COPILOT_THINKING_LEVEL=low|none to reduce load. Original: ${getErrorMessage(error, 'resource exhausted')}`
   )
 }
 
@@ -464,13 +477,14 @@ export function convertMessagesToGemini(messages: ChatMessage[]): GeminiConversi
  * Caller owns client construction (API key vs Vertex project + ADC).
  *
  * Before the stream opens, 429 RESOURCE_EXHAUSTED retries with exponential
- * backoff. Vertex callers can escalate retries to Priority PayGo via
- * {@link VERTEX_PRIORITY_PAYGO_HEADERS}.
+ * backoff. Vertex callers (`priorityPayGoOnRetry`) escalate in this order:
+ * 1. Same slot + {@link VERTEX_PRIORITY_PAYGO_HEADERS} (no rotation)
+ * 2+. Rotate slots/keys via {@link refreshAi} with Priority sticky
  */
 export async function* streamGoogleGenAiChatCompletion(params: {
   ai: GoogleGenAI
   /** Rebuilds the client between 429 retries (next Vertex slot / Gemini key). */
-  refreshAi?: () => GoogleGenAI
+  refreshAi?: (options?: GoogleGenAiClientRefreshOptions) => GoogleGenAI
   config: LocalCopilotConfig
   request: ChatCompletionRequest
   /** Log label, e.g. `Gemini` or `Vertex`. */
@@ -478,7 +492,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
   /** Strip optional `vertex/` prefix from the model id before the API call. */
   stripVertexPrefix?: boolean
   /**
-   * On 429 retries, attach Vertex Priority PayGo headers so capacity retries
+   * On 429, attach Vertex Priority PayGo headers and retry so capacity fails
    * escalate to the shared priority pool. Vertex (`global` / `us` / `eu`) only.
    */
   priorityPayGoOnRetry?: boolean
@@ -572,8 +586,14 @@ export async function* streamGoogleGenAiChatCompletion(params: {
     // parts alongside text deltas.
     let stream: Awaited<ReturnType<GoogleGenAI['models']['generateContentStream']>> | undefined
     let openAttempt = 0
+    /**
+     * Sticky after the first 429 when {@link priorityPayGoOnRetry} is set.
+     * Retry order for Vertex:
+     * 1. Same slot + Priority PayGo headers (no rotation)
+     * 2+. Rotate slot/key with Priority still on
+     */
+    let usePriorityPayGo = false
     for (; openAttempt <= MAX_RESOURCE_EXHAUSTED_RETRIES; openAttempt++) {
-      const usePriorityPayGo = priorityPayGoOnRetry && openAttempt > 0
       try {
         stream = await client.models.generateContentStream({
           model,
@@ -595,18 +615,39 @@ export async function* streamGoogleGenAiChatCompletion(params: {
           throw toError(error)
         }
         if (openAttempt >= MAX_RESOURCE_EXHAUSTED_RETRIES) {
-          throw formatResourceExhaustedError(logLabel, error)
+          throw formatResourceExhaustedError(logLabel, error, {
+            triedPriorityPayGo: usePriorityPayGo || priorityPayGoOnRetry,
+          })
         }
-        logger.warn(`${logLabel} RESOURCE_EXHAUSTED before stream open; retrying`, {
+
+        // Prefer Priority before any slot/key rotation.
+        const escalatePriorityFirst = priorityPayGoOnRetry && !usePriorityPayGo
+        if (escalatePriorityFirst) {
+          usePriorityPayGo = true
+          logger.warn(`${logLabel} RESOURCE_EXHAUSTED; retrying with Priority PayGo (same slot)`, {
+            model,
+            attempt: openAttempt + 1,
+            maxRetries: MAX_RESOURCE_EXHAUSTED_RETRIES,
+            usingPriorityPayGo: true,
+            rotateClient: false,
+            error: getErrorMessage(error, 'resource exhausted'),
+          })
+          await sleep(backoffWithJitter(1, null, { baseMs: 200, maxMs: 1_000 }))
+          continue
+        }
+
+        const willRotate = Boolean(refreshAi)
+        logger.warn(`${logLabel} RESOURCE_EXHAUSTED; retrying`, {
           model,
           attempt: openAttempt + 1,
           maxRetries: MAX_RESOURCE_EXHAUSTED_RETRIES,
-          escalateToPriorityPayGo: priorityPayGoOnRetry,
+          usingPriorityPayGo: usePriorityPayGo,
+          rotateClient: willRotate,
           error: getErrorMessage(error, 'resource exhausted'),
         })
         await sleep(backoffWithJitter(openAttempt + 1, null, { baseMs: 500, maxMs: 8_000 }))
         if (refreshAi) {
-          client = refreshAi()
+          client = refreshAi(usePriorityPayGo ? { priorityPayGo: true } : undefined)
         }
       }
     }
@@ -615,8 +656,8 @@ export async function* streamGoogleGenAiChatCompletion(params: {
       throw new Error(`${logLabel} failed to open generateContentStream`)
     }
 
-    if (priorityPayGoOnRetry && openAttempt > 0) {
-      logger.info(`${logLabel} stream opened after Priority PayGo retry`, {
+    if (usePriorityPayGo) {
+      logger.info(`${logLabel} stream opened with Priority PayGo`, {
         model,
         openAttempt,
       })
