@@ -10,9 +10,14 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Button } from '@sim/emcn'
+import { Button, cn } from '@sim/emcn'
 import { ArrowDown } from '@sim/emcn/icons'
 import { MessageCircle } from 'lucide-react'
+import {
+  ConversationTimeline,
+  CONVERSATION_TIMELINE_GUTTER_CLASS,
+  shouldShowConversationTimeline,
+} from '@/components/conversation-timeline/conversation-timeline'
 import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
 import {
   DEPLOYED_CHAT_CANVAS_GRADIENT,
@@ -29,8 +34,10 @@ interface ChatMessageContainerProps {
   isStreaming?: boolean
   showScrollButton: boolean
   messagesContainerRef: Ref<HTMLDivElement>
-  messagesEndRef: RefObject<HTMLDivElement>
+  messagesEndRef: RefObject<HTMLDivElement | null>
   scrollToBottom: () => void
+  /** Jump the scroll container to a message by id (used by the conversation timeline). */
+  scrollToMessage?: (messageId: string) => void
   chatConfig: {
     description?: string
   } | null
@@ -59,6 +66,14 @@ interface ChatMessageContainerProps {
   onRegenerateMessage?: () => void
 }
 
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (!ref) return
+  if (typeof ref === 'function') {
+    return ref(value)
+  }
+  ref.current = value
+}
+
 export function ChatMessageContainer({
   messages,
   isLoading,
@@ -67,6 +82,7 @@ export function ChatMessageContainer({
   messagesContainerRef,
   messagesEndRef,
   scrollToBottom,
+  scrollToMessage,
   chatConfig,
   setMessages,
   workspaceIdsForKbLinks,
@@ -83,9 +99,18 @@ export function ChatMessageContainer({
     left: number
   } | null>(null)
   const tipRef = useRef<HTMLButtonElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+
+  const setScrollContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollContainerRef.current = node
+      return assignRef(messagesContainerRef, node)
+    },
+    [messagesContainerRef]
+  )
 
   const handleMouseUp = useCallback(() => {
-    if (!onAskInChat || !messagesContainerRef?.current) return
+    if (!onAskInChat || !scrollContainerRef.current) return
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed) {
       setSelectionTip(null)
@@ -99,7 +124,7 @@ export function ChatMessageContainer({
     const range = selection.getRangeAt(0)
     if (!range) return
     const rect = range.getBoundingClientRect()
-    const container = messagesContainerRef.current
+    const container = scrollContainerRef.current
     const containerRect = container.getBoundingClientRect()
     if (
       rect.top < containerRect.top ||
@@ -115,7 +140,7 @@ export function ChatMessageContainer({
       top: rect.top,
       left: rect.left,
     })
-  }, [onAskInChat, messagesContainerRef])
+  }, [onAskInChat])
 
   const handleAskInChatClick = useCallback(() => {
     if (!selectionTip) return
@@ -124,19 +149,49 @@ export function ChatMessageContainer({
     setSelectionTip(null)
   }, [selectionTip, onAskInChat])
 
+  /**
+   * Center the jumped-to message in the local scroller. Falls back to the
+   * parent `scrollToMessage` helper when the DOM node is not found.
+   */
+  const handleTimelineJump = useCallback(
+    (messageId: string) => {
+      const container = scrollContainerRef.current
+      const messageElement = container?.querySelector(`[data-message-id="${messageId}"]`)
+      if (container && messageElement instanceof HTMLElement) {
+        const containerRect = container.getBoundingClientRect()
+        const messageRect = messageElement.getBoundingClientRect()
+        const centeredTop =
+          container.scrollTop +
+          messageRect.top -
+          containerRect.top -
+          container.clientHeight / 2 +
+          messageRect.height / 2
+
+        container.scrollTo({
+          top: Math.max(0, centeredTop),
+          behavior: 'smooth',
+        })
+        return
+      }
+
+      scrollToMessage?.(messageId)
+    },
+    [scrollToMessage]
+  )
+
   useEffect(() => {
     if (!onAskInChat) return
-    const container = messagesContainerRef?.current
+    const container = scrollContainerRef.current
     if (!container) return
     container.addEventListener('mouseup', handleMouseUp)
     return () => container.removeEventListener('mouseup', handleMouseUp)
-  }, [onAskInChat, handleMouseUp, messagesContainerRef])
+  }, [onAskInChat, handleMouseUp, messages])
 
   useEffect(() => {
     if (!onAskInChat) return
 
     const handleSelectionChange = () => {
-      const container = messagesContainerRef?.current
+      const container = scrollContainerRef.current
       if (!container) return
 
       const selection = window.getSelection()
@@ -155,7 +210,7 @@ export function ChatMessageContainer({
 
     document.addEventListener('selectionchange', handleSelectionChange)
     return () => document.removeEventListener('selectionchange', handleSelectionChange)
-  }, [onAskInChat, messagesContainerRef])
+  }, [onAskInChat])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -168,6 +223,8 @@ export function ChatMessageContainer({
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [selectionTip])
+
+  const showTimeline = Boolean(scrollToMessage) && shouldShowConversationTimeline(messages)
 
   return (
     <div
@@ -192,8 +249,11 @@ export function ChatMessageContainer({
       )}
 
       <div
-        ref={messagesContainerRef}
-        className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
+        ref={setScrollContainerRef}
+        className={cn(
+          '!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto',
+          showTimeline && CONVERSATION_TIMELINE_GUTTER_CLASS
+        )}
       >
         <div className='px-3 py-4 md:px-4'>
           <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} pb-8`}>
@@ -251,6 +311,15 @@ export function ChatMessageContainer({
           </div>
         </div>
       </div>
+
+      {/* Shared ChatGPT-style tick timeline — gated on jump support. */}
+      {scrollToMessage ? (
+        <ConversationTimeline
+          messages={messages}
+          scrollContainerRef={scrollContainerRef}
+          onJumpToMessage={handleTimelineJump}
+        />
+      ) : null}
 
       {showScrollButton && (
         <div className='-translate-x-1/2 absolute bottom-4 left-1/2 z-20 transform'>
