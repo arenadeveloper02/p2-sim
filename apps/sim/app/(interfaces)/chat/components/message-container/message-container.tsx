@@ -10,10 +10,14 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Button } from '@sim/emcn'
+import { Button, cn } from '@sim/emcn'
 import { ArrowDown } from '@sim/emcn/icons'
 import { MessageCircle } from 'lucide-react'
-import { ConversationTimeline } from '@/components/conversation-timeline/conversation-timeline'
+import {
+  ConversationTimeline,
+  CONVERSATION_TIMELINE_GUTTER_CLASS,
+  shouldShowConversationTimeline,
+} from '@/components/conversation-timeline/conversation-timeline'
 import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
 import {
   DEPLOYED_CHAT_CANVAS_GRADIENT,
@@ -220,6 +224,8 @@ export function ChatMessageContainer({
     }
   }, [selectionTip])
 
+  const showTimeline = Boolean(scrollToMessage) && shouldShowConversationTimeline(messages)
+
   return (
     <div
       className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'
@@ -244,7 +250,10 @@ export function ChatMessageContainer({
 
       <div
         ref={setScrollContainerRef}
-        className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
+        className={cn(
+          '!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto',
+          showTimeline && CONVERSATION_TIMELINE_GUTTER_CLASS
+        )}
       >
         <div className='px-3 py-4 md:px-4'>
           <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} pb-8`}>

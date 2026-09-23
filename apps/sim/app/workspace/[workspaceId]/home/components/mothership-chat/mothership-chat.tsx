@@ -47,7 +47,11 @@ import type {
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
-import { ConversationTimeline } from '@/components/conversation-timeline/conversation-timeline'
+import {
+  ConversationTimeline,
+  CONVERSATION_TIMELINE_GUTTER_CLASS,
+  shouldShowConversationTimeline,
+} from '@/components/conversation-timeline/conversation-timeline'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
@@ -714,6 +718,8 @@ export function MothershipChat({
     [messages, virtualizer]
   )
 
+  const showTimeline = shouldShowConversationTimeline(messages)
+
   return (
     <ChatSurfaceProvider
       chatId={chatId}
@@ -730,7 +736,10 @@ export function MothershipChat({
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
         {/* Relative wrapper anchors the timeline to the scroll viewport, not the composer. */}
         <div className='relative flex min-h-0 flex-1 flex-col'>
-          <div ref={setScrollElement} className={styles.scrollContainer}>
+          <div
+            ref={setScrollElement}
+            className={cn(styles.scrollContainer, showTimeline && CONVERSATION_TIMELINE_GUTTER_CLASS)}
+          >
             {isLoading && !hasMessages ? (
               <MothershipChatSkeleton layout={layout} />
             ) : (

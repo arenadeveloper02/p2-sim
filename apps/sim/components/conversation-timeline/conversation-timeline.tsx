@@ -24,6 +24,14 @@ export const CONVERSATION_TIMELINE_MIN_TURNS = 5
 const MAX_TIMELINE_MARKERS = 36
 
 /**
+ * Reserved right padding on the scroll/content column while the timeline is
+ * visible. Matches the absolute tick rail (`right-2` + ~28px hit target) so
+ * message text never runs underneath the markers — critical in the narrow
+ * copilot side panel.
+ */
+export const CONVERSATION_TIMELINE_GUTTER_CLASS = 'pr-11' as const
+
+/**
  * Minimal message shape shared by arena deployed chat (`type`) and mothership
  * copilot chat (`role`). Either field is enough — surfaces pass their native
  * message objects without a mapping layer.
@@ -74,6 +82,16 @@ function isUserTurn(message: ConversationTimelineMessage): boolean {
 
 function getUserTurns(messages: ConversationTimelineMessage[]): ConversationTimelineMessage[] {
   return messages.filter(isUserTurn)
+}
+
+/**
+ * Whether the timeline would render for this message list. Surfaces use this
+ * to reserve {@link CONVERSATION_TIMELINE_GUTTER_CLASS} only when needed.
+ */
+export function shouldShowConversationTimeline(
+  messages: ConversationTimelineMessage[]
+): boolean {
+  return getUserTurns(messages).length > CONVERSATION_TIMELINE_MIN_TURNS
 }
 
 /**
@@ -231,7 +249,7 @@ export function ConversationTimeline({
     <nav
       aria-label='Conversation timeline'
       className={cn(
-        'pointer-events-none absolute top-1/2 right-5 z-10 hidden -translate-y-1/2 md:flex',
+        'pointer-events-none absolute top-1/2 right-2 z-10 hidden w-7 -translate-y-1/2 md:flex',
         'max-h-[min(70vh,520px)] flex-col items-center justify-center'
       )}
     >
