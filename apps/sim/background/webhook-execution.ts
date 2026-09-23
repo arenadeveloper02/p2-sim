@@ -1,6 +1,9 @@
 import { db } from '@sim/db'
 import { account, webhook } from '@sim/db/schema'
 import { createLogger, runWithRequestContext } from '@sim/logger'
+import { installNodeRequestContext } from '@sim/logger/request-context.node'
+
+installNodeRequestContext()
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'

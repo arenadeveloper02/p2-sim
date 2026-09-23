@@ -13,7 +13,7 @@ import {
   updateOpenRouterProviderModels,
   updateTogetherProviderModels,
   updateVLLMProviderModels,
-} from '@/providers/utils'
+} from '@/providers/provider-metadata'
 import { type ProviderName, useProvidersStore } from '@/stores/providers'
 
 const logger = createLogger('ProviderModelsLoader')

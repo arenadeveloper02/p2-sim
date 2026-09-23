@@ -3,13 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { omit } from '@sim/utils/object'
 import type OpenAI from 'openai'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
-import { formatCreditCost } from '@/lib/billing/credits/conversion'
-import { env } from '@/lib/core/config/env'
-import {
-  getBlacklistedProvidersFromEnv,
-  getCostMultiplier,
-  isHosted,
-} from '@/lib/core/config/env-flags'
+import { getCostMultiplier, isHosted } from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -27,39 +21,66 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { assembleCustomBlockInputMapping, isCustomBlockType } from '@/blocks/custom/build-config'
 import { isCustomTool } from '@/executor/constants'
-import {
-  getComputerUseModels,
-  getEmbeddingModelPricing,
-  getHostedModels as getHostedModelsFromDefinitions,
-  getMaxOutputTokensForModel as getMaxOutputTokensForModelFromDefinitions,
-  getMaxTemperature as getMaxTempFromDefinitions,
-  getModelPricing as getModelPricingFromDefinitions,
-  getModelsWithDeepResearch,
-  getModelsWithoutMemory,
-  getModelsWithPromptCaching,
-  getModelsWithReasoningEffort,
-  getModelsWithTemperatureRange,
-  getModelsWithTemperatureSupport,
-  getModelsWithThinking,
-  getModelsWithVerbosity,
-  getProviderDefaultModel as getProviderDefaultModelFromDefinitions,
-  getProviderModels as getProviderModelsFromDefinitions,
-  getProvidersWithToolUsageControl,
-  getReasoningEffortValuesForModel as getReasoningEffortValuesForModelFromDefinitions,
-  getThinkingLevelsForModel as getThinkingLevelsForModelFromDefinitions,
-  getVerbosityValuesForModel as getVerbosityValuesForModelFromDefinitions,
-  isKnownModelLevelValue,
-  PROVIDER_DEFINITIONS,
-  supportsTemperature as supportsTemperatureFromDefinitions,
-  supportsToolUsageControl as supportsToolUsageControlFromDefinitions,
-  updateOllamaModels as updateOllamaModelsInDefinitions,
-} from '@/providers/models'
+import { getEmbeddingModelPricing, getModelPricing as getModelPricingFromDefinitions } from '@/providers/models'
 import {
   getProviderToolInputProvenance,
   getProviderToolModelInputRegistry,
   registerPreparedProviderToolInputProvenance,
 } from '@/providers/tool-input-provenance'
-import type { ProviderId, ProviderToolConfig } from '@/providers/types'
+import { getHostedModels } from '@/providers/provider-metadata'
+import type { ProviderToolConfig } from '@/providers/types'
+
+export type { ProviderMetadata } from '@/providers/provider-metadata'
+export {
+  describeModelLevel,
+  filterBlacklistedModels,
+  findProviderFromModel,
+  formatCost,
+  getAllModelProviders,
+  getAllModels,
+  getAllProviderIds,
+  getBaseModelProviders,
+  getHostedModels,
+  getMaxOutputTokensForModel,
+  getMaxTemperature,
+  getProvider,
+  getProviderConfigFromModel,
+  getProviderFromModel,
+  getProviderIcon,
+  getProviderModels,
+  getReasoningEffortValuesForModel,
+  getThinkingLevelsForModel,
+  getVerbosityValuesForModel,
+  isDeepResearchModel,
+  isGemini3Model,
+  isProviderBlacklisted,
+  MODELS_TEMP_RANGE_0_1,
+  MODELS_TEMP_RANGE_0_15,
+  MODELS_TEMP_RANGE_0_2,
+  MODELS_WITH_DEEP_RESEARCH,
+  MODELS_WITH_PROMPT_CACHING,
+  MODELS_WITH_REASONING_EFFORT,
+  MODELS_WITH_TEMPERATURE_SUPPORT,
+  MODELS_WITH_THINKING,
+  MODELS_WITH_VERBOSITY,
+  MODELS_WITHOUT_MEMORY,
+  PROVIDERS_WITH_TOOL_USAGE_CONTROL,
+  providers,
+  supportsPromptCaching,
+  supportsReasoningEffort,
+  supportsTemperature,
+  supportsThinking,
+  supportsToolUsageControl,
+  supportsVerbosity,
+  updateBasetenProviderModels,
+  updateFireworksProviderModels,
+  updateLiteLLMProviderModels,
+  updateOllamaCloudProviderModels,
+  updateOllamaProviderModels,
+  updateOpenRouterProviderModels,
+  updateTogetherProviderModels,
+  updateVLLMProviderModels,
+} from '@/providers/provider-metadata'
 import { useProvidersStore } from '@/stores/providers/store'
 import { mergeToolParameters } from '@/tools/merge-params'
 import type { SchemaProperty } from '@/tools/params'
@@ -88,330 +109,23 @@ function isDefaultWorkflowDescription(
 }
 
 /**
- * Fetches workflow metadata (name and description) from the API
+ * Server-only workflow metadata lookup. The specifier is assembled at runtime so
+ * webpack cannot follow `@/executor/utils/http` into the client graph.
  */
 async function fetchWorkflowMetadata(
   workflowId: string,
   executionContext: WorkflowToolExecutionContext | undefined
 ): Promise<{ name: string; description: string | null } | null> {
-  try {
-    if (!executionContext?.userId) {
-      throw new Error('Workflow metadata enrichment requires a trusted execution subject')
-    }
-    const { buildAPIUrl, buildExecutorDelegationHeaders } = await import(
-      /* webpackIgnore: true */ '@/executor/utils/http'
-    )
-    const { executionScopeForTarget } = await import(
-      /* webpackIgnore: true */ '@/executor/utils/delegation'
-    )
-
-    const headers = await buildExecutorDelegationHeaders({
-      subjectUserId: executionContext.userId,
-      workflowId,
-      ...executionScopeForTarget(executionContext, workflowId),
-    })
-    const url = buildAPIUrl(`/api/workflows/${workflowId}`)
-
-    const response = await fetch(url.toString(), { headers })
-    if (!response.ok) {
-      await response.text().catch(() => {})
-      logger.warn(`Failed to fetch workflow metadata for ${workflowId}`)
-      return null
-    }
-
-    const { data } = await response.json()
-    return {
-      name: data?.name || 'Workflow',
-      description: data?.description || null,
-    }
-  } catch (error) {
-    logger.error('Error fetching workflow metadata:', error)
-    return null
-  }
-}
-
-/**
- * Client-safe provider metadata.
- * This object contains only model lists and patterns - no executeRequest implementations.
- * For server-side execution, use @/providers/registry.
- */
-export interface ProviderMetadata {
-  id: string
-  name: string
-  description: string
-  version: string
-  models: string[]
-  defaultModel: string
-  computerUseModels?: string[]
-  modelPatterns?: RegExp[]
-}
-
-/**
- * Build provider metadata from PROVIDER_DEFINITIONS.
- * This is client-safe as it doesn't import any provider implementations.
- */
-function buildProviderMetadata(providerId: ProviderId): ProviderMetadata {
-  const def = PROVIDER_DEFINITIONS[providerId]
-  return {
-    id: providerId,
-    name: def?.name || providerId,
-    description: def?.description || '',
-    version: '1.0.0',
-    models: getProviderModelsFromDefinitions(providerId),
-    defaultModel: getProviderDefaultModelFromDefinitions(providerId),
-    modelPatterns: def?.modelPatterns,
-  }
-}
-
-export const providers: Record<ProviderId, ProviderMetadata> = {
-  ollama: buildProviderMetadata('ollama'),
-  'ollama-cloud': buildProviderMetadata('ollama-cloud'),
-  vllm: buildProviderMetadata('vllm'),
-  litellm: buildProviderMetadata('litellm'),
-  openai: {
-    ...buildProviderMetadata('openai'),
-    computerUseModels: ['computer-use-preview'],
-  },
-  anthropic: {
-    ...buildProviderMetadata('anthropic'),
-    computerUseModels: getComputerUseModels().filter((model) =>
-      getProviderModelsFromDefinitions('anthropic').includes(model)
-    ),
-  },
-  sambanova: buildProviderMetadata('sambanova'),
-  google: buildProviderMetadata('google'),
-  vertex: buildProviderMetadata('vertex'),
-  'azure-openai': buildProviderMetadata('azure-openai'),
-  'azure-anthropic': buildProviderMetadata('azure-anthropic'),
-  deepseek: buildProviderMetadata('deepseek'),
-  xai: buildProviderMetadata('xai'),
-  cerebras: buildProviderMetadata('cerebras'),
-  groq: buildProviderMetadata('groq'),
-  sakana: buildProviderMetadata('sakana'),
-  nvidia: buildProviderMetadata('nvidia'),
-  meta: buildProviderMetadata('meta'),
-  zai: buildProviderMetadata('zai'),
-  kimi: buildProviderMetadata('kimi'),
-  mistral: buildProviderMetadata('mistral'),
-  bedrock: buildProviderMetadata('bedrock'),
-  openrouter: buildProviderMetadata('openrouter'),
-  fireworks: buildProviderMetadata('fireworks'),
-  together: buildProviderMetadata('together'),
-  baseten: buildProviderMetadata('baseten'),
-}
-
-export function updateOllamaProviderModels(models: string[]): void {
-  updateOllamaModelsInDefinitions(models)
-  providers.ollama.models = getProviderModelsFromDefinitions('ollama')
-}
-
-export function updateVLLMProviderModels(models: string[]): void {
-  const { updateVLLMModels } = require('@/providers/models')
-  updateVLLMModels(models)
-  providers.vllm.models = getProviderModelsFromDefinitions('vllm')
-}
-
-export function updateLiteLLMProviderModels(models: string[]): void {
-  const { updateLiteLLMModels } = require('@/providers/models')
-  updateLiteLLMModels(models)
-  providers.litellm.models = getProviderModelsFromDefinitions('litellm')
-}
-
-export async function updateOpenRouterProviderModels(models: string[]): Promise<void> {
-  const { updateOpenRouterModels } = await import('@/providers/models')
-  updateOpenRouterModels(models)
-  providers.openrouter.models = getProviderModelsFromDefinitions('openrouter')
-}
-
-export async function updateFireworksProviderModels(models: string[]): Promise<void> {
-  const { updateFireworksModels } = await import('@/providers/models')
-  updateFireworksModels(models)
-  providers.fireworks.models = getProviderModelsFromDefinitions('fireworks')
-}
-
-export async function updateOllamaCloudProviderModels(models: string[]): Promise<void> {
-  const { updateOllamaCloudModels } = await import('@/providers/models')
-  updateOllamaCloudModels(models)
-  providers['ollama-cloud'].models = getProviderModelsFromDefinitions('ollama-cloud')
-}
-
-export async function updateTogetherProviderModels(models: string[]): Promise<void> {
-  const { updateTogetherModels } = await import('@/providers/models')
-  updateTogetherModels(models)
-  providers.together.models = getProviderModelsFromDefinitions('together')
-}
-
-export async function updateBasetenProviderModels(models: string[]): Promise<void> {
-  const { updateBasetenModels } = await import('@/providers/models')
-  updateBasetenModels(models)
-  providers.baseten.models = getProviderModelsFromDefinitions('baseten')
-}
-
-export function getBaseModelProviders(): Record<string, ProviderId> {
-  const allProviders = Object.entries(providers)
-    .filter(
-      ([providerId]) =>
-        providerId !== 'ollama' &&
-        providerId !== 'ollama-cloud' &&
-        providerId !== 'vllm' &&
-        providerId !== 'litellm' &&
-        providerId !== 'openrouter' &&
-        providerId !== 'mistral' &&
-        providerId !== 'cerebras' &&
-        providerId !== 'azure-openai' &&
-        providerId !== 'fireworks' &&
-        providerId !== 'together' &&
-        providerId !== 'baseten'
-    )
-    .reduce(
-      (map, [providerId, config]) => {
-        config.models.forEach((model) => {
-          map[model.toLowerCase()] = providerId as ProviderId
-        })
-        return map
-      },
-      {} as Record<string, ProviderId>
-    )
-
-  return filterBlacklistedModelsFromProviderMap(allProviders)
-}
-
-function filterBlacklistedModelsFromProviderMap(
-  providerMap: Record<string, ProviderId>
-): Record<string, ProviderId> {
-  const filtered: Record<string, ProviderId> = {}
-  for (const [model, providerId] of Object.entries(providerMap)) {
-    if (isProviderBlacklisted(providerId)) {
-      continue
-    }
-    if (!isModelBlacklisted(model)) {
-      filtered[model] = providerId
-    }
-  }
-  return filtered
-}
-
-export function getAllModelProviders(): Record<string, ProviderId> {
-  return Object.entries(providers).reduce(
-    (map, [providerId, config]) => {
-      config.models.forEach((model) => {
-        map[model.toLowerCase()] = providerId as ProviderId
-      })
-      return map
-    },
-    {} as Record<string, ProviderId>
+  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{
+    fetchWorkflowMetadata: (
+      workflowId: string,
+      executionContext: WorkflowToolExecutionContext | undefined
+    ) => Promise<{ name: string; description: string | null } | null>
+  }>
+  const { fetchWorkflowMetadata: fetchOnServer } = await load(
+    '@/providers/fetch-workflow-metadata.server'
   )
-}
-
-/**
- * The provider that declares `model`, or `null` when none does.
- *
- * The non-guessing half of {@link getProviderFromModel}. A caller that *gates*
- * on the answer needs "unknown" to stay distinct from "ollama": this registry
- * holds chat models only, so every embedding, speech, image and video model id
- * would otherwise read as an Ollama model and be judged against an allowlist
- * that was never about it.
- */
-export function findProviderFromModel(model: string): ProviderId | null {
-  const normalizedModel = model.toLowerCase()
-
-  const declared = getAllModelProviders()[normalizedModel]
-  if (declared) return declared
-
-  for (const [id, config] of Object.entries(providers)) {
-    for (const pattern of config.modelPatterns ?? []) {
-      if (pattern.test(normalizedModel)) return id as ProviderId
-    }
-  }
-
-  return null
-}
-
-export function getProviderFromModel(model: string): ProviderId {
-  const normalizedModel = model.toLowerCase()
-
-  let providerId = findProviderFromModel(model)
-
-  if (!providerId) {
-    logger.warn(`No provider found for model: ${model}, defaulting to ollama`)
-    providerId = 'ollama'
-  }
-
-  if (isProviderBlacklisted(providerId)) {
-    throw new Error(`Provider "${providerId}" is not available`)
-  }
-
-  if (isModelBlacklisted(normalizedModel)) {
-    throw new Error(`Model "${model}" is not available`)
-  }
-
-  return providerId
-}
-
-export function getProvider(id: string): ProviderMetadata | undefined {
-  const providerId = id.split('/')[0] as ProviderId
-  return providers[providerId]
-}
-
-export function getProviderConfigFromModel(model: string): ProviderMetadata | undefined {
-  const providerId = getProviderFromModel(model)
-  return providers[providerId]
-}
-
-export function getAllModels(): string[] {
-  return Object.values(providers).flatMap((provider) => provider.models || [])
-}
-
-export function getAllProviderIds(): ProviderId[] {
-  return Object.keys(providers) as ProviderId[]
-}
-
-export function getProviderModels(providerId: ProviderId): string[] {
-  return getProviderModelsFromDefinitions(providerId)
-}
-
-export function isProviderBlacklisted(providerId: string): boolean {
-  return getBlacklistedProvidersFromEnv().includes(providerId.toLowerCase())
-}
-
-/**
- * Get the list of blacklisted models from env var.
- * BLACKLISTED_MODELS supports:
- * - Exact model names: "gpt-4,claude-3-opus"
- * - Prefix patterns with *: "claude-*,gpt-4-*" (matches models starting with that prefix)
- */
-function getBlacklistedModels(): { models: string[]; prefixes: string[] } {
-  if (!env.BLACKLISTED_MODELS) return { models: [], prefixes: [] }
-
-  const entries = env.BLACKLISTED_MODELS.split(',').map((m) => m.trim().toLowerCase())
-  const models = entries.filter((e) => !e.endsWith('*'))
-  const prefixes = entries.filter((e) => e.endsWith('*')).map((e) => e.slice(0, -1))
-
-  return { models, prefixes }
-}
-
-function isModelBlacklisted(model: string): boolean {
-  const lowerModel = model.toLowerCase()
-  const blacklist = getBlacklistedModels()
-
-  if (blacklist.models.includes(lowerModel)) {
-    return true
-  }
-
-  if (blacklist.prefixes.some((prefix) => lowerModel.startsWith(prefix))) {
-    return true
-  }
-
-  return false
-}
-
-export function filterBlacklistedModels(models: string[]): string[] {
-  return models.filter((model) => !isModelBlacklisted(model))
-}
-
-export function getProviderIcon(model: string): React.ComponentType<{ className?: string }> | null {
-  const providerId = getProviderFromModel(model)
-  return PROVIDER_DEFINITIONS[providerId]?.icon || null
+  return fetchOnServer(workflowId, executionContext)
 }
 
 /**
@@ -1192,25 +906,6 @@ export function getModelPricing(modelId: string): any {
 }
 
 /**
- * Format cost as a credit string for display.
- * Internally cost is in USD; this converts to credits (1 USD = 200 credits).
- *
- * @param cost Cost in USD
- * @returns Formatted credit string (e.g. "200 credits", "<1 credit", "0 credits")
- */
-export function formatCost(cost: number): string {
-  return formatCreditCost(cost) ?? '—'
-}
-
-/**
- * Get the list of models that are hosted by the platform (don't require user API keys)
- * These are the models for which we hide the API key field in the hosted environment
- */
-export function getHostedModels(): string[] {
-  return getHostedModelsFromDefinitions()
-}
-
-/**
  * Determine if model usage should be billed to the user
  *
  * @param model The model name
@@ -1708,117 +1403,6 @@ export function trackForcedToolUsage(
         : originalToolChoice
       : undefined,
   }
-}
-
-export const MODELS_TEMP_RANGE_0_2 = getModelsWithTemperatureRange(2)
-export const MODELS_TEMP_RANGE_0_15 = getModelsWithTemperatureRange(1.5)
-export const MODELS_TEMP_RANGE_0_1 = getModelsWithTemperatureRange(1)
-export const MODELS_WITH_TEMPERATURE_SUPPORT = getModelsWithTemperatureSupport()
-export const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
-export const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
-export const MODELS_WITH_THINKING = getModelsWithThinking()
-export const MODELS_WITH_PROMPT_CACHING = getModelsWithPromptCaching()
-export const MODELS_WITH_DEEP_RESEARCH = getModelsWithDeepResearch()
-export const MODELS_WITHOUT_MEMORY = getModelsWithoutMemory()
-export const PROVIDERS_WITH_TOOL_USAGE_CONTROL = getProvidersWithToolUsageControl()
-
-export function supportsTemperature(model: string): boolean {
-  return supportsTemperatureFromDefinitions(model)
-}
-
-/**
- * Levels the pickers offer on top of what a model declares. `auto` means "say nothing" and
- * `none` means "explicitly off"; provider adapters special-case both, so neither is an
- * unrecognized level.
- */
-const MODEL_LEVEL_SENTINELS = new Set(['auto', 'none'])
-
-/**
- * Renders a tuning level for a log line or an error message.
- *
- * The agent block's reasoning effort, verbosity, and thinking level fields accept variable and
- * environment references, so an unrecognized level is not necessarily a mistyped level — it is
- * whatever the reference resolved to, up to and including secret content. Only a level the
- * catalogue declares somewhere is safe to echo; anything else is reported by length alone,
- * which still distinguishes a stray level from a resolved blob.
- *
- * Every site that puts a caller-supplied level into a message must go through this.
- */
-export function describeModelLevel(value: string | undefined): string {
-  if (!value) return '(unset)'
-  const isSafe = MODEL_LEVEL_SENTINELS.has(value) || isKnownModelLevelValue(value)
-  return isSafe ? value : `[redacted ${value.length} chars]`
-}
-
-export function supportsReasoningEffort(model: string): boolean {
-  return MODELS_WITH_REASONING_EFFORT.includes(model.toLowerCase())
-}
-
-export function supportsVerbosity(model: string): boolean {
-  return MODELS_WITH_VERBOSITY.includes(model.toLowerCase())
-}
-
-export function supportsThinking(model: string): boolean {
-  return MODELS_WITH_THINKING.includes(model.toLowerCase())
-}
-
-/** Whether the model accepts caller-placed prompt-cache breakpoints. */
-export function supportsPromptCaching(model: string): boolean {
-  return MODELS_WITH_PROMPT_CACHING.includes(model.toLowerCase())
-}
-
-export function isDeepResearchModel(model: string): boolean {
-  return MODELS_WITH_DEEP_RESEARCH.includes(model.toLowerCase())
-}
-
-export function isGemini3Model(model: string): boolean {
-  const normalized = model.toLowerCase().replace(/^vertex\//, '')
-  return normalized.startsWith('gemini-3')
-}
-
-/**
- * Get the maximum temperature value for a model
- * @returns Maximum temperature value (1 or 2) or undefined if temperature not supported
- */
-export function getMaxTemperature(model: string): number | undefined {
-  return getMaxTempFromDefinitions(model)
-}
-
-export function supportsToolUsageControl(provider: string): boolean {
-  return supportsToolUsageControlFromDefinitions(provider)
-}
-
-/**
- * Get reasoning effort values for a specific model
- * Returns the valid options for that model, or null if the model doesn't support reasoning effort
- */
-export function getReasoningEffortValuesForModel(model: string): string[] | null {
-  return getReasoningEffortValuesForModelFromDefinitions(model)
-}
-
-/**
- * Get verbosity values for a specific model
- * Returns the valid options for that model, or null if the model doesn't support verbosity
- */
-export function getVerbosityValuesForModel(model: string): string[] | null {
-  return getVerbosityValuesForModelFromDefinitions(model)
-}
-
-/**
- * Get thinking levels for a specific model
- * Returns the valid levels for that model, or null if the model doesn't support thinking
- */
-export function getThinkingLevelsForModel(model: string): string[] | null {
-  return getThinkingLevelsForModelFromDefinitions(model)
-}
-
-/**
- * Get max output tokens for a specific model.
- *
- * @param model - The model ID
- */
-export function getMaxOutputTokensForModel(model: string): number {
-  return getMaxOutputTokensForModelFromDefinitions(model)
 }
 
 /**

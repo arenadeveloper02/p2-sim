@@ -51,7 +51,7 @@ import {
   MATCH_SCREENSHOT_USER_INPUT,
 } from '@/lib/arena-generative-ui/visual-brief'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
+import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/provider-metadata'
 
 const logger = createLogger('ArenaGenerativeUiBrief')
 

@@ -22,7 +22,7 @@ import {
 } from '@/providers/models'
 import { isPiSupportedModel } from '@/providers/pi-providers'
 import type { ProviderId } from '@/providers/types'
-import { getProviderFromModel } from '@/providers/utils'
+import { getProviderFromModel } from '@/providers/provider-metadata'
 import { useProvidersStore } from '@/stores/providers/store'
 
 export const VERTEX_MODELS = getProviderModels('vertex')

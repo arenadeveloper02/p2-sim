@@ -73,7 +73,7 @@ import {
   PROVIDER_DEFINITIONS,
 } from '@/providers/models'
 import type { ProviderId } from '@/providers/types'
-import { getAllProviderIds, getProviderFromModel } from '@/providers/utils'
+import { getAllProviderIds, getProviderFromModel } from '@/providers/provider-metadata'
 import type { ProviderName } from '@/stores/providers'
 import { getToolMetadata } from '@/tools/metadata'
 

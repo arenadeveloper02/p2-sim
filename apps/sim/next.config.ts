@@ -138,7 +138,7 @@ const nextConfig: NextConfig = {
       'entities/escape': entitiesEscapeAlias,
     },
   },
-  webpack: (config, { isServer, webpack }) => {
+  webpack: (config, { isServer }) => {
     const monacoEditorApi = path.join(
       packageRootFromEntry(require.resolve('monaco-editor'), 'monaco-editor'),
       'esm/vs/editor/editor.api.js'
@@ -160,16 +160,54 @@ const nextConfig: NextConfig = {
     }
     if (!isServer) {
       /**
-       * Webpack treats `node:foo` as an unhandled URI scheme (UnhandledSchemeError)
-       * before `resolve.fallback` runs. Strip the prefix, then stub Node builtins
-       * so a leftover server import cannot fail the browser compile. Turbopack
-       * (`next dev`) never hits this path.
+       * Webpack treats `node:foo` as a URI scheme and fails with UnhandledSchemeError
+       * before `NormalModuleReplacementPlugin` or `resolve.fallback` run. The
+       * `resolveForScheme` hook is the one that actually intercepts it.
        */
-      config.plugins.push(
-        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource: { request: string }) => {
-          resource.request = resource.request.replace(/^node:/, '')
-        })
-      )
+      const emptyNodeBuiltin = path.resolve(import.meta.dirname, 'lib/webpack-empty-node-builtin.cjs')
+      config.plugins.push({
+        apply(compiler: {
+          hooks: {
+            compilation: {
+              tap: (
+                name: string,
+                fn: (
+                  compilation: unknown,
+                  params: {
+                    normalModuleFactory: {
+                      hooks: {
+                        resolveForScheme: {
+                          for: (scheme: string) => {
+                            tap: (
+                              name: string,
+                              handler: (resource: { path?: string; query?: string; fragment?: string }) => boolean
+                            ) => void
+                          }
+                        }
+                      }
+                    }
+                  }
+                ) => void
+              ) => void
+            }
+          }
+        }) {
+          compiler.hooks.compilation.tap(
+            'HandleNodeScheme',
+            (_compilation, { normalModuleFactory }) => {
+              normalModuleFactory.hooks.resolveForScheme.for('node').tap(
+                'HandleNodeScheme',
+                (resource) => {
+                  resource.path = emptyNodeBuiltin
+                  resource.query = ''
+                  resource.fragment = ''
+                  return true
+                }
+              )
+            }
+          )
+        },
+      })
       config.resolve.fallback = {
         ...config.resolve.fallback,
         async_hooks: false,

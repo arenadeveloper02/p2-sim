@@ -13,7 +13,7 @@ import type {
 } from '@/lib/arena-generative-ui/types'
 import { compactManifestForCritic } from '@/lib/arena-generative-ui/ui-critic'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
+import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/provider-metadata'
 
 const logger = createLogger('ArenaGenerativeUiCritic')
 

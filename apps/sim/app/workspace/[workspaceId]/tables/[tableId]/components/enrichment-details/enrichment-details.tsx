@@ -12,7 +12,7 @@ import { useLogDetailsResize } from '@/app/workspace/[workspaceId]/logs/hooks'
 import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils'
 import { getTileIconColorClass } from '@/blocks/icon-color'
 import { useEnrichmentDetail } from '@/hooks/queries/tables'
-import { formatCost } from '@/providers/utils'
+import { formatCost } from '@/providers/provider-metadata'
 import { useLogDetailsUIStore } from '@/stores/logs/store'
 import { MAX_LOG_DETAILS_WIDTH_RATIO, MIN_LOG_DETAILS_WIDTH } from '@/stores/logs/utils'
 

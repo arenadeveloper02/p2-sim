@@ -8,7 +8,7 @@ import {
   resolveImageProviderForModel,
 } from '@/lib/image-generation/block-model-config'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
-import { getProviderFromModel } from '@/providers/utils'
+import { getProviderFromModel } from '@/providers/provider-metadata'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'

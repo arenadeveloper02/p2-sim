@@ -45,7 +45,7 @@ import {
   workspaceFilesKeys,
 } from '@/hooks/queries/workspace-files'
 import { getProviderAttachmentMaxBytes } from '@/providers/attachments'
-import { getProviderFromModel } from '@/providers/utils'
+import { getProviderFromModel } from '@/providers/provider-metadata'
 import { useChatStore } from '@/stores/chat/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'

@@ -24,7 +24,7 @@ import { useOptionalWorkspaceHostContext } from '@/app/workspace/[workspaceId]/p
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { overlayVisibility } from '@/blocks/visibility/context'
 import { useUserPermissionConfig } from '@/ee/access-control/hooks/permission-groups'
-import { findProviderFromModel } from '@/providers/utils'
+import { findProviderFromModel } from '@/providers/provider-metadata'
 
 export interface PermissionConfigResult {
   config: PermissionGroupConfig

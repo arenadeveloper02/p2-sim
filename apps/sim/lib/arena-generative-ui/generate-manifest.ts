@@ -89,7 +89,7 @@ import {
 import { applyWaitEstimateFromBrief } from '@/lib/arena-generative-ui/wait-estimate'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { formatProviderNetworkError } from '@/lib/core/utils/opaque-fetch-error'
-import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
+import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/provider-metadata'
 
 const logger = createLogger('ArenaGenerativeUi')
 

@@ -1,4 +1,7 @@
 import { createLogger, runWithRequestContext } from '@sim/logger'
+import { installNodeRequestContext } from '@sim/logger/request-context.node'
+
+installNodeRequestContext()
 import { getErrorMessage } from '@sim/utils/errors'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'

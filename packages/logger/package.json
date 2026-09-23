@@ -13,6 +13,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./request-context.node": {
+      "types": "./src/request-context.node.ts",
+      "default": "./src/request-context.node.ts"
     }
   },
   "scripts": {

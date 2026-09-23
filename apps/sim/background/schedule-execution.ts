@@ -7,6 +7,9 @@ import {
   workflowSchedule,
 } from '@sim/db'
 import { createLogger, runWithRequestContext } from '@sim/logger'
+import { installNodeRequestContext } from '@sim/logger/request-context.node'
+
+installNodeRequestContext()
 import { describeError, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { task, timeout } from '@trigger.dev/sdk'

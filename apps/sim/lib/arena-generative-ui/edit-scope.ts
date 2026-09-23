@@ -13,7 +13,7 @@ import {
 } from '@/lib/arena-generative-ui/types'
 import { collectNavTargets } from '@/lib/arena-generative-ui/validate-manifest'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
+import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/provider-metadata'
 
 const logger = createLogger('ArenaGenerativeUiEditScope')
 

@@ -10,7 +10,7 @@ import {
 } from '@/lib/arena-generative-ui/visual-brief'
 import type { ArenaGenerativeVisionImage } from '@/lib/arena-generative-ui/visual-reference'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
+import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/provider-metadata'
 
 const logger = createLogger('ArenaGenerativeUiVisual')
 

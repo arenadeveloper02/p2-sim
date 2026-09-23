@@ -1,6 +1,9 @@
 import { db } from '@sim/db'
 import { tableRowExecutions, workflow as workflowTable } from '@sim/db/schema'
 import { createLogger, runWithRequestContext } from '@sim/logger'
+import { installNodeRequestContext } from '@sim/logger/request-context.node'
+
+installNodeRequestContext()
 import { describeError, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'

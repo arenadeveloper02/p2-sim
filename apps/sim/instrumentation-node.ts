@@ -13,6 +13,9 @@ import type {
   SpanProcessor,
 } from '@opentelemetry/sdk-trace-base'
 import { createLogger } from '@sim/logger'
+import { installNodeRequestContext } from '@sim/logger/request-context.node'
+
+installNodeRequestContext()
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { env } from './lib/core/config/env'
 import { parseOtlpHeaders } from './lib/monitoring/otlp'
