@@ -1401,7 +1401,7 @@ function SearchModalContent({
                 onKeyDown={handleSearchKeyDown}
                 placeholder={askMode ? 'Ask Arena AI anything...' : 'Search anything...'}
                 endAdornment={
-                  isChatEnabled ? (
+                  chatEnabled ? (
                     <span className='flex-shrink-0 whitespace-nowrap text-[var(--text-subtle)] text-xs'>
                       {askMode ? '⇥ Search' : '⇥ Ask Arena AI'}
                     </span>
