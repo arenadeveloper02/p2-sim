@@ -297,6 +297,44 @@ export function buildUnfulfilledIntentContinuationMessage(): string {
 }
 
 /**
+ * System nudge when log/debug tools finished but the model returned no user-facing explanation.
+ */
+export function buildDebugExplanationContinuationMessage(): string {
+  return (
+    '[System] You already fetched execution logs / error analysis. ' +
+    'Reply to the user NOW with a clear plain-language explanation of why the workflow failed, ' +
+    'which block failed, and what to fix. Do not call more tools unless a critical detail is still missing.'
+  )
+}
+
+/**
+ * True when debug tools ran and the turn would otherwise settle with no real reply.
+ */
+export function shouldForceDebugExplanationContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  forcedDebugExplanations: number
+  maxForcedDebugExplanations: number
+  round: number
+  maxToolRounds: number
+  hasDebugTools: boolean
+  streamedUserFacingText: string
+  roundDisplayText: string
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.hasDebugTools) return false
+  if (options.forcedDebugExplanations >= options.maxForcedDebugExplanations) return false
+  if (options.round >= options.maxToolRounds - 1) return false
+
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (streamed && !isBridgingAssistantNarration(streamed)) return false
+
+  const roundDisplay = stripOptionsTagsForDisplay(options.roundDisplayText, false).trim()
+  if (roundDisplay && !isBridgingAssistantNarration(roundDisplay)) return false
+
+  return true
+}
+
+/**
  * Whether buffered model prose for this round should be streamed to the UI.
  * Tool rounds keep text in the LLM transcript only — streaming it between tool
  * batches creates repeated "Arena Copilot" mothership headers. Bridging

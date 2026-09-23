@@ -15,6 +15,7 @@ import {
 } from '@/local-copilot/lib/agent/thinking-live-status'
 import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
 import {
+  MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
   MAX_FORCED_FOLLOW_UP_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
   MAX_POPULATE_EDITS,
@@ -150,12 +151,14 @@ import {
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { buildGeneratedApiKeyControl } from '@/local-copilot/lib/security/trusted-controls'
 import {
+  buildDebugInspectionChatAppendix,
   buildToolFailureEvidenceLines,
   buildWorkflowRunChatAppendix,
   isWorkflowRunToolName,
   shouldAppendWorkflowRunChatResult,
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
+  turnHasDebugInspectionTools,
   type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
@@ -179,6 +182,7 @@ import {
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 import {
   buildBlocksMetadataReuseSystemMessage,
+  buildDebugExplanationContinuationMessage,
   buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
   createAssistantRoundTextStreamer,
@@ -190,6 +194,7 @@ import {
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
   shouldEmitEmptyAssistantFallback,
+  shouldForceDebugExplanationContinuation,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
 } from '@/local-copilot/lib/user-facing-text'
@@ -887,6 +892,7 @@ export async function* runLocalCopilotAgent(
   let pendingFollowUps: MandatoryFollowUp[] = []
   let forcedFollowUpRounds = 0
   let forcedIntentContinuations = 0
+  let forcedDebugExplanations = 0
   let turnInputTokens = 0
   let turnOutputTokens = 0
   const stagnationTracker = createToolStagnationTracker()
@@ -1248,6 +1254,39 @@ export async function* runLocalCopilotAgent(
           round,
           forcedIntentContinuations,
           preview: truncate(intentDisplay, 120),
+        })
+        continue
+      }
+
+      const canForceDebugExplanation = shouldForceDebugExplanationContinuation({
+        postBuildToolMode,
+        forcedDebugExplanations,
+        maxForcedDebugExplanations: MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasDebugTools: turnHasDebugInspectionTools(turnToolRecords),
+        streamedUserFacingText,
+        roundDisplayText: intentDisplay,
+      })
+
+      if (canForceDebugExplanation) {
+        forcedDebugExplanations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildDebugExplanationContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing debug-explanation continuation', {
+          round,
+          forcedDebugExplanations,
+          debugTools: turnToolRecords
+            .filter((record) =>
+              ['query_logs', 'get_execution_logs', 'explain_error'].includes(record.name)
+            )
+            .map((record) => record.name),
         })
         continue
       }
@@ -2336,6 +2375,7 @@ export async function* runLocalCopilotAgent(
     if (turnToolRecords.length > 0) {
       const synthesized =
         synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        buildDebugInspectionChatAppendix(turnToolRecords) ??
         'I finished the requested steps, but had nothing further to add.'
       const safe = stripIdsFromUserFacingText(synthesized)
       assistantText = safe
@@ -2364,6 +2404,31 @@ export async function* runLocalCopilotAgent(
       assistantText += chunk
       streamedUserFacingText += chunk
       yield { type: 'text_delta', content: chunk }
+    }
+  }
+
+  // Hard guarantee: debug/log turns (incl. `run` specialist) must leave visible prose.
+  // Nested specialist text can sit inside a collapsed agent group while the main
+  // bubble stays empty — always promote a top-level explanation when needed.
+  if (turnHasDebugInspectionTools(turnToolRecords)) {
+    const visible = stripIdsFromUserFacingText(
+      stripOptionsTagsForDisplay(streamedUserFacingText, false)
+    ).trim()
+    const looksEmpty =
+      !visible ||
+      isBridgingAssistantNarration(visible) ||
+      /^Finished the run steps\b/i.test(visible)
+    if (looksEmpty) {
+      const guaranteed =
+        buildDebugInspectionChatAppendix(turnToolRecords) ??
+        synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        'I checked the execution logs but could not determine why the run failed. Please share the execution ID or try again.'
+      const safe = stripIdsFromUserFacingText(guaranteed)
+      if (safe && safe !== visible) {
+        assistantText = safe
+        streamedUserFacingText = safe
+        yield { type: 'text_delta', content: safe }
+      }
     }
   }
 

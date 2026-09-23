@@ -49,7 +49,13 @@ import {
   resolveMandatoryFollowUps,
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
+import {
+  buildDebugInspectionChatAppendix,
+  isDebugInspectionToolName,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
 import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
+import { buildDebugExplanationContinuationMessage } from '@/local-copilot/lib/user-facing-text'
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
 import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
 import { buildSpecialistStructuredResult } from '@/local-copilot/lib/verification/specialist-result'
@@ -67,6 +73,8 @@ const logger = createLogger('LocalCopilotSpecialistPass')
  */
 export const SPECIALIST_PASS_MAX_ROUNDS = 10
 const MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS = 4
+/** When log/debug tools finish with no prose, force one closing explanation round. */
+const MAX_SPECIALIST_DEBUG_EXPLANATION_ROUNDS = 1
 export const SPECIALIST_FINDINGS_MAX_CHARS = 12_000
 
 export interface RunSpecialistPassParams {
@@ -259,9 +267,11 @@ export async function executeSpecialistLoop(
     const mutationOutcomes: MutationOutcome[] = []
     const verifications: VerificationRecord[] = []
     const errors: string[] = []
+    const debugToolRecords: ToolTurnRecord[] = []
     let toolRoundCount = 0
     let pendingFollowUps: MandatoryFollowUp[] = []
     let forcedFollowUpRounds = 0
+    let forcedDebugExplanations = 0
     const persistFileIntentChannel =
       params.domain === 'file' && Boolean(params.parentDispatchToolCallId)
     let fileIntentChannelId = persistFileIntentChannel
@@ -362,7 +372,41 @@ export async function executeSpecialistLoop(
           })
           continue
         }
-        if (assistantText.trim()) findings.push(assistantText.trim())
+
+        if (
+          !assistantText.trim() &&
+          debugToolRecords.length > 0 &&
+          forcedDebugExplanations < MAX_SPECIALIST_DEBUG_EXPLANATION_ROUNDS &&
+          round < maxRounds - 1
+        ) {
+          forcedDebugExplanations += 1
+          messages.push({
+            role: 'system',
+            content: buildDebugExplanationContinuationMessage(),
+          })
+          logger.info('Arena Copilot specialist forcing debug-explanation continuation', {
+            domain: params.domain,
+            round,
+            forcedDebugExplanations,
+            debugTools: debugToolRecords.map((record) => record.name),
+          })
+          continue
+        }
+
+        if (assistantText.trim()) {
+          findings.push(assistantText.trim())
+        } else if (debugToolRecords.length > 0) {
+          // Model stopped after log tools with no prose — surface a real answer now.
+          const synthesized = buildDebugInspectionChatAppendix(debugToolRecords)
+          if (synthesized) {
+            findings.push(synthesized)
+            await emitSpecialistEvent(
+              events,
+              { type: 'text_delta', content: synthesized },
+              params.onEvent
+            )
+          }
+        }
         break
       }
 
@@ -582,6 +626,14 @@ export async function executeSpecialistLoop(
           toolResult.result
         )
         findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
+        if (isDebugInspectionToolName(call.name)) {
+          debugToolRecords.push({
+            name: call.name,
+            success: toolResult.success,
+            result: toolResult.result,
+            ...(toolResult.error ? { error: toolResult.error } : {}),
+          })
+        }
         if (!toolResult.success && toolResult.error) {
           errors.push(toolResult.error)
         }
