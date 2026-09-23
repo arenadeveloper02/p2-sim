@@ -45,9 +45,20 @@ export const SIDEBAR_DIVIDER_PAD_BELOW_CLASS = 'pt-2'
  * (rail midline 25.5 vs glyph column 24), which produced either a
  * left-biased rail or a drift on toggle; keep the rail width and this chip
  * width commensurate (rail = chip + 2 × gutter) if either ever changes.
- * The width applies in one frame, in step with the rail itself.
+ * Collapsing, the width tweens down to 32px on the 175ms curve the rail
+ * closes on; expanding targets `auto` (not interpolable), so the chip snaps
+ * to the still-narrow rail's width and stretch-tracks it open. The duration
+ * is `!important` because the aside zeroes chip transition durations
+ * (`[&_.group.cursor-pointer]:duration-0`) for instant hover fills — colors
+ * are excluded from the property list here, so hover fills keep snapping.
  */
-export const SIDEBAR_RAIL_CHIP_CLASS = 'group-data-[collapsed]/rail:w-[32px]'
+export const SIDEBAR_RAIL_CHIP_CLASS = [
+  'transition-[width]',
+  '![transition-duration:175ms]',
+  '[transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]',
+  'motion-reduce:!transition-none',
+  'group-data-[collapsed]/rail:w-[32px]',
+].join(' ')
 
 /**
  * Nested-selector variants for cmdk-based surfaces (e.g. the search modal).

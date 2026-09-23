@@ -467,6 +467,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
             })),
             ...resourceScopeFields(resourceScopeFromOwner(props.reconnectTarget)),
             reconnect: true,
+            credentialId: props.reconnectTarget.credentialId,
             requestedAt: Date.now(),
           })
           returnContextWritten = true

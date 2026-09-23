@@ -8,7 +8,10 @@ import { getMaxSidebarWidth, useSidebarStore } from '@/stores/sidebar/store'
  * Architecture (confirmed industry best-practice for resize handles):
  *
  * pointerdown  → capture the pointer on the handle (so move/up keep arriving
- *                even when the cursor leaves the window or crosses an iframe)
+ *                even when the cursor leaves the window or crosses an iframe),
+ *                add `is-resizing` class directly to the DOM (no React
+ *                round-trip, so the CSS width transition is suppressed from the
+ *                very first frame)
  * pointermove  → write --sidebar-width to `.sidebar-shell-outer` (the element
  *                that sizes the rail) inside a requestAnimationFrame callback.
  *                Scoping the variable to that subtree keeps the style recalc
@@ -20,8 +23,9 @@ import { getMaxSidebarWidth, useSidebarStore } from '@/stores/sidebar/store'
  *
  * The drag is torn down by `pointerup`, `pointercancel`, or window `blur`, so an
  * interrupted gesture (release outside the window, alt-tab, context menu, the OS
- * stealing focus) can never leave the body cursor and selection lock stuck. A
- * single-flight guard prevents
+ * stealing focus) can never leave the `is-resizing` / `sidebar-resizing` classes
+ * stuck — which would otherwise freeze the sidebar at a tiny width with the
+ * collapse transition permanently disabled. A single-flight guard prevents
  * stacking listeners across rapid presses, and unmounting mid-drag finalizes it
  * the same way a release does — persisting the last width and dropping the
  * scoped override — which matters because `.sidebar-shell-outer` lives in the
@@ -38,9 +42,11 @@ export function useSidebarResize() {
 
       const handle = e.currentTarget
       const pointerId = e.pointerId
+      const sidebar = document.querySelector<HTMLElement>('.sidebar-container')
       const shell = document.querySelector<HTMLElement>('.sidebar-shell-outer')
       const target = shell ?? document.documentElement
-      target.setAttribute('data-resizing', '')
+      sidebar?.classList.add('is-resizing')
+      document.documentElement.classList.add('sidebar-resizing')
       document.body.style.cursor = 'ew-resize'
       document.body.style.userSelect = 'none'
       handle.setPointerCapture?.(pointerId)
@@ -64,6 +70,8 @@ export function useSidebarResize() {
           cancelAnimationFrame(rafId)
           rafId = null
         }
+        sidebar?.classList.remove('is-resizing')
+        document.documentElement.classList.remove('sidebar-resizing')
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
         if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
@@ -80,7 +88,6 @@ export function useSidebarResize() {
           setSidebarWidth(lastWidth)
           if (target !== document.documentElement) target.style.removeProperty('--sidebar-width')
         }
-        target.removeAttribute('data-resizing')
       }
 
       teardownRef.current = endDrag

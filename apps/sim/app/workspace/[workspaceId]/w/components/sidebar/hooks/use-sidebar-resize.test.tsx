@@ -8,6 +8,7 @@ import { useSidebarResize } from '@/app/workspace/[workspaceId]/w/components/sid
 import { useSidebarStore } from '@/stores/sidebar/store'
 
 let container: HTMLDivElement
+let sidebar: HTMLDivElement
 let root: Root
 
 function ResizeHandle() {
@@ -18,10 +19,13 @@ function ResizeHandle() {
 beforeEach(() => {
   vi.useFakeTimers()
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  useSidebarStore.setState({ isCollapsed: false, sidebarWidth: 256 })
+  useSidebarStore.setState({ isCollapsed: false, sidebarWidth: 238 })
   container = document.createElement('div')
   container.className = 'sidebar-shell-outer'
+  sidebar = document.createElement('div')
+  sidebar.className = 'sidebar-container'
   document.body.appendChild(container)
+  document.body.appendChild(sidebar)
   root = createRoot(container)
   act(() => root.render(<ResizeHandle />))
 })
@@ -29,13 +33,16 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
+  sidebar.remove()
+  document.documentElement.classList.remove('sidebar-resizing')
   vi.useRealTimers()
 })
 
 function startResize() {
   const handle = container.querySelector('[role="separator"]')!
   act(() => handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })))
-  expect(container.hasAttribute('data-resizing')).toBe(true)
+  expect(sidebar.classList.contains('is-resizing')).toBe(true)
+  expect(document.documentElement.classList.contains('sidebar-resizing')).toBe(true)
 }
 
 describe('sidebar resize lifecycle', () => {
@@ -48,7 +55,7 @@ describe('sidebar resize lifecycle', () => {
         vi.advanceTimersByTime(20)
       })
       expect(container.style.getPropertyValue('--sidebar-width')).toBe('280px')
-      expect(useSidebarStore.getState().sidebarWidth).toBe(256)
+      expect(useSidebarStore.getState().sidebarWidth).toBe(238)
 
       act(() => {
         if (event === 'unmount') root.render(null)
@@ -56,7 +63,8 @@ describe('sidebar resize lifecycle', () => {
         else document.dispatchEvent(new Event(event))
       })
 
-      expect(container.hasAttribute('data-resizing')).toBe(false)
+      expect(sidebar.classList.contains('is-resizing')).toBe(false)
+      expect(document.documentElement.classList.contains('sidebar-resizing')).toBe(false)
       expect(container.style.getPropertyValue('--sidebar-width')).toBe('')
       expect(useSidebarStore.getState().sidebarWidth).toBe(280)
       expect(document.body.style.cursor).toBe('')
@@ -67,7 +75,8 @@ describe('sidebar resize lifecycle', () => {
   it('restores animation when released without moving', () => {
     startResize()
     act(() => document.dispatchEvent(new Event('pointerup')))
-    expect(container.hasAttribute('data-resizing')).toBe(false)
-    expect(useSidebarStore.getState().sidebarWidth).toBe(256)
+    expect(sidebar.classList.contains('is-resizing')).toBe(false)
+    expect(document.documentElement.classList.contains('sidebar-resizing')).toBe(false)
+    expect(useSidebarStore.getState().sidebarWidth).toBe(238)
   })
 })

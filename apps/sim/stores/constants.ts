@@ -28,18 +28,11 @@ export const CONTENT_WINDOW_GAP = 0
 
 /** Sidebar width constraints */
 export const SIDEBAR_WIDTH = {
-  DEFAULT: 256,
-  /** Narrowest the expanded rail can be dragged — slightly under the default */
-  MIN: 224,
+  DEFAULT: 238,
+  MIN: 238,
   /** Width when sidebar is collapsed to icon-only mode */
   COLLAPSED: 48,
-  /**
-   * Absolute ceiling on the expanded width. The percentage below already scales
-   * the rail with the viewport; this keeps a wide monitor from granting a rail
-   * that swallows a third of the page. `getMaxSidebarWidth` combines the two.
-   */
-  MAX: 400,
-  /** Maximum is 30% of viewport (up to `MAX`), enforced dynamically */
+  /** Maximum is 30% of viewport, enforced dynamically */
   MAX_PERCENTAGE: 0.3,
 } as const
 

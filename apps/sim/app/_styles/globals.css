@@ -392,7 +392,7 @@
 :root {
   --sidebar-width: 0px; /* 0 outside workspace; blocking script always sets actual value on workspace pages */
   --sidebar-collapsed-width: 48px; /* icon rail on web; desktop overrides to 0 before first paint */
-  --sidebar-expanded-width: 256px; /* SIDEBAR_WIDTH.DEFAULT; the width to restore to, held even while collapsed */
+  --sidebar-expanded-width: 238px; /* SIDEBAR_WIDTH.DEFAULT; the width to restore to, held even while collapsed */
   --desktop-title-bar-height: 0px; /* macOS traffic-light lane; desktop overrides before first paint */
   --workspace-content-title-bar-inset: 0px; /* lane the content pane must leave clear; only non-zero when the pane, not the sidebar, sits under it */
   --desktop-title-bar-inset-x: 0px; /* clearance past the traffic lights; desktop overrides */
@@ -567,6 +567,7 @@ html[data-sim-desktop-title-bar="inset"]
 
 .sidebar-container {
   width: var(--sidebar-width);
+  transition: width 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 /**
@@ -593,6 +594,12 @@ html[data-sim-desktop-title-bar="inset"]
   --sidebar-width: var(--sidebar-expanded-width);
 }
 
+/* The card appears at full width, so the aside's own width transition would animate
+   0 -> expanded inside it. */
+.sidebar-shell-outer[data-peek] .sidebar-container {
+  transition: none;
+}
+
 /* The card is a flex column sized to its content, so the shell must be allowed to
    shrink for the sidebar's own scroll region to bound itself once the card hits its
    max height. Docked, this element is not a flex item and the rule is inert. */
@@ -603,6 +610,7 @@ html[data-sim-desktop-title-bar="inset"]
 
 .sidebar-container span,
 .sidebar-container .text-small {
+  transition: opacity 120ms ease;
   white-space: nowrap;
 }
 
@@ -611,8 +619,49 @@ html[data-sim-desktop-title-bar="inset"]
   opacity: 0;
 }
 
+.sidebar-container .sidebar-collapse-hide {
+  transition: opacity 60ms ease;
+}
+
 .sidebar-container[data-collapsed] .sidebar-collapse-hide {
   opacity: 0;
+}
+
+@keyframes sidebar-collapse-guard {
+  from {
+    pointer-events: none;
+  }
+  to {
+    pointer-events: auto;
+  }
+}
+
+.sidebar-container[data-collapsed] {
+  animation: sidebar-collapse-guard 250ms step-end;
+}
+
+.sidebar-container.is-resizing {
+  transition: none;
+}
+
+/* Suppress width/transform transitions on the chrome wrappers during a
+   drag-resize so the outer overflow-hidden clip doesn't lag behind the inner
+   sidebar content, which is already at the correct width instantly. */
+html.sidebar-resizing .sidebar-shell-outer,
+html.sidebar-resizing .sidebar-shell-inner {
+  transition: none !important;
+}
+
+/* Suppress sidebar transitions during the initial hydration window. The
+   pre-paint script sets the correct --sidebar-width, but store rehydration
+   re-applies it a tick later; without this guard that re-apply animates the
+   rail, reading as a collapse -> expand flash on a fresh page load. Removed
+   after the first paint (see workspace-chrome.tsx) so user-driven toggles and
+   the fullscreen slide still animate. */
+html.sidebar-booting .sidebar-container,
+html.sidebar-booting .sidebar-shell-outer,
+html.sidebar-booting .sidebar-shell-inner {
+  transition: none !important;
 }
 
 .panel-container {

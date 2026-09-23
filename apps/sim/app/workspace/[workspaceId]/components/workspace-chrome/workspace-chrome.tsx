@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { applyDesktopTitleBarMode, type DesktopTitleBarMode } from '@sim/desktop-bridge'
 import { cn } from '@sim/emcn'
 import { ArrowLeft, ArrowRight, PanelLeft } from '@sim/emcn/icons'
@@ -234,6 +234,29 @@ export function WorkspaceChrome({
   const peekEnabled = isCollapsed && !isFullscreen && titleBarMode === 'inset'
   const { isPeekActive, isPeekOpen, cardRef, triggerRef, onTriggerEnter, onTriggerLeave } =
     useSidebarPeek(peekEnabled, isSearchModalOpen)
+
+  /**
+   * Suppress sidebar transitions during the initial hydration window. The
+   * pre-paint script sets the correct `--sidebar-width`, but store rehydration
+   * re-applies it a tick later; without this guard that re-apply animates the
+   * rail, reading as a collapse to expand flash on a fresh page load. Removed
+   * after the first paint so user-driven collapse toggles and the fullscreen
+   * slide still animate.
+   */
+  const bootRafRef = useRef(0)
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.classList.add('sidebar-booting')
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => root.classList.remove('sidebar-booting'))
+      bootRafRef.current = raf2
+    })
+    bootRafRef.current = raf1
+    return () => {
+      cancelAnimationFrame(bootRafRef.current)
+      root.classList.remove('sidebar-booting')
+    }
+  }, [])
 
   // Hydrate the persisted width before paint (collapse comes from the cookie/prop).
   useLayoutEffect(() => {

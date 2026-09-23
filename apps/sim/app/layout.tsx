@@ -141,10 +141,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 }
 
                 // Sidebar width. Mirror getMaxSidebarWidth() in stores/sidebar/store.ts:
-                // 30% of the viewport capped at 400px, and never below the 224px
-                // minimum, so a narrow window yields a width >= MIN instead of a
-                // sub-minimum sliver.
-                var defaultSidebarWidth = 256;
+                // 30% of the viewport, and never below the 238px minimum, so a
+                // narrow window yields a width >= MIN instead of a sub-minimum sliver.
+                var defaultSidebarWidth = 238;
                 try {
                   // Collapse comes from the cookie (independent of localStorage
                   // parsing); the persisted width is read defensively below. Match the
@@ -170,10 +169,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   // collapsed, because the desktop hover-peek renders the sidebar at
                   // its restore width while --sidebar-width still reads collapsed.
                   var width = state && state.sidebarWidth;
-                  var maxSidebarWidth = Math.max(224, Math.min(400, window.innerWidth * 0.3));
+                  var maxSidebarWidth = Math.max(238, window.innerWidth * 0.3);
                   var expandedWidth =
                     typeof width === 'number' && isFinite(width)
-                      ? Math.min(Math.max(width, 224), maxSidebarWidth)
+                      ? Math.min(Math.max(width, 238), maxSidebarWidth)
                       : Math.min(defaultSidebarWidth, maxSidebarWidth);
                   document.documentElement.style.setProperty(
                     '--sidebar-expanded-width',

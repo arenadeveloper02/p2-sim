@@ -54,10 +54,10 @@ describe('sidebar width CSS variables', () => {
     expect(widthVars()).toEqual({ width: '300px', expanded: '300px' })
   })
 
-  it('allows narrowing below the default down to the minimum', () => {
+  it('clamps a drag below the minimum back up to the minimum', () => {
     useSidebarStore.getState().setSidebarWidth(SIDEBAR_WIDTH.MIN)
     expect(useSidebarStore.getState().sidebarWidth).toBe(SIDEBAR_WIDTH.MIN)
-    expect(SIDEBAR_WIDTH.MIN).toBeLessThan(SIDEBAR_WIDTH.DEFAULT)
+    expect(SIDEBAR_WIDTH.MIN).toBe(SIDEBAR_WIDTH.DEFAULT)
 
     useSidebarStore.getState().setSidebarWidth(SIDEBAR_WIDTH.MIN - 1)
     expect(useSidebarStore.getState().sidebarWidth).toBe(SIDEBAR_WIDTH.MIN)
@@ -103,16 +103,16 @@ describe('sidebar width CSS variables', () => {
     expect(widthVars().expanded).toBe(`${SIDEBAR_WIDTH.MIN}px`)
   })
 
-  it('clamps the default fallback to a viewport maximum below the default', () => {
+  it('keeps a non-finite width at the default on a narrow viewport', () => {
     const innerWidth = window.innerWidth
-    window.innerWidth = 800
+    window.innerWidth = 400
     try {
       useSidebarStore.setState({ isCollapsed: false, sidebarWidth: Number.NaN })
 
       useSidebarStore.getState().syncWidth()
 
-      expect(widthVars().expanded).toBe(`${getMaxSidebarWidth(800)}px`)
-      expect(getMaxSidebarWidth(800)).toBeLessThan(SIDEBAR_WIDTH.DEFAULT)
+      expect(widthVars().expanded).toBe(`${SIDEBAR_WIDTH.DEFAULT}px`)
+      expect(getMaxSidebarWidth(400)).toBe(SIDEBAR_WIDTH.MIN)
     } finally {
       window.innerWidth = innerWidth
     }
@@ -124,8 +124,8 @@ describe('getMaxSidebarWidth', () => {
     expect(getMaxSidebarWidth(1000)).toBe(1000 * SIDEBAR_WIDTH.MAX_PERCENTAGE)
   })
 
-  it('caps a wide viewport at the absolute maximum', () => {
-    expect(getMaxSidebarWidth(4000)).toBe(SIDEBAR_WIDTH.MAX)
+  it('scales a wide viewport by the percentage, floored at the minimum', () => {
+    expect(getMaxSidebarWidth(4000)).toBe(4000 * SIDEBAR_WIDTH.MAX_PERCENTAGE)
   })
 
   it('never drops below the minimum on a narrow viewport', () => {
