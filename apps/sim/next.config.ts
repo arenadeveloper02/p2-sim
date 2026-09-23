@@ -163,6 +163,8 @@ const nextConfig: NextConfig = {
        * Webpack treats `node:foo` as a URI scheme and fails with UnhandledSchemeError
        * before `NormalModuleReplacementPlugin` or `resolve.fallback` run. The
        * `resolveForScheme` hook is the one that actually intercepts it.
+       * `resource` is the string stored on the module and later read by scheme;
+       * rewriting only `path` leaves that string as `node:crypto`.
        */
       const emptyNodeBuiltin = path.resolve(import.meta.dirname, 'lib/webpack-empty-node-builtin.cjs')
       config.plugins.push({
@@ -180,7 +182,12 @@ const nextConfig: NextConfig = {
                           for: (scheme: string) => {
                             tap: (
                               name: string,
-                              handler: (resource: { path?: string; query?: string; fragment?: string }) => boolean
+                              handler: (resource: {
+                                resource: string
+                                path?: string
+                                query?: string
+                                fragment?: string
+                              }) => boolean
                             ) => void
                           }
                         }
@@ -198,6 +205,7 @@ const nextConfig: NextConfig = {
               normalModuleFactory.hooks.resolveForScheme.for('node').tap(
                 'HandleNodeScheme',
                 (resource) => {
+                  resource.resource = emptyNodeBuiltin
                   resource.path = emptyNodeBuiltin
                   resource.query = ''
                   resource.fragment = ''
