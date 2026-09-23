@@ -241,6 +241,7 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
   - Use \`run_workflow\` to execute a workflow and inspect block outputs. Pass \`workflowId\` from \`workspaceWorkflows\` on home chat, or omit it when a workflow is already open.
   - To re-test one block after a full run, use \`run_block\` with \`blockId\` (and optional \`executionId\` from the prior run). To resume from mid-pipeline, use \`run_from_block\` with \`startBlockId\`. Both need a prior execution snapshot — run the full workflow first when none exists.
   - After a run, summarize key block outputs for the user in plain language. Use \`query_logs\` with the returned \`executionId\` for deeper debugging.
+  - After \`query_logs\`, \`get_execution_logs\`, or \`explain_error\`, ALWAYS reply with a plain-language explanation of why the run failed (failing block + root cause + fix). Never end the turn on tool rows alone.
   - Use \`list_integration_tools\` to see operations available for a connected integration service.
   - Use \`get_workflow_data\` to load workflow structure when you need details for a workflow that is not currently open.`,
   },
