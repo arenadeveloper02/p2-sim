@@ -44,4 +44,14 @@ describe('usage tool family rollup', () => {
     ])
     expect(formatUsageToolFamilyLabel('exa')).toBe('Exa')
   })
+
+  it('drops tools that display as 0 credits', () => {
+    const rows = aggregateUsageToolsByFamily([
+      { toolId: 'knowledge_search', billableCost: 0, count: 12 },
+      { toolId: 'firecrawl_scrape', billableCost: 0.001, count: 2 },
+      { toolId: 'exa_search', billableCost: 0.07, count: 1 },
+    ])
+
+    expect(rows.map((row) => row.toolId)).toEqual(['exa'])
+  })
 })

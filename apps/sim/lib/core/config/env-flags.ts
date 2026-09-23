@@ -28,6 +28,13 @@ export const isProd = env.NODE_ENV === 'production'
 export const isDev = env.NODE_ENV === 'development'
 
 /**
+ * Serve the in-app email/password login instead of bouncing to Arena SSO.
+ * Always on in local development. Production deployments without an Arena hub
+ * opt in with NEXT_PUBLIC_LOCAL_LOGIN_ENABLED.
+ */
+export const isLocalLoginEnabled = isDev || isTruthy(getEnv('NEXT_PUBLIC_LOCAL_LOGIN_ENABLED'))
+
+/**
  * Is the application running in test mode
  */
 export const isTest = env.NODE_ENV === 'test'
