@@ -417,11 +417,42 @@ export async function executeMothershipDelegatedTool(
     workspaceId: ctx.workspaceId,
   })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
-  const result = await executeTool(
+  let result = await executeTool(
     toolName,
     enrichedArgs,
     toCopilotServerToolContext(ctx, workflowId)
   )
+
+  // Cloud mothership post-processes function_execute with maybeWriteOutputToFile
+  // so path-only `outputs.files` land in the workspace VFS. Arena must do the
+  // same — otherwise Claude sees a sandbox "success" while files/ never updates.
+  if (toolName === 'function_execute' && result.success) {
+    const { maybeWriteOutputToFile } = await import('@/lib/copilot/request/tools/files')
+    const written = await maybeWriteOutputToFile(
+      toolName,
+      enrichedArgs,
+      { success: result.success, output: result.output, error: result.error },
+      {
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+        workflowId: workflowId ?? ctx.workflowId ?? '',
+        userPermission: ctx.userPermission ?? 'write',
+        chatId: ctx.chatId,
+        messageId: ctx.messageId,
+        abortSignal: ctx.abortSignal,
+        ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
+        ...(ctx.resolvedSecretTraceRegistry
+          ? { resolvedSecretTraceRegistry: ctx.resolvedSecretTraceRegistry }
+          : {}),
+      }
+    )
+    result = {
+      success: written.success,
+      output: written.output,
+      error: written.error,
+      resources: written.resources ?? result.resources,
+    }
+  }
 
   if (!result.success) {
     logger.warn('Delegated Mothership tool failed', {

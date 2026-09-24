@@ -19,6 +19,7 @@ import {
   MAX_FORCED_FOLLOW_UP_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
   MAX_POPULATE_EDITS,
+  MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS,
   MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS,
 } from '@/local-copilot/lib/agent/limits'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -186,6 +187,7 @@ import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib
 import {
   buildBlocksMetadataReuseSystemMessage,
   buildDebugExplanationContinuationMessage,
+  buildResearchSearchContinuationMessage,
   buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
   buildWorkflowBuildContinuationMessage,
@@ -193,12 +195,14 @@ import {
   editResultNeedsFollowUp,
   emptyAssistantTurnFallback,
   isBridgingAssistantNarration,
+  isLiveWebSearchToolCall,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
   shouldEmitEmptyAssistantFallback,
   shouldForceDebugExplanationContinuation,
+  shouldForceResearchSearchContinuation,
   shouldForceWorkflowBuildContinuation,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
@@ -899,10 +903,15 @@ export async function* runLocalCopilotAgent(
   let forcedIntentContinuations = 0
   let forcedDebugExplanations = 0
   let forcedWorkflowBuildContinuations = 0
+  let forcedResearchSearchContinuations = 0
+  let turnHasLiveWebSearch = false
   let turnInputTokens = 0
   let turnOutputTokens = 0
   const stagnationTracker = createToolStagnationTracker()
   let stagnationStopMessage: string | null = null
+
+  const needsLiveSearch =
+    intent.primary === 'research' || intent.secondary.includes('research')
 
   for (let round = 0; round < maxToolRounds; round++) {
     if (stagnationStopMessage) break
@@ -1227,6 +1236,15 @@ export async function* runLocalCopilotAgent(
 
       if (canForceFollowUp) {
         forcedFollowUpRounds += 1
+        // Record the already-streamed pitch so the next round does not regenerate
+        // the same "workflow is fully built + Connect Gmail" paragraph.
+        const settledFollowUp =
+          stripIdsFromUserFacingText(stripOptionsTagsForDisplay(roundRawText, false)) ||
+          roundRawText
+        if (settledFollowUp.trim()) {
+          messages.push({ role: 'assistant', content: settledFollowUp })
+          assistantText = ''
+        }
         const continuation = buildFollowUpContinuationMessage(pendingFollowUps)
         messages.push({ role: 'user', content: continuation })
         logger.info('Arena Copilot forcing mandatory follow-up continuation', {
@@ -1259,6 +1277,35 @@ export async function* runLocalCopilotAgent(
         logger.info('Arena Copilot forcing mutation-intent continuation', {
           round,
           forcedIntentContinuations,
+          preview: truncate(intentDisplay, 120),
+        })
+        continue
+      }
+
+      const canForceResearchSearch = shouldForceResearchSearchContinuation({
+        postBuildToolMode,
+        needsLiveSearch,
+        forcedResearchSearchContinuations,
+        maxForcedResearchSearchContinuations: MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasLiveWebSearch: turnHasLiveWebSearch,
+      })
+
+      if (canForceResearchSearch) {
+        forcedResearchSearchContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildResearchSearchContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing research live-search continuation', {
+          round,
+          forcedResearchSearchContinuations,
+          intentPrimary: intent.primary,
           preview: truncate(intentDisplay, 120),
         })
         continue
@@ -1362,6 +1409,11 @@ export async function* runLocalCopilotAgent(
         ? pendingToolCalls.filter((call) => call.name === 'oauth_get_auth_link')
         : pendingToolCalls
     )
+    if (
+      orderedToolCalls.some((call) => isLiveWebSearchToolCall(call.name, call.arguments))
+    ) {
+      turnHasLiveWebSearch = true
+    }
     if (orderedToolCalls.length === 0) {
       postBuildToolMode = postBuildToolMode === 'all' ? 'all' : 'done'
       break

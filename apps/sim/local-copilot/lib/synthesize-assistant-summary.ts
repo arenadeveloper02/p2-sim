@@ -561,7 +561,32 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (record.name === 'search_online') {
       const payload = asRecord(record.result)
       const summary = typeof payload.summary === 'string' ? payload.summary.trim() : ''
-      if (summary) parts.push(summary)
+      if (summary) {
+        parts.push(summary)
+        continue
+      }
+      const results = Array.isArray(payload.results) ? payload.results : []
+      const lines = results
+        .slice(0, 5)
+        .map((entry) => {
+          const row = asRecord(entry)
+          const title = typeof row.title === 'string' ? row.title.trim() : ''
+          const snippet =
+            (typeof row.snippet === 'string' && row.snippet.trim()) ||
+            (typeof row.highlights === 'string' && row.highlights.trim()) ||
+            (Array.isArray(row.highlights) &&
+              row.highlights
+                .filter((h): h is string => typeof h === 'string')
+                .join(' ')
+                .trim()) ||
+            ''
+          if (!title && !snippet) return null
+          return snippet ? `${title}: ${snippet}` : title
+        })
+        .filter((line): line is string => Boolean(line))
+      if (lines.length > 0) {
+        parts.push(truncate(lines.join('\n'), GENERIC_MESSAGE_MAX_CHARS))
+      }
       continue
     }
 
