@@ -204,6 +204,7 @@ export interface LocalCopilotVertexClientOptions {
 }
 
 const VERTEX_PRIORITY_PAYGO_HTTP_OPTIONS = {
+  apiVersion: 'v1',
   headers: {
     'X-Vertex-AI-LLM-Request-Type': 'shared',
     'X-Vertex-AI-LLM-Shared-Request-Type': 'priority',
@@ -237,6 +238,9 @@ function buildVertexClient(
   })
 }
 
+/** Last slot handed out by {@link createLocalCopilotVertexClient} (for same-slot Priority rebuilds). */
+let lastResolvedVertexSlot: LocalCopilotVertexSlot | null = null
+
 /**
  * Builds a `@google/genai` client pointed at Vertex AI.
  *
@@ -248,5 +252,19 @@ function buildVertexClient(
 export function createLocalCopilotVertexClient(
   options?: LocalCopilotVertexClientOptions
 ): GoogleGenAI {
-  return buildVertexClient(resolveLocalCopilotVertexSlot(), options)
+  const slot = resolveLocalCopilotVertexSlot()
+  lastResolvedVertexSlot = slot
+  return buildVertexClient(slot, options)
+}
+
+/**
+ * Rebuilds a Vertex client for the last resolved slot without advancing
+ * rotation — used when escalating a 429 to Priority PayGo on the same account.
+ */
+export function recreateLocalCopilotVertexClientWithoutRotation(
+  options?: LocalCopilotVertexClientOptions
+): GoogleGenAI {
+  const slot = lastResolvedVertexSlot ?? resolveLocalCopilotVertexSlot()
+  lastResolvedVertexSlot = slot
+  return buildVertexClient(slot, options)
 }

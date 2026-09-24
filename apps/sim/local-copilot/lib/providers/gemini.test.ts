@@ -363,8 +363,9 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
     }
 
     expect(generateContentStream).toHaveBeenCalledTimes(2)
-    // First 429 flips Priority on the same client — do not rotate yet.
-    expect(refreshAi).not.toHaveBeenCalled()
+    // First 429 rebuilds the same slot with Priority baked into the client.
+    expect(refreshAi).toHaveBeenCalledTimes(1)
+    expect(refreshAi).toHaveBeenCalledWith({ priorityPayGo: true, sameSlot: true })
     const firstConfig = generateContentStream.mock.calls[0]?.[0]?.config as
       | { httpOptions?: { headers?: Record<string, string> } }
       | undefined
@@ -375,7 +376,7 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
     expect(retryConfig?.httpOptions?.headers).toEqual({ ...VERTEX_PRIORITY_PAYGO_HEADERS })
   })
 
-  it('keeps Priority sticky and rotates the client on a second 429', async () => {
+  it('after Priority fails, rotates to the next slot on Standard', async () => {
     const exhausted = Object.assign(new Error('Resource exhausted'), {
       status: 'RESOURCE_EXHAUSTED',
       code: 429,
@@ -412,16 +413,18 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
       // drain
     }
 
+    // slot0 Standard → slot0 Priority → slot1 Standard (success)
     expect(generateContentStream).toHaveBeenCalledTimes(3)
-    expect(refreshAi).toHaveBeenCalledTimes(1)
-    expect(refreshAi).toHaveBeenCalledWith({ priorityPayGo: true })
+    expect(refreshAi).toHaveBeenCalledTimes(2)
+    expect(refreshAi).toHaveBeenNthCalledWith(1, { priorityPayGo: true, sameSlot: true })
+    expect(refreshAi).toHaveBeenNthCalledWith(2, undefined)
     const thirdConfig = generateContentStream.mock.calls[2]?.[0]?.config as
       | { httpOptions?: { headers?: Record<string, string> } }
       | undefined
-    expect(thirdConfig?.httpOptions?.headers).toEqual({ ...VERTEX_PRIORITY_PAYGO_HEADERS })
+    expect(thirdConfig?.httpOptions?.headers).toBeUndefined()
   })
 
-  it('surfaces a clearer error after exhausting retries', async () => {
+  it('surfaces a clearer error after exhausting the slot ladder', async () => {
     const exhausted = Object.assign(new Error('Resource exhausted'), {
       status: 'RESOURCE_EXHAUSTED',
       code: 429,
@@ -442,7 +445,8 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
       }
     }).rejects.toThrow(/Retries included Vertex Priority PayGo/)
 
-    expect(generateContentStream).toHaveBeenCalledTimes(5)
-    expect(mockSleep).toHaveBeenCalledTimes(4)
+    // attempts 0..5 = 6 opens (3 slots × Standard + Priority)
+    expect(generateContentStream).toHaveBeenCalledTimes(6)
+    expect(mockSleep).toHaveBeenCalledTimes(5)
   })
 })

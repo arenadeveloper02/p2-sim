@@ -18,5 +18,11 @@ export const MAX_INTENT_CONTINUATION_ROUNDS = 5
  */
 export const MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS = 1
 
+/**
+ * After get_available_blocks / get_blocks_metadata without create/edit, force
+ * more model rounds so the turn does not settle on discovery tool rows alone.
+ */
+export const MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS = 2
+
 /** Successful create-then-edit_workflow calls before the post-build lock. */
 export const MAX_POPULATE_EDITS = 5
