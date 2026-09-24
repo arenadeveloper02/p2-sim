@@ -88,7 +88,9 @@ export function ConversationTimelinePopover({
           return (
             <Tooltip.Root key={item.id}>
               <Tooltip.Trigger asChild>{row}</Tooltip.Trigger>
-              <Tooltip.Content side='left'>{item.label}</Tooltip.Content>
+              <Tooltip.Content side='left' className='text-sm'>
+                <span className='block whitespace-normal break-words text-left'>{item.label}</span>
+              </Tooltip.Content>
             </Tooltip.Root>
           )
         })}
