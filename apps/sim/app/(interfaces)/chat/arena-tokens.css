@@ -493,31 +493,45 @@
  * (`html.dark` surfaces from globals.css).
  */
 .dark .deployed-chat {
-  --color-ds-canvas: var(--bg);
-  --color-ds-surface-page: var(--bg);
-  --color-ds-surface-subtle: #232323;
-  --color-ds-surface-raised: #1e1e1e;
-  --color-ds-brand-surface: #262626;
-  --color-ds-blue-50: #262626;
-  --color-ds-blue-200: #3d3d3d;
-  --color-ds-indication: var(--surface-5);
+  /* Same dark palette as mothership chat (globals `.dark`). The light bridge
+     above remaps these names onto Arena greys, so dark sets them directly. */
+  --bg: #1b1b1b;
+  --surface-1: #1e1e1e;
+  --surface-2: #232323;
+  --surface-3: #242424;
+  --surface-4: #292929;
   --surface-5: #363636;
   --surface-hover: #262626;
+  --border: #444444;
+  --border-1: #444444;
+  --border-200: #444444;
+  --text-primary: #e6e6e6;
+  --text-body: #c1c1c1;
+  --text-secondary: #cccccc;
+  --text-muted: #6e6e6e;
+  --text-icon: #969696;
+  --color-ds-canvas: var(--bg);
+  --color-ds-surface-page: var(--bg);
+  --color-ds-surface-subtle: var(--surface-2);
+  --color-ds-surface-raised: var(--surface-1);
+  --color-ds-brand-surface: var(--surface-hover);
+  --color-ds-blue-50: var(--surface-hover);
+  --color-ds-blue-200: var(--border);
+  --color-ds-indication: var(--surface-hover);
   --deployed-send-bg: #e0e0e0;
   --deployed-send-bg-hover: #cfcfcf;
   --deployed-send-fg: #000000;
   --color-ds-input-glow: transparent;
-  --color-ds-text-primary: #e6e6e6;
-  --color-ds-text-secondary: #cccccc;
-  --color-ds-text-tertiary: #969696;
+  --color-ds-text-primary: var(--text-primary);
+  --color-ds-text-secondary: var(--text-secondary);
+  --color-ds-text-tertiary: var(--text-muted);
   --color-ds-text-placeholder: #8d8d8d;
-  --color-ds-text-disabled: #6e6e6e;
-  --color-ds-icon-default: #969696;
+  --color-ds-text-disabled: var(--text-muted);
+  --color-ds-icon-default: var(--text-icon);
   --color-ds-icon-subtle: #7d7d7d;
-  --color-ds-border-default: #444444;
+  --color-ds-border-default: var(--border);
   --color-ds-border-strong: #575757;
-  --color-ds-border-subtle: #363636;
-  --surface-3: #363636;
+  --color-ds-border-subtle: var(--surface-5);
   --color-ds-chart-label: #e6e6e6;
   --color-ds-chart-axis: #969696;
   --color-ds-chart-grid-line: #363636;
@@ -529,7 +543,7 @@
 .dark .deployed-chat-root,
 .dark .deployed-chat-surface {
   color-scheme: dark;
-  color: var(--color-ds-text-primary);
+  color: var(--text-primary);
   background-color: var(--bg);
 }
 

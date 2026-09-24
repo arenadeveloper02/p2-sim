@@ -1543,13 +1543,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         <div className='deployed-chat-surface relative flex min-h-0 min-w-0 flex-1 flex-col'>
           <div className='relative flex min-h-0 flex-1'>
             {isHistoryLoading && (
-              <div
-                className='absolute inset-0 z-[105] flex items-center justify-center'
-                style={{
-                  backgroundColor:
-                    'color-mix(in srgb, var(--color-ds-brand-surface) 60%, transparent)',
-                }}
-              >
+              <div className='absolute inset-0 z-[105] flex items-center justify-center bg-[var(--bg)]'>
                 <DeployedResponseLoader size={160} className='py-0' />
               </div>
             )}

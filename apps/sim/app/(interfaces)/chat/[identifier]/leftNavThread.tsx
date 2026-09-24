@@ -25,7 +25,6 @@ import {
 import {
   DEPLOYED_CHAT_DIVIDER,
   DEPLOYED_CHAT_SIDEBAR_BORDER,
-  DEPLOYED_CHAT_TEXT_SUBTLE,
 } from '@/app/(interfaces)/chat/constants'
 import { groupThreadsByDate } from '@/app/(interfaces)/chat/utils/thread-date-groups'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -74,8 +73,8 @@ function sidebarRowClass(isActive: boolean, disabled = false) {
   return cn(
     'group flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
     isActive
-      ? 'bg-[var(--color-ds-indication)] shadow-none'
-      : 'bg-transparent hover:bg-[var(--color-ds-indication)]',
+      ? 'bg-[var(--surface-hover)] shadow-none'
+      : 'bg-transparent hover:bg-[var(--surface-hover)]',
     disabled && 'cursor-not-allowed opacity-50'
   )
 }
@@ -84,13 +83,11 @@ function sidebarRowStyle(_isActive: boolean): CSSProperties | undefined {
   return undefined
 }
 
-function sidebarRowIconClass(isActive: boolean) {
+function sidebarRowIconClass(_isActive: boolean) {
   return cn(
     // Pulls the icon left so it lines up with the logo (row padding otherwise over-indents it).
     '-ml-1.5 size-6 shrink-0',
-    isActive
-      ? 'text-[var(--text-primary)]'
-      : 'text-[var(--text-icon)] group-hover:text-[var(--text-primary)]'
+    'text-[var(--text-primary)]'
   )
 }
 
@@ -146,8 +143,8 @@ interface SidebarToggleButtonProps {
  */
 function sidebarSoftIconClass() {
   return cn(
-    'inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-icon)] transition-colors',
-    'group-hover:bg-[var(--surface-hover)] group-hover:text-[var(--text-primary)]'
+    'inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-primary)] transition-colors',
+    'group-hover:bg-[var(--surface-hover)]'
   )
 }
 
@@ -669,10 +666,7 @@ const LeftNavThread = ({
       <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
       <div className='flex min-h-0 flex-1 flex-col'>
-        <p
-          className='mb-[var(--spacing-ds-component-md,12px)] px-1 font-medium text-xs'
-          style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
-        >
+        <p className='mb-[var(--spacing-ds-component-md,12px)] px-1 font-medium text-[var(--text-secondary)] text-xs'>
           Chats
         </p>
 
@@ -703,9 +697,7 @@ const LeftNavThread = ({
             <div className='flex flex-col gap-3'>
               {groupedThreads.map((group) => (
                 <div key={group.label} className='flex flex-col'>
-                  <p className='mb-1 px-1 text-xs' style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}>
-                    {group.label}
-                  </p>
+                  <p className='mb-1 px-1 text-[var(--text-secondary)] text-xs'>{group.label}</p>
                   <div className='flex flex-col gap-1'>
                     {group.threads.map((thread) => (
                       <ThreadRow
