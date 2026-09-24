@@ -8,6 +8,7 @@ import {
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
+  Info,
 } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import {

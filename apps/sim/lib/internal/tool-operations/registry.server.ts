@@ -1338,6 +1338,12 @@ const TIKTOK_TOOL_IDS = ['tiktok_upload_video_draft'] as const
 
 const IMAGE_TOOL_IDS = ['image_generate'] as const
 
+const BING_ADS_TOOL_IDS = ['bing_ads_query'] as const
+
+const FACEBOOK_ADS_TOOL_IDS = ['facebook_ads_query'] as const
+
+const GOOGLE_ADS_V1_TOOL_IDS = ['google_ads_v1_query'] as const
+
 const EMBEDDINGS_TOOL_IDS = [
   'embeddings_openai',
   'embeddings_openrouter',
@@ -1780,6 +1786,15 @@ registerFamily(handlerLoaders, MEMORY_TOOL_IDS, async () => {
 })
 registerFamily(handlerLoaders, LOG_TOOL_IDS, async () => {
   return (await import('@/lib/internal/logs/execute-tool')).executeLogsTool
+})
+registerFamily(handlerLoaders, BING_ADS_TOOL_IDS, async () => {
+  return (await import('@/lib/internal/bing-ads/execute-tool')).executeBingAdsTool
+})
+registerFamily(handlerLoaders, FACEBOOK_ADS_TOOL_IDS, async () => {
+  return (await import('@/lib/internal/facebook-ads/execute-tool')).executeFacebookAdsTool
+})
+registerFamily(handlerLoaders, GOOGLE_ADS_V1_TOOL_IDS, async () => {
+  return (await import('@/lib/internal/google-ads-v1/execute-tool')).executeGoogleAdsV1Tool
 })
 
 handlerLoaders.set(

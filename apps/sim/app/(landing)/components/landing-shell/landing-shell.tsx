@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { isHosted } from '@/lib/core/config/env-flags'
 import { getGitHubStars } from '@/lib/github/stars'
 import { Cta } from '@/app/(landing)/components/cta/cta'
 import { Footer } from '@/app/(landing)/components/footer/footer'
