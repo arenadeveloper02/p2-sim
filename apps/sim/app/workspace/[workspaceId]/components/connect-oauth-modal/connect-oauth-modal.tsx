@@ -234,7 +234,10 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
 
   const workspaceId = isConnect ? props.workspaceId : props.reconnectTarget?.workspaceId
   const organizationId = isConnect ? props.organizationId : props.reconnectTarget?.organizationId
-  const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
+  const { data: workspaceSettings } = useWorkspaceSettings(workspaceId ?? '')
+  /** Marketplace-app lookup; not credential ownership (workspace XOR organization). */
+  const customAppOrganizationId =
+    organizationId ?? workspaceSettings?.settings?.workspace?.organizationId ?? undefined
 
   const { data: activeOrganization } = useActiveOrganization()
   const { data: organization } = useOrganization(activeOrganization?.id || '')
@@ -243,8 +246,8 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   const needsCustomApp = requiresCustomOAuthApp(providerId)
   const customAppConfig = needsCustomApp ? getCustomOAuthAppConfig(providerId) : undefined
   const { data: orgOAuthApps = [] } = useOrganizationOAuthApps(
-    organizationId,
-    Boolean(organizationId) && isOrgAdmin && needsCustomApp && open
+    customAppOrganizationId,
+    Boolean(customAppOrganizationId) && isOrgAdmin && needsCustomApp && open
   )
   const customAppConfigured = needsCustomApp
     ? orgOAuthApps.some(
@@ -516,7 +519,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
     connectOAuthService.isPending ||
     connectMicrosoftDataverseOAuthService.isPending
   const customAppBlocked =
-    needsCustomApp && (!organizationId || (isOrgAdmin && !customAppConfigured))
+    needsCustomApp && (!customAppOrganizationId || (isOrgAdmin && !customAppConfigured))
   const isDisabled = isConnect
     ? !displayName.trim() ||
       !dataverseEnvironmentForm.isComplete ||
@@ -679,7 +682,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
         {needsCustomApp && (
           <InfoCard>
             <InfoCardList>
-              {!organizationId ? (
+              {!customAppOrganizationId ? (
                 <InfoCardItem>
                   Zoom is only available for organization workspaces. Move this workspace into an
                   organization or ask your admin to configure a Zoom OAuth app.

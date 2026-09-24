@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
   clearOAuthReturnContext: vi.fn(),
   workspaceCredentials: vi.fn(),
   writeOAuthReturnContext: vi.fn(),
+  requiresCustomOAuthApp: vi.fn(() => false),
+  getCustomOAuthAppConfig: vi.fn(() => undefined as { appKey: string } | undefined),
+  orgOAuthApps: vi.fn(() => ({
+    data: [] as Array<{ appKey: string; hasClientSecret: boolean; clientId: string }>,
+  })),
+  workspaceOrganizationId: 'org-1' as string | null,
 }))
 
 interface MockChipModalFieldProps {
@@ -106,8 +112,8 @@ vi.mock('@/lib/workspaces/organization', () => ({
 }))
 
 vi.mock('@/lib/oauth/custom-app-config', () => ({
-  getCustomOAuthAppConfig: () => undefined,
-  requiresCustomOAuthApp: () => false,
+  getCustomOAuthAppConfig: mocks.getCustomOAuthAppConfig,
+  requiresCustomOAuthApp: mocks.requiresCustomOAuthApp,
 }))
 
 vi.mock('@/hooks/queries/organization', () => ({
@@ -115,12 +121,12 @@ vi.mock('@/hooks/queries/organization', () => ({
 }))
 
 vi.mock('@/hooks/queries/organization-oauth-apps', () => ({
-  useOrganizationOAuthApps: () => ({ data: [] }),
+  useOrganizationOAuthApps: () => mocks.orgOAuthApps(),
 }))
 
 vi.mock('@/hooks/queries/workspace', () => ({
   useWorkspaceSettings: () => ({
-    data: { settings: { workspace: { organizationId: 'org-1' } } },
+    data: { settings: { workspace: { organizationId: mocks.workspaceOrganizationId } } },
   }),
 }))
 
@@ -243,6 +249,10 @@ describe('ConnectOAuthModal reauthorization', () => {
     mocks.onConnect.mockResolvedValue(undefined)
     mocks.getServiceConfigByProviderId.mockReturnValue(null)
     mocks.workspaceCredentials.mockReturnValue({ data: [], isPending: false })
+    mocks.requiresCustomOAuthApp.mockReturnValue(false)
+    mocks.getCustomOAuthAppConfig.mockReturnValue(undefined)
+    mocks.orgOAuthApps.mockReturnValue({ data: [] })
+    mocks.workspaceOrganizationId = 'org-1'
     window.history.replaceState({}, '', '/')
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     container = document.createElement('div')
@@ -601,5 +611,57 @@ describe('ConnectOAuthModal reauthorization', () => {
     expect(mocks.writeOAuthReturnContext.mock.invocationCallOrder[0]).toBeLessThan(
       onOpenChange.mock.invocationCallOrder[0]
     )
+  })
+
+  it('enables Zoom Connect on workflow origin using the workspace organization', () => {
+    mocks.requiresCustomOAuthApp.mockReturnValue(true)
+    mocks.getCustomOAuthAppConfig.mockReturnValue({ appKey: 'zoom' })
+    mocks.orgOAuthApps.mockReturnValue({
+      data: [{ appKey: 'zoom', hasClientSecret: true, clientId: 'zoom-client-id' }],
+    })
+
+    act(() => {
+      root.render(
+        <ConnectOAuthModal
+          mode='connect'
+          origin='workflow'
+          open
+          onOpenChange={vi.fn()}
+          providerId='zoom'
+          workspaceId='workspace-1'
+          workflowId='workflow-1'
+          requiredScopes={[]}
+        />
+      )
+    })
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="connect"]')
+    expect(button).not.toBeNull()
+    expect(button?.disabled).toBe(false)
+  })
+
+  it('disables Zoom Connect when the workspace has no organization', () => {
+    mocks.requiresCustomOAuthApp.mockReturnValue(true)
+    mocks.getCustomOAuthAppConfig.mockReturnValue({ appKey: 'zoom' })
+    mocks.workspaceOrganizationId = null
+
+    act(() => {
+      root.render(
+        <ConnectOAuthModal
+          mode='connect'
+          origin='workflow'
+          open
+          onOpenChange={vi.fn()}
+          providerId='zoom'
+          workspaceId='workspace-1'
+          workflowId='workflow-1'
+          requiredScopes={[]}
+        />
+      )
+    })
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="connect"]')
+    expect(button?.disabled).toBe(true)
+    expect(container).toHaveTextContent('organization workspaces')
   })
 })
