@@ -10,7 +10,9 @@ import {
   type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import {
+  isLiveWebSearchToolCall,
   shouldForceDebugExplanationContinuation,
+  shouldForceResearchSearchContinuation,
   shouldForceWorkflowBuildContinuation,
 } from '@/local-copilot/lib/user-facing-text'
 
@@ -98,6 +100,62 @@ describe('debug inspection synthesis', () => {
     ])
     expect(summary).toContain('Credential or authentication issue')
     expect(summary).toContain('Reconnect')
+  })
+})
+
+describe('shouldForceResearchSearchContinuation', () => {
+  it('forces when research intent settled without a live search tool', () => {
+    expect(
+      shouldForceResearchSearchContinuation({
+        postBuildToolMode: 'all',
+        needsLiveSearch: true,
+        forcedResearchSearchContinuations: 0,
+        maxForcedResearchSearchContinuations: 1,
+        round: 0,
+        maxToolRounds: 10,
+        hasLiveWebSearch: false,
+      })
+    ).toBe(true)
+  })
+
+  it('does not force after search_online / exa already ran', () => {
+    expect(
+      shouldForceResearchSearchContinuation({
+        postBuildToolMode: 'all',
+        needsLiveSearch: true,
+        forcedResearchSearchContinuations: 0,
+        maxForcedResearchSearchContinuations: 1,
+        round: 0,
+        maxToolRounds: 10,
+        hasLiveWebSearch: true,
+      })
+    ).toBe(false)
+  })
+
+  it('does not force for non-research intents', () => {
+    expect(
+      shouldForceResearchSearchContinuation({
+        postBuildToolMode: 'all',
+        needsLiveSearch: false,
+        forcedResearchSearchContinuations: 0,
+        maxForcedResearchSearchContinuations: 1,
+        round: 0,
+        maxToolRounds: 10,
+        hasLiveWebSearch: false,
+      })
+    ).toBe(false)
+  })
+})
+
+describe('isLiveWebSearchToolCall', () => {
+  it('matches search_online and exa invoke tools', () => {
+    expect(isLiveWebSearchToolCall('search_online')).toBe(true)
+    expect(
+      isLiveWebSearchToolCall('invoke_integration_tool', JSON.stringify({ toolId: 'exa_answer' }))
+    ).toBe(true)
+    expect(
+      isLiveWebSearchToolCall('invoke_integration_tool', JSON.stringify({ toolId: 'gmail_draft_v2' }))
+    ).toBe(false)
   })
 })
 

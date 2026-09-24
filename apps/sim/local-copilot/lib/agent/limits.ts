@@ -24,5 +24,11 @@ export const MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS = 1
  */
 export const MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS = 2
 
+/**
+ * When research/factual intent ends with no live web search tool call, force
+ * one more round so Claude/Gemini cannot settle on a memory-only answer.
+ */
+export const MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS = 1
+
 /** Successful create-then-edit_workflow calls before the post-build lock. */
 export const MAX_POPULATE_EDITS = 5

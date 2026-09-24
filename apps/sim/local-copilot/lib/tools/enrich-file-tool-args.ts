@@ -125,6 +125,26 @@ export function enrichCreateFileArgs(args: Record<string, unknown>): void {
     const body = firstFileBodyString(args) ?? (nested ? firstFileBodyString(nested) : undefined)
     if (body) args.content = body
   }
+
+  // Native object/array `content` (common from Claude tool_use) must become a string
+  // before create_file — otherwise it is ignored and an empty shell is written.
+  if (args.content && typeof args.content === 'object') {
+    try {
+      args.content = JSON.stringify(args.content, null, 2)
+    } catch {
+      args.content = undefined
+    }
+  }
+  if (nested?.content && typeof nested.content === 'object') {
+    try {
+      nested.content = JSON.stringify(nested.content, null, 2)
+      if (typeof args.content !== 'string' || !args.content) {
+        args.content = nested.content
+      }
+    } catch {
+      nested.content = undefined
+    }
+  }
 }
 
 /**
@@ -201,6 +221,13 @@ export function enrichWorkspaceFileArgs(args: Record<string, unknown>): void {
  * Remaps common `edit_content` aliases when the model omits required `content`.
  */
 export function enrichEditContentArgs(args: Record<string, unknown>): void {
+  if (args.content && typeof args.content === 'object') {
+    try {
+      args.content = JSON.stringify(args.content, null, 2)
+    } catch {
+      args.content = undefined
+    }
+  }
   if (typeof args.content === 'string' && args.content.length > 0) return
   const body = firstFileBodyString(args)
   if (body) args.content = body

@@ -48,9 +48,15 @@ export function resolvePostBuildRoundTools<T extends { name: string }>(
 
 const COMPLETION_MARKERS = [
   'connect gmail',
+  'connect google',
+  'fully built',
   'built and wired',
+  'structurally complete',
   'start → fetch',
   'start -> fetch',
+  'start —',
+  'start -',
+  'fetch emails',
   'newer_than:',
   'one step left',
   'one thing left',
@@ -58,6 +64,18 @@ const COMPLETION_MARKERS = [
   'authorize gmail',
 ] as const
 
+/**
+ * True when earlier-round prose already delivered a post-build completion pitch
+ * (workflow built + connect accounts). Used to suppress re-streaming duplicates.
+ */
+export function contentLooksLikeCompletion(text: string): boolean {
+  const normalized = normalizeCompletionText(text)
+  if (normalized.length < 80) return false
+  const markers = COMPLETION_MARKERS.filter((marker) =>
+    normalized.includes(normalizeCompletionText(marker))
+  ).length
+  return markers >= 2
+}
 /**
  * Removes internal ids from prose without destroying auth/callback URLs or
  * privileged control tags that need ids for Apply/Approve UI.
@@ -175,10 +193,25 @@ function normalizeCompletionText(text: string): string {
 export function isNearDuplicateCompletion(previous: string, next: string): boolean {
   const a = normalizeCompletionText(previous)
   const b = normalizeCompletionText(next)
+  if (!a || !b) return false
+
+  // Earlier round already looked like a full completion — any new completion
+  // pitch is a duplicate (do not wait for both sides to hit 100 chars).
+  if (contentLooksLikeCompletion(previous) && b.length >= 40) {
+    const bMarkers = COMPLETION_MARKERS.filter((marker) =>
+      b.includes(normalizeCompletionText(marker))
+    ).length
+    if (bMarkers >= 1) return true
+  }
+
   if (b.length < 100 || a.length < 100) return false
 
-  const aMarkers = COMPLETION_MARKERS.filter((marker) => a.includes(marker)).length
-  const bMarkers = COMPLETION_MARKERS.filter((marker) => b.includes(marker)).length
+  const aMarkers = COMPLETION_MARKERS.filter((marker) =>
+    a.includes(normalizeCompletionText(marker))
+  ).length
+  const bMarkers = COMPLETION_MARKERS.filter((marker) =>
+    b.includes(normalizeCompletionText(marker))
+  ).length
   if (aMarkers >= 2 && bMarkers >= 2) return true
 
   const probe = b.slice(0, Math.min(160, b.length))
@@ -377,6 +410,60 @@ export function shouldForceWorkflowBuildContinuation(options: {
 }
 
 /**
+ * System nudge when research/factual intent settled without a live web search.
+ */
+export function buildResearchSearchContinuationMessage(): string {
+  return (
+    '[System] This is a real-world / current factual question. ' +
+    'You must call search_online({ query, toolTitle }) OR ' +
+    'invoke_integration_tool({ toolId: "exa_answer", params: { query } }) NOW ' +
+    'before answering. Do not answer from training memory. ' +
+    'After the tool returns, reply using only those live results.'
+  )
+}
+
+/**
+ * True when a tool call is a live Exa / web search (search_online or exa_* invoke).
+ */
+export function isLiveWebSearchToolCall(name: string, argumentsJson?: string): boolean {
+  if (name === 'search_online') return true
+  if (name !== 'invoke_integration_tool') return false
+  if (!argumentsJson) return false
+  try {
+    const args = JSON.parse(argumentsJson) as { toolId?: unknown }
+    const toolId = typeof args.toolId === 'string' ? args.toolId.trim() : ''
+    return toolId === 'exa_search' || toolId === 'exa_answer'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when research/factual intent tried to settle without calling a live search tool.
+ * Forces even if the model already streamed a memory answer — that is the failure mode.
+ */
+export function shouldForceResearchSearchContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  needsLiveSearch: boolean
+  forcedResearchSearchContinuations: number
+  maxForcedResearchSearchContinuations: number
+  round: number
+  maxToolRounds: number
+  hasLiveWebSearch: boolean
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.needsLiveSearch) return false
+  if (options.hasLiveWebSearch) return false
+  if (
+    options.forcedResearchSearchContinuations >= options.maxForcedResearchSearchContinuations
+  ) {
+    return false
+  }
+  if (options.round >= options.maxToolRounds - 1) return false
+  return true
+}
+
+/**
  * Whether buffered model prose for this round should be streamed to the UI.
  * Tool rounds keep text in the LLM transcript only — streaming it between tool
  * batches creates repeated "Arena Copilot" mothership headers. Bridging
@@ -390,6 +477,8 @@ export function shouldStreamAssistantRoundText(options: {
   if (!options.display.trim()) return false
   if (options.hasToolCalls) return false
   if (isBridgingAssistantNarration(options.display)) return false
+  // Prior round already delivered the post-build pitch — do not stream another.
+  if (contentLooksLikeCompletion(options.contentBeforeRound)) return false
   if (
     options.contentBeforeRound.trim().length > 120 &&
     isNearDuplicateCompletion(options.contentBeforeRound, options.display)
@@ -482,6 +571,10 @@ export function createAssistantRoundTextStreamer(
         options.toolsAvailable &&
         (isBridgingAssistantNarration(display) || isLikelyMidStreamToken(display))
       ) {
+        return null
+      }
+
+      if (contentLooksLikeCompletion(options.contentBeforeRound)) {
         return null
       }
 
