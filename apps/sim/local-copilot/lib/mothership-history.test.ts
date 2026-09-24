@@ -11,7 +11,7 @@ import {
 import { assistantMessageToChatHistory } from '@/local-copilot/lib/mothership-history'
 
 describe('assistantMessageToChatHistory', () => {
-  it('collapses tool turns without thought signatures so follow-up thinking can run', () => {
+  it('replays unsigned tool turns as structured toolCalls (Claude/Bedrock history)', () => {
     const message: PersistedMessage = {
       id: 'a1',
       role: 'assistant',
@@ -43,12 +43,15 @@ describe('assistantMessageToChatHistory', () => {
 
     const history = assistantMessageToChatHistory(message)
 
-    expect(history).toHaveLength(2)
-    expect(history[0].role).toBe('assistant')
+    expect(history).toHaveLength(3)
+    expect(history[0]).toMatchObject({
+      role: 'assistant',
+      content: '',
+      toolCalls: [{ id: 't1', name: 'grep', arguments: JSON.stringify({ query: 'x' }) }],
+    })
     expect(history[0].content).not.toContain('I should search first.')
-    expect(history[0].content).toContain('Called `grep`')
-    expect(history[0].toolCalls).toBeUndefined()
-    expect(history[1]).toEqual({
+    expect(history[1]).toMatchObject({ role: 'tool', toolCallId: 't1' })
+    expect(history[2]).toEqual({
       role: 'assistant',
       content: 'Found two matches.',
     })

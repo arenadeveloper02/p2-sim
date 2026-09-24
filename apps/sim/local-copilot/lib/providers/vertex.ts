@@ -47,7 +47,9 @@ export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotPr
   const project = resolveLocalCopilotVertexProject()
   const location = resolveLocalCopilotVertexLocation()
   const slotCount = listLocalCopilotVertexSlots().length
-  logger.info('Vertex Local Copilot provider ready', { project, location, slotCount })
+  /** Standard + Priority once per unique slot → attempts `0..slotCount*2-1`. */
+  const maxOpenRetries = Math.max(1, slotCount * 2 - 1)
+  logger.info('Vertex Local Copilot provider ready', { project, location, slotCount, maxOpenRetries })
 
   const refreshVertexClient = (options?: { priorityPayGo?: boolean; sameSlot?: boolean }) => {
     if (options?.sameSlot) {
@@ -78,6 +80,7 @@ export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotPr
           ai: createLocalCopilotVertexClient(),
           refreshAi: refreshVertexClient,
           priorityPayGoOnRetry: true,
+          maxOpenRetries,
           config,
           request,
           logLabel: 'Vertex',
