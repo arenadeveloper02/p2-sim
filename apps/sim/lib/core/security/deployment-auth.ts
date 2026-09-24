@@ -174,7 +174,7 @@ export async function validateDeploymentAuth(
         const session = await getSession()
         const sessionEmail = session?.user?.email
         if (sessionEmail && isEmailAllowed(sessionEmail, allowedEmails)) {
-          return { authorized: true }
+          return { authorized: true, authenticatedEmail: normalizeEmail(sessionEmail) }
         }
         return { authorized: false, error: 'auth_required_email' }
       }

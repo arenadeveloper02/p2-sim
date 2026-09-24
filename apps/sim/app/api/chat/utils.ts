@@ -7,6 +7,7 @@ import { isDev } from '@/lib/core/config/env-flags'
 import {
   type DeploymentAuthResource,
   setDeploymentAuthCookie,
+  validateAuthToken,
 } from '@/lib/core/security/deployment'
 import {
   type DeploymentAuthBody,
@@ -40,6 +41,7 @@ export async function canAccessAgentGeneratedImageViaDeployedChat(
       id: chat.id,
       authType: chat.authType,
       password: chat.password,
+      allowedEmails: chat.allowedEmails,
     })
     .from(chat)
     .where(and(eq(chat.workflowId, workflowId), eq(chat.isActive, true)))
@@ -55,7 +57,7 @@ export async function canAccessAgentGeneratedImageViaDeployedChat(
     const authCookie = request.cookies.get(`chat_auth_${d.id}`)
     if (
       authCookie?.value &&
-      validateAuthToken(authCookie.value, d.id, d.authType || 'password', d.password)
+      (await validateAuthToken({ token: authCookie.value, resource: d }))
     ) {
       return true
     }

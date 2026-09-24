@@ -23,6 +23,7 @@ import {
 } from '@/lib/chat/history-persistence'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { env } from '@/lib/core/config/env'
+import { validateAuthToken } from '@/lib/core/security/deployment'
 import {
   enforceIpRateLimitWithIndependentBackstop,
   enforceResourceRateLimit,
@@ -514,6 +515,11 @@ export const POST = withRouteHandler(
 
         if (deployment.authType === 'password') {
           await setChatAuthCookie(response, deployment)
+        } else if (deployment.authType === 'email') {
+          const verifiedEmail = authResult.authenticatedEmail ?? email
+          if (verifiedEmail) {
+            await setChatAuthCookie(response, deployment, verifiedEmail)
+          }
         }
 
         return response
@@ -1228,7 +1234,8 @@ export const PATCH = withRouteHandler(
       const authCookie = request.cookies.get(cookieName)
       if (
         deployment.authType !== 'public' &&
-        (!authCookie || !validateAuthToken(authCookie.value, deployment.id, deployment.password))
+        (!authCookie?.value ||
+          !(await validateAuthToken({ token: authCookie.value, resource: deployment })))
       ) {
         const authResult = await validateChatAuth(requestId, deployment, request)
         if (!authResult.authorized) {
@@ -1375,8 +1382,8 @@ export const GET = withRouteHandler(
       if (
         deployment.authType !== 'public' &&
         deployment.authType !== 'sso' &&
-        authCookie &&
-        validateAuthToken(authCookie.value, deployment.id, deployment.authType, deployment.password)
+        authCookie?.value &&
+        (await validateAuthToken({ token: authCookie.value, resource: deployment }))
       ) {
         let userWorkspaceIds: string[] | undefined
         try {
@@ -1410,8 +1417,10 @@ export const GET = withRouteHandler(
 
       const response = createSuccessResponse(buildChatConfigData(userWorkspaceIds))
 
-      if (deployment.authType !== 'public') {
-        setChatAuthCookie(response, deployment.id, deployment.authType)
+      if (deployment.authType === 'password') {
+        await setChatAuthCookie(response, deployment)
+      } else if (deployment.authType === 'email' && authResult.authenticatedEmail) {
+        await setChatAuthCookie(response, deployment, authResult.authenticatedEmail)
       }
 
       // return addCorsHeaders(response, request)
