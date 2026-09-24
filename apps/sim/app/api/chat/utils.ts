@@ -55,10 +55,7 @@ export async function canAccessAgentGeneratedImageViaDeployedChat(
       return true
     }
     const authCookie = request.cookies.get(`chat_auth_${d.id}`)
-    if (
-      authCookie?.value &&
-      (await validateAuthToken({ token: authCookie.value, resource: d }))
-    ) {
+    if (authCookie?.value && (await validateAuthToken({ token: authCookie.value, resource: d }))) {
       return true
     }
   }

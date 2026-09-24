@@ -507,6 +507,12 @@
   --color-ds-border-strong: #575757;
   --color-ds-border-subtle: #363636;
   --surface-3: #363636;
+  --color-ds-chart-label: #e6e6e6;
+  --color-ds-chart-axis: #969696;
+  --color-ds-chart-grid-line: #363636;
+  --color-ds-chart-background: transparent;
+  --color-ds-chart-tooltip-bg: #2a2a2a;
+  --color-ds-chart-tooltip-text: #e6e6e6;
 }
 
 .dark .deployed-chat-root {

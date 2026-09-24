@@ -155,8 +155,8 @@ export default function ArenaCopilotMarkdownRenderer({
   variant = 'block',
   renderImage,
   fontClassName = 'font-geist-sans',
-  bodyTextClassName = 'text-gray-800 dark:text-gray-200',
-  headingTextClassName = 'text-gray-900 dark:text-gray-100',
+  bodyTextClassName = 'text-[var(--text-primary)]',
+  headingTextClassName = 'text-[var(--text-primary)]',
 }: ArenaCopilotMarkdownRendererProps) {
   const [copiedCodeBlocks, setCopiedCodeBlocks] = useState<Record<string, boolean>>({})
   const displayContent = useMemo(() => renumberMarkdownOrderedLists(content), [content])
@@ -374,7 +374,7 @@ export default function ArenaCopilotMarkdownRenderer({
         if (inline) {
           return (
             <code
-              className='whitespace-normal break-all rounded bg-gray-200 px-1 py-0.5 font-mono text-[0.9em] text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+              className='whitespace-normal break-all rounded bg-[var(--surface-3)] px-1 py-0.5 font-mono text-[0.9em] text-[var(--text-primary)]'
               {...props}
             >
               {children}
@@ -412,7 +412,7 @@ export default function ArenaCopilotMarkdownRenderer({
       blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
         <blockquote
           className={cn(
-            'my-4 border-gray-300 border-l-4 py-1 pl-4 italic dark:border-gray-600',
+            'my-4 border-[var(--border)] border-l-4 py-1 pl-4 italic',
             bodyTextClassName,
             fontClassName
           )}
@@ -422,7 +422,7 @@ export default function ArenaCopilotMarkdownRenderer({
       ),
 
       // Horizontal rule
-      hr: () => <hr className='my-4 border-gray-500/[.07] border-t dark:border-gray-400/[.07]' />,
+      hr: () => <hr className='my-4 border-[var(--border)] border-t' />,
 
       // Links
       a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -437,7 +437,7 @@ export default function ArenaCopilotMarkdownRenderer({
           <div className='inline-block min-w-full align-middle'>
             <table
               className={cn(
-                'min-w-full table-auto border border-gray-300 text-sm dark:border-gray-700',
+                'min-w-full table-auto border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-primary)] text-sm',
                 bodyTextClassName,
                 fontClassName
               )}
@@ -448,23 +448,25 @@ export default function ArenaCopilotMarkdownRenderer({
         </div>
       ),
       thead: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-        <thead className='bg-gray-100 text-left dark:bg-gray-800'>{children}</thead>
+        <thead className='bg-[var(--surface-3)] text-left text-[var(--text-secondary)]'>
+          {children}
+        </thead>
       ),
       tbody: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-        <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>{children}</tbody>
+        <tbody className='divide-y divide-[var(--border)]'>{children}</tbody>
       ),
       tr: ({ children }: React.HTMLAttributes<HTMLTableRowElement>) => (
-        <tr className='border-gray-200 border-b transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800/60'>
+        <tr className='border-[var(--border)] border-b transition-colors hover:bg-[var(--surface-hover)]'>
           {children}
         </tr>
       ),
       th: ({ children }: React.ThHTMLAttributes<HTMLTableCellElement>) => (
-        <th className='whitespace-nowrap border-gray-300 border-r px-4 py-2 font-medium text-gray-700 last:border-r-0 dark:border-gray-700 dark:text-gray-300'>
+        <th className='whitespace-nowrap border-[var(--border)] border-r px-4 py-2 font-medium text-[var(--text-secondary)] last:border-r-0'>
           {children}
         </th>
       ),
       td: ({ children }: React.TdHTMLAttributes<HTMLTableCellElement>) => (
-        <td className='max-w-[360px] whitespace-normal break-words border-gray-300 border-r px-4 py-2 align-top text-gray-800 last:border-r-0 dark:border-gray-700 dark:text-gray-200'>
+        <td className='max-w-[360px] whitespace-normal break-words border-[var(--border)] border-r bg-[var(--surface-2)] px-4 py-2 align-top text-[var(--text-primary)] last:border-r-0'>
           {children}
         </td>
       ),

@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getSelectorManifestEntry, type SelectorKey } from '@/lib/selectors/manifest'
 import { buildSelectorContextFromBlock } from '@/lib/workflows/subblocks/context'
+import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks/registry'
 import {
   type SelectorClientContext,
@@ -27,6 +28,8 @@ interface UseFetchedOptionsProps {
   subBlockId: string
   dependsOnFields: string[]
   selectorKey?: SelectorKey
+  fetchOptions?: (blockId: string) => Promise<FetchedOption[]>
+  fetchOptionById?: (blockId: string, optionId: string) => Promise<FetchedOption | null>
   selectorExcludeSelf?: boolean
   isPreview: boolean
   disabled: boolean
@@ -68,6 +71,8 @@ export function useFetchedOptions({
   subBlockId,
   dependsOnFields,
   selectorKey,
+  fetchOptions,
+  fetchOptionById,
   selectorExcludeSelf,
   isPreview,
   disabled,
@@ -82,6 +87,149 @@ export function useFetchedOptions({
   const liveValues = useSubBlockStore((state) =>
     activeWorkflowId ? state.workflowValues[activeWorkflowId]?.[blockId] : undefined
   )
+  const blockConfig = block?.type ? getBlock(block.type) : null
+  const canonicalModeOverrides = block?.data?.canonicalModes
+  const canonicalIndex = useMemo(
+    () => buildCanonicalIndex(blockConfig?.subBlocks || []),
+    [blockConfig?.subBlocks]
+  )
+  const dependencyValues = useMemo(() => {
+    if (dependsOnFields.length === 0 || !liveValues) return []
+    return dependsOnFields.map((depKey) =>
+      resolveDependencyValue(depKey, liveValues, canonicalIndex, canonicalModeOverrides)
+    )
+  }, [canonicalIndex, canonicalModeOverrides, dependsOnFields, liveValues])
+
+  const useLegacyFetch = Boolean(fetchOptions) && !selectorKey
+  const [legacyOptions, setLegacyOptions] = useState<FetchedOption[]>([])
+  const [legacyLoading, setLegacyLoading] = useState(false)
+  const [legacyError, setLegacyError] = useState<string | null>(null)
+  const [legacyHydrated, setLegacyHydrated] = useState<FetchedOption | null>(null)
+  const [legacyMissing, setLegacyMissing] = useState<string | null>(null)
+  const [legacyHasLoaded, setLegacyHasLoaded] = useState(false)
+  const [hydrationRevision, setHydrationRevision] = useState(0)
+  const hydratedRevisionRef = useRef<{ id: string; revision: number } | null>(null)
+  const fetchRequestIdRef = useRef(0)
+  const previousFetchScopeRef = useRef('')
+  const hasFetchedRef = useRef(false)
+
+  const runLegacyFetch = useCallback(async () => {
+    if (!useLegacyFetch || !fetchOptions || isPreview || disabled) return
+
+    const requestId = ++fetchRequestIdRef.current
+    setLegacyLoading(true)
+    setLegacyError(null)
+    try {
+      const options = await fetchOptions(blockId)
+      if (requestId !== fetchRequestIdRef.current) return
+      setLegacyOptions(options)
+    } catch (error) {
+      if (requestId !== fetchRequestIdRef.current) return
+      setLegacyError(getErrorMessage(error, 'Failed to fetch options'))
+      setLegacyOptions([])
+    } finally {
+      if (requestId === fetchRequestIdRef.current) {
+        setLegacyLoading(false)
+        setLegacyHasLoaded(true)
+      }
+    }
+  }, [blockId, disabled, fetchOptions, isPreview, useLegacyFetch])
+
+  useEffect(() => {
+    if (!useLegacyFetch) return
+
+    const current = JSON.stringify([workspaceId, dependencyValues])
+    const previous = previousFetchScopeRef.current
+    if (previous && current !== previous) {
+      fetchRequestIdRef.current += 1
+      setLegacyOptions([])
+      setLegacyLoading(false)
+      setLegacyHydrated(null)
+      setLegacyMissing(null)
+      setLegacyError(null)
+      setLegacyHasLoaded(false)
+      hydratedRevisionRef.current = null
+      hasFetchedRef.current = false
+    }
+    previousFetchScopeRef.current = current
+  }, [dependencyValues, useLegacyFetch, workspaceId])
+
+  useEffect(() => {
+    if (
+      !useLegacyFetch ||
+      isPreview ||
+      disabled ||
+      hasFetchedRef.current ||
+      legacyLoading ||
+      legacyError
+    ) {
+      return
+    }
+    hasFetchedRef.current = true
+    void runLegacyFetch()
+  }, [
+    dependencyValues,
+    disabled,
+    isPreview,
+    legacyError,
+    legacyLoading,
+    runLegacyFetch,
+    useLegacyFetch,
+  ])
+
+  useEffect(() => {
+    if (!useLegacyFetch || !fetchOptionById || isPreview || disabled || !valueToHydrate) return
+    if (valueToHydrate.startsWith('<') || valueToHydrate.includes('{{')) return
+    if (
+      legacyHydrated?.id === valueToHydrate &&
+      hydratedRevisionRef.current?.id === valueToHydrate &&
+      hydratedRevisionRef.current.revision === hydrationRevision
+    ) {
+      return
+    }
+    if (hasLocalOption(legacyOptions, valueToHydrate)) return
+    if (hasLocalOption(localOptions, valueToHydrate)) return
+
+    let isActive = true
+    fetchOptionById(blockId, valueToHydrate)
+      .then((option) => {
+        if (!isActive) return
+        hydratedRevisionRef.current = option
+          ? { id: valueToHydrate, revision: hydrationRevision }
+          : null
+        setLegacyHydrated(option)
+        setLegacyMissing(option ? null : valueToHydrate)
+      })
+      .catch(() => {
+        if (!isActive) return
+        setLegacyHydrated(null)
+        setLegacyMissing(null)
+      })
+
+    return () => {
+      isActive = false
+    }
+  }, [
+    blockId,
+    disabled,
+    fetchOptionById,
+    hydrationRevision,
+    isPreview,
+    legacyHydrated?.id,
+    legacyOptions,
+    localOptions,
+    useLegacyFetch,
+    valueToHydrate,
+    workspaceId,
+  ])
+
+  const refetchLegacy = useCallback(() => {
+    hasFetchedRef.current = true
+    setHydrationRevision((revision) => revision + 1)
+    void runLegacyFetch()
+  }, [runLegacyFetch])
+  const noop = useCallback(() => {}, [])
+
   const effectiveKey = selectorKey ?? 'workspace.triggerTypes'
   const manifest = getSelectorManifestEntry(effectiveKey)
 
@@ -158,6 +306,26 @@ export function useFetchedOptions({
     enabled: Boolean(selectorKey) && manifest.supportsDetail && detailIds.length > 0,
     surfaceId,
   })
+
+  if (useLegacyFetch) {
+    return {
+      fetchedOptions: legacyOptions,
+      isDynamic: true,
+      isLoadingOptions: legacyLoading,
+      isFetchingMore: false,
+      isLoadingAll: false,
+      hasMore: false,
+      truncated: false,
+      hasLoadedOptions: legacyHasLoaded,
+      fetchError: legacyError,
+      hydratedOption: legacyHydrated,
+      hydratedOptions: [],
+      missingOptionId: legacyMissing,
+      loadMore: noop,
+      loadAll: noop,
+      refetch: refetchLegacy,
+    }
+  }
 
   return {
     fetchedOptions: list.data ?? [],

@@ -2,10 +2,12 @@ import { LANDING_ROUTES } from '@/lib/landing/routes'
 
 /**
  * First path segments outside the `(landing)` group whose pages pin the light
- * token layer in their own shell — `(auth)`, the chat interfaces, the public
- * file view, the pages reached from an email, and the `AuthShell` handoffs for
- * the CLI and credential groups. Segments, not prefixes: they are matched by
- * set membership, so `f` covers `/f/<token>` and needs no trailing slash.
+ * token layer in their own shell — `(auth)`, the public file view, the pages
+ * reached from an email, and the `AuthShell` handoffs for the CLI and
+ * credential groups. Deployed chat (`/chat`) is not in this set: it follows
+ * the account theme the same way the workspace does. Segments, not prefixes:
+ * they are matched by set membership, so `f` covers `/f/<token>` and needs no
+ * trailing slash.
  *
  * Landing paths live in {@link LANDING_ROUTES}. ThemeProvider and the root
  * layout FOUC script union both lists.
@@ -17,7 +19,6 @@ export const NON_LANDING_LIGHT_SEGMENTS = [
   'sso',
   'invite',
   'verify',
-  'chat',
   'resume',
   'oauth',
   'oauth-error',

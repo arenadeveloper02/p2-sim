@@ -23,13 +23,13 @@ import {
 } from '@/lib/chat/history-persistence'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { env } from '@/lib/core/config/env'
-import { validateAuthToken } from '@/lib/core/security/deployment'
 import {
   enforceIpRateLimitWithIndependentBackstop,
   enforceResourceRateLimit,
   type TokenBucketConfig,
 } from '@/lib/core/rate-limiter'
 import { RATE_LIMITS } from '@/lib/core/rate-limiter/types'
+import { validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { preprocessExecution } from '@/lib/execution/preprocessing'

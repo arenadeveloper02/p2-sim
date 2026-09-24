@@ -788,6 +788,8 @@ function SubBlockComponent({
               multiSelect={config.multiSelect}
               selectAllOption={config.selectAllOption}
               selectorKey={config.selectorKey}
+              fetchOptions={config.fetchOptions}
+              fetchOptionById={config.fetchOptionById}
               selectorExcludeSelf={config.selectorExcludeSelf}
               dependsOn={config.dependsOn}
               searchable={config.searchable}

@@ -493,6 +493,19 @@ export interface SubBlockConfig {
    */
   selectorExcludeSelf?: boolean
   selectorAllowSearch?: boolean
+  /**
+   * Remote option list for dropdowns that are not registered selectors.
+   * Used by the Google Ads V1, Facebook Ads, and Bing Ads account fields.
+   */
+  fetchOptions?: (blockId: string) => Promise<Array<{ label: string; id: string }>>
+  /**
+   * Resolves one stored option id to its label before the full list has loaded.
+   */
+  fetchOptionById?: (
+    blockId: string,
+    optionId: string,
+    signal?: AbortSignal
+  ) => Promise<{ label: string; id: string } | null>
   // File selector specific properties
   mimeType?: string
   // File upload specific properties

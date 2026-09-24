@@ -118,6 +118,19 @@ describe('ThemeProvider theme stores', () => {
     expect(classes).not.toContain('dark')
   })
 
+  it('follows the account theme on deployed chat', () => {
+    localStorage.setItem('sim-theme', 'dark')
+    const classes = render('/chat/agent-1')
+    expect(classes).toContain('dark')
+    expect(classes).not.toContain('light')
+
+    act(() => syncThemeToNextThemes('light'))
+
+    expect(classes).toContain('light')
+    expect(classes).not.toContain('dark')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+  })
+
   it('updates the workspace theme when account settings resolve', () => {
     localStorage.setItem('sim-theme', 'light')
     const classes = render('/workspace/ws-1/home')

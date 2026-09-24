@@ -92,6 +92,13 @@ interface DropdownProps {
   selectAllOption?: boolean
   /** Registered selector supplying the options. The canonical source for a remote list. */
   selectorKey?: SelectorKey
+  /** Remote list for fields that are not registered selectors, such as ads account dropdowns. */
+  fetchOptions?: (blockId: string) => Promise<Array<{ label: string; id: string }>>
+  /** Resolves one stored option id before the remote list has loaded. */
+  fetchOptionById?: (
+    blockId: string,
+    optionId: string
+  ) => Promise<{ label: string; id: string } | null>
   /** Drop the hosting workflow from a `sim.workflows` list. */
   selectorExcludeSelf?: boolean
   /** Field dependencies that trigger option refetch when changed */
@@ -126,6 +133,8 @@ export const Dropdown = memo(function Dropdown({
   multiSelect = false,
   selectAllOption = false,
   selectorKey,
+  fetchOptions,
+  fetchOptionById,
   selectorExcludeSelf,
   dependsOn,
   searchable = false,
@@ -222,6 +231,8 @@ export const Dropdown = memo(function Dropdown({
     subBlockId,
     dependsOnFields,
     selectorKey,
+    fetchOptions,
+    fetchOptionById,
     selectorExcludeSelf,
     isPreview: Boolean(isPreview),
     disabled: Boolean(disabled),
