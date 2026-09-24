@@ -92,13 +92,13 @@ export const googleAdsV1QueryTool: InternalToolConfig<GoogleAdsV1QueryParams, un
     },
     input: (params) =>
       filterUndefined({
-        query: params.prompt,
-        accounts: params.accounts,
-        accessToken: params.accessToken,
-        accountId: params.accountId,
-        customerId: params.customerId,
-        developerToken: params.developerToken,
-        managerCustomerId: params.managerCustomerId,
+        query: params.prompt ?? undefined,
+        accounts: params.accounts ?? undefined,
+        accessToken: params.accessToken ?? undefined,
+        accountId: params.accountId ?? undefined,
+        customerId: params.customerId ?? undefined,
+        developerToken: params.developerToken ?? undefined,
+        managerCustomerId: params.managerCustomerId ?? undefined,
       }),
   },
 

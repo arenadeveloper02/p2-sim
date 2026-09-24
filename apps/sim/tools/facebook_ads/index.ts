@@ -75,11 +75,11 @@ export const facebookAdsQueryTool: InternalToolConfig<FacebookAdsQueryParams, un
     },
     input: (params) =>
       filterUndefined({
-        query: params.query,
-        account: params.account,
-        accessToken: params.accessToken,
-        accountId: params.accountId,
-        adAccountId: params.accountId ?? params.adAccountId,
+        query: params.query ?? undefined,
+        account: params.account ?? undefined,
+        accessToken: params.accessToken ?? undefined,
+        accountId: params.accountId ?? undefined,
+        adAccountId: params.accountId ?? params.adAccountId ?? undefined,
       }),
   },
   transformResponse: async (response: Response, params?: FacebookAdsQueryParams) => {

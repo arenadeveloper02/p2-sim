@@ -7,13 +7,13 @@ import { executeGoogleAdsV1Query } from '@/app/api/google-ads-v1/query/execute'
 import { isAbortError } from '@/providers/streaming-tool-loop-shared'
 
 const googleAdsV1QueryInputSchema = z.object({
-  query: z.string().min(1, 'No query provided'),
-  accounts: z.string().optional(),
-  accessToken: z.string().optional(),
-  accountId: z.string().optional(),
-  customerId: z.string().optional(),
-  developerToken: z.string().optional(),
-  managerCustomerId: z.string().optional(),
+  query: z.string().min(1, 'No query provided').nullish(),
+  accounts: z.string().nullish(),
+  accessToken: z.string().nullish(),
+  accountId: z.string().nullish(),
+  customerId: z.string().nullish(),
+  developerToken: z.string().nullish(),
+  managerCustomerId: z.string().nullish(),
 })
 
 export const executeGoogleAdsV1Tool: InternalToolOperationHandler = async (request) => {
@@ -51,7 +51,13 @@ export const executeGoogleAdsV1Tool: InternalToolOperationHandler = async (reque
   try {
     const result = await executeGoogleAdsV1Query(
       {
-        ...parsed.data,
+        query: parsed.data.query ?? '',
+        accounts: parsed.data.accounts ?? undefined,
+        accessToken: parsed.data.accessToken ?? undefined,
+        accountId: parsed.data.accountId ?? undefined,
+        customerId: parsed.data.customerId ?? undefined,
+        developerToken: parsed.data.developerToken ?? undefined,
+        managerCustomerId: parsed.data.managerCustomerId ?? undefined,
         workspaceId: request.context.workspaceId,
         userId: request.context.userId,
       },

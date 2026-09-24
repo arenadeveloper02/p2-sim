@@ -47,13 +47,54 @@ describe('ads query in-process tools', () => {
       createCall('google_ads_v1_query', { accounts: 'acme' })
     )
     expect(google.status).toBe(400)
+    await expect(google.json()).resolves.toMatchObject({ error: 'No query provided' })
 
     const facebook = await executeFacebookAdsTool(
       createCall('facebook_ads_query', { account: 'acme' })
     )
     expect(facebook.status).toBe(400)
+    await expect(facebook.json()).resolves.toMatchObject({ error: 'Missing required field: query' })
 
     const bing = await executeBingAdsTool(createCall('bing_ads_query', { account: 'acme' }))
     expect(bing.status).toBe(400)
+    await expect(bing.json()).resolves.toMatchObject({ error: 'No query provided' })
+  })
+
+  it('treats JSON null optional strings as omitted, matching the HTTP query routes', async () => {
+    const facebook = await executeFacebookAdsTool(
+      createCall('facebook_ads_query', {
+        query: 'show campaign performance',
+        account: null,
+        accessToken: null,
+        accountId: null,
+        adAccountId: null,
+        date_preset: null,
+        level: null,
+      })
+    )
+    expect(facebook.status).toBe(400)
+    const facebookBody = await facebook.json()
+    expect(String(facebookBody.error)).not.toContain('expected string, received null')
+
+    const bing = await executeBingAdsTool(
+      createCall('bing_ads_query', { query: 'show campaign performance', account: null })
+    )
+    expect(bing.status).toBe(400)
+    await expect(bing.json()).resolves.toMatchObject({ error: 'No account provided' })
+
+    const google = await executeGoogleAdsV1Tool(
+      createCall('google_ads_v1_query', {
+        query: 'show campaign performance',
+        accounts: null,
+        accessToken: null,
+        accountId: null,
+        customerId: null,
+        developerToken: null,
+        managerCustomerId: null,
+      })
+    )
+    expect(google.status).toBe(400)
+    const googleBody = await google.json()
+    expect(String(googleBody.error)).not.toContain('expected string, received null')
   })
 })

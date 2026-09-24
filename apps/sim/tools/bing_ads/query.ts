@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { filterUndefined } from '@sim/utils/object'
 import type { InternalToolConfig } from '@/tools/types'
 
 const logger = createLogger('BingAdsQuery')
@@ -40,10 +41,11 @@ export const bingAdsQueryTool: InternalToolConfig<BingAdsQueryParams, unknown> =
       mode: 'project',
       select: (params) => ({ query: params.query }),
     },
-    input: (params) => ({
-      query: params.query,
-      account: params.account,
-    }),
+    input: (params) =>
+      filterUndefined({
+        query: params.query ?? undefined,
+        account: params.account ?? undefined,
+      }),
   },
   transformResponse: async (response: Response, params?: BingAdsQueryParams) => {
     try {

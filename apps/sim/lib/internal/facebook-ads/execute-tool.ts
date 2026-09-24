@@ -7,15 +7,15 @@ import { executeFacebookAdsQuery } from '@/app/api/facebook-ads/query/execute'
 import { isAbortError } from '@/providers/streaming-tool-loop-shared'
 
 const facebookAdsQueryInputSchema = z.object({
-  query: z.string().min(1, 'Missing required field: query'),
-  account: z.string().optional(),
-  accessToken: z.string().optional(),
-  accountId: z.string().optional(),
-  adAccountId: z.string().optional(),
-  date_preset: z.string().optional(),
-  time_range: z.object({ since: z.string(), until: z.string() }).optional(),
-  fields: z.array(z.string()).optional(),
-  level: z.string().optional(),
+  query: z.string().min(1, 'Missing required field: query').nullish(),
+  account: z.string().nullish(),
+  accessToken: z.string().nullish(),
+  accountId: z.string().nullish(),
+  adAccountId: z.string().nullish(),
+  date_preset: z.string().nullish(),
+  time_range: z.object({ since: z.string(), until: z.string() }).nullish(),
+  fields: z.array(z.string()).nullish(),
+  level: z.string().nullish(),
 })
 
 export const executeFacebookAdsTool: InternalToolOperationHandler = async (request) => {
@@ -53,7 +53,15 @@ export const executeFacebookAdsTool: InternalToolOperationHandler = async (reque
   try {
     const result = await executeFacebookAdsQuery(
       {
-        ...parsed.data,
+        query: parsed.data.query ?? '',
+        account: parsed.data.account ?? undefined,
+        accessToken: parsed.data.accessToken ?? undefined,
+        accountId: parsed.data.accountId ?? undefined,
+        adAccountId: parsed.data.adAccountId ?? undefined,
+        date_preset: parsed.data.date_preset ?? undefined,
+        time_range: parsed.data.time_range ?? undefined,
+        fields: parsed.data.fields ?? undefined,
+        level: parsed.data.level ?? undefined,
         workspaceId: request.context.workspaceId,
       },
       { requestId: request.requestId, signal: request.signal }

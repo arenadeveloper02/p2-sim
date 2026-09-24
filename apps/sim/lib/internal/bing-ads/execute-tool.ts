@@ -7,8 +7,8 @@ import { executeBingAdsQuery } from '@/app/api/bing-ads/query/execute'
 import { isAbortError } from '@/providers/streaming-tool-loop-shared'
 
 const bingAdsQueryInputSchema = z.object({
-  query: z.string().min(1, 'No query provided'),
-  account: z.string().min(1, 'No account provided'),
+  query: z.string().min(1, 'No query provided').nullish(),
+  account: z.string().min(1, 'No account provided').nullish(),
 })
 
 export const executeBingAdsTool: InternalToolOperationHandler = async (request) => {
@@ -43,7 +43,8 @@ export const executeBingAdsTool: InternalToolOperationHandler = async (request) 
   try {
     const result = await executeBingAdsQuery(
       {
-        ...parsed.data,
+        query: parsed.data.query ?? '',
+        account: parsed.data.account ?? '',
         workspaceId: request.context.workspaceId,
       },
       { signal: request.signal }
