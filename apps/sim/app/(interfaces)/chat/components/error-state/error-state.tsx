@@ -3,6 +3,7 @@
 import { Button } from '@sim/emcn'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
+import { APP_ENTRY_PATH } from '@/lib/navigation/paths'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 
 interface ChatErrorStateProps {
@@ -22,10 +23,10 @@ export function ChatErrorState({ error }: ChatErrorStateProps) {
         <p className='text-[var(--text-muted)] text-lg'>{error}</p>
         <Button
           variant='primary'
-          onClick={() => router.push('/workspace')}
+          onClick={() => router.push(APP_ENTRY_PATH)}
           className='h-[32px] w-full gap-2 px-2.5 text-sm'
         >
-          Return to Workspace
+          Open Sim
         </Button>
       </div>
     </div>

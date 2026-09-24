@@ -1,7 +1,5 @@
-import { randomItem } from '@sim/utils/random'
 import { hexToRgb } from '@/lib/colors'
 
-/** Color palette for workspace accents. */
 export const WORKSPACE_COLORS = [
   '#2ABBF8', // Blue
   '#22c55e', // Green
@@ -14,7 +12,7 @@ export const WORKSPACE_COLORS = [
 
 /** Picks a random workspace color from the hero palette. */
 export function getRandomWorkspaceColor(): string {
-  return randomItem(WORKSPACE_COLORS)
+  return WORKSPACE_COLORS[Math.floor(Math.random() * WORKSPACE_COLORS.length)]
 }
 
 /**

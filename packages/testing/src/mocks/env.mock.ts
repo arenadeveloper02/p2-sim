@@ -136,7 +136,7 @@ export function envNumberImpl(
   ) {
     return value
   }
-  if (value === undefined || value === null || value === '') return fallback
+  if (value === undefined || value === null || String(value).trim() === '') return fallback
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= min && (!options.integer || Number.isInteger(parsed))
     ? parsed
@@ -201,4 +201,11 @@ export const envMock = {
   isFalsy: isFalsyImpl,
   envBoolean: envBooleanImpl,
   envNumber: envNumberImpl,
+  /**
+   * Mirrors `PUBLIC_ENV_ATTRIBUTE` in `apps/sim/lib/core/config/env.ts`. The
+   * literal is repeated rather than imported because packages never import from
+   * `apps/*`; keep the two in step if the attribute is ever renamed.
+   */
+  PUBLIC_ENV_ATTRIBUTE: 'data-public-env',
+  publicEnvMissingAtModuleInit: false,
 }

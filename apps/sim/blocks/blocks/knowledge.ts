@@ -170,10 +170,11 @@ export const KnowledgeBlock: BlockConfig = {
       title: 'Retrieval Mode',
       type: 'dropdown',
       options: [
-        { label: 'Vector only', id: 'vector' },
+        { label: 'Automatic', id: 'auto' },
         { label: 'Hybrid (full-text + vector)', id: 'hybrid' },
+        { label: 'Vector only', id: 'vector' },
       ],
-      value: () => 'vector',
+      value: () => 'auto',
       mode: 'advanced',
       condition: { field: 'operation', value: 'search' },
     },
@@ -566,7 +567,8 @@ export const KnowledgeBlock: BlockConfig = {
     tagFilters: { type: 'string', description: 'Tag filter criteria' },
     searchMode: {
       type: 'string',
-      description: 'Retrieval mode: vector only (default) or hybrid (full-text + vector)',
+      description:
+        "Retrieval mode: 'hybrid' (full-text + vector) or 'vector'; omitted, the workspace's default applies",
     },
     // Document tags for create document (JSON string of tag objects)
     // rereanking fields from sim side.........................>

@@ -1,3 +1,4 @@
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from '@/lib/branding/defaults'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export function GET() {
@@ -156,7 +157,7 @@ Built-in table creation and management:
 - [GitHub](https://github.com/simstudioai/sim): Open-source codebase
 - [Slack](https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA): Community workspace
 - [X/Twitter](https://x.com/simdotai): Announcements and updates
-- [LinkedIn](https://linkedin.com/company/simstudioai): Company page
+- [LinkedIn](https://linkedin.com/company/simdotai): Company page
 
 ## Support
 
@@ -167,8 +168,8 @@ Built-in table creation and management:
 
 ## Legal
 
-- [Terms of Service](${baseUrl}/terms): Legal terms
-- [Privacy Policy](${baseUrl}/privacy): Data handling practices
+- [Terms of Service](${DEFAULT_TERMS_URL}): Legal terms
+- [Privacy Policy](${DEFAULT_PRIVACY_URL}): Data handling practices
 - [Security](${baseUrl}/.well-known/security.txt): Vulnerability disclosure policy
 `
 

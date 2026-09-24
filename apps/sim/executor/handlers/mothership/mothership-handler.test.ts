@@ -2,6 +2,7 @@ import '@sim/testing/mocks/executor'
 
 import { loggerMock, resetEnvMock, setEnv } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resolveMothershipConversation } from '@/lib/mothership/conversation-id'
 import { BlockType } from '@/executor/constants'
 import { MothershipBlockHandler } from '@/executor/handlers/mothership/mothership-handler'
 import type { ExecutionContext, StreamingExecution } from '@/executor/types'
@@ -33,26 +34,32 @@ const {
   mockAreModelSafeWorkspaceFileKeys,
   mockBuildAuthHeaders,
   mockBuildAPIUrl,
+  mockDiscoverMcpServerToolsAsExecutor,
   mockExtractAPIErrorMessage,
   mockGenerateId,
-  mockIsExecutionCancelled,
-  mockIsRedisCancellationEnabled,
   mockReadUserFileContent,
 } = vi.hoisted(() => ({
   mockAreModelSafeWorkspaceFileKeys: vi.fn(),
   mockBuildAuthHeaders: vi.fn(),
   mockBuildAPIUrl: vi.fn(),
+  mockDiscoverMcpServerToolsAsExecutor: vi.fn(),
   mockExtractAPIErrorMessage: vi.fn(),
   mockGenerateId: vi.fn(),
-  mockIsExecutionCancelled: vi.fn(),
-  mockIsRedisCancellationEnabled: vi.fn(),
   mockReadUserFileContent: vi.fn(),
+}))
+
+vi.mock('@/lib/auth/internal', () => ({
+  generateInternalDelegationToken: vi.fn().mockResolvedValue('signed-mcp-scope'),
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () => ({
   areModelSafeWorkspaceFileKeys: mockAreModelSafeWorkspaceFileKeys,
   MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE:
     'File cannot be sent to a model because its secret provenance is unavailable',
+}))
+
+vi.mock('@/lib/internal/mcp/discover-tools', () => ({
+  discoverMcpServerToolsAsExecutor: mockDiscoverMcpServerToolsAsExecutor,
 }))
 
 vi.mock('@/executor/utils/http', () => ({
@@ -63,11 +70,6 @@ vi.mock('@/executor/utils/http', () => ({
 
 vi.mock('@sim/utils/id', () => ({
   generateId: mockGenerateId,
-}))
-
-vi.mock('@/lib/execution/cancellation', () => ({
-  isExecutionCancelled: mockIsExecutionCancelled,
-  isRedisCancellationEnabled: mockIsRedisCancellationEnabled,
 }))
 
 vi.mock('@/lib/execution/payloads/materialization.server', () => ({
@@ -158,9 +160,6 @@ describe('MothershipBlockHandler', () => {
     mockBuildAPIUrl.mockReturnValue(new URL('/api/mothership/execute', 'http://localhost:3000'))
     mockExtractAPIErrorMessage.mockResolvedValue('boom')
     mockGenerateId.mockReset()
-    mockIsExecutionCancelled.mockReset()
-    mockIsRedisCancellationEnabled.mockReset()
-    mockIsRedisCancellationEnabled.mockReturnValue(false)
     mockReadUserFileContent.mockReset()
     mockAreModelSafeWorkspaceFileKeys.mockReset()
     mockAreModelSafeWorkspaceFileKeys.mockResolvedValue(true)
@@ -179,6 +178,11 @@ describe('MothershipBlockHandler', () => {
 
     context = {
       workflowId: 'workflow-1',
+      executorDelegationOrigin: {
+        workflowId: 'workflow-1',
+        subjectUserId: 'user-1',
+        executionId: 'execution-1',
+      },
       executionId: 'execution-1',
       workspaceId: 'workspace-1',
       userId: 'user-1',
@@ -789,7 +793,7 @@ describe('MothershipBlockHandler', () => {
       messages: [{ role: 'user', content: 'Hello from workflow' }],
       workspaceId: 'workspace-1',
       userId: 'user-1',
-      chatId: 'chat-uuid',
+      chatId: resolveMothershipConversation('workspace-1', 'chat-uuid').chatId,
       messageId: 'message-uuid',
       requestId: 'request-uuid',
       secretScope: 'all',
@@ -873,7 +877,7 @@ describe('MothershipBlockHandler', () => {
       messages: [{ role: 'user', content: 'Continue this thread' }],
       workspaceId: 'workspace-1',
       userId: 'user-1',
-      chatId: 'existing-chat-id',
+      chatId: resolveMothershipConversation('workspace-1', 'existing-chat-id').chatId,
       messageId: 'message-uuid',
       requestId: 'request-uuid',
       secretScope: 'all',
@@ -884,7 +888,7 @@ describe('MothershipBlockHandler', () => {
     expect(mockGenerateId).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps a resolved conversation ID out of logs while forwarding it unchanged', async () => {
+  it('keeps a resolved conversation ID out of logs and off the wire', async () => {
     const conversationId = 'chat-plaintext-secret-__var_API_KEY-__sim_secret_API_KEY'
     mockGenerateId.mockReturnValueOnce('message-uuid').mockReturnValueOnce('request-uuid')
     fetchMock.mockResolvedValue(
@@ -904,7 +908,8 @@ describe('MothershipBlockHandler', () => {
 
     const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
     const body = JSON.parse(String(options.body))
-    expect(body.chatId).toBe(conversationId)
+    expect(body.chatId).toBe(resolveMothershipConversation('workspace-1', conversationId).chatId)
+    expect(body.chatId).not.toContain('chat-plaintext-secret')
 
     const logged = JSON.stringify(mockMothershipLogger.info.mock.calls)
     expect(logged).not.toContain('chat-plaintext-secret')
@@ -933,7 +938,9 @@ describe('MothershipBlockHandler', () => {
     const result = await handler.execute(context, block, inputs)
 
     const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(JSON.parse(String(options.body)).chatId).toBe('x')
+    expect(JSON.parse(String(options.body)).chatId).toBe(
+      resolveMothershipConversation('workspace-1', 'x').chatId
+    )
     expect(result).toMatchObject({ conversationId: 'x' })
     expect(inputs.conversationId).toBe('x')
     expect(context.resolvedSecretTraceRegistry?.getActiveMatches()).toEqual([])
@@ -992,6 +999,68 @@ describe('MothershipBlockHandler', () => {
       },
     ])
     expect(body.contexts).toEqual([{ kind: 'skill', skillId: 'skill-1', label: 'sales-playbook' }])
+  })
+
+  it('expands an explicitly selected managed MCP connection for the request', async () => {
+    const credentialId = 'mcp-cg-123456789012345678901'
+    mockDiscoverMcpServerToolsAsExecutor.mockResolvedValueOnce([
+      {
+        name: 'search_transcripts',
+        description: 'Search transcripts',
+        inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+        serverId: credentialId,
+        serverName: 'Fireflies',
+      },
+    ])
+    fetchMock.mockResolvedValue(createJsonResponse({ content: 'done', toolCalls: [] }))
+
+    await handler.execute(context, block, {
+      prompt: 'Search Fireflies',
+      tools: [
+        {
+          type: 'mcp-server-advanced',
+          params: { serverId: credentialId },
+          usageControl: 'force',
+        },
+      ],
+    })
+
+    expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledWith(
+      expect.objectContaining({ serverId: credentialId, workspaceId: context.workspaceId })
+    )
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(String(options.body)).mcpTools).toEqual([
+      {
+        type: 'mcp',
+        usageControl: 'force',
+        schema: { type: 'object', properties: { query: { type: 'string' } } },
+        params: {
+          serverId: credentialId,
+          toolName: 'search_transcripts',
+          serverName: 'Fireflies',
+        },
+      },
+    ])
+  })
+
+  it('rejects a blank advanced MCP server binding', async () => {
+    fetchMock.mockResolvedValue(createJsonResponse({ content: 'done', toolCalls: [] }))
+
+    await expect(
+      handler.execute(context, block, {
+        prompt: 'Continue without MCP tools',
+        tools: [
+          {
+            type: 'mcp-server-advanced',
+            params: { serverId: '' },
+            usageControl: 'auto',
+          },
+        ],
+      })
+    ).rejects.toThrow('requires params.serverId')
+
+    expect(mockDiscoverMcpServerToolsAsExecutor).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('does not scan arbitrary Mothership metadata, attachment names, or payloads', async () => {
@@ -1893,28 +1962,6 @@ describe('MothershipBlockHandler', () => {
     abortController.abort()
 
     await expect(abortedExecution).resolves.toMatchObject({ name: 'AbortError' })
-  })
-
-  it('propagates durable workflow cancellation to the mothership request', async () => {
-    vi.useFakeTimers()
-
-    mockGenerateId.mockReturnValueOnce('chat-uuid')
-    mockGenerateId.mockReturnValueOnce('message-uuid')
-    mockGenerateId.mockReturnValueOnce('request-uuid')
-    mockIsRedisCancellationEnabled.mockReturnValue(true)
-    mockIsExecutionCancelled.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
-
-    fetchMock.mockImplementation((_url: string, options?: RequestInit) =>
-      createAbortableFetchPromise(options?.signal as AbortSignal | undefined)
-    )
-
-    const executionPromise = handler.execute(context, block, { prompt: 'Cancel me durably' })
-    const abortedExecution = executionPromise.catch((error) => error)
-
-    await vi.advanceTimersByTimeAsync(1000)
-
-    await expect(abortedExecution).resolves.toMatchObject({ name: 'AbortError' })
-    expect(mockIsExecutionCancelled).toHaveBeenCalledWith('execution-1')
   })
 
   it('aborts the mothership request when selected-output streaming is cancelled', async () => {

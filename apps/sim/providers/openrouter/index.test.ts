@@ -129,7 +129,6 @@ function toolCallResponse(
 function tool(id: string): ProviderToolConfig {
   return {
     id,
-    name: id,
     description: 'test tool',
     params: {},
     parameters: { type: 'object', properties: {}, required: [] },
@@ -173,6 +172,12 @@ describe('openRouterProvider.executeRequest', () => {
     expect(payload.model).toBe('anthropic/claude-3.5-sonnet')
     expect(payload.messages[0]).toEqual({ role: 'system', content: 'You are helpful.' })
     expect(payload.messages.at(-1)).toEqual({ role: 'user', content: 'Hello' })
+  })
+
+  it('preserves custom provider paths when stripping an uppercase namespace', async () => {
+    mockCreate.mockResolvedValueOnce(textResponse('ok'))
+    await openRouterProvider.executeRequest({ ...baseRequest, model: 'OPENROUTER/Org/CustomModel' })
+    expect(mockCreate.mock.calls[0][0].model).toBe('Org/CustomModel')
   })
 
   it('inserts context as a user message between system and history', async () => {

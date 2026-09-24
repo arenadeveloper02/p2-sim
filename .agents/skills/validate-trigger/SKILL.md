@@ -36,6 +36,10 @@ apps/sim/lib/webhooks/provider-subscription-utils.ts    # Subscription helpers
 apps/sim/lib/webhooks/processor.ts                  # Central webhook processor
 ```
 
+If trigger sub-blocks use a `selectorKey`, also apply the `validate-selector` skill and read the
+key's browser-safe manifest entry, shared active-value context builder, server attachment, and
+provider listing primitive.
+
 ## Step 2: Pull API Documentation
 
 Fetch the service's official webhook documentation. This is the **source of truth** for:
@@ -76,6 +80,12 @@ If a payload schema is unknown, validation must explicitly recommend:
 - [ ] Every trigger's `id` matches the convention `{service}_{event_name}`
 - [ ] Every trigger's `provider` matches the service name used in the handler registry
 - [ ] `index.ts` barrel exports all triggers
+- [ ] Every remote `selectorKey` is present in `apps/sim/lib/selectors/manifest.ts` and has exactly
+      one server attachment
+- [ ] Trigger-mode `dependsOn` fields project only active canonical values; exact `{{KEY}}`
+      references stay unresolved in the browser
+- [ ] Trigger selectors use the shared `selectors.execute` transport, with no client provider
+      module, browser token request, or selector-only provider route
 
 ### Trigger ↔ Provider Alignment (CRITICAL)
 - [ ] Every trigger ID referenced in `matchEvent` logic exists in `{service}TriggerOptions`
@@ -185,6 +195,8 @@ Group findings by severity:
 - Trigger IDs mismatch between trigger files, registry, and block
 - `createSubscription` calling wrong API endpoint
 - Auth comparison using `===` instead of `safeCompare`
+- Trigger selector credential/reference resolution occurring in the browser, or a selector missing
+  scope authorization, credential provider binding, destination enforcement, or safe projection
 
 **Warning** (convention violations or usability issues):
 - Missing `extractIdempotencyId` when the service provides delivery IDs
@@ -210,7 +222,7 @@ After reporting, fix every **critical** and **warning** issue. Apply **suggestio
 After fixing, confirm:
 1. `bun run type-check` passes
 2. Re-read all modified files to verify fixes are correct
-3. Provider handler tests pass (if they exist): `bun test {service}`
+3. Provider handler tests pass (if they exist): `bun run --cwd apps/sim test lib/webhooks/providers/<handler-basename>` — handler files are kebab-case (`azure-devops.ts`) while trigger directories are snake_case (`azure_devops`), so use the handler's actual basename
 4. Any remaining unknown webhook payload schemas were explicitly reported to the user instead of guessed
 
 ## Checklist Summary
@@ -218,6 +230,7 @@ After fixing, confirm:
 - [ ] Read all trigger files, provider handler, types, registries, and block
 - [ ] Pulled and read official webhook/API documentation
 - [ ] Validated trigger definitions: options, instructions, extra fields, outputs
+- [ ] Validated dynamic selector declarations through the shared manifest and server attachment
 - [ ] Validated primary/secondary trigger distinction (`includeDropdown`)
 - [ ] Validated provider handler: auth, matchEvent, formatInput, idempotency
 - [ ] Validated output alignment: every `outputs` key ↔ every `formatInput` key

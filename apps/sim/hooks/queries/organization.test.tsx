@@ -6,10 +6,20 @@ import { sleep } from '@sim/utils/helpers'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiClientError } from '@/lib/api/client/errors'
 
-const { mockGetFullOrganization, mockRequestJson } = vi.hoisted(() => ({
-  mockGetFullOrganization: vi.fn(),
-  mockRequestJson: vi.fn(),
+const { mockGetFullOrganization, mockListOrganizations, mockRequestJson, featureFlags } =
+  vi.hoisted(() => ({
+    mockGetFullOrganization: vi.fn(),
+    mockListOrganizations: vi.fn(),
+    mockRequestJson: vi.fn(),
+    featureFlags: { organizations: true },
+  }))
+
+vi.mock('@/lib/core/config/env-flags', () => ({
+  get isOrganizationsEnabled() {
+    return featureFlags.organizations
+  },
 }))
 
 vi.mock('@/lib/api/client/request', () => ({
@@ -20,6 +30,7 @@ vi.mock('@/lib/auth/auth-client', () => ({
   client: {
     organization: {
       getFullOrganization: mockGetFullOrganization,
+      list: mockListOrganizations,
     },
     subscription: {
       list: vi.fn(),
@@ -28,6 +39,7 @@ vi.mock('@/lib/auth/auth-client', () => ({
 }))
 
 import {
+  getOrganizationBillingSummaryContract,
   getOrganizationRosterContract,
   type OrganizationRoster,
 } from '@/lib/api/contracts/organization'
@@ -36,10 +48,16 @@ import {
   type OrganizationBillingApiResponse,
 } from '@/lib/api/contracts/subscription'
 import {
+  organizationKeys,
   useOrganization,
   useOrganizationBilling,
+  useOrganizationList,
   useOrganizationRoster,
 } from '@/hooks/queries/organization'
+import {
+  organizationBillingSummaryOptions,
+  shouldRetryOrganizationBillingSummary,
+} from '@/hooks/queries/organization-billing-summary'
 
 interface Deferred<T> {
   promise: Promise<T>
@@ -71,6 +89,7 @@ const ROSTER_A: { success: true; data: OrganizationRoster } = {
         name: 'Member A',
         email: 'member-a@example.com',
         image: null,
+        suspendedAt: null,
         workspaces: [],
       },
     ],
@@ -106,6 +125,11 @@ function OrganizationProbe({ organizationId }: { organizationId: string }) {
   )
 }
 
+function MembershipProbe() {
+  const query = useOrganizationList()
+  return <div>{query.error?.message ?? query.data?.map(({ name }) => name).join(', ')}</div>
+}
+
 function renderOrganization(organizationId: string) {
   act(() => {
     root.render(
@@ -131,6 +155,7 @@ describe('organization identity transitions', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    featureFlags.organizations = true
     queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -143,6 +168,65 @@ describe('organization identity transitions', () => {
     queryClient.clear()
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('treats Better Auth failures as errors rather than a missing organization', async () => {
+    mockGetFullOrganization.mockResolvedValue({ data: null, error: { message: 'Access revoked' } })
+    mockRequestJson.mockResolvedValue(ROSTER_A)
+    renderOrganization('org-a')
+    await flushQueries()
+
+    expect(queryClient.getQueryState(organizationKeys.detail('org-a'))?.status).toBe('error')
+    expect(queryClient.getQueryState(organizationKeys.detail('org-a'))?.error?.message).toBe(
+      'Access revoked'
+    )
+    expect(container.textContent).not.toContain('Manage organization')
+  })
+
+  it('lists actual memberships and forwards cancellation to Better Auth', async () => {
+    mockListOrganizations.mockResolvedValue({ data: [ORGANIZATION_A], error: null })
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MembershipProbe />
+        </QueryClientProvider>
+      )
+    )
+    await flushQueries()
+
+    expect(container.textContent).toBe('Organization A')
+    const signal = mockListOrganizations.mock.calls[0][0].fetchOptions.signal
+    expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('does not call the organization plugin when organizations are disabled', async () => {
+    featureFlags.organizations = false
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MembershipProbe />
+        </QueryClientProvider>
+      )
+    )
+    await flushQueries()
+    expect(mockListOrganizations).not.toHaveBeenCalled()
+  })
+
+  it('surfaces membership-list errors for retry instead of returning an empty list', async () => {
+    mockListOrganizations.mockResolvedValue({
+      data: null,
+      error: { message: 'Membership service unavailable' },
+    })
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MembershipProbe />
+        </QueryClientProvider>
+      )
+    )
+    await flushQueries()
+    expect(container.textContent).toBe('Membership service unavailable')
+    expect(queryClient.getQueryState(organizationKeys.lists())?.status).toBe('error')
   })
 
   it('clears organization detail, roster, billing, and actions while the next org loads', async () => {
@@ -189,8 +273,77 @@ describe('organization identity transitions', () => {
     expect(container).not.toHaveTextContent('Member A')
     expect(container).not.toHaveTextContent('org-a')
     expect(container.querySelector('button')).toBeNull()
-    expect(mockGetFullOrganization).toHaveBeenCalledWith({
-      query: { organizationId: 'org-b' },
+    expect(mockGetFullOrganization).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { organizationId: 'org-b' } })
+    )
+  })
+
+  it('forwards the query signal so an in-flight org fetch can be cancelled', async () => {
+    mockGetFullOrganization.mockResolvedValue({ data: ORGANIZATION_A })
+
+    renderOrganization('org-a')
+
+    await flushQueries()
+
+    const [args] = mockGetFullOrganization.mock.calls[0]
+    expect(args.fetchOptions?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('uses a shape-specific recoverable cache entry for the navigation billing summary', async () => {
+    const summary = {
+      success: true as const,
+      data: {
+        organizationId: 'org-a',
+        subscriptionState: 'active' as const,
+        subscriptionPlan: 'team_25000',
+        subscriptionStatus: 'active',
+        creditBalance: 0,
+        billingInterval: 'month' as const,
+        cancelAtPeriodEnd: false,
+        totalSeats: 2,
+        totalCurrentUsage: 3,
+        totalUsageLimit: 125,
+        minimumBillingAmount: 125,
+        billingPeriodEnd: '2026-09-01T00:00:00.000Z',
+        billingBlocked: false,
+        billingBlockedReason: null,
+        blockedByOrgOwner: false,
+        upgradeWorkspaceId: 'workspace-a',
+        userRole: 'owner' as const,
+      },
+    }
+    mockRequestJson.mockResolvedValue(summary)
+
+    const options = organizationBillingSummaryOptions('org-a')
+    expect(options.queryKey).toEqual(organizationKeys.billingSummary('org-a'))
+    expect(options.queryKey).not.toEqual(organizationKeys.billing('org-a'))
+    expect(options.retryOnMount).toBe(true)
+
+    await expect(queryClient.fetchQuery(options)).resolves.toEqual(summary)
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      getOrganizationBillingSummaryContract,
+      expect.objectContaining({
+        params: { id: 'org-a' },
+        signal: expect.any(AbortSignal),
+      })
+    )
+  })
+
+  it('retries one transient billing-summary failure without retrying authorization errors', () => {
+    const serverError = new ApiClientError({
+      status: 503,
+      message: 'Unavailable',
+      body: null,
     })
+    const forbiddenError = new ApiClientError({
+      status: 403,
+      message: 'Forbidden',
+      body: null,
+    })
+
+    expect(shouldRetryOrganizationBillingSummary(0, serverError)).toBe(true)
+    expect(shouldRetryOrganizationBillingSummary(1, serverError)).toBe(false)
+    expect(shouldRetryOrganizationBillingSummary(0, forbiddenError)).toBe(false)
+    expect(shouldRetryOrganizationBillingSummary(0, new TypeError('Network error'))).toBe(true)
   })
 })

@@ -9,12 +9,14 @@ const {
   mockGetApiKeyWithBYOK,
   mockExecuteRequest,
   mockFilterModelSafeWorkspaceFileAttachments,
+  mockExecuteTool,
   mockUploadLargeFilesToProvider,
 } = vi.hoisted(() => ({
   mockAttachLargeFileRemoteUrls: vi.fn(),
   mockGetApiKeyWithBYOK: vi.fn(),
   mockExecuteRequest: vi.fn(),
   mockFilterModelSafeWorkspaceFileAttachments: vi.fn(async (attachments: unknown[]) => attachments),
+  mockExecuteTool: vi.fn(async () => ({ success: true, output: {} })),
   mockUploadLargeFilesToProvider: vi.fn(),
 }))
 
@@ -39,9 +41,16 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () 
     mockFilterModelSafeWorkspaceFileAttachments(...args),
 }))
 
+vi.mock('@/tools', () => ({
+  executeTool: (...args: unknown[]) => mockExecuteTool(...args),
+}))
+
+import type { ExecutionContext, NormalizedBlockOutput, StreamingExecution } from '@/executor/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { executeProviderRequest } from '@/providers'
-import type { ProviderResponse } from '@/providers/types'
+import { executeProviderTool } from '@/providers/runtime-context'
+import type { AgentStreamEvent } from '@/providers/stream-events'
+import type { ProviderResponse, ProviderToolConfig } from '@/providers/types'
 
 const HOSTED_RATE_INPUT_COST = 0.340285
 const HOSTED_RATE_OUTPUT_COST = 0.0387
@@ -90,6 +99,123 @@ function makeAnthropicResponse(): ProviderResponse {
     },
   }
 }
+
+function makeProviderTool(id: string, credential: string): ProviderToolConfig {
+  return {
+    id,
+    description: id,
+    params: { oauthCredential: credential },
+    parameters: { type: 'object', properties: {}, required: [] },
+  }
+}
+
+describe('executeProviderRequest — tool identities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('passes trusted execution context to both attachment authorization stages without serializing it', async () => {
+    const executionContext = {
+      workflowId: 'workflow-1',
+      workspaceId: 'workspace-1',
+      executionId: 'execution-1',
+    } as ExecutionContext
+    mockExecuteRequest.mockResolvedValueOnce({ content: 'ready', model: 'test-model' })
+    await executeProviderRequest('anthropic', { model: 'test-model' }, { executionContext })
+    expect(mockAttachLargeFileRemoteUrls).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'test-model' }),
+      'anthropic',
+      executionContext
+    )
+    expect(mockUploadLargeFilesToProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'test-model' }),
+      'anthropic',
+      executionContext
+    )
+    expect(mockExecuteRequest.mock.calls[0][0]).not.toHaveProperty('executionContext')
+    expect(mockExecuteRequest.mock.calls[0][0]).not.toHaveProperty('principal')
+  })
+
+  it('sends unique opaque ids and projects provider aliases out of the response', async () => {
+    const tools = [
+      makeProviderTool('gmail_send', 'credential-a'),
+      makeProviderTool('gmail_send', 'credential-b'),
+    ]
+    mockExecuteRequest.mockImplementationOnce(async (request) => {
+      const alias = request.tools[1].id
+      expect(request.tools.map((tool: ProviderToolConfig) => tool.id)).toEqual([
+        'gmail_send',
+        'gmail_send__sim_2',
+      ])
+      expect(alias).not.toContain('credential-b')
+      return {
+        content: 'sent',
+        model: 'test-model',
+        toolCalls: [{ name: alias, arguments: {} }],
+        timing: {
+          startTime: 'start',
+          endTime: 'end',
+          duration: 1,
+          timeSegments: [{ type: 'tool', name: alias, startTime: 0, endTime: 1, duration: 1 }],
+        },
+      }
+    })
+
+    const response = (await executeProviderRequest('anthropic', {
+      model: 'test-model',
+      tools,
+    })) as ProviderResponse
+
+    expect(response.toolCalls?.[0].name).toBe('gmail_send')
+    expect(response.timing?.timeSegments?.[0].name).toBe('gmail_send')
+    expect(tools[1].params.oauthCredential).toBe('credential-b')
+  })
+
+  it('keeps the alias map active while a streaming provider executes the selected instance', async () => {
+    const tools = [
+      makeProviderTool('gmail_send', 'credential-a'),
+      makeProviderTool('gmail_send', 'credential-b'),
+    ]
+    mockExecuteRequest.mockImplementationOnce(async (request) => {
+      const selected = request.tools[1] as ProviderToolConfig
+      const output: NormalizedBlockOutput = {
+        toolCalls: { list: [], count: 0 },
+        providerTiming: { startTime: 'start', endTime: 'end', duration: 0, timeSegments: [] },
+      }
+      return {
+        streamFormat: 'agent-events-v1',
+        stream: new ReadableStream<AgentStreamEvent>({
+          async pull(controller) {
+            await executeProviderTool(selected.id, selected.params)
+            output.toolCalls = { list: [{ name: selected.id }], count: 1 }
+            controller.enqueue({ type: 'tool_call_start', id: 'call-1', name: selected.id })
+            controller.close()
+          },
+        }),
+        execution: { success: true, output },
+      }
+    })
+
+    const response = await executeProviderRequest('anthropic', {
+      model: 'test-model',
+      tools,
+    })
+    expect(response).not.toBeInstanceOf(ReadableStream)
+    expect(response).toHaveProperty('stream')
+    const streaming = response as StreamingExecution
+    const reader = (streaming.stream as ReadableStream<AgentStreamEvent>).getReader()
+    const event = await reader.read()
+    await reader.read()
+
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'gmail_send',
+      { oauthCredential: 'credential-b' },
+      expect.any(Object)
+    )
+    expect(event.value).toEqual({ type: 'tool_call_start', id: 'call-1', name: 'gmail_send' })
+    expect(streaming.execution.output.toolCalls?.list[0].name).toBe('gmail_send')
+  })
+})
 
 describe('executeProviderRequest — BYOK regression', () => {
   beforeEach(() => {
@@ -172,6 +298,33 @@ describe('executeProviderRequest — BYOK regression', () => {
 
     expect(result.cost?.toolCost).toBeCloseTo(0.005, 8)
     expect(result.cost?.total).toBeCloseTo(0.00675, 8)
+  })
+
+  it('adds failed Function cost once alongside successful tool results', async () => {
+    mockGetApiKeyWithBYOK.mockResolvedValue({ apiKey: 'sk-byok', isBYOK: true })
+    mockExecuteTool.mockResolvedValueOnce({
+      success: false,
+      output: { cost: { total: 0.004 } },
+      error: 'execution failed',
+    })
+    mockExecuteRequest.mockImplementationOnce(async () => {
+      const execution = await executeProviderTool('function_execute', {})
+      expect(execution.rawResponse.success).toBe(false)
+      return {
+        ...makeAnthropicResponse(),
+        toolResults: [{ cost: { total: 0.005 } }],
+      } as ProviderResponse
+    })
+
+    const result = (await executeProviderRequest('anthropic', {
+      model: 'claude-opus-4-6',
+      workspaceId: 'ws-1',
+      tools: [makeProviderTool('function_execute', 'credential')],
+    })) as ProviderResponse
+
+    expect(result.cost).toMatchObject({ input: 0, output: 0 })
+    expect(result.cost?.toolCost).toBeCloseTo(0.009, 8)
+    expect(result.cost?.total).toBeCloseTo(0.009, 8)
   })
 
   /**
@@ -810,35 +963,85 @@ describe('executeProviderRequest — caller-prepared model input', () => {
     })
   })
 
-  it('omits only unsafe durable files before any provider attachment processing', async () => {
-    const unsafe = {
-      id: 'wf-unsafe',
-      name: 'unsafe.txt',
-      url: '/unsafe',
-      size: 10,
-      type: 'text/plain',
-      key: 'workspace/ws-1/unsafe.txt',
-    }
-    const safe = {
-      id: 'wf-safe',
-      name: 'safe.txt',
-      url: '/safe',
-      size: 10,
-      type: 'text/plain',
-      key: 'workspace/ws-1/safe.txt',
-    }
-    mockFilterModelSafeWorkspaceFileAttachments.mockResolvedValueOnce([safe])
+  it.each([
+    { stream: false, includeSafeFile: false },
+    { stream: false, includeSafeFile: true },
+    { stream: true, includeSafeFile: false },
+    { stream: true, includeSafeFile: true },
+  ])(
+    'continues with an attachment error notice (stream=$stream, mixed=$includeSafeFile)',
+    async ({ stream, includeSafeFile }) => {
+      const unsafe = {
+        id: 'wf-unsafe',
+        name: 'private-filename.txt',
+        url: '/private-file-url',
+        size: 10,
+        type: 'text/plain',
+        key: 'workspace/ws-1/private-storage-key.txt',
+        base64: 'private-file-bytes',
+      }
+      const safe = {
+        ...unsafe,
+        id: 'wf-safe',
+        name: 'safe.txt',
+        url: '/safe',
+        key: 'safe-key',
+        base64: 'safe-bytes',
+      }
+      const safeFiles = includeSafeFile ? [safe] : []
+      mockFilterModelSafeWorkspaceFileAttachments.mockResolvedValueOnce(safeFiles)
+      const messages = [
+        { role: 'user' as const, content: 'Earlier context' },
+        {
+          role: 'user' as const,
+          content: includeSafeFile ? 'Review files' : null,
+          files: [...safeFiles, unsafe],
+        },
+      ]
+      const originalMessages = structuredClone(messages)
+      if (stream) {
+        mockExecuteRequest.mockResolvedValueOnce({
+          stream: new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('ok'))
+              controller.close()
+            },
+          }),
+          execution: { success: true, output: { content: 'ok' } },
+        })
+      }
 
-    await executeProviderRequest('openai', {
-      model: 'test-model',
-      workspaceId: 'ws-1',
-      messages: [{ role: 'user', content: 'Review files', files: [unsafe, safe] }],
-    })
+      const response = await executeProviderRequest('openai', {
+        model: 'test-model',
+        workspaceId: 'ws-1',
+        userId: 'user-1',
+        stream,
+        messages,
+      })
 
-    expect(mockAttachLargeFileRemoteUrls.mock.calls[0][0].messages[0].files).toEqual([safe])
-    expect(mockUploadLargeFilesToProvider.mock.calls[0][0].messages[0].files).toEqual([safe])
-    expect(mockExecuteRequest.mock.calls[0][0].messages[0].files).toEqual([safe])
-  })
+      if (stream) {
+        expect(await new Response((response as StreamingExecution).stream).text()).toBe('ok')
+      } else {
+        expect(response).toMatchObject({ content: 'ok' })
+      }
+      expect(mockFilterModelSafeWorkspaceFileAttachments).toHaveBeenCalledWith(
+        [...safeFiles, unsafe],
+        { workspaceId: 'ws-1', actorUserId: 'user-1' }
+      )
+      const sent = mockExecuteRequest.mock.calls[0][0]
+      expect(sent.messages[0]).toEqual(messages[0])
+      expect(sent.messages[1].content).toContain(
+        'Attachment error: 1 requested file attachment was not provided'
+      )
+      expect(sent.messages[1].content).toContain('Continue with the available inputs')
+      if (includeSafeFile) expect(sent.messages[1].content).toMatch(/^Review files\n\n/)
+      expect(sent.messages[1].files ?? []).toEqual(safeFiles)
+      expect(JSON.stringify(sent)).not.toContain('private-')
+      expect(mockAttachLargeFileRemoteUrls.mock.calls[0][0]).toBe(sent)
+      expect(mockUploadLargeFilesToProvider.mock.calls[0][0]).toBe(sent)
+      expect(messages).toEqual(originalMessages)
+    }
+  )
 
   it('fails explicitly when file provenance lookup is unavailable', async () => {
     mockFilterModelSafeWorkspaceFileAttachments.mockRejectedValueOnce(new Error('db unavailable'))
@@ -1466,6 +1669,30 @@ describe('executeProviderRequest — model level normalization', () => {
     })
 
     expect(sentRequest().reasoningEffort).toBe('high')
+  })
+
+  it.each([
+    ['azure-openai', 'azure/MyDeployment'],
+    ['azure-anthropic', 'azure-anthropic/MyDeployment'],
+    ['bedrock', 'bedrock/custom-inference-profile'],
+    ['vertex', 'vertex/custom-gemini'],
+  ])('preserves tuning levels for a custom %s deployment', async (provider, model) => {
+    await executeProviderRequest(provider, {
+      model,
+      workspaceId: 'ws-1',
+      reasoningEffort: 'high',
+      verbosity: 'low',
+      thinkingLevel: 'high',
+      temperature: 0.7,
+    })
+
+    expect(sentRequest()).toMatchObject({
+      model,
+      reasoningEffort: 'high',
+      verbosity: 'low',
+      thinkingLevel: 'high',
+      temperature: 0.7,
+    })
   })
 
   it('still drops levels for a dynamic-provider model that does not take them', async () => {

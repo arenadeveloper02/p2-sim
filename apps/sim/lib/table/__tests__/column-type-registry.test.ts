@@ -111,13 +111,24 @@ describe('conversion write-back', () => {
     for (const definition of ALL_COLUMN_TYPES) {
       if (definition.jsonbCast !== 'timestamptz') continue
       expect(definition.coerce(1700000000000, { name: 'c', type: definition.id }).ok).toBe(false)
-      const coerced = definition.coerce('2023-11-14T22:13:20.000Z', {
+      const coerced = definition.coerce('2023-11-14T22:13:20Z', {
         name: 'c',
         type: definition.id,
       })
       expect(coerced.ok).toBe(true)
       expect(typeof (coerced as { value: unknown }).value).toBe('string')
     }
+  })
+})
+
+describe('ttl columns', () => {
+  it('declares offset-preserving editing, string workflow values, timestamp comparisons, and one column per table', () => {
+    expect(COLUMN_TYPE_REGISTRY.ttl).toMatchObject({
+      jsonbCast: 'timestamptz',
+      workflowInputType: 'string',
+      editor: 'offset-date',
+      maxPerTable: 1,
+    })
   })
 })
 

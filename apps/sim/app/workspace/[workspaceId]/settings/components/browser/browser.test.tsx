@@ -87,8 +87,22 @@ vi.mock('@sim/emcn', () => ({
     </select>
   ),
   Label: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  Switch: ({ checked }: { checked: boolean }) => (
-    <button type='button' role='switch' aria-checked={checked} />
+  Switch: ({
+    checked,
+    disabled,
+    onCheckedChange,
+  }: {
+    checked: boolean
+    disabled?: boolean
+    onCheckedChange?: (checked: boolean) => void
+  }) => (
+    <button
+      type='button'
+      role='switch'
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onCheckedChange?.(!checked)}
+    />
   ),
   toast: mockToast,
 }))
@@ -171,33 +185,6 @@ vi.mock(
   })
 )
 
-// The modal's own picker logic is covered by import-modal.test.tsx; here it is
-// reduced to "open?" plus a way to confirm the chosen profile.
-vi.mock(
-  '@/app/workspace/[workspaceId]/settings/components/browser/components/import-modal/import-modal',
-  () => ({
-    ImportModal: ({
-      open,
-      profiles,
-      pending,
-      onImport,
-    }: {
-      open: boolean
-      profiles: BrowserImportProfile[]
-      pending: boolean
-      onImport: (profile: BrowserImportProfile) => void
-    }) =>
-      open ? (
-        <div role='dialog' aria-label='Import from your browser'>
-          <span>{`${profiles.length} profiles`}</span>
-          <button type='button' disabled={pending} onClick={() => onImport(profiles[1])}>
-            Confirm import
-          </button>
-        </div>
-      ) : null,
-  })
-)
-
 import { Browser } from '@/app/workspace/[workspaceId]/settings/components/browser/browser'
 
 const PROFILES: BrowserImportProfile[] = [
@@ -235,6 +222,7 @@ const IMPORTED_BOTH: BrowserChromeImportResult = {
 
 interface BridgeOverrides {
   browserEnabled?: boolean
+  browserSearchSuggestionsEnabled?: boolean
   browserTheme?: 'app' | 'light' | 'dark'
   browserDefaultZoom?: DesktopZoomPercent
   browserDownloadDirectory?: string
@@ -247,6 +235,7 @@ interface BridgeOverrides {
 
 function createBridge({
   browserEnabled = true,
+  browserSearchSuggestionsEnabled = true,
   browserTheme = 'app',
   browserDefaultZoom = 100,
   browserDownloadDirectory = '/Users/sim/Downloads',
@@ -263,6 +252,7 @@ function createBridge({
     launchAtLogin: false,
     autoDownloadUpdates: true,
     browserEnabled,
+    browserSearchSuggestionsEnabled,
     browserTheme,
     browserDefaultZoom,
     browserDownloadDirectory,
@@ -271,6 +261,10 @@ function createBridge({
     settings: {
       getPreferences: vi.fn(async () => preferences),
       setBrowserEnabled: vi.fn(),
+      setBrowserSearchSuggestionsEnabled: vi.fn(async (enabled: boolean) => ({
+        ...preferences,
+        browserSearchSuggestionsEnabled: enabled,
+      })),
       setBrowserTheme: vi.fn(async (theme: 'app' | 'light' | 'dark') => ({
         ...preferences,
         browserTheme: theme,
@@ -343,6 +337,7 @@ describe('Browser settings', () => {
 
     expect(container.textContent).toContain('Let Chat browse the web')
     expect(container.textContent).toContain('Theme')
+    expect(container.textContent).toContain('Search suggestions')
     expect(container.textContent).not.toContain(
       'Pages open in a browser built into Sim, signed in separately from your own.'
     )
@@ -350,6 +345,22 @@ describe('Browser settings', () => {
     expect(container.textContent).not.toContain('Supported websites use this appearance')
     expect(container.textContent).not.toContain('signed in or holding cookies')
     expect(container.textContent).not.toContain('Saved passwords are never deleted here')
+  })
+
+  it('explains and persists the live-search privacy switch', async () => {
+    const bridge = createBridge({ browserSearchSuggestionsEnabled: true })
+    mockBridge.current = bridge
+    await render()
+
+    expect(container.textContent).toContain(
+      'Send address-bar typing to Google for live completions'
+    )
+    const switches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
+    expect(switches[1]).toHaveAttribute('aria-checked', 'true')
+
+    await click(switches[1])
+
+    expect(bridge.settings.setBrowserSearchSuggestionsEnabled).toHaveBeenCalledWith(false)
   })
 
   it('persists an independent website theme', async () => {
@@ -409,6 +420,19 @@ describe('Browser settings', () => {
       'Passwords',
       'Clear all',
     ])
+  })
+
+  it('reserves the real header actions while preferences are loading', async () => {
+    const bridge = createBridge()
+    bridge.settings.getPreferences = vi.fn(() => new Promise(() => {}))
+    mockBridge.current = bridge
+
+    await render()
+
+    const actions = [...container.querySelectorAll<HTMLButtonElement>('header button')]
+    expect(actions.map((button) => button.textContent)).toEqual(['Passwords', 'Clear all'])
+    expect(actions.every((button) => button.disabled)).toBe(true)
+    expect(container.querySelector('section[aria-label="General"]')).toBeNull()
   })
 
   it('lists each data type as a standard settings row in one section', async () => {

@@ -212,7 +212,9 @@ export function aggregateUsageToolsByFamily<T extends UsageToolBucketRow>(rows: 
   }
 
   return [...merged.values()]
-    .filter((row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID)
+    .filter(
+      (row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
+    )
     .sort((a, b) => b.billableCost - a.billableCost)
 }
 

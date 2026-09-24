@@ -1,7 +1,7 @@
 'use client'
 
 import type { ElementType, ReactNode } from 'react'
-import { cn } from '@sim/emcn'
+import { cn, OverflowText } from '@sim/emcn'
 import {
   Connections,
   Database,
@@ -16,11 +16,15 @@ import {
 import type { QueryClient } from '@tanstack/react-query'
 import { Globe } from 'lucide-react'
 import { getDocumentIcon } from '@/components/icons/document-icons'
+import { terminalIdFromResourceId } from '@/lib/terminal/resource-id'
+import { BrowserTabIcon } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry/browser-tab-icon'
+import { TerminalTabIcon } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry/terminal-tab-icon'
 import type {
   MothershipResource,
   MothershipResourceType,
 } from '@/app/workspace/[workspaceId]/home/types'
-import { getBareIconStyle, type StyleableIcon } from '@/blocks/brand-icon-style'
+import { getDisplayStatus, STATUS_CONFIG } from '@/app/workspace/[workspaceId]/logs/utils'
+import { BrandIcon, type StyleableIcon } from '@/blocks/brand-icon'
 import { logKeys } from '@/hooks/queries/logs'
 import { mothershipChatKeys } from '@/hooks/queries/mothership-chats'
 import { folderKeys } from '@/hooks/queries/utils/folder-keys'
@@ -38,29 +42,41 @@ export interface ResourceTypeConfig {
   type: MothershipResourceType
   label: string
   icon: ElementType
-  renderTabIcon: (resource: MothershipResource, className: string) => ReactNode
+  /** `desktopScopeId` names the desktop browser scope a browser tab belongs to. */
+  renderTabIcon: (
+    resource: MothershipResource,
+    className: string,
+    desktopScopeId?: string
+  ) => ReactNode
   renderDropdownItem: (props: DropdownItemRenderProps) => ReactNode
+  /**
+   * How many of this family's candidates an unfiltered `@` list shows, overriding
+   * {@link MENTION_PREVIEW_DEFAULT_LIMIT}. Raise it only for a family whose rows a
+   * user browses; the unfiltered list is a preview, not a browser, and typing a
+   * query lifts the cap entirely — see `buildMentionPreview`.
+   */
+  mentionPreviewLimit?: number
 }
 
 function WorkflowDropdownItem({ item }: DropdownItemRenderProps) {
   return (
     <>
-      <Workflow className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate'>{item.name}</span>
+      <Workflow className='size-[14px] shrink-0 text-[var(--text-icon)]' />
+      <OverflowText label={item.name} />
     </>
   )
 }
 
 function DefaultDropdownItem({ item }: DropdownItemRenderProps) {
-  return <span className='truncate'>{item.name}</span>
+  return <OverflowText label={item.name} />
 }
 
 function FileDropdownItem({ item }: DropdownItemRenderProps) {
   const DocIcon = getDocumentIcon('', item.name)
   return (
     <>
-      <DocIcon className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate'>{item.name}</span>
+      <DocIcon className='size-[14px] shrink-0 text-[var(--text-icon)]' />
+      <OverflowText label={item.name} />
     </>
   )
 }
@@ -68,8 +84,8 @@ function FileDropdownItem({ item }: DropdownItemRenderProps) {
 function IconDropdownItem({ item, icon: Icon }: DropdownItemRenderProps & { icon: ElementType }) {
   return (
     <>
-      <Icon className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate'>{item.name}</span>
+      <Icon className='size-[14px] shrink-0 text-[var(--text-icon)]' />
+      <OverflowText label={item.name} />
     </>
   )
 }
@@ -82,27 +98,46 @@ function IconDropdownItem({ item, icon: Icon }: DropdownItemRenderProps & { icon
  */
 function IntegrationDropdownItem({ item }: DropdownItemRenderProps) {
   const Icon = item.iconComponent as StyleableIcon | undefined
-  if (!Icon) return <span className='truncate'>{item.name}</span>
+  if (!Icon) return <OverflowText label={item.name} />
   return (
     <>
-      <Icon
-        className='size-[14px] flex-shrink-0 text-[var(--text-icon)]'
-        style={getBareIconStyle(Icon)}
-      />
-      <span className='truncate'>{item.name}</span>
+      <BrandIcon icon={Icon} className='size-[14px] shrink-0' />
+      <OverflowText label={item.name} />
     </>
   )
 }
 
+/**
+ * A run, not the workflow it ran — the Logs icon is what says so, and it is the
+ * same one the sidebar, the search palette, and the resulting chip already use.
+ *
+ * A run that did not simply succeed carries the same dot `Badge` draws at `sm`,
+ * so a status reads identically here and on the logs page. Marking every row
+ * would mark nothing, so a plain success gets none.
+ */
 function LogDropdownItem({ item }: DropdownItemRenderProps) {
   const workflowName = (item.workflowName as string) ?? item.name
   const time = (item.time as string) ?? ''
+  const status = getDisplayStatus(item.status as string | null | undefined)
+  const statusColor = status === 'info' ? null : STATUS_CONFIG[status].color
   return (
     <>
-      <Workflow className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate'>{workflowName}</span>
+      <Library className='size-[14px] shrink-0 text-[var(--text-icon)]' />
+      <OverflowText label={workflowName} />
+      {statusColor && (
+        <div
+          aria-hidden
+          className='ml-auto size-[5px] shrink-0 rounded-xs'
+          style={{ backgroundColor: statusColor }}
+        />
+      )}
       {time && (
-        <span className='ml-auto flex-shrink-0 text-[var(--text-tertiary)] text-caption'>
+        <span
+          className={cn(
+            'shrink-0 text-[var(--text-tertiary)] text-caption',
+            !statusColor && 'ml-auto'
+          )}
+        >
           {time}
         </span>
       )}
@@ -206,8 +241,8 @@ export const RESOURCE_REGISTRY: Record<MothershipResourceType, ResourceTypeConfi
     type: 'browser',
     label: 'Browser',
     icon: Globe,
-    renderTabIcon: (_resource, className) => (
-      <Globe className={cn(className, 'text-[var(--text-icon)]')} />
+    renderTabIcon: (resource, className, desktopScopeId) => (
+      <BrowserTabIcon tabId={resource.id} scopeId={desktopScopeId} className={className} />
     ),
     renderDropdownItem: (props) => <IconDropdownItem {...props} icon={Globe} />,
   },
@@ -215,12 +250,23 @@ export const RESOURCE_REGISTRY: Record<MothershipResourceType, ResourceTypeConfi
     type: 'terminal',
     label: 'Terminal',
     icon: TerminalWindow,
-    renderTabIcon: (_resource, className) => (
-      <TerminalWindow className={cn(className, 'text-[var(--text-icon)]')} />
+    renderTabIcon: (resource, className, desktopScopeId) => (
+      <TerminalTabIcon
+        terminalId={terminalIdFromResourceId(resource.id)}
+        scopeId={desktopScopeId}
+        className={className}
+      />
     ),
     renderDropdownItem: (props) => <IconDropdownItem {...props} icon={TerminalWindow} />,
   },
 } as const
+
+/**
+ * Rows per family in the unfiltered `@` preview, unless the family overrides it
+ * with {@link ResourceTypeConfig.mentionPreviewLimit}. Enough to show what a family
+ * holds without any one of them crowding out the rest.
+ */
+export const MENTION_PREVIEW_DEFAULT_LIMIT = 5
 
 /**
  * Top-down order for every menu that lists resource families, mirroring the
@@ -237,8 +283,8 @@ export const RESOURCE_MENU_ORDER: readonly MothershipResourceType[] = [
   'file',
   'filefolder',
   'knowledgebase',
-  'log',
   'workflow',
+  'log',
   'folder',
   'browser',
   'terminal',
@@ -266,6 +312,9 @@ const RESOURCE_INVALIDATORS: Record<
   table: (qc, _wId, id) => {
     qc.invalidateQueries({ queryKey: tableKeys.lists() })
     qc.invalidateQueries({ queryKey: tableKeys.detail(id) })
+    // A view the agent just created must be in the list before the embedded
+    // table can switch to it; see the view-pin store.
+    qc.invalidateQueries({ queryKey: tableKeys.views(id) })
   },
   file: (qc, wId, id) => {
     qc.invalidateQueries({ queryKey: workspaceFilesKeys.lists() })
@@ -297,7 +346,7 @@ const RESOURCE_INVALIDATORS: Record<
   },
   /**
    * Integrations are sourced from the static integration catalog
-   * (`listIntegrations()`), not a server-backed query, so there is nothing to
+   * (`listIntegrationsByPopularity()`), not a server-backed query, so there is nothing to
    * invalidate when one is added.
    */
   integration: () => {},

@@ -43,7 +43,7 @@ export function ConversationTimelinePopover({
         role='listbox'
         aria-label='Conversation prompts'
         className={cn(
-          'pointer-events-auto absolute top-1/2 right-full z-20 mr-3 w-[220px] -translate-y-1/2',
+          '-translate-y-1/2 pointer-events-auto absolute top-1/2 right-full z-20 mr-3 w-[220px]',
           'max-h-[min(60vh,420px)] overflow-y-auto overscroll-contain rounded-xl border border-[var(--border)]',
           // Same contrast model as left-nav: canvas/brand panel so indication (raised) hover reads in light theme.
           'bg-[var(--color-ds-canvas,var(--color-ds-brand-surface,var(--surface-2)))] py-1.5 shadow-lg'

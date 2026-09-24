@@ -40,8 +40,14 @@ function recordSpanError(span: Span, err: unknown) {
 
 const logger = createLogger('FileReader')
 
-/** Inline text-read cap — exported so callers can align their own byte-sniff budgets with what read() can actually display. */
-export const MAX_TEXT_READ_BYTES = 5 * 1024 * 1024 // 5 MB
+/**
+ * Text-read materialization cap — exported so callers can align their own byte-sniff budgets
+ * with what read() can actually load. This bounds what the server LOADS, not what the model
+ * receives inline: the read handler windows (offset/limit) and inline-size-gates the result,
+ * so a large file is paged rather than sent whole. 20MB keeps multi-MB logs/exports greppable
+ * and pageable while still refusing genuinely unbounded blobs.
+ */
+export const MAX_TEXT_READ_BYTES = 20 * 1024 * 1024 // 20 MB
 /** Vision-attachment cap: what the prepared image must fit into after resizing. */
 export const MAX_IMAGE_READ_BYTES = 5 * 1024 * 1024 // 5 MB
 // Parseable-document byte cap. Large office/PDF files can still
@@ -98,7 +104,7 @@ const TEXT_TYPES = new Set([
   'application/javascript',
 ])
 
-const PARSEABLE_EXTENSIONS = new Set(['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'])
+const PARSEABLE_EXTENSIONS = new Set(['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx'])
 
 export function isReadableFileType(contentType: string): boolean {
   return TEXT_TYPES.has(contentType) || contentType.startsWith('text/')
@@ -581,6 +587,10 @@ export async function readFileRecord(
           try {
             const { parseBuffer } = await import('@/lib/file-parsers')
             const result = await parseBuffer(fetched.buffer, ext)
+            if (result.metadata?.degraded === true) {
+              /** Scraped ZIP internals or placeholder prose, not the document's text. */
+              throw new Error(result.metadata.warning ?? 'Parser returned degraded output')
+            }
             const content = result.content || ''
             const lines = content.split('\n').length
             span.setAttributes({

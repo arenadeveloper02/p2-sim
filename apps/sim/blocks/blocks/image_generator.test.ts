@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { IMAGE_BLOCK_PROVIDER_OPTIONS } from '@/lib/image-generation/block-model-config'
 import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
 import { AGENT_TOOL_BLOCK_TYPES } from '@/blocks/utils'
 import { imageGenerateTool } from '@/tools/image/generate'
@@ -62,6 +63,7 @@ describe('ImageGeneratorV2Block', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       model: 'gpt-image-2',
       prompt: 'A pricing card with readable text',
+      size: 'auto',
     })
 
     expect(params).toMatchObject({
@@ -76,6 +78,7 @@ describe('ImageGeneratorV2Block', () => {
       provider: 'gemini',
       model: 'gpt-images-2',
       prompt: 'A poster with headline copy',
+      size: 'auto',
     })
 
     expect(params).toMatchObject({
@@ -131,10 +134,13 @@ describe('ImageGeneratorV2Block', () => {
 
   it('keeps all optional image_generator_v2 combobox and dropdown fields clearable without editor defaults', () => {
     const optionalFieldTypes = new Set(['combobox', 'dropdown'])
-    const requiredFieldIds = new Set(['prompt'])
+    const requiredFieldIds = new Set(['prompt', 'size'])
 
     const optionalConfiguredFields = ImageGeneratorV2Block.subBlocks.filter(
-      (subBlock) => optionalFieldTypes.has(subBlock.type) && !requiredFieldIds.has(subBlock.id)
+      (subBlock) =>
+        optionalFieldTypes.has(subBlock.type) &&
+        !requiredFieldIds.has(subBlock.id) &&
+        subBlock.required !== true
     )
 
     expect(optionalConfiguredFields.length).toBeGreaterThan(0)
@@ -182,6 +188,7 @@ describe('ImageGeneratorV2Block', () => {
       provider: 'gemini',
       model: 'gpt-image-2',
       prompt: 'A poster with headline copy',
+      size: 'auto',
     })
 
     expect(params).toMatchObject({
@@ -245,6 +252,7 @@ describe('ImageGeneratorV2Block', () => {
       provider: 'openai',
       model: 'gpt-image-2',
       prompt: 'Edit this image',
+      size: 'auto',
       inputImage: [referenceFileA, referenceFileB],
     })
 
@@ -258,6 +266,7 @@ describe('ImageGeneratorV2Block', () => {
       provider: 'openai',
       model: 'gpt-image-1.5',
       prompt: 'Edit this image',
+      size: 'auto',
       inputImage: [referenceFileA, referenceFileB],
     })
 
@@ -271,6 +280,7 @@ describe('ImageGeneratorV2Block', () => {
       provider: 'openai',
       model: 'gpt-images-2',
       prompt: 'Composite these references',
+      size: 'auto',
       inputImage: [referenceFileA, referenceFileB],
     })
 
@@ -278,36 +288,17 @@ describe('ImageGeneratorV2Block', () => {
     expect(params?.inputImages).toHaveLength(2)
   })
 
-  it.skip('preserves multiple uploaded references for Fal.ai Nano Banana 2', () => {
-    const params = ImageGeneratorV2Block.tools.config.params?.({
-      provider: 'falai',
-      model: 'nano-banana-2',
-      prompt: 'Edit these product images',
-      inputImage: [
-        {
-          id: 'file-1',
-          name: 'source-a.png',
-          url: 'https://example.com/source-a.png',
-          key: 'execution/ws/wf/ex/source-a.png',
-          type: 'image/png',
-          size: 123,
-        },
-        {
-          id: 'file-2',
-          name: 'source-b.png',
-          url: 'https://example.com/source-b.png',
-          key: 'execution/ws/wf/ex/source-b.png',
-          type: 'image/png',
-          size: 456,
-        },
-      ],
+  it('does not expose Fal.ai as a selectable provider or falai-gated fields', () => {
+    expect(IMAGE_BLOCK_PROVIDER_OPTIONS.every((option) => option.id !== 'falai')).toBe(true)
+
+    const falaiGated = ImageGeneratorV2Block.subBlocks.filter((subBlock) => {
+      const condition = subBlock.condition
+      if (!condition) return false
+      const value = condition.value
+      if (value === 'falai') return true
+      return Array.isArray(value) && value.includes('falai')
     })
 
-    expect(params).toMatchObject({
-      provider: 'falai',
-      model: 'nano-banana-2',
-      prompt: 'Edit these product images',
-    })
-    expect(params?.inputImages).toHaveLength(2)
+    expect(falaiGated).toHaveLength(0)
   })
 })

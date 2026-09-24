@@ -15,6 +15,8 @@ import { decodeCursor } from '@/lib/table/rows/cursor'
 import { buildFilterClause, buildSortClause } from '@/lib/table/sql'
 import type { ColumnDefinition, TableDefinition } from '@/lib/table/types'
 
+const { mockFireTableTrigger } = vi.hoisted(() => ({ mockFireTableTrigger: vi.fn() }))
+
 vi.mock('@/lib/table/sql', () => ({
   buildFilterClause: vi.fn(() => sql`true`),
   buildSortClause: vi.fn(() => sql`true`),
@@ -23,7 +25,7 @@ vi.mock('@/lib/table/sql', () => ({
 }))
 
 vi.mock('@/lib/table/trigger', () => ({
-  fireTableTrigger: vi.fn(),
+  fireTableTrigger: mockFireTableTrigger,
 }))
 
 vi.mock('@/lib/table/workflow-group-deps', () => ({
@@ -34,6 +36,21 @@ vi.mock('@/lib/table/workflow-columns', () => ({
   scheduleRunsForRows: vi.fn(),
   scheduleRunsForTable: vi.fn(),
   stripGroupDeps: vi.fn(),
+}))
+
+const { mockLoadExecutionsByRow } = vi.hoisted(() => ({
+  mockLoadExecutionsByRow: vi.fn(async () => new Map()),
+}))
+
+vi.mock('@/lib/table/rows/executions', () => ({
+  applyExecutionsPatch: vi.fn((existing: unknown) => existing),
+  deriveExecClearsForDataPatch: vi.fn(() => ({
+    executionsPatch: undefined,
+    inFlightDownstreamGroups: [],
+  })),
+  loadExecutionsByRow: mockLoadExecutionsByRow,
+  loadExecutionsForRow: vi.fn(async () => ({})),
+  writeExecutionsPatch: vi.fn(async () => 'wrote'),
 }))
 
 vi.mock('@/lib/table/validation', () => ({
@@ -49,7 +66,9 @@ vi.mock('@/lib/table/validation', () => ({
 }))
 
 import {
+  deleteRow,
   deleteRowsByFilter,
+  deleteRowsByIds,
   queryRows,
   requireTableRowIds,
   updateRowsByFilter,
@@ -168,6 +187,104 @@ describe('service filter threading', () => {
   })
 })
 
+describe('delete trigger dispatch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+  })
+
+  it('fires with the committed snapshot after deleting one row', async () => {
+    dbChainMockFns.returning.mockResolvedValueOnce([{ id: 'row-1', data: { name: 'Ada' } }])
+
+    await deleteRow(TABLE, 'row-1', 'req-delete-one')
+
+    expect(mockFireTableTrigger).toHaveBeenCalledWith(
+      TABLE.id,
+      TABLE.workspaceId,
+      TABLE.name,
+      'delete',
+      [{ id: 'row-1', data: { name: 'Ada' } }],
+      null,
+      TABLE.schema,
+      'req-delete-one'
+    )
+  })
+
+  it('returns after deleting one row without waiting for trigger dispatch', async () => {
+    dbChainMockFns.returning.mockResolvedValueOnce([{ id: 'row-1', data: { name: 'Ada' } }])
+    let releaseTrigger: (() => void) | undefined
+    const triggerPending = new Promise<void>((resolve) => {
+      releaseTrigger = resolve
+    })
+    mockFireTableTrigger.mockReturnValueOnce(triggerPending)
+    const deletion = deleteRow(TABLE, 'row-1', 'req-delete-one')
+    const onDeleteSettled = vi.fn()
+    void deletion.then(onDeleteSettled)
+
+    await vi.waitFor(() => expect(mockFireTableTrigger).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+
+    try {
+      expect(onDeleteSettled).toHaveBeenCalledTimes(1)
+    } finally {
+      releaseTrigger?.()
+      await deletion
+    }
+  })
+
+  it('fires once with every committed snapshot in an ID batch', async () => {
+    dbChainMockFns.returning.mockResolvedValueOnce([
+      { id: 'row-1', data: { name: 'Ada' } },
+      { id: 'row-2', data: { name: 'Grace' } },
+    ])
+
+    await deleteRowsByIds(
+      TABLE,
+      { tableId: TABLE.id, workspaceId: TABLE.workspaceId, rowIds: ['row-1', 'row-2'] },
+      'req-delete-many'
+    )
+
+    expect(mockFireTableTrigger).toHaveBeenCalledWith(
+      TABLE.id,
+      TABLE.workspaceId,
+      TABLE.name,
+      'delete',
+      [
+        { id: 'row-1', data: { name: 'Ada' } },
+        { id: 'row-2', data: { name: 'Grace' } },
+      ],
+      null,
+      TABLE.schema,
+      'req-delete-many'
+    )
+  })
+
+  it('dispatches byte-bounded ID-delete snapshots before loading the next batch', async () => {
+    setEnv({
+      TABLE_MAX_ROW_SIZE_BYTES: TABLE_LIMITS.DELETE_SNAPSHOT_BATCH_MAX_BYTES * 2,
+    })
+    dbChainMockFns.returning
+      .mockResolvedValueOnce([{ id: 'row-1', data: { name: 'Ada' } }])
+      .mockResolvedValueOnce([{ id: 'row-2', data: { name: 'Grace' } }])
+
+    try {
+      await deleteRowsByIds(
+        TABLE,
+        { tableId: TABLE.id, workspaceId: TABLE.workspaceId, rowIds: ['row-1', 'row-2'] },
+        'req-delete-bounded'
+      )
+    } finally {
+      setEnv({ TABLE_MAX_ROW_SIZE_BYTES: undefined })
+    }
+
+    expect(mockFireTableTrigger).toHaveBeenCalledTimes(2)
+    expect(mockFireTableTrigger.mock.calls[0][4]).toEqual([{ id: 'row-1', data: { name: 'Ada' } }])
+    expect(mockFireTableTrigger.mock.calls[1][4]).toEqual([
+      { id: 'row-2', data: { name: 'Grace' } },
+    ])
+  })
+})
+
 describe('bulk update/delete limited-subset ordering', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -259,6 +376,49 @@ describe('queryRows byte budget', () => {
 
     expect(result.rows).toHaveLength(2)
     expect(result.nextCursor).toBeNull()
+  })
+
+  /**
+   * The sidecar is a second, unbounded read: its `blockErrors` are jsonb with no
+   * ceiling of its own, so the drain has to carry a byte budget rather than have
+   * one measured over an already-materialized result.
+   */
+  it('hands the run-state drain the budget its caller asked for', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+    dbChainMockFns.limit.mockResolvedValueOnce([row(1, 8), row(2, 8)])
+
+    await queryRows(
+      TABLE,
+      {
+        limit: 5,
+        includeTotal: false,
+        withExecutions: true,
+        runStateBudgetBytes: TABLE_LIMITS.MAX_ROW_RUN_STATE_BYTES,
+      },
+      'req-1'
+    )
+
+    expect(mockLoadExecutionsByRow).toHaveBeenCalledWith(expect.anything(), ['row_1', 'row_2'], {
+      budgetBytes: TABLE_LIMITS.MAX_ROW_RUN_STATE_BYTES,
+    })
+  })
+
+  /**
+   * Only the public reads publish a `413` for the sidecar. The first-party grid
+   * reads run state at five times the row limit with no such contract, so a
+   * budget there turns a large page into a hard failure where it used to render.
+   */
+  it('leaves the drain unbounded for a caller that asked for no budget', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+    dbChainMockFns.limit.mockResolvedValueOnce([row(1, 8), row(2, 8)])
+
+    await queryRows(TABLE, { limit: 5, includeTotal: false, withExecutions: true }, 'req-1')
+
+    expect(mockLoadExecutionsByRow).toHaveBeenCalledWith(
+      expect.anything(),
+      ['row_1', 'row_2'],
+      undefined
+    )
   })
 
   it('returns an entire under-budget result past the former batch safety limit', async () => {

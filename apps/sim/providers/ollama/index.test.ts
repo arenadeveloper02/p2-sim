@@ -119,7 +119,6 @@ function completion(
 function makeTool(id: string, usageControl?: 'auto' | 'force' | 'none'): ProviderToolConfig {
   return {
     id,
-    name: id,
     description: `${id} tool`,
     params: {},
     parameters: { type: 'object', properties: {}, required: [] },
@@ -149,6 +148,14 @@ describe('ollamaProvider.executeRequest', () => {
     mockCreate.mockResolvedValue(completion({ content: 'hello' }))
     mockExecuteTool.mockResolvedValue({ success: true, output: { ok: true } })
   })
+
+  it.each(['ollama/Org/CustomModel', 'OLLAMA/Org/CustomModel', 'Org/CustomModel'])(
+    'preserves the local model ID while removing only its optional namespace: %s',
+    async (model) => {
+      await ollamaProvider.executeRequest({ ...baseRequest, model })
+      expect(mockCreate.mock.calls[0][0].model).toBe('Org/CustomModel')
+    }
+  )
 
   it('assembles system, context, then history in order and forwards params', async () => {
     const result = (await ollamaProvider.executeRequest({

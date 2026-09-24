@@ -4,9 +4,10 @@
  * Framework-agnostic logging utilities for the Sim platform.
  * Provides standardized console logging with environment-aware configuration.
  */
+import { logs, SeverityNumber } from '@opentelemetry/api-logs'
 import { filterUndefined, isRecordLike } from '@sim/utils/object'
 import chalk from 'chalk'
-import { getRequestContext } from './request-context'
+import { getRequestContext, type RequestContext } from './request-context'
 
 /**
  * LogLevel enum defines the severity levels for logging
@@ -305,6 +306,31 @@ const materializeMetadata = (metadata: LoggerMetadata): LoggerMetadata => {
 }
 
 /**
+ * The request context's contribution to every log line in it. Only fields the
+ * request actually established are set, so a line outside a request, or before
+ * authentication, carries no empty keys to filter back out.
+ */
+const requestContextMetadata = (context: RequestContext): LoggerMetadata => {
+  const metadata: LoggerMetadata = { requestId: context.requestId }
+  if (context.method) metadata.method = context.method
+  if (context.path) metadata.path = context.path
+  if (context.traceId) metadata.traceId = context.traceId
+  if (context.client) {
+    metadata.surface = context.client.surface
+    if (context.client.version) metadata.clientVersion = context.client.version
+    if (context.client.name) metadata.clientName = context.client.name
+    if (context.client.agent) metadata.codingAgent = context.client.agent
+  }
+  if (context.auth) {
+    metadata.auth = context.auth.kind
+    if (context.auth.service) metadata.authService = context.auth.service
+    if (context.auth.clientId) metadata.authClientId = context.auth.clientId
+  }
+  if (context.callChain) metadata.callDepth = context.callChain.length
+  return metadata
+}
+
+/**
  * Logger class for standardized console logging
  *
  * Provides methods for logging at different severity levels
@@ -399,13 +425,9 @@ export class Logger {
 
     const reqCtx = getRequestContext()
     const effectiveMetadata = reqCtx
-      ? {
-          requestId: reqCtx.requestId,
-          method: reqCtx.method,
-          path: reqCtx.path,
-          ...this.metadata,
-        }
+      ? { ...requestContextMetadata(reqCtx), ...this.metadata }
       : this.metadata
+    emitOtelLogRecord(level, this.module, message, effectiveMetadata, args)
     const metadataEntries = Object.entries(filterUndefined(effectiveMetadata))
     const metadataStr =
       metadataEntries.length > 0
@@ -522,5 +544,65 @@ export function createLogger(module: string, config?: LoggerConfig): Logger {
   return new Logger(module, config)
 }
 
-export type { RequestContext } from './request-context'
-export { getRequestContext, runWithRequestContext } from './request-context'
+export type { RequestAuth, RequestContext, SetRequestAuthOptions } from './request-context'
+export {
+  getRequestContext,
+  runWithRequestContext,
+  setRequestAuth,
+  setRequestTraceId,
+} from './request-context'
+
+const OTEL_LOG_SEVERITY: Record<LogLevel, { number: SeverityNumber; text: string }> = {
+  [LogLevel.DEBUG]: { number: SeverityNumber.DEBUG, text: 'DEBUG' },
+  [LogLevel.INFO]: { number: SeverityNumber.INFO, text: 'INFO' },
+  [LogLevel.WARN]: { number: SeverityNumber.WARN, text: 'WARN' },
+  [LogLevel.ERROR]: { number: SeverityNumber.ERROR, text: 'ERROR' },
+}
+
+const OTEL_LOG_ARG_MAX_CHARS = 2000
+
+/**
+ * Fans every accepted log line out through the OTel Logs API. Until an
+ * application installs a global LoggerProvider (apps/sim does in
+ * instrumentation-node.ts), the api-logs global is a no-op delegate, so this
+ * costs nothing in browsers, tests, and services that do not export logs.
+ * The active trace context is attached by the SDK, which is what enables
+ * span → logs correlation in the backend. Never allowed to throw into the
+ * console write path.
+ */
+function emitOtelLogRecord(
+  level: LogLevel,
+  module: string,
+  message: string,
+  metadata: Record<string, unknown>,
+  args: unknown[]
+): void {
+  try {
+    const severity = OTEL_LOG_SEVERITY[level]
+    const attributes: Record<string, string> = { 'log.module': module }
+    for (const [key, value] of Object.entries(filterUndefined(metadata))) {
+      attributes[key] = String(value)
+    }
+    const firstError = args.find((arg) => arg instanceof Error) as Error | undefined
+    if (firstError) {
+      attributes['error.message'] = firstError.message
+      if (firstError.stack) attributes['error.stack'] = firstError.stack
+    }
+    const plainArgs = args.filter((arg) => !(arg instanceof Error))
+    if (plainArgs.length > 0) {
+      try {
+        attributes['log.args'] = JSON.stringify(plainArgs).slice(0, OTEL_LOG_ARG_MAX_CHARS)
+      } catch {
+        attributes['log.args'] = String(plainArgs).slice(0, OTEL_LOG_ARG_MAX_CHARS)
+      }
+    }
+    logs.getLogger('sim').emit({
+      severityNumber: severity.number,
+      severityText: severity.text,
+      body: message,
+      attributes,
+    })
+  } catch {
+    // Log export must never break the primary console write path.
+  }
+}

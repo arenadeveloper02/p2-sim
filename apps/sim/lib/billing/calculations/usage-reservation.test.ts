@@ -2,7 +2,9 @@
  * @vitest-environment node
  */
 import { redisConfigMockFns, resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { generateId } from '@sim/utils/id'
+import Redis from 'ioredis'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   refreshExecutionSlotExpiry,
   releaseExecutionSlot,
@@ -339,6 +341,62 @@ describe('usage-reservation', () => {
   })
 
   describe('refreshExecutionSlotExpiry', () => {
+    it.each([
+      new Error('Command timed out'),
+      Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+    ])('classifies a Redis transport failure while preserving its cause: %s', async (original) => {
+      getMock.mockRejectedValueOnce(original)
+
+      await expect(refreshExecutionSlotExpiry('exec-1', Date.now() + 60_000)).rejects.toMatchObject(
+        {
+          name: 'UsageReservationUnavailableError',
+          code: 'SERVICE_OVERLOADED',
+          cause: original,
+        }
+      )
+      expect(evalMock).not.toHaveBeenCalled()
+    })
+
+    it.each(['local', 'pointer'])('classifies a timeout extending the %s lease', async (stage) => {
+      evalMock.mockResolvedValueOnce(1).mockResolvedValueOnce(1)
+      await reserveExecutionSlot(memberParams)
+      const descriptor = String(evalMock.mock.calls[1][3])
+      vi.clearAllMocks()
+      getMock.mockResolvedValueOnce(descriptor)
+      if (stage === 'pointer') evalMock.mockResolvedValueOnce(1)
+      const original = new Error('Command timed out')
+      evalMock.mockRejectedValueOnce(original)
+
+      await expect(refreshExecutionSlotExpiry('exec-1', Date.now() + 60_000)).rejects.toMatchObject(
+        {
+          name: 'UsageReservationUnavailableError',
+          code: 'SERVICE_OVERLOADED',
+          cause: original,
+        }
+      )
+      expect(evalMock).toHaveBeenCalledTimes(stage === 'pointer' ? 2 : 1)
+    })
+
+    it.each([
+      new TypeError('invalid Redis command argument'),
+      Object.assign(new Error('NOAUTH Authentication required.'), { name: 'ReplyError' }),
+      Object.assign(
+        new Error('WRONGTYPE Operation against a key holding the wrong kind of value'),
+        {
+          name: 'ReplyError',
+        }
+      ),
+    ])(
+      'does not classify programming or server configuration failures as transient: %s',
+      async (original) => {
+        getMock.mockRejectedValueOnce(original)
+
+        await expect(refreshExecutionSlotExpiry('exec-1', Date.now() + 60_000)).rejects.toBe(
+          original
+        )
+      }
+    )
+
     it('refreshes only the locally owned slot and matching pointer', async () => {
       evalMock.mockResolvedValueOnce(1).mockResolvedValueOnce(1)
       await reserveExecutionSlot(memberParams)
@@ -469,6 +527,102 @@ describe('usage-reservation', () => {
     it('swallows release errors', async () => {
       getMock.mockRejectedValueOnce(new Error('boom'))
       await expect(releaseExecutionSlot('exec-1')).resolves.toBeUndefined()
+    })
+  })
+})
+
+const redisUrl = process.env.BILLING_USAGE_TEST_REDIS_URL
+if (redisUrl) {
+  const target = new URL(redisUrl)
+  if (
+    target.protocol !== 'redis:' ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)
+  ) {
+    throw new Error('Usage reservation integration tests require a disposable local Redis')
+  }
+}
+
+describe.runIf(Boolean(redisUrl))('pooled usage reservations with Redis', () => {
+  let redis: Redis
+  const reservations: string[] = []
+  const payer = { type: 'organization' as const, id: generateId() }
+
+  beforeAll(async () => {
+    redis = new Redis(redisUrl!, { lazyConnect: true, maxRetriesPerRequest: 0 })
+    await redis.connect()
+  })
+
+  beforeEach(() => {
+    setEnvFlags({ isHosted: true, isBillingEnabled: true })
+    redisConfigMockFns.mockGetRedisClient.mockReturnValue(redis)
+  })
+
+  afterEach(async () => {
+    await Promise.all(reservations.splice(0).map(releaseExecutionSlot))
+  })
+
+  afterAll(async () => {
+    await redis?.quit()
+  })
+
+  function params(actorUserId = generateId()) {
+    const reservationId = generateId()
+    reservations.push(reservationId)
+    return {
+      billingEntity: payer,
+      reservationId,
+      plan: 'enterprise' as const,
+      currentUsage: 0,
+      limit: 0.05,
+      member: { organizationId: payer.id, actorUserId, currentUsage: 0, limit: 0.01 },
+    }
+  }
+
+  it('shares payer headroom across 100 concurrent requests from different members', async () => {
+    const requests = Array.from({ length: 100 }, () => params())
+    const results = await Promise.all(requests.map(reserveExecutionSlot))
+    expect(results.filter((result) => result.reserved)).toHaveLength(10)
+    expect(results.filter((result) => !result.reserved)).toEqual(
+      Array.from({ length: 90 }, () => ({ reserved: false, reason: 'payer_headroom' }))
+    )
+    expect(
+      await reserveExecutionSlot({
+        ...params(),
+        billingEntity: { type: 'organization', id: generateId() },
+        member: undefined,
+      })
+    ).toEqual({ reserved: true, created: true })
+  })
+
+  it('isolates member caps inside the shared payer without consuming rejected slots', async () => {
+    const memberA = generateId()
+    const memberB = generateId()
+    const results = await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        reserveExecutionSlot(params(index < 20 ? memberA : memberB))
+      )
+    )
+    expect(results.slice(0, 20).filter((result) => result.reserved)).toHaveLength(2)
+    expect(results.slice(20).filter((result) => result.reserved)).toHaveLength(2)
+    expect(results.filter((result) => !result.reserved)).toEqual(
+      Array.from({ length: 36 }, () => ({ reserved: false, reason: 'member_headroom' }))
+    )
+    expect(await reserveExecutionSlot(params())).toEqual({ reserved: true, created: true })
+  })
+
+  it('preserves duplicate ownership and queued-worker refresh without new admission', async () => {
+    const request = params()
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => reserveExecutionSlot(request))
+    )
+    expect(results.filter((result) => result.reserved && result.created)).toHaveLength(1)
+    expect(results.every((result) => result.reserved)).toBe(true)
+    expect(await refreshExecutionSlotExpiry(request.reservationId, Date.now() + 60_000)).toBe(true)
+    await releaseExecutionSlot(request.reservationId)
+    expect(await refreshExecutionSlotExpiry(request.reservationId, Date.now() + 60_000)).toBe(false)
+    expect(await reserveExecutionSlot({ ...params(), currentUsage: 0.05 })).toEqual({
+      reserved: false,
+      reason: 'payer_headroom',
     })
   })
 })

@@ -5,6 +5,7 @@ import type { RevealedSimKeysByMessage } from '@/lib/copilot/chat/sim-key-redact
 import { captureRevealedSimKeys } from '@/lib/copilot/chat/sim-key-redaction'
 import type { SyntheticFilePreviewPayload } from '@/lib/copilot/request/session'
 import type { FilePreviewSession } from '@/lib/copilot/request/session/file-preview-session-contract'
+import type { MothershipResourceUpdate } from '@/lib/copilot/resources/types'
 import {
   createTurnModel,
   type TurnModel,
@@ -83,7 +84,8 @@ export interface StreamEventScope {
 }
 
 export interface StreamLoopDeps {
-  workspaceId: string
+  workspaceId?: string
+  organizationId?: string
   queryClient: QueryClient
   assistantId: string
   expectedGen: number | undefined
@@ -97,7 +99,7 @@ export interface StreamLoopDeps {
   setResources: Dispatch<SetStateAction<MothershipResource[]>>
   setActiveResourceId: Dispatch<SetStateAction<string | null>>
 
-  addResource: (resource: MothershipResource) => boolean
+  addResource: (resource: MothershipResourceUpdate) => boolean
   removeResource: (resourceType: MothershipResourceType, resourceId: string) => void
   startClientWorkflowTool: (id: string, name: string, args: Record<string, unknown>) => void
   startClientLocalFilesystemTool: (id: string, name: string, args: Record<string, unknown>) => void

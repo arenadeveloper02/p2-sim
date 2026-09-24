@@ -11,6 +11,12 @@ import {
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 
+/** Table side effects are not exercised here, and the real module loads the table application layer. */
+vi.mock('@/lib/copilot/request/tools/tables', () => ({
+  maybeWriteOutputToTable: vi.fn(async (_toolName, _params, result) => result),
+  maybeWriteReadCsvToTable: vi.fn(async (_toolName, _params, result) => result),
+}))
+
 vi.mock('@/lib/copilot/request/session', async () => {
   const actual = await vi.importActual<typeof import('@/lib/copilot/request/session')>(
     '@/lib/copilot/request/session'
@@ -80,6 +86,11 @@ import {
   STREAM_ENDED_WITHOUT_TERMINAL_MESSAGE,
   StreamEndedWithoutTerminalError,
 } from '@/lib/copilot/request/go/stream'
+import {
+  createProviderToolCallIdentity,
+  PROVIDER_TOOL_CALL_IDENTITY_LIMITS,
+  scopeProviderToolCallId,
+} from '@/lib/copilot/request/go/tool-call-identity'
 import { AbortReason, createEvent, hasAbortMarker } from '@/lib/copilot/request/session'
 import { RequestTraceV1Outcome, TraceCollector } from '@/lib/copilot/request/trace'
 import type { ExecutionContext, StreamingContext } from '@/lib/copilot/request/types'
@@ -143,6 +154,7 @@ function createStreamingContext(): StreamingContext {
     toolPermissions: {
       enabled: false,
       autoAllowed: new Set(),
+      autoAllowPermitted: true,
     },
   }
 }
@@ -175,22 +187,153 @@ describe('copilot go stream helpers', () => {
     vi.unstubAllGlobals()
   })
 
+  it('terminates the stream on an exhausted identity budget before forwarding later events', async () => {
+    const identity = createProviderToolCallIdentity('exhausted-identity-run')
+    identity.retainedBytes = PROVIDER_TOOL_CALL_IDENTITY_LIMITS.maxRetainedBytes
+    const context = createStreamingContext()
+    context.providerToolCallIdentity = identity
+    const onEvent = vi.fn()
+    vi.mocked(fetch).mockResolvedValueOnce(
+      createSseResponse([
+        createEvent({
+          streamId: 'identity-budget-stream',
+          cursor: '1',
+          requestId: 'identity-budget-request',
+          seq: 1,
+          type: 'tool',
+          payload: {
+            phase: 'call',
+            toolCallId: 'new-call-over-budget',
+            toolName: 'glob',
+            executor: 'client',
+            mode: 'async',
+            arguments: { path: 'files' },
+          },
+        }),
+        createEvent({
+          streamId: 'identity-budget-stream',
+          cursor: '2',
+          requestId: 'identity-budget-request',
+          seq: 2,
+          type: 'complete',
+          payload: { status: 'complete' },
+        }),
+      ])
+    )
+
+    await expect(
+      runStreamLoop('https://example.com/api/mothership', {}, context, turnScopedExecContext(), {
+        timeout: 1000,
+        onEvent,
+      })
+    ).rejects.toThrow('Provider tool call identity budget exceeded')
+    expect(onEvent).not.toHaveBeenCalled()
+    expect(context.completionStatus).toBeUndefined()
+    expect(context.errors).toContain('Provider tool call identity budget exceeded')
+  })
+
+  it('namespaces repeated provider IDs before forwarding and checkpoint handling', async () => {
+    for (const runId of ['stream-identity-run-1', 'stream-identity-run-2']) {
+      const identity = createProviderToolCallIdentity(runId)
+      const context = createStreamingContext()
+      context.providerToolCallIdentity = identity
+      const onEvent = vi.fn()
+      vi.mocked(fetch).mockResolvedValueOnce(
+        createSseResponse([
+          createEvent({
+            streamId: 'identity-stream',
+            cursor: '1',
+            requestId: 'identity-request',
+            seq: 1,
+            type: 'tool',
+            payload: {
+              phase: 'call',
+              toolCallId: 'shared-provider-call',
+              toolName: 'glob',
+              executor: 'client',
+              mode: 'async',
+              arguments: { path: 'files', toolCallId: 'unchanged-user-argument' },
+            },
+          }),
+          createEvent({
+            streamId: 'identity-stream',
+            cursor: '2',
+            requestId: 'identity-request',
+            seq: 2,
+            type: 'run',
+            payload: {
+              kind: 'checkpoint_pause',
+              checkpointId: 'identity-checkpoint',
+              executionId: 'identity-execution',
+              runId: 'provider-run',
+              pendingToolCallIds: ['shared-provider-call'],
+            },
+          }),
+        ])
+      )
+      await runStreamLoop(
+        'https://example.com/api/mothership',
+        {},
+        context,
+        turnScopedExecContext(),
+        { timeout: 1000, onEvent, onBeforeDispatch: (event) => event.type === 'tool' }
+      )
+
+      const canonicalId = scopeProviderToolCallId('shared-provider-call', identity)
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'tool',
+          payload: expect.objectContaining({
+            toolCallId: canonicalId,
+            arguments: { path: 'files', toolCallId: 'unchanged-user-argument' },
+          }),
+        })
+      )
+      expect(context.awaitingAsyncContinuation?.pendingToolCallIds).toEqual([canonicalId])
+    }
+  })
+
   it('decodes complete escapes and stops at incomplete unicode escapes', () => {
     expect(decodeJsonStringPrefix('hello\\nworld')).toBe('hello\nworld')
     expect(decodeJsonStringPrefix('emoji \\u263A')).toBe('emoji ☺')
     expect(decodeJsonStringPrefix('partial \\u26')).toBe('partial ')
   })
 
-  it('extracts the streamed edit_content prefix from partial JSON', () => {
+  it('extracts the streamed apply_file_edit prefix from partial JSON', () => {
     expect(extractEditContent('{"content":"hello\\nwor')).toBe('hello\nwor')
     expect(extractEditContent('{"content":"tab\\tvalue"}')).toBe('tab\tvalue')
   })
 
-  it('emits full snapshots for append (sidebar viewer uses replace mode; no delta merge)', () => {
+  /**
+   * Append extends its own text, so it deltas like `update` does.
+   *
+   * It forced a snapshot per emission until the only consumer that could not merge a
+   * delta was gone — `apply-file-preview-phase.ts` has accumulated them since #4923.
+   * Because an append preview is `existingContent + streamed`, a snapshot per chunk
+   * re-sent the whole file on every streamed token, which is `O(file x tokens)` into
+   * the stream buffer: one 250 KB file cost gigabytes of Redis.
+   */
+  it('emits deltas for append when the preview extends the previous text', () => {
     expect(buildPreviewContentUpdate('hello', 'hello world', 100, 200, 'append')).toEqual({
-      content: 'hello world',
+      content: ' world',
+      contentMode: 'delta',
+      lastSnapshotAt: 100,
+    })
+  })
+
+  it('still snapshots an append whose base changed underneath it', () => {
+    expect(buildPreviewContentUpdate('hello', 'HELLO world', 100, 200, 'append')).toEqual({
+      content: 'HELLO world',
       contentMode: 'snapshot',
       lastSnapshotAt: 200,
+    })
+  })
+
+  it('still checkpoints an append with a full snapshot on the interval', () => {
+    expect(buildPreviewContentUpdate('hello', 'hello world', 0, 1_000, 'append')).toEqual({
+      content: 'hello world',
+      contentMode: 'snapshot',
+      lastSnapshotAt: 1_000,
     })
   })
 
@@ -216,7 +359,7 @@ describe('copilot go stream helpers', () => {
     })
   })
 
-  it('hydrates path-based workspace_file edits into file preview events before edit_content streams', async () => {
+  it('hydrates path-based prepare_file_edit edits into file preview events before apply_file_edit streams', async () => {
     listAllWorkspaceFilesMock.mockResolvedValue({
       files: [{ id: 'file-1', name: 'notes.md', folderPath: null }],
     })
@@ -229,7 +372,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'workspace-file-path-1',
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.call,
@@ -248,7 +391,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'workspace-file-path-1',
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.result,
@@ -267,7 +410,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'edit-content-path-1',
-        toolName: 'edit_content',
+        toolName: 'apply_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.args_delta,
@@ -282,7 +425,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'edit-content-path-1',
-        toolName: 'edit_content',
+        toolName: 'apply_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.result,
@@ -378,7 +521,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'workspace-file-alias-1',
-        toolName: 'workspace_file',
+        toolName: 'prepare_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.call,
@@ -397,7 +540,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'edit-content-alias-1',
-        toolName: 'edit_content',
+        toolName: 'apply_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.args_delta,
@@ -412,7 +555,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'edit-content-alias-1',
-        toolName: 'edit_content',
+        toolName: 'apply_file_edit',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.result,
@@ -492,7 +635,7 @@ describe('copilot go stream helpers', () => {
       type: MothershipStreamV1EventType.tool,
       payload: {
         toolCallId: 'tool-result-dedupe',
-        toolName: 'search_online',
+        toolName: 'web_search',
         executor: MothershipStreamV1ToolExecutor.sim,
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.result,
@@ -541,7 +684,7 @@ describe('copilot go stream helpers', () => {
     expect(context.toolCalls.get('tool-result-dedupe')).toEqual(
       expect.objectContaining({
         id: 'tool-result-dedupe',
-        name: 'search_online',
+        name: 'web_search',
         status: MothershipStreamV1ToolOutcome.success,
         result: { success: true, output: { value: 'ok' } },
       })
@@ -935,5 +1078,71 @@ describe('copilot go stream helpers', () => {
     expect(subagentBlock?.spanId).toBe('S2')
     expect(subagentBlock?.parentSpanId).toBe('S1')
     expect(subagentBlock?.parentToolCallId).toBe('tc-deploy-inner')
+  })
+
+  it('backfills the display name when only the second subagent start carries it', async () => {
+    const scope = {
+      lane: 'subagent' as const,
+      agentId: 'research',
+      parentToolCallId: 'tc-research',
+      spanId: 'S3',
+      parentSpanId: 'S1',
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(
+      createSseResponse([
+        // Dispatch-time start: fires before the trigger args stream, so no name.
+        createEvent({
+          streamId: 'stream-1',
+          cursor: '1',
+          seq: 1,
+          requestId: 'req-1',
+          type: MothershipStreamV1EventType.span,
+          scope,
+          payload: {
+            kind: 'subagent',
+            event: 'start',
+            agent: 'research',
+            data: { tool_call_id: 'tc-research' },
+          },
+        }),
+        // Phase-3 start re-announces the lane WITH the orchestrator-chosen name.
+        createEvent({
+          streamId: 'stream-1',
+          cursor: '2',
+          seq: 2,
+          requestId: 'req-1',
+          type: MothershipStreamV1EventType.span,
+          scope,
+          payload: {
+            kind: 'subagent',
+            event: 'start',
+            agent: 'research',
+            data: { tool_call_id: 'tc-research', name: 'Pricing research' },
+          },
+        }),
+        createEvent({
+          streamId: 'stream-1',
+          cursor: '3',
+          seq: 3,
+          requestId: 'req-1',
+          type: MothershipStreamV1EventType.complete,
+          payload: { status: MothershipStreamV1CompletionStatus.complete },
+        }),
+      ])
+    )
+
+    const context = createStreamingContext()
+    const execContext: ExecutionContext = {
+      userId: 'user-1',
+      workflowId: 'workflow-1',
+    }
+
+    await runStreamLoop('https://example.com/mothership/stream', {}, context, execContext, {
+      timeout: 1000,
+    })
+
+    const subagentBlocks = context.contentBlocks.filter((block) => block.type === 'subagent')
+    expect(subagentBlocks).toHaveLength(1)
+    expect(subagentBlocks[0]?.subagentName).toBe('Pricing research')
   })
 })

@@ -1,5 +1,5 @@
 /**
- * @vitest-environment jsdom
+ * @vitest-environment node
  *
  * HTTP Request Tool Unit Tests
  *
@@ -11,6 +11,7 @@ import { ToolTester } from '@sim/testing/builders'
 import { mockHttpResponses } from '@sim/testing/factories'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requestTool } from '@/tools/http/request'
+import { processUrl } from '@/tools/http/utils'
 
 process.env.VITEST = 'true'
 
@@ -67,6 +68,121 @@ describe('HTTP Request Tool', () => {
       expect(url.includes('name')).toBe(true)
       expect(url.includes('special')).toBe(true)
       expect(url.includes('chars')).toBe(true)
+    })
+
+    it.concurrent('substitutes path parameters only by their whole name', () => {
+      expect(processUrl('https://www.google.com', { '': '' })).toBe('https://www.google.com')
+      expect(processUrl('https://api.example.com:8443/users/:id', { '8443': 'x', id: '42' })).toBe(
+        'https://api.example.com:8443/users/42'
+      )
+      expect(processUrl('https://api.example.com/users/:idx/:id', { id: '1', idx: '2' })).toBe(
+        'https://api.example.com/users/2/1'
+      )
+      expect(processUrl('https://api.example.com/users/:id-profile', { id: '7' })).toBe(
+        'https://api.example.com/users/7-profile'
+      )
+      expect(processUrl('https://api.example.com/users/:user-id', { 'user-id': '9' })).toBe(
+        'https://api.example.com/users/9'
+      )
+      expect(processUrl('https://api.example.com/users/:id', { id: '$&' })).toBe(
+        'https://api.example.com/users/%24%26'
+      )
+      expect(processUrl('https://api.example.com/users/:user.name', { 'user.name': 'ada' })).toBe(
+        'https://api.example.com/users/ada'
+      )
+      expect(processUrl('https://api.example.com/v1/:$ref', { $ref: 'x' })).toBe(
+        'https://api.example.com/v1/x'
+      )
+      expect(processUrl('https://api.example.com/users/:id', { '/': 'x', '1': 'y' })).toBe(
+        'https://api.example.com/users/:id'
+      )
+      expect(
+        processUrl('https://api.example.com/:user-id/:user', { user: 'alice', 'user-id': '42' })
+      ).toBe('https://api.example.com/42/alice')
+      expect(
+        processUrl('https://api.example.com/:user.name', { user: 'alice', 'user.name': 'ada' })
+      ).toBe('https://api.example.com/ada')
+      expect(processUrl('https://api.example.com/:é/:éa', { é: '42', éa: '7' })).toBe(
+        'https://api.example.com/42/7'
+      )
+    })
+
+    it.concurrent('canonicalizes first-party API calls before the apex redirect', () => {
+      expect(
+        processUrl('https://sim.ai/api/v2/workflows', undefined, [
+          { cells: { Key: 'limit', Value: '10' } },
+        ])
+      ).toBe('https://www.sim.ai/api/v2/workflows?limit=10')
+      expect(processUrl('https://sim.ai/pricing')).toBe('https://sim.ai/pricing')
+      expect(processUrl('https://www.sim.ai/api/v2/workflows')).toBe(
+        'https://www.sim.ai/api/v2/workflows'
+      )
+      expect(processUrl('https://sim.ai:8443/api/v2/workflows')).toBe(
+        'https://sim.ai:8443/api/v2/workflows'
+      )
+      expect(processUrl('https://staging.sim.ai/api/v2/workflows')).toBe(
+        'https://www.staging.sim.ai/api/v2/workflows'
+      )
+      expect(processUrl('https://dev.sim.ai/api/v2/workflows')).toBe(
+        'https://www.dev.sim.ai/api/v2/workflows'
+      )
+      expect(processUrl('https://preview.dev.sim.ai/api/v2/workflows')).toBe(
+        'https://preview.dev.sim.ai/api/v2/workflows'
+      )
+    })
+  })
+
+  describe('Redirect Policy', () => {
+    it.concurrent('keeps missing policy fields on legacy behavior', () => {
+      expect(requestTool.request.redirectPolicy?.({ url: 'https://api.example.com' })).toEqual({
+        mode: 'legacy',
+        sendCredentialsOnCrossOriginRedirect: true,
+        sensitiveHeaders: [],
+      })
+    })
+
+    it.concurrent('uses the standard safe policy for newly versioned blocks', () => {
+      expect(
+        requestTool.request.redirectPolicy?.({
+          url: 'https://api.example.com',
+          redirectPolicyVersion: 'standard-v1',
+          sendCredentialsOnCrossOriginRedirect: false,
+          headers: {
+            Authorization: 'Bearer token',
+            'X-Api-Key': 'key',
+            'X-Trace': 'trace',
+          },
+        })
+      ).toEqual({
+        mode: 'standard',
+        sendCredentialsOnCrossOriginRedirect: false,
+        sensitiveHeaders: ['Authorization', 'X-Api-Key'],
+      })
+    })
+
+    it.concurrent('keeps an existing block legacy when credential forwarding is enabled', () => {
+      expect(
+        requestTool.request.redirectPolicy?.({
+          url: 'https://api.example.com',
+          sendCredentialsOnCrossOriginRedirect: true,
+        })
+      ).toMatchObject({
+        mode: 'legacy',
+        sendCredentialsOnCrossOriginRedirect: true,
+      })
+    })
+
+    it.concurrent('uses the standard policy with credential forwarding on by default', () => {
+      expect(
+        requestTool.request.redirectPolicy?.({
+          url: 'https://api.example.com',
+          redirectPolicyVersion: 'standard-v1',
+          sendCredentialsOnCrossOriginRedirect: true,
+        })
+      ).toMatchObject({
+        mode: 'standard',
+        sendCredentialsOnCrossOriginRedirect: true,
+      })
     })
   })
 

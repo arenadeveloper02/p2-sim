@@ -31,7 +31,8 @@ const { mockProviders } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/providers/models', () => ({
+vi.mock('@/providers/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/providers/models')>()),
   getProviderFileAttachment: vi
     .fn()
     .mockReturnValue({ maxBytes: 10 * 1024 * 1024, strategy: 'inline' }),
@@ -67,13 +68,10 @@ vi.mock('@/lib/oauth/utils', () => ({
   getScopesForService: vi.fn(() => []),
 }))
 
-import type { SubBlockConfig } from '@/blocks/types'
 import {
   BUILT_IN_TOOL_TYPES,
   getApiKeyCondition,
-  getDependsOnFields,
   getSerializedModelProviderId,
-  getSubBlocksDependingOnChange,
   parseOptionalBooleanInput,
   parseOptionalJsonInput,
   parseOptionalNumberInput,
@@ -84,6 +82,11 @@ describe('BUILT_IN_TOOL_TYPES', () => {
   it('classifies the current File block instead of the legacy File block', () => {
     expect(BUILT_IN_TOOL_TYPES.has('file_v5')).toBe(true)
     expect(BUILT_IN_TOOL_TYPES.has('file')).toBe(false)
+  })
+
+  it('classifies the current Table block instead of the legacy Table block', () => {
+    expect(BUILT_IN_TOOL_TYPES.has('table_v2')).toBe(true)
+    expect(BUILT_IN_TOOL_TYPES.has('table')).toBe(false)
   })
 })
 
@@ -178,6 +181,16 @@ describe('getApiKeyCondition / shouldRequireApiKeyForModel', () => {
   })
 
   describe('provider store lookup (client-side)', () => {
+    it('requires the cloud key even when a local discovered name uses its namespace', () => {
+      mockProviders.value.ollama.models = ['azure/MyDeployment', 'ollama-cloud/MyModel']
+      expect(evaluateCondition('azure/MyDeployment')).toBe(true)
+      expect(evaluateCondition('ollama-cloud/MyModel')).toBe(true)
+    })
+
+    it('does not require an API key for an undiscovered namespaced Ollama model', () => {
+      expect(evaluateCondition('OLLAMA/Org/CustomModel')).toBe(false)
+    })
+
     it('does not require API key when model is in the Ollama store bucket', () => {
       mockProviders.value.ollama.models = ['llama3:latest', 'mistral:latest']
       expect(evaluateCondition('llama3:latest')).toBe(false)
@@ -374,96 +387,6 @@ describe('parseOptionalBooleanInput', () => {
   it('returns undefined for unrecognized string values', () => {
     expect(parseOptionalBooleanInput('yes')).toBeUndefined()
     expect(parseOptionalBooleanInput('no')).toBeUndefined()
-  })
-})
-
-describe('getDependsOnFields', () => {
-  it('returns an empty array when dependsOn is unset', () => {
-    expect(getDependsOnFields(undefined)).toEqual([])
-  })
-
-  it('returns array dependencies unchanged', () => {
-    expect(getDependsOnFields(['credential', 'projectId'])).toEqual(['credential', 'projectId'])
-  })
-
-  it('flattens all and any dependencies', () => {
-    expect(getDependsOnFields({ all: ['credential'], any: ['teamId', 'manualTeamId'] })).toEqual([
-      'credential',
-      'teamId',
-      'manualTeamId',
-    ])
-  })
-})
-
-describe('getSubBlocksDependingOnChange', () => {
-  it('finds direct dependents of a changed subblock', () => {
-    const subBlocks: SubBlockConfig[] = [
-      { id: 'provider', title: 'Provider', type: 'dropdown' },
-      { id: 'model', title: 'Model', type: 'dropdown', dependsOn: ['provider'] },
-      { id: 'prompt', title: 'Prompt', type: 'long-input' },
-    ]
-
-    expect(
-      getSubBlocksDependingOnChange(subBlocks, 'provider').map((subBlock) => subBlock.id)
-    ).toEqual(['model'])
-  })
-
-  it('matches dependents through canonical basic and advanced siblings', () => {
-    const subBlocks: SubBlockConfig[] = [
-      {
-        id: 'channel',
-        title: 'Channel',
-        type: 'channel-selector',
-        canonicalParamId: 'channelId',
-        mode: 'basic',
-      },
-      {
-        id: 'manualChannel',
-        title: 'Channel ID',
-        type: 'short-input',
-        canonicalParamId: 'channelId',
-        mode: 'advanced',
-      },
-      {
-        id: 'messageId',
-        title: 'Message ID',
-        type: 'short-input',
-        dependsOn: ['channelId'],
-      },
-      {
-        id: 'threadTs',
-        title: 'Thread Timestamp',
-        type: 'short-input',
-        dependsOn: ['otherField'],
-      },
-    ]
-
-    expect(
-      getSubBlocksDependingOnChange(subBlocks, 'manualChannel').map((subBlock) => subBlock.id)
-    ).toEqual(['messageId'])
-    expect(
-      getSubBlocksDependingOnChange(subBlocks, 'channel').map((subBlock) => subBlock.id)
-    ).toEqual(['messageId'])
-  })
-
-  it('matches object-form dependencies when any listed dependency changes', () => {
-    const subBlocks: SubBlockConfig[] = [
-      { id: 'credential', title: 'Credential', type: 'oauth-input' },
-      { id: 'teamId', title: 'Team', type: 'short-input' },
-      {
-        id: 'projectId',
-        title: 'Project',
-        type: 'short-input',
-        dependsOn: { all: ['credential'], any: ['teamId'] },
-      },
-    ]
-
-    expect(
-      getSubBlocksDependingOnChange(subBlocks, 'credential').map((subBlock) => subBlock.id)
-    ).toEqual(['projectId'])
-    expect(
-      getSubBlocksDependingOnChange(subBlocks, 'teamId').map((subBlock) => subBlock.id)
-    ).toEqual(['projectId'])
   })
 })
 

@@ -18,8 +18,13 @@ const API_ENDPOINTS = {
  * @see layout.tsx for pre-hydration script that reads localStorage
  */
 
-/** Inset gap in pixels between the viewport edge and the content window */
-export const CONTENT_WINDOW_GAP = 8
+/**
+ * Inset in pixels between the viewport edge and the content window. Zero: the
+ * pane sits flush against the viewport and meets the sidebar on a hairline
+ * divider. Kept as a named constant because the panel, terminal, and floating
+ * window geometry all measure from it.
+ */
+export const CONTENT_WINDOW_GAP = 0
 
 /** Sidebar width constraints */
 export const SIDEBAR_WIDTH = {
