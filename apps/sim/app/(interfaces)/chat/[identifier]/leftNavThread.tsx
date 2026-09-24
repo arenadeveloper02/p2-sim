@@ -23,7 +23,6 @@ import {
   ReRunNavIcon,
 } from '@/app/(interfaces)/chat/[identifier]/sidebar-nav-icons'
 import {
-  DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_DIVIDER,
   DEPLOYED_CHAT_SIDEBAR_BORDER,
   DEPLOYED_CHAT_TEXT_SUBTLE,
@@ -90,17 +89,15 @@ function sidebarRowIconClass(isActive: boolean) {
     // Pulls the icon left so it lines up with the logo (row padding otherwise over-indents it).
     '-ml-1.5 size-6 shrink-0',
     isActive
-      ? 'text-[var(--color-ds-text-link-hover,#155CBA)]'
-      : 'text-[var(--color-ds-icon-default,#575A66)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+      ? 'text-[var(--text-primary)]'
+      : 'text-[var(--text-icon)] group-hover:text-[var(--text-primary)]'
   )
 }
 
 function sidebarRowLabelClass(isActive: boolean) {
   return cn(
     'truncate text-sm',
-    isActive
-      ? 'font-medium text-[var(--color-ds-text-link-hover,#155CBA)]'
-      : 'font-normal text-[var(--color-ds-text-primary,#2C2D33)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+    isActive ? 'font-medium text-[var(--text-primary)]' : 'font-normal text-[var(--text-primary)]'
   )
 }
 
@@ -110,7 +107,7 @@ function sidebarRowLabelClass(isActive: boolean) {
  * to fall back to dark grey on a dark surface until hover.
  */
 const THREAD_MENU_ITEM_CLASS =
-  'h-9 gap-2.5 px-3 text-sm font-normal text-[var(--color-ds-text-primary,#2C2D33)] focus:bg-[var(--color-ds-brand-surface)] data-[highlighted]:bg-[var(--color-ds-brand-surface)] data-[highlighted]:text-[var(--color-ds-text-link-hover,#155CBA)] [&_svg]:size-4 [&_svg]:text-current'
+  'h-9 gap-2.5 px-3 text-sm font-normal text-[var(--text-primary)] focus:bg-[var(--surface-hover)] data-[highlighted]:bg-[var(--surface-hover)] data-[highlighted]:text-[var(--text-primary)] [&_svg]:size-[14px] [&_svg]:text-[var(--text-icon)]'
 
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
@@ -127,12 +124,11 @@ interface SidebarShellProps {
 
 function SidebarShell({ collapsed = false, children }: SidebarShellProps) {
   return (
-    <div className='flex h-full shrink-0 p-2' style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}>
+    <div className='deployed-chat-surface flex h-full shrink-0 p-2'>
       <div
-        className={sidebarPanelClass(collapsed)}
+        className={cn(sidebarPanelClass(collapsed), 'deployed-chat-surface')}
         style={{
           borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER,
-          backgroundColor: DEPLOYED_CHAT_CANVAS_BG,
         }}
       >
         {children}
@@ -150,8 +146,8 @@ interface SidebarToggleButtonProps {
  */
 function sidebarSoftIconClass() {
   return cn(
-    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[var(--color-ds-brand-surface,#F3F8FE)] text-[var(--color-ds-icon-default,#575A66)] transition-colors',
-    'group-hover:bg-[var(--color-ds-surface-raised)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+    'inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-icon)] transition-colors',
+    'group-hover:bg-[var(--surface-hover)] group-hover:text-[var(--text-primary)]'
   )
 }
 

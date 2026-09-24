@@ -187,11 +187,16 @@
   --color-ds-brand-hover: var(--color-ds-blue-700);
   --color-ds-brand-pressed: var(--color-ds-blue-800);
   --color-ds-brand-surface: var(--color-ds-blue-50);
-  /** Page canvas. Light uses the Arena brand wash; dark follows the app background. */
-  --color-ds-canvas: var(--color-ds-brand-surface);
-  --color-ds-input-glow: var(--color-ds-blue-200);
-  /** User prompt and hovered or active thread. Light stays raised; dark lifts above the canvas. */
-  --color-ds-indication: var(--color-ds-surface-raised);
+  /** Page canvas. Matches mothership chat (`--bg`) in both themes. */
+  --color-ds-canvas: var(--bg);
+  --color-ds-input-glow: transparent;
+  /** User prompt and hovered or active thread. Same fill as mothership user bubbles. */
+  --color-ds-indication: var(--surface-5);
+  /** Send control. Light is the mothership charcoal circle; dark flips in `.dark .deployed-chat`. */
+  --deployed-send-bg: #383838;
+  --deployed-send-bg-hover: #575757;
+  --deployed-send-fg: #ffffff;
+  --deployed-send-disabled: #808080;
 
   /* â”€â”€ Interactive (buttons, links, controls) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
@@ -463,8 +468,8 @@
   --surface-1: var(--color-ds-surface-raised);
   --surface-2: var(--color-ds-surface-subtle);
   --surface-3: var(--color-ds-grey-200);
-  --surface-5: var(--color-ds-surface-subtle);
-  --surface-hover: var(--color-ds-brand-surface);
+  --surface-5: #f3f3f3;
+  --surface-hover: #f2f2f2;
   --selection: var(--color-ds-brand-default);
   --landing-bg: var(--color-ds-surface-page);
   --landing-bg-elevated: var(--color-ds-surface-raised);
@@ -476,7 +481,8 @@
  * Page-shell paint only. Portaled menus/popovers also use `.deployed-chat` for
  * tokens, but must not inherit this canvas fill or they look transparent/odd.
  */
-.deployed-chat-root {
+.deployed-chat-root,
+.deployed-chat-surface {
   color: var(--color-ds-text-primary);
   background-color: var(--color-ds-canvas);
   color-scheme: light;
@@ -487,14 +493,19 @@
  * (`html.dark` surfaces from globals.css).
  */
 .dark .deployed-chat {
-  --color-ds-canvas: #1b1b1b;
-  --color-ds-surface-page: #1b1b1b;
+  --color-ds-canvas: var(--bg);
+  --color-ds-surface-page: var(--bg);
   --color-ds-surface-subtle: #232323;
   --color-ds-surface-raised: #1e1e1e;
   --color-ds-brand-surface: #262626;
   --color-ds-blue-50: #262626;
   --color-ds-blue-200: #3d3d3d;
-  --color-ds-indication: #3a3a3a;
+  --color-ds-indication: var(--surface-5);
+  --surface-5: #363636;
+  --surface-hover: #262626;
+  --deployed-send-bg: #e0e0e0;
+  --deployed-send-bg-hover: #cfcfcf;
+  --deployed-send-fg: #000000;
   --color-ds-input-glow: transparent;
   --color-ds-text-primary: #e6e6e6;
   --color-ds-text-secondary: #cccccc;
@@ -515,10 +526,35 @@
   --color-ds-chart-tooltip-text: #e6e6e6;
 }
 
-.dark .deployed-chat-root {
+.dark .deployed-chat-root,
+.dark .deployed-chat-surface {
   color-scheme: dark;
   color: var(--color-ds-text-primary);
-  background-color: var(--color-ds-canvas);
+  background-color: var(--bg);
+}
+
+.deployed-chat .deployed-chat-input-shell {
+  background: var(--white);
+  border: 1px solid var(--border-1);
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.dark .deployed-chat .deployed-chat-input-shell {
+  background: var(--surface-4);
+}
+
+.deployed-chat .deployed-send-button {
+  background: var(--deployed-send-bg);
+  color: var(--deployed-send-fg);
+}
+
+.deployed-chat .deployed-send-button:hover:not(:disabled) {
+  background: var(--deployed-send-bg-hover);
+}
+
+.deployed-chat .deployed-send-button:disabled {
+  background: var(--deployed-send-disabled);
 }
 
 /* =============================================================================

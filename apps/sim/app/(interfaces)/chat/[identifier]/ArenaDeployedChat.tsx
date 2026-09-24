@@ -31,7 +31,6 @@ import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/messa
 import {
   CHAT_ERROR_MESSAGES,
   CHAT_REQUEST_TIMEOUT_MS,
-  DEPLOYED_CHAT_CANVAS_GRADIENT,
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_PLACEHOLDER,
 } from '@/app/(interfaces)/chat/constants'
@@ -1481,10 +1480,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   return (
     <ToastProvider>
-      <div
-        className='fixed inset-0 z-[100] flex'
-        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-      >
+      <div className='deployed-chat-surface fixed inset-0 z-[100] flex'>
         <div className='hidden h-full shrink-0 md:flex'>
           <LeftNavThread
             threads={threads as ThreadRecord[]}
@@ -1544,10 +1540,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           />
         )}
 
-        <div
-          className='relative flex min-h-0 min-w-0 flex-1 flex-col'
-          style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-        >
+        <div className='deployed-chat-surface relative flex min-h-0 min-w-0 flex-1 flex-col'>
           <div className='relative flex min-h-0 flex-1'>
             {isHistoryLoading && (
               <div

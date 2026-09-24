@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@sim/emcn'
-import { DEPLOYED_CHAT_DIVIDER, DEPLOYED_CHAT_TEXT_BODY } from '@/app/(interfaces)/chat/constants'
+import { DEPLOYED_CHAT_TEXT_BODY } from '@/app/(interfaces)/chat/constants'
 import {
   parseWelcomeSegments,
   type WelcomeSegment,
@@ -90,11 +90,9 @@ export function WelcomeMessageWithCtas({
                   key={`w-query-${index}-${queryIndex}`}
                   type='button'
                   className={cn(
-                    'w-fit max-w-full cursor-pointer rounded-lg border bg-[var(--color-ds-surface-raised)] px-3 py-1.5 text-left font-medium text-[14px] leading-[21px] transition-colors',
-                    'text-[var(--color-ds-text-primary,#2C2D33)]',
-                    'hover:bg-[var(--color-ds-brand-surface,#F3F8FE)] hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+                    'w-fit max-w-full cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5 text-left font-[family-name:var(--font-inter)] font-medium text-[var(--text-primary)] text-small leading-[21px] transition-colors',
+                    'hover:bg-[var(--surface-hover)]'
                   )}
-                  style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
                   onClick={() => onQueryClick?.(query)}
                   title='Run this query'
                 >

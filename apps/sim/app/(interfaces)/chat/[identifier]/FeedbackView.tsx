@@ -108,7 +108,7 @@ export function FeedbackView({
 }: FeedbackViewProps) {
   if (isLoading) {
     return (
-      <div className='flex h-full w-full items-center justify-center bg-[var(--color-ds-brand-surface)]'>
+      <div className='flex h-full w-full items-center justify-center bg-[var(--bg)]'>
         <div className='text-[var(--color-ds-text-secondary)] text-sm'>Loading feedback...</div>
       </div>
     )
@@ -116,7 +116,7 @@ export function FeedbackView({
 
   if (error) {
     return (
-      <div className='flex h-full w-full items-center justify-center bg-[var(--color-ds-brand-surface)]'>
+      <div className='flex h-full w-full items-center justify-center bg-[var(--bg)]'>
         <div className='text-[var(--color-ds-status-error-default)] text-sm'>{error}</div>
       </div>
     )
@@ -125,7 +125,7 @@ export function FeedbackView({
   return (
     <div className='flex h-full w-full flex-col overflow-hidden'>
       {/* Header */}
-      <div className='flex items-center gap-4 border-[var(--color-ds-border-default)] border-b bg-[var(--color-ds-brand-surface)] px-6 py-4'>
+      <div className='flex items-center gap-4 border-[var(--color-ds-border-default)] border-b bg-[var(--bg)] px-6 py-4'>
         <Button variant='ghost' size='icon' className='h-8 w-8' onClick={onBack}>
           <ArrowLeft className='h-4 w-4' />
         </Button>
@@ -133,7 +133,7 @@ export function FeedbackView({
       </div>
 
       {/* Content */}
-      <div className='flex-1 overflow-y-auto bg-[var(--color-ds-brand-surface)] px-6 py-6'>
+      <div className='flex-1 overflow-y-auto bg-[var(--bg)] px-6 py-6'>
         <Tooltip.Provider>
           <div className='mx-auto max-w-7xl space-y-6'>
             {feedbackData.length === 0 ? (
@@ -176,7 +176,7 @@ export function FeedbackView({
                         <div className='mb-2 font-semibold text-[var(--color-ds-text-secondary)] text-sm'>
                           Prompt
                         </div>
-                        <div className='rounded-md bg-[var(--color-ds-brand-surface)] px-4 py-3'>
+                        <div className='rounded-[16px] bg-[var(--surface-5)] px-4 py-3'>
                           <div className='text-[var(--color-ds-text-primary)] text-sm'>
                             <MarkdownRenderer content={prompt} />
                           </div>
@@ -190,7 +190,7 @@ export function FeedbackView({
                         <div className='mb-2 font-semibold text-[var(--color-ds-text-secondary)] text-sm'>
                           Response
                         </div>
-                        <div className='rounded-md bg-[var(--color-ds-brand-surface)] px-4 py-3'>
+                        <div className='rounded-[16px] bg-[var(--surface-5)] px-4 py-3'>
                           <div className='text-[var(--color-ds-text-primary)] text-sm'>
                             <MarkdownRenderer content={response} />
                           </div>
@@ -248,7 +248,7 @@ export function FeedbackView({
                               </span>
                             ))}
                             {comment && (
-                              <div className='mt-2 w-full rounded-md bg-[var(--color-ds-brand-surface)] px-4 py-2'>
+                              <div className='mt-2 w-full rounded-[16px] bg-[var(--surface-5)] px-4 py-2'>
                                 <div className='text-[var(--color-ds-text-secondary)] text-sm'>
                                   <MarkdownRenderer content={comment} />
                                 </div>

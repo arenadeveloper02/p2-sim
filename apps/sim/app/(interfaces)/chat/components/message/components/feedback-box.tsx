@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Checkbox, ChipTextarea, cn } from '@sim/emcn'
-import { X } from 'lucide-react'
-import { messageActionIconButtonClass } from '@/app/(interfaces)/chat/components/message/components/message-action-icons'
 import {
-  DEPLOYED_CHAT_TEXT_BODY,
-  DEPLOYED_CHAT_TEXT_DISPLAY,
-  DEPLOYED_CHAT_TEXT_MUTED,
-} from '@/app/(interfaces)/chat/constants'
+  Checkbox,
+  ChipModal,
+  ChipModalBody,
+  ChipModalField,
+  ChipModalFooter,
+  ChipModalHeader,
+} from '@sim/emcn'
 
 export interface FeedbackBoxProps {
   isOpen?: boolean
@@ -38,13 +38,13 @@ const INITIAL_FEEDBACK: FeedbackData = {
   comment: '',
 }
 
-/** Tints the checkbox's checked state with the Arena brand blue instead of emcn's default dark fill. */
-function feedbackCheckboxClass() {
-  return cn(
-    'data-[state=checked]:!border-[var(--color-ds-brand-default,#1A73E8)]',
-    'data-[state=checked]:!bg-[var(--color-ds-brand-default,#1A73E8)]'
-  )
-}
+const DISLIKE_OPTIONS: Array<{ id: FeedbackCheckboxField; label: string }> = [
+  { id: 'tooLong', label: 'Too long' },
+  { id: 'tooShort', label: 'Too short' },
+  { id: 'outOfDate', label: 'Out of date' },
+  { id: 'inaccurate', label: 'Inaccurate' },
+  { id: 'incomplete', label: 'Incomplete' },
+]
 
 interface FeedbackOptionProps {
   id: FeedbackCheckboxField
@@ -60,12 +60,10 @@ function FeedbackOption({ id, label, checked, onCheckedChange }: FeedbackOptionP
         id={id}
         checked={checked}
         onCheckedChange={(value) => onCheckedChange(value === true)}
-        className={feedbackCheckboxClass()}
       />
       <label
         htmlFor={id}
-        className='cursor-pointer font-normal text-[14px]'
-        style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+        className='cursor-pointer font-[family-name:var(--font-inter)] text-[var(--text-primary)] text-small'
       >
         {label}
       </label>
@@ -74,7 +72,7 @@ function FeedbackOption({ id, label, checked, onCheckedChange }: FeedbackOptionP
 }
 
 export function FeedbackBox({
-  isOpen,
+  isOpen = false,
   onClose,
   onSubmit,
   currentExecutionId,
@@ -86,8 +84,9 @@ export function FeedbackBox({
     setFeedback((prev) => ({ ...prev, [field]: checked }))
   }
 
-  const handleCommentChange = (value: string) => {
-    setFeedback((prev) => ({ ...prev, comment: value }))
+  const handleClose = () => {
+    setFeedback(INITIAL_FEEDBACK)
+    onClose?.()
   }
 
   const handleSubmit = () => {
@@ -96,7 +95,6 @@ export function FeedbackBox({
     onClose?.()
   }
 
-  // For like feedback, allow submission even without a comment
   const hasAnyFeedback = isLikeFeedback
     ? true
     : feedback.tooLong ||
@@ -106,98 +104,48 @@ export function FeedbackBox({
       feedback.inaccurate ||
       Boolean(feedback.comment?.trim())
 
-  if (!isOpen) return null
-
   return (
-    <div className='overflow-auto rounded-2xl border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-raised)] p-4 shadow-lg'>
-      <div className='mb-3 flex items-center justify-between gap-3'>
-        <h3
-          className='font-semibold text-[length:var(--text-ds-heading-xsm,16px)] leading-[var(--leading-ds-heading-xsm,24px)]'
-          style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
-        >
-          Help us out
-        </h3>
-        <button
-          type='button'
-          onClick={onClose}
-          className={messageActionIconButtonClass()}
-          aria-label='Close feedback form'
-        >
-          <X className='size-4' />
-        </button>
-      </div>
-
-      <div className='space-y-4'>
+    <ChipModal
+      open={isOpen}
+      onOpenChange={(open) => !open && handleClose()}
+      srTitle='Give feedback'
+    >
+      <ChipModalHeader onClose={handleClose}>Give feedback</ChipModalHeader>
+      <ChipModalBody>
         {!isLikeFeedback && (
-          <div className='grid grid-cols-2 gap-4'>
-            <div className='space-y-3'>
+          <div className='grid grid-cols-2 gap-3 px-2'>
+            {DISLIKE_OPTIONS.map((option) => (
               <FeedbackOption
-                id='tooLong'
-                label='Too Long'
-                checked={feedback.tooLong}
-                onCheckedChange={(checked) => handleCheckboxChange('tooLong', checked)}
+                key={option.id}
+                id={option.id}
+                label={option.label}
+                checked={feedback[option.id]}
+                onCheckedChange={(checked) => handleCheckboxChange(option.id, checked)}
               />
-              <FeedbackOption
-                id='outOfDate'
-                label='Out of Date'
-                checked={feedback.outOfDate}
-                onCheckedChange={(checked) => handleCheckboxChange('outOfDate', checked)}
-              />
-              <FeedbackOption
-                id='incomplete'
-                label='Incomplete'
-                checked={feedback.incomplete}
-                onCheckedChange={(checked) => handleCheckboxChange('incomplete', checked)}
-              />
-            </div>
-            <div className='space-y-3'>
-              <FeedbackOption
-                id='tooShort'
-                label='Too Short'
-                checked={feedback.tooShort}
-                onCheckedChange={(checked) => handleCheckboxChange('tooShort', checked)}
-              />
-              <FeedbackOption
-                id='inaccurate'
-                label='Inaccurate'
-                checked={feedback.inaccurate}
-                onCheckedChange={(checked) => handleCheckboxChange('inaccurate', checked)}
-              />
-            </div>
+            ))}
           </div>
         )}
-
-        <div className='space-y-2'>
-          <div className='font-normal text-[14px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
-            {isLikeFeedback ? 'Feedback' : 'Other feedback'}
-          </div>
-          <ChipTextarea
-            placeholder={isLikeFeedback ? 'Share your feedback...' : 'Other feedback'}
-            value={feedback.comment}
-            onChange={(e) => handleCommentChange(e.target.value)}
-            rows={4}
-          />
-        </div>
-
-        <div className='flex justify-end gap-2 pt-1'>
-          <button
-            type='button'
-            onClick={onClose}
-            className='rounded-lg border border-[var(--color-ds-border-default)] px-3 py-1.5 font-medium text-[14px] transition-colors hover:bg-[var(--color-ds-brand-surface)]'
-            style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
-          >
-            Cancel
-          </button>
-          <button
-            type='button'
-            onClick={handleSubmit}
-            disabled={!hasAnyFeedback}
-            className='rounded-lg bg-[var(--color-ds-brand-default,#1A73E8)] px-3 py-1.5 font-medium text-[14px] text-white transition-colors hover:bg-[var(--color-ds-brand-hover,#155CBA)] disabled:cursor-not-allowed disabled:opacity-50'
-          >
-            Submit
-          </button>
-        </div>
-      </div>
-    </div>
+        <ChipModalField
+          type='textarea'
+          title='Feedback'
+          value={feedback.comment ?? ''}
+          onChange={(value) => setFeedback((prev) => ({ ...prev, comment: value }))}
+          rows={6}
+          minHeight={140}
+          resizable
+          placeholder={
+            isLikeFeedback ? 'Tell us what was helpful...' : 'Tell us what went wrong...'
+          }
+        />
+      </ChipModalBody>
+      <ChipModalFooter
+        onCancel={handleClose}
+        primaryAction={{
+          label: 'Submit',
+          onClick: handleSubmit,
+          disabled: !hasAnyFeedback,
+        }}
+      />
+    </ChipModal>
   )
 }
