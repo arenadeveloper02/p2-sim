@@ -308,6 +308,17 @@ export function buildDebugExplanationContinuationMessage(): string {
 }
 
 /**
+ * System nudge when block discovery finished but create/edit never ran.
+ */
+export function buildWorkflowBuildContinuationMessage(): string {
+  return (
+    '[System] You already called get_available_blocks / get_blocks_metadata (and maybe load_copilot_artifact) ' +
+    'but have not created or edited a workflow yet. Call create_workflow (if needed) then edit_workflow NOW ' +
+    'to add the blocks for the user request. Do not stop after discovery tools and do not only narrate the plan.'
+  )
+}
+
+/**
  * True when debug tools ran and the turn would otherwise settle with no real reply.
  */
 export function shouldForceDebugExplanationContinuation(options: {
@@ -323,6 +334,37 @@ export function shouldForceDebugExplanationContinuation(options: {
   if (options.postBuildToolMode !== 'all') return false
   if (!options.hasDebugTools) return false
   if (options.forcedDebugExplanations >= options.maxForcedDebugExplanations) return false
+  if (options.round >= options.maxToolRounds - 1) return false
+
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (streamed && !isBridgingAssistantNarration(streamed)) return false
+
+  const roundDisplay = stripOptionsTagsForDisplay(options.roundDisplayText, false).trim()
+  if (roundDisplay && !isBridgingAssistantNarration(roundDisplay)) return false
+
+  return true
+}
+
+/**
+ * True when workflow discovery tools ran without create/edit and the model
+ * stopped with no tools — force another round so chat does not settle empty.
+ */
+export function shouldForceWorkflowBuildContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  forcedWorkflowBuildContinuations: number
+  maxForcedWorkflowBuildContinuations: number
+  round: number
+  maxToolRounds: number
+  hasDiscoveryTools: boolean
+  hasMutationTools: boolean
+  streamedUserFacingText: string
+  roundDisplayText: string
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.hasDiscoveryTools || options.hasMutationTools) return false
+  if (options.forcedWorkflowBuildContinuations >= options.maxForcedWorkflowBuildContinuations) {
+    return false
+  }
   if (options.round >= options.maxToolRounds - 1) return false
 
   const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()

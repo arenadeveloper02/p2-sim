@@ -19,6 +19,7 @@ import {
   MAX_FORCED_FOLLOW_UP_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
   MAX_POPULATE_EDITS,
+  MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS,
 } from '@/local-copilot/lib/agent/limits'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import { createSpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
@@ -159,6 +160,8 @@ import {
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
   turnHasDebugInspectionTools,
+  turnHasWorkflowDiscoveryTools,
+  turnHasWorkflowMutationTools,
   type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
@@ -185,6 +188,7 @@ import {
   buildDebugExplanationContinuationMessage,
   buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
+  buildWorkflowBuildContinuationMessage,
   createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
   emptyAssistantTurnFallback,
@@ -195,6 +199,7 @@ import {
   resolvePostBuildRoundTools,
   shouldEmitEmptyAssistantFallback,
   shouldForceDebugExplanationContinuation,
+  shouldForceWorkflowBuildContinuation,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
 } from '@/local-copilot/lib/user-facing-text'
@@ -893,6 +898,7 @@ export async function* runLocalCopilotAgent(
   let forcedFollowUpRounds = 0
   let forcedIntentContinuations = 0
   let forcedDebugExplanations = 0
+  let forcedWorkflowBuildContinuations = 0
   let turnInputTokens = 0
   let turnOutputTokens = 0
   const stagnationTracker = createToolStagnationTracker()
@@ -1285,6 +1291,42 @@ export async function* runLocalCopilotAgent(
           debugTools: turnToolRecords
             .filter((record) =>
               ['query_logs', 'get_execution_logs', 'explain_error'].includes(record.name)
+            )
+            .map((record) => record.name),
+        })
+        continue
+      }
+
+      const canForceWorkflowBuild = shouldForceWorkflowBuildContinuation({
+        postBuildToolMode,
+        forcedWorkflowBuildContinuations,
+        maxForcedWorkflowBuildContinuations: MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasDiscoveryTools: turnHasWorkflowDiscoveryTools(turnToolRecords),
+        hasMutationTools: turnHasWorkflowMutationTools(turnToolRecords),
+        streamedUserFacingText,
+        roundDisplayText: intentDisplay,
+      })
+
+      if (canForceWorkflowBuild) {
+        forcedWorkflowBuildContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildWorkflowBuildContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing workflow-build continuation', {
+          round,
+          forcedWorkflowBuildContinuations,
+          discoveryTools: turnToolRecords
+            .filter((record) =>
+              ['get_available_blocks', 'get_blocks_metadata', 'load_copilot_artifact'].includes(
+                record.name
+              )
             )
             .map((record) => record.name),
         })

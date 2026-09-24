@@ -238,6 +238,13 @@ function reusedWorkflowResult(existing: CreatedWorkflowThisTurn): ToolExecutionR
     toolName: 'create_workflow',
     success: true,
     createdWorkflowId: existing.workflowId,
+    resources: [
+      {
+        type: 'workflow',
+        id: existing.workflowId,
+        title: existing.workflowName?.trim() || 'Workflow',
+      },
+    ],
     result: {
       success: true,
       alreadyCreatedThisTurn: true,

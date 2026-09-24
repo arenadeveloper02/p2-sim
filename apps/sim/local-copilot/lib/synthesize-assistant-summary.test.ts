@@ -11,6 +11,7 @@ import {
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import {
   shouldForceDebugExplanationContinuation,
+  shouldForceWorkflowBuildContinuation,
 } from '@/local-copilot/lib/user-facing-text'
 
 describe('debug inspection synthesis', () => {
@@ -144,5 +145,50 @@ describe('shouldForceDebugExplanationContinuation', () => {
         roundDisplayText: '',
       })
     ).toBe(false)
+  })
+})
+
+describe('shouldForceWorkflowBuildContinuation', () => {
+  it('forces a continuation after discovery tools with no create/edit', () => {
+    expect(
+      shouldForceWorkflowBuildContinuation({
+        postBuildToolMode: 'all',
+        forcedWorkflowBuildContinuations: 0,
+        maxForcedWorkflowBuildContinuations: 2,
+        round: 2,
+        maxToolRounds: 10,
+        hasDiscoveryTools: true,
+        hasMutationTools: false,
+        streamedUserFacingText: '',
+        roundDisplayText: '',
+      })
+    ).toBe(true)
+  })
+
+  it('does not force after create_workflow / edit_workflow already ran', () => {
+    expect(
+      shouldForceWorkflowBuildContinuation({
+        postBuildToolMode: 'all',
+        forcedWorkflowBuildContinuations: 0,
+        maxForcedWorkflowBuildContinuations: 2,
+        round: 2,
+        maxToolRounds: 10,
+        hasDiscoveryTools: true,
+        hasMutationTools: true,
+        streamedUserFacingText: '',
+        roundDisplayText: '',
+      })
+    ).toBe(false)
+  })
+})
+
+describe('synthesizeAssistantSummaryFromTools discovery-only', () => {
+  it('explains when only block discovery tools ran', () => {
+    expect(
+      synthesizeAssistantSummaryFromTools([
+        { name: 'get_available_blocks', success: true, result: { blocks: [] } },
+        { name: 'get_blocks_metadata', success: true, result: { metadata: {} } },
+      ])
+    ).toMatch(/looked up the available blocks/i)
   })
 })

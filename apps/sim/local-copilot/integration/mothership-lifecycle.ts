@@ -660,6 +660,8 @@ export async function runLocalCopilotMothershipLifecycle(
   const startedAt = Date.now()
   const toolArgsByCallId = new Map<string, Record<string, unknown>>()
   const specialistSpans = createSpecialistSpanTracker()
+  /** Workflow created this turn — re-activated at end so KB/file upserts do not steal the right panel. */
+  let createdWorkflowResource: { id: string; title: string } | undefined
   const userMessageId =
     typeof requestPayload.messageId === 'string' ? requestPayload.messageId : undefined
   let turnUsage:
@@ -779,6 +781,32 @@ export async function runLocalCopilotMothershipLifecycle(
       if (event.type === 'done' && event.usage) {
         turnUsage = event.usage
       }
+      if (
+        event.type === 'tool_call_result' &&
+        event.toolName === 'create_workflow' &&
+        event.success &&
+        event.output &&
+        typeof event.output === 'object'
+      ) {
+        const output = event.output as Record<string, unknown>
+        const createdId =
+          typeof output.workflowId === 'string' && output.workflowId.trim()
+            ? output.workflowId.trim()
+            : event.resources?.find((resource) => resource.type === 'workflow')?.id
+        if (createdId) {
+          const titleFromOutput =
+            typeof output.workflowName === 'string' && output.workflowName.trim()
+              ? output.workflowName.trim()
+              : undefined
+          const titleFromResource = event.resources?.find(
+            (resource) => resource.type === 'workflow' && resource.id === createdId
+          )?.title
+          createdWorkflowResource = {
+            id: createdId,
+            title: titleFromOutput || titleFromResource || 'Workflow',
+          }
+        }
+      }
 
       await dispatchLocalCopilotEvent(
         event,
@@ -799,6 +827,45 @@ export async function runLocalCopilotMothershipLifecycle(
     // the settled UI chrome.
     flushSubagentThinkingBlock(context)
     flushThinkingBlock(context)
+
+    // Re-activate the workflow created this turn last so later KB/file resource
+    // upserts do not leave the mothership right panel on the wrong tab.
+    const chatIdForResources = options.chatId ?? context.chatId
+    if (
+      createdWorkflowResource &&
+      chatIdForResources &&
+      !context.wasAborted &&
+      !options.abortSignal?.aborted
+    ) {
+      await persistChatResources(chatIdForResources, [
+        {
+          type: 'workflow',
+          id: createdWorkflowResource.id,
+          title: createdWorkflowResource.title,
+        },
+      ])
+      await dispatchStreamEvent(
+        {
+          type: MothershipStreamV1EventType.resource,
+          payload: {
+            op: MothershipStreamV1ResourceOp.upsert,
+            resource: {
+              type: 'workflow',
+              id: createdWorkflowResource.id,
+              title: createdWorkflowResource.title,
+            },
+          },
+        },
+        context,
+        execContext,
+        options,
+        filePreview
+      )
+      logger.info('Arena Copilot re-activated created workflow in mothership panel', {
+        chatId: chatIdForResources,
+        workflowId: createdWorkflowResource.id,
+      })
+    }
 
     const status =
       context.errors.length > 0

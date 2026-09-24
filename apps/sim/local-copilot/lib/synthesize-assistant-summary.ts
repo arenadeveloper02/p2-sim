@@ -69,6 +69,15 @@ const DEBUG_INSPECTION_TOOL_NAMES = new Set([
   'explain_error',
 ])
 
+/** Discovery-only tools that should be followed by create_workflow / edit_workflow. */
+const WORKFLOW_DISCOVERY_TOOL_NAMES = new Set([
+  'get_available_blocks',
+  'get_blocks_metadata',
+  'load_copilot_artifact',
+])
+
+const WORKFLOW_MUTATION_TOOL_NAMES = new Set(['create_workflow', 'edit_workflow'])
+
 const RUN_OUTPUT_MAX_CHARS = 6_000
 const DEBUG_SUMMARY_MAX_CHARS = 4_000
 
@@ -77,6 +86,22 @@ const DEBUG_SUMMARY_MAX_CHARS = 4_000
  */
 export function isWorkflowRunToolName(name: string): boolean {
   return WORKFLOW_RUN_TOOL_NAMES.has(name)
+}
+
+/**
+ * True when this turn ran block-discovery tools (catalog / metadata / artifact).
+ */
+export function turnHasWorkflowDiscoveryTools(records: ToolTurnRecord[]): boolean {
+  return records.some((record) => WORKFLOW_DISCOVERY_TOOL_NAMES.has(record.name))
+}
+
+/**
+ * True when this turn successfully created or edited a workflow.
+ */
+export function turnHasWorkflowMutationTools(records: ToolTurnRecord[]): boolean {
+  return records.some(
+    (record) => WORKFLOW_MUTATION_TOOL_NAMES.has(record.name) && record.success
+  )
 }
 
 /**
@@ -587,6 +612,13 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (isLikelySpecialistDomain(record.name)) {
       parts.push(`Finished the ${record.name.replace(/_/g, ' ')} steps for your request.`)
     }
+  }
+
+  if (parts.length === 0 && turnHasWorkflowDiscoveryTools(records) && !turnHasWorkflowMutationTools(records)) {
+    return (
+      'I looked up the available blocks, but did not finish creating the workflow. ' +
+      'Please try again (or switch models if Vertex quota is exhausted).'
+    )
   }
 
   const summary = parts
