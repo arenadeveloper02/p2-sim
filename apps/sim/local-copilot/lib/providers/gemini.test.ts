@@ -445,8 +445,36 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
       }
     }).rejects.toThrow(/Retries included Vertex Priority PayGo/)
 
-    // attempts 0..5 = 6 opens (3 slots × Standard + Priority)
+    // attempts 0..5 = 6 opens (default 3-slot ladder cap)
     expect(generateContentStream).toHaveBeenCalledTimes(6)
-    expect(mockSleep).toHaveBeenCalledTimes(5)
+    // Priority escalations skip sleep; only Priority→next-slot rotates sleep (twice).
+    expect(mockSleep).toHaveBeenCalledTimes(2)
+  })
+
+  it('honors a slot-aware maxOpenRetries cap (one unique project)', async () => {
+    const exhausted = Object.assign(new Error('Resource exhausted'), {
+      status: 'RESOURCE_EXHAUSTED',
+      code: 429,
+    })
+    const generateContentStream = vi.fn().mockRejectedValue(exhausted)
+    const ai = { models: { generateContentStream } }
+
+    await expect(async () => {
+      for await (const _chunk of streamGoogleGenAiChatCompletion({
+        // double-cast-allowed: test double for GoogleGenAI stream client
+        ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+        priorityPayGoOnRetry: true,
+        maxOpenRetries: 1,
+        config,
+        request: { messages: [{ role: 'user', content: 'hi' }] },
+        logLabel: 'Vertex',
+      })) {
+        // drain
+      }
+    }).rejects.toThrow(/Retries included Vertex Priority PayGo/)
+
+    // Standard then Priority only
+    expect(generateContentStream).toHaveBeenCalledTimes(2)
+    expect(mockSleep).toHaveBeenCalledTimes(0)
   })
 })

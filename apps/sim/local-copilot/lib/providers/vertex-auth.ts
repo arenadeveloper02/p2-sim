@@ -115,6 +115,9 @@ function validateLocation(location: string, paramName: string): string {
  * A slot is included when its project env is set. Location falls back to
  * `VERTEX_LOCATION` then `global`. Credentials fall back to the primary SA /
  * `GCS_CREDENTIALS_JSON`, otherwise the SDK uses Application Default Credentials.
+ *
+ * Duplicate project + service-account + location combos are collapsed to the
+ * first slot — they share one quota pool and retrying them only adds latency.
  */
 export function listLocalCopilotVertexSlots(): LocalCopilotVertexSlot[] {
   const primaryLocation = validateLocation(
@@ -148,7 +151,15 @@ export function listLocalCopilotVertexSlots(): LocalCopilotVertexSlot[] {
     })
   }
 
-  return slots
+  // Same project + SA shares one quota pool — keep the first env slot only so
+  // the 429 ladder does not burn seconds retrying identical capacity.
+  const seen = new Set<string>()
+  return slots.filter((slot) => {
+    const identity = `${slot.project}|${slot.credentials?.client_email ?? 'adc'}|${slot.location}`
+    if (seen.has(identity)) return false
+    seen.add(identity)
+    return true
+  })
 }
 
 /**

@@ -113,6 +113,20 @@ describe('Vertex Local Copilot slot rotation', () => {
     })
   })
 
+  it('dedupes identical project + SA slots so the 429 ladder stays short', () => {
+    process.env.VERTEX_PROJECT = 'same-proj'
+    process.env.VERTEX_LOCATION = 'global'
+    process.env.VERTEX_SERVICE_ACCOUNT_JSON = SA('shared@x.iam.gserviceaccount.com', 'same-proj')
+    process.env.VERTEX_PROJECT_1 = 'same-proj'
+    process.env.VERTEX_LOCATION_1 = 'global'
+    process.env.VERTEX_SERVICE_ACCOUNT_JSON_1 = SA('shared@x.iam.gserviceaccount.com', 'same-proj')
+    process.env.VERTEX_PROJECT_2 = 'same-proj'
+    process.env.VERTEX_LOCATION_2 = 'global'
+    process.env.VERTEX_SERVICE_ACCOUNT_JSON_2 = SA('shared@x.iam.gserviceaccount.com', 'same-proj')
+
+    expect(listLocalCopilotVertexSlots()).toHaveLength(1)
+  })
+
   it('reports not configured when nothing is set', () => {
     expect(isLocalCopilotVertexConfigured()).toBe(false)
   })

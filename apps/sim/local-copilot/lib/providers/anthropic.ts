@@ -118,6 +118,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
         system: system || undefined,
         messages: anthropicMessages,
         tools: toAnthropicTools(request.tools),
+        ...(request.tools?.length ? { tool_choice: { type: 'auto' } } : {}),
       }
 
       if (thinkingRequest) {
@@ -136,6 +137,14 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
           thinkingLevel: config.thinkingLevel,
           thinkingType: thinkingRequest.thinking.type,
           maxTokens,
+        })
+      }
+
+      if (request.tools?.length) {
+        logger.info('Arena Copilot Anthropic tool-enabled request', {
+          model,
+          toolCount: request.tools.length,
+          toolNames: request.tools.map((tool) => tool.name),
         })
       }
 
@@ -182,6 +191,8 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
       let buffer = ''
       const toolCalls = new Map<number, { id: string; name: string; arguments: string }>()
       let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
+      let yieldedToolCall = false
+      let emittedDone = false
 
       let openThinkingText = ''
       let openThinkingSignature = ''
@@ -223,6 +234,26 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
         openThinkingSignature = ''
         openRedactedData = ''
         return []
+      }
+
+      const flushPendingToolCalls = (): ChatCompletionChunk[] => {
+        if (toolCalls.size === 0) return []
+        const chunks: ChatCompletionChunk[] = []
+        for (const call of toolCalls.values()) {
+          chunks.push({ type: 'tool_call', toolCall: call })
+          yieldedToolCall = true
+        }
+        toolCalls.clear()
+        return chunks
+      }
+
+      const emitDone = (finishReason: string): ChatCompletionChunk => {
+        emittedDone = true
+        return {
+          type: 'done',
+          finishReason,
+          usage,
+        }
       }
 
       while (true) {
@@ -338,34 +369,33 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
               }
               if (delta?.stop_reason === 'tool_use') {
                 for (const chunk of flushOpenThinkingBlock()) yield chunk
-                for (const call of toolCalls.values()) {
-                  yield {
-                    type: 'tool_call',
-                    toolCall: call,
-                  }
-                }
-                toolCalls.clear()
+                for (const chunk of flushPendingToolCalls()) yield chunk
               }
-              if (delta?.stop_reason === 'end_turn') {
+              if (delta?.stop_reason === 'end_turn' || delta?.stop_reason === 'stop_sequence') {
                 for (const chunk of flushOpenThinkingBlock()) yield chunk
-                yield {
-                  type: 'done',
-                  finishReason: 'stop',
-                  usage,
+                for (const chunk of flushPendingToolCalls()) yield chunk
+                if (!emittedDone) {
+                  yield emitDone(yieldedToolCall ? 'tool_calls' : 'stop')
                 }
               }
             }
 
             if (eventType === 'message_stop') {
               for (const chunk of flushOpenThinkingBlock()) yield chunk
-              yield {
-                type: 'done',
-                finishReason: 'stop',
-                usage,
+              for (const chunk of flushPendingToolCalls()) yield chunk
+              if (!emittedDone) {
+                yield emitDone(yieldedToolCall ? 'tool_calls' : 'stop')
               }
             }
           } catch {}
         }
+      }
+
+      // Stream ended without message_stop — still flush any buffered tool_use.
+      for (const chunk of flushOpenThinkingBlock()) yield chunk
+      for (const chunk of flushPendingToolCalls()) yield chunk
+      if (!emittedDone) {
+        yield emitDone(yieldedToolCall ? 'tool_calls' : 'stop')
       }
     },
   }

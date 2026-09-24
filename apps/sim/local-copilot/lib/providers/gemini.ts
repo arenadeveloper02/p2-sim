@@ -42,8 +42,10 @@ const GEMINI_NOT_CONFIGURED =
 const MAX_RESOURCE_EXHAUSTED_RETRIES = 4
 
 /**
- * Vertex slot ladder: up to 3 slots × (standard + Priority) = 6 open attempts
- * (attempts 0..5). Standard Gemini API-key path keeps {@link MAX_RESOURCE_EXHAUSTED_RETRIES}.
+ * Default Vertex slot ladder when the caller does not pass a slot-aware cap:
+ * up to 3 unique slots × (standard + Priority) = 6 open attempts (0..5).
+ * Prefer {@link streamGoogleGenAiChatCompletion}'s `maxOpenRetries` from Vertex
+ * so duplicate projects do not burn wasted attempts.
  */
 const MAX_VERTEX_SLOT_LADDER_RETRIES = 5
 
@@ -509,6 +511,12 @@ export async function* streamGoogleGenAiChatCompletion(params: {
    * escalate to the shared priority pool. Vertex (`global` / `us` / `eu`) only.
    */
   priorityPayGoOnRetry?: boolean
+  /**
+   * Caps open-stream retries (attempts are `0..maxOpenRetries`).
+   * Vertex should pass `uniqueSlots * 2 - 1` so Standard+Priority run once per
+   * distinct project — avoids multi-second waits on duplicate slot configs.
+   */
+  maxOpenRetries?: number
 }): AsyncGenerator<ChatCompletionChunk, void, undefined> {
   const {
     config,
@@ -517,6 +525,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
     stripVertexPrefix = false,
     refreshAi,
     priorityPayGoOnRetry = false,
+    maxOpenRetries: maxOpenRetriesOverride,
   } = params
   let client = params.ai
   const rawModel = request.model || config.model
@@ -604,9 +613,9 @@ export async function* streamGoogleGenAiChatCompletion(params: {
      * slot N standard → slot N Priority → slot N+1 standard → slot N+1 Priority → …
      */
     let usePriorityPayGo = false
-    const maxOpenRetries = priorityPayGoOnRetry
-      ? MAX_VERTEX_SLOT_LADDER_RETRIES
-      : MAX_RESOURCE_EXHAUSTED_RETRIES
+    const maxOpenRetries =
+      maxOpenRetriesOverride ??
+      (priorityPayGoOnRetry ? MAX_VERTEX_SLOT_LADDER_RETRIES : MAX_RESOURCE_EXHAUSTED_RETRIES)
     for (; openAttempt <= maxOpenRetries; openAttempt++) {
       try {
         stream = await client.models.generateContentStream({
@@ -636,6 +645,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
 
         if (priorityPayGoOnRetry && !usePriorityPayGo) {
           // Standard failed → Priority on the same slot/account.
+          // No multi-second wait — Priority is a different capacity pool, not a cooldown.
           usePriorityPayGo = true
           logger.warn(`${logLabel} RESOURCE_EXHAUSTED; retrying with Priority PayGo (same slot)`, {
             model,
@@ -645,7 +655,6 @@ export async function* streamGoogleGenAiChatCompletion(params: {
             rotateClient: false,
             error: getErrorMessage(error, 'resource exhausted'),
           })
-          await sleep(backoffWithJitter(1, null, { baseMs: 200, maxMs: 1_000 }))
           if (refreshAi) {
             client = refreshAi({ priorityPayGo: true, sameSlot: true })
           }
@@ -653,6 +662,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
         }
 
         // Priority failed (or Gemini key path) → next slot/key on Standard first.
+        // Keep rotate sleeps short so a full ladder still fails over to Gemini quickly.
         usePriorityPayGo = false
         const willRotate = Boolean(refreshAi)
         logger.warn(`${logLabel} RESOURCE_EXHAUSTED; rotating to next slot on Standard`, {
@@ -663,7 +673,12 @@ export async function* streamGoogleGenAiChatCompletion(params: {
           rotateClient: willRotate,
           error: getErrorMessage(error, 'resource exhausted'),
         })
-        await sleep(backoffWithJitter(openAttempt + 1, null, { baseMs: 500, maxMs: 8_000 }))
+        await sleep(
+          backoffWithJitter(openAttempt + 1, null, {
+            baseMs: priorityPayGoOnRetry ? 50 : 500,
+            maxMs: priorityPayGoOnRetry ? 250 : 8_000,
+          })
+        )
         if (refreshAi) {
           client = refreshAi(undefined)
         }
