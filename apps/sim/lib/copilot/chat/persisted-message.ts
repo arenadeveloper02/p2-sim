@@ -25,6 +25,56 @@ import type { BrowserTextSelection, TerminalTextSelection } from '@/stores/panel
 
 export type PersistedToolState = LocalToolCallStatus | MothershipStreamV1ToolOutcome | 'interrupted'
 
+/**
+ * Tool writes that keep a compact receipt after output stripping so Claude
+ * follow-ups can see vfsPath / size instead of a bare `{ success: true }`.
+ */
+const FILE_RECEIPT_TOOL_NAMES = new Set([
+  'create_file',
+  'create_file_folder',
+  'workspace_file',
+  'edit_content',
+  'function_execute',
+])
+
+function extractFileWriteReceipt(output: unknown): Record<string, unknown> | undefined {
+  if (!isPlainRecord(output)) return undefined
+  const data = isPlainRecord(output.data) ? output.data : undefined
+  const receipt: Record<string, unknown> = {}
+
+  for (const key of [
+    'vfsPath',
+    'size',
+    'id',
+    'name',
+    'contentType',
+    'message',
+    'fileId',
+    'fileName',
+  ] as const) {
+    if (typeof output[key] === 'string' || typeof output[key] === 'number') {
+      receipt[key] = output[key]
+    }
+    if (data && (typeof data[key] === 'string' || typeof data[key] === 'number')) {
+      receipt[key] = data[key]
+    }
+  }
+
+  if (Array.isArray(output.files)) {
+    receipt.files = output.files.slice(0, 5).map((entry) => {
+      if (!isPlainRecord(entry)) return entry
+      return {
+        ...(typeof entry.vfsPath === 'string' ? { vfsPath: entry.vfsPath } : {}),
+        ...(typeof entry.fileName === 'string' ? { fileName: entry.fileName } : {}),
+        ...(typeof entry.size === 'number' ? { size: entry.size } : {}),
+        ...(typeof entry.fileId === 'string' ? { fileId: entry.fileId } : {}),
+      }
+    })
+  }
+
+  return Object.keys(receipt).length > 0 ? receipt : undefined
+}
+
 interface PersistedToolCall {
   id: string
   name: string
@@ -154,9 +204,10 @@ export interface PersistedMessage {
 /**
  * Drop persisted tool outputs, keeping `success` and `error`. The one narrow
  * UI-state exception is a browser takeover's user-authored instruction, which
- * restores its answered question recap after reload. Other outputs are never
- * rendered or replayed to the model (the upstream service owns conversation
- * memory), so storing them only bloats
+ * restores its answered question recap after reload. File write tools keep a
+ * compact receipt (`vfsPath`, `size`, …) so Claude can verify prior creates.
+ * Other outputs are never rendered or replayed to the model (the upstream
+ * service owns conversation memory), so storing them only bloats
  * `copilot_messages.content` — a single `get_workflow_logs`/`run_workflow`
  * result can reach hundreds of MB and stall task loads.
  *
@@ -187,9 +238,16 @@ export function stripToolResultOutput(message: PersistedMessage): PersistedMessa
       return block
     }
     changed = true
+    const fileReceipt = FILE_RECEIPT_TOOL_NAMES.has(toolCall.name)
+      ? extractFileWriteReceipt(output)
+      : undefined
     const strippedResult: { success: boolean; output?: unknown; error?: string } = {
       success: result.success,
-      ...(normalizedInstruction ? { output: { userInstruction: normalizedInstruction } } : {}),
+      ...(normalizedInstruction
+        ? { output: { userInstruction: normalizedInstruction } }
+        : fileReceipt
+          ? { output: fileReceipt }
+          : {}),
     }
     if (result.error !== undefined) strippedResult.error = result.error
     return { ...block, toolCall: { ...toolCall, result: strippedResult } }

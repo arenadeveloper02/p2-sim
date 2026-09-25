@@ -4,6 +4,7 @@ import { getMessageContentText } from '@/local-copilot/lib/providers/message-con
 import { createOpenAiCompatibleThinkingBlocksAccumulator } from '@/local-copilot/lib/providers/openai-compatible-thinking-blocks'
 import { fetchProviderWithRetry } from '@/local-copilot/lib/providers/provider-fetch'
 import type {
+  ChatCompletionChunk,
   ChatCompletionRequest,
   LocalCopilotProvider,
 } from '@/local-copilot/lib/providers/types'
@@ -60,7 +61,10 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
     async *chatCompletionStream(request: ChatCompletionRequest) {
       const url = `${baseUrl}/chat/completions`
       const model = request.model || config.model
-      const thinkingBody = resolveOpenAiCompatibleThinkingBody(model, config.thinkingLevel)
+      const thinkingBody = resolveOpenAiCompatibleThinkingBody(
+        model,
+        request.thinkingLevel ?? config.thinkingLevel
+      )
 
       const body: Record<string, unknown> = {
         model,
@@ -115,7 +119,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
         // proxies usually mirror that constraint.
         logger.info('Arena Copilot OpenAI-compatible thinking enabled', {
           model,
-          thinkingLevel: config.thinkingLevel,
+          thinkingLevel: request.thinkingLevel ?? config.thinkingLevel,
           thinkingType: thinkingBody.thinking.type,
         })
       } else {
@@ -156,6 +160,41 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
       let cacheReadTokens = 0
       let sawSignedThinkingBlocks = false
       let loggedMissingThinkingBlocks = false
+      let yieldedToolCall = false
+      let emittedDone = false
+
+      const usagePayload = () => ({
+        inputTokens,
+        outputTokens,
+        ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+      })
+
+      const flushPendingToolCalls = (): ChatCompletionChunk[] => {
+        if (toolCalls.size === 0) return []
+        if (thinkingBody && !sawSignedThinkingBlocks && !loggedMissingThinkingBlocks) {
+          loggedMissingThinkingBlocks = true
+          logger.warn(
+            'Claude-via-proxy tool turn missing signed thinking_blocks; later rounds may drop thinking',
+            { model }
+          )
+        }
+        const chunks: ChatCompletionChunk[] = []
+        for (const call of toolCalls.values()) {
+          chunks.push({ type: 'tool_call', toolCall: call })
+          yieldedToolCall = true
+        }
+        toolCalls.clear()
+        return chunks
+      }
+
+      const emitDone = (finishReason: string): ChatCompletionChunk => {
+        emittedDone = true
+        return {
+          type: 'done',
+          finishReason,
+          usage: usagePayload(),
+        }
+      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -170,14 +209,9 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
           if (!trimmed.startsWith('data:')) continue
           const payload = trimmed.slice(5).trim()
           if (payload === '[DONE]') {
-            yield {
-              type: 'done',
-              finishReason: 'stop',
-              usage: {
-                inputTokens,
-                outputTokens,
-                ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
-              },
+            for (const chunk of flushPendingToolCalls()) yield chunk
+            if (!emittedDone) {
+              yield emitDone(yieldedToolCall ? 'tool_calls' : 'stop')
             }
             continue
           }
@@ -274,39 +308,26 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
             }
 
             if (choice.finish_reason === 'tool_calls') {
-              if (
-                thinkingBody &&
-                !sawSignedThinkingBlocks &&
-                !loggedMissingThinkingBlocks
-              ) {
-                loggedMissingThinkingBlocks = true
-                logger.warn(
-                  'Claude-via-proxy tool turn missing signed thinking_blocks; later rounds may drop thinking',
-                  { model }
-                )
+              for (const chunk of flushPendingToolCalls()) yield chunk
+              if (!emittedDone) {
+                yield emitDone('tool_calls')
               }
-              for (const call of toolCalls.values()) {
-                yield {
-                  type: 'tool_call',
-                  toolCall: call,
-                }
-              }
-              toolCalls.clear()
             }
 
             if (choice.finish_reason === 'stop') {
-              yield {
-                type: 'done',
-                finishReason: 'stop',
-                usage: {
-                  inputTokens,
-                  outputTokens,
-                  ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
-                },
+              // Proxies sometimes buffer tool_calls then end with `stop` / [DONE].
+              for (const chunk of flushPendingToolCalls()) yield chunk
+              if (!emittedDone) {
+                yield emitDone(yieldedToolCall ? 'tool_calls' : 'stop')
               }
             }
           } catch {}
         }
+      }
+
+      for (const chunk of flushPendingToolCalls()) yield chunk
+      if (!emittedDone) {
+        yield emitDone(yieldedToolCall ? 'tool_calls' : 'stop')
       }
     },
   }

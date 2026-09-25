@@ -62,13 +62,134 @@ const WORKFLOW_RUN_TOOL_NAMES = new Set([
   'run_workflow_until_block',
 ])
 
+/** Tools used to inspect failed runs — often leave the bubble empty without a forced reply. */
+const DEBUG_INSPECTION_TOOL_NAMES = new Set([
+  'query_logs',
+  'get_execution_logs',
+  'explain_error',
+])
+
+/** Discovery-only tools that should be followed by create_workflow / edit_workflow. */
+const WORKFLOW_DISCOVERY_TOOL_NAMES = new Set([
+  'get_available_blocks',
+  'get_blocks_metadata',
+])
+
+/**
+ * File inspection tools. `load_copilot_artifact` belongs here (not workflow
+ * discovery) — HTML reads are offloaded and reloaded via artifact, which must
+ * not trigger a create_workflow nudge.
+ */
+const FILE_INSPECTION_TOOL_NAMES = new Set([
+  'read',
+  'grep',
+  'glob',
+  'load_copilot_artifact',
+])
+
+const FILE_MUTATION_TOOL_NAMES = new Set([
+  'create_file',
+  'create_file_folder',
+  'workspace_file',
+  'edit_content',
+  'delete_file',
+  'rename_file',
+  'move_file',
+])
+
+const WORKFLOW_MUTATION_TOOL_NAMES = new Set(['create_workflow', 'edit_workflow'])
+
 const RUN_OUTPUT_MAX_CHARS = 6_000
+const DEBUG_SUMMARY_MAX_CHARS = 4_000
 
 /**
  * True for tools that execute a workflow (or part of one) and produce run output.
  */
 export function isWorkflowRunToolName(name: string): boolean {
   return WORKFLOW_RUN_TOOL_NAMES.has(name)
+}
+
+/**
+ * True when this turn ran block-discovery tools (catalog / metadata).
+ */
+export function turnHasWorkflowDiscoveryTools(records: ToolTurnRecord[]): boolean {
+  return records.some((record) => WORKFLOW_DISCOVERY_TOOL_NAMES.has(record.name))
+}
+
+/**
+ * True when this turn successfully created or edited a workflow.
+ */
+export function turnHasWorkflowMutationTools(records: ToolTurnRecord[]): boolean {
+  return records.some(
+    (record) => WORKFLOW_MUTATION_TOOL_NAMES.has(record.name) && record.success
+  )
+}
+
+/**
+ * True for log/debug tools that gather failure evidence but do not themselves
+ * produce user-facing chat prose.
+ */
+export function isDebugInspectionToolName(name: string): boolean {
+  return DEBUG_INSPECTION_TOOL_NAMES.has(name)
+}
+
+/**
+ * True when this turn already ran debug tools — used to force a closing explanation.
+ */
+export function turnHasDebugInspectionTools(records: ToolTurnRecord[]): boolean {
+  return records.some(
+    (record) => isDebugInspectionToolName(record.name) || record.name === 'run'
+  )
+}
+
+/**
+ * True when this turn inspected workspace files (read/grep/artifact) without writing.
+ */
+export function turnHasFileInspectionTools(records: ToolTurnRecord[]): boolean {
+  return records.some((record) => FILE_INSPECTION_TOOL_NAMES.has(record.name))
+}
+
+/**
+ * True when this turn successfully mutated a workspace file.
+ */
+export function turnHasFileMutationTools(records: ToolTurnRecord[]): boolean {
+  return records.some(
+    (record) => FILE_MUTATION_TOOL_NAMES.has(record.name) && record.success
+  )
+}
+
+/**
+ * Closing prose when file inspection finished without an edit or reply.
+ */
+export function buildFileInspectionChatAppendix(records: ToolTurnRecord[]): string | null {
+  if (!turnHasFileInspectionTools(records) || turnHasFileMutationTools(records)) return null
+  const inspected = records
+    .filter((record) => FILE_INSPECTION_TOOL_NAMES.has(record.name))
+    .map((record) => record.name.replace(/_/g, ' '))
+  const unique = [...new Set(inspected)]
+  if (unique.length === 0) return null
+  return (
+    `I inspected the file (${unique.join(', ')}) but did not finish applying the fix. ` +
+    'Please try again — I should call workspace_file / edit_content with the corrected binding.'
+  )
+}
+
+/**
+ * Parses `[explain_error] {…}` dumps from specialist findings into chat prose.
+ */
+export function synthesizeExplainErrorFromSpecialistFindings(message: string): string | null {
+  const match = message.match(/\[explain_error\]\s*(\{[\s\S]*?\})(?=\n\n|\n\[|$)/i)
+  if (!match?.[1]) return null
+  try {
+    const parsed = JSON.parse(match[1]) as unknown
+    return formatDebugInspectionChatResult({
+      name: 'explain_error',
+      success: true,
+      result: parsed,
+    })
+  } catch {
+    return null
+  }
 }
 
 function stringifyRunValue(value: unknown): string | null {
@@ -179,6 +300,178 @@ export function buildWorkflowRunChatAppendix(records: ToolTurnRecord[]): string 
     const record = records[index]
     if (!record || !isWorkflowRunToolName(record.name)) continue
     return formatWorkflowRunChatResult(record)
+  }
+  return null
+}
+
+function formatExplainErrorChatResult(record: ToolTurnRecord): string {
+  const payload = asRecord(record.result)
+  const analysis = asRecord(payload.analysis)
+  const errorMessage =
+    (typeof payload.errorMessage === 'string' && payload.errorMessage.trim()) ||
+    (typeof record.error === 'string' && record.error.trim()) ||
+    ''
+  const rootCause =
+    (typeof analysis.rootCause === 'string' && analysis.rootCause.trim()) || 'Block execution failure'
+  const failingBlock = asRecord(analysis.failingBlock)
+  const blockLabel =
+    (typeof failingBlock.name === 'string' && failingBlock.name.trim()) ||
+    (typeof failingBlock.type === 'string' && failingBlock.type.trim()) ||
+    (typeof failingBlock.id === 'string' && failingBlock.id.trim()) ||
+    (typeof payload.blockId === 'string' && payload.blockId.trim()) ||
+    null
+
+  const lines: string[] = [`**Why it failed:** ${rootCause}`]
+  if (blockLabel) {
+    lines.push(
+      typeof failingBlock.type === 'string' && failingBlock.type.trim() && failingBlock.name
+        ? `**Failing block:** ${failingBlock.name} (${failingBlock.type})`
+        : `**Failing block:** ${blockLabel}`
+    )
+  }
+  if (errorMessage) {
+    lines.push(`**Error:** ${truncate(errorMessage, 800)}`)
+  }
+
+  const fixes = Array.isArray(analysis.suggestedFixes)
+    ? analysis.suggestedFixes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+  if (fixes.length > 0) {
+    lines.push('**Suggested fixes:**')
+    for (const fix of fixes.slice(0, 4)) {
+      lines.push(`- ${fix.trim()}`)
+    }
+  }
+
+  return truncate(lines.join('\n'), DEBUG_SUMMARY_MAX_CHARS)
+}
+
+function pickFailedLogEntries(value: unknown): Array<Record<string, unknown>> {
+  const payload = asRecord(value)
+  const candidates: unknown[] = []
+  if (Array.isArray(payload.data)) candidates.push(...payload.data)
+  if (Array.isArray(payload.logs)) candidates.push(...payload.logs)
+  if (Array.isArray(payload.executions)) candidates.push(...payload.executions)
+  if (Array.isArray(payload.entries)) candidates.push(...payload.entries)
+  if (Array.isArray(value)) candidates.push(...value)
+
+  const failed: Array<Record<string, unknown>> = []
+  for (const entry of candidates) {
+    const row = asRecord(entry)
+    const status = typeof row.status === 'string' ? row.status.toLowerCase() : ''
+    const level = typeof row.level === 'string' ? row.level.toLowerCase() : ''
+    const success = row.success
+    if (
+      status === 'error' ||
+      status === 'failed' ||
+      level === 'error' ||
+      success === false ||
+      (typeof row.error === 'string' && row.error.trim())
+    ) {
+      failed.push(row)
+    }
+  }
+  return failed
+}
+
+function formatLogEntryLine(row: Record<string, unknown>): string {
+  const name =
+    (typeof row.workflowName === 'string' && row.workflowName.trim()) ||
+    (typeof row.blockName === 'string' && row.blockName.trim()) ||
+    (typeof row.executionId === 'string' && row.executionId.trim()) ||
+    'Execution'
+  const error =
+    (typeof row.error === 'string' && row.error.trim()) ||
+    (typeof row.message === 'string' && row.message.trim()) ||
+    (typeof asRecord(row.executionError).message === 'string' &&
+      String(asRecord(row.executionError).message).trim()) ||
+    null
+  const status =
+    (typeof row.status === 'string' && row.status.trim()) ||
+    (typeof row.level === 'string' && row.level.trim()) ||
+    'failed'
+  return error ? `- ${name}: ${status} — ${truncate(error, 240)}` : `- ${name}: ${status}`
+}
+
+function formatGetExecutionLogsChatResult(record: ToolTurnRecord): string {
+  const failed = pickFailedLogEntries(record.result)
+  if (failed.length === 0) {
+    const payload = asRecord(record.result)
+    const count = Array.isArray(payload.data) ? payload.data.length : 0
+    return count > 0
+      ? `Checked ${count} recent execution log${count === 1 ? '' : 's'} — none were marked failed.`
+      : 'No execution logs were found for this workflow.'
+  }
+
+  const lines = [
+    `Found ${failed.length} failed execution${failed.length === 1 ? '' : 's'}:`,
+    ...failed.slice(0, 5).map(formatLogEntryLine),
+  ]
+  return truncate(lines.join('\n'), DEBUG_SUMMARY_MAX_CHARS)
+}
+
+function formatQueryLogsChatResult(record: ToolTurnRecord): string {
+  const payload = asRecord(record.result)
+  // Overview / full views often nest the failure on `error` or span summaries.
+  const topError =
+    (typeof payload.error === 'string' && payload.error.trim()) ||
+    (typeof payload.message === 'string' && payload.message.trim()) ||
+    null
+  if (topError && !Array.isArray(payload.data)) {
+    const status =
+      (typeof payload.status === 'string' && payload.status.trim()) ||
+      (payload.success === false ? 'failed' : null)
+    return truncate(
+      status ? `Log inspection (${status}): ${topError}` : `Log inspection: ${topError}`,
+      DEBUG_SUMMARY_MAX_CHARS
+    )
+  }
+
+  const failed = pickFailedLogEntries(record.result)
+  if (failed.length > 0) {
+    return truncate(
+      [`From the logs:`, ...failed.slice(0, 5).map(formatLogEntryLine)].join('\n'),
+      DEBUG_SUMMARY_MAX_CHARS
+    )
+  }
+
+  if (typeof payload.summary === 'string' && payload.summary.trim()) {
+    return truncate(payload.summary.trim(), DEBUG_SUMMARY_MAX_CHARS)
+  }
+
+  return 'Queried execution logs.'
+}
+
+/**
+ * Formats a debug-inspection tool record into chat prose.
+ */
+export function formatDebugInspectionChatResult(record: ToolTurnRecord): string | null {
+  if (!isDebugInspectionToolName(record.name)) return null
+  if (!record.success) {
+    const payload = asRecord(record.result)
+    const error =
+      (typeof record.error === 'string' && record.error.trim()) ||
+      (typeof payload.error === 'string' && payload.error.trim()) ||
+      (typeof payload.message === 'string' && payload.message.trim()) ||
+      null
+    return error
+      ? `I couldn't inspect the logs: ${error}`
+      : `I couldn't complete ${record.name.replace(/_/g, ' ')}.`
+  }
+  if (record.name === 'explain_error') return formatExplainErrorChatResult(record)
+  if (record.name === 'get_execution_logs') return formatGetExecutionLogsChatResult(record)
+  if (record.name === 'query_logs') return formatQueryLogsChatResult(record)
+  return null
+}
+
+/**
+ * Prefers the latest explain_error / log tool result when synthesizing a reply.
+ */
+export function buildDebugInspectionChatAppendix(records: ToolTurnRecord[]): string | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]
+    if (!record || !isDebugInspectionToolName(record.name)) continue
+    return formatDebugInspectionChatResult(record)
   }
   return null
 }
@@ -321,12 +614,56 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (record.name === 'search_online') {
       const payload = asRecord(record.result)
       const summary = typeof payload.summary === 'string' ? payload.summary.trim() : ''
-      if (summary) parts.push(summary)
+      if (summary) {
+        parts.push(summary)
+        continue
+      }
+      const results = Array.isArray(payload.results) ? payload.results : []
+      const lines = results
+        .slice(0, 5)
+        .map((entry) => {
+          const row = asRecord(entry)
+          const title = typeof row.title === 'string' ? row.title.trim() : ''
+          const snippet =
+            (typeof row.snippet === 'string' && row.snippet.trim()) ||
+            (typeof row.highlights === 'string' && row.highlights.trim()) ||
+            (Array.isArray(row.highlights) &&
+              row.highlights
+                .filter((h): h is string => typeof h === 'string')
+                .join(' ')
+                .trim()) ||
+            ''
+          if (!title && !snippet) return null
+          return snippet ? `${title}: ${snippet}` : title
+        })
+        .filter((line): line is string => Boolean(line))
+      if (lines.length > 0) {
+        parts.push(truncate(lines.join('\n'), GENERIC_MESSAGE_MAX_CHARS))
+      }
       continue
     }
 
     if (isWorkflowRunToolName(record.name)) {
       parts.push(formatWorkflowRunChatResult(record))
+      continue
+    }
+
+    if (isDebugInspectionToolName(record.name)) {
+      // Prefer explain_error over earlier list/query tools so the bubble is one clear answer.
+      if (record.name !== 'explain_error') {
+        const hasExplain = records.some(
+          (other) => other.name === 'explain_error' && other.success
+        )
+        if (hasExplain) continue
+      }
+      if (record.name === 'query_logs') {
+        const hasExecutionLogs = records.some(
+          (other) => other.name === 'get_execution_logs' && other.success
+        )
+        if (hasExecutionLogs) continue
+      }
+      const debugSummary = formatDebugInspectionChatResult(record)
+      if (debugSummary) parts.push(debugSummary)
       continue
     }
 
@@ -353,6 +690,17 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (isLikelySpecialistDomain(record.name)) {
       parts.push(`Finished the ${record.name.replace(/_/g, ' ')} steps for your request.`)
     }
+  }
+
+  if (parts.length === 0 && turnHasWorkflowDiscoveryTools(records) && !turnHasWorkflowMutationTools(records)) {
+    return (
+      'I looked up the available blocks, but did not finish creating the workflow. ' +
+      'Please try again (or switch models if Vertex quota is exhausted).'
+    )
+  }
+
+  if (parts.length === 0 && turnHasFileInspectionTools(records) && !turnHasFileMutationTools(records)) {
+    return buildFileInspectionChatAppendix(records)
   }
 
   const summary = parts
@@ -385,6 +733,9 @@ function isLikelySpecialistDomain(name: string): boolean {
  * Turns specialist findings like `[create_workflow] {"workflowName":"…"}` into short prose.
  */
 function summarizeSpecialistFindings(domain: string, message: string): string {
+  const explainSummary = synthesizeExplainErrorFromSpecialistFindings(message)
+  if (explainSummary) return explainSummary
+
   const created = message.match(/\[create_workflow\][^\n]*/i)
   if (created) {
     const nameMatch =

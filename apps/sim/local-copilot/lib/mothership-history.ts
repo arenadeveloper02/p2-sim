@@ -159,19 +159,6 @@ function toolResultContent(block: PersistedContentBlock): string {
   })
 }
 
-/**
- * True when a persisted tool batch can be replayed as wire `tool_use` /
- * `functionCall` parts. Unsigned tool batches must be collapsed — Gemini 3
- * returns 400 (or skips thoughts) when function calls are echoed without
- * thought signatures.
- */
-function canReplayToolBatchWithThinking(toolBatch: PersistedContentBlock[]): boolean {
-  return toolBatch.every((block) => {
-    const signature = block.toolCall?.thoughtSignature
-    return typeof signature === 'string' && signature.length > 0
-  })
-}
-
 function optionalThoughtSignature(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
@@ -244,29 +231,14 @@ function buildGeminiModelPartsFromSegment(params: {
   return parts.length > 0 ? parts : null
 }
 
-function formatCollapsedToolTurn(params: {
-  prose: string
-  toolBatch: PersistedContentBlock[]
-}): string {
-  const sections: string[] = []
-  const prose = stripLeakedToolMarkers(params.prose).trim()
-  // Prior CoT must NOT be echoed as assistant content — stuffing it into
-  // history makes Claude-via-proxy skip fresh thinking on the next user turn.
-  if (prose) sections.push(prose)
-  for (const block of params.toolBatch) {
-    const name = block.toolCall?.name ?? 'tool'
-    sections.push(`Called \`${name}\`.\nResult: ${toolResultContent(block)}`)
-  }
-  return sections.join('\n\n')
-}
-
 /**
  * Reconstructs assistant/tool turns from persisted content blocks instead of
  * flattening tools into `[Tool name: state]` text (which the model echoed to users).
  *
- * When Gemini thought signatures are present, rebuilds `geminiModelParts` so the
- * next user turn keeps CoT. Otherwise tool batches without signatures are
- * collapsed to assistant text (prose + tool summary only — never prior CoT).
+ * Always replays structured `toolCalls` + `role: 'tool'` results so Claude /
+ * Bedrock keep tool history. When Gemini thought signatures (or stored
+ * `geminiModelPartRounds`) are present, also attaches `geminiModelParts` for CoT.
+ * Prior thinking text without signatures is never echoed as assistant content.
  */
 export function assistantMessageToChatHistory(message: PersistedMessage): ChatMessage[] {
   const blocks = message.contentBlocks ?? []
@@ -327,32 +299,27 @@ export function assistantMessageToChatHistory(message: PersistedMessage): ChatMe
     }
 
     if (toolBatch.length > 0) {
-      if (geminiModelParts || canReplayToolBatchWithThinking(toolBatch)) {
-        const cleanedProse = stripLeakedToolMarkers(prose)
-        out.push({
-          role: 'assistant',
-          content: cleanedProse,
-          toolCalls: toolBatch.map((block) => ({
-            id: block.toolCall!.id,
-            name: block.toolCall!.name,
-            arguments: JSON.stringify(block.toolCall!.params ?? {}),
-            ...(block.toolCall!.thoughtSignature
-              ? { thoughtSignature: block.toolCall!.thoughtSignature }
-              : {}),
-          })),
-          ...(geminiModelParts ? { geminiModelParts } : {}),
-        })
+      const cleanedProse = stripLeakedToolMarkers(prose)
+      out.push({
+        role: 'assistant',
+        content: cleanedProse,
+        toolCalls: toolBatch.map((block) => ({
+          id: block.toolCall!.id,
+          name: block.toolCall!.name,
+          arguments: JSON.stringify(block.toolCall!.params ?? {}),
+          ...(block.toolCall!.thoughtSignature
+            ? { thoughtSignature: block.toolCall!.thoughtSignature }
+            : {}),
+        })),
+        ...(geminiModelParts ? { geminiModelParts } : {}),
+      })
 
-        for (const block of toolBatch) {
-          out.push({
-            role: 'tool',
-            toolCallId: block.toolCall!.id,
-            content: toolResultContent(block),
-          })
-        }
-      } else {
-        const collapsed = formatCollapsedToolTurn({ prose, toolBatch })
-        if (collapsed) out.push({ role: 'assistant', content: collapsed })
+      for (const block of toolBatch) {
+        out.push({
+          role: 'tool',
+          toolCallId: block.toolCall!.id,
+          content: toolResultContent(block),
+        })
       }
       continue
     }

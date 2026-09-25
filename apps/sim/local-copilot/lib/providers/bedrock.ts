@@ -586,7 +586,10 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
       maxTokens: request.maxTokens ?? 8192,
     })
 
-    const thinkingFields = resolveBedrockThinkingAdditionalFields(model, config.thinkingLevel)
+    const thinkingFields = resolveBedrockThinkingAdditionalFields(
+      model,
+      request.thinkingLevel ?? config.thinkingLevel
+    )
 
     const baseInput = {
       modelId: bedrockModelId,

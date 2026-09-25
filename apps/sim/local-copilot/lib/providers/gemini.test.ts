@@ -341,11 +341,18 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
           }
         })()
       )
+    const refreshAi = vi.fn(() => ({
+      models: { generateContentStream },
+    }))
     const ai = { models: { generateContentStream } }
 
     for await (const _chunk of streamGoogleGenAiChatCompletion({
       // double-cast-allowed: test double for GoogleGenAI stream client
       ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+      // double-cast-allowed: test double for GoogleGenAI stream client refresh
+      refreshAi: refreshAi as unknown as NonNullable<
+        Parameters<typeof streamGoogleGenAiChatCompletion>[0]['refreshAi']
+      >,
       priorityPayGoOnRetry: true,
       config,
       request: { messages: [{ role: 'user', content: 'hi' }] },
@@ -356,6 +363,9 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
     }
 
     expect(generateContentStream).toHaveBeenCalledTimes(2)
+    // First 429 rebuilds the same slot with Priority baked into the client.
+    expect(refreshAi).toHaveBeenCalledTimes(1)
+    expect(refreshAi).toHaveBeenCalledWith({ priorityPayGo: true, sameSlot: true })
     const firstConfig = generateContentStream.mock.calls[0]?.[0]?.config as
       | { httpOptions?: { headers?: Record<string, string> } }
       | undefined
@@ -366,7 +376,55 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
     expect(retryConfig?.httpOptions?.headers).toEqual({ ...VERTEX_PRIORITY_PAYGO_HEADERS })
   })
 
-  it('surfaces a clearer error after exhausting retries', async () => {
+  it('after Priority fails, rotates to the next slot on Standard', async () => {
+    const exhausted = Object.assign(new Error('Resource exhausted'), {
+      status: 'RESOURCE_EXHAUSTED',
+      code: 429,
+    })
+    const generateContentStream = vi
+      .fn()
+      .mockRejectedValueOnce(exhausted)
+      .mockRejectedValueOnce(exhausted)
+      .mockResolvedValueOnce(
+        (async function* () {
+          yield {
+            candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+            usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+          }
+        })()
+      )
+    const refreshAi = vi.fn(() => ({
+      models: { generateContentStream },
+    }))
+    const ai = { models: { generateContentStream } }
+
+    for await (const _chunk of streamGoogleGenAiChatCompletion({
+      // double-cast-allowed: test double for GoogleGenAI stream client
+      ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+      // double-cast-allowed: test double for GoogleGenAI stream client refresh
+      refreshAi: refreshAi as unknown as NonNullable<
+        Parameters<typeof streamGoogleGenAiChatCompletion>[0]['refreshAi']
+      >,
+      priorityPayGoOnRetry: true,
+      config,
+      request: { messages: [{ role: 'user', content: 'hi' }] },
+      logLabel: 'Vertex',
+    })) {
+      // drain
+    }
+
+    // slot0 Standard → slot0 Priority → slot1 Standard (success)
+    expect(generateContentStream).toHaveBeenCalledTimes(3)
+    expect(refreshAi).toHaveBeenCalledTimes(2)
+    expect(refreshAi).toHaveBeenNthCalledWith(1, { priorityPayGo: true, sameSlot: true })
+    expect(refreshAi).toHaveBeenNthCalledWith(2, undefined)
+    const thirdConfig = generateContentStream.mock.calls[2]?.[0]?.config as
+      | { httpOptions?: { headers?: Record<string, string> } }
+      | undefined
+    expect(thirdConfig?.httpOptions?.headers).toBeUndefined()
+  })
+
+  it('surfaces a clearer error after exhausting the slot ladder', async () => {
     const exhausted = Object.assign(new Error('Resource exhausted'), {
       status: 'RESOURCE_EXHAUSTED',
       code: 429,
@@ -378,15 +436,45 @@ describe('streamGoogleGenAiChatCompletion 429 retries', () => {
       for await (const _chunk of streamGoogleGenAiChatCompletion({
         // double-cast-allowed: test double for GoogleGenAI stream client
         ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+        priorityPayGoOnRetry: true,
         config,
         request: { messages: [{ role: 'user', content: 'hi' }] },
-        logLabel: 'Gemini',
+        logLabel: 'Vertex',
       })) {
         // drain
       }
-    }).rejects.toThrow(/quota exceeded \(429 RESOURCE_EXHAUSTED\) after retries/)
+    }).rejects.toThrow(/Retries included Vertex Priority PayGo/)
 
-    expect(generateContentStream).toHaveBeenCalledTimes(5)
-    expect(mockSleep).toHaveBeenCalledTimes(4)
+    // attempts 0..5 = 6 opens (default 3-slot ladder cap)
+    expect(generateContentStream).toHaveBeenCalledTimes(6)
+    // Priority escalations skip sleep; only Priority→next-slot rotates sleep (twice).
+    expect(mockSleep).toHaveBeenCalledTimes(2)
+  })
+
+  it('honors a slot-aware maxOpenRetries cap (one unique project)', async () => {
+    const exhausted = Object.assign(new Error('Resource exhausted'), {
+      status: 'RESOURCE_EXHAUSTED',
+      code: 429,
+    })
+    const generateContentStream = vi.fn().mockRejectedValue(exhausted)
+    const ai = { models: { generateContentStream } }
+
+    await expect(async () => {
+      for await (const _chunk of streamGoogleGenAiChatCompletion({
+        // double-cast-allowed: test double for GoogleGenAI stream client
+        ai: ai as unknown as Parameters<typeof streamGoogleGenAiChatCompletion>[0]['ai'],
+        priorityPayGoOnRetry: true,
+        maxOpenRetries: 1,
+        config,
+        request: { messages: [{ role: 'user', content: 'hi' }] },
+        logLabel: 'Vertex',
+      })) {
+        // drain
+      }
+    }).rejects.toThrow(/Retries included Vertex Priority PayGo/)
+
+    // Standard then Priority only
+    expect(generateContentStream).toHaveBeenCalledTimes(2)
+    expect(mockSleep).toHaveBeenCalledTimes(0)
   })
 })

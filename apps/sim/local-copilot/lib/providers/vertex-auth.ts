@@ -115,6 +115,9 @@ function validateLocation(location: string, paramName: string): string {
  * A slot is included when its project env is set. Location falls back to
  * `VERTEX_LOCATION` then `global`. Credentials fall back to the primary SA /
  * `GCS_CREDENTIALS_JSON`, otherwise the SDK uses Application Default Credentials.
+ *
+ * Duplicate project + service-account + location combos are collapsed to the
+ * first slot — they share one quota pool and retrying them only adds latency.
  */
 export function listLocalCopilotVertexSlots(): LocalCopilotVertexSlot[] {
   const primaryLocation = validateLocation(
@@ -148,7 +151,15 @@ export function listLocalCopilotVertexSlots(): LocalCopilotVertexSlot[] {
     })
   }
 
-  return slots
+  // Same project + SA shares one quota pool — keep the first env slot only so
+  // the 429 ladder does not burn seconds retrying identical capacity.
+  const seen = new Set<string>()
+  return slots.filter((slot) => {
+    const identity = `${slot.project}|${slot.credentials?.client_email ?? 'adc'}|${slot.location}`
+    if (seen.has(identity)) return false
+    seen.add(identity)
+    return true
+  })
 }
 
 /**
@@ -194,12 +205,35 @@ export function resetLocalCopilotVertexSlotRotation(): void {
   vertexSlotRotationCounter = 0
 }
 
-function buildVertexClient(slot: LocalCopilotVertexSlot): GoogleGenAI {
+/** Options when constructing a Local Copilot Vertex client. */
+export interface LocalCopilotVertexClientOptions {
+  /**
+   * Bake Priority PayGo headers into client `httpOptions` so every request
+   * on this client hits the shared priority pool.
+   */
+  priorityPayGo?: boolean
+}
+
+const VERTEX_PRIORITY_PAYGO_HTTP_OPTIONS = {
+  apiVersion: 'v1',
+  headers: {
+    'X-Vertex-AI-LLM-Request-Type': 'shared',
+    'X-Vertex-AI-LLM-Shared-Request-Type': 'priority',
+  },
+} as const
+
+function buildVertexClient(
+  slot: LocalCopilotVertexSlot,
+  options?: LocalCopilotVertexClientOptions
+): GoogleGenAI {
+  const httpOptions = options?.priorityPayGo ? VERTEX_PRIORITY_PAYGO_HTTP_OPTIONS : undefined
+
   if (slot.credentials) {
     return new GoogleGenAI({
       vertexai: true,
       project: slot.project,
       location: slot.location,
+      ...(httpOptions ? { httpOptions } : {}),
       googleAuthOptions: {
         credentials: slot.credentials,
         scopes: [VERTEX_CLOUD_PLATFORM_SCOPE],
@@ -211,15 +245,37 @@ function buildVertexClient(slot: LocalCopilotVertexSlot): GoogleGenAI {
     vertexai: true,
     project: slot.project,
     location: slot.location,
+    ...(httpOptions ? { httpOptions } : {}),
   })
 }
+
+/** Last slot handed out by {@link createLocalCopilotVertexClient} (for same-slot Priority rebuilds). */
+let lastResolvedVertexSlot: LocalCopilotVertexSlot | null = null
 
 /**
  * Builds a `@google/genai` client pointed at Vertex AI.
  *
  * Round-robins up to three slots, each with its own project, location, and
  * service-account JSON (`VERTEX_*`, `VERTEX_*_1`, `VERTEX_*_2`).
+ * Pass `{ priorityPayGo: true }` after a 429 to pin the next slot to the
+ * shared priority pool.
  */
-export function createLocalCopilotVertexClient(): GoogleGenAI {
-  return buildVertexClient(resolveLocalCopilotVertexSlot())
+export function createLocalCopilotVertexClient(
+  options?: LocalCopilotVertexClientOptions
+): GoogleGenAI {
+  const slot = resolveLocalCopilotVertexSlot()
+  lastResolvedVertexSlot = slot
+  return buildVertexClient(slot, options)
+}
+
+/**
+ * Rebuilds a Vertex client for the last resolved slot without advancing
+ * rotation — used when escalating a 429 to Priority PayGo on the same account.
+ */
+export function recreateLocalCopilotVertexClientWithoutRotation(
+  options?: LocalCopilotVertexClientOptions
+): GoogleGenAI {
+  const slot = lastResolvedVertexSlot ?? resolveLocalCopilotVertexSlot()
+  lastResolvedVertexSlot = slot
+  return buildVertexClient(slot, options)
 }
