@@ -7,6 +7,7 @@ import type { ContractBodyInput } from '@/lib/api/contracts'
 import {
   acceptInvitationContract,
   type BatchInvitationResult as BatchInvitationResultContract,
+  type BatchWorkspaceInvitationBody,
   batchWorkspaceInvitationsContract,
   cancelInvitationContract,
   getInvitationContract,
@@ -84,7 +85,8 @@ export interface WorkspaceInvitation {
   isPendingInvitation: boolean
   isExternal: boolean
   invitationId?: string
-  token: string
+  /** Absent unless the viewer may manage the workspace; the copy-link action is gated on it. */
+  token?: string
 }
 
 async function fetchPendingInvitations(
@@ -95,6 +97,7 @@ async function fetchPendingInvitations(
 
   return (
     data.invitations
+      /** The server returns pending rows only; the status check stays as a cheap contract guard. */
       ?.filter(
         (inv: PendingInvitationRow) => inv.status === 'pending' && inv.workspaceId === workspaceId
       )
@@ -209,7 +212,7 @@ export function useDeclineMyInvitation() {
   })
 }
 
-type SendInvitationsParams = ContractBodyInput<typeof batchWorkspaceInvitationsContract> & {
+type SendInvitationsParams = Omit<BatchWorkspaceInvitationBody, 'organizationId'> & {
   organizationId?: string | null
 }
 
@@ -230,9 +233,16 @@ export function useSendWorkspaceInvitations() {
       emails,
       permission,
       membership,
+      organizationId,
     }: SendInvitationsParams): Promise<SendInvitationsResult> => {
       const result = await requestJson(batchWorkspaceInvitationsContract, {
-        body: { workspaceIds, emails, permission, membership },
+        body: {
+          workspaceIds,
+          emails,
+          permission,
+          membership,
+          organizationId: organizationId ?? undefined,
+        },
       })
 
       return {

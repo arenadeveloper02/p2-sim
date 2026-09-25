@@ -9,14 +9,23 @@ import { and, eq } from 'drizzle-orm'
 import { normalizeCredentialEnvKey } from '@/lib/api/contracts/credentials'
 import { acquireOrganizationUserMutationLocks } from '@/lib/billing/organizations/membership'
 import type { OrchestrationRequestContext } from '@/lib/core/orchestration/types'
+import {
+  type ResourceOwner,
+  resourceScopeColumns,
+  resourceScopeFromOwner,
+} from '@/lib/core/resource-scope'
+import { resourceScopeCondition } from '@/lib/core/resource-scope.server'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import {
   ensureBilledAccountCredentialMembership,
   getCredentialActorContext,
+  requireOrdinaryCredentialType,
 } from '@/lib/credentials/access'
 import { AtlassianValidationError } from '@/lib/credentials/atlassian-service-account'
 import { getCredentialCreationWorkspaceContext } from '@/lib/credentials/environment'
 import type { CredentialOrchestrationErrorCode } from '@/lib/credentials/orchestration'
+import { getCredentialCreationOrganizationContext } from '@/lib/credentials/organization'
+import type { AtlassianProduct } from '@/lib/credentials/service-account-fields'
 import {
   ServiceAccountSecretError,
   verifyAndBuildServiceAccountSecret,
@@ -71,6 +80,7 @@ export interface PerformCreateCredentialParams {
   serviceAccountJson?: string
   apiToken?: string
   domain?: string
+  atlassianProduct?: AtlassianProduct
   signingSecret?: string
   botToken?: string
   clientId?: string
@@ -96,7 +106,7 @@ export interface PerformCreateCredentialResult {
   errorCode?: CredentialOrchestrationErrorCode
   /** Provider-specific code (e.g. Atlassian `invalid_credentials`) for client message mapping. */
   providerErrorCode?: string
-  /** A provider outage rather than a rejected secret — callers surface 502, not 400. */
+  /** A provider outage rather than a rejected secret — callers surface 503, not 400. */
   providerUnavailable?: boolean
   credential?: CredentialRow
   /** False when an existing credential matched the source and was returned instead. */
@@ -105,8 +115,7 @@ export interface PerformCreateCredentialResult {
   auditMetadata?: Record<string, unknown>
 }
 
-interface ExistingCredentialSourceParams {
-  workspaceId: string
+interface ExistingCredentialSourceParams extends ResourceOwner {
   type: CredentialType
   accountId?: string | null
   envKey?: string | null
@@ -123,7 +132,8 @@ async function findExistingCredentialBySourceWith(
   exec: DbOrTx,
   params: ExistingCredentialSourceParams
 ): Promise<CredentialRow | null> {
-  const { workspaceId, type, accountId, envKey, envOwnerUserId, displayName, providerId } = params
+  const { type, accountId, envKey, envOwnerUserId, displayName, providerId } = params
+  const scope = resourceScopeFromOwner(params)
 
   if (type === 'oauth' && accountId) {
     const [row] = await exec
@@ -131,7 +141,7 @@ async function findExistingCredentialBySourceWith(
       .from(credential)
       .where(
         and(
-          eq(credential.workspaceId, workspaceId),
+          resourceScopeCondition(credential, scope),
           eq(credential.type, 'oauth'),
           eq(credential.accountId, accountId)
         )
@@ -146,7 +156,7 @@ async function findExistingCredentialBySourceWith(
       .from(credential)
       .where(
         and(
-          eq(credential.workspaceId, workspaceId),
+          resourceScopeCondition(credential, scope),
           eq(credential.type, 'env_workspace'),
           eq(credential.envKey, envKey)
         )
@@ -161,7 +171,7 @@ async function findExistingCredentialBySourceWith(
       .from(credential)
       .where(
         and(
-          eq(credential.workspaceId, workspaceId),
+          resourceScopeCondition(credential, scope),
           eq(credential.type, 'env_personal'),
           eq(credential.envKey, envKey),
           eq(credential.envOwnerUserId, envOwnerUserId)
@@ -177,7 +187,7 @@ async function findExistingCredentialBySourceWith(
       .from(credential)
       .where(
         and(
-          eq(credential.workspaceId, workspaceId),
+          resourceScopeCondition(credential, scope),
           eq(credential.type, 'service_account'),
           eq(credential.providerId, providerId),
           eq(credential.displayName, displayName)
@@ -210,16 +220,38 @@ function failure(
   return { success: false, error, errorCode, ...extra }
 }
 
+export type CreateCredentialRecordParams = Omit<PerformCreateCredentialParams, 'workspaceId'> &
+  ResourceOwner
+
 export async function createCredentialRecord(
-  params: PerformCreateCredentialParams,
+  params: CreateCredentialRecordParams,
   options: { authorizeWorkspace: boolean }
 ): Promise<PerformCreateCredentialResult> {
-  const { workspaceId, type, userId } = params
+  const { type, userId } = params
+  const scope = resourceScopeFromOwner(params)
+  if (scope.kind === 'organization' && type !== 'oauth' && type !== 'service_account') {
+    return failure('Organization connections support OAuth and service accounts', 'validation')
+  }
+  const getCreationContext = (executor: DbOrTx, forUpdate = false) =>
+    scope.kind === 'workspace'
+      ? getCredentialCreationWorkspaceContext({
+          executor,
+          workspaceId: scope.workspaceId,
+          userId,
+          forUpdate,
+        })
+      : getCredentialCreationOrganizationContext({
+          executor,
+          organizationId: scope.organizationId,
+          userId,
+          forUpdate,
+        })
 
   try {
-    const workspaceAccess = options.authorizeWorkspace
-      ? await checkWorkspaceAccess(workspaceId, userId)
-      : undefined
+    const workspaceAccess =
+      options.authorizeWorkspace && scope.kind === 'workspace'
+        ? await checkWorkspaceAccess(scope.workspaceId, userId)
+        : undefined
     if (workspaceAccess && !workspaceAccess.canWrite) {
       return failure('Write permission required', 'forbidden')
     }
@@ -270,6 +302,7 @@ export async function createCredentialRecord(
           botToken: params.botToken,
           apiToken: params.apiToken,
           domain: params.domain,
+          atlassianProduct: params.atlassianProduct,
           serviceAccountJson: params.serviceAccountJson,
           clientId: params.clientId,
           clientSecret: params.clientSecret,
@@ -313,7 +346,7 @@ export async function createCredentialRecord(
     if (!resolvedDisplayName) return failure('Display name is required', 'validation')
 
     const existingCredential = await findExistingCredentialBySourceWith(db, {
-      workspaceId,
+      ...resourceScopeColumns(scope),
       type,
       accountId: resolvedAccountId,
       envKey: resolvedEnvKey,
@@ -354,9 +387,12 @@ export async function createCredentialRecord(
         )
       }
 
-      const access = await getCredentialActorContext(existingCredential.id, userId, {
-        ...(workspaceAccess ? { workspaceAccess } : {}),
-      })
+      const access =
+        scope.kind === 'workspace'
+          ? await getCredentialActorContext(existingCredential.id, userId, {
+              ...(workspaceAccess ? { workspaceAccess } : {}),
+            })
+          : { member: null, isAdmin: (await getCreationContext(db))?.canWrite === true }
 
       if (!access.member && !access.isAdmin) {
         return failure('A credential with this source already exists in this workspace', 'conflict')
@@ -431,11 +467,7 @@ export async function createCredentialRecord(
        * credential and blocks. If transfer wins, its permission/member cleanup
        * is visible to the authoritative re-read below and the insert is refused.
        */
-      const plannedContext = await getCredentialCreationWorkspaceContext({
-        executor: tx,
-        workspaceId,
-        userId,
-      })
+      const plannedContext = await getCreationContext(tx)
       if (!plannedContext) return failure('Write permission required', 'forbidden')
 
       await acquireOrganizationUserMutationLocks(tx, {
@@ -443,12 +475,7 @@ export async function createCredentialRecord(
         organizationIds: plannedContext.organizationId ? [plannedContext.organizationId] : [],
       })
 
-      const currentContext = await getCredentialCreationWorkspaceContext({
-        executor: tx,
-        workspaceId,
-        userId,
-        forUpdate: true,
-      })
+      const currentContext = await getCreationContext(tx, true)
       if (!currentContext) return failure('Write permission required', 'forbidden')
       if (currentContext.organizationId !== plannedContext.organizationId) {
         return failure(
@@ -465,7 +492,7 @@ export async function createCredentialRecord(
        */
       if (type === 'service_account') {
         const innerExisting = await findExistingCredentialBySourceWith(tx, {
-          workspaceId,
+          ...resourceScopeColumns(scope),
           type,
           displayName: resolvedDisplayName,
           providerId: resolvedProviderId,
@@ -475,7 +502,7 @@ export async function createCredentialRecord(
 
       await tx.insert(credential).values({
         id: credentialId,
-        workspaceId,
+        ...resourceScopeColumns(scope),
         type,
         displayName: resolvedDisplayName,
         description: resolvedDescription,
@@ -618,12 +645,12 @@ export async function performCreateCredential(
     params.userId,
     'credential_connected',
     {
-      credential_type: result.credential.type,
+      credential_type: requireOrdinaryCredentialType(result.credential.type),
       provider_id: result.credential.providerId ?? result.credential.type,
-      workspace_id: result.credential.workspaceId,
+      workspace_id: params.workspaceId,
     },
     {
-      groups: { workspace: result.credential.workspaceId },
+      groups: { workspace: params.workspaceId },
       setOnce: { first_credential_connected_at: new Date().toISOString() },
     }
   )
@@ -663,12 +690,17 @@ export function isProviderOutageCode(code: string | undefined): boolean {
   return code !== undefined && PROVIDER_OUTAGE_CODES.has(code)
 }
 
-/** HTTP status for a credential orchestration failure, shared by every route surface. */
+/**
+ * HTTP status for a credential orchestration failure, shared by every route
+ * surface. A provider outage is `503`, as {@link PROVIDER_OUTAGE_CODES} says —
+ * the same status the internal and v2 credential error policies render, each
+ * with a `Retry-After`.
+ */
 export function statusForCredentialOrchestrationError(
   code: CredentialOrchestrationErrorCode | undefined,
   options: { providerUnavailable?: boolean } = {}
 ): number {
-  if (options.providerUnavailable) return 502
+  if (options.providerUnavailable) return 503
   if (code === 'validation') return 400
   if (code === 'forbidden') return 403
   if (code === 'not_found') return 404

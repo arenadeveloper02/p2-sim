@@ -20,12 +20,14 @@ export const SIDEBAR_SECTION_GAP_CLASS = 'mt-4'
 export const SIDEBAR_ITEM_GAP_CLASS = 'gap-[1px]'
 
 /**
- * Halves of {@link SIDEBAR_SECTION_GAP_CLASS} straddling the scroll region's
- * divider: the pinned block above carries the top half, the scroll region below
- * carries the bottom half. Split this way the divider sits centered in a gap that
- * reads as one section gap, so the first section header is spaced from the block
- * above it exactly like every other section boundary. Keep both in step with the
- * section gap.
+ * Halves of {@link SIDEBAR_SECTION_GAP_CLASS} straddling a divider: the block
+ * above carries the top half, the block below carries the bottom half. Split this
+ * way the divider sits centered in a gap that reads as one section gap, so the
+ * first section header is spaced from the pinned nav exactly like every other
+ * section boundary. The scroll region carries BOTH — the bottom half under the
+ * nav's divider and the top half above the footer's — as its own padding, so rows
+ * scroll through the gap beneath the edge fade rather than stopping short of the
+ * rule. Keep both in step with the section gap.
  */
 export const SIDEBAR_DIVIDER_PAD_ABOVE_CLASS = 'pb-2'
 export const SIDEBAR_DIVIDER_PAD_BELOW_CLASS = 'pt-2'

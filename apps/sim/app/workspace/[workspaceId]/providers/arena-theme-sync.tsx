@@ -3,8 +3,8 @@
 import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
 import { normalizeEmail } from '@sim/utils/string'
-import { useTheme } from 'next-themes'
 import { useSession } from '@/lib/auth/auth-client'
+import { useTheme } from '@/app/_shell/providers/theme-provider'
 
 const logger = createLogger('ArenaThemeSync')
 
@@ -12,7 +12,7 @@ const logger = createLogger('ArenaThemeSync')
  * Applies arena-driven theme updates for the signed-in user only.
  *
  * Isolated from general settings: does not refetch, invalidate, or mutate
- * React Query settings state — only updates next-themes (`sim-theme`).
+ * React Query settings state — only updates the document theme (`sim-theme`).
  */
 export function ArenaThemeSync() {
   const { data: session } = useSession()

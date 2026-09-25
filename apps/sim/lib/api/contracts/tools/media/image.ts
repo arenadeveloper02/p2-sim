@@ -1,6 +1,5 @@
 import { z } from 'zod'
-import { toolBooleanSchema, toolJsonResponseSchema } from '@/lib/api/contracts/tools/media/shared'
-import { defineRouteContract } from '@/lib/api/contracts/types'
+import { toolBooleanSchema } from '@/lib/api/contracts/tools/media/shared'
 
 export const imageProviders = ['openai', 'gemini', 'falai'] as const
 const MISSING_IMAGE_FIELDS_ERROR = 'Missing required fields: provider, apiKey, and prompt'
@@ -51,10 +50,3 @@ export const imageToolBodySchema = z
   })
 
 export type ImageToolBody = z.infer<typeof imageToolBodySchema>
-
-export const imageToolContract = defineRouteContract({
-  method: 'POST',
-  path: '/api/tools/image',
-  body: imageToolBodySchema,
-  response: { mode: 'json', schema: toolJsonResponseSchema },
-})

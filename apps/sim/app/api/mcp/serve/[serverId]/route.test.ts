@@ -70,6 +70,24 @@ function createResolvedSecretTraceProvenance(userId: string, workspaceId = 'ws-1
   }
 }
 
+const SESSION_PRINCIPAL = {
+  kind: 'session',
+  userId: 'user-1',
+  sessionId: 'session-1',
+} as const
+
+const PERSONAL_API_KEY_PRINCIPAL = {
+  kind: 'personal_api_key',
+  userId: 'user-1',
+  keyId: 'personal-key-1',
+} as const
+
+const WORKSPACE_API_KEY_PRINCIPAL = {
+  kind: 'workspace_api_key',
+  workspaceId: 'ws-1',
+  keyId: 'workspace-key-1',
+} as const
+
 vi.mock('@/lib/workspaces/permissions/utils', () => permissionsMock)
 
 vi.mock('@/lib/auth/internal', () => ({
@@ -77,7 +95,7 @@ vi.mock('@/lib/auth/internal', () => ({
 }))
 
 vi.mock('@/lib/core/execution-limits', () => ({
-  getMaxExecutionTimeout: () => 10_000,
+  getMaxExecutionTimeout: () => 60_000,
 }))
 
 vi.mock('@/lib/workflows/executor/execute-service', () => ({
@@ -215,6 +233,7 @@ describe('MCP Serve Route', () => {
       success: true,
       userId: 'user-1',
       authType: 'session',
+      principal: SESSION_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('read')
 
@@ -273,6 +292,7 @@ describe('MCP Serve Route', () => {
       userId: 'user-1',
       authType: 'api_key',
       apiKeyType: 'personal',
+      principal: PERSONAL_API_KEY_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('write')
     mockExecuteWorkflowService.mockResolvedValueOnce({
@@ -289,7 +309,10 @@ describe('MCP Serve Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/mcp/serve/server-1', {
       method: 'POST',
-      headers: { 'X-API-Key': 'pk_test_123' },
+      headers: {
+        'X-API-Key': 'pk_test_123',
+        Accept: 'application/json, text/event-stream;q=0',
+      },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -300,12 +323,14 @@ describe('MCP Serve Route', () => {
     const response = await POST(req, { params: Promise.resolve({ serverId: 'server-1' }) })
 
     expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/json')
     expect(mockExecuteWorkflowService).toHaveBeenCalledTimes(1)
     expect(mockExecuteWorkflowService).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowId: 'wf-1',
         userId: 'user-1',
         triggerType: 'mcp',
+        principal: PERSONAL_API_KEY_PRINCIPAL,
         useAuthenticatedUserAsActor: true,
         deploymentVersionId: 'deployment-1',
         includeFileBase64: false,
@@ -316,6 +341,153 @@ describe('MCP Serve Route', () => {
       actorUserId: 'user-1',
       workspaceId: 'ws-1',
     })
+  })
+
+  it('keeps a Streamable HTTP tool call active and ends with its JSON-RPC response', async () => {
+    vi.useFakeTimers()
+    try {
+      dbChainMockFns.limit
+        .mockResolvedValueOnce([
+          {
+            id: 'server-1',
+            name: 'Public Server',
+            workspaceId: 'ws-1',
+            isPublic: true,
+            createdBy: 'owner-1',
+          },
+        ])
+        .mockResolvedValueOnce([{ toolName: 'tool_a', workflowId: 'wf-1' }])
+        .mockResolvedValueOnce([{ workspaceId: 'ws-1', deploymentVersionId: 'deployment-1' }])
+
+      let finishExecution!: (result: unknown) => void
+      mockExecuteWorkflowService.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishExecution = resolve
+        })
+      )
+
+      const req = new NextRequest('http://localhost:3000/api/mcp/serve/server-1', {
+        method: 'POST',
+        headers: { accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'tool_a', arguments: { q: 'test' } },
+        }),
+      })
+      const response = await POST(req, { params: Promise.resolve({ serverId: 'server-1' }) })
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/event-stream')
+      if (!response.body) throw new Error('Expected MCP event stream')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      expect(decoder.decode((await reader.read()).value)).toBe(': keepalive\n\n')
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(decoder.decode((await reader.read()).value)).toBe(': keepalive\n\n')
+
+      finishExecution({
+        ok: true,
+        executionId: 'exec-1',
+        workflowId: 'wf-1',
+        status: 'completed',
+        aborted: null,
+        output: { ok: true },
+        error: null,
+        hasResponseBlock: false,
+        resolvedSecretTraceProvenance: createResolvedSecretTraceProvenance('owner-1'),
+      })
+
+      const event = decoder.decode((await reader.read()).value)
+      expect(JSON.parse(event.replace(/^data: /, '').trim())).toMatchObject({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { content: [{ type: 'text' }], isError: false },
+      })
+      expect((await reader.read()).done).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('serves metadata when standalone SSE GET is explicitly rejected', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([
+      {
+        id: 'server-1',
+        name: 'Public Server',
+        workspaceId: 'ws-1',
+        isPublic: true,
+        createdBy: 'owner-1',
+      },
+    ])
+
+    const request = new NextRequest('http://localhost:3000/api/mcp/serve/server-1', {
+      headers: { accept: 'application/json, text/event-stream;q=0' },
+    })
+    const response = await GET(request, { params: Promise.resolve({ serverId: 'server-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      name: 'Public Server',
+      capabilities: { tools: {} },
+    })
+  })
+
+  it('cancels the workflow when an MCP event-stream consumer disconnects', async () => {
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          id: 'server-1',
+          name: 'Public Server',
+          workspaceId: 'ws-1',
+          isPublic: true,
+          createdBy: 'owner-1',
+        },
+      ])
+      .mockResolvedValueOnce([{ toolName: 'tool_a', workflowId: 'wf-1' }])
+      .mockResolvedValueOnce([{ workspaceId: 'ws-1', deploymentVersionId: 'deployment-1' }])
+
+    let executionSignal: AbortSignal | undefined
+    mockExecuteWorkflowService.mockImplementationOnce(
+      ({ abortSignal }: { abortSignal: AbortSignal }) =>
+        new Promise((resolve) => {
+          executionSignal = abortSignal
+          const finish = () =>
+            resolve({
+              ok: true,
+              executionId: 'exec-1',
+              workflowId: 'wf-1',
+              status: 'cancelled',
+              aborted: 'client',
+              output: undefined,
+              error: { message: 'Client cancelled request', code: 'CANCELLED' },
+              hasResponseBlock: false,
+            })
+          if (abortSignal.aborted) finish()
+          else abortSignal.addEventListener('abort', finish, { once: true })
+        })
+    )
+
+    const req = new NextRequest('http://localhost:3000/api/mcp/serve/server-1', {
+      method: 'POST',
+      headers: { accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'tool_a', arguments: { q: 'test' } },
+      }),
+    })
+    const response = await POST(req, { params: Promise.resolve({ serverId: 'server-1' }) })
+    if (!response.body) throw new Error('Expected MCP event stream')
+    const reader = response.body.getReader()
+    await reader.read()
+    await vi.waitFor(() => expect(executionSignal).toBeDefined())
+
+    await reader.cancel('client disconnected')
+
+    expect(executionSignal?.aborted).toBe(true)
   })
 
   it('rejects a personal api key when the workspace disallows personal api keys', async () => {
@@ -334,6 +506,7 @@ describe('MCP Serve Route', () => {
       userId: 'user-1',
       authType: 'api_key',
       apiKeyType: 'personal',
+      principal: PERSONAL_API_KEY_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('write')
 
@@ -375,6 +548,7 @@ describe('MCP Serve Route', () => {
       authType: 'api_key',
       apiKeyType: 'workspace',
       workspaceId: 'ws-1',
+      principal: WORKSPACE_API_KEY_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('write')
     mockExecuteWorkflowService.mockResolvedValueOnce({
@@ -405,6 +579,7 @@ describe('MCP Serve Route', () => {
     expect(mockExecuteWorkflowService).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
+        principal: WORKSPACE_API_KEY_PRINCIPAL,
         useAuthenticatedUserAsActor: false,
       })
     )
@@ -477,6 +652,7 @@ describe('MCP Serve Route', () => {
       success: true,
       userId: 'user-1',
       authType: 'session',
+      principal: SESSION_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('read')
     mockExecuteWorkflowService.mockResolvedValueOnce({
@@ -1096,6 +1272,7 @@ describe('MCP Serve Route', () => {
       userId: 'user-1',
       authType: 'api_key',
       apiKeyType: 'personal',
+      principal: PERSONAL_API_KEY_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('write')
     mockExecuteWorkflowService.mockResolvedValueOnce({
@@ -1193,6 +1370,7 @@ describe('MCP Serve Route', () => {
       authType: 'api_key',
       apiKeyType: 'workspace',
       workspaceId: 'ws-1',
+      principal: WORKSPACE_API_KEY_PRINCIPAL,
     })
     mockGetUserEntityPermissions.mockResolvedValueOnce('write')
     mockExecuteWorkflowService.mockResolvedValueOnce({

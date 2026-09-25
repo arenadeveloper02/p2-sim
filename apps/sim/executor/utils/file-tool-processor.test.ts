@@ -41,14 +41,12 @@ const toolConfig = {
   },
   outputs: {
     file: { type: 'file' },
-    image: { type: 'file', description: 'Generated image file' },
   },
 } satisfies ToolConfig
 
 describe('FileToolProcessor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('image-bytes'))
     mockUploadExecutionFile.mockResolvedValue({
       id: 'file-1',
       key: 'workspace/workspace-1/file-1',
@@ -59,20 +57,34 @@ describe('FileToolProcessor', () => {
     } satisfies UserFile)
   })
 
-  it('processes bare image URL strings for file outputs', async () => {
-    mockUploadExecutionFile.mockResolvedValue({
-      id: 'file_1',
-      key: 'exec/key.png',
-      name: 'generated-image.png',
-      url: 'https://example.com/file.png',
-      size: 11,
-      type: 'image/png',
+  it('passes stored file descriptors through without downloading or uploading again', async () => {
+    const stored: UserFile = {
+      id: 'file-1',
+      key: 'execution/workspace-1/workflow-1/execution-1/file-1/workbook.xlsx',
+      name: 'workbook.xlsx',
+      size: 12 * 1024 * 1024,
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      url: 'https://storage.example/workbook.xlsx',
       context: 'execution',
-    })
+    }
+
+    const result = await FileToolProcessor.processToolOutputs(
+      { file: stored },
+      toolConfig,
+      executionContext
+    )
+
+    expect(result.file).toBe(stored)
+    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
+    expect(mockDownloadFileFromUrl).not.toHaveBeenCalled()
+  })
+
+  it('processes bare image URL strings for file outputs', async () => {
+    mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('image-bytes'))
 
     const processed = await FileToolProcessor.processToolOutputs(
       {
-        image: 'https://example.com/generated.png',
+        file: 'https://example.com/generated.png',
       },
       toolConfig,
       executionContext
@@ -83,24 +95,10 @@ describe('FileToolProcessor', () => {
       userId: 'user-1',
     })
     expect(mockUploadExecutionFile).toHaveBeenCalled()
-    expect(processed.image).toMatchObject({
-      id: 'file_1',
-      url: 'https://example.com/file.png',
+    expect(processed.file).toMatchObject({
+      id: 'file-1',
+      url: '/api/files/serve?key=workspace%2Fworkspace-1%2Ffile-1',
     })
-  })
-
-  it('skips unprocessable file outputs instead of throwing', async () => {
-    const processed = await FileToolProcessor.processToolOutputs(
-      {
-        image: {},
-      },
-      toolConfig,
-      executionContext
-    )
-
-    expect(processed.image).toEqual({})
-    expect(mockDownloadFileFromUrl).not.toHaveBeenCalled()
-    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
   })
 
   it('caps URL downloads and stores raster images using byte-derived metadata', async () => {
@@ -152,6 +150,130 @@ describe('FileToolProcessor', () => {
         executionContext
       )
     ).rejects.toThrow('exceeds the maximum allowed size')
+
+    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
+  })
+
+  it.each([Buffer.alloc(0), '', { type: 'Buffer', data: [] }])(
+    'stores valid zero-byte inline files as UserFile outputs: %j',
+    async (data) => {
+      const storedFile = {
+        id: 'empty-file',
+        key: 'workspace/workspace-1/empty-file',
+        name: 'empty.txt',
+        size: 0,
+        type: 'text/plain',
+        url: '/api/files/serve?key=workspace%2Fworkspace-1%2Fempty-file',
+      } satisfies UserFile
+      mockUploadExecutionFile.mockResolvedValue(storedFile)
+
+      const result = await FileToolProcessor.processToolOutputs(
+        { file: { name: 'empty.txt', mimeType: 'text/plain', data } },
+        toolConfig,
+        executionContext
+      )
+
+      expect(result.file).toEqual(storedFile)
+      expect(mockUploadExecutionFile).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: 'workspace-1', executionId: 'execution-1' }),
+        Buffer.alloc(0),
+        'empty.txt',
+        'text/plain',
+        'user-1'
+      )
+      expect(mockDownloadFileFromUrl).not.toHaveBeenCalled()
+    }
+  )
+
+  it('preserves empty file entries in file-array outputs', async () => {
+    const result = await FileToolProcessor.processToolOutputs(
+      { file: [{ name: 'empty.txt', mimeType: 'text/plain', data: '' }] },
+      { ...toolConfig, outputs: { file: { type: 'file[]' } } },
+      executionContext
+    )
+
+    expect(result.file).toHaveLength(1)
+    expect(mockUploadExecutionFile.mock.calls[0]?.[1]).toEqual(Buffer.alloc(0))
+  })
+
+  it.each([Buffer.alloc(0), '', { type: 'Buffer', data: [] }])(
+    'prefers the url over empty inline data: %j',
+    async (data) => {
+      mockDownloadFileFromUrl.mockResolvedValue(Buffer.from('downloaded'))
+
+      await FileToolProcessor.processToolOutputs(
+        {
+          file: {
+            name: 'file.txt',
+            mimeType: 'text/plain',
+            data,
+            url: 'https://example.com/file',
+          },
+        },
+        toolConfig,
+        executionContext
+      )
+
+      expect(mockDownloadFileFromUrl).toHaveBeenCalledWith(
+        'https://example.com/file',
+        expect.objectContaining({ userId: 'user-1' })
+      )
+      expect(mockUploadExecutionFile.mock.calls[0]?.[1]).toEqual(Buffer.from('downloaded'))
+    }
+  )
+
+  it.each([
+    ['line-wrapped base64', 'SGVsbG8s\nIHdvcmxkIQ=='],
+    ['unpadded base64url', 'SGVsbG8sIHdvcmxkIQ'],
+    ['a base64 data URI', 'data:text/plain;base64,SGVsbG8sIHdvcmxkIQ=='],
+  ])('decodes %s', async (_label, data) => {
+    await FileToolProcessor.processToolOutputs(
+      { file: { name: 'hello.txt', mimeType: 'text/plain', data } },
+      toolConfig,
+      executionContext
+    )
+
+    expect(mockUploadExecutionFile.mock.calls[0]?.[1]).toEqual(Buffer.from('Hello, world!'))
+  })
+
+  it('stores an empty base64 data URI as a zero-byte file', async () => {
+    await FileToolProcessor.processToolOutputs(
+      { file: { name: 'empty.txt', mimeType: 'text/plain', data: 'data:text/plain;base64,' } },
+      toolConfig,
+      executionContext
+    )
+
+    expect(mockUploadExecutionFile.mock.calls[0]?.[1]).toEqual(Buffer.alloc(0))
+  })
+
+  it('stores a successful zero-byte URL download', async () => {
+    mockDownloadFileFromUrl.mockResolvedValue(Buffer.alloc(0))
+
+    await FileToolProcessor.processToolOutputs(
+      { file: { name: 'empty.txt', mimeType: 'text/plain', url: 'https://example.com/empty' } },
+      toolConfig,
+      executionContext
+    )
+
+    expect(mockUploadExecutionFile.mock.calls[0]?.[1]).toEqual(Buffer.alloc(0))
+  })
+
+  it.each([
+    undefined,
+    null,
+    '!!!',
+    'a!b!c!AAAA',
+    'AAAAA',
+    '  \n\t ',
+    { type: 'Buffer', data: 'invalid' },
+  ])('does not turn missing or malformed data into an empty file: %j', async (data) => {
+    await expect(
+      FileToolProcessor.processToolOutputs(
+        { file: { name: 'invalid.txt', mimeType: 'text/plain', data } },
+        toolConfig,
+        executionContext
+      )
+    ).rejects.toThrow("Failed to process file output 'file'")
 
     expect(mockUploadExecutionFile).not.toHaveBeenCalled()
   })

@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { WORKSPACE_ACCESS_SCOPE } from '@/lib/knowledge/access/scope'
 import { getDocuments } from '@/lib/knowledge/documents/service'
 import { buildTagFilterCondition } from '@/lib/knowledge/documents/tag-filter'
 import { validateTagValue } from '@/lib/knowledge/tags/utils'
@@ -38,7 +39,7 @@ describe('buildTagFilterCondition', () => {
         })
       )
       expect(sql).toBe('LOWER(?) = LOWER(?)')
-      expect(params).toEqual(['tag1', 'Ada Lovelace'])
+      expect(params).toEqual(['document.tag1', 'Ada Lovelace'])
     })
 
     it('matches neq case-insensitively', () => {
@@ -51,7 +52,7 @@ describe('buildTagFilterCondition', () => {
         })
       )
       expect(sql).toBe('LOWER(?) != LOWER(?)')
-      expect(params).toEqual(['tag2', 'Spreadsheet'])
+      expect(params).toEqual(['document.tag2', 'Spreadsheet'])
     })
 
     it('escapes LIKE wildcards in contains', () => {
@@ -89,7 +90,7 @@ describe('buildTagFilterCondition', () => {
         })
       )
       expect(sql).toBe('?::date = ?::date')
-      expect(params).toEqual(['date1', '2026-04-21'])
+      expect(params).toEqual(['document.date1', '2026-04-21'])
     })
 
     it('compares range bounds on the calendar day', () => {
@@ -138,7 +139,7 @@ describe('buildTagFilterCondition', () => {
           operator: 'eq',
           value: '42',
         })
-      ).toEqual({ type: 'eq', left: 'number1', right: 42 })
+      ).toEqual({ type: 'eq', left: 'document.number1', right: 42 })
     })
 
     it('ignores non-numeric values', () => {
@@ -162,7 +163,7 @@ describe('buildTagFilterCondition', () => {
           operator: 'eq',
           value: 'true',
         })
-      ).toEqual({ type: 'eq', left: 'boolean1', right: true })
+      ).toEqual({ type: 'eq', left: 'document.boolean1', right: true })
     })
 
     it('ignores values that are not boolean-like', () => {
@@ -189,7 +190,7 @@ describe('buildTagFilterCondition', () => {
         })
       )
       expect(sql).toBe('?::date = ?::date')
-      expect(params).toEqual(['date1', '2026-04-21'])
+      expect(params).toEqual(['document.date1', '2026-04-21'])
     })
 
     it('compiles a trimmed between bound too', () => {
@@ -201,7 +202,10 @@ describe('buildTagFilterCondition', () => {
         valueTo: ' 2026-04-30 ',
       }) as unknown as { type: string; conditions: unknown[] }
       expect(condition.type).toBe('and')
-      expect(rendered(condition.conditions[1] as never).params).toEqual(['date1', '2026-04-30'])
+      expect(rendered(condition.conditions[1] as never).params).toEqual([
+        'document.date1',
+        '2026-04-30',
+      ])
     })
 
     it('reads a boolean case-insensitively', () => {
@@ -213,7 +217,7 @@ describe('buildTagFilterCondition', () => {
           operator: 'eq',
           value: 'TRUE',
         })
-      ).toEqual({ type: 'eq', left: 'boolean1', right: true })
+      ).toEqual({ type: 'eq', left: 'document.boolean1', right: true })
     })
   })
 })
@@ -230,7 +234,8 @@ describe('getDocuments tag filters', () => {
             { tagSlot: 'not_a_real_slot', fieldType: 'text', operator: 'eq', value: 'x' },
           ],
         },
-        'req-1'
+        'req-1',
+        WORKSPACE_ACCESS_SCOPE
       )
     ).rejects.toThrow(/Tag filter on slot "not_a_real_slot" could not be applied/)
   })

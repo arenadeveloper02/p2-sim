@@ -1,13 +1,6 @@
 'use client'
 
-import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@sim/emcn'
 import { ConversationTimelinePopover } from '@/components/conversation-timeline/conversation-timeline-popover'
 
@@ -91,9 +84,7 @@ function getUserTurns(messages: ConversationTimelineMessage[]): ConversationTime
  * Whether the timeline would render for this message list. Surfaces use this
  * to reserve {@link CONVERSATION_TIMELINE_GUTTER_CLASS} only when needed.
  */
-export function shouldShowConversationTimeline(
-  messages: ConversationTimelineMessage[]
-): boolean {
+export function shouldShowConversationTimeline(messages: ConversationTimelineMessage[]): boolean {
   return getUserTurns(messages).length > CONVERSATION_TIMELINE_MIN_TURNS
 }
 
@@ -101,9 +92,7 @@ export function shouldShowConversationTimeline(
  * Evenly sample user turns across the full conversation when over the cap.
  * Always keeps endpoints so the first and last turns remain reachable.
  */
-function selectMarkerTurns(
-  turns: ConversationTimelineMessage[]
-): ConversationTimelineMessage[] {
+function selectMarkerTurns(turns: ConversationTimelineMessage[]): ConversationTimelineMessage[] {
   if (turns.length <= MAX_TIMELINE_MARKERS) return turns
 
   const sampled: ConversationTimelineMessage[] = []
@@ -135,10 +124,7 @@ function buildMarkers(messages: ConversationTimelineMessage[]): TimelineMarker[]
  * list is virtualized and the target row is unmounted, falls back to mapping
  * scroll progress onto the marker list so the highlight still tracks.
  */
-function findActiveMarkerId(
-  container: HTMLDivElement,
-  markers: TimelineMarker[]
-): string | null {
+function findActiveMarkerId(container: HTMLDivElement, markers: TimelineMarker[]): string | null {
   if (markers.length === 0) return null
 
   // Bias toward the upper portion of the viewport — closer to how ChatGPT
@@ -278,7 +264,7 @@ export function ConversationTimeline({
     <nav
       aria-label='Conversation timeline'
       className={cn(
-        'absolute top-1/2 right-2 z-10 hidden w-7 -translate-y-1/2 md:flex',
+        '-translate-y-1/2 absolute top-1/2 right-2 z-10 hidden w-7 md:flex',
         'max-h-[min(70vh,520px)] flex-col items-center justify-center'
       )}
       onMouseEnter={openPopover}

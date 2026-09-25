@@ -141,7 +141,7 @@ export interface GmailMessage {
 // Gmail Attachment Interface (for processed attachments)
 export interface GmailAttachment {
   name: string
-  data: string
+  data: Buffer | string
   mimeType: string
   size: number
 }

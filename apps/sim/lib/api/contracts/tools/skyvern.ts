@@ -1,11 +1,16 @@
 import { z } from 'zod'
-import { nullableOptionalString, optionalString } from '@/lib/api/contracts/selectors/shared'
 import type {
   ContractBody,
   ContractBodyInput,
   ContractJsonResponse,
 } from '@/lib/api/contracts/types'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+
+const optionalString = z.string().optional()
+const nullableOptionalString = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? undefined)
 
 export const skyvernWorkflowOptionSchema = z.object({
   id: z.string(),

@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'
 import { usePostHog } from 'posthog-js/react'
+import { PermissionAccessBoundary } from '@/components/access-requests/permission-access-boundary'
 import { requestJson } from '@/lib/api/client/request'
 import { createWorkflowContract } from '@/lib/api/contracts'
 import {
@@ -35,13 +36,17 @@ import {
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { RESOURCE_HEADER_CLASSES } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-tabs/resource-tab-controls'
+import { SuggestedActions } from '@/app/workspace/[workspaceId]/home/components/suggested-actions'
+import { useBrowserTabResources } from '@/app/workspace/[workspaceId]/home/hooks/use-browser-tab-resources'
+import { useTerminalTabResources } from '@/app/workspace/[workspaceId]/home/hooks/use-terminal-tab-resources'
 import { resolveWorkspaceResourceRef } from '@/app/workspace/[workspaceId]/home/resolve-resource-ref'
+import {
+  resolveResourceEventPresentation,
+  resolveResourceSelectionUpdate,
+} from '@/app/workspace/[workspaceId]/home/resource-view-policy'
 import { resourceParam, resourceUrlKeys } from '@/app/workspace/[workspaceId]/home/search-params'
 import { useFolders } from '@/hooks/queries/folders'
-import {
-  useMarkMothershipChatRead,
-  useMothershipChatHistory,
-} from '@/hooks/queries/mothership-chats'
+import { useMarkMothershipChatRead } from '@/hooks/queries/mothership-chats'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { getWorkspaceFilesQueryOptions, useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
@@ -51,11 +56,16 @@ import {
   ChatSurfaceProvider,
   MothershipChat,
   MothershipResourcesProvider,
-  SuggestedActions,
   UserInput,
   type UserInputHandle,
 } from './components'
-import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
+import {
+  getMothershipUseChatOptions,
+  type ResourceEventOptions,
+  shouldActivateResourceEvent,
+  useChat,
+  useMothershipResize,
+} from './hooks'
 import type {
   FileAttachmentForApi,
   MothershipResource,
@@ -80,11 +90,17 @@ interface HomeProps {
   chatId?: string
   userName?: string
   userId?: string
-  /** Resolved server-side by the page — the embedded table can't reach AppConfig. */
-  tableViewsEnabled?: boolean
 }
 
-export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps) {
+export function Home(props: HomeProps) {
+  return (
+    <PermissionAccessBoundary configKey='hideCopilot'>
+      <HomeContent {...props} />
+    </PermissionAccessBoundary>
+  )
+}
+
+function HomeContent({ chatId, userName, userId }: HomeProps) {
   useOAuthReturnRouter()
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
@@ -101,6 +117,8 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     ...resourceParam.parser,
     ...resourceUrlKeys,
   })
+  const activeResourceParamRef = useRef(activeResourceParam)
+  activeResourceParamRef.current = activeResourceParam
   /**
    * Strips any leftover URL fragment on selection change, preserving the old
    * effect's `url.hash = ''` (the only hash usage on this surface) without a
@@ -113,11 +131,13 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
    */
   const setActiveResourceUrl = useCallback<Dispatch<SetStateAction<string | null>>>(
     (action) => {
+      const nextResourceId = resolveResourceSelectionUpdate(activeResourceParamRef.current, action)
+      activeResourceParamRef.current = nextResourceId
       if (typeof window !== 'undefined' && window.location.hash) {
         const { pathname, search } = window.location
         window.history.replaceState(window.history.state, '', `${pathname}${search}`)
       }
-      void setResourceParam(action)
+      void setResourceParam(nextResourceId)
     },
     [setResourceParam]
   )
@@ -199,28 +219,45 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
 
   const wasSendingRef = useRef(false)
 
-  const { data: chatHistory, isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
   const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
 
-  const [isResourceCollapsed, setIsResourceCollapsed] = useState(true)
+  const [isResourceCollapsed, setIsResourceCollapsedState] = useState(true)
   const [skipResourceTransition, setSkipResourceTransition] = useState(false)
   const [resourceActivityIds, setResourceActivityIds] = useState<Set<string>>(new Set())
   const isResourceCollapsedRef = useRef(isResourceCollapsed)
-  isResourceCollapsedRef.current = isResourceCollapsed
-  const userOwnsResourceViewRef = useRef(false)
-  const activeResourceParamRef = useRef(activeResourceParam)
-  activeResourceParamRef.current = activeResourceParam
+  const setResourceCollapsed = useCallback((collapsed: boolean) => {
+    isResourceCollapsedRef.current = collapsed
+    setIsResourceCollapsedState(collapsed)
+  }, [])
+  const resourceCollapseOwnedByUserRef = useRef(false)
+  const resourceSelectionOwnedByUserRef = useRef(false)
 
-  function handleResourceEvent(resourceId: string) {
-    if (isResourceCollapsedRef.current) setIsResourceCollapsed(false)
+  function handleResourceEvent(resourceId: string, options?: ResourceEventOptions) {
+    const activeResourceId = effectiveActiveResourceIdRef.current
+    const presentation = resolveResourceEventPresentation({
+      activeResourceId,
+      activationRequested: shouldActivateResourceEvent(activeResourceId, resourceId, options),
+      panelCollapseOwnedByUser: resourceCollapseOwnedByUserRef.current,
+      panelCollapsed: isResourceCollapsedRef.current,
+      resourceId,
+      selectionOwnedByUser: resourceSelectionOwnedByUserRef.current,
+    })
 
+    if (presentation.revealPanel) setResourceCollapsed(false)
+    if (presentation.markActivity) {
+      setResourceActivityIds((current) => new Set(current).add(resourceId))
+      return
+    }
     setResourceActivityIds((current) => {
       if (!current.has(resourceId)) return current
       const next = new Set(current)
       next.delete(resourceId)
       return next
     })
-    if (activeResourceParamRef.current !== resourceId) setActiveResourceUrl(resourceId)
+    if (presentation.activateResource && activeResourceId !== resourceId) {
+      activeResourceParamRef.current = resourceId
+      setActiveResourceUrl(resourceId)
+    }
   }
 
   const {
@@ -233,6 +270,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
 
   const {
     messages,
+    isChatHistoryPending,
     isSending,
     isReconnecting,
     sendMessage,
@@ -281,10 +319,11 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   const resourceAttentionChatIdRef = useRef(resolvedChatId)
 
   const collapseResource = useCallback(() => {
-    userOwnsResourceViewRef.current = true
+    resourceCollapseOwnedByUserRef.current = true
+    resourceSelectionOwnedByUserRef.current = true
     clearWidth()
-    setIsResourceCollapsed(true)
-  }, [clearWidth])
+    setResourceCollapsed(true)
+  }, [clearWidth, setResourceCollapsed])
 
   const clearResourceActivity = useCallback((resourceId: string) => {
     setResourceActivityIds((current) => {
@@ -296,15 +335,16 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   }, [])
 
   const expandResource = () => {
-    userOwnsResourceViewRef.current = true
-    const activeResourceId = activeResourceParamRef.current
+    resourceCollapseOwnedByUserRef.current = false
+    resourceSelectionOwnedByUserRef.current = true
+    const activeResourceId = effectiveActiveResourceIdRef.current
     if (activeResourceId) clearResourceActivity(activeResourceId)
-    setIsResourceCollapsed(false)
+    setResourceCollapsed(false)
   }
 
   const selectResourceFromUser = useCallback(
     (resourceId: string) => {
-      userOwnsResourceViewRef.current = true
+      resourceSelectionOwnedByUserRef.current = true
       clearResourceActivity(resourceId)
       if (effectiveActiveResourceIdRef.current === resourceId) return
       effectiveActiveResourceIdRef.current = resourceId
@@ -314,26 +354,45 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     [setActiveResourceId, clearResourceActivity]
   )
 
+  const desktopTabResourceOptions = {
+    scopeId: desktopScopeId,
+    resources,
+    activeResourceId,
+    selectedResourceId: activeResourceParam,
+    addResource,
+    removeResource,
+    selectResource: selectResourceFromUser,
+    onResourceEvent: handleResourceEvent,
+  }
+  useBrowserTabResources(desktopTabResourceOptions)
+  useTerminalTabResources(desktopTabResourceOptions)
+
   const addResourceFromUser = useCallback(
     (resource: MothershipResource) => {
-      userOwnsResourceViewRef.current = true
+      resourceCollapseOwnedByUserRef.current = false
+      resourceSelectionOwnedByUserRef.current = true
       addResource(resource)
       selectResourceFromUser(resource.id)
-      setIsResourceCollapsed(false)
+      setResourceCollapsed(false)
     },
-    [addResource, selectResourceFromUser]
+    [addResource, selectResourceFromUser, setResourceCollapsed]
   )
 
   const handleResourceResizePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      userOwnsResourceViewRef.current = true
+      resourceSelectionOwnedByUserRef.current = true
       handleResizePointerDown(event)
     },
     [handleResizePointerDown]
   )
 
   const handleResourceInteraction = useCallback(() => {
-    userOwnsResourceViewRef.current = true
+    resourceSelectionOwnedByUserRef.current = true
+  }, [])
+
+  const prepareResourceViewForAgentTurn = useCallback(() => {
+    resourceSelectionOwnedByUserRef.current = false
+    setResourceActivityIds(new Set())
   }, [])
 
   useEffect(() => {
@@ -344,13 +403,14 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
       markRead(resolvedChatId)
     } else {
       clearWidth()
-      setIsResourceCollapsed(true)
+      setResourceCollapsed(true)
     }
     if (!resolvedChatId || (previousChatId && previousChatId !== resolvedChatId)) {
-      userOwnsResourceViewRef.current = false
+      resourceCollapseOwnedByUserRef.current = false
+      resourceSelectionOwnedByUserRef.current = false
       setResourceActivityIds(new Set())
     }
-  }, [resolvedChatId, markRead, clearWidth])
+  }, [resolvedChatId, markRead, clearWidth, setResourceCollapsed])
 
   useEffect(() => {
     if (wasSendingRef.current && !isSending && resolvedChatId) {
@@ -362,22 +422,22 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   useEffect(() => {
     if (
       !(resources.length > 0 && isResourceCollapsedRef.current) ||
-      userOwnsResourceViewRef.current
+      resourceCollapseOwnedByUserRef.current
     ) {
       return
     }
-    setIsResourceCollapsed(false)
+    setResourceCollapsed(false)
     setSkipResourceTransition(true)
     const id = requestAnimationFrame(() => setSkipResourceTransition(false))
     return () => cancelAnimationFrame(id)
-  }, [resources])
+  }, [resources, setResourceCollapsed])
 
   useEffect(() => {
     if (resources.length === 0 && !isResourceCollapsedRef.current) {
       clearWidth()
-      setIsResourceCollapsed(true)
+      setResourceCollapsed(true)
     }
-  }, [resources, clearWidth])
+  }, [resources, clearWidth, setResourceCollapsed])
 
   useEffect(() => {
     const resourceIds = new Set(resources.map((resource) => resource.id))
@@ -397,7 +457,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   }, [workspaceId, getCurrentRequestId, stopGeneration])
 
   const handleSubmit = useCallback(
-    (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
+    async (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
       const trimmed = text.trim()
       if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
 
@@ -412,11 +472,10 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
         setIsInputEntering(true)
       }
 
-      userOwnsResourceViewRef.current = false
-      setResourceActivityIds(new Set())
+      prepareResourceViewForAgentTurn()
       sendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
     },
-    [workspaceId, chatId, sendMessage]
+    [workspaceId, chatId, prepareResourceViewForAgentTurn, sendMessage]
   )
 
   /**
@@ -430,13 +489,16 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
       const detail = (e as CustomEvent<MothershipSendMessageDetail>).detail
       if (!detail?.message) return
       e.preventDefault()
+      prepareResourceViewForAgentTurn()
       sendMessage(detail.message, detail.fileAttachments, detail.contexts, {
         ...(detail.resumeUserMessageId ? { resumeUserMessageId: detail.resumeUserMessageId } : {}),
+        ...(detail.requestMode ? { requestMode: detail.requestMode } : {}),
+        ...(detail.assistantSearch ? { assistantSearch: detail.assistantSearch } : {}),
       })
     }
     window.addEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
-  }, [sendMessage])
+  }, [prepareResourceViewForAgentTurn, sendMessage])
 
   /**
    * Consumes a one-shot handoff left by another surface and applies it to this
@@ -461,10 +523,13 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     const handoff = MothershipHandoffStorage.consume(workspaceId)
     if (!handoff) return
     if (handoff.message) {
+      prepareResourceViewForAgentTurn()
       sendMessage(handoff.message, handoff.fileAttachments, handoff.contexts, {
         ...(handoff.resumeUserMessageId
           ? { resumeUserMessageId: handoff.resumeUserMessageId }
           : {}),
+        ...(handoff.requestMode ? { requestMode: handoff.requestMode } : {}),
+        ...(handoff.assistantSearch ? { assistantSearch: handoff.assistantSearch } : {}),
       })
       return
     }
@@ -476,7 +541,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     // keep it one-shot — and harmless either way, since `consume` clears the entry
     // atomically and any re-run would find nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
-  }, [chatId, workspaceId, sendMessage])
+  }, [chatId, workspaceId, prepareResourceViewForAgentTurn, sendMessage])
 
   function resolveResourceFromContext(
     context: ChatContext
@@ -582,6 +647,12 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   const hasMessages = messages.length > 0
   const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
   const draftScopeKey = `${workspaceId}:${chatId ?? 'new'}`
+  const resourceActivityCount = resourceActivityIds.size
+  const resourceToggleLabel = isResourceCollapsed
+    ? resourceActivityCount > 0
+      ? `Expand resource view, ${resourceActivityCount} resource${resourceActivityCount === 1 ? '' : 's'} updated`
+      : 'Expand resource view'
+    : 'Collapse resource view'
 
   // The empty state is the chat pane's content, not a layout of its own. It
   // used to return early, which meant the resource panel and its toggle did
@@ -658,6 +729,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
           </div>
         ) : (
           <MothershipChat
+            workspaceId={workspaceId}
             messages={messages}
             isSending={isSending}
             isReconnecting={isReconnecting}
@@ -721,9 +793,8 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
             previewSession={previewSession}
             isAgentResponding={isSending}
             genericResourceData={genericResourceData ?? undefined}
-            tableViewsEnabled={tableViewsEnabled}
             onUserInteraction={handleResourceInteraction}
-            className={skipResourceTransition ? '!transition-none' : undefined}
+            className={skipResourceTransition ? 'transition-none!' : undefined}
           />
         </Suspense>
       </MothershipResourcesProvider>
@@ -736,13 +807,16 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
           size={null}
           type='button'
           onClick={isResourceCollapsed ? expandResource : collapseResource}
-          className='size-[var(--resource-header-toggle-size)] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
-          aria-label={isResourceCollapsed ? 'Expand resource view' : 'Collapse resource view'}
+          className="after:-translate-x-1/2 after:-translate-y-1/2 relative size-[var(--resource-header-toggle-size)] rounded-[8px] after:absolute after:top-1/2 after:left-1/2 after:size-[var(--resource-header-toggle-hit-size)] after:content-[''] hover-hover:bg-[var(--surface-active)]"
+          aria-label={resourceToggleLabel}
         >
           <span className='relative'>
             <PanelLeft className='-scale-x-100 size-[16px] text-[var(--text-icon)]' />
             {isResourceCollapsed && resourceActivityIds.size > 0 && (
-              <span className='-top-0.5 -right-0.5 absolute size-1.5 rounded-full bg-[var(--brand-primary)]' />
+              <span
+                aria-hidden='true'
+                className='-top-0.5 -right-0.5 absolute size-1.5 rounded-full bg-[var(--brand-primary)]'
+              />
             )}
           </span>
         </Button>

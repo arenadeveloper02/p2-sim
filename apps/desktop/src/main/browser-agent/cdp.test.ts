@@ -1,9 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => import('@/test/electron-mock'))
 
-import { WebContentsView, type WebFrameMain } from 'electron'
 import {
+  type NativeImage,
+  type nativeImage,
+  type WebContents,
+  WebContentsView,
+  type WebFrameMain,
+} from 'electron'
+import {
+  captureScreenshot,
   clickAt,
   ensureInstrumented,
   evaluateInIsolatedFrame,
@@ -481,4 +488,523 @@ describe('browser-agent CDP theme', () => {
       features: [],
     })
   })
+})
+
+/**
+ * The browser panel shows a LIVE view, so a capture must not perturb the page.
+ * Chromium serves `clip` by applying device-emulation params to the widget and
+ * syncing visual properties, which the user sees as the page rescaling and
+ * snapping back. Resolution is bounded on the returned image instead.
+ */
+describe('browser-agent screenshot capture', () => {
+  function captureFixture(
+    imageSize: { width: number; height: number } | null,
+    imageContent = 'sim'
+  ) {
+    const contents = new WebContentsView().webContents
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({ cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024 } })
+      }
+      return Promise.resolve(undefined)
+    })
+    const resized = {
+      getSize: vi.fn(() => ({ width: 1024, height: 512 })),
+      toJPEG: vi.fn(() => Buffer.from('resized')),
+    }
+    const cropped = {
+      getSize: vi.fn(() => ({ width: 400, height: 200 })),
+      resize: vi.fn(() => resized),
+      toJPEG: vi.fn(() => Buffer.from('cropped')),
+    }
+    const image = {
+      isEmpty: vi.fn(() => imageSize === null),
+      getSize: vi.fn(() => imageSize ?? { width: 0, height: 0 }),
+      crop: vi.fn(() => cropped),
+      resize: vi.fn(() => resized),
+      toJPEG: vi.fn(() => Buffer.from(imageContent)),
+    } as unknown as ReturnType<typeof nativeImage.createFromBuffer>
+    vi.mocked(contents.capturePage).mockResolvedValue(image)
+    return { contents, resized, cropped, image }
+  }
+
+  it('never sends a clip, which would emulate the live page for the capture', async () => {
+    const { contents } = captureFixture({ width: 4096, height: 2048 })
+
+    await captureScreenshot(contents)
+
+    expect(contents.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: true })
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Page.captureScreenshot',
+      expect.anything()
+    )
+  })
+
+  it('crops the decoded image in memory without sending a CDP clip', async () => {
+    const { contents, cropped, image } = captureFixture({ width: 4096, height: 2048 })
+
+    const shot = await captureScreenshot(contents, { x: 100, y: 50, width: 200, height: 100 })
+
+    expect(contents.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: true })
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Page.captureScreenshot',
+      expect.anything()
+    )
+    expect(image.crop).toHaveBeenCalledWith({ x: 200, y: 100, width: 400, height: 200 })
+    expect(cropped.resize).not.toHaveBeenCalled()
+    expect(shot).toEqual({
+      dataUrl: `data:image/jpeg;base64,${Buffer.from('cropped').toString('base64')}`,
+      scale: 2,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 400, height: 200 },
+      clip: { x: 100, y: 50, width: 200, height: 100 },
+    })
+  })
+
+  it('reports the actual CSS crop after rounding a narrow fractional element to pixels', async () => {
+    const { contents, cropped, image } = captureFixture({ width: 4096, height: 2048 })
+    cropped.getSize.mockReturnValue({ width: 3, height: 201 })
+
+    const shot = await captureScreenshot(contents, { x: 0.1, y: 0.2, width: 1.1, height: 100 })
+
+    expect(image.crop).toHaveBeenCalledWith({ x: 0, y: 0, width: 3, height: 201 })
+    expect(shot).toMatchObject({
+      clip: { x: 0, y: 0, width: 1.5, height: 100.5 },
+      imageSize: { width: 3, height: 201 },
+      scale: 2,
+    })
+    expect(100 / shot.scale).toBe(50)
+    expect(cropped.resize).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    {
+      requested: { x: -10, y: -20, width: 30, height: 40 },
+      crop: { x: 0, y: 0, width: 40, height: 40 },
+      captured: { x: 0, y: 0, width: 20, height: 20 },
+    },
+    {
+      requested: { x: 2040, y: 1020, width: 30, height: 40 },
+      crop: { x: 4080, y: 2040, width: 16, height: 8 },
+      captured: { x: 2040, y: 1020, width: 8, height: 4 },
+    },
+  ])(
+    'reports only the encoded portion of a crop clamped to the viewport: $requested',
+    async ({ requested, crop, captured }) => {
+      const { contents, cropped, image } = captureFixture({ width: 4096, height: 2048 })
+      cropped.getSize.mockReturnValue({ width: crop.width, height: crop.height })
+
+      const shot = await captureScreenshot(contents, requested)
+
+      expect(image.crop).toHaveBeenCalledWith(crop)
+      expect(shot).toMatchObject({
+        clip: captured,
+        imageSize: { width: crop.width, height: crop.height },
+        scale: 2,
+      })
+    }
+  )
+
+  /**
+   * A 2048px CSS viewport bounded to 1024px is scale 0.5, and the capture
+   * arrives at device resolution (4096px on a 2x display). The resize is what
+   * lands the image on the CSS-relative size the coordinate contract
+   * (cssX = imageX / scale) assumes.
+   */
+  it('downscales the returned image to the CSS-relative size', async () => {
+    const { contents, resized, image } = captureFixture({ width: 4096, height: 2048 })
+
+    const shot = await captureScreenshot(contents)
+
+    expect(image.resize).toHaveBeenCalledWith({ width: 1024, height: 512, quality: 'good' })
+    expect(resized.toJPEG).toHaveBeenCalled()
+    expect(shot).toEqual({
+      dataUrl: `data:image/jpeg;base64,${Buffer.from('resized').toString('base64')}`,
+      scale: 0.5,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it('skips resizing when the capture already matches the target size', async () => {
+    const { contents, image } = captureFixture({ width: 1024, height: 512 })
+
+    const shot = await captureScreenshot(contents)
+
+    expect(image.resize).not.toHaveBeenCalled()
+    expect(shot).toEqual({
+      dataUrl: 'data:image/jpeg;base64,c2lt',
+      scale: 0.5,
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it('rejects an empty native capture', async () => {
+    const { contents } = captureFixture(null)
+    await expect(captureScreenshot(contents)).rejects.toThrow('empty image')
+  })
+
+  describe('stalled native capture recovery', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    function observeFrames(contents: WebContents) {
+      const frames: Array<(image: NativeImage) => void> = []
+      vi.mocked(contents.beginFrameSubscription).mockImplementation((...args: unknown[]) => {
+        const callback = args.at(-1) as (image: NativeImage) => void
+        frames.push((image) => callback(image))
+      })
+      return frames
+    }
+
+    it('recovers repeatedly with fresh frames without overlapping native surface copies', async () => {
+      const { contents } = captureFixture({ width: 1024, height: 512 })
+      vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+      const frames = observeFrames(contents)
+
+      for (let index = 0; index < 5; index++) {
+        const { image } = captureFixture({ width: 1024, height: 512 }, `frame-${index}`)
+        const capture = captureScreenshot(contents)
+        await vi.advanceTimersByTimeAsync(index === 0 ? 5_000 : 0)
+        expect(contents.capturePage).toHaveBeenCalledOnce()
+        expect(contents.beginFrameSubscription).toHaveBeenLastCalledWith(
+          false,
+          expect.any(Function)
+        )
+        expect(frames).toHaveLength(index + 1)
+        frames[index](image)
+        await expect(capture).resolves.toMatchObject({
+          dataUrl: `data:image/jpeg;base64,${Buffer.from(`frame-${index}`).toString('base64')}`,
+          imageSize: { width: 1024, height: 512 },
+        })
+        expect(contents.endFrameSubscription).toHaveBeenCalledTimes(index + 1)
+        expect(vi.getTimerCount()).toBe(0)
+      }
+      const registered = vi
+        .mocked(contents.once)
+        .mock.calls.filter(([event]) => String(event) === 'destroyed')
+      for (const [, listener] of registered) {
+        expect(contents.removeListener).toHaveBeenCalledWith('destroyed', listener)
+      }
+      expect(contents.reload).not.toHaveBeenCalled()
+      expect(contents.loadURL).not.toHaveBeenCalled()
+    })
+
+    it('bounds both waits and allows another frame attempt after a timeout', async () => {
+      const { contents, image } = captureFixture({ width: 1024, height: 512 })
+      vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+      const frames = observeFrames(contents)
+      const failed = expect(captureScreenshot(contents)).rejects.toThrow('frame capture timed out')
+      await vi.advanceTimersByTimeAsync(9_999)
+      expect(contents.endFrameSubscription).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      await failed
+      expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
+      expect(vi.getTimerCount()).toBe(0)
+
+      const recovered = captureScreenshot(contents)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(contents.capturePage).toHaveBeenCalledOnce()
+      frames[1](image)
+      await expect(recovered).resolves.toMatchObject({ imageSize: { width: 1024, height: 512 } })
+      expect(contents.endFrameSubscription).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('ignores a timed-out frame callback while a later subscription is active', async () => {
+      const { contents, image } = captureFixture({ width: 1024, height: 512 }, 'fresh')
+      const stale = captureFixture({ width: 1024, height: 512 }, 'stale').image
+      vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+      const frames = observeFrames(contents)
+      const failed = expect(captureScreenshot(contents)).rejects.toThrow('frame capture timed out')
+      await vi.advanceTimersByTimeAsync(10_000)
+      await failed
+
+      const recovered = captureScreenshot(contents)
+      const settled = vi.fn()
+      void recovered.then(settled)
+      await vi.advanceTimersByTimeAsync(0)
+      frames[0](stale)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).not.toHaveBeenCalled()
+      expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
+      frames[1](image)
+      await expect(recovered).resolves.toMatchObject({
+        dataUrl: `data:image/jpeg;base64,${Buffer.from('fresh').toString('base64')}`,
+      })
+      expect(contents.endFrameSubscription).toHaveBeenCalledTimes(2)
+    })
+
+    it.each(['resolve', 'reject'] as const)(
+      'ignores a late native %s and resumes native captures afterward',
+      async (outcome) => {
+        const { contents, image } = captureFixture({ width: 1024, height: 512 }, 'current')
+        const stale = captureFixture({ width: 1024, height: 512 }, 'stale').image
+        let settleNative: () => void = () => {}
+        vi.mocked(contents.capturePage).mockImplementationOnce(
+          () =>
+            new Promise((resolve, reject) => {
+              settleNative = () =>
+                outcome === 'resolve' ? resolve(stale) : reject(new Error('late failure'))
+            })
+        )
+        const frames = observeFrames(contents)
+        const capture = captureScreenshot(contents)
+        const settled = vi.fn()
+        void capture.then(settled)
+        await vi.advanceTimersByTimeAsync(5_000)
+        settleNative()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(settled).not.toHaveBeenCalled()
+        expect(contents.endFrameSubscription).not.toHaveBeenCalled()
+        frames[0](image)
+        await expect(capture).resolves.toMatchObject({
+          dataUrl: `data:image/jpeg;base64,${Buffer.from('current').toString('base64')}`,
+        })
+        await expect(captureScreenshot(contents)).resolves.toMatchObject({
+          dataUrl: `data:image/jpeg;base64,${Buffer.from('current').toString('base64')}`,
+        })
+        expect(contents.capturePage).toHaveBeenCalledTimes(2)
+        expect(contents.beginFrameSubscription).toHaveBeenCalledOnce()
+        expect(vi.getTimerCount()).toBe(0)
+      }
+    )
+
+    it('rejects concurrent captures without replacing the active subscription or blocking another tab', async () => {
+      const { contents, image } = captureFixture({ width: 1024, height: 512 })
+      const other = captureFixture({ width: 1024, height: 512 })
+      vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+      const frames = observeFrames(contents)
+      const capture = captureScreenshot(contents)
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(captureScreenshot(contents)).rejects.toThrow('already in progress')
+      expect(contents.capturePage).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(5_000)
+      await expect(captureScreenshot(contents)).rejects.toThrow('already in progress')
+      expect(contents.beginFrameSubscription).toHaveBeenCalledOnce()
+      expect(contents.endFrameSubscription).not.toHaveBeenCalled()
+      await expect(captureScreenshot(other.contents)).resolves.toMatchObject({
+        imageSize: { width: 1024, height: 512 },
+      })
+      frames[0](image)
+      await capture
+      expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
+    })
+
+    it.each(['cancel', 'destroy'] as const)(
+      'releases frame resources on %s and ignores a subsequent frame',
+      async (reason) => {
+        const { contents, image } = captureFixture({ width: 1024, height: 512 })
+        vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+        const frames = observeFrames(contents)
+        const controller = new AbortController()
+        const removeAbort = vi.spyOn(controller.signal, 'removeEventListener')
+        const failed = expect(
+          captureScreenshot(contents, undefined, controller.signal)
+        ).rejects.toThrow(reason === 'cancel' ? 'cancelled' : 'tab was closed')
+        await vi.advanceTimersByTimeAsync(5_000)
+        const destroyed = vi
+          .mocked(contents.once)
+          .mock.calls.filter(([event]) => String(event) === 'destroyed')
+          .at(-1)?.[1] as unknown as (() => void) | undefined
+        expect(destroyed).toBeDefined()
+        if (reason === 'cancel') controller.abort()
+        else {
+          vi.mocked(contents.isDestroyed).mockReturnValue(true)
+          destroyed?.()
+        }
+        await failed
+        expect(contents.removeListener).toHaveBeenCalledWith('destroyed', destroyed)
+        expect(removeAbort).toHaveBeenCalledTimes(2)
+        expect(contents.endFrameSubscription).toHaveBeenCalledTimes(reason === 'cancel' ? 1 : 0)
+        frames[0](image)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(contents.endFrameSubscription).toHaveBeenCalledTimes(reason === 'cancel' ? 1 : 0)
+        expect(vi.getTimerCount()).toBe(0)
+        if (reason === 'cancel') {
+          const recovered = captureScreenshot(contents)
+          await vi.advanceTimersByTimeAsync(0)
+          frames[1](image)
+          await recovered
+          expect(contents.capturePage).toHaveBeenCalledOnce()
+          expect(contents.endFrameSubscription).toHaveBeenCalledTimes(2)
+        }
+      }
+    )
+
+    it.each(['beginFrameSubscription', 'invalidate'] as const)(
+      'cleans up a synchronous %s failure and permits another frame attempt',
+      async (method) => {
+        const { contents, image } = captureFixture({ width: 1024, height: 512 })
+        vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+        const frames = observeFrames(contents)
+        vi.mocked(contents[method]).mockImplementationOnce(() => {
+          throw new Error('frame setup failed')
+        })
+        const failed = expect(captureScreenshot(contents)).rejects.toThrow('frame setup failed')
+        await vi.advanceTimersByTimeAsync(5_000)
+        await failed
+        expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
+        expect(vi.getTimerCount()).toBe(0)
+
+        const recovered = captureScreenshot(contents)
+        await vi.advanceTimersByTimeAsync(0)
+        frames.at(-1)?.(image)
+        await expect(recovered).resolves.toMatchObject({ imageSize: { width: 1024, height: 512 } })
+        expect(contents.capturePage).toHaveBeenCalledOnce()
+        expect(contents.endFrameSubscription).toHaveBeenCalledTimes(2)
+      }
+    )
+  })
+
+  it.each(['cancel', 'destroy'] as const)(
+    'releases capture listeners and timer on %s',
+    async (reason) => {
+      vi.useFakeTimers()
+      try {
+        const { contents } = captureFixture({ width: 1024, height: 512 })
+        vi.mocked(contents.capturePage).mockReturnValue(new Promise(() => {}))
+        const controller = new AbortController()
+        const failed = expect(
+          captureScreenshot(contents, undefined, controller.signal)
+        ).rejects.toThrow(reason === 'cancel' ? 'cancelled' : 'tab was closed')
+        await vi.advanceTimersByTimeAsync(0)
+        const destroyed = vi
+          .mocked(contents.once)
+          .mock.calls.find(([event]) => String(event) === 'destroyed')?.[1] as unknown as
+          | (() => void)
+          | undefined
+        expect(destroyed).toBeDefined()
+        if (reason === 'cancel') controller.abort()
+        else destroyed?.()
+        await failed
+        expect(contents.removeListener).toHaveBeenCalledWith('destroyed', destroyed)
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
+
+  it('does not start capture after cancellation or keep a synchronous failure pending', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    const controller = new AbortController()
+    controller.abort()
+    await expect(captureScreenshot(contents, undefined, controller.signal)).rejects.toThrow()
+    expect(contents.capturePage).not.toHaveBeenCalled()
+    vi.mocked(contents.capturePage).mockImplementationOnce(() => {
+      throw new Error('native failure')
+    })
+    await expect(captureScreenshot(contents)).rejects.toThrow('native failure')
+    await expect(captureScreenshot(contents)).resolves.toMatchObject({
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it('does not expose deprecated device-pixel metrics as a CSS viewport', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({ layoutViewport: { clientWidth: 2048, clientHeight: 1024 } })
+      }
+      return Promise.resolve(undefined)
+    })
+
+    const shot = await captureScreenshot(contents)
+
+    expect(shot.viewport).toBeNull()
+    expect(shot.imageSize).toEqual({ width: 1024, height: 512 })
+  })
+
+  it('refuses element cropping without verified CSS viewport metrics', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({ layoutViewport: { clientWidth: 2048, clientHeight: 1024 } })
+      }
+      return Promise.resolve(undefined)
+    })
+
+    await expect(
+      captureScreenshot(contents, { x: 10, y: 10, width: 100, height: 50 })
+    ).rejects.toThrow(/CSS viewport/)
+    expect(contents.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Page.captureScreenshot',
+      expect.anything()
+    )
+  })
+
+  it('accepts stable finite scroll offsets around the capture', async () => {
+    const { contents } = captureFixture({ width: 1024, height: 512 })
+    vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return Promise.resolve({
+          cssLayoutViewport: {
+            clientWidth: 2048,
+            clientHeight: 1024,
+            pageX: 12,
+            pageY: 34,
+          },
+        })
+      }
+      return Promise.resolve(undefined)
+    })
+
+    await expect(captureScreenshot(contents)).resolves.toMatchObject({
+      viewport: { width: 2048, height: 1024 },
+      imageSize: { width: 1024, height: 512 },
+    })
+  })
+
+  it.each([
+    [
+      'dimensions',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024 } },
+      { cssLayoutViewport: { clientWidth: 1024, clientHeight: 512 } },
+    ],
+    [
+      'metric units',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024 } },
+      { layoutViewport: { clientWidth: 2048, clientHeight: 1024 } },
+    ],
+    [
+      'horizontal scroll offset',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 0, pageY: 20 } },
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 10, pageY: 20 } },
+    ],
+    [
+      'vertical scroll offset',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 10, pageY: 20 } },
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 10, pageY: 30 } },
+    ],
+    [
+      'offset validity',
+      { cssLayoutViewport: { clientWidth: 2048, clientHeight: 1024, pageX: 0, pageY: 0 } },
+      {
+        cssLayoutViewport: {
+          clientWidth: 2048,
+          clientHeight: 1024,
+          pageX: 0,
+          pageY: Number.NaN,
+        },
+      },
+    ],
+    ['availability', {}, {}],
+  ])(
+    'rejects a capture when viewport %s change during native capture',
+    async (_label, before, after) => {
+      const { contents } = captureFixture({ width: 1024, height: 512 })
+      let metricsRead = 0
+      vi.mocked(contents.debugger.sendCommand).mockImplementation((method: string) => {
+        if (method === 'Page.getLayoutMetrics') {
+          metricsRead++
+          return Promise.resolve(metricsRead === 1 ? before : after)
+        }
+        return Promise.resolve(undefined)
+      })
+
+      await expect(captureScreenshot(contents)).rejects.toThrow(/viewport changed/)
+    }
+  )
 })

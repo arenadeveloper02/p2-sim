@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import Image from 'next/image'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
-import { LogoMark, SimWordmark } from '@/app/(landing)/components/navbar/components'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
+import { LogoMark } from '@/app/(landing)/components/navbar/components'
 
 interface AuthShellProps {
   /** Centered content column (the form, status copy, etc.). */
@@ -17,8 +18,10 @@ interface AuthShellProps {
  * Mirrors the landing chrome: it pins the `light` token layer (so the platform's
  * light-mode `var(--*)` tokens resolve regardless of the visitor's theme), uses
  * the canvas/`--text-primary` surface, and renders a logo-only header that reuses
- * the landing {@link LogoMark} + {@link SimWordmark} at the same nav gutters. The
+ * the landing {@link LogoMark} + Arena logo at the same nav gutters. The
  * single content column is centered and capped for a calm single-form layout.
+ * The home link starts a document navigation so the marketing theme default is
+ * initialized independently of auth's forced-light context.
  *
  * The shell also owns the macOS traffic-light lane, unconditionally — every surface that
  * wears it (the `(auth)` routes, the CLI auth handoff, the invite pages) sits outside
@@ -34,11 +37,11 @@ export function AuthShell({ children, footer }: AuthShellProps) {
       <DesktopTitleBarLane />
       <header>
         <nav className='mx-auto flex w-full max-w-[1446px] items-center px-12 py-4 max-sm:px-5 max-lg:px-8'>
-          <Link href='/' aria-label='Sim home' className='flex h-[30px] items-center'>
+          <a href='/' aria-label='Arena home' className='flex h-[30px] items-center'>
             <LogoMark>
-              <SimWordmark />
+              <Image src={arenaLogo} alt='Arena' width={30} height={30} priority />
             </LogoMark>
-          </Link>
+          </a>
         </nav>
       </header>
       <div className='flex flex-1 items-center justify-center px-4 pb-16'>

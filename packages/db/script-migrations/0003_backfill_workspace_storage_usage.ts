@@ -125,7 +125,7 @@ export function createPostgresStorageReconciliationStore(sql: Sql): StorageRecon
         const [invalid] = await tx<Array<{ invalid_count: number | string }>>`
           SELECT count(*) AS invalid_count
           FROM (
-            SELECT size::bigint AS bytes
+            SELECT size_bytes AS bytes
             FROM workspace_files
             WHERE workspace_id = ANY(${workspaceIds}::text[])
               AND context = 'workspace'
@@ -137,15 +137,15 @@ export function createPostgresStorageReconciliationStore(sql: Sql): StorageRecon
               AND d.connector_id IS NULL
               AND d.deleted_at IS NULL
           ) source
-          WHERE bytes < 0
+          WHERE bytes IS NULL OR bytes < 0
         `
         if (Number(invalid?.invalid_count ?? 0) > 0) {
-          throw new Error('Cannot reconcile workspace storage: negative source metadata size')
+          throw new Error('Cannot reconcile workspace storage: invalid canonical size metadata')
         }
 
         await tx`
           WITH file_totals AS (
-            SELECT workspace_id, sum(size)::bigint AS bytes
+            SELECT workspace_id, sum(size_bytes)::bigint AS bytes
             FROM workspace_files
             WHERE workspace_id = ANY(${workspaceIds}::text[])
               AND context = 'workspace'

@@ -21,6 +21,10 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { expireStalePendingInvitationsForOrganization } from '@/lib/invitations/core'
+import {
+  capabilityRefusal,
+  isOrganizationCapabilityWithheld,
+} from '@/lib/permission-groups/capability-assertions'
 
 const logger = createLogger('OrganizationRosterAPI')
 
@@ -49,6 +53,27 @@ export const GET = withRouteHandler(
         )
       }
 
+      /**
+       * permission-group-enforced: organization.member_directory — an
+       * organization-scoped read with no workspace for the funnel to authorize.
+       *
+       * Admins and owners are exempt, for the reason the members route records:
+       * this feeds the page an admin would use to change the setting.
+       */
+      if (
+        !isOrgAdminRole(callerMembership.role) &&
+        (await isOrganizationCapabilityWithheld(organizationId, 'organization.member_directory'))
+      ) {
+        logger.warn('Organization roster blocked by permission group', {
+          organizationId,
+          userId: session.user.id,
+        })
+        return NextResponse.json(
+          { error: capabilityRefusal('organization.member_directory') },
+          { status: 403 }
+        )
+      }
+
       const memberRows = await db
         .select({
           memberId: member.id,
@@ -58,6 +83,7 @@ export const GET = withRouteHandler(
           userName: user.name,
           userEmail: user.email,
           userImage: user.image,
+          userSuspendedAt: user.suspendedAt,
         })
         .from(member)
         .innerJoin(user, eq(member.userId, user.id))
@@ -71,6 +97,7 @@ export const GET = withRouteHandler(
         name: row.userName,
         email: row.userEmail,
         image: row.userImage,
+        suspendedAt: row.userSuspendedAt?.toISOString() ?? null,
         workspaces: [] as RosterWorkspaceAccess[],
       }))
 
@@ -164,6 +191,7 @@ export const GET = withRouteHandler(
                 userName: user.name,
                 userEmail: user.email,
                 userImage: user.image,
+                userSuspendedAt: user.suspendedAt,
                 workspaceId: permissions.entityId,
                 permission: permissions.permissionType,
                 createdAt: permissions.createdAt,
@@ -193,6 +221,7 @@ export const GET = withRouteHandler(
           name: string
           email: string
           image: string | null
+          suspendedAt: string | null
           workspaces: RosterWorkspaceAccess[]
         }
       >()
@@ -222,6 +251,7 @@ export const GET = withRouteHandler(
           name: row.userName,
           email: row.userEmail,
           image: row.userImage,
+          suspendedAt: row.userSuspendedAt?.toISOString() ?? null,
           workspaces: [workspaceAccess],
         })
       }

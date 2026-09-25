@@ -17,6 +17,7 @@ const {
   mockInitiateMultipart,
   mockListMultipartParts,
   mockResolveBillingContext,
+  mockUploadStorageProvider,
 } = vi.hoisted(() => ({
   mockAbortProviderUpload: vi.fn(),
   mockCheckStorageQuota: vi.fn(),
@@ -27,6 +28,7 @@ const {
   mockInitiateMultipart: vi.fn(),
   mockListMultipartParts: vi.fn(),
   mockResolveBillingContext: vi.fn(),
+  mockUploadStorageProvider: vi.fn(() => 's3' as const),
 }))
 
 vi.mock('@/lib/billing/storage', () => ({
@@ -63,7 +65,7 @@ vi.mock('@/lib/uploads/upload-session/provider', () => ({
   headProviderObject: mockHeadObject,
   initiateMultipartProviderUpload: mockInitiateMultipart,
   listMultipartProviderParts: mockListMultipartParts,
-  uploadStorageProvider: vi.fn(() => 's3'),
+  uploadStorageProvider: mockUploadStorageProvider,
 }))
 
 import { OrchestrationError } from '@/lib/core/orchestration/types'
@@ -109,6 +111,7 @@ describe('upload sessions', () => {
     resetDbChainMock()
     mockResolveBillingContext.mockResolvedValue({ workspaceId: WORKSPACE_ID })
     mockCheckStorageQuota.mockResolvedValue({ allowed: true })
+    mockUploadStorageProvider.mockReturnValue('s3')
     mockCreatePutTransfer.mockResolvedValue({
       method: 'put',
       url: 'https://storage.example/upload',
@@ -148,6 +151,126 @@ describe('upload sessions', () => {
       workspaceId: WORKSPACE_ID,
       principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
     })
+  })
+
+  it('stores organization logos under their own scope and replaces forged credential metadata', async () => {
+    dbChainMockFns.returning.mockResolvedValueOnce([
+      uploadRow({
+        purpose: 'organization_logo',
+        workspaceId: null,
+        storageContext: 'organization-logos',
+        finalKey: 'SIM_ORG_LOGOS/org-1/1700000000000-aaaaaaaaaaaaaaaa-logo.png',
+        contentType: 'image/png',
+      }),
+    ])
+    await createUploadSession({
+      id: 'upload-1',
+      userId: 'user-1',
+      purpose: 'organization_logo',
+      organizationId: 'org-1',
+      expectedLogo: null,
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      fileName: 'logo.png',
+      contentType: 'image/png',
+      fileSize: 100,
+      metadata: { organizationLogo: { organizationId: 'forged' } },
+    })
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: null,
+        finalKey: expect.stringMatching(/^SIM_ORG_LOGOS\/org-1\/\d+-[a-f0-9]{16}-logo\.png$/),
+        storageContext: 'organization-logos',
+        metadata: {
+          organizationLogo: {
+            organizationId: 'org-1',
+            expectedLogo: null,
+            userId: 'user-1',
+            sessionId: 'session-1',
+          },
+        },
+      })
+    )
+    expect(mockCreatePutTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'organization-logos', fileSize: 100 })
+    )
+  })
+
+  it.each([
+    { contentType: 'text/html', fileSize: 100 },
+    { contentType: 'image/png', fileSize: 5 * 1024 * 1024 + 1 },
+    { contentType: 'image/png', fileSize: 0 },
+  ])('rejects invalid organization logos before initializing storage', async (file) => {
+    await expect(
+      createUploadSession({
+        purpose: 'organization_logo',
+        organizationId: 'org-1',
+        expectedLogo: null,
+        userId: 'user-1',
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        fileName: 'logo.png',
+        ...file,
+      })
+    ).rejects.toMatchObject({ code: 'validation' })
+    expect(mockCreatePutTransfer).not.toHaveBeenCalled()
+    expect(dbChainMockFns.values).not.toHaveBeenCalled()
+  })
+
+  it('binds organization images to the creating session and stores them without a workspace', async () => {
+    dbChainMockFns.returning.mockResolvedValueOnce([
+      uploadRow({
+        purpose: 'mothership_attachment',
+        workspaceId: null,
+        storageContext: 'mothership',
+        finalKey: 'assistant/org-1/user-1/upload-1/image.png',
+        contentType: 'image/png',
+      }),
+    ])
+    await createUploadSession({
+      id: 'upload-1',
+      userId: 'user-1',
+      purpose: 'mothership_attachment',
+      organizationId: 'org-1',
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      fileName: 'image.png',
+      contentType: 'image/png',
+      fileSize: 100,
+      metadata: { organizationAttachment: { organizationId: 'forged' } },
+    })
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: null,
+        finalKey: 'assistant/org-1/user-1/upload-1/image.png',
+        metadata: {
+          organizationAttachment: {
+            organizationId: 'org-1',
+            userId: 'user-1',
+            sessionId: 'session-1',
+          },
+        },
+      })
+    )
+    expect(mockCreatePutTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'mothership', fileSize: 100 })
+    )
+  })
+
+  it.each([
+    { contentType: 'text/html', fileSize: 100 },
+    { contentType: 'image/png', fileSize: 5 * 1024 * 1024 + 1 },
+  ])('rejects invalid organization images before storage initialization', async (file) => {
+    await expect(
+      createUploadSession({
+        id: 'upload-1',
+        userId: 'user-1',
+        purpose: 'mothership_attachment',
+        organizationId: 'org-1',
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        fileName: 'image.png',
+        ...file,
+      })
+    ).rejects.toThrow('Assistant attachments must be')
+    expect(mockCreatePutTransfer).not.toHaveBeenCalled()
+    expect(dbChainMockFns.values).not.toHaveBeenCalled()
   })
 
   // Local storage stores an object's metadata sidecar beside it, under the
@@ -220,6 +343,33 @@ describe('upload sessions', () => {
       }
     }
   )
+
+  it('keeps an OAuth upload bound across access-token rotation for the same client', () => {
+    const original: Principal = {
+      kind: 'oauth_access_token',
+      userId: 'user-1',
+      clientId: 'sim-cli',
+      tokenId: 'token-1',
+      scopes: ['api:write'],
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    }
+    const session = sessionRecord({
+      purpose: 'knowledge_document',
+      knowledgeBaseId: 'kb-1',
+      metadata: { authBinding: createUploadSessionAuthBinding(original, WORKSPACE_ID) },
+    })
+    const rotated: Principal = { ...original, tokenId: 'token-2' }
+    const otherClient: Principal = { ...original, clientId: 'other-client', tokenId: 'token-3' }
+    const otherUser: Principal = { ...original, userId: 'user-2', tokenId: 'token-4' }
+
+    expect(() => assertUploadSessionAuthBinding(session, rotated)).not.toThrow()
+    expect(() => assertUploadSessionAuthBinding(session, otherClient)).toThrow(
+      'Upload session not found'
+    )
+    expect(() => assertUploadSessionAuthBinding(session, otherUser)).toThrow(
+      'Upload session not found'
+    )
+  })
 
   it('allocates distinct keys for same-named execution attachments', async () => {
     dbChainMockFns.returning
@@ -624,6 +774,30 @@ describe('upload sessions', () => {
     expect(mockCreatePutTransfer).not.toHaveBeenCalled()
   })
 
+  it('uses proxy-safe multipart parts for large local uploads', async () => {
+    const fileSize = UPLOAD_SESSION_PART_SIZE + 1
+    mockUploadStorageProvider.mockReturnValue('local')
+    mockInitiateMultipart.mockResolvedValueOnce({ provider: 'local', providerUploadId: null })
+    dbChainMockFns.returning.mockResolvedValueOnce([
+      uploadRow({
+        fileSize,
+        method: 'multipart',
+        storageProvider: 'local',
+        partSize: UPLOAD_SESSION_PART_SIZE,
+        partCount: 2,
+      }),
+    ])
+
+    const created = await createWorkspaceUpload(fileSize)
+
+    expect(created.transfer).toEqual({
+      method: 'multipart',
+      partSize: UPLOAD_SESSION_PART_SIZE,
+      partCount: 2,
+    })
+    expect(mockCreatePutTransfer).not.toHaveBeenCalled()
+  })
+
   it('preserves multipart request bounds before provider signing', async () => {
     const multipart = sessionRecord({
       method: 'multipart',
@@ -714,8 +888,8 @@ describe('upload sessions', () => {
       partCount: 2,
     })
     const parts = [
-      { partNumber: 1, etag: 'etag-1', size: UPLOAD_SESSION_PART_SIZE },
       { partNumber: 2, etag: 'etag-2', size: 3 },
+      { partNumber: 1, etag: 'etag-1', size: UPLOAD_SESSION_PART_SIZE },
     ]
     mockListMultipartParts.mockResolvedValue(parts)
     mockHeadObject
@@ -733,7 +907,13 @@ describe('upload sessions', () => {
       expect.objectContaining({ key: FINAL_KEY, providerUploadId: 'provider-upload-1' })
     )
     expect(mockCompleteMultipart).toHaveBeenCalledWith(
-      expect.objectContaining({ key: FINAL_KEY, parts })
+      expect.objectContaining({
+        key: FINAL_KEY,
+        parts: [
+          { partNumber: 1, etag: 'etag-1', size: UPLOAD_SESSION_PART_SIZE },
+          { partNumber: 2, etag: 'etag-2', size: 3 },
+        ],
+      })
     )
     expect(finalize).toHaveBeenCalledOnce()
   })
@@ -970,6 +1150,96 @@ describe('upload sessions', () => {
     expect(mockDeleteObjectVersion).toHaveBeenCalledWith(
       expect.objectContaining({ key: FINAL_KEY, version: 'version-1' })
     )
+  })
+
+  it.each(['mothership_attachment', 'organization_logo'] as const)(
+    'reclaims an unreferenced completed %s object',
+    async (purpose) => {
+      const image = uploadRow({
+        purpose,
+        workspaceId: null,
+        storageContext: purpose === 'organization_logo' ? 'organization-logos' : 'mothership',
+        finalKey:
+          purpose === 'organization_logo'
+            ? 'organization-logos/org-1/upload-1-logo.png'
+            : 'assistant/org-1/user-1/upload-1/image.png',
+        status: 'completed',
+        completedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+      })
+      queueTableRows(schemaMock.uploadSession, [])
+      queueTableRows(schemaMock.uploadSession, [image])
+      mockHeadObject.mockResolvedValue(providerObject(sessionRecord(image), 'version-1'))
+      dbChainMockFns.returning
+        .mockResolvedValueOnce([image])
+        .mockResolvedValueOnce([{ id: image.id }])
+
+      await expect(cleanupExpiredUploadSessions()).resolves.toEqual({
+        expired: 0,
+        failed: 0,
+        purged: 1,
+      })
+      expect(mockDeleteObjectVersion).toHaveBeenCalledWith({
+        provider: 's3',
+        key: image.finalKey,
+        context: image.storageContext,
+        version: 'version-1',
+      })
+      expect(mockDeleteObjectVersion.mock.invocationCallOrder[0]).toBeLessThan(
+        dbChainMockFns.delete.mock.invocationCallOrder[0]
+      )
+    }
+  )
+
+  it.each(['mothership_attachment', 'organization_logo'] as const)(
+    'retains %s ownership records after deletion failure so cleanup can retry',
+    async (purpose) => {
+      const image = uploadRow({
+        purpose,
+        workspaceId: null,
+        storageContext: purpose === 'organization_logo' ? 'organization-logos' : 'mothership',
+        status: 'completed',
+        completedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+      })
+      queueTableRows(schemaMock.uploadSession, [])
+      queueTableRows(schemaMock.uploadSession, [image])
+      mockHeadObject.mockResolvedValue(providerObject(sessionRecord(image), 'version-1'))
+      mockDeleteObjectVersion.mockRejectedValueOnce(new Error('Storage unavailable'))
+      dbChainMockFns.returning.mockResolvedValueOnce([image])
+
+      await expect(cleanupExpiredUploadSessions()).resolves.toEqual({
+        expired: 0,
+        failed: 1,
+        purged: 0,
+      })
+      expect(dbChainMockFns.delete).not.toHaveBeenCalled()
+      expect(dbChainMockFns.set).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          processingLeaseId: null,
+          processingLeaseExpiresAt: null,
+          error: 'Storage unavailable',
+        })
+      )
+    }
+  )
+
+  it('purges completed workspace attachment sessions without deleting their registered objects', async () => {
+    const attachment = uploadRow({
+      purpose: 'mothership_attachment',
+      status: 'completed',
+      completedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+    })
+    queueTableRows(schemaMock.uploadSession, [])
+    queueTableRows(schemaMock.uploadSession, [attachment])
+    dbChainMockFns.returning
+      .mockResolvedValueOnce([attachment])
+      .mockResolvedValueOnce([{ id: attachment.id }])
+
+    await expect(cleanupExpiredUploadSessions()).resolves.toEqual({
+      expired: 0,
+      failed: 0,
+      purged: 1,
+    })
+    expect(mockDeleteObjectVersion).not.toHaveBeenCalled()
   })
 })
 

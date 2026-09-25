@@ -1,9 +1,8 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { ChevronDown, handleKeyboardActivation } from '@sim/emcn'
+import { ChevronDown, cn, handleKeyboardActivation } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
-import clsx from 'clsx'
 import { useShallow } from 'zustand/react/shallow'
 import {
   FieldItem,
@@ -27,7 +26,6 @@ interface ConnectionBlocksProps {
 interface FieldTreeNodesProps {
   fields: SchemaField[]
   parentPath: string
-  level: number
   connection: ConnectedBlock
   isFieldExpanded: (connectionId: string, fieldPath: string) => boolean
   onToggleFieldExpansion: (connectionId: string, fieldPath: string) => void
@@ -36,7 +34,6 @@ interface FieldTreeNodesProps {
 function FieldTreeNodes({
   fields,
   parentPath,
-  level,
   connection,
   isFieldExpanded,
   onToggleFieldExpansion,
@@ -52,7 +49,6 @@ function FieldTreeNodes({
           connection={connection}
           field={field}
           path={fieldPath}
-          level={level}
           hasChildren={hasChildren}
           isExpanded={expanded}
           onToggleExpand={(p) => onToggleFieldExpansion(connection.id, p)}
@@ -63,7 +59,6 @@ function FieldTreeNodes({
             <FieldTreeNodes
               fields={field.children!}
               parentPath={fieldPath}
-              level={level + 1}
               connection={connection}
               isFieldExpanded={isFieldExpanded}
               onToggleFieldExpansion={onToggleFieldExpansion}
@@ -117,7 +112,7 @@ function ConnectionItem({
         tabIndex={hasFields ? 0 : undefined}
         draggable
         onDragStart={(e) => onConnectionDragStart(e, connection)}
-        className={clsx(
+        className={cn(
           'group flex h-[26px] cursor-grab items-center gap-2 rounded-lg px-1.5 text-sm hover-hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover-hover:bg-[var(--surface-5)]',
           hasFields && 'cursor-pointer'
         )}
@@ -129,7 +124,7 @@ function ConnectionItem({
       >
         <BlockTile blockType={connection.type} size='sm' />
         <span
-          className={clsx(
+          className={cn(
             'truncate',
             'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
           )}
@@ -138,8 +133,8 @@ function ConnectionItem({
         </span>
         {hasFields && (
           <ChevronDown
-            className={clsx(
-              'size-[8px] flex-shrink-0 text-[var(--text-tertiary)] transition-transform duration-100 group-hover:text-[var(--text-primary)]',
+            className={cn(
+              'size-[8px] shrink-0 text-[var(--text-tertiary)] transition-transform duration-100 group-hover:text-[var(--text-primary)]',
               !isExpanded && '-rotate-90'
             )}
           />
@@ -152,7 +147,6 @@ function ConnectionItem({
           <FieldTreeNodes
             fields={fields}
             parentPath=''
-            level={0}
             connection={connection}
             isFieldExpanded={isFieldExpanded}
             onToggleFieldExpansion={onToggleFieldExpansion}

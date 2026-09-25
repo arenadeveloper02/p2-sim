@@ -22,6 +22,14 @@ export type WorkspaceWithInviteFlags = WorkspaceRow &
   WorkspaceInviteFlags & {
     role: 'owner' | 'admin' | 'member'
     permissions: PermissionType
+    /**
+     * The viewer's admin access to this workspace derives from their
+     * organization role. `role: 'admin'` alone cannot say so — an explicit
+     * workspace admin looks identical — and the two differ in what the viewer
+     * can do: derived access has no permission row to give up, so leaving is
+     * refused by `DELETE /api/workspaces/members/[id]`.
+     */
+    isOrgAdmin: boolean
   }
 
 /** The GET /api/workspaces payload assembled by {@link listWorkspacesForViewer}. */
@@ -39,7 +47,11 @@ export interface WorkspaceListPayload {
  * billed user / organization).
  */
 async function buildWorkspacesWithInviteFlags(
-  userWorkspaces: Array<{ workspace: WorkspaceRow; permissionType: PermissionType }>,
+  userWorkspaces: Array<{
+    workspace: WorkspaceRow
+    permissionType: PermissionType
+    viaOrgAdmin: boolean
+  }>,
   userId: string
 ): Promise<WorkspaceWithInviteFlags[]> {
   const nonOrgBilledUserIds = [
@@ -70,7 +82,7 @@ async function buildWorkspacesWithInviteFlags(
     }),
   ])
 
-  return userWorkspaces.map(({ workspace: workspaceDetails, permissionType }) => {
+  return userWorkspaces.map(({ workspace: workspaceDetails, permissionType, viaOrgAdmin }) => {
     const billedPlanCategory: PlanCategory =
       workspaceDetails.workspaceMode === WORKSPACE_MODE.ORGANIZATION
         ? workspaceDetails.organizationId
@@ -88,6 +100,7 @@ async function buildWorkspacesWithInviteFlags(
             ? ('admin' as const)
             : ('member' as const),
       permissions: permissionType,
+      isOrgAdmin: viaOrgAdmin,
       ...resolveInviteFlags(invitePolicy, workspaceDetails.billedAccountUserId === userId),
     }
   })
@@ -99,9 +112,8 @@ async function buildWorkspacesWithInviteFlags(
  * the workspace creation policy.
  *
  * Unlike the route, this performs no writes — no default-workspace creation and
- * no orphaned-workflow repair. It exists for the workspace layout's sidebar
- * prefetch, which only runs after host-context authorization has proven the
- * viewer already has at least one accessible workspace.
+ * no orphaned-workflow repair. Sidebar prefetch leaves empty lists uncached so
+ * the client can still reach the route's default-workspace creation path.
  */
 export async function listWorkspacesForViewer(params: {
   userId: string

@@ -1,25 +1,20 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { ToolConfig } from '@/tools/types'
+import { filterUndefined } from '@sim/utils/object'
+import type { InternalToolConfig } from '@/tools/types'
 
 const logger = createLogger('FacebookAdsQuery')
 
 interface FacebookAdsQueryParams {
   account?: string
   query: string
-  workspaceId?: string
   oauthCredential?: string
   accessToken?: string
   accountId?: string
   adAccountId?: string
-  _context?: {
-    workspaceId?: string
-    workflowId?: string
-    userId?: string
-  }
 }
 
-export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> = {
+export const facebookAdsQueryTool: InternalToolConfig<FacebookAdsQueryParams, unknown> = {
   id: 'facebook_ads_query',
   version: '1.0.0',
   name: 'Facebook Ads Query',
@@ -73,20 +68,19 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
       description: 'Facebook ad account ID (non-admin workspaces)',
     },
   },
-  request: {
-    url: () => '/api/facebook-ads/query',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: FacebookAdsQueryParams) => ({
-      account: params.account,
-      query: params.query,
-      workspaceId: params.workspaceId ?? params._context?.workspaceId,
-      accessToken: params.accessToken,
-      accountId: params.accountId,
-      adAccountId: params.accountId ?? params.adAccountId,
-    }),
+  operation: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ query: params.query }),
+    },
+    input: (params) =>
+      filterUndefined({
+        query: params.query ?? undefined,
+        account: params.account ?? undefined,
+        accessToken: params.accessToken ?? undefined,
+        accountId: params.accountId ?? undefined,
+        adAccountId: params.accountId ?? params.adAccountId ?? undefined,
+      }),
   },
   transformResponse: async (response: Response, params?: FacebookAdsQueryParams) => {
     try {

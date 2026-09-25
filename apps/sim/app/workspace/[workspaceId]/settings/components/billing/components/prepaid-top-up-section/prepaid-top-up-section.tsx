@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ButtonGroup, ButtonGroupItem, Chip, ChipInput, toast } from '@sim/emcn'
+import { Chip, ChipButtonGroup, ChipButtonGroupItem, ChipInput, toast } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import {
   dollarsToCredits,
@@ -106,7 +106,7 @@ export function PrepaidTopUpSection({
   return (
     <SettingsSection label='Buy Credits'>
       <div className='flex flex-col gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-4'>
-        <ButtonGroup
+        <ChipButtonGroup
           value={String(selection)}
           onValueChange={(value) => {
             const next = parseSelectionValue(value)
@@ -114,12 +114,12 @@ export function PrepaidTopUpSection({
           }}
         >
           {PREPAID_TOP_UP_PRESETS.map((preset) => (
-            <ButtonGroupItem key={preset} value={String(preset)}>
+            <ChipButtonGroupItem key={preset} value={String(preset)}>
               ${preset}
-            </ButtonGroupItem>
+            </ChipButtonGroupItem>
           ))}
-          <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
-        </ButtonGroup>
+          <ChipButtonGroupItem value='custom'>Custom</ChipButtonGroupItem>
+        </ChipButtonGroup>
 
         {selection === 'custom' && (
           <ChipInput

@@ -1,4 +1,4 @@
-import { truncateToTokenLimit } from '@/lib/tokenization/estimators'
+import { truncateToTokenLimit } from '@/lib/tokenization/accurate'
 import {
   estimateChatMessagesTokens,
   fitPromptToTokenBudget,

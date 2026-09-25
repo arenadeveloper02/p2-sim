@@ -20,9 +20,7 @@ const SECTION_TABS = ['api-reference', 'academy', 'cli'] as const
  *
  * A substring test is wrong: `/integrations/clickup` and
  * `/integrations/clickhouse` both contain `/cli`, which lit the CLI tab and
- * unlit Documentation on two existing integration pages. Anchoring to the start
- * is also wrong, because a non-default locale prefixes the path (`/ja/cli`), so
- * the segment can sit anywhere.
+ * unlit Documentation on two existing integration pages.
  */
 function isInSection(pathname: string, section: string): boolean {
   return (
@@ -73,7 +71,7 @@ export function Navbar() {
             paddingRight: 'calc(var(--toc-offset) + var(--nav-inset))',
           }}
         >
-          <Link href='/' className='flex items-center'>
+          <Link href='/' aria-label='Sim documentation home' className='flex items-center'>
             <SimWordmark className='h-[18px]' />
           </Link>
 
@@ -108,7 +106,7 @@ export function Navbar() {
                   '-mb-px relative flex items-center border-b text-sm tracking-[-0.01em] transition-colors',
                   isActive
                     ? 'border-[var(--text-muted)] font-medium text-[var(--text-primary)]'
-                    : 'border-transparent font-normal text-[var(--text-muted)] hover:border-[var(--border-1)] hover:text-[var(--text-secondary)]'
+                    : 'border-transparent font-normal text-[var(--text-secondary)] hover:border-[var(--border-1)] hover:text-[var(--text-primary)]'
                 )}
               >
                 {/* Invisible bold text reserves width to prevent layout shift */}

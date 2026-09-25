@@ -85,13 +85,6 @@ vi.mock('@/lib/core/config/env', () => ({
     typeof value === 'string' ? value.toLowerCase() === 'false' || value === '0' : value === false,
 }))
 
-vi.mock('@/lib/uploads/setup', () => ({
-  S3_CONFIG: {
-    bucket: 'test-bucket',
-    region: 'test-region',
-  },
-}))
-
 vi.mock('@/lib/uploads/config', () => ({
   S3_CONFIG: mockS3Config,
   S3_KB_CONFIG: {
@@ -131,6 +124,89 @@ describe('S3 Client', () => {
   })
 
   describe('uploadToS3', () => {
+    it.each(['upload', 'delete'] as const)(
+      'cancels a stalled %s through the SDK signal',
+      async (operation) => {
+        const controller = new AbortController()
+        const aborted = new Error('Checkpoint expired')
+        let started!: () => void
+        const ready = new Promise<void>((resolve) => {
+          started = resolve
+        })
+        mockSend.mockImplementationOnce((_command, options: { abortSignal: AbortSignal }) => {
+          started()
+          return new Promise((_resolve, reject) => {
+            options.abortSignal.addEventListener(
+              'abort',
+              () => reject(options.abortSignal.reason),
+              { once: true }
+            )
+          })
+        })
+        const pending =
+          operation === 'upload'
+            ? uploadToS3(
+                Buffer.from('private text'),
+                'checkpoint.txt',
+                'text/plain',
+                undefined,
+                undefined,
+                true,
+                undefined,
+                false,
+                controller.signal
+              )
+            : deleteFromS3('checkpoint.txt', undefined, controller.signal)
+        const result = expect(pending).rejects.toBe(aborted)
+        await ready
+        controller.abort(aborted)
+        await result
+        expect(mockSend.mock.calls[0][1].abortSignal).toBe(controller.signal)
+      }
+    )
+
+    it('refuses an already canceled upload before dispatching it', async () => {
+      const controller = new AbortController()
+      controller.abort()
+      await expect(
+        uploadToS3(
+          Buffer.from('private text'),
+          'checkpoint.txt',
+          'text/plain',
+          undefined,
+          undefined,
+          true,
+          undefined,
+          false,
+          controller.signal
+        )
+      ).rejects.toHaveProperty('name', 'AbortError')
+      expect(mockSend).not.toHaveBeenCalled()
+    })
+
+    it('adds a provider create-only precondition for an immutable upload', async () => {
+      mockSend.mockResolvedValueOnce({})
+
+      await uploadToS3(
+        Buffer.from('new'),
+        'kb/new.txt',
+        'text/plain',
+        undefined,
+        undefined,
+        true,
+        { uploadId: 'attempt-1' },
+        true
+      )
+
+      expect(mockPutObjectCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Key: 'kb/new.txt',
+          IfNoneMatch: '*',
+          Metadata: expect.objectContaining({ uploadId: 'attempt-1' }),
+        })
+      )
+    })
+
     it('should upload a file to S3 and return file info', async () => {
       mockSend.mockResolvedValueOnce({})
 
@@ -464,6 +540,36 @@ describe('S3 Client', () => {
         downloadFromS3('large-file.txt', { bucket: 'test-bucket', region: 'test-region' }, 10)
       ).rejects.toThrow('storage download exceeds maximum size')
       expect(mockDestroy).toHaveBeenCalledWith(expect.any(Error))
+    })
+
+    it('forwards cancellation to the S3 request and stream reader', async () => {
+      const controller = new AbortController()
+      const mockDestroy = vi.fn()
+      const mockStream = {
+        destroy: mockDestroy,
+        on: vi.fn(() => mockStream),
+        off: vi.fn(() => mockStream),
+      }
+      mockSend.mockResolvedValueOnce({
+        Body: mockStream,
+        $metadata: { httpStatusCode: 200 },
+      })
+
+      const download = downloadFromS3(
+        'test-file.txt',
+        { bucket: 'test-bucket', region: 'test-region' },
+        undefined,
+        controller.signal
+      )
+      await vi.waitFor(() => expect(mockStream.on).toHaveBeenCalled())
+      controller.abort(new Error('cancelled'))
+
+      await expect(download).rejects.toThrow('cancelled')
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ abortSignal: controller.signal })
+      )
+      expect(mockDestroy).toHaveBeenCalledWith()
     })
 
     it('should handle S3 client errors', async () => {

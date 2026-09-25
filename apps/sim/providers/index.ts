@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { getApiKeyWithBYOK } from '@/lib/api-key/byok'
+import { env, envNumber } from '@/lib/core/config/env'
 import { filterModelSafeWorkspaceFileAttachments } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
+import { appendUnavailableAttachmentNotice } from '@/lib/uploads/utils/model-input'
 import type { StreamingExecution } from '@/executor/types'
 import {
   applyModelCostPolicy,
@@ -22,6 +24,11 @@ import {
   type ProviderRuntimeContext,
   runWithProviderRuntimeContext,
 } from '@/providers/runtime-context'
+import {
+  assignProviderToolIdentities,
+  projectProviderResponseToolIdentities,
+  projectStreamingExecutionToolIdentities,
+} from '@/providers/tool-identity'
 import type { ProviderId, ProviderRequest, ProviderResponse } from '@/providers/types'
 import {
   generateStructuredOutputInstructions,
@@ -35,9 +42,7 @@ import {
 
 const logger = createLogger('Providers')
 
-async function omitUnsafeProviderFileAttachments(
-  request: ProviderRequest
-): Promise<ProviderRequest> {
+async function prepareProviderFileAttachments(request: ProviderRequest): Promise<ProviderRequest> {
   const attachments = (request.messages ?? []).flatMap((message) => message.files ?? [])
   if (attachments.length === 0) return request
 
@@ -45,6 +50,7 @@ async function omitUnsafeProviderFileAttachments(
   try {
     safeAttachments = await filterModelSafeWorkspaceFileAttachments(attachments, {
       workspaceId: request.workspaceId,
+      ...(request.userId ? { actorUserId: request.userId } : {}),
     })
   } catch (error) {
     logger.error('Workspace file secret provenance could not be verified', {
@@ -65,16 +71,32 @@ async function omitUnsafeProviderFileAttachments(
     messages: request.messages?.map((message) => {
       if (!message.files) return message
       const files = message.files.filter((file) => safe.has(file))
-      return { ...message, ...(files.length > 0 ? { files } : { files: undefined }) }
+      const omittedCount = message.files.length - files.length
+      if (omittedCount === 0) return message
+      return {
+        ...message,
+        content: appendUnavailableAttachmentNotice(message.content, omittedCount),
+        files: files.length > 0 ? files : undefined,
+      }
     }),
   }
 }
 
+/** Round trips an Agent block's tool loop takes before it is forced to answer. */
+const DEFAULT_MAX_TOOL_ITERATIONS = 20
+
 /**
  * Maximum number of iterations for tool call loops to prevent infinite loops.
  * Used across all providers that support tool/function calling.
+ *
+ * Self-hosted deployments that need longer agent runs raise it with the
+ * `MAX_TOOL_ITERATIONS` env var; a value that is not a positive integer falls
+ * back to {@link DEFAULT_MAX_TOOL_ITERATIONS}.
  */
-export const MAX_TOOL_ITERATIONS = 20
+export const MAX_TOOL_ITERATIONS = envNumber(env.MAX_TOOL_ITERATIONS, DEFAULT_MAX_TOOL_ITERATIONS, {
+  min: 1,
+  integer: true,
+})
 
 /**
  * Normalizes a model-tuning level that may have arrived from a variable or block reference
@@ -97,10 +119,6 @@ function sanitizeRequest(request: ProviderRequest): ProviderRequest {
   sanitizedRequest.verbosity = normalizeModelLevel(sanitizedRequest.verbosity)
   sanitizedRequest.thinkingLevel = normalizeModelLevel(sanitizedRequest.thinkingLevel)
 
-  if (model && !supportsTemperature(model)) {
-    sanitizedRequest.temperature = undefined
-  }
-
   /**
    * A model absent from the catalogue is unknown, not known-incapable. The model field is an
    * editable combobox, so a model newer than `models.ts` reaches this point routed by pattern
@@ -110,6 +128,10 @@ function sanitizeRequest(request: ProviderRequest): ProviderRequest {
    * the protective drop.
    */
   const isCatalogued = Boolean(model) && isKnownModelId(model)
+
+  if (model && isCatalogued && !supportsTemperature(model)) {
+    sanitizedRequest.temperature = undefined
+  }
 
   if (model && isCatalogued && !supportsReasoningEffort(model)) {
     sanitizedRequest.reasoningEffort = undefined
@@ -146,14 +168,18 @@ function isReadableStream(response: any): response is ReadableStream {
  * stream drain — long after this function returns — so the policy is installed
  * on the live output object rather than applied to a value.
  */
-function applyStreamingCostPolicy(response: StreamingExecution, policy: ModelCostPolicy): void {
+function applyStreamingCostPolicy(
+  response: StreamingExecution,
+  policy: ModelCostPolicy,
+  additionalToolCost?: () => number
+): void {
   const output = response.execution?.output
   if (!output || typeof output !== 'object') {
     logger.warn('Streaming output unavailable at intercept time; cost policy not applied')
     return
   }
 
-  installStreamingCostPolicy(output, policy)
+  installStreamingCostPolicy(output, policy, additionalToolCost)
 
   const segments = output.providerTiming?.timeSegments
   if (Array.isArray(segments)) {
@@ -215,8 +241,21 @@ export async function executeProviderRequest(
     sanitizedRequest.responseFormat = undefined
   }
 
-  const provenanceSafeRequest = await omitUnsafeProviderFileAttachments(sanitizedRequest)
-  const modelSafeRequest = provenanceSafeRequest
+  const modelSafeRequest = await prepareProviderFileAttachments(sanitizedRequest)
+  const toolIdentities = assignProviderToolIdentities(modelSafeRequest.tools)
+  const failedFunctionToolCost = { total: 0 }
+  const requestRuntimeContext: ProviderRuntimeContext = {
+    ...runtimeContext,
+    failedFunctionToolCost,
+    ...(toolIdentities.toolIdByWireId.size > 0
+      ? {
+          toolIdByWireId: new Map([
+            ...(runtimeContext?.toolIdByWireId ?? []),
+            ...toolIdentities.toolIdByWireId,
+          ]),
+        }
+      : {}),
+  }
 
   if (modelSafeRequest.responseFormat) {
     const structuredOutputInstructions = generateStructuredOutputInstructions(
@@ -229,15 +268,20 @@ export async function executeProviderRequest(
     }
   }
 
-  const response = await runWithProviderRuntimeContext(runtimeContext, async () => {
-    await attachLargeFileRemoteUrls(modelSafeRequest, providerId)
-    await uploadLargeFilesToProvider(modelSafeRequest, providerId)
+  const response = await runWithProviderRuntimeContext(requestRuntimeContext, async () => {
+    await attachLargeFileRemoteUrls(modelSafeRequest, providerId, runtimeContext?.executionContext)
+    await uploadLargeFilesToProvider(modelSafeRequest, providerId, runtimeContext?.executionContext)
     return provider.executeRequest(modelSafeRequest)
   })
 
   if (isStreamingExecution(response)) {
     logger.info('Provider returned StreamingExecution', { isBYOK })
-    applyStreamingCostPolicy(response, resolveModelCostPolicy(sanitizedRequest.model, isBYOK))
+    applyStreamingCostPolicy(
+      response,
+      resolveModelCostPolicy(sanitizedRequest.model, isBYOK),
+      () => failedFunctionToolCost.total
+    )
+    projectStreamingExecutionToolIdentities(response, toolIdentities)
     return response
   }
 
@@ -247,6 +291,7 @@ export async function executeProviderRequest(
   }
 
   const costPolicy = resolveModelCostPolicy(response.model, isBYOK)
+  projectProviderResponseToolIdentities(response, toolIdentities)
 
   if (response.tokens) {
     const { input: promptTokens = 0, output: completionTokens = 0 } = response.tokens
@@ -281,7 +326,7 @@ export async function executeProviderRequest(
     applySegmentCostPolicy(response.timing.timeSegments, costPolicy)
   }
 
-  const toolCost = sumToolCosts(response.toolResults)
+  const toolCost = sumToolCosts(response.toolResults) + failedFunctionToolCost.total
   if (toolCost > 0 && response.cost) {
     // Replaced rather than mutated: a provider-supplied cost can be the same
     // object it also handed to a time segment, and tool cost belongs only to

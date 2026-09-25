@@ -1,22 +1,19 @@
 import { toError } from '@sim/utils/errors'
 import { SimAutoIcon } from '@/components/icons'
-import {
-  isAzureConfigured,
-  isCohereConfigured,
-  isHosted,
-  isOllamaConfigured,
-} from '@/lib/core/config/env-flags'
+import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isOllamaConfigured } from '@/lib/core/config/env-flags'
 import { getScopesForService } from '@/lib/oauth/utils'
 import { containsReference } from '@/lib/workflows/sanitization/references'
-import { buildCanonicalIndex } from '@/lib/workflows/subblocks/visibility'
 import type { SubBlockConfig } from '@/blocks/types'
 import {
+  findProviderFromModel,
   getBaseModelProviders,
   getHostedModels,
   getModelSunsetStatus,
   getProviderIcon,
   getProviderModels,
   isAutoModel,
+  isCustomModelId,
   orderModelIdsByReleaseDate,
   SIM_AUTO_MODEL_ID,
 } from '@/providers/models'
@@ -25,8 +22,6 @@ import type { ProviderId } from '@/providers/types'
 import { getProviderFromModel } from '@/providers/utils'
 import { useProvidersStore } from '@/stores/providers/store'
 
-export const VERTEX_MODELS = getProviderModels('vertex')
-export const BEDROCK_MODELS = getProviderModels('bedrock')
 export const AZURE_MODELS = [
   ...getProviderModels('azure-openai'),
   ...getProviderModels('azure-anthropic'),
@@ -90,7 +85,7 @@ export function getModelOptions() {
   // Hosted-only automatic model. Deliberately LAST in the list (limited
   // visibility for the initial release): available to anyone who scrolls or
   // searches for it, but never the first thing the dropdown offers.
-  if (isHosted) {
+  if (getDeploymentShape().hosted) {
     options.push({ label: 'Auto', id: SIM_AUTO_MODEL_ID, icon: SimAutoIcon })
   }
 
@@ -139,39 +134,6 @@ export function getPiModelOptions() {
   })
 }
 
-/**
- * Gets all dependency fields as a flat array.
- * Handles both simple array format and object format with all/any fields.
- */
-export function getDependsOnFields(dependsOn: SubBlockConfig['dependsOn']): string[] {
-  if (!dependsOn) return []
-  if (Array.isArray(dependsOn)) return dependsOn
-  return [...(dependsOn.all || []), ...(dependsOn.any || [])]
-}
-
-/**
- * Finds subblocks that depend on a changed field, accounting for canonical pairs.
- */
-export function getSubBlocksDependingOnChange(
-  allSubBlocks: SubBlockConfig[],
-  changedSubBlockId: string
-): SubBlockConfig[] {
-  const canonicalIndex = buildCanonicalIndex(allSubBlocks)
-  const canonicalId = canonicalIndex.canonicalIdBySubBlockId[changedSubBlockId]
-  const group = canonicalId ? canonicalIndex.groupsById[canonicalId] : undefined
-  const changedFields = new Set<string>([changedSubBlockId])
-
-  if (canonicalId) changedFields.add(canonicalId)
-  if (group?.basicId) changedFields.add(group.basicId)
-  for (const advancedId of group?.advancedIds || []) {
-    changedFields.add(advancedId)
-  }
-
-  return allSubBlocks.filter((subBlock) =>
-    getDependsOnFields(subBlock.dependsOn).some((field) => changedFields.has(field))
-  )
-}
-
 function getProviderFromStore(model: string): string | null {
   const { providers } = useProvidersStore.getState()
   const normalized = model.toLowerCase()
@@ -206,12 +168,13 @@ function shouldRequireApiKeyForModel(model: string): boolean {
   const normalizedModel = model.trim().toLowerCase()
   if (!normalizedModel) return false
 
+  const { hosted, azureConfigured } = getDeploymentShape()
   // On hosted Sim the auto pseudo-model resolves server-side to a hosted pool
   // model. On self-hosted it exists only via imported workflows and always
   // falls back to the default Anthropic model, so the key field must show.
-  if (isAutoModel(normalizedModel)) return !isHosted
+  if (isAutoModel(normalizedModel)) return !hosted
 
-  if (isHosted) {
+  if (hosted) {
     const hostedModels = getHostedModels()
     if (hostedModels.some((m) => m.toLowerCase() === normalizedModel)) return false
   }
@@ -220,7 +183,7 @@ function shouldRequireApiKeyForModel(model: string): boolean {
     return false
   }
   if (
-    isAzureConfigured &&
+    azureConfigured &&
     (normalizedModel.startsWith('azure/') ||
       normalizedModel.startsWith('azure-openai/') ||
       normalizedModel.startsWith('azure-anthropic/') ||
@@ -228,9 +191,15 @@ function shouldRequireApiKeyForModel(model: string): boolean {
   ) {
     return false
   }
-  if (normalizedModel.startsWith('vllm/') || normalizedModel.startsWith('litellm/')) {
+  if (
+    normalizedModel.startsWith('ollama/') ||
+    normalizedModel.startsWith('vllm/') ||
+    normalizedModel.startsWith('litellm/')
+  ) {
     return false
   }
+
+  if (isCustomModelId(normalizedModel)) return true
 
   const storeProvider = getProviderFromStore(normalizedModel)
   if (storeProvider === 'ollama' || storeProvider === 'vllm' || storeProvider === 'litellm')
@@ -324,7 +293,8 @@ export function getApiKeyCondition() {
  */
 export function getCohereRerankerApiKeyCondition() {
   return () => {
-    if (isHosted || isCohereConfigured) {
+    const { hosted, cohereConfigured } = getDeploymentShape()
+    if (hosted || cohereConfigured) {
       return { field: 'operation', value: '__never_show__' }
     }
     return {
@@ -332,6 +302,14 @@ export function getCohereRerankerApiKeyCondition() {
       value: 'search',
       and: { field: 'rerankerEnabled', value: true },
     }
+  }
+}
+
+function getModelProviderCondition(...providerIds: ProviderId[]) {
+  return (values?: Record<string, unknown>) => {
+    const model = typeof values?.model === 'string' ? values.model : ''
+    const provider = findProviderFromModel(model.trim())
+    return buildModelVisibilityCondition(model, provider !== null && providerIds.includes(provider))
   }
 }
 
@@ -353,10 +331,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       requiredScopes: getScopesForService('vertex-ai'),
       placeholder: 'Select Google Cloud account',
       required: true,
-      condition: {
-        field: 'model',
-        value: VERTEX_MODELS,
-      },
+      condition: getModelProviderCondition('vertex'),
     },
     {
       id: 'vertexManualCredential',
@@ -366,10 +341,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       mode: 'advanced',
       placeholder: 'Enter credential ID',
       required: true,
-      condition: {
-        field: 'model',
-        value: VERTEX_MODELS,
-      },
+      condition: getModelProviderCondition('vertex'),
     },
     {
       id: 'apiKey',
@@ -390,10 +362,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       placeholder: 'https://your-resource.services.ai.azure.com',
       connectionDroppable: false,
       hideWhenEnvSet: 'NEXT_PUBLIC_AZURE_CONFIGURED',
-      condition: {
-        field: 'model',
-        value: AZURE_MODELS,
-      },
+      condition: getModelProviderCondition('azure-openai', 'azure-anthropic'),
     },
     {
       id: 'azureApiVersion',
@@ -402,10 +371,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       placeholder: 'Enter API version',
       connectionDroppable: false,
       hideWhenEnvSet: 'NEXT_PUBLIC_AZURE_CONFIGURED',
-      condition: {
-        field: 'model',
-        value: AZURE_MODELS,
-      },
+      condition: getModelProviderCondition('azure-openai', 'azure-anthropic'),
     },
     {
       id: 'vertexProject',
@@ -415,10 +381,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       placeholder: 'your-gcp-project-id',
       connectionDroppable: false,
       required: true,
-      condition: {
-        field: 'model',
-        value: VERTEX_MODELS,
-      },
+      condition: getModelProviderCondition('vertex'),
     },
     {
       id: 'vertexLocation',
@@ -427,10 +390,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       placeholder: 'us-central1',
       connectionDroppable: false,
       required: true,
-      condition: {
-        field: 'model',
-        value: VERTEX_MODELS,
-      },
+      condition: getModelProviderCondition('vertex'),
     },
     {
       id: 'bedrockAccessKeyId',
@@ -441,10 +401,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       connectionDroppable: false,
       required: true,
       hideWhenEnvSet: 'NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS',
-      condition: {
-        field: 'model',
-        value: BEDROCK_MODELS,
-      },
+      condition: getModelProviderCondition('bedrock'),
     },
     {
       id: 'bedrockSecretKey',
@@ -455,10 +412,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       connectionDroppable: false,
       required: true,
       hideWhenEnvSet: 'NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS',
-      condition: {
-        field: 'model',
-        value: BEDROCK_MODELS,
-      },
+      condition: getModelProviderCondition('bedrock'),
     },
     {
       id: 'bedrockRegion',
@@ -466,10 +420,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       type: 'short-input',
       placeholder: 'us-east-1',
       connectionDroppable: false,
-      condition: {
-        field: 'model',
-        value: BEDROCK_MODELS,
-      },
+      condition: getModelProviderCondition('bedrock'),
     },
   ]
 }
@@ -740,7 +691,7 @@ export const BUILT_IN_TOOL_TYPES = new Set([
   'tts',
   'stt',
   'memory',
-  'table',
+  'table_v2',
   'webhook_request',
   'workflow',
   'chart_generator',

@@ -2,10 +2,10 @@
 
 import { useState } from 'react'
 import {
-  ButtonGroup,
-  ButtonGroupItem,
   Calendar,
   Chip,
+  ChipButtonGroup,
+  ChipButtonGroupItem,
   ChipSelect,
   chipVariants,
   cn,
@@ -216,25 +216,25 @@ export function BillingActivityDetail({ onRefresh }: BillingActivityDetailProps)
     >
       <div className='flex flex-col gap-4'>
         <div className='flex flex-wrap items-center gap-3'>
-          <ButtonGroup
+          <ChipButtonGroup
             value={sourceTab}
             onValueChange={(value) => setSourceTab(value as SourceTab)}
           >
             {SOURCE_TABS.map((tab) => (
-              <ButtonGroupItem key={tab.id} value={tab.id}>
+              <ChipButtonGroupItem key={tab.id} value={tab.id}>
                 {tab.label}
-              </ButtonGroupItem>
+              </ChipButtonGroupItem>
             ))}
-          </ButtonGroup>
+          </ChipButtonGroup>
 
           <div className='relative'>
-            <ButtonGroup value={period} onValueChange={handlePeriodChange}>
+            <ChipButtonGroup value={period} onValueChange={handlePeriodChange}>
               {PERIOD_TABS.map((tab) => (
-                <ButtonGroupItem key={tab.id} value={tab.id}>
+                <ChipButtonGroupItem key={tab.id} value={tab.id}>
                   {tab.id === 'custom' && customRangeLabel ? customRangeLabel : tab.label}
-                </ButtonGroupItem>
+                </ChipButtonGroupItem>
               ))}
-            </ButtonGroup>
+            </ChipButtonGroup>
             <Popover
               open={datePickerOpen}
               onOpenChange={(isOpen) => {

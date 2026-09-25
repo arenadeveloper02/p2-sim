@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 import { extractDeletedResourcesFromToolResult, extractResourcesFromToolResult } from './extraction'
 
 describe('extractResourcesFromToolResult', () => {
-  it('extracts file resources from create_file results', () => {
+  it('extracts file resources from create_empty_file results', () => {
     const resources = extractResourcesFromToolResult(
-      'create_file',
+      'create_empty_file',
       {
         fileName: 'notes.md',
       },
@@ -31,9 +31,9 @@ describe('extractResourcesFromToolResult', () => {
     ])
   })
 
-  it('uses the knowledge base id for knowledge_base tag mutations', () => {
+  it('uses the knowledge base id for manage_knowledge_base tag mutations', () => {
     const resources = extractResourcesFromToolResult(
-      'knowledge_base',
+      'manage_knowledge_base',
       {
         operation: 'update_tag',
         args: {
@@ -63,7 +63,7 @@ describe('extractResourcesFromToolResult', () => {
 
   it('uses knowledgeBaseId from the tool result when update_tag args omit it', () => {
     const resources = extractResourcesFromToolResult(
-      'knowledge_base',
+      'manage_knowledge_base',
       {
         operation: 'update_tag',
         args: {
@@ -93,7 +93,7 @@ describe('extractResourcesFromToolResult', () => {
 
   it('does not create resources for read-only knowledge base tag operations', () => {
     const resources = extractResourcesFromToolResult(
-      'knowledge_base',
+      'manage_knowledge_base',
       {
         operation: 'list_tags',
         args: {
@@ -156,7 +156,7 @@ describe('extractDeletedResourcesFromToolResult', () => {
             { from: 'workflows/Lead%20Router', kind: 'workflow', id: 'wf-1' },
             { from: 'workflows/Old%20Projects', kind: 'workflow_folder', id: 'wfolder-1' },
             { from: 'tables/Leads', kind: 'table', id: 'tbl-1' },
-            { from: 'knowledgebases/support-docs', kind: 'knowledge_base', id: 'kb-1' },
+            { from: 'knowledgebases/support-docs', kind: 'manage_knowledge_base', id: 'kb-1' },
             { from: 'files/missing.md', kind: 'file', error: 'Not found: files/missing.md' },
           ],
         }
@@ -181,10 +181,10 @@ describe('extractDeletedResourcesFromToolResult', () => {
     ).toEqual([{ type: 'table', id: 'table-1', title: 'Table' }])
   })
 
-  it('extracts deleted knowledge bases from knowledge_base result data', () => {
+  it('extracts deleted knowledge bases from manage_knowledge_base result data', () => {
     expect(
       extractDeletedResourcesFromToolResult(
-        'knowledge_base',
+        'manage_knowledge_base',
         { operation: 'delete', args: { knowledgeBaseIds: ['kb-1'] } },
         {
           success: true,
@@ -192,5 +192,65 @@ describe('extractDeletedResourcesFromToolResult', () => {
         }
       )
     ).toEqual([{ type: 'knowledgebase', id: 'kb-1', title: 'Docs' }])
+  })
+})
+
+describe('extractResourcesFromToolResult for table_views', () => {
+  const written = {
+    success: true,
+    message: 'Created view "Overdue" (view_1)',
+    data: {
+      tableId: 'tbl_1',
+      tableName: 'Invoices',
+      viewId: 'view_1',
+      view: { id: 'view_1', name: 'Overdue', isDefault: false, filter: null, sort: null },
+    },
+  }
+
+  it.each(['create_view', 'update_view', 'set_default_view'])(
+    '%s opens the table pinned to the view it wrote',
+    (operation) => {
+      expect(
+        extractResourcesFromToolResult(
+          'table_views',
+          { operation, args: { tableId: 'tbl_1' } },
+          written
+        )
+      ).toEqual([{ type: 'table', id: 'tbl_1', title: 'Invoices', viewId: 'view_1' }])
+    }
+  )
+
+  it('a delete opens the table and explicitly clears its saved pin', () => {
+    expect(
+      extractResourcesFromToolResult(
+        'table_views',
+        { operation: 'delete_view', args: { tableId: 'tbl_1', viewId: 'view_1' } },
+        {
+          success: true,
+          message: 'Deleted view "Overdue"',
+          data: { tableId: 'tbl_1', tableName: 'Invoices' },
+        }
+      )
+    ).toEqual([{ type: 'table', id: 'tbl_1', title: 'Invoices', clearViewId: true }])
+  })
+
+  it.each(['list_views', 'get_view'])('%s opens nothing', (operation) => {
+    expect(
+      extractResourcesFromToolResult(
+        'table_views',
+        { operation, args: { tableId: 'tbl_1' } },
+        written
+      )
+    ).toEqual([])
+  })
+
+  it('falls back to the argument table id when the result names none', () => {
+    expect(
+      extractResourcesFromToolResult(
+        'table_views',
+        { operation: 'update_view', args: { tableId: 'tbl_1', viewId: 'view_1' } },
+        { success: true, message: 'Updated view' }
+      )
+    ).toEqual([{ type: 'table', id: 'tbl_1', title: 'Table' }])
   })
 })

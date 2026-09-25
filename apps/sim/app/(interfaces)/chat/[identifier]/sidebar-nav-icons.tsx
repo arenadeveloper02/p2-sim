@@ -30,10 +30,9 @@ export function CollapseNavIcon({ className }: SidebarNavIconProps) {
       fill='none'
       xmlns='http://www.w3.org/2000/svg'
       className={cn(
-        'size-6 shrink-0 text-[var(--color-ds-icon-default,#575A66)] transition-colors',
-        'group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]',
-        '[&_.collapse-icon-plate]:fill-[var(--color-ds-brand-surface,#F3F8FE)]',
-        'group-hover:[&_.collapse-icon-plate]:fill-[var(--color-ds-surface-raised)]',
+        'size-6 shrink-0 text-[var(--text-primary)] transition-colors',
+        '[&_.collapse-icon-plate]:fill-[var(--surface-hover)]',
+        'group-hover:[&_.collapse-icon-plate]:fill-[var(--surface-2)]',
         className
       )}
       aria-hidden='true'

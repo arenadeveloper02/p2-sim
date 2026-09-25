@@ -1,4 +1,5 @@
 import {
+  dbChainMockFns,
   loggerMock,
   queueTableRows,
   resetDbChainMock,
@@ -22,6 +23,7 @@ import * as userFileBase64 from '@/lib/uploads/utils/user-file-base64.server'
 import { getAllBlocks } from '@/blocks'
 import { AGENT, BlockType, isMcpTool } from '@/executor/constants'
 import { AgentBlockHandler } from '@/executor/handlers/agent/agent-handler'
+import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
 import type { ExecutionContext, StreamingExecution } from '@/executor/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { executeProviderRequest } from '@/providers'
@@ -38,8 +40,16 @@ import { ToolSchemaEnrichmentError } from '@/tools/params'
 
 process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000'
 
-const { mockImportWorkspaceFileSecretProvenanceForModelView } = vi.hoisted(() => ({
+const {
+  mockDiscoverMcpServerToolsAsExecutor,
+  mockImportWorkspaceFileSecretProvenanceForModelView,
+} = vi.hoisted(() => ({
+  mockDiscoverMcpServerToolsAsExecutor: vi.fn().mockResolvedValue([]),
   mockImportWorkspaceFileSecretProvenanceForModelView: vi.fn().mockResolvedValue(true),
+}))
+
+vi.mock('@/lib/internal/mcp/discover-tools', () => ({
+  discoverMcpServerToolsAsExecutor: mockDiscoverMcpServerToolsAsExecutor,
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () => ({
@@ -118,15 +128,26 @@ vi.mock('@/executor/utils/http', () => ({
 
 /** Connected MCP servers every workspace-server lookup in this suite resolves. */
 const MCP_SERVER_ROWS = [
-  { id: 'mcp-search-server', connectionStatus: 'connected' },
-  { id: 'same-server', connectionStatus: 'connected' },
-  { id: 'mcp-legacy-server', connectionStatus: 'connected' },
+  {
+    id: 'mcp-search-server',
+    connectionStatus: 'connected',
+    credentialGroupId: null,
+    enabled: true,
+  },
+  { id: 'same-server', connectionStatus: 'connected', credentialGroupId: null, enabled: true },
+  {
+    id: 'mcp-legacy-server',
+    connectionStatus: 'connected',
+    credentialGroupId: null,
+    enabled: true,
+  },
 ]
 
-const mockGetCustomToolById = vi.fn()
+const mockReadAvailableCustomToolByIdOrTitleAsExecutor = vi.fn()
 
-vi.mock('@/lib/workflows/custom-tools/operations', () => ({
-  getCustomToolById: (...args: unknown[]) => mockGetCustomToolById(...args),
+vi.mock('@/lib/internal/custom-tools/read-available-by-id-or-title', () => ({
+  readAvailableCustomToolByIdOrTitleAsExecutor: (...args: unknown[]) =>
+    mockReadAvailableCustomToolByIdOrTitleAsExecutor(...args),
 }))
 
 const mockGetAllBlocks = getAllBlocks as Mock
@@ -153,6 +174,32 @@ describe('AgentBlockHandler', () => {
   beforeEach(() => {
     handler = new AgentBlockHandler()
     vi.clearAllMocks()
+    mockDiscoverMcpServerToolsAsExecutor.mockImplementation(
+      async ({ serverId }: { serverId: string }) =>
+        [
+          'read_file',
+          'search_files',
+          'list_files',
+          'search',
+          'failing_tool',
+          'test_tool',
+          'tool',
+          'tool_1',
+          'tool_2',
+          'tool_3',
+          'tool1',
+          'tool2',
+        ].map((name) => ({
+          name,
+          serverId,
+          serverName: 'Live server',
+          description: `Live ${name}`,
+          inputSchema: {
+            type: 'object',
+            properties: { query: { type: 'string' }, path: { type: 'string' } },
+          },
+        }))
+    )
     mockImportWorkspaceFileSecretProvenanceForModelView.mockResolvedValue(true)
     resetDbChainMock()
     // The MCP server lookup awaits select().from(mcpServers).where(...) directly;
@@ -182,6 +229,7 @@ describe('AgentBlockHandler', () => {
       enabled: true,
     } as SerializedBlock
     mockContext = {
+      workspaceId: 'test-workspace',
       workflowId: 'test-workflow',
       blockStates: new Map(),
       blockLogs: [],
@@ -273,6 +321,177 @@ describe('AgentBlockHandler', () => {
         metadata: undefined,
       }
       expect(handler.canHandle(noMetadataBlock)).toBe(false)
+    })
+  })
+
+  describe('conversation attachment replay', () => {
+    beforeEach(() => {
+      dbChainMockFns.returning.mockResolvedValue([{ id: 'memory-1' }])
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    const file = {
+      id: 'file-1',
+      name: 'example.png',
+      key: 'execution/test-workspace/test-workflow/exec-1/example.png',
+      url: 'https://storage.example.com/expired',
+      size: 8,
+      type: 'image/png',
+      context: 'execution',
+      base64: 'iVBORw0KGgo=',
+    }
+
+    it.each(['files', 'messages', 'userPrompt'] as const)(
+      'replays a previous turn from %s with a fresh provider attachment',
+      async (source) => {
+        mockGetProviderFromModel.mockReturnValue('openai')
+        const hydrate = vi
+          .spyOn(userFileBase64, 'hydrateUserFilesWithBase64')
+          .mockImplementation(async (value) => {
+            const files = value as (typeof file)[]
+            return files.map((attachment) => ({
+              ...attachment,
+              base64: file.base64,
+            })) as typeof value
+          })
+        const inputs: AgentInputs = {
+          model: 'gpt-4o',
+          memoryType: 'conversation',
+          conversationId: 'conversation-1',
+          ...(source === 'userPrompt'
+            ? { userPrompt: 'Analyze this file', files: [file] }
+            : {
+                messages: [
+                  {
+                    role: 'user',
+                    content: 'Analyze this file',
+                    ...(source === 'messages' ? { files: [file] } : {}),
+                  },
+                ],
+                ...(source === 'files' ? { files: [file] } : {}),
+              }),
+        }
+        const original = structuredClone(inputs)
+        await handler.execute({ ...mockContext, executionId: 'exec-1' }, mockBlock, inputs)
+        const stored = dbChainMockFns.values.mock.calls
+          .map(([row]) => row)
+          .find((row) => Array.isArray(row.data) && row.data[0]?.role === 'user')?.data as Message[]
+        expect(stored).toBeDefined()
+        expect(stored[0].files).toEqual([
+          {
+            id: file.id,
+            name: file.name,
+            key: file.key,
+            url: '',
+            size: file.size,
+            type: file.type,
+            context: file.context,
+          },
+        ])
+        expect(inputs).toEqual(original)
+
+        queueTableRows(schemaMock.memory, [
+          {
+            secretProvenanceVersion: null,
+            data: [...stored, { role: 'assistant', content: 'First answer' }],
+          },
+        ])
+        mockGetProviderFromModel.mockReturnValue('anthropic')
+        const nextContext = { ...mockContext, executionId: 'exec-2' }
+        await handler.execute(nextContext, mockBlock, {
+          model: 'claude-sonnet-4-5',
+          memoryType: 'conversation',
+          conversationId: 'conversation-1',
+          messages: [{ role: 'user', content: 'What is in that file?' }],
+        })
+        const request = mockExecuteProviderRequest.mock.calls.at(-1)?.[1]
+        expect(request.messages[0]).toMatchObject({
+          role: 'user',
+          content: 'Analyze this file',
+          files: [{ key: file.key, base64: file.base64 }],
+        })
+        expect(request.messages.at(-1)).toMatchObject({
+          role: 'user',
+          content: 'What is in that file?',
+        })
+        expect(request.messages.at(-1).files).toBeUndefined()
+        expect(hydrate.mock.calls.at(-1)?.[0]).toEqual(stored[0].files)
+        expect(hydrate.mock.calls.at(-1)?.[1]).toMatchObject({
+          executionId: 'exec-2',
+          fileKeys: [file.key],
+        })
+        hydrate.mockRestore()
+      }
+    )
+
+    it('does not duplicate an attachment when the same execution revisits the agent', async () => {
+      mockGetProviderFromModel.mockReturnValue('openai')
+      queueTableRows(schemaMock.memory, [
+        {
+          secretProvenanceVersion: null,
+          data: [
+            { role: 'user', content: 'Analyze this file', executionId: 'exec-1', files: [file] },
+          ],
+        },
+      ])
+      await handler.execute({ ...mockContext, executionId: 'exec-1' }, mockBlock, {
+        model: 'gpt-4o',
+        memoryType: 'conversation',
+        conversationId: 'conversation-1',
+        messages: [{ role: 'user', content: 'Analyze this file' }],
+        files: [file],
+      })
+      expect(mockExecuteProviderRequest.mock.calls[0][1].messages[0].files).toHaveLength(1)
+      expect(dbChainMockFns.values.mock.calls.some(([row]) => row.data?.[0]?.role === 'user')).toBe(
+        false
+      )
+    })
+
+    it('saves a new attachment appended to an existing conversation', async () => {
+      mockGetProviderFromModel.mockReturnValue('openai')
+      queueTableRows(schemaMock.memory, [
+        { secretProvenanceVersion: null, data: [{ role: 'assistant', content: 'Hello' }] },
+      ])
+      await handler.execute({ ...mockContext, executionId: 'exec-2' }, mockBlock, {
+        model: 'gpt-4o',
+        memoryType: 'conversation',
+        conversationId: 'conversation-1',
+        messages: [{ role: 'user', content: 'Analyze this file' }],
+        files: [file],
+      })
+      const stored = dbChainMockFns.values.mock.calls
+        .map(([row]) => row)
+        .find((row) => row.data?.[0]?.role === 'user')?.data as Message[]
+      expect(stored[0].files?.[0]).toMatchObject({ key: file.key, url: '' })
+      expect(stored[0].files?.[0].base64).toBeUndefined()
+    })
+
+    it('does not hydrate attachments excluded by the conversation window', async () => {
+      mockGetProviderFromModel.mockReturnValue('openai')
+      const hydrate = vi.spyOn(userFileBase64, 'hydrateUserFilesWithBase64')
+      queueTableRows(schemaMock.memory, [
+        {
+          secretProvenanceVersion: null,
+          data: [
+            { role: 'user', content: 'Old file', files: [file] },
+            { role: 'assistant', content: 'Recent answer' },
+          ],
+        },
+      ])
+      const context = { ...mockContext, executionId: 'exec-2' }
+      await handler.execute(context, mockBlock, {
+        model: 'gpt-4o',
+        memoryType: 'sliding_window',
+        slidingWindowSize: '1',
+        conversationId: 'conversation-1',
+        messages: [{ role: 'user', content: 'Hello' }],
+      })
+      expect(hydrate).not.toHaveBeenCalled()
+      expect(context.fileKeys).toBeUndefined()
+      hydrate.mockRestore()
     })
   })
 
@@ -420,7 +639,6 @@ describe('AgentBlockHandler', () => {
       ).applyRoutingCost(streaming, 0.002)
 
       // The drain settles the model cost afterwards.
-
       ;(output as { cost: unknown }).cost = { input: 0.01, output: 0.02, total: 0.03 }
 
       expect(output.cost).toEqual({
@@ -742,6 +960,52 @@ describe('AgentBlockHandler', () => {
       expect(inputs).toEqual(rawInputs)
     })
 
+    it.each([
+      'url/https://example.com/image.png',
+      '',
+      'provider-file-id',
+      'profile-pictures/avatar.png',
+    ])('preserves inline bytes for an actorless request with key %s', async (key) => {
+      mockGetProviderFromModel.mockReturnValue('openai')
+      await handler.execute(
+        {
+          ...mockContext,
+          principal: {
+            kind: 'system',
+            serviceId: 'chat',
+            workspaceId: 'test-workspace',
+            workflowId: 'test-workflow',
+          },
+          executorDelegationOrigin: undefined,
+        },
+        mockBlock,
+        {
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'user',
+              content: 'Analyze this image',
+              files: [
+                {
+                  id: 'file-1',
+                  key,
+                  name: 'image.png',
+                  url: 'https://example.com/image.png',
+                  size: 5,
+                  type: 'image/png',
+                  base64: 'aW1hZ2U=',
+                },
+              ],
+            },
+          ],
+          apiKey: 'test-api-key',
+        }
+      )
+      expect(mockExecuteProviderRequest.mock.calls[0][1].messages[0].files).toEqual([
+        expect.objectContaining({ base64: 'aW1hZ2U=' }),
+      ])
+    })
+
     it('normalizes the persisted workspace-picker shape before provider execution', async () => {
       const key = 'workspace/ws-1/example.png'
       const hydrationSpy = vi
@@ -783,55 +1047,87 @@ describe('AgentBlockHandler', () => {
       }
     })
 
-    it('omits only a generated document whose embedded contributor is not model-safe', async () => {
-      const key = 'workspace/ws-1/report.pdf'
-      mockContext.workspaceId = 'ws-1'
-      const hydrationSpy = vi
-        .spyOn(userFileBase64, 'hydrateUserFilesWithBase64')
-        .mockImplementationOnce(async (files, options) => {
-          await options.onServableFileContributors?.(files[0], [
-            {
-              fileId: 'image-1',
-              key: 'workspace/ws-1/image-1.png',
-              context: 'workspace',
-              contentUpdatedAt: new Date('2026-08-06T00:00:00.000Z'),
-            },
-          ])
-          return files.map((file) => ({ ...file, base64: 'JVBERi0=' }))
-        })
-      mockImportWorkspaceFileSecretProvenanceForModelView.mockResolvedValueOnce(false)
-
-      try {
-        mockGetProviderFromModel.mockReturnValue('openai')
-
-        await handler.execute(mockContext, mockBlock, {
-          model: 'gpt-4o',
-          userPrompt: 'Analyze this document',
-          files: [
-            {
-              id: 'file-1',
-              name: 'report.pdf',
-              path: `/api/files/serve/${encodeURIComponent(key)}?context=workspace`,
-              key,
-              size: 128,
-              type: 'text/x-python-pdf',
-            },
-          ],
-          apiKey: 'test-api-key',
-        })
-
-        expect(mockExecuteProviderRequest.mock.calls[0][1].messages.at(-1)?.files).toEqual([])
-        expect(mockImportWorkspaceFileSecretProvenanceForModelView).toHaveBeenCalledWith(
-          expect.objectContaining({
-            workspaceId: mockContext.workspaceId,
-            view: 'opaque',
-            identity: expect.objectContaining({ fileId: 'image-1' }),
+    it.each([
+      { safe: false, includeSafeFile: false },
+      { safe: false, includeSafeFile: true },
+      { safe: true, includeSafeFile: true },
+    ])(
+      'continues after document contributor admission (safe=$safe, mixed=$includeSafeFile)',
+      async ({ safe, includeSafeFile }) => {
+        const key = 'workspace/ws-1/report.pdf'
+        mockContext.workspaceId = 'ws-1'
+        const hydrationSpy = vi
+          .spyOn(userFileBase64, 'hydrateUserFilesWithBase64')
+          .mockImplementationOnce(async (files, options) => {
+            await options.onServableFileContributors?.(files[0], [
+              {
+                fileId: 'image-1',
+                key: 'workspace/ws-1/image-1.png',
+                context: 'workspace',
+                contentUpdatedAt: new Date('2026-08-06T00:00:00.000Z'),
+              },
+            ])
+            return files.map((file) => ({ ...file, base64: 'JVBERi0=' }))
           })
-        )
-      } finally {
-        hydrationSpy.mockRestore()
+        mockImportWorkspaceFileSecretProvenanceForModelView.mockResolvedValueOnce(safe)
+
+        try {
+          mockGetProviderFromModel.mockReturnValue('openai')
+
+          await handler.execute(mockContext, mockBlock, {
+            model: 'gpt-4o',
+            userPrompt: 'Analyze this document',
+            files: [
+              {
+                id: 'file-1',
+                name: 'report.pdf',
+                path: `/api/files/serve/${encodeURIComponent(key)}?context=workspace`,
+                key,
+                size: 128,
+                type: 'text/x-python-pdf',
+              },
+              ...(includeSafeFile
+                ? [
+                    {
+                      id: 'file-2',
+                      name: 'safe.pdf',
+                      path: '/safe.pdf',
+                      key: 'workspace/ws-1/safe.pdf',
+                      size: 128,
+                      type: 'application/pdf',
+                    },
+                  ]
+                : []),
+            ],
+            apiKey: 'test-api-key',
+          })
+
+          expect(mockExecuteProviderRequest).toHaveBeenCalledOnce()
+          const sent = mockExecuteProviderRequest.mock.calls[0][1].messages.at(-1)
+          expect(sent.files.map((file: { id: string }) => file.id)).toEqual([
+            ...(safe ? ['file-1'] : []),
+            ...(includeSafeFile ? ['file-2'] : []),
+          ])
+          if (safe) {
+            expect(sent.content).toBe('Analyze this document')
+          } else {
+            expect(sent.content).toMatch(
+              /^Analyze this document\n\nAttachment error: 1 requested file attachment was not provided/
+            )
+            expect(JSON.stringify(sent)).not.toContain(key)
+          }
+          expect(mockImportWorkspaceFileSecretProvenanceForModelView).toHaveBeenCalledWith(
+            expect.objectContaining({
+              workspaceId: mockContext.workspaceId,
+              view: 'opaque',
+              identity: expect.objectContaining({ fileId: 'image-1' }),
+            })
+          )
+        } finally {
+          hydrationSpy.mockRestore()
+        }
       }
-    })
+    )
 
     it('should reject files for providers without attachment support', async () => {
       const inputs = {
@@ -934,13 +1230,13 @@ describe('AgentBlockHandler', () => {
       expect(tools.length).toBe(2)
 
       const autoTool = tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'auto_tool'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Auto Tool'
       )
       const forceTool = tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'force_tool'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Force Tool'
       )
       const noneTool = tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'none_tool'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_None Tool'
       )
 
       expect(autoTool).toBeDefined()
@@ -949,6 +1245,55 @@ describe('AgentBlockHandler', () => {
 
       expect(autoTool.usageControl).toBe('auto')
       expect(forceTool.usageControl).toBe('force')
+    })
+
+    /**
+     * `schema.function.name` has no uniqueness constraint — only the tool title
+     * does — so two custom tools can declare the same one. The model-facing
+     * function name is the tool's `id` (`custom_<title>`), never that field, so
+     * the declarations stay distinguishable at the agent boundary.
+     */
+    it('keeps two custom tools distinguishable when their schemas declare one name', async () => {
+      const declaration = (name: string) => ({
+        function: {
+          name,
+          description: 'Collides on the declared function name',
+          parameters: { type: 'object', properties: { input: { type: 'string' } } },
+        },
+      })
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the tools provided.',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            type: 'custom-tool',
+            title: 'First Tool',
+            code: 'return {}',
+            schema: declaration('collides'),
+            usageControl: 'auto' as const,
+          },
+          {
+            type: 'custom-tool',
+            title: 'Second Tool',
+            code: 'return {}',
+            schema: declaration('collides'),
+            usageControl: 'auto' as const,
+          },
+        ],
+      }
+
+      mockGetProviderFromModel.mockReturnValue('openai')
+
+      await handler.execute(mockContext, mockBlock, inputs)
+
+      const tools = mockExecuteProviderRequest.mock.calls[0][1].tools as Array<{ id: string }>
+      expect(tools.length).toBe(2)
+      expect(new Set(tools.map((tool) => tool.id)).size).toBe(2)
+      expect(tools.map((tool) => tool.id).sort()).toEqual([
+        'custom_First Tool',
+        'custom_Second Tool',
+      ])
     })
 
     it('should filter out tools with usageControl set to "none"', async () => {
@@ -996,6 +1341,203 @@ describe('AgentBlockHandler', () => {
       expect(toolIds).toContain('transformed_tool_1')
       expect(toolIds).toContain('transformed_tool_3')
       expect(toolIds).not.toContain('transformed_tool_2')
+    })
+
+    it('uses the resolved canonical tool mode expression before filtering tools', async () => {
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the enabled tools.',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            id: 'tool_1',
+            type: 'tool-type-1',
+            operation: 'operation1',
+            usageControl: 'force' as const,
+            usageControlExpression: 'none',
+          },
+          {
+            id: 'tool_2',
+            type: 'tool-type-2',
+            operation: 'operation2',
+            usageControl: 'none' as const,
+            usageControlExpression: ' Force ',
+          },
+        ],
+      }
+      const block = {
+        ...mockBlock,
+        canonicalModes: {
+          '0:agentToolUsageControl': 'advanced' as const,
+          '1:agentToolUsageControl': 'advanced' as const,
+        },
+      }
+
+      mockGetProviderFromModel.mockReturnValue('openai')
+
+      await handler.execute(mockContext, block, inputs)
+
+      expect(mockExecuteProviderRequest.mock.calls[0][1].tools).toEqual([
+        expect.objectContaining({ id: 'transformed_tool_2', usageControl: 'force' }),
+      ])
+    })
+
+    it.each([
+      ['unsupported word', 'sometimes'],
+      ['empty string', ''],
+      ['whitespace', ' \n\t '],
+      ['missing value', undefined],
+      ['null', null],
+      ['number', 0],
+      ['boolean', true],
+      ['empty array', []],
+      ['array containing a valid mode', ['force']],
+      ['object containing a valid mode', { mode: 'force' }],
+      ['quoted mode', '"force"'],
+      ['unresolved reference', '<start.missing>'],
+      ['multiple modes', 'force\nnone'],
+      ['unicode lookalike', 'ＦＯＲＣＥ'],
+      ['invisible prefix', '\u200bforce'],
+      ['oversized resolved value', 'force'.repeat(1024)],
+    ])('rejects %s before provider or tool work', async (_label, usageControlExpression) => {
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the tool.',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            id: 'tool_1',
+            type: 'tool-type-1',
+            operation: 'operation1',
+            usageControl: 'auto' as const,
+            usageControlExpression,
+          },
+        ],
+      }
+      const block = {
+        ...mockBlock,
+        canonicalModes: { '0:agentToolUsageControl': 'advanced' as const },
+      }
+
+      await expect(handler.execute(mockContext, block, inputs)).rejects.toThrow(
+        'Tool 1 mode must resolve to Auto, Force, or None'
+      )
+      expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
+      expect(mockTransformBlockTool).not.toHaveBeenCalled()
+      expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).not.toHaveBeenCalled()
+      expect(mockDiscoverMcpServerToolsAsExecutor).not.toHaveBeenCalled()
+    })
+
+    it('settles a secret-derived permission without sending its expression to the provider', async () => {
+      const registry = new ResolvedSecretTraceRegistry([
+        { name: 'QA_TOOL_MODE', plaintext: 'force', encryptedValue: 'encrypted-mode' },
+      ])
+      const path = ['tools', '0', 'usageControlExpression'] as const
+      registry.recordResolvedAtInputPath('QA_TOOL_MODE', 'force', path)
+      registry.recordResolvedInputProjection(path, 'force', '{{QA_TOOL_MODE}}')
+      mockContext.resolvedSecretTraceRegistry = registry
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the tool.',
+        apiKey: 'test-api-key',
+        tools: [{ id: 'tool_1', type: 'tool-type-1', usageControlExpression: 'force' }],
+      }
+
+      await handler.execute(
+        mockContext,
+        { ...mockBlock, canonicalModes: { '0:agentToolUsageControl': 'advanced' } },
+        inputs
+      )
+
+      const providerTools = mockExecuteProviderRequest.mock.calls[0][1].tools
+      expect(providerTools).toEqual([expect.objectContaining({ usageControl: 'force' })])
+      expect(providerTools[0]).not.toHaveProperty('usageControlExpression')
+      expect(JSON.stringify(providerTools)).not.toContain('QA_TOOL_MODE')
+      expect(inputs.tools[0].usageControlExpression).toBe('{{QA_TOOL_MODE}}')
+      expect(mockContext.resolvedSecretTraceRegistry?.getActiveMatches()).toEqual([])
+    })
+
+    it.each(['mcp', 'mcp-server-advanced'])(
+      'skips discovery for a disabled %s tool',
+      async (type) => {
+        mockDiscoverMcpServerToolsAsExecutor.mockRejectedValue(new Error('MCP unavailable'))
+        await handler.execute(
+          mockContext,
+          { ...mockBlock, canonicalModes: { '0:agentToolUsageControl': 'advanced' } },
+          {
+            model: 'gpt-4o',
+            userPrompt: 'Reply without tools.',
+            apiKey: 'test-api-key',
+            tools: [
+              { type, params: { serverId: 'unavailable-server' }, usageControlExpression: 'none' },
+            ],
+          }
+        )
+        expect(mockDiscoverMcpServerToolsAsExecutor).not.toHaveBeenCalled()
+        expect(mockExecuteProviderRequest.mock.calls[0][1].tools).toEqual([])
+      }
+    )
+
+    it('ignores an invalid inactive expression in selector mode', async () => {
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the enabled tool.',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            id: 'tool_1',
+            type: 'tool-type-1',
+            operation: 'operation1',
+            usageControl: 'force' as const,
+            usageControlExpression: { invalid: true },
+          },
+        ],
+      }
+
+      await handler.execute(mockContext, mockBlock, inputs)
+
+      expect(mockExecuteProviderRequest.mock.calls[0][1].tools).toEqual([
+        expect.objectContaining({ id: 'transformed_tool_1', usageControl: 'force' }),
+      ])
+    })
+
+    it('keeps original tool inputs intact after a provider error and resolves the next run afresh', async () => {
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Use the enabled tool.',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            id: 'tool_1',
+            type: 'tool-type-1',
+            operation: 'operation1',
+            usageControl: 'none' as const,
+            usageControlExpression: 'force',
+          },
+        ],
+      }
+      const originalInputs = structuredClone(inputs)
+      const block = {
+        ...mockBlock,
+        canonicalModes: { '0:agentToolUsageControl': 'advanced' as const },
+      }
+      mockExecuteProviderRequest.mockRejectedValueOnce(new Error('Provider unavailable'))
+
+      await expect(handler.execute(mockContext, block, inputs)).rejects.toThrow(
+        'Provider unavailable'
+      )
+      expect(inputs).toEqual(originalInputs)
+      expect(mockExecuteProviderRequest.mock.calls[0][1].tools).toEqual([
+        expect.objectContaining({ usageControl: 'force' }),
+      ])
+
+      await handler.execute(mockContext, block, {
+        ...inputs,
+        tools: [{ ...inputs.tools[0], usageControlExpression: 'none' }],
+      })
+
+      expect(mockExecuteProviderRequest.mock.calls[1][1].tools).toEqual([])
+      expect(inputs).toEqual(originalInputs)
     })
 
     it('should include usageControl property in transformed tools', async () => {
@@ -1102,18 +1644,16 @@ describe('AgentBlockHandler', () => {
 
       expect(requestBody.tools.length).toBe(2)
 
-      const toolNames = requestBody.tools.map(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name
-      )
-      expect(toolNames).toContain('custom_tool_auto')
-      expect(toolNames).toContain('custom_tool_force')
-      expect(toolNames).not.toContain('custom_tool_none')
+      const toolNames = requestBody.tools.map((t: { id?: string; usageControl?: string }) => t.id)
+      expect(toolNames).toContain('custom_Custom Tool - Auto')
+      expect(toolNames).toContain('custom_Custom Tool - Force')
+      expect(toolNames).not.toContain('custom_Custom Tool - None')
 
       const autoTool = requestBody.tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'custom_tool_auto'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Custom Tool - Auto'
       )
       const forceTool = requestBody.tools.find(
-        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'custom_tool_force'
+        (t: { id?: string; usageControl?: string }) => t.id === 'custom_Custom Tool - Force'
       )
 
       expect(autoTool.usageControl).toBe('auto')
@@ -1653,11 +2193,12 @@ describe('AgentBlockHandler', () => {
             }),
           }),
           expect.objectContaining({
-            name: 'search_files',
-            description: 'MCP tool search_files from Docs {{MCP_SERVER_LABEL}}',
+            id: expect.stringContaining('search_files'),
+            description: 'Live search_files',
             parameters: expect.objectContaining({
               properties: {
-                query: { type: 'string', description: 'Search {{MCP_PARAMETER}}' },
+                query: { type: 'string' },
+                path: { type: 'string' },
               },
             }),
           }),
@@ -3248,41 +3789,13 @@ describe('AgentBlockHandler', () => {
       expect(contextWithWorkspace.workspaceId).toBe('test-workspace-456')
     })
 
-    it('should use cached schema for MCP tools (no discovery needed)', async () => {
-      const fetchCalls: any[] = []
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        fetchCalls.push({ url, options })
-
-        if (url.includes('/api/providers')) {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => (name === 'Content-Type' ? 'application/json' : null),
-            },
-            json: () =>
-              Promise.resolve({
-                content: 'Used MCP tool successfully',
-                model: 'gpt-4o',
-                tokens: { input: 10, output: 10, total: 20 },
-                toolCalls: [],
-                timing: { total: 50 },
-              }),
-          })
-        }
-
-        if (url.includes('/api/mcp/tools/execute')) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                success: true,
-                data: { output: { content: [{ type: 'text', text: 'Tool executed' }] } },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    it('rediscovers MCP tools even when an editor schema is cached', async () => {
+      mockExecuteProviderRequest.mockResolvedValueOnce({
+        content: 'Used MCP tool successfully',
+        model: 'gpt-4o',
+        tokens: { input: 10, output: 10, total: 20 },
+        toolCalls: [],
+        timing: { total: 50 },
       })
 
       const inputs = {
@@ -3320,15 +3833,11 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(contextWithWorkspace, mockBlock, inputs)
 
-      const discoveryCalls = fetchCalls.filter((c) => c.url.includes('/api/mcp/tools/discover'))
-      expect(discoveryCalls.length).toBe(0)
-
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledOnce()
       expect(mockExecuteProviderRequest).toHaveBeenCalled()
     })
 
-    it('should pass toolSchema to execution endpoint when using cached schema', async () => {
-      let executionCall: any = null
-
+    it('passes the authorized live schema to the provider', async () => {
       mockExecuteProviderRequest.mockResolvedValueOnce({
         content: 'Tool executed',
         model: 'gpt-4o',
@@ -3340,22 +3849,6 @@ describe('AgentBlockHandler', () => {
           },
         ],
         timing: { total: 50 },
-      })
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        if (url.includes('/api/mcp/tools/execute')) {
-          executionCall = { url, body: JSON.parse(options.body) }
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                success: true,
-                data: { output: { content: [{ type: 'text', text: 'Search results' }] } },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
       })
 
       const cachedSchema = {
@@ -3399,7 +3892,7 @@ describe('AgentBlockHandler', () => {
       const providerCallArgs = mockExecuteProviderRequest.mock.calls[0]
       expect(providerCallArgs[1].tools).toBeDefined()
       expect(providerCallArgs[1].tools.length).toBe(1)
-      expect(providerCallArgs[1].tools[0].name).toBe('search_files')
+      expect(providerCallArgs[1].tools[0].id).toContain('search_files')
     })
 
     it('should pass callChain to executeProviderRequest for MCP cycle detection', async () => {
@@ -3566,29 +4059,12 @@ describe('AgentBlockHandler', () => {
     })
 
     it('should handle multiple MCP tools from the same server efficiently', async () => {
-      const fetchCalls: any[] = []
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        fetchCalls.push({ url, options })
-
-        if (url.includes('/api/providers')) {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => (name === 'Content-Type' ? 'application/json' : null),
-            },
-            json: () =>
-              Promise.resolve({
-                content: 'Used tools',
-                model: 'gpt-4o',
-                tokens: { input: 10, output: 10, total: 20 },
-                toolCalls: [],
-                timing: { total: 50 },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+      mockExecuteProviderRequest.mockResolvedValueOnce({
+        content: 'Used tools',
+        model: 'gpt-4o',
+        tokens: { input: 10, output: 10, total: 20 },
+        toolCalls: [],
+        timing: { total: 50 },
       })
 
       const inputs = {
@@ -3642,58 +4118,27 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(contextWithWorkspace, mockBlock, inputs)
 
-      const discoveryCalls = fetchCalls.filter((c) => c.url.includes('/api/mcp/tools/discover'))
-      expect(discoveryCalls.length).toBe(0)
-
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledOnce()
       expect(mockExecuteProviderRequest).toHaveBeenCalled()
       const providerCallArgs = mockExecuteProviderRequest.mock.calls[0]
       expect(providerCallArgs[1].tools.length).toBe(3)
     })
 
-    it('should fallback to discovery for MCP tools without cached schema', async () => {
-      const fetchCalls: any[] = []
-
-      mockFetch.mockImplementation((url: string, options: any) => {
-        fetchCalls.push({ url, options })
-
-        if (url.includes('/api/mcp/tools/discover')) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                success: true,
-                data: {
-                  tools: [
-                    {
-                      name: 'legacy_tool',
-                      description: 'A legacy tool without cached schema',
-                      inputSchema: { type: 'object', properties: {} },
-                      serverName: 'legacy-server',
-                    },
-                  ],
-                },
-              }),
-          })
-        }
-
-        if (url.includes('/api/providers')) {
-          return Promise.resolve({
-            ok: true,
-            headers: {
-              get: (name: string) => (name === 'Content-Type' ? 'application/json' : null),
-            },
-            json: () =>
-              Promise.resolve({
-                content: 'Used legacy tool',
-                model: 'gpt-4o',
-                tokens: { input: 10, output: 10, total: 20 },
-                toolCalls: [],
-                timing: { total: 50 },
-              }),
-          })
-        }
-
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+    it('should discover MCP tools without cached schema through the application operation', async () => {
+      mockDiscoverMcpServerToolsAsExecutor.mockResolvedValue([
+        {
+          name: 'legacy_tool',
+          description: 'A legacy tool without cached schema',
+          inputSchema: { type: 'object', properties: {} },
+          serverName: 'legacy-server',
+        },
+      ])
+      mockExecuteProviderRequest.mockResolvedValueOnce({
+        content: 'Used legacy tool',
+        model: 'gpt-4o',
+        tokens: { input: 10, output: 10, total: 20 },
+        toolCalls: [],
+        timing: { total: 50 },
       })
 
       const inputs = {
@@ -3716,6 +4161,7 @@ describe('AgentBlockHandler', () => {
 
       const contextWithWorkspace = {
         ...mockContext,
+        userId: 'user-1',
         workspaceId: 'test-workspace-123',
         workflowId: 'test-workflow-456',
       }
@@ -3724,10 +4170,139 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(contextWithWorkspace, mockBlock, inputs)
 
-      const discoveryCalls = fetchCalls.filter((c) => c.url.includes('/api/mcp/tools/discover'))
-      expect(discoveryCalls.length).toBe(1)
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: 'test-workspace-123',
+          context: expect.objectContaining({
+            userId: contextWithWorkspace.userId,
+            workflowId: 'test-workflow-456',
+          }),
+          serverId: 'mcp-legacy-server',
+        })
+      )
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/api/mcp/tools/discover'),
+        expect.anything()
+      )
+    })
 
-      expect(discoveryCalls[0].url).toContain('serverId=mcp-legacy-server')
+    it('expands every live tool from an explicitly selected managed MCP connection', async () => {
+      const credentialId = 'mcp-cg-123456789012345678901'
+      mockDiscoverMcpServerToolsAsExecutor.mockResolvedValue([
+        {
+          name: 'search_transcripts',
+          description: 'Search transcripts',
+          inputSchema: {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+          },
+          serverId: credentialId,
+          serverName: 'Fireflies',
+        },
+        {
+          name: 'get_transcript',
+          description: 'Get one transcript',
+          inputSchema: {
+            type: 'object',
+            properties: { transcriptId: { type: 'string' } },
+            required: ['transcriptId'],
+          },
+          serverId: credentialId,
+          serverName: 'Fireflies',
+        },
+      ])
+
+      await handler.execute(
+        {
+          ...mockContext,
+          userId: 'permission-check-user',
+          workspaceId: 'test-workspace-123',
+          workflowId: 'test-workflow-456',
+        },
+        mockBlock,
+        {
+          model: 'gpt-4o',
+          userPrompt: 'Use Fireflies',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'mcp-server-advanced',
+              params: { serverId: credentialId },
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+      )
+
+      expect(mockDiscoverMcpServerToolsAsExecutor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverId: credentialId,
+          workspaceId: 'test-workspace-123',
+        })
+      )
+      const providerTools = mockExecuteProviderRequest.mock.calls[0][1].tools
+      expect(providerTools).toEqual([
+        expect.objectContaining({
+          id: `${credentialId}-search_transcripts`,
+          params: {},
+        }),
+        expect.objectContaining({
+          id: `${credentialId}-get_transcript`,
+          params: {},
+        }),
+      ])
+    })
+
+    it('rejects a blank advanced MCP server binding', async () => {
+      await expect(
+        handler.execute(
+          {
+            ...mockContext,
+            workspaceId: 'test-workspace-123',
+            workflowId: 'test-workflow-456',
+          },
+          mockBlock,
+          {
+            model: 'gpt-4o',
+            userPrompt: 'Continue without MCP tools',
+            apiKey: 'test-api-key',
+            tools: [
+              {
+                type: 'mcp-server-advanced',
+                params: { serverId: '' },
+                usageControl: 'auto' as const,
+              },
+            ],
+          }
+        )
+      ).rejects.toThrow('requires params.serverId')
+
+      expect(mockDiscoverMcpServerToolsAsExecutor).not.toHaveBeenCalled()
+      expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
+    })
+
+    it('fails before invoking the model when no advanced operations are permitted', async () => {
+      mockDiscoverMcpServerToolsAsExecutor.mockResolvedValue([])
+      await expect(
+        handler.execute(
+          { ...mockContext, workspaceId: 'test-workspace-123', workflowId: 'test-workflow-456' },
+          mockBlock,
+          {
+            model: 'gpt-4o',
+            userPrompt: 'Use MCP',
+            apiKey: 'test-api-key',
+            tools: [
+              {
+                type: 'mcp-server-advanced',
+                params: { serverId: 'mcp-server-1' },
+                operationPolicy: { mode: 'allow', operations: [] },
+              },
+            ],
+          }
+        )
+      ).rejects.toThrow('No permitted MCP operations')
+      expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
     })
 
     describe('customToolId resolution - DB as source of truth', () => {
@@ -3766,8 +4341,9 @@ describe('AgentBlockHandler', () => {
       const dbCode = 'return { title, content, format };'
 
       function mockDBForCustomTool(toolId: string) {
-        mockGetCustomToolById.mockImplementation(({ toolId: id }: { toolId: string }) => {
-          if (id === toolId) {
+        mockReadAvailableCustomToolByIdOrTitleAsExecutor.mockImplementation(
+          ({ identifier }: { identifier: string }) => {
+            if (identifier !== toolId) return Promise.resolve(null)
             return Promise.resolve({
               id: toolId,
               title: 'formatReport',
@@ -3775,12 +4351,13 @@ describe('AgentBlockHandler', () => {
               code: dbCode,
             })
           }
-          return Promise.resolve(null)
-        })
+        )
       }
 
       function mockDBFailure() {
-        mockGetCustomToolById.mockRejectedValue(new Error('DB connection failed'))
+        mockReadAvailableCustomToolByIdOrTitleAsExecutor.mockRejectedValue(
+          new Error('DB connection failed')
+        )
       }
 
       beforeEach(() => {
@@ -3789,7 +4366,7 @@ describe('AgentBlockHandler', () => {
           writable: true,
           configurable: true,
         })
-        mockGetCustomToolById.mockReset()
+        mockReadAvailableCustomToolByIdOrTitleAsExecutor.mockReset()
         mockContext.userId = 'test-user'
       })
 
@@ -3853,7 +4430,7 @@ describe('AgentBlockHandler', () => {
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
         expect(tools[0].parameters.required).toContain('format')
       })
 
@@ -3886,10 +4463,12 @@ describe('AgentBlockHandler', () => {
 
         await handler.execute(mockContext, mockBlock, inputs)
 
-        expect(mockGetCustomToolById).toHaveBeenCalledWith(expect.objectContaining({ toolId }))
+        expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).toHaveBeenCalledWith(
+          expect.objectContaining({ context: mockContext, identifier: toolId, lookup: 'id' })
+        )
         const providerRequest = mockExecuteProviderRequest.mock.calls[0][1]
         expect(providerRequest.tools).toHaveLength(1)
-        expect(providerRequest.tools[0].name).toBe('formatReport')
+        expect(providerRequest.tools[0].id).toBe('custom_formatReport')
         expect(JSON.stringify(providerRequest.tools)).not.toContain(toolId)
         expect(JSON.stringify(providerRequest.tools)).not.toContain('CANARY_CUSTOM_TOOL_ID')
         expect(inputs.tools[0].customToolId).toBe('{{CANARY_CUSTOM_TOOL_ID}}')
@@ -3993,7 +4572,9 @@ describe('AgentBlockHandler', () => {
 
         await expect(handler.execute(mockContext, mockBlock, inputs)).rejects.toBe(failure)
 
-        expect(mockGetCustomToolById).toHaveBeenCalledWith(expect.objectContaining({ toolId }))
+        expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).toHaveBeenCalledWith(
+          expect.objectContaining({ context: mockContext, identifier: toolId, lookup: 'id' })
+        )
         expect(inputs.tools[0].customToolId).toBe('{{CANARY_CUSTOM_TOOL_ID}}')
         expect(mockContext.resolvedSecretTraceRegistry?.getActiveMatches()).toEqual([])
         expect(mockExecuteProviderRequest).not.toHaveBeenCalled()
@@ -4025,9 +4606,7 @@ describe('AgentBlockHandler', () => {
         await handler.execute(mockContext, mockBlock, inputs)
 
         const providerRequest = mockExecuteProviderRequest.mock.calls[0][1]
-        expect(providerRequest.tools).toContainEqual(
-          expect.objectContaining({ id: 'load_skill', name: 'load_skill' })
-        )
+        expect(providerRequest.tools).toContainEqual(expect.objectContaining({ id: 'load_skill' }))
         expect(JSON.stringify(providerRequest.tools)).toContain('Reporting')
         expect(inputs.skills[0].skillId).toBe('{{CANARY_SKILL_ID}}')
         expect(mockContext.resolvedSecretTraceRegistry?.getActiveMatches()).toEqual([])
@@ -4061,7 +4640,7 @@ describe('AgentBlockHandler', () => {
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
         expect(tools[0].parameters.required).not.toContain('format')
       })
 
@@ -4121,7 +4700,7 @@ describe('AgentBlockHandler', () => {
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
       })
 
       it('should not fetch from DB when no customToolId is present', async () => {
@@ -4144,14 +4723,14 @@ describe('AgentBlockHandler', () => {
 
         await handler.execute(mockContext, mockBlock, inputs)
 
-        expect(mockGetCustomToolById).not.toHaveBeenCalled()
+        expect(mockReadAvailableCustomToolByIdOrTitleAsExecutor).not.toHaveBeenCalled()
 
         expect(mockExecuteProviderRequest).toHaveBeenCalled()
         const providerCall = mockExecuteProviderRequest.mock.calls[0]
         const tools = providerCall[1].tools
 
         expect(tools.length).toBe(1)
-        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].id).toBe('custom_formatReport')
         expect(tools[0].parameters.required).not.toContain('format')
       })
     })

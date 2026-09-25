@@ -107,7 +107,7 @@ export const openRouterProvider: ProviderConfig = {
       baseURL: 'https://openrouter.ai/api/v1',
     })
 
-    const requestedModel = request.model.replace(/^openrouter\//, '')
+    const requestedModel = request.model.replace(/^openrouter\//i, '')
 
     logger.info('Preparing OpenRouter request', {
       model: requestedModel,
@@ -306,7 +306,12 @@ export const openRouterProvider: ProviderConfig = {
               }
             }
 
-            const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+            const { toolParams, executionParams } = prepareToolExecution(
+              tool,
+              toolArgs,
+              request,
+              toolCall.id
+            )
             const { rawResponse, modelResponse } = await executeProviderTool(
               toolName,
               executionParams,

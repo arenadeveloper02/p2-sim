@@ -1,4 +1,3 @@
-// @ts-expect-error - escape-html doesn't have TypeScript types
 import escapeHtml from 'escape-html'
 import { marked, type Token, type Tokens } from 'marked'
 import sanitizeHtml from 'sanitize-html'

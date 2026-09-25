@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
-  ButtonGroup,
-  ButtonGroupItem,
   Calendar,
+  ChipButtonGroup,
+  ChipButtonGroupItem,
   ChipLink,
   ChipSelect,
   cn,
@@ -1094,15 +1094,15 @@ export function Usage() {
   const adminPeriodFilters = (
     <>
       <div className='relative flex flex-wrap items-center gap-2'>
-        <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
+        <ChipButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
           {USAGE_PERIODS.map((periodId) => (
-            <ButtonGroupItem key={periodId} value={periodId}>
+            <ChipButtonGroupItem key={periodId} value={periodId}>
               {formatAdminPeriodChipLabel(periodId)}
-            </ButtonGroupItem>
+            </ChipButtonGroupItem>
           ))}
-          <ButtonGroupItem value='all'>All time</ButtonGroupItem>
-          <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
-        </ButtonGroup>
+          <ChipButtonGroupItem value='all'>All time</ChipButtonGroupItem>
+          <ChipButtonGroupItem value='custom'>Custom</ChipButtonGroupItem>
+        </ChipButtonGroup>
         <Popover
           open={datePickerOpen}
           onOpenChange={(isOpen) => {
@@ -1138,15 +1138,15 @@ export function Usage() {
   const userPeriodFilters = (
     <>
       <div className='relative flex flex-wrap items-center gap-2'>
-        <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
+        <ChipButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
           {USAGE_PERIODS.map((periodId) => (
-            <ButtonGroupItem key={periodId} value={periodId}>
+            <ChipButtonGroupItem key={periodId} value={periodId}>
               {formatAdminPeriodChipLabel(periodId)}
-            </ButtonGroupItem>
+            </ChipButtonGroupItem>
           ))}
-          <ButtonGroupItem value='all'>All time</ButtonGroupItem>
-          <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
-        </ButtonGroup>
+          <ChipButtonGroupItem value='all'>All time</ChipButtonGroupItem>
+          <ChipButtonGroupItem value='custom'>Custom</ChipButtonGroupItem>
+        </ChipButtonGroup>
         <Popover
           open={datePickerOpen}
           onOpenChange={(isOpen) => {
@@ -1187,7 +1187,7 @@ export function Usage() {
   )
 
   const scopeToggle = showScopeToggle ? (
-    <ButtonGroup
+    <ChipButtonGroup
       value={effectiveScope}
       onValueChange={(value) => {
         const nextScope = value as UsageScope
@@ -1204,11 +1204,11 @@ export function Usage() {
       }}
     >
       {availableScopes.map((scopeId) => (
-        <ButtonGroupItem key={scopeId} value={scopeId}>
+        <ChipButtonGroupItem key={scopeId} value={scopeId}>
           {SCOPE_LABELS[scopeId]}
-        </ButtonGroupItem>
+        </ChipButtonGroupItem>
       ))}
-    </ButtonGroup>
+    </ChipButtonGroup>
   ) : null
 
   if (isOrganizationScope) {
@@ -1365,7 +1365,7 @@ export function Usage() {
             <div className='flex flex-wrap items-center gap-3'>
               {scopeToggle}
 
-              <ButtonGroup
+              <ChipButtonGroup
                 value={tab}
                 onValueChange={(value) =>
                   void setUsageParams({
@@ -1375,22 +1375,22 @@ export function Usage() {
                 }
               >
                 {USAGE_TABS.map((tabId) => (
-                  <ButtonGroupItem key={tabId} value={tabId}>
+                  <ChipButtonGroupItem key={tabId} value={tabId}>
                     {TAB_LABELS[tabId]}
-                  </ButtonGroupItem>
+                  </ChipButtonGroupItem>
                 ))}
-              </ButtonGroup>
+              </ChipButtonGroup>
 
               <div className='relative flex flex-wrap items-center gap-2'>
-                <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
+                <ChipButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
                   {USAGE_PERIODS.map((periodId) => (
-                    <ButtonGroupItem key={periodId} value={periodId}>
+                    <ChipButtonGroupItem key={periodId} value={periodId}>
                       {formatPeriodLabel(periodId)}
-                    </ButtonGroupItem>
+                    </ChipButtonGroupItem>
                   ))}
-                  <ButtonGroupItem value='all'>All time</ButtonGroupItem>
-                  <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
-                </ButtonGroup>
+                  <ChipButtonGroupItem value='all'>All time</ChipButtonGroupItem>
+                  <ChipButtonGroupItem value='custom'>Custom</ChipButtonGroupItem>
+                </ChipButtonGroup>
                 <Popover
                   open={datePickerOpen}
                   onOpenChange={(isOpen) => {

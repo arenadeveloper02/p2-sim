@@ -1,7 +1,11 @@
 /**
  * @vitest-environment node
  */
-import { hybridAuthMockFns } from '@sim/testing'
+import {
+  createTableDefinition,
+  hybridAuthMockFns,
+  type TableDefinitionFactoryOptions,
+} from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TableDefinition } from '@/lib/table'
@@ -34,6 +38,9 @@ vi.mock('@/app/api/table/utils', async () => {
   const { TableLockedError } = await import('@/lib/table/mutation-locks')
   return {
     checkAccess: mockCheckAccess,
+    /** Mirrors the real helper: only a `user` principal names a governed subject. */
+    capabilityGovernedUserId: (principal: { kind: string; userId?: string }) =>
+      principal.kind === 'user' ? (principal.userId ?? null) : null,
     accessError: (result: { status: number }) => {
       const message = result.status === 404 ? 'Table not found' : 'Access denied'
       return NextResponse.json({ error: message }, { status: result.status })
@@ -122,27 +129,14 @@ function createFormData(
   return form
 }
 
-function buildTable(overrides: Partial<TableDefinition> = {}): TableDefinition {
-  return {
-    id: 'tbl_1',
-    name: 'People',
-    description: null,
-    schema: {
-      columns: [
-        { name: 'name', type: 'string', required: true },
-        { name: 'age', type: 'number' },
-      ],
-    },
-    metadata: null,
-    rowCount: 0,
-    maxRows: 100,
-    workspaceId: 'workspace-1',
-    createdBy: 'user-1',
-    archivedAt: null,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-    ...overrides,
-  }
+const TABLE_FIXTURE: TableDefinitionFactoryOptions = {
+  columns: [
+    { name: 'name', type: 'string', required: true },
+    { name: 'age', type: 'number' },
+  ],
+  maxRows: 100,
+  createdAt: new Date('2024-01-01'),
+  updatedAt: new Date('2024-01-01'),
 }
 
 /** Additions array the route passed to importAppendRows (2nd positional arg). */
@@ -173,7 +167,7 @@ describe('POST /api/table/[tableId]/import', () => {
       userId: 'user-1',
       authType: 'session',
     })
-    mockCheckAccess.mockResolvedValue({ ok: true, table: buildTable() })
+    mockCheckAccess.mockResolvedValue({ ok: true, table: createTableDefinition(TABLE_FIXTURE) })
     mockImportAppendRows.mockImplementation(
       async (table: TableDefinition, _additions: unknown, rows: unknown[]) => ({
         inserted: rows.map((_, i) => ({ id: `row_${i}` })),
@@ -229,7 +223,7 @@ describe('POST /api/table/[tableId]/import', () => {
   it('returns 400 when the target table is archived', async () => {
     mockCheckAccess.mockResolvedValueOnce({
       ok: true,
-      table: buildTable({ archivedAt: new Date('2024-01-02') }),
+      table: createTableDefinition({ ...TABLE_FIXTURE, archivedAt: new Date('2024-01-02') }),
     })
     const response = await callPost(createFormData(createCsvFile('name,age\nAlice,30')))
     expect(response.status).toBe(400)
@@ -290,6 +284,47 @@ describe('POST /api/table/[tableId]/import', () => {
     expect(mockImportReplaceRows).not.toHaveBeenCalled()
   })
 
+  /**
+   * The appended rows auto-fire the table's workflow columns, and those cells
+   * gate their tools on the governed subject. Leaving it null ran the importing
+   * member's cells with no per-tool gate at all.
+   */
+  it('dispatches the auto-fired cells under the person it just gated', async () => {
+    await callPost(createFormData(createCsvFile('name,age\nAlice,30'), { mode: 'append' }))
+
+    expect(mockDispatchAfterBatchInsert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      'user-1',
+      'user-1'
+    )
+  })
+
+  /**
+   * `checkSessionOrInternalAuth` also accepts an internal JWT, whose user id is
+   * the run's actor — potentially the workspace billing owner. Dispatching the
+   * auto-fired cells under it would run them with that bystander's permission
+   * group; an executor call must dispatch under nobody.
+   */
+  it('dispatches an internal-JWT import under nobody, not the run actor', async () => {
+    hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValue({
+      success: true,
+      userId: 'billing-owner',
+      authType: 'internal_jwt',
+    })
+
+    await callPost(createFormData(createCsvFile('name,age\nAlice,30'), { mode: 'append' }))
+
+    expect(mockDispatchAfterBatchInsert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      'billing-owner',
+      null
+    )
+  })
+
   it('accepts chunked multipart imports without a content-length header', async () => {
     const form = createFormData(createCsvFile('name,age\nAlice,30'), { mode: 'append' })
     const req = new NextRequest('http://localhost:3000/api/table/tbl_1/import', {
@@ -306,7 +341,10 @@ describe('POST /api/table/[tableId]/import', () => {
   })
 
   it('rejects append when it would exceed the current plan row limit', async () => {
-    mockCheckAccess.mockResolvedValueOnce({ ok: true, table: buildTable({ rowCount: 99 }) })
+    mockCheckAccess.mockResolvedValueOnce({
+      ok: true,
+      table: createTableDefinition({ ...TABLE_FIXTURE, rowCount: 99 }),
+    })
     mockGetMaxRowsPerTable.mockResolvedValueOnce(100)
     const response = await callPost(
       createFormData(createCsvFile('name,age\nAlice,30\nBob,40'), { mode: 'append' })
@@ -459,14 +497,13 @@ describe('POST /api/table/[tableId]/import', () => {
     it('dedupes when sanitized name collides with an existing column', async () => {
       mockCheckAccess.mockResolvedValueOnce({
         ok: true,
-        table: buildTable({
-          schema: {
-            columns: [
-              { name: 'name', type: 'string', required: true },
-              { name: 'age', type: 'number' },
-              { name: 'email', type: 'string' },
-            ],
-          },
+        table: createTableDefinition({
+          ...TABLE_FIXTURE,
+          columns: [
+            { name: 'name', type: 'string', required: true },
+            { name: 'age', type: 'number' },
+            { name: 'email', type: 'string' },
+          ],
         }),
       })
       const response = await callPost(

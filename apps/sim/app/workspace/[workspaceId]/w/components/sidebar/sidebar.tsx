@@ -45,6 +45,7 @@ import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPathNames } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { useSidebarChrome } from '@/app/workspace/[workspaceId]/components/workspace-chrome'
 import { CONNECT_MODE } from '@/app/workspace/[workspaceId]/integrations/connect-route'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -410,7 +411,10 @@ const HIDDEN_STYLE = { display: 'none' } as const
 const DRAG_EXEMPT_CLASS = '[-webkit-app-region:no-drag]'
 
 /**
- * Sidebar component with resizable width that persists across page refreshes.
+ * Workspace rail hosted by `WorkspaceChrome`. Collapse and peek come from
+ * {@link useSidebarChrome} — the same source the shell width reads — so the icon
+ * rail and its expand control stay in step with the collapsed width. The layout
+ * passes this component as an element, so those values cannot arrive as props.
  *
  * Uses a CSS-based approach to prevent hydration mismatches:
  * 1. Dimensions are controlled by CSS variables (--sidebar-width)
@@ -421,29 +425,10 @@ const DRAG_EXEMPT_CLASS = '[-webkit-app-region:no-drag]'
  *
  * @returns Sidebar with workflows panel
  */
-interface SidebarProps {
-  /**
-   * Authoritative collapse state, derived once in {@link WorkspaceChrome} from the
-   * `sidebar_collapsed` cookie (server prop → store after hydration) and passed in
-   * so the rail's structure, labels, and width all read a single source.
-   */
-  isCollapsed: boolean
-  /**
-   * True while the sidebar is rendered as the desktop hover-peek card. The card shows
-   * the expanded layout even though the rail is collapsed, so this overrides
-   * {@link SidebarProps.isCollapsed} below — and separately suppresses the chrome the
-   * card already provides: it sits below the traffic-light lane, and drag-resize would
-   * fight the card's width.
-   */
-  isPeeking?: boolean
-}
-
-export const Sidebar = memo(function Sidebar({
-  isCollapsed: isCollapsedProp,
-  isPeeking = false,
-}: SidebarProps) {
+export const Sidebar = memo(function Sidebar() {
+  const { isCollapsed: railCollapsed, isPeeking } = useSidebarChrome()
   /** The peek card always renders the expanded layout, whatever the rail's state. */
-  const isCollapsed = isCollapsedProp && !isPeeking
+  const isCollapsed = railCollapsed && !isPeeking
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const workflowId = params.workflowId as string | undefined
@@ -1598,39 +1583,41 @@ export const Sidebar = memo(function Sidebar({
                         className='chats-section flex-shrink-0'
                       >
                         {isCollapsed ? (
-                          <CollapsedSidebarMenu
-                            icon={chatsCollapsedIcon}
-                            hover={chatsHover}
-                            ariaLabel='Chats'
-                          >
-                            {chatsLoading ? (
-                              <DropdownMenuItem disabled>
-                                <Loader className='size-[14px]' animate />
-                                Loading...
-                              </DropdownMenuItem>
-                            ) : chats.length === 0 ? (
-                              <DropdownMenuItem disabled>No chats yet</DropdownMenuItem>
-                            ) : (
-                              chats.map((chat) => (
-                                <CollapsedChatFlyoutItem
-                                  key={chat.id}
-                                  chat={chat}
-                                  isCurrentRoute={pathname === chat.href}
-                                  isMenuOpen={menuOpenChatId === chat.id}
-                                  isEditing={chat.id === chatFlyoutRename.editingId}
-                                  editValue={chatFlyoutRename.value}
-                                  inputRef={chatFlyoutRename.inputRef}
-                                  isRenaming={chatFlyoutRename.isSaving}
-                                  onEditValueChange={chatFlyoutRename.setValue}
-                                  onEditKeyDown={chatFlyoutRename.handleKeyDown}
-                                  onEditBlur={handleChatRenameBlur}
-                                  onContextMenu={handleChatContextMenu}
-                                  onMorePointerDown={handleChatMorePointerDown}
-                                  onMoreClick={handleChatMoreClick}
-                                />
-                              ))
-                            )}
-                          </CollapsedSidebarMenu>
+                          <div className='px-2'>
+                            <CollapsedSidebarMenu
+                              icon={chatsCollapsedIcon}
+                              hover={chatsHover}
+                              ariaLabel='Chats'
+                            >
+                              {chatsLoading ? (
+                                <DropdownMenuItem disabled>
+                                  <Loader className='size-[14px]' animate />
+                                  Loading...
+                                </DropdownMenuItem>
+                              ) : chats.length === 0 ? (
+                                <DropdownMenuItem disabled>No chats yet</DropdownMenuItem>
+                              ) : (
+                                chats.map((chat) => (
+                                  <CollapsedChatFlyoutItem
+                                    key={chat.id}
+                                    chat={chat}
+                                    isCurrentRoute={pathname === chat.href}
+                                    isMenuOpen={menuOpenChatId === chat.id}
+                                    isEditing={chat.id === chatFlyoutRename.editingId}
+                                    editValue={chatFlyoutRename.value}
+                                    inputRef={chatFlyoutRename.inputRef}
+                                    isRenaming={chatFlyoutRename.isSaving}
+                                    onEditValueChange={chatFlyoutRename.setValue}
+                                    onEditKeyDown={chatFlyoutRename.handleKeyDown}
+                                    onEditBlur={handleChatRenameBlur}
+                                    onContextMenu={handleChatContextMenu}
+                                    onMorePointerDown={handleChatMorePointerDown}
+                                    onMoreClick={handleChatMoreClick}
+                                  />
+                                ))
+                              )}
+                            </CollapsedSidebarMenu>
+                          </div>
                         ) : (
                           <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
                             {chatsLoading ? (
@@ -1809,64 +1796,68 @@ export const Sidebar = memo(function Sidebar({
                       }
                     >
                       {isCollapsed ? (
-                        <CollapsedSidebarMenu
-                          icon={workflowsCollapsedIcon}
-                          hover={workflowsHover}
-                          ariaLabel='Workflows'
-                          primaryAction={workflowsPrimaryAction}
-                        >
-                          {workflowsLoading && regularWorkflows.length === 0 ? (
-                            <DropdownMenuItem disabled>
-                              <Loader className='h-[14px] w-[14px]' animate />
-                              Loading...
-                            </DropdownMenuItem>
-                          ) : regularWorkflows.length === 0 ? (
-                            <DropdownMenuItem disabled>No workflows yet</DropdownMenuItem>
-                          ) : (
-                            <>
-                              {collapsedRootItems.map((item) =>
-                                item.kind === 'folder' ? (
-                                  <CollapsedFolderItems
-                                    key={item.id}
-                                    nodes={[item.node]}
-                                    workflowsByFolder={workflowsByFolder}
-                                    workspaceId={workspaceId}
-                                    currentWorkflowId={workflowId}
-                                    editingWorkflowId={workflowFlyoutRename.editingId}
-                                    editingValue={workflowFlyoutRename.value}
-                                    editInputRef={workflowFlyoutRename.inputRef}
-                                    isRenamingWorkflow={workflowFlyoutRename.isSaving}
-                                    onEditValueChange={workflowFlyoutRename.setValue}
-                                    onEditKeyDown={workflowFlyoutRename.handleKeyDown}
-                                    onEditBlur={handleWorkflowRenameBlur}
-                                    onWorkflowOpenInNewTab={handleCollapsedWorkflowOpenInNewTab}
-                                    onWorkflowRename={handleCollapsedWorkflowRename}
-                                    canRenameWorkflow={canEdit}
-                                  />
-                                ) : (
-                                  <CollapsedWorkflowFlyoutItem
-                                    key={item.id}
-                                    workflow={item.workflow}
-                                    href={`/workspace/${workspaceId}/w/${item.workflow.id}`}
-                                    isCurrentRoute={item.workflow.id === workflowId}
-                                    isEditing={item.workflow.id === workflowFlyoutRename.editingId}
-                                    editValue={workflowFlyoutRename.value}
-                                    inputRef={workflowFlyoutRename.inputRef}
-                                    isRenaming={workflowFlyoutRename.isSaving}
-                                    onEditValueChange={workflowFlyoutRename.setValue}
-                                    onEditKeyDown={workflowFlyoutRename.handleKeyDown}
-                                    onEditBlur={handleWorkflowRenameBlur}
-                                    onOpenInNewTab={() =>
-                                      handleCollapsedWorkflowOpenInNewTab(item.workflow)
-                                    }
-                                    onRename={() => handleCollapsedWorkflowRename(item.workflow)}
-                                    canRename={canEdit}
-                                  />
-                                )
-                              )}
-                            </>
-                          )}
-                        </CollapsedSidebarMenu>
+                        <div className='px-2'>
+                          <CollapsedSidebarMenu
+                            icon={workflowsCollapsedIcon}
+                            hover={workflowsHover}
+                            ariaLabel='Workflows'
+                            primaryAction={workflowsPrimaryAction}
+                          >
+                            {workflowsLoading && regularWorkflows.length === 0 ? (
+                              <DropdownMenuItem disabled>
+                                <Loader className='h-[14px] w-[14px]' animate />
+                                Loading...
+                              </DropdownMenuItem>
+                            ) : regularWorkflows.length === 0 ? (
+                              <DropdownMenuItem disabled>No workflows yet</DropdownMenuItem>
+                            ) : (
+                              <>
+                                {collapsedRootItems.map((item) =>
+                                  item.kind === 'folder' ? (
+                                    <CollapsedFolderItems
+                                      key={item.id}
+                                      nodes={[item.node]}
+                                      workflowsByFolder={workflowsByFolder}
+                                      workspaceId={workspaceId}
+                                      currentWorkflowId={workflowId}
+                                      editingWorkflowId={workflowFlyoutRename.editingId}
+                                      editingValue={workflowFlyoutRename.value}
+                                      editInputRef={workflowFlyoutRename.inputRef}
+                                      isRenamingWorkflow={workflowFlyoutRename.isSaving}
+                                      onEditValueChange={workflowFlyoutRename.setValue}
+                                      onEditKeyDown={workflowFlyoutRename.handleKeyDown}
+                                      onEditBlur={handleWorkflowRenameBlur}
+                                      onWorkflowOpenInNewTab={handleCollapsedWorkflowOpenInNewTab}
+                                      onWorkflowRename={handleCollapsedWorkflowRename}
+                                      canRenameWorkflow={canEdit}
+                                    />
+                                  ) : (
+                                    <CollapsedWorkflowFlyoutItem
+                                      key={item.id}
+                                      workflow={item.workflow}
+                                      href={`/workspace/${workspaceId}/w/${item.workflow.id}`}
+                                      isCurrentRoute={item.workflow.id === workflowId}
+                                      isEditing={
+                                        item.workflow.id === workflowFlyoutRename.editingId
+                                      }
+                                      editValue={workflowFlyoutRename.value}
+                                      inputRef={workflowFlyoutRename.inputRef}
+                                      isRenaming={workflowFlyoutRename.isSaving}
+                                      onEditValueChange={workflowFlyoutRename.setValue}
+                                      onEditKeyDown={workflowFlyoutRename.handleKeyDown}
+                                      onEditBlur={handleWorkflowRenameBlur}
+                                      onOpenInNewTab={() =>
+                                        handleCollapsedWorkflowOpenInNewTab(item.workflow)
+                                      }
+                                      onRename={() => handleCollapsedWorkflowRename(item.workflow)}
+                                      canRename={canEdit}
+                                    />
+                                  )
+                                )}
+                              </>
+                            )}
+                          </CollapsedSidebarMenu>
+                        </div>
                       ) : (
                         <div className='px-2'>
                           {workflowsLoading && regularWorkflows.length === 0 ? (

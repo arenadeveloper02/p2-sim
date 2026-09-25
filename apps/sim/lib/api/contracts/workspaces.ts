@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { nonEmptyIdSchema, requiredFieldSchema } from '@/lib/api/contracts/primitives'
+import {
+  nonEmptyIdSchema,
+  organizationRoleSchema,
+  requiredFieldSchema,
+} from '@/lib/api/contracts/primitives'
 import { type ContractJsonResponse, defineRouteContract } from '@/lib/api/contracts/types'
 
 export const workspaceScopeSchema = z.enum(['active', 'archived', 'all'])
@@ -11,7 +15,6 @@ export type WorkspacePermission = z.output<typeof workspacePermissionSchema>
 export const workspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
-  color: z.string().optional(),
   logoUrl: z.string().nullable().optional(),
   ownerId: z.string(),
   organizationId: z.string().nullable(),
@@ -20,6 +23,12 @@ export const workspaceSchema = z.object({
   role: z.string().optional(),
   membershipId: z.string().optional(),
   permissions: workspacePermissionSchema.nullable().optional(),
+  /**
+   * The viewer holds admin here through their organization role rather than a
+   * permission row, so they cannot leave. Optional because not every workspace
+   * response builder resolves organization standing.
+   */
+  isOrgAdmin: z.boolean().optional(),
   billedAccountUserId: z.string().nullable().optional(),
   allowPersonalApiKeys: z.boolean().optional(),
   inviteMembersEnabled: z.boolean().optional(),
@@ -44,7 +53,9 @@ export const workspaceCreationPolicySchema = z.object({
    * Machine-readable discriminant for blocked states whose correct user-facing
    * copy the workspace mode alone cannot determine.
    */
-  blockedReasonCode: z.literal('organization-subscription-inactive').optional(),
+  blockedReasonCode: z
+    .enum(['organization-subscription-inactive', 'permission-group-denied'])
+    .optional(),
 })
 
 export type WorkspaceCreationPolicy = z.output<typeof workspaceCreationPolicySchema>
@@ -57,10 +68,6 @@ export type WorkspaceQueryScope = NonNullable<z.input<typeof listWorkspacesQuery
 
 export const createWorkspaceBodySchema = z.object({
   name: z.string().trim().min(1, 'Name is required'),
-  color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .optional(),
   skipDefaultWorkflow: z.boolean().optional().default(false),
 })
 
@@ -70,10 +77,6 @@ export const workspaceParamsSchema = z.object({
 
 export const updateWorkspaceBodySchema = z.object({
   name: z.string().trim().min(1).optional(),
-  color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .optional(),
   logoUrl: z
     .string()
     .refine((val) => val.startsWith('/') || val.startsWith('https://'), {
@@ -96,6 +99,7 @@ export const workspaceUserSchema = z.object({
   isExternal: z.boolean(),
   joinedAt: z.string(),
   roleSource: z.enum(['owner', 'explicit', 'org-admin']),
+  isOrgAdmin: z.boolean(),
   isBilledAccount: z.boolean(),
 })
 
@@ -162,20 +166,6 @@ export const workspaceMemberSchema = z.object({
 })
 
 export type WorkspaceMember = z.output<typeof workspaceMemberSchema>
-
-export const workspaceMetricsExecutionsQuerySchema = z.object({
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  segments: z.coerce.number().min(1).max(200).default(72),
-  workflowIds: z.string().optional(),
-  folderIds: z.string().optional(),
-  triggers: z.string().optional(),
-  level: z.string().optional(),
-  allTime: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((value) => value === 'true'),
-})
 
 export const listWorkspacesContract = defineRouteContract({
   method: 'GET',
@@ -244,12 +234,55 @@ export const workspaceOwnerBillingSchema = z.object({
 
 export type WorkspaceOwnerBilling = z.output<typeof workspaceOwnerBillingSchema>
 
+/**
+ * Enterprise features as this deployment's configuration resolves them (see
+ * `enterpriseFeatureEnabled` in `@/lib/core/config/env-flags`). The browser consults
+ * these only off-hosted, where no subscription plan exists to decide entitlement.
+ */
+export const deploymentFeaturesSchema = z.object({
+  accessControl: z.boolean(),
+  auditLogs: z.boolean(),
+  customBlocks: z.boolean(),
+  dataDrains: z.boolean(),
+  dataRetention: z.boolean(),
+  inbox: z.boolean(),
+  sandboxes: z.boolean(),
+  scim: z.boolean(),
+  sessionPolicies: z.boolean(),
+  sso: z.boolean(),
+  usageMonitoring: z.boolean(),
+  whitelabeling: z.boolean(),
+})
+
+export type DeploymentFeatures = z.output<typeof deploymentFeaturesSchema>
+
+/**
+ * The deployment's shape, resolved on the server per request. Browser code reads it
+ * from the workspace host context rather than from the `NEXT_PUBLIC_*` module
+ * constants: those freeze at module init, and a document that never ran the root
+ * layout — Next's bare `__next_error__` 404 shell, or `global-error` — leaves every
+ * one of them unset for the life of the tab, including after the app recovers in
+ * place. See `@/lib/core/config/deployment-shape`.
+ */
+export const deploymentShapeSchema = z.object({
+  hosted: z.boolean(),
+  billingEnabled: z.boolean(),
+  chatEnabled: z.boolean(),
+  azureConfigured: z.boolean(),
+  cohereConfigured: z.boolean(),
+  features: deploymentFeaturesSchema,
+})
+
+export type DeploymentShape = z.output<typeof deploymentShapeSchema>
+
 export const workspaceHostContextSchema = z.object({
   workspace: z.object({
     id: nonEmptyIdSchema,
     name: z.string().min(1),
     workspaceMode: workspaceModeSchema,
     billedAccountUserId: nonEmptyIdSchema,
+    /** Optional for rolling compatibility with app versions that predate API-key policy projection. */
+    allowPersonalApiKeys: z.boolean().optional(),
   }),
   hostOrganizationId: nonEmptyIdSchema.nullable(),
   ownerBilling: workspaceOwnerBillingSchema,
@@ -257,12 +290,22 @@ export const workspaceHostContextSchema = z.object({
     permission: workspacePermissionSchema,
     isHostOrganizationMember: z.boolean(),
     isHostOrganizationAdmin: z.boolean(),
+    /** Optional for rolling compatibility with app versions that predate organization-role projection. */
+    organizationRole: organizationRoleSchema.nullable().optional(),
   }),
   features: z
     .object({
       credentialGroups: z.boolean(),
+      /** Optional for rolling compatibility; absent keeps settings in the workspace. */
+      organizationSearch: z.boolean().optional(),
+      /** Optional for rolling compatibility with app versions that predate the flag. */
+      knowledgeMemberAccess: z.boolean().optional(),
+      /** Optional for rolling compatibility with app versions that predate administrator mode. */
+      knowledgeSourceMirroredAccess: z.boolean().optional(),
     })
     .optional(),
+  /** Optional for rolling compatibility with app versions that predate deployment projection. */
+  deployment: deploymentShapeSchema.optional(),
 })
 
 export type WorkspaceHostContext = z.output<typeof workspaceHostContextSchema>

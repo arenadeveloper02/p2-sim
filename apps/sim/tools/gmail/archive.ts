@@ -1,7 +1,7 @@
 import type { GmailMarkReadParams, GmailToolResponse } from '@/tools/gmail/types'
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const gmailArchiveTool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+export const gmailArchiveTool: InternalToolConfig<GmailMarkReadParams, GmailToolResponse> = {
   id: 'gmail_archive',
   name: 'Gmail Archive',
   description: 'Archive a Gmail message (remove from inbox)',
@@ -27,13 +27,8 @@ export const gmailArchiveTool: ToolConfig<GmailMarkReadParams, GmailToolResponse
     },
   },
 
-  request: {
-    url: '/api/tools/gmail/archive',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: GmailMarkReadParams) => ({
+  operation: {
+    input: (params: GmailMarkReadParams) => ({
       accessToken: params.accessToken,
       messageId: params.messageId,
     }),
@@ -76,14 +71,23 @@ export const gmailArchiveTool: ToolConfig<GmailMarkReadParams, GmailToolResponse
   },
 }
 
-export const gmailArchiveV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+interface GmailModifyV2Response {
+  success: boolean
+  output: {
+    id?: string
+    threadId?: string
+    labelIds?: string[]
+  }
+}
+
+export const gmailArchiveV2Tool: InternalToolConfig<GmailMarkReadParams, GmailModifyV2Response> = {
   id: 'gmail_archive_v2',
   name: 'Gmail Archive',
   description: 'Archive a Gmail message (remove from inbox)',
   version: '2.0.0',
   oauth: gmailArchiveTool.oauth,
   params: gmailArchiveTool.params,
-  request: gmailArchiveTool.request,
+  operation: gmailArchiveTool.operation,
   transformResponse: async (response) => {
     return await gmailArchiveTool.transformResponse!(response)
   },

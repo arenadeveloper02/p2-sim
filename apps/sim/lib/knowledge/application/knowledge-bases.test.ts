@@ -9,16 +9,17 @@ const mocks = vi.hoisted(() => ({
   resolveWorkspace: vi.fn(),
   loadAuthorizationWorkspace: vi.fn(),
   resolveKnowledgeBase: vi.fn(),
+  resolveArchivedKnowledgeBase: vi.fn(),
   resolvePermission: vi.fn(),
+  resolveAccess: vi.fn(),
+  createAccessProvider: vi.fn(),
+  attachConnectors: vi.fn(),
   resolveFolderPath: vi.fn(),
   createRecord: vi.fn(),
   updateRecord: vi.fn(),
   deleteRecord: vi.fn(),
   listRecords: vi.fn(),
-  listLegacyPersonalRecords: vi.fn(),
-  listVisibleRecords: vi.fn(),
   getRecord: vi.fn(),
-  getRestorableRecord: vi.fn(),
   performUpdate: vi.fn(),
   performDelete: vi.fn(),
   performRestore: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@sim/audit', () => ({
     KNOWLEDGE_BASE_CREATED: 'knowledge_base.created',
     KNOWLEDGE_BASE_UPDATED: 'knowledge_base.updated',
     KNOWLEDGE_BASE_DELETED: 'knowledge_base.deleted',
+    KNOWLEDGE_BASE_RESTORED: 'knowledge_base.restored',
   },
   AuditResourceType: { KNOWLEDGE_BASE: 'knowledge_base' },
   recordAudit: mocks.recordAudit,
@@ -45,6 +47,10 @@ vi.mock('@sim/platform-authz/workspace', () => ({
     )
   },
   resolveEffectiveWorkspacePermission: mocks.resolvePermission,
+}))
+
+vi.mock('@/lib/knowledge/access/scope', () => ({
+  createKnowledgeAccessProvider: mocks.createAccessProvider,
 }))
 
 vi.mock('@/lib/core/telemetry', () => ({
@@ -65,6 +71,7 @@ vi.mock('@/lib/knowledge/application/contexts', () => ({
   loadKnowledgeWorkspaceAuthorizationContext: mocks.loadAuthorizationWorkspace,
   resolveKnowledgeWorkspaceContext: mocks.resolveWorkspace,
   resolveActiveKnowledgeBaseContext: mocks.resolveKnowledgeBase,
+  resolveArchivedKnowledgeBaseContext: mocks.resolveArchivedKnowledgeBase,
 }))
 
 vi.mock('@/lib/knowledge/application/folder-paths', () => ({
@@ -73,8 +80,7 @@ vi.mock('@/lib/knowledge/application/folder-paths', () => ({
 }))
 
 vi.mock('@/lib/knowledge/embeddings', () => ({
-  EMBEDDING_DIMENSIONS: 1536,
-  getConfiguredEmbeddingModel: () => 'text-embedding-3-small',
+  getConfiguredKbEmbedding: () => ({ model: 'text-embedding-3-small', dimensions: 1536 }),
 }))
 
 vi.mock('@/lib/knowledge/service', () => ({
@@ -82,13 +88,11 @@ vi.mock('@/lib/knowledge/service', () => ({
   updateKnowledgeBase: mocks.updateRecord,
   deleteKnowledgeBase: mocks.deleteRecord,
   getKnowledgeBaseById: mocks.getRecord,
-  getLegacyPersonalKnowledgeBases: mocks.listLegacyPersonalRecords,
-  listWorkspaceAndLegacyKnowledgeBases: mocks.listVisibleRecords,
   getWorkspaceKnowledgeBases: mocks.listRecords,
+  attachKnowledgeBaseConnectors: mocks.attachConnectors,
 }))
 
 vi.mock('@/lib/knowledge/orchestration', () => ({
-  getRestorableKnowledgeBase: mocks.getRestorableRecord,
   performUpdateKnowledgeBase: mocks.performUpdate,
   performDeleteKnowledgeBase: mocks.performDelete,
   performRestoreKnowledgeBase: mocks.performRestore,
@@ -99,16 +103,17 @@ import {
   bulkDeleteKnowledgeBases,
   createKnowledgeBase,
   deleteInternalKnowledgeBase,
-  listArchivedKnowledgeBases,
   listInternalKnowledgeBases,
   listKnowledgeBaseCatalog,
   listKnowledgeBases,
   readInternalKnowledgeBase,
   readKnowledgeBase,
   restoreInternalKnowledgeBase,
+  restoreKnowledgeBase,
   updateInternalKnowledgeBase,
   updateKnowledgeBaseOperation,
 } from '@/lib/knowledge/application/knowledge-bases'
+import { knowledgeOperations } from '@/lib/knowledge/application/operations'
 
 const context = {
   workspaceId: 'workspace-1',
@@ -138,12 +143,16 @@ const knowledgeBase = {
 describe('knowledge base application use cases', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.resolveAccess.mockResolvedValue({ kind: 'workspace', tokens: ['workspace', 'public'] })
+    mocks.createAccessProvider.mockReturnValue({ get: mocks.resolveAccess })
+    mocks.attachConnectors.mockImplementation(async (kb) => kb)
     mocks.resolveWorkspace.mockResolvedValue(context)
     mocks.loadAuthorizationWorkspace.mockResolvedValue(context)
     mocks.resolveKnowledgeBase.mockResolvedValue({
       ...context,
       knowledgeBaseId: knowledgeBase.id,
       knowledgeBase,
+      access: { get: mocks.resolveAccess },
     })
     mocks.resolvePermission.mockResolvedValue('write')
     mocks.resolveFolderPath.mockResolvedValue({
@@ -153,10 +162,18 @@ describe('knowledge base application use cases', () => {
     mocks.loadFolderIndex.mockResolvedValue({ pathById: new Map(), idByPath: new Map() })
     mocks.createRecord.mockResolvedValue(knowledgeBase)
     mocks.listRecords.mockResolvedValue({ data: [], nextCursorKeys: null })
-    mocks.listLegacyPersonalRecords.mockResolvedValue([knowledgeBase])
-    mocks.listVisibleRecords.mockResolvedValue([knowledgeBase])
     mocks.getRecord.mockResolvedValue(knowledgeBase)
-    mocks.getRestorableRecord.mockResolvedValue(knowledgeBase)
+    mocks.resolveArchivedKnowledgeBase.mockResolvedValue({
+      ...context,
+      knowledgeBaseId: knowledgeBase.id,
+      restorableKnowledgeBase: {
+        id: knowledgeBase.id,
+        name: knowledgeBase.name,
+        workspaceId: knowledgeBase.workspaceId,
+        userId: knowledgeBase.userId,
+        deletedAt: new Date('2026-02-01T00:00:00Z'),
+      },
+    })
     mocks.performUpdate.mockResolvedValue({
       success: true,
       knowledgeBase: { ...knowledgeBase, name: 'Renamed' },
@@ -183,17 +200,17 @@ describe('knowledge base application use cases', () => {
     expect(mocks.resolveFolderPath).not.toHaveBeenCalled()
   })
 
-  it('lists legacy personal knowledge bases through the explicit session-only operation', async () => {
+  it('returns no knowledge bases when the internal list omits its workspace', async () => {
     await expect(
       listInternalKnowledgeBases.execute({
         principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
         input: { scope: 'all' },
       })
-    ).resolves.toEqual({ knowledgeBases: [knowledgeBase] })
+    ).resolves.toEqual({ knowledgeBases: [] })
 
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
     expect(mocks.resolvePermission).not.toHaveBeenCalled()
-    expect(mocks.listLegacyPersonalRecords).toHaveBeenCalledWith('user-1', 'all')
+    expect(mocks.listRecords).not.toHaveBeenCalled()
   })
 
   it('authorizes a canonical workspace before listing its internal knowledge bases', async () => {
@@ -210,8 +227,9 @@ describe('knowledge base application use cases', () => {
       undefined,
       { forUpdate: undefined }
     )
-    expect(mocks.listVisibleRecords).toHaveBeenCalledWith('user-1', 'workspace-1', 'archived')
-    expect(mocks.listLegacyPersonalRecords).not.toHaveBeenCalled()
+    expect(mocks.listRecords).toHaveBeenCalledWith('workspace-1', 'archived', {
+      access: expect.objectContaining({ get: mocks.resolveAccess }),
+    })
   })
 
   /**
@@ -221,7 +239,7 @@ describe('knowledge base application use cases', () => {
    */
   it('lists a workspace for an authorized caller who holds no workspace permission row', async () => {
     mocks.resolvePermission.mockResolvedValue('admin')
-    mocks.listVisibleRecords.mockResolvedValueOnce([knowledgeBase])
+    mocks.listRecords.mockResolvedValueOnce({ data: [knowledgeBase], nextCursorKeys: null })
 
     await expect(
       listInternalKnowledgeBases.execute({
@@ -230,7 +248,9 @@ describe('knowledge base application use cases', () => {
       })
     ).resolves.toEqual({ knowledgeBases: [knowledgeBase] })
 
-    expect(mocks.listVisibleRecords).toHaveBeenCalledWith('org-admin-1', 'workspace-1', 'active')
+    expect(mocks.listRecords).toHaveBeenCalledWith('workspace-1', 'active', {
+      access: expect.objectContaining({ get: mocks.resolveAccess }),
+    })
   })
 
   it('loads the active knowledge catalog and tag metadata only after workspace authorization', async () => {
@@ -278,7 +298,7 @@ describe('knowledge base application use cases', () => {
 
   it('rejects an archived Knowledge list bound to another trusted workspace before reading', async () => {
     await expect(
-      listArchivedKnowledgeBases.execute({
+      listKnowledgeBases.execute({
         principal: {
           kind: 'delegated',
           serviceId: 'copilot',
@@ -289,7 +309,7 @@ describe('knowledge base application use cases', () => {
           issuedAt: new Date(),
           expiresAt: new Date(Date.now() + 60_000),
         },
-        input: { workspaceId: 'workspace-1' },
+        input: { workspaceId: 'workspace-1', scope: 'archived' },
       })
     ).rejects.toMatchObject({ code: 'forbidden' })
 
@@ -307,7 +327,7 @@ describe('knowledge base application use cases', () => {
       })
     ).rejects.toMatchObject({ code: 'forbidden' })
 
-    expect(mocks.listLegacyPersonalRecords).not.toHaveBeenCalled()
+    expect(mocks.listRecords).not.toHaveBeenCalled()
   })
 
   it('rejects non-session principals before resolving internal list input', async () => {
@@ -319,7 +339,7 @@ describe('knowledge base application use cases', () => {
     ).rejects.toMatchObject({ code: 'forbidden' })
 
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
-    expect(mocks.listLegacyPersonalRecords).not.toHaveBeenCalled()
+    expect(mocks.listRecords).not.toHaveBeenCalled()
   })
 
   it('rejects an insufficient role before the protected mutation', async () => {
@@ -438,22 +458,26 @@ describe('knowledge base application use cases', () => {
     )
   })
 
-  it('reads a legacy personal knowledge base only for its owning session', async () => {
-    const personalKnowledgeBase = {
-      ...knowledgeBase,
-      userId: 'user-1',
-      workspaceId: null,
-    }
-    mocks.getRecord.mockResolvedValueOnce(personalKnowledgeBase)
+  it.each([null, 'organization-1'])(
+    'conceals a knowledge base outside a workspace even from its creator: %s',
+    async (organizationId) => {
+      const scopedKnowledgeBase = {
+        ...knowledgeBase,
+        userId: 'user-1',
+        workspaceId: null,
+        organizationId,
+      }
+      mocks.getRecord.mockResolvedValueOnce(scopedKnowledgeBase)
 
-    await expect(
-      readInternalKnowledgeBase.execute({
-        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
-        input: { knowledgeBaseId: 'knowledge-1' },
-      })
-    ).resolves.toEqual({ knowledgeBase: personalKnowledgeBase })
-    expect(mocks.loadAuthorizationWorkspace).not.toHaveBeenCalled()
-  })
+      await expect(
+        readInternalKnowledgeBase.execute({
+          principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+          input: { knowledgeBaseId: 'knowledge-1' },
+        })
+      ).rejects.toMatchObject({ code: 'not_found' })
+      expect(mocks.loadAuthorizationWorkspace).not.toHaveBeenCalled()
+    }
+  )
 
   it('authorizes the canonical workspace before an internal detail read', async () => {
     await readInternalKnowledgeBase.execute({
@@ -483,6 +507,33 @@ describe('knowledge base application use cases', () => {
     )
   })
 
+  it.each([null, ''])('rejects detaching a KB even for its owner: %s', async (workspaceId) => {
+    await expect(
+      updateInternalKnowledgeBase.execute({
+        principal: { kind: 'session', userId: knowledgeBase.userId, sessionId: 'session-1' },
+        /** @ts-expect-error Exercise a runtime caller bypassing the HTTP contract. */
+        input: { knowledgeBaseId: knowledgeBase.id, workspaceId },
+      })
+    ).rejects.toMatchObject({ code: 'validation', message: 'Workspace ID is required' })
+    expect(mocks.performUpdate).not.toHaveBeenCalled()
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+    expect(mocks.recordAudit).not.toHaveBeenCalled()
+  })
+
+  it('refuses to move an unscoped knowledge base through a creator-authorized path', async () => {
+    mocks.getRecord.mockResolvedValueOnce({ ...knowledgeBase, workspaceId: null })
+
+    await expect(
+      updateInternalKnowledgeBase.execute({
+        principal: { kind: 'session', userId: knowledgeBase.userId, sessionId: 'session-1' },
+        input: { knowledgeBaseId: knowledgeBase.id, workspaceId: 'workspace-1' },
+      })
+    ).rejects.toMatchObject({ code: 'not_found' })
+
+    expect(mocks.performUpdate).not.toHaveBeenCalled()
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
   it('rejects a destination workspace before an internal move mutation', async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce({ ...context, workspaceId: 'workspace-2' })
     mocks.resolvePermission.mockResolvedValueOnce('write').mockResolvedValueOnce(null)
@@ -496,6 +547,14 @@ describe('knowledge base application use cases', () => {
     expect(mocks.performUpdate).not.toHaveBeenCalled()
   })
 
+  /**
+   * The internal restore delegates its workspace branch to the shared
+   * `restoreKnowledgeBase` use case, so the archived context — which is what
+   * loads the workspace with `includeArchived` — is resolved there rather than
+   * in the internal wrapper. What must stay true is that the mutation runs only
+   * after authorization, and that the shared use case suppresses the
+   * orchestration's own audit so the restore is recorded once.
+   */
   it('carries canonical scope into internal delete and restores only after authorization', async () => {
     const principal = { kind: 'session', userId: 'user-1', sessionId: 'session-1' } as const
     await deleteInternalKnowledgeBase.execute({
@@ -510,10 +569,122 @@ describe('knowledge base application use cases', () => {
     expect(mocks.performDelete).toHaveBeenCalledWith(
       expect.objectContaining({ assertedWorkspaceId: 'workspace-1' })
     )
-    expect(mocks.loadAuthorizationWorkspace).toHaveBeenLastCalledWith('workspace-1', {
-      includeArchived: true,
+    expect(mocks.resolveArchivedKnowledgeBase).toHaveBeenCalledWith({
+      knowledgeBaseId: 'knowledge-1',
+      assertedWorkspaceId: undefined,
     })
-    expect(mocks.performRestore).toHaveBeenCalledOnce()
+    expect(mocks.resolvePermission).toHaveBeenCalled()
+    expect(mocks.performRestore).toHaveBeenCalledWith(
+      expect.objectContaining({ knowledgeBaseId: 'knowledge-1', recordSemanticAudit: false })
+    )
+  })
+
+  it('restores a workspace knowledge base only after the operation authorizes', async () => {
+    mocks.resolvePermission.mockResolvedValue('read')
+
+    await expect(
+      restoreInternalKnowledgeBase.execute({
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        input: { knowledgeBaseId: 'knowledge-1' },
+      })
+    ).rejects.toMatchObject({ code: 'forbidden' })
+
+    expect(mocks.performRestore).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Restore is the inverse of delete, so a principal that can archive a
+   * knowledge base must be able to recover it. A tighter policy here would
+   * strand rows a workspace API key deleted.
+   */
+  it('reaches restore under the same policy as delete', () => {
+    expect(knowledgeOperations.restore.minimumRole).toBe(knowledgeOperations.delete.minimumRole)
+    expect(knowledgeOperations.restore.workspaceApiKey).toBe(
+      knowledgeOperations.delete.workspaceApiKey
+    )
+  })
+
+  /**
+   * The orchestration call and the audit projection must agree on which surface
+   * asked: the internal route restores as `ui` and the public one as `api`, and
+   * a literal in the orchestration call would attribute both to whichever one
+   * it names.
+   */
+  it.each([['ui' as const], ['api' as const], ['agent' as const]])(
+    'restores with the calling surface, not a fixed one (%s)',
+    async (source) => {
+      await restoreKnowledgeBase.execute({
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+        input: { knowledgeBaseId: 'knowledge-1', assertedWorkspaceId: 'workspace-1', source },
+      })
+
+      expect(mocks.performRestore).toHaveBeenCalledWith(expect.objectContaining({ source }))
+    }
+  )
+
+  it('carries the internal surface through the shared restore use case', async () => {
+    await restoreInternalKnowledgeBase.execute({
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      input: { knowledgeBaseId: 'knowledge-1' },
+    })
+
+    expect(mocks.performRestore).toHaveBeenCalledWith(expect.objectContaining({ source: 'ui' }))
+  })
+
+  it('answers an already-active knowledge base without restoring or auditing it', async () => {
+    mocks.resolveArchivedKnowledgeBase.mockResolvedValue({
+      ...context,
+      knowledgeBaseId: knowledgeBase.id,
+      restorableKnowledgeBase: {
+        id: knowledgeBase.id,
+        name: knowledgeBase.name,
+        workspaceId: knowledgeBase.workspaceId,
+        userId: knowledgeBase.userId,
+        deletedAt: null,
+      },
+    })
+
+    const result = await restoreKnowledgeBase.execute({
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      input: {
+        knowledgeBaseId: 'knowledge-1',
+        assertedWorkspaceId: 'workspace-1',
+        source: 'api',
+      },
+    })
+
+    expect(result.restored).toBe(false)
+    expect(result.knowledgeBase.id).toBe('knowledge-1')
+    expect(mocks.performRestore).not.toHaveBeenCalled()
+    expect(mocks.recordAudit).not.toHaveBeenCalled()
+  })
+
+  it('reads the archived set through the same list, keyset, and reader as the active one', async () => {
+    mocks.listRecords.mockResolvedValue({ data: [knowledgeBase], nextCursorKeys: ['k', 'id'] })
+
+    const result = await listKnowledgeBases.execute({
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      input: {
+        workspaceId: 'workspace-1',
+        scope: 'archived',
+        search: 'docs',
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
+        limit: 25,
+        cursorKeys: ['2026-01-01T00:00:00.000Z', 'knowledge-0'],
+      },
+    })
+
+    expect(mocks.listRecords).toHaveBeenCalledWith('workspace-1', 'archived', {
+      access: expect.objectContaining({ get: mocks.resolveAccess }),
+      folderId: undefined,
+      search: 'docs',
+      sortBy: 'updatedAt',
+      sortOrder: 'desc',
+      limit: 25,
+      cursorKeys: ['2026-01-01T00:00:00.000Z', 'knowledge-0'],
+    })
+    expect(result.nextCursorKeys).toEqual(['k', 'id'])
   })
 
   it('bounds bulk deletion before canonical workspace loading', async () => {

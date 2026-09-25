@@ -6,7 +6,8 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
 import type { McpOauthCallbackMessage, McpOauthCallbackReason } from '@/lib/mcp/oauth'
-import { mcpKeys, useStartMcpOauth } from '@/hooks/queries/mcp'
+import { useStartMcpOauth } from '@/hooks/queries/mcp'
+import { mcpKeys } from '@/hooks/queries/utils/mcp-keys'
 
 const logger = createLogger('useMcpOauthPopup')
 
@@ -88,6 +89,7 @@ export function useMcpOauthPopup({ workspaceId }: UseMcpOauthPopupProps) {
   const invalidateServer = useCallback(
     (serverId: string) => {
       queryClient.invalidateQueries({ queryKey: mcpKeys.serversList(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: mcpKeys.managedCatalogList(workspaceId) })
       queryClient.invalidateQueries({ queryKey: mcpKeys.serverToolsList(workspaceId, serverId) })
       queryClient.invalidateQueries({ queryKey: mcpKeys.storedToolsList(workspaceId) })
     },
