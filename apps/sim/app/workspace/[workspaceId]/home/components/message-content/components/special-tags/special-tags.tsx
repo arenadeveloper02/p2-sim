@@ -1703,11 +1703,13 @@ interface PendingTagIndicatorProps {
 
 /**
  * Renders the turn-level activity shimmer.
+ * Wraps long live-status lines (e.g. full thinking summaries) instead of
+ * clipping them to a single nowrap row.
  */
 export function PendingTagIndicator({ label }: PendingTagIndicatorProps) {
   return (
     <div className='animate-stream-fade-in py-2'>
-      <ThinkingLoader size={20} startVariant='corners' label={label} labelRatio={0.7} />
+      <ThinkingLoader size={20} startVariant='corners' label={label} labelRatio={0.7} labelWrap />
     </div>
   )
 }

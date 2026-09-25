@@ -16,7 +16,7 @@ const ENGAGEMENT_MAX_TOKENS = 256
 const ENGAGEMENT_TIMEOUT_MS = 5000
 const ENGAGEMENT_TEMPERATURE = 0.7
 
-/** Default model for live status / engagement copy (override with `COPILOT_ENGAGEMENT_MODEL`). */
+/** Default model for optional tool engagement / chat titles (override with `COPILOT_ENGAGEMENT_MODEL`). */
 export const DEFAULT_ENGAGEMENT_MODEL = 'gpt-4.1-nano'
 
 export type EngagementPhase = 'model_wait' | 'tool'
@@ -32,7 +32,7 @@ export interface EngagementStatusContext {
 }
 
 /**
- * Model used for live status copy. Defaults to {@link DEFAULT_ENGAGEMENT_MODEL}.
+ * Model used for optional tool engagement / chat titles. Defaults to {@link DEFAULT_ENGAGEMENT_MODEL}.
  */
 export function resolveEngagementModel(
   _provider?: LocalCopilotProviderId,

@@ -18,6 +18,7 @@ import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/compo
 import { ChatSurfaceProvider } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import {
   assistantMessageHasRenderableContent,
+  collectMainThinkingText,
   MessageContent,
   type MessagePhase,
 } from '@/app/workspace/[workspaceId]/home/components/message-content'
@@ -238,7 +239,8 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   }, [phase])
 
   const hasRenderableAssistant = assistantMessageHasRenderableContent(blocks, message.content ?? '')
-  if (!hasRenderableAssistant && !trimmedContent && !isStreaming) {
+  const hasThinking = collectMainThinkingText(blocks).length > 0
+  if (!hasRenderableAssistant && !trimmedContent && !hasThinking && !isStreaming) {
     return null
   }
 

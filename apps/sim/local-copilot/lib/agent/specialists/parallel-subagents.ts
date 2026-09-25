@@ -42,7 +42,7 @@ export async function* runParallelSubagents(
 
   const parentDepth = params.parentDepth ?? 0
 
-  yield { type: 'status', message: 'Working on it…' }
+  yield { type: 'status', message: 'Thinking…' }
 
   logger.info('Arena Copilot parallel subagents starting', {
     domains,

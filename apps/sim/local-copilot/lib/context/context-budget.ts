@@ -57,6 +57,13 @@ export const LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS = 8_192
 export const LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS = 32_768
 
 /**
+ * Higher generation cap for Claude (catalog max often 64k–128k). 32k lets
+ * Local Copilot finish medium HTML/CSS in one create_file without spending the
+ * full quota — Arena/Figma megabyte exports still need modular/patch flows.
+ */
+export const LOCAL_COPILOT_CLAUDE_MAX_OUTPUT_TOKENS = 32_768
+
+/**
  * Headroom for tokenizer mismatch, message framing, and cache/tool overhead
  * that `estimateChatMessagesTokens` does not see.
  */
@@ -157,12 +164,15 @@ export function resolveDefaultPromptTokenSoftCap(
 
 /**
  * Max completion tokens for a Local Copilot parent/specialist request.
- * Gemini 3.8 Flash gets 32k; everyone else keeps the 8k default.
+ * Gemini 3.8 Flash and Claude get 32k; everyone else keeps the 8k default.
  */
 export function resolveLocalCopilotMaxOutputTokens(model: string): number {
   const normalized = normalizeLocalCopilotModelId(model)
   if (normalized === 'gemini-3.8-flash') {
     return LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS
+  }
+  if (normalized.includes('claude')) {
+    return LOCAL_COPILOT_CLAUDE_MAX_OUTPUT_TOKENS
   }
   return LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
 }

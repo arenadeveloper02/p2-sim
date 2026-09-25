@@ -8,10 +8,61 @@ import {
 /** Inline tool-result size before offloading to an artifact. */
 export const ARTIFACT_INLINE_MAX_CHARS = 8_000
 
+/**
+ * Hard cap when `load_copilot_artifact` rehydrates a body into the model
+ * transcript. Full HTML dashboards often exceed this; dumping them back into
+ * Claude + thinking stalls the next round on empty "Thinking…".
+ */
+export const ARTIFACT_LOAD_MAX_CHARS = 24_000
+
 export const ARTIFACT_MAX_COUNT = 20
 export const ARTIFACT_MAX_TOTAL_BYTES = 500_000
 
 export const LOAD_COPILOT_ARTIFACT_TOOL_NAME = 'load_copilot_artifact'
+
+const ARTIFACT_LOAD_TRUNCATION_HINT =
+  '\n…[truncated: artifact exceeds model budget — use grep/read with a narrower path or offset instead of reloading the full body]'
+
+/**
+ * Caps an artifact body for model consumption so huge file reads cannot
+ * stall the next Claude thinking round.
+ */
+export function truncateArtifactBodyForModel(body: unknown): unknown {
+  if (typeof body === 'string') {
+    if (body.length <= ARTIFACT_LOAD_MAX_CHARS) return body
+    return truncate(body, ARTIFACT_LOAD_MAX_CHARS, ARTIFACT_LOAD_TRUNCATION_HINT)
+  }
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    const serialized = serializeForSize(body)
+    if (serialized.length <= ARTIFACT_LOAD_MAX_CHARS) return body
+    return {
+      truncated: true,
+      preview: truncate(serialized, ARTIFACT_LOAD_MAX_CHARS, ARTIFACT_LOAD_TRUNCATION_HINT),
+      hint: 'Use grep/read with a narrower range instead of loading the full artifact.',
+    }
+  }
+
+  const record = { ...(body as Record<string, unknown>) }
+  for (const key of ['content', 'text', 'body', 'data', 'result'] as const) {
+    const value = record[key]
+    if (typeof value === 'string' && value.length > ARTIFACT_LOAD_MAX_CHARS) {
+      record[key] = truncate(value, ARTIFACT_LOAD_MAX_CHARS, ARTIFACT_LOAD_TRUNCATION_HINT)
+      record.truncated = true
+      record.truncationHint =
+        'Artifact body truncated for the model. Prefer grep/read with a narrower range.'
+      return record
+    }
+  }
+
+  const serialized = serializeForSize(record)
+  if (serialized.length <= ARTIFACT_LOAD_MAX_CHARS) return record
+  return {
+    truncated: true,
+    preview: truncate(serialized, ARTIFACT_LOAD_MAX_CHARS, ARTIFACT_LOAD_TRUNCATION_HINT),
+    hint: 'Use grep/read with a narrower range instead of loading the full artifact.',
+  }
+}
 
 function serializeForSize(value: unknown): string {
   try {
