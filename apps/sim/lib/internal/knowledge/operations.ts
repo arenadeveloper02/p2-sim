@@ -621,7 +621,19 @@ export async function searchOperation(
   const body = {
     success: true,
     data: {
-      results: result.results.map(({ embeddingId: _embeddingId, ...item }) => item),
+      results: result.results.map((item) => ({
+        documentId: item.documentId,
+        documentName: item.documentName,
+        sourceUrl: item.sourceUrl,
+        content: item.content,
+        chunkIndex: item.chunkIndex,
+        metadata: item.metadata,
+        similarity: item.similarity,
+        ...(item.rerankerScore !== undefined ? { rerankerScore: item.rerankerScore } : {}),
+        knowledgeBaseId: item.knowledgeBaseId,
+        chunkId: item.chunkId ?? item.embeddingId,
+        ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}),
+      })),
       query: result.query,
       knowledgeBaseIds: result.knowledgeBaseIds,
       knowledgeBaseId: result.knowledgeBaseId,

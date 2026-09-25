@@ -86,7 +86,6 @@ export const internalSelectorAttachments = {
           input: {
             knowledgeBaseId,
             documentId: args.request.id,
-            assertedWorkspaceId: args.workspaceId,
           },
         })
         return detailSelectorResult({
@@ -101,7 +100,6 @@ export const internalSelectorAttachments = {
         principal: args.principal,
         input: {
           knowledgeBaseId,
-          assertedWorkspaceId: args.workspaceId,
           enabledFilter: 'all',
           search: args.request.search,
           limit: KNOWLEDGE_PAGE_SIZE,

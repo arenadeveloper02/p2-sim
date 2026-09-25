@@ -78,6 +78,7 @@ vi.mock('@/lib/knowledge/secret-provenance', () => ({
   createKnowledgeDocumentSourceValue: vi.fn(),
 }))
 
+import { internalKnowledgeSearchContract } from '@/lib/api/contracts/knowledge/search'
 import {
   type KnowledgeOperationContext,
   listTagsOperation,
@@ -204,5 +205,63 @@ describe('Knowledge direct operations', () => {
         totalResults: 0,
       },
     })
+  })
+
+  it('presents embedding identity as chunkId so the search contract can validate results', async () => {
+    mocks.searchKnowledge.execute.mockResolvedValue({
+      results: [
+        {
+          embeddingId: 'embedding-1',
+          knowledgeBaseId: 'kb-1',
+          documentId: 'document-1',
+          documentName: 'guide.pdf',
+          sourceUrl: null,
+          sourceModifiedAt: null,
+          connectorType: null,
+          content: 'answer',
+          chunkIndex: 0,
+          metadata: {},
+          similarity: 0.8,
+        },
+      ],
+      query: 'answer',
+      knowledgeBaseIds: ['kb-1'],
+      knowledgeBaseId: 'kb-1',
+      topK: 10,
+      totalResults: 1,
+      workspaceId: 'workspace-1',
+      resultSecretRegistry: { isComplete: () => true },
+    })
+
+    const result = await searchOperation(
+      { knowledgeBaseIds: ['kb-1'], query: 'answer', topK: 10, skipUsageBilling: true },
+      createContext()
+    )
+
+    expect(result.body).toEqual({
+      success: true,
+      data: {
+        results: [
+          {
+            documentId: 'document-1',
+            documentName: 'guide.pdf',
+            sourceUrl: null,
+            content: 'answer',
+            chunkIndex: 0,
+            metadata: {},
+            similarity: 0.8,
+            knowledgeBaseId: 'kb-1',
+            chunkId: 'embedding-1',
+            workspaceId: 'workspace-1',
+          },
+        ],
+        query: 'answer',
+        knowledgeBaseIds: ['kb-1'],
+        knowledgeBaseId: 'kb-1',
+        topK: 10,
+        totalResults: 1,
+      },
+    })
+    expect(internalKnowledgeSearchContract.response.schema.parse(result.body)).toEqual(result.body)
   })
 })

@@ -127,6 +127,8 @@ type KnowledgeSearchContext = KnowledgeResourceContext & {
 export interface KnowledgeSearchItem {
   /** Trusted embedding identity for provenance import; HTTP presenters omit it. */
   embeddingId: string
+  /** Embedding row id; used by chat "View in Knowledge Base" deep links. */
+  chunkId: string
   /** Knowledge base the matching chunk came from; a search spans up to 20. */
   knowledgeBaseId: string
   documentId: string
@@ -650,6 +652,7 @@ const searchKnowledgeUseCase = defineAuthorizedKnowledgeUseCase({
         const rerankerScore = rerankerScores.get(row.id)
         return {
           embeddingId: row.id,
+          chunkId: row.id,
           knowledgeBaseId: row.knowledgeBaseId,
           documentId: row.documentId,
           documentName: document?.filename ?? null,

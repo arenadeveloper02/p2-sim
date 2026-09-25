@@ -7,6 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockListWorkflows = vi.hoisted(() => vi.fn())
 const mockFetchOpenRouterEmbeddingModelCatalog = vi.hoisted(() => vi.fn())
 const mockGetWorkspaceOrganizationAccounts = vi.hoisted(() => vi.fn())
+const mockListKnowledgeDocuments = vi.hoisted(() => vi.fn())
+const mockReadKnowledgeDocument = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/knowledge/application/documents', () => ({
+  listKnowledgeDocuments: { execute: mockListKnowledgeDocuments },
+  readKnowledgeDocument: { execute: mockReadKnowledgeDocument },
+}))
 
 vi.mock('@/lib/credential-groups/application/workspace-organization-accounts', () => ({
   getWorkspaceOrganizationAccounts: { execute: mockGetWorkspaceOrganizationAccounts },
@@ -196,5 +203,63 @@ describe('providers.openrouterEmbeddingModels selector', () => {
 
     expect(mockFetchOpenRouterEmbeddingModelCatalog).toHaveBeenCalledOnce()
     expect(mockFetchOpenRouterEmbeddingModelCatalog).toHaveBeenCalledWith(controller.signal)
+  })
+})
+
+describe('knowledge.documents selector', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockListKnowledgeDocuments.mockResolvedValue({
+      documents: [{ id: 'doc-1', filename: 'guide.pdf' }],
+      pagination: { offset: 0, limit: 100, hasMore: false },
+    })
+    mockReadKnowledgeDocument.mockResolvedValue({
+      document: { id: 'doc-1', filename: 'guide.pdf' },
+    })
+  })
+
+  function documentArgs(
+    overrides: Partial<ExecuteServerSelectorArgs> = {}
+  ): ExecuteServerSelectorArgs {
+    return {
+      ...workflowArgs(),
+      selectorKey: 'knowledge.documents',
+      context: { knowledgeBaseId: 'kb-1' },
+      ...overrides,
+    }
+  }
+
+  it('lists documents without asserting the editor workspace onto the knowledge base', async () => {
+    await expect(
+      internalSelectorAttachments['knowledge.documents'].execute(documentArgs())
+    ).resolves.toEqual({
+      kind: 'list',
+      items: [{ id: 'doc-1', label: 'guide.pdf' }],
+    })
+    expect(mockListKnowledgeDocuments).toHaveBeenCalledWith({
+      principal: expect.objectContaining({ userId: 'user-1' }),
+      input: expect.objectContaining({
+        knowledgeBaseId: 'kb-1',
+        enabledFilter: 'all',
+      }),
+    })
+    expect(mockListKnowledgeDocuments.mock.calls[0][0].input).not.toHaveProperty(
+      'assertedWorkspaceId'
+    )
+  })
+
+  it('resolves a selected document without asserting the editor workspace', async () => {
+    await expect(
+      internalSelectorAttachments['knowledge.documents'].execute(
+        documentArgs({ request: { kind: 'detail', id: 'doc-1' } })
+      )
+    ).resolves.toEqual({
+      kind: 'detail',
+      item: { id: 'doc-1', label: 'guide.pdf' },
+    })
+    expect(mockReadKnowledgeDocument).toHaveBeenCalledWith({
+      principal: expect.objectContaining({ userId: 'user-1' }),
+      input: { knowledgeBaseId: 'kb-1', documentId: 'doc-1' },
+    })
   })
 })

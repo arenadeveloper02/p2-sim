@@ -15,6 +15,7 @@ const message = {
 function result(id: string, overrides: Partial<KnowledgeSearchItem> = {}): KnowledgeSearchItem {
   return {
     embeddingId: 'e1',
+    chunkId: 'e1',
     knowledgeBaseId: 'kb1',
     documentId: id,
     documentName: `Document ${id}`,
