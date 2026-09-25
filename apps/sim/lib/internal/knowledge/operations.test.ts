@@ -4,17 +4,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  requireWorkspaceBillingAttributionHeader: vi.fn(),
+  resolveBillingAttribution: vi.fn(),
   listKnowledgeTags: { execute: vi.fn() },
+  searchKnowledge: { execute: vi.fn() },
   syncKnowledgeConnector: { execute: vi.fn() },
   connectorSynced: vi.fn(),
 }))
 
 vi.mock('@/lib/billing/core/billing-attribution', () => ({
-  requireWorkspaceBillingAttributionHeader: mocks.requireWorkspaceBillingAttributionHeader,
+  resolveBillingAttribution: mocks.resolveBillingAttribution,
 }))
 
 vi.mock('@/lib/knowledge/api/internal-route', () => ({
+  internalKnowledgeActorUserId: (principal: { subjectUserId?: string }) =>
+    principal.subjectUserId ?? 'billing-owner',
   internalKnowledgeProvenanceUserId: (_headers: Headers, principal: { subjectUserId?: string }) =>
     principal.subjectUserId ?? 'billing-owner',
   internalKnowledgeAnalytics: {
@@ -60,7 +63,7 @@ vi.mock('@/lib/knowledge/application/documents', () => ({
 }))
 
 vi.mock('@/lib/knowledge/application/search', () => ({
-  searchKnowledge: { execute: vi.fn() },
+  searchKnowledge: mocks.searchKnowledge,
 }))
 
 vi.mock('@/lib/knowledge/application/tags', () => ({
@@ -78,6 +81,7 @@ vi.mock('@/lib/knowledge/secret-provenance', () => ({
 import {
   type KnowledgeOperationContext,
   listTagsOperation,
+  searchOperation,
   syncConnectorOperation,
 } from '@/lib/internal/knowledge/operations'
 
@@ -102,7 +106,7 @@ describe('Knowledge direct operations', () => {
     vi.clearAllMocks()
   })
 
-  it('calls the canonical tag use case with principal workspace assertion', async () => {
+  it('calls the canonical tag use case without asserting the workflow workspace', async () => {
     const tag = {
       id: 'tag-1',
       tagSlot: 'tag1',
@@ -118,20 +122,20 @@ describe('Knowledge direct operations', () => {
 
     expect(mocks.listKnowledgeTags.execute).toHaveBeenCalledWith({
       principal,
-      input: { knowledgeBaseId: 'kb-1', assertedWorkspaceId: 'workspace-1' },
+      input: { knowledgeBaseId: 'kb-1' },
       request: { headers: context.headers },
     })
     expect(result.body).toEqual({ success: true, data: [tag] })
   })
 
-  it('restores exact billing attribution before the canonical connector sync use case', async () => {
-    const attribution = { actorUserId: 'trusted-user', workspaceId: 'workspace-1' }
-    mocks.requireWorkspaceBillingAttributionHeader.mockReturnValue(attribution)
+  it('bills the knowledge-base workspace without asserting the workflow workspace', async () => {
+    const attribution = { actorUserId: 'trusted-user', workspaceId: 'workspace-2' }
+    mocks.resolveBillingAttribution.mockResolvedValue(attribution)
     mocks.syncKnowledgeConnector.execute.mockImplementation(async ({ input }) => {
-      await expect(input.resolveBillingAttribution('workspace-1')).resolves.toBe(attribution)
+      await expect(input.resolveBillingAttribution('workspace-2')).resolves.toBe(attribution)
       return {
         knowledgeBaseId: 'kb-1',
-        workspaceId: 'workspace-1',
+        workspaceId: 'workspace-2',
         connectorId: 'connector-1',
         connectorType: 'notion',
       }
@@ -140,20 +144,65 @@ describe('Knowledge direct operations', () => {
 
     const result = await syncConnectorOperation('kb-1', 'connector-1', false, context)
 
-    expect(mocks.requireWorkspaceBillingAttributionHeader).toHaveBeenCalledWith(context.headers, {
-      workspaceId: 'workspace-1',
+    expect(mocks.resolveBillingAttribution).toHaveBeenCalledWith({
+      actorUserId: 'trusted-user',
+      workspaceId: 'workspace-2',
     })
     expect(mocks.syncKnowledgeConnector.execute).toHaveBeenCalledWith({
       principal,
       input: expect.objectContaining({
         knowledgeBaseId: 'kb-1',
         connectorId: 'connector-1',
-        assertedWorkspaceId: 'workspace-1',
         source: 'ui',
       }),
       request: { headers: context.headers },
     })
+    expect(mocks.syncKnowledgeConnector.execute.mock.calls[0][0].input).not.toHaveProperty(
+      'assertedWorkspaceId'
+    )
     expect(mocks.connectorSynced).toHaveBeenCalledOnce()
     expect(result.body).toEqual({ success: true, message: 'Sync triggered' })
+  })
+
+  it('searches by knowledge base id without asserting the workflow workspace', async () => {
+    mocks.searchKnowledge.execute.mockResolvedValue({
+      results: [],
+      query: 'answer',
+      knowledgeBaseIds: ['kb-1'],
+      knowledgeBaseId: 'kb-1',
+      topK: 10,
+      totalResults: 0,
+      resultSecretRegistry: { isComplete: () => true },
+    })
+    const context = createContext()
+
+    const result = await searchOperation(
+      { knowledgeBaseIds: ['kb-1'], query: 'answer', topK: 10, skipUsageBilling: true },
+      context
+    )
+
+    expect(mocks.searchKnowledge.execute).toHaveBeenCalledWith({
+      principal,
+      input: expect.objectContaining({
+        knowledgeBaseIds: ['kb-1'],
+        query: 'answer',
+        topK: 10,
+        surface: 'workflow',
+        skipUsageBilling: true,
+      }),
+      request: { headers: context.headers },
+    })
+    expect(mocks.searchKnowledge.execute.mock.calls[0][0].input).not.toHaveProperty('workspaceId')
+    expect(result.body).toEqual({
+      success: true,
+      data: {
+        results: [],
+        query: 'answer',
+        knowledgeBaseIds: ['kb-1'],
+        knowledgeBaseId: 'kb-1',
+        topK: 10,
+        totalResults: 0,
+      },
+    })
   })
 })

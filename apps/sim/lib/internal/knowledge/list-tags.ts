@@ -11,7 +11,6 @@ export interface ListKnowledgeTagsAsExecutorInput {
 
 export async function listKnowledgeTagsAsExecutor({
   knowledgeBaseId,
-  workspaceId,
   context,
 }: ListKnowledgeTagsAsExecutorInput) {
   const principal = await createExecutorPrincipalFromExecutionContext({
@@ -20,7 +19,7 @@ export async function listKnowledgeTagsAsExecutor({
   })
   const result = await listKnowledgeTags.execute({
     principal,
-    input: { knowledgeBaseId, assertedWorkspaceId: workspaceId },
+    input: { knowledgeBaseId },
   })
   return result.tagDefinitions
 }

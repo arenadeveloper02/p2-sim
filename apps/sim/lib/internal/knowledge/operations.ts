@@ -1,19 +1,22 @@
 import type { WorkflowExecutionDelegatedPrincipal } from '@sim/auth/principal'
 import type { z } from 'zod'
+import type {
+  createChunkBodySchema,
+  listKnowledgeChunksQuerySchema,
+  updateChunkBodySchema,
+} from '@/lib/api/contracts/knowledge/chunks'
 import {
-  type createChunkBodySchema,
   type createKnowledgeDocumentsBodySchema,
-  type listKnowledgeChunksQuerySchema,
   type listKnowledgeDocumentsQuerySchema,
   parseDocumentTagFiltersParam,
-  type updateChunkBodySchema,
   type upsertDocumentBodySchema,
-} from '@/lib/api/contracts/knowledge'
+} from '@/lib/api/contracts/knowledge/documents'
 import type { KnowledgeSearchBody } from '@/lib/api/contracts/knowledge/search'
 import { AuthType } from '@/lib/auth/hybrid'
-import { requireWorkspaceBillingAttributionHeader } from '@/lib/billing/core/billing-attribution'
+import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import {
+  internalKnowledgeActorUserId,
   internalKnowledgeAnalytics,
   internalKnowledgeProvenanceUserId,
   toInternalKnowledgeChunk,
@@ -75,8 +78,16 @@ function throwIfAborted(context: KnowledgeOperationContext): void {
   context.signal?.throwIfAborted()
 }
 
+/**
+ * Bills the knowledge-base workspace, not the workflow workspace. The block
+ * selector lists every KB the actor can reach; asserting the run workspace
+ * made those selections look missing at execute time.
+ */
 function billingAttribution(context: KnowledgeOperationContext, workspaceId: string) {
-  return requireWorkspaceBillingAttributionHeader(context.headers, { workspaceId })
+  return resolveBillingAttribution({
+    actorUserId: internalKnowledgeActorUserId(context.principal),
+    workspaceId,
+  })
 }
 
 function resolveChunkContentProvenance(
@@ -115,7 +126,6 @@ export async function listDocumentsOperation(
     principal: context.principal,
     input: {
       knowledgeBaseId,
-      assertedWorkspaceId: context.principal.workspaceId,
       enabledFilter: query.enabledFilter,
       search: query.search,
       limit: query.limit,
@@ -162,12 +172,10 @@ export async function createDocumentsOperation(
   const documents = bodyInput.bulk ? bodyInput.documents : [bodyInput]
   const input = {
     knowledgeBaseId,
-    assertedWorkspaceId: context.principal.workspaceId,
     documents,
     bulk: bodyInput.bulk,
     processingOptions: bodyInput.bulk ? bodyInput.processingOptions : undefined,
-    resolveBillingAttribution: (workspaceId: string) =>
-      Promise.resolve(billingAttribution(context, workspaceId)),
+    resolveBillingAttribution: (workspaceId: string) => billingAttribution(context, workspaceId),
     resolveSecretProvenances: ({
       userId,
       workspaceId,
@@ -227,7 +235,6 @@ export async function readDocumentOperation(
     input: {
       knowledgeBaseId,
       documentId,
-      assertedWorkspaceId: context.principal.workspaceId,
     },
     request: { headers: context.headers },
   })
@@ -263,7 +270,6 @@ export async function deleteDocumentOperation(
   const input = {
     knowledgeBaseId,
     documentId,
-    assertedWorkspaceId: context.principal.workspaceId,
     source: 'ui',
   }
   const result = await deleteKnowledgeDocument.execute({
@@ -289,7 +295,6 @@ export async function upsertDocumentOperation(
   throwIfAborted(context)
   const input = {
     knowledgeBaseId,
-    assertedWorkspaceId: context.principal.workspaceId,
     documentId: bodyInput.documentId,
     filename: bodyInput.filename,
     fileUrl: bodyInput.fileUrl,
@@ -297,8 +302,7 @@ export async function upsertDocumentOperation(
     mimeType: bodyInput.mimeType,
     documentTagsData: bodyInput.documentTagsData,
     processingOptions: bodyInput.processingOptions,
-    resolveBillingAttribution: (workspaceId: string) =>
-      Promise.resolve(billingAttribution(context, workspaceId)),
+    resolveBillingAttribution: (workspaceId: string) => billingAttribution(context, workspaceId),
     resolveSecretProvenances: ({
       userId,
       workspaceId,
@@ -370,7 +374,6 @@ export async function listChunksOperation(
     input: {
       knowledgeBaseId,
       documentId,
-      assertedWorkspaceId: context.principal.workspaceId,
       ...query,
     },
     request: { headers: context.headers },
@@ -413,7 +416,6 @@ export async function createChunkOperation(
     input: {
       knowledgeBaseId,
       documentId,
-      assertedWorkspaceId: context.principal.workspaceId,
       content: bodyInput.content,
       enabled: bodyInput.enabled,
       resolveContentProvenance: ({ workspaceId }) =>
@@ -448,7 +450,6 @@ export async function updateChunkOperation(
       knowledgeBaseId,
       documentId,
       chunkId,
-      assertedWorkspaceId: context.principal.workspaceId,
       content: bodyInput.content,
       enabled: bodyInput.enabled,
       resolveContentProvenance: ({ workspaceId }) =>
@@ -498,7 +499,6 @@ export async function deleteChunkOperation(
       knowledgeBaseId,
       documentId,
       chunkId,
-      assertedWorkspaceId: context.principal.workspaceId,
     },
     request: { headers: context.headers },
   })
@@ -513,7 +513,7 @@ export async function listConnectorsOperation(
   throwIfAborted(context)
   const result = await listKnowledgeConnectors.execute({
     principal: context.principal,
-    input: { knowledgeBaseId, assertedWorkspaceId: context.principal.workspaceId },
+    input: { knowledgeBaseId },
     request: { headers: context.headers },
   })
   throwIfAborted(context)
@@ -533,7 +533,6 @@ export async function readConnectorOperation(
     input: {
       knowledgeBaseId,
       connectorId,
-      assertedWorkspaceId: context.principal.workspaceId,
     },
     request: { headers: context.headers },
   })
@@ -551,10 +550,8 @@ export async function syncConnectorOperation(
   const input = {
     knowledgeBaseId,
     connectorId,
-    assertedWorkspaceId: context.principal.workspaceId,
     rehydrate,
-    resolveBillingAttribution: (workspaceId: string) =>
-      Promise.resolve(billingAttribution(context, workspaceId)),
+    resolveBillingAttribution: (workspaceId: string) => billingAttribution(context, workspaceId),
     source: 'ui' as const,
   }
   const result = await syncKnowledgeConnector.execute({
@@ -574,7 +571,7 @@ export async function listTagsOperation(
   throwIfAborted(context)
   const result = await listKnowledgeTags.execute({
     principal: context.principal,
-    input: { knowledgeBaseId, assertedWorkspaceId: context.principal.workspaceId },
+    input: { knowledgeBaseId },
     request: { headers: context.headers },
   })
   throwIfAborted(context)
@@ -591,7 +588,6 @@ export async function searchOperation(
   const result = await searchKnowledge.execute({
     principal: context.principal,
     input: {
-      workspaceId: context.principal.workspaceId,
       knowledgeBaseIds: Array.isArray(bodyInput.knowledgeBaseIds)
         ? bodyInput.knowledgeBaseIds
         : [bodyInput.knowledgeBaseIds],
@@ -605,8 +601,7 @@ export async function searchOperation(
       rerankerInputCount: bodyInput.rerankerInputCount,
       rerankerApiKey: bodyInput.rerankerApiKey,
       skipUsageBilling: bodyInput.skipUsageBilling,
-      resolveBillingAttribution: (workspaceId: string) =>
-        Promise.resolve(billingAttribution(context, workspaceId)),
+      resolveBillingAttribution: (workspaceId: string) => billingAttribution(context, workspaceId),
       prepareModelInputProvenance: async ({ userId, workspaceId }) => {
         const prepared = await prepareKnowledgeModelInputProvenance({
           headers: context.headers,

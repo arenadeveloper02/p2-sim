@@ -24,7 +24,6 @@ export async function searchKnowledgeAsExecutor({
   knowledgeBaseIds,
   query,
   topK,
-  workspaceId,
   context,
   billingAttribution,
   resolvedSecretTraceRegistry,
@@ -44,7 +43,6 @@ export async function searchKnowledgeAsExecutor({
   const result = await searchKnowledge.execute({
     principal,
     input: {
-      workspaceId,
       knowledgeBaseIds,
       query,
       topK,
