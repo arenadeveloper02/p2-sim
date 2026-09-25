@@ -12,11 +12,12 @@ vi.hoisted(() => {
 vi.unmock('@/lib/core/config/env')
 vi.unmock('@/lib/core/config/env-flags')
 
-import { isHosted, isProd } from '@/lib/core/config/env-flags'
+import { isHosted, isProd, isSimCloudHosted } from '@/lib/core/config/env-flags'
 
 describe('hosted detection', () => {
   it('follows the configured URL and ignores the development override in production', () => {
     expect(isProd).toBe(true)
     expect(isHosted).toBe(false)
+    expect(isSimCloudHosted).toBe(false)
   })
 })

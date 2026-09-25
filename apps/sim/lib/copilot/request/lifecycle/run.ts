@@ -78,6 +78,7 @@ import {
   isBillingEnabled,
   isCopilotToolPermissionsEnabled,
   isHosted,
+  isSimCloudHosted,
 } from '@/lib/core/config/env-flags'
 import { isWorkspaceCapabilityWithheld } from '@/lib/permission-groups/capability-assertions'
 import { filterModelSafeWorkspaceFileAttachments } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
@@ -397,7 +398,7 @@ export async function runCopilotLifecycle(
     execContext.sandboxProfile = undefined
   }
   if (
-    isHosted &&
+    isSimCloudHosted &&
     (!(execContext.workspaceId || execContext.organizationId) || !execContext.billingAttribution)
   ) {
     throw new Error('Billing attribution is required for hosted Copilot execution')
@@ -414,7 +415,7 @@ export async function runCopilotLifecycle(
       throw new Error('Copilot billing attribution does not match its actor and workspace')
     }
     execContext.billingAttribution = billingAttribution
-    if (isHosted) {
+    if (isSimCloudHosted) {
       hostedBillingRequest = createAttributedBillingRequestEnvelope(billingAttribution)
     }
   }
@@ -519,7 +520,7 @@ export async function runCopilotLifecycle(
         lifecycleOptions.workspaceId
       )
       await runCheckpointLoop(
-        modelSafeRequestPayload,
+        { ...modelSafeRequestPayload, isHosted: isSimCloudHosted },
         context,
         execContext,
         lifecycleOptions,

@@ -25,6 +25,7 @@ const {
   mockFilterModelSafeWorkspaceFileAttachments,
   mockUpdateRunStatus,
   mockEnv,
+  mockShouldRouteToLocalCopilot,
 } = vi.hoisted(() => ({
   mockCreateRunSegment: vi.fn(),
   mockForceFailHungToolCall: vi.fn(),
@@ -43,6 +44,11 @@ const {
     COPILOT_API_KEY: undefined as string | undefined,
     MSHIP_SYSPROMPT_OVERRIDE: undefined as string | undefined,
   },
+  mockShouldRouteToLocalCopilot: vi.fn(),
+}))
+
+vi.mock('@/local-copilot/lib/routing', () => ({
+  shouldRouteToLocalCopilot: mockShouldRouteToLocalCopilot,
 }))
 
 vi.mock('@/lib/copilot/application/load-search-integrations', () => ({
@@ -167,8 +173,9 @@ const SCHEMA_CONTROL_KEYS = [
 describe('runCopilotLifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockEnv.COPILOT_API_KEY = undefined
+    mockEnv.COPILOT_API_KEY = 'test-copilot-key'
     mockEnv.MSHIP_SYSPROMPT_OVERRIDE = undefined
+    mockShouldRouteToLocalCopilot.mockResolvedValue(false)
     setEnvFlags({
       isHosted: false,
       isCopilotToolPermissionsEnabled: false,
@@ -539,8 +546,9 @@ describe('runCopilotLifecycle', () => {
       resolvedSecretTraceRegistry: registry,
     })
 
-    const { enterpriseByokEligible, ...sent } = JSON.parse(capturedRequestBody)
+    const { enterpriseByokEligible, isHosted, ...sent } = JSON.parse(capturedRequestBody)
     expect(enterpriseByokEligible).toBe(false)
+    expect(isHosted).toBe(false)
     expect(sent).toEqual(payload)
   })
 
@@ -1001,8 +1009,9 @@ describe('runCopilotLifecycle', () => {
         resolvedSecretTraceRegistry: registry,
       })
 
-      const { enterpriseByokEligible, ...sent } = JSON.parse(capturedRequestBody)
+      const { enterpriseByokEligible, isHosted, ...sent } = JSON.parse(capturedRequestBody)
       expect(enterpriseByokEligible).toBe(false)
+      expect(isHosted).toBe(false)
       expect(sent).toEqual(payload)
     }
   )
@@ -1900,6 +1909,40 @@ describe('runCopilotLifecycle', () => {
     expect(headers['x-sim-billing-protocol']).toBeUndefined()
     expect(headers['x-sim-billing-request-id']).toBeUndefined()
     expect(headers['x-sim-billing-attribution']).toBeUndefined()
+  })
+
+  it('uses outbound Sim transport when Arena is hosted but Cloud mothership is not Sim Cloud', async () => {
+    mockEnv.COPILOT_API_KEY = 'customer-copilot-key'
+    setEnvFlags({ isHosted: true, isSimCloudHosted: false })
+
+    await runCopilotLifecycle(
+      { message: 'hello', messageId: 'message-1', isHosted: true },
+      {
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        chatId: 'chat-1',
+        copilotBackend: 'external',
+        billingAttribution: {
+          actorUserId: 'user-1',
+          workspaceId: 'ws-1',
+          billedAccountUserId: 'owner-1',
+          organizationId: null,
+          billingEntity: { type: 'user', id: 'owner-1' },
+          billingPeriod: {
+            start: '2026-07-01T00:00:00.000Z',
+            end: '2026-08-01T00:00:00.000Z',
+          },
+          payerSubscription: null,
+        },
+      }
+    )
+
+    const call = mockRunStreamLoop.mock.calls[0]
+    const headers = call?.[1].headers as Record<string, string>
+    expect(headers['x-sim-billing-protocol']).toBeUndefined()
+    expect(headers['x-sim-billing-request-id']).toBeUndefined()
+    expect(headers['x-sim-billing-attribution']).toBeUndefined()
+    expect(JSON.parse(String(call?.[1].body)).isHosted).toBe(false)
   })
 
   it('normalizes the initial request body with workspaceId from lifecycle options', async () => {

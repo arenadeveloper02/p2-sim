@@ -12,6 +12,7 @@ export interface EnvFlagsMockState {
   isDev: boolean
   isTest: boolean
   isHosted: boolean
+  isSimCloudHosted: boolean
   isChatEnabled: boolean
   isStatusNoticePreviewEnabled: boolean
   isCopilotToolPermissionsEnabled: boolean
@@ -64,6 +65,7 @@ const defaultEnvFlagsState: EnvFlagsMockState = {
   isDev: false,
   isTest: true,
   isHosted: false,
+  isSimCloudHosted: false,
   isChatEnabled: true,
   isStatusNoticePreviewEnabled: false,
   isCopilotToolPermissionsEnabled: false,
@@ -162,6 +164,9 @@ export const envFlagsMockFns = {
  */
 export function setEnvFlags(overrides: Partial<EnvFlagsMockState>): void {
   Object.assign(envFlagsState, overrides)
+  if (overrides.isHosted !== undefined && overrides.isSimCloudHosted === undefined) {
+    envFlagsState.isSimCloudHosted = overrides.isHosted
+  }
 }
 
 /**

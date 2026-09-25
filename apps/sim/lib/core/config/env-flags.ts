@@ -76,6 +76,15 @@ export const isHosted =
   getEnv('NEXT_PUBLIC_APP_URL') === 'https://agent.thearena.ai'
 
 /**
+ * True only on Sim's own cloud (sim.ai). Arena sets {@link isHosted} for product
+ * features, but Cloud mothership at copilot.sim.ai still classifies this process
+ * as a customer. Sending hosted billing protocol / `isHosted: true` makes Go
+ * reject with "Customer requests require outbound Sim transport".
+ */
+export const isSimCloudHosted =
+  forceHosted || appHostname === 'sim.ai' || appHostname.endsWith('.sim.ai')
+
+/**
  * Are the Chat module's surfaces shown. On by default, so a deployment that
  * already has `COPILOT_API_KEY` keeps Chat without setting anything; the setup
  * wizard writes the opt-out when you skip the key.

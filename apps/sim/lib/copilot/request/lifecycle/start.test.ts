@@ -485,4 +485,22 @@ describe('requestChatTitle billing protocol', () => {
     ).resolves.toBeNull()
     expect(fetchGo).not.toHaveBeenCalled()
   })
+
+  it('does not send hosted billing headers for Arena Cloud title generation', async () => {
+    setEnvFlags({ isHosted: true, isSimCloudHosted: false })
+    await expect(
+      requestChatTitle({
+        message: 'explain billing',
+        model: 'claude-opus-4.8',
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        billingAttribution: BILLING_ATTRIBUTION,
+        copilotBackend: 'external',
+      })
+    ).resolves.toBe('Billing Protocol')
+    const headers = fetchGo.mock.calls[0]?.[1]?.headers as Record<string, string>
+    expect(headers['x-sim-billing-protocol']).toBeUndefined()
+    expect(headers['x-sim-billing-request-id']).toBeUndefined()
+    expect(headers['x-sim-billing-attribution']).toBeUndefined()
+  })
 })

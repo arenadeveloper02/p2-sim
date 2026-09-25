@@ -49,7 +49,7 @@ import { SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/session/sse'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { isSimCloudHosted } from '@/lib/core/config/env-flags'
 import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
 import { generateLocalChatTitle } from '@/local-copilot/lib/agent/chat-title'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
@@ -579,7 +579,7 @@ export async function requestChatTitle(params: {
     if (organizationId && (!chatId || workspaceId)) {
       throw new Error('Organization titles require a private chat without a workspace')
     }
-    if (isHosted) {
+    if (isSimCloudHosted) {
       if (!userId || (!workspaceId && !organizationId)) {
         throw new Error('Title generation requires a billing actor and workspace')
       }
