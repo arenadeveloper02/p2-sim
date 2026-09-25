@@ -23,7 +23,10 @@ import {
   sseHandlers,
   subAgentHandlers,
 } from '@/lib/copilot/request/handlers'
-import { flushSubagentThinkingBlock, flushThinkingBlock } from '@/lib/copilot/request/handlers/types'
+import {
+  flushSubagentThinkingBlock,
+  flushThinkingBlock,
+} from '@/lib/copilot/request/handlers/types'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
 import {
   isSubagentSpanStreamEvent,

@@ -107,6 +107,12 @@ describe('resolveSettingsSection', () => {
     expect(resolveSettingsSection('')).toBeNull()
   })
 
+  it('resolves General for fallback redirects without listing it in the sidebar catalog', () => {
+    expect(resolveSettingsSection('general')?.id).toBe('general')
+    expect(resolveSettingsSection('general')?.meta.title).toBe('General')
+    expect(allNavigationItems.some(({ id }) => id === 'general')).toBe(false)
+  })
+
   it('resolves organization connected accounts in the unified settings shell', () => {
     expect(resolveSettingsSection('credential-groups')?.id).toBe('connected-accounts')
     expect(resolveSettingsSection('connected-accounts')?.id).toBe('connected-accounts')

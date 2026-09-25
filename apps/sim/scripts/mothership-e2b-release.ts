@@ -1,9 +1,9 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import {
   isImmutableE2BTemplateRef,
   isValidE2BTemplateReferenceName,
 } from '@sim/utils/sandbox-references'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import path from 'node:path'
 import {
   MOTHERSHIP_E2B_DEFAULT_BASE_TEMPLATE,
   MOTHERSHIP_E2B_DEFAULT_TEMPLATE_NAME,
@@ -35,7 +35,10 @@ export function resolveDefaultMothershipTemplateName(
   return MOTHERSHIP_E2B_DEFAULT_TEMPLATE_NAME
 }
 
-function assertMothershipTemplateName(value: string, flag: '--name' | 'MOTHERSHIP_E2B_TEMPLATE_ID'): string {
+function assertMothershipTemplateName(
+  value: string,
+  flag: '--name' | 'MOTHERSHIP_E2B_TEMPLATE_ID'
+): string {
   if (isImmutableE2BTemplateRef(value)) {
     throw new Error(
       `${flag} must be a mutable template alias, not an immutable <template>:<build-id>. Rebuilding updates the alias in place.`

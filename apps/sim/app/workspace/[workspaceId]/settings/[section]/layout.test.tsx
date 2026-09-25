@@ -39,4 +39,8 @@ describe('workspace settings legacy links', () => {
   it('still rejects unknown sections', async () => {
     await expect(SettingsSectionLayout(layoutProps('unknown'))).rejects.toThrow('NEXT_NOT_FOUND')
   })
+
+  it('keeps General routable so gated-section fallbacks do not 404', async () => {
+    await expect(SettingsSectionLayout(layoutProps('general'))).resolves.toBeTruthy()
+  })
 })

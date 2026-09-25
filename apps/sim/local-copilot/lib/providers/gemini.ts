@@ -103,9 +103,7 @@ function formatResourceExhaustedError(
   error: unknown,
   options?: { triedPriorityPayGo?: boolean }
 ): Error {
-  const priorityNote = options?.triedPriorityPayGo
-    ? ' Retries included Vertex Priority PayGo.'
-    : ''
+  const priorityNote = options?.triedPriorityPayGo ? ' Retries included Vertex Priority PayGo.' : ''
   return new Error(
     `${logLabel} quota exceeded (429 RESOURCE_EXHAUSTED) after retries.${priorityNote} Wait a minute and try again, switch catalog models (Gemini / Claude / Bedrock), or raise the Vertex quota. Set COPILOT_THINKING_LEVEL=low|none to reduce load. Original: ${getErrorMessage(error, 'resource exhausted')}`
   )
@@ -223,9 +221,7 @@ export function prepareGeminiModelPartsForApi(parts: GeminiHistoryPart[]): Part[
           args: part.functionCall.args,
         },
         // Only the first functionCall in a model step requires a signature.
-        ...(firstFunctionCall
-          ? { thoughtSignature: SKIP_THOUGHT_SIGNATURE_VALIDATOR }
-          : {}),
+        ...(firstFunctionCall ? { thoughtSignature: SKIP_THOUGHT_SIGNATURE_VALIDATOR } : {}),
       })
       firstFunctionCall = false
       continue

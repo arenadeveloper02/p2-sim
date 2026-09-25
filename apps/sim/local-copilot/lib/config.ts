@@ -84,9 +84,7 @@ export function resolveLocalCopilotThinkingLevel(
   if (usesClaudeStyleThinkingLevels(provider)) {
     if (!override) return DEFAULT_ANTHROPIC_THINKING_LEVEL
     const normalized = override.toLowerCase()
-    return ANTHROPIC_THINKING_LEVELS.has(normalized)
-      ? normalized
-      : DEFAULT_ANTHROPIC_THINKING_LEVEL
+    return ANTHROPIC_THINKING_LEVELS.has(normalized) ? normalized : DEFAULT_ANTHROPIC_THINKING_LEVEL
   }
 
   return undefined
@@ -97,9 +95,7 @@ export function resolveLocalCopilotThinkingLevel(
  * often burns minutes eyeballing `Unexpected token` / table syntax instead of
  * rewriting `edit_content` — keep the tip on, but prefer `low` for file work.
  */
-export function resolveFileTurnThinkingLevel(
-  configured: string | undefined
-): string | undefined {
+export function resolveFileTurnThinkingLevel(configured: string | undefined): string | undefined {
   if (!configured || configured === 'none') return configured
   const normalized = configured.trim().toLowerCase()
   if (normalized === 'high' || normalized === 'medium') return 'low'

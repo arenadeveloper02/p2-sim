@@ -89,9 +89,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
               })),
               // DeepSeek / Claude-via-proxy need the prior reasoning echoed or
               // subsequent tool-loop rounds omit thinking (or 400).
-              ...(reasoning
-                ? { reasoning_content: reasoning, reasoning }
-                : {}),
+              ...(reasoning ? { reasoning_content: reasoning, reasoning } : {}),
               // Claude-via-LiteLLM requires signed `thinking_blocks` on tool
               // turns; without them proxies drop `thinking` for later rounds.
               ...(thinkingBlocks?.length ? { thinking_blocks: thinkingBlocks } : {}),
@@ -105,9 +103,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
         stream_options: { include_usage: true },
         max_tokens: request.maxTokens ?? 4096,
         // OpenAI automatic prompt caching: stable key improves prefix reuse across turns.
-        ...(config.provider === 'openai'
-          ? { prompt_cache_key: `local-copilot:${model}` }
-          : {}),
+        ...(config.provider === 'openai' ? { prompt_cache_key: `local-copilot:${model}` } : {}),
       }
 
       if (thinkingBody) {

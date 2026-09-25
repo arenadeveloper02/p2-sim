@@ -36,7 +36,10 @@ describe('post-build completion duplicate suppression', () => {
 
   it('flags near-duplicate even before the new pitch reaches 100 chars', () => {
     expect(
-      isNearDuplicateCompletion(COMPLETION_PITCH, 'Your Email Summary Digest workflow is fully built')
+      isNearDuplicateCompletion(
+        COMPLETION_PITCH,
+        'Your Email Summary Digest workflow is fully built'
+      )
     ).toBe(true)
   })
 

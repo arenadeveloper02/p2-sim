@@ -7,10 +7,10 @@ import {
   buildFileInspectionChatAppendix,
   formatDebugInspectionChatResult,
   synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
   turnHasDebugInspectionTools,
   turnHasFileInspectionTools,
   turnHasWorkflowDiscoveryTools,
-  type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import {
   isFileInspectionBridgeNarration,
@@ -83,12 +83,12 @@ describe('debug inspection synthesis', () => {
   })
 
   it('turnHasDebugInspectionTools detects log/debug tools', () => {
-    expect(turnHasDebugInspectionTools([{ name: 'edit_workflow', success: true, result: {} }])).toBe(
-      false
-    )
     expect(
-      turnHasDebugInspectionTools([{ name: 'query_logs', success: true, result: {} }])
-    ).toBe(true)
+      turnHasDebugInspectionTools([{ name: 'edit_workflow', success: true, result: {} }])
+    ).toBe(false)
+    expect(turnHasDebugInspectionTools([{ name: 'query_logs', success: true, result: {} }])).toBe(
+      true
+    )
     expect(turnHasDebugInspectionTools([{ name: 'run', success: true, result: {} }])).toBe(true)
   })
 
@@ -159,7 +159,10 @@ describe('isLiveWebSearchToolCall', () => {
       isLiveWebSearchToolCall('invoke_integration_tool', JSON.stringify({ toolId: 'exa_answer' }))
     ).toBe(true)
     expect(
-      isLiveWebSearchToolCall('invoke_integration_tool', JSON.stringify({ toolId: 'gmail_draft_v2' }))
+      isLiveWebSearchToolCall(
+        'invoke_integration_tool',
+        JSON.stringify({ toolId: 'gmail_draft_v2' })
+      )
     ).toBe(false)
   })
 })

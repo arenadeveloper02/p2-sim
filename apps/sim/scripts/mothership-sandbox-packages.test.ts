@@ -7,11 +7,11 @@ import {
   resolveDefaultMothershipTemplateName,
 } from '@/scripts/mothership-e2b-release'
 import {
-  mergeMothershipPipPackages,
   MOTHERSHIP_E2B_DEFAULT_TEMPLATE_NAME,
   MOTHERSHIP_E2B_PYTHON_PACKAGES,
   MOTHERSHIP_NPM_CLI_PACKAGES,
   MOTHERSHIP_REQUIRED_COMMANDS,
+  mergeMothershipPipPackages,
 } from '@/scripts/mothership-sandbox-packages'
 import { upsertEnvVar } from '@/scripts/upsert-env-var'
 
@@ -62,10 +62,7 @@ describe('parseMothershipBuildArgs', () => {
 
   it('accepts an explicit existing sim-sbx reference as --name', () => {
     expect(
-      parseMothershipBuildArgs(
-        ['--name', EXISTING_ID, '--no-cache', '--no-write-env'],
-        EXISTING_ID
-      )
+      parseMothershipBuildArgs(['--name', EXISTING_ID, '--no-cache', '--no-write-env'], EXISTING_ID)
     ).toMatchObject({
       templateName: EXISTING_ID,
       baseTemplate: EXISTING_ID,
@@ -75,9 +72,7 @@ describe('parseMothershipBuildArgs', () => {
   })
 
   it('accepts pip extras without changing the template id', () => {
-    expect(
-      parseMothershipBuildArgs(['--pip', 'httpx==0.28.1'], EXISTING_ID)
-    ).toMatchObject({
+    expect(parseMothershipBuildArgs(['--pip', 'httpx==0.28.1'], EXISTING_ID)).toMatchObject({
       templateName: EXISTING_ID,
       pipExtras: ['httpx==0.28.1'],
     })
@@ -85,10 +80,7 @@ describe('parseMothershipBuildArgs', () => {
 
   it('rejects immutable build ids as --name', () => {
     expect(() =>
-      parseMothershipBuildArgs([
-        '--name',
-        'sim-mothership:0cc50c4d-951d-4982-a131-3f0ae022d8d2',
-      ])
+      parseMothershipBuildArgs(['--name', 'sim-mothership:0cc50c4d-951d-4982-a131-3f0ae022d8d2'])
     ).toThrow(/mutable template alias/)
   })
 })

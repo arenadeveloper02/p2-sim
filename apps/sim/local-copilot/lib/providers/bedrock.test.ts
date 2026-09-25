@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import type { ContentBlock, Message as BedrockMessage } from '@aws-sdk/client-bedrock-runtime'
+import type { Message as BedrockMessage, ContentBlock } from '@aws-sdk/client-bedrock-runtime'
 import { describe, expect, it } from 'vitest'
 import {
   anthropicThinkingBlocksToBedrockContent,
@@ -19,9 +19,7 @@ describe('resolveBedrockThinkingAdditionalFields', () => {
   })
 
   it('enables budget thinking for Claude 4.6', () => {
-    expect(
-      resolveBedrockThinkingAdditionalFields('anthropic.claude-sonnet-4-6', 'high')
-    ).toEqual({
+    expect(resolveBedrockThinkingAdditionalFields('anthropic.claude-sonnet-4-6', 'high')).toEqual({
       thinking: { type: 'enabled', budget_tokens: 16384 },
     })
   })

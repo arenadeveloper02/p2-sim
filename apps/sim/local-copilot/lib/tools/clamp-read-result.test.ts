@@ -39,9 +39,9 @@ describe('clampReadResultForLocalModel', () => {
 
 describe('rejectCreateFileImageAsText', () => {
   it('rejects png create_file paths', () => {
-    expect(
-      rejectCreateFileImageAsText({ fileName: 'files/diagram.png', content: 'abc' })
-    ).toMatch(/generate_image/i)
+    expect(rejectCreateFileImageAsText({ fileName: 'files/diagram.png', content: 'abc' })).toMatch(
+      /generate_image/i
+    )
   })
 
   it('allows html create_file paths', () => {

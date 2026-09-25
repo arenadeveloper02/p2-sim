@@ -511,9 +511,7 @@ export function shouldForceResearchSearchContinuation(options: {
   if (options.postBuildToolMode !== 'all') return false
   if (!options.needsLiveSearch) return false
   if (options.hasLiveWebSearch) return false
-  if (
-    options.forcedResearchSearchContinuations >= options.maxForcedResearchSearchContinuations
-  ) {
+  if (options.forcedResearchSearchContinuations >= options.maxForcedResearchSearchContinuations) {
     return false
   }
   if (options.round >= options.maxToolRounds - 1) return false

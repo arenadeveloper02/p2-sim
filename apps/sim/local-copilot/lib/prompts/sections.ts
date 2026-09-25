@@ -1,7 +1,7 @@
 import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
-import { LOCAL_COMPLEX_HTML_GUIDANCE } from '@/local-copilot/lib/prompts/complex-html-guidance'
 import { MAX_POPULATE_EDITS } from '@/local-copilot/lib/agent/limits'
 import type { LocalCopilotCloudSpecialistDomain } from '@/local-copilot/lib/agent/specialists/domains'
+import { LOCAL_COMPLEX_HTML_GUIDANCE } from '@/local-copilot/lib/prompts/complex-html-guidance'
 
 /**
  * One contiguous slice of the Arena Copilot system prompt.

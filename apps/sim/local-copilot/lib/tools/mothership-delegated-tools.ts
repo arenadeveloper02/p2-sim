@@ -5,6 +5,11 @@ import { and, desc, eq, isNull } from 'drizzle-orm'
 import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
+import {
+  clampSuccessfulReadResult,
+  isOversizedVfsReadError,
+  recoverOversizedVfsReadForLocal,
+} from '@/local-copilot/lib/tools/clamped-vfs-read'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import {
   enrichCreateFileArgs,
@@ -13,11 +18,6 @@ import {
   rejectCreateFileImageAsText,
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
-import {
-  clampSuccessfulReadResult,
-  isOversizedVfsReadError,
-  recoverOversizedVfsReadForLocal,
-} from '@/local-copilot/lib/tools/clamped-vfs-read'
 import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,

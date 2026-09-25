@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_SETTINGS_ITEMS,
   buildUnifiedSettingsCatalog,
   isPlatformAdminSettingsSection,
   toSettingsHeaderMeta,
@@ -43,6 +44,14 @@ for (const item of allNavigationItems) {
 }
 
 /**
+ * Arena keeps General off the workspace sidebar (profile lives at
+ * `/workspace/arena-general-settings`), but `/settings/general` must still
+ * resolve. Credential Groups and other gated sections redirect here — matching
+ * main — and a missing catalog entry was answering 404 instead of the page.
+ */
+const GENERAL_SETTINGS_ITEM = ACCOUNT_SETTINGS_ITEMS.find((item) => item.id === 'general')
+
+/**
  * Section segments that are no longer canonical but must keep resolving, so old links
  * and bookmarks survive. Kept beside the catalog because the route layout, the page's
  * access gate, and `generateMetadata` all have to normalize a segment identically.
@@ -68,7 +77,11 @@ export interface ResolvedSettingsSection {
  * viewer may open a section is the page gate's decision, not the route's.
  */
 export function resolveSettingsSection(section: string): ResolvedSettingsSection | null {
-  const item = navigationItemsById.get((SECTION_ALIASES[section] ?? section) as SettingsSection)
+  const normalized = (SECTION_ALIASES[section] ?? section) as SettingsSection
+  if (normalized === 'general' && GENERAL_SETTINGS_ITEM) {
+    return { id: 'general', meta: toSettingsHeaderMeta(GENERAL_SETTINGS_ITEM) }
+  }
+  const item = navigationItemsById.get(normalized)
   return item ? { id: item.id, meta: toSettingsHeaderMeta(item) } : null
 }
 
@@ -80,6 +93,13 @@ export function resolveSettingsSection(section: string): ResolvedSettingsSection
 export function getSettingsSectionMeta(
   section: SettingsSection
 ): { label: string; description: string; docsLink?: string } | null {
+  if (section === 'general' && GENERAL_SETTINGS_ITEM) {
+    return {
+      label: GENERAL_SETTINGS_ITEM.label,
+      description: GENERAL_SETTINGS_ITEM.description,
+      docsLink: GENERAL_SETTINGS_ITEM.docsLink,
+    }
+  }
   const item = navigationItemsById.get(section)
   return item ? { label: item.label, description: item.description, docsLink: item.docsLink } : null
 }

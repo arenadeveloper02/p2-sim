@@ -135,7 +135,7 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
       if (
-        item.id === 'credential-groups' &&
+        item.id === 'connected-accounts' &&
         (!hostContext.features?.credentialGroups || !canAdminWorkspace)
       ) {
         return false

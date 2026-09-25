@@ -63,29 +63,17 @@ const WORKFLOW_RUN_TOOL_NAMES = new Set([
 ])
 
 /** Tools used to inspect failed runs — often leave the bubble empty without a forced reply. */
-const DEBUG_INSPECTION_TOOL_NAMES = new Set([
-  'query_logs',
-  'get_execution_logs',
-  'explain_error',
-])
+const DEBUG_INSPECTION_TOOL_NAMES = new Set(['query_logs', 'get_execution_logs', 'explain_error'])
 
 /** Discovery-only tools that should be followed by create_workflow / edit_workflow. */
-const WORKFLOW_DISCOVERY_TOOL_NAMES = new Set([
-  'get_available_blocks',
-  'get_blocks_metadata',
-])
+const WORKFLOW_DISCOVERY_TOOL_NAMES = new Set(['get_available_blocks', 'get_blocks_metadata'])
 
 /**
  * File inspection tools. `load_copilot_artifact` belongs here (not workflow
  * discovery) — HTML reads are offloaded and reloaded via artifact, which must
  * not trigger a create_workflow nudge.
  */
-const FILE_INSPECTION_TOOL_NAMES = new Set([
-  'read',
-  'grep',
-  'glob',
-  'load_copilot_artifact',
-])
+const FILE_INSPECTION_TOOL_NAMES = new Set(['read', 'grep', 'glob', 'load_copilot_artifact'])
 
 const FILE_MUTATION_TOOL_NAMES = new Set([
   'create_file',
@@ -120,9 +108,7 @@ export function turnHasWorkflowDiscoveryTools(records: ToolTurnRecord[]): boolea
  * True when this turn successfully created or edited a workflow.
  */
 export function turnHasWorkflowMutationTools(records: ToolTurnRecord[]): boolean {
-  return records.some(
-    (record) => WORKFLOW_MUTATION_TOOL_NAMES.has(record.name) && record.success
-  )
+  return records.some((record) => WORKFLOW_MUTATION_TOOL_NAMES.has(record.name) && record.success)
 }
 
 /**
@@ -137,9 +123,7 @@ export function isDebugInspectionToolName(name: string): boolean {
  * True when this turn already ran debug tools — used to force a closing explanation.
  */
 export function turnHasDebugInspectionTools(records: ToolTurnRecord[]): boolean {
-  return records.some(
-    (record) => isDebugInspectionToolName(record.name) || record.name === 'run'
-  )
+  return records.some((record) => isDebugInspectionToolName(record.name) || record.name === 'run')
 }
 
 /**
@@ -153,9 +137,7 @@ export function turnHasFileInspectionTools(records: ToolTurnRecord[]): boolean {
  * True when this turn successfully mutated a workspace file.
  */
 export function turnHasFileMutationTools(records: ToolTurnRecord[]): boolean {
-  return records.some(
-    (record) => FILE_MUTATION_TOOL_NAMES.has(record.name) && record.success
-  )
+  return records.some((record) => FILE_MUTATION_TOOL_NAMES.has(record.name) && record.success)
 }
 
 /**
@@ -312,7 +294,8 @@ function formatExplainErrorChatResult(record: ToolTurnRecord): string {
     (typeof record.error === 'string' && record.error.trim()) ||
     ''
   const rootCause =
-    (typeof analysis.rootCause === 'string' && analysis.rootCause.trim()) || 'Block execution failure'
+    (typeof analysis.rootCause === 'string' && analysis.rootCause.trim()) ||
+    'Block execution failure'
   const failingBlock = asRecord(analysis.failingBlock)
   const blockLabel =
     (typeof failingBlock.name === 'string' && failingBlock.name.trim()) ||
@@ -334,7 +317,9 @@ function formatExplainErrorChatResult(record: ToolTurnRecord): string {
   }
 
   const fixes = Array.isArray(analysis.suggestedFixes)
-    ? analysis.suggestedFixes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    ? analysis.suggestedFixes.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0
+      )
     : []
   if (fixes.length > 0) {
     lines.push('**Suggested fixes:**')
@@ -651,9 +636,7 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (isDebugInspectionToolName(record.name)) {
       // Prefer explain_error over earlier list/query tools so the bubble is one clear answer.
       if (record.name !== 'explain_error') {
-        const hasExplain = records.some(
-          (other) => other.name === 'explain_error' && other.success
-        )
+        const hasExplain = records.some((other) => other.name === 'explain_error' && other.success)
         if (hasExplain) continue
       }
       if (record.name === 'query_logs') {
@@ -692,14 +675,22 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     }
   }
 
-  if (parts.length === 0 && turnHasWorkflowDiscoveryTools(records) && !turnHasWorkflowMutationTools(records)) {
+  if (
+    parts.length === 0 &&
+    turnHasWorkflowDiscoveryTools(records) &&
+    !turnHasWorkflowMutationTools(records)
+  ) {
     return (
       'I looked up the available blocks, but did not finish creating the workflow. ' +
       'Please try again (or switch models if Vertex quota is exhausted).'
     )
   }
 
-  if (parts.length === 0 && turnHasFileInspectionTools(records) && !turnHasFileMutationTools(records)) {
+  if (
+    parts.length === 0 &&
+    turnHasFileInspectionTools(records) &&
+    !turnHasFileMutationTools(records)
+  ) {
     return buildFileInspectionChatAppendix(records)
   }
 

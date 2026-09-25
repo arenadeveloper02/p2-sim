@@ -227,6 +227,86 @@ describe('ExecutionLogger', () => {
       )
     })
 
+    const startParams = {
+      workflowId: 'workflow-123',
+      workspaceId: 'workspace-123',
+      executionId: 'execution-123',
+      trigger: {
+        type: 'chat' as const,
+        source: 'chat' as const,
+        timestamp: '2026-08-04T00:00:00.000Z',
+      },
+      environment: {
+        variables: {},
+        workflowId: 'workflow-123',
+        executionId: 'execution-123',
+        userId: 'user-123',
+        workspaceId: 'workspace-123',
+      },
+      workflowState: { blocks: {}, edges: [], loops: {}, parallels: {} },
+    }
+
+    test('records the deployment version when an early log started without one', async () => {
+      const startedAt = new Date('2026-08-04T00:00:00.000Z')
+      queueTableRows(workflowExecutionLogs, [
+        {
+          id: 'log-1',
+          workflowId: 'workflow-123',
+          executionId: 'execution-123',
+          stateSnapshotId: 'snapshot-123',
+          deploymentVersionId: null,
+          level: 'info',
+          status: 'running',
+          trigger: 'chat',
+          startedAt,
+          endedAt: null,
+          totalDurationMs: null,
+          executionData: {},
+          createdAt: startedAt,
+        },
+      ])
+
+      await logger.startWorkflowExecution({
+        ...startParams,
+        deploymentVersionId: 'deployment-version-1',
+      })
+
+      expect(dbChainMockFns.set).toHaveBeenCalledWith({
+        deploymentVersionId: 'deployment-version-1',
+      })
+      expect(dbChainMockFns.values).not.toHaveBeenCalled()
+    })
+
+    test('leaves a deployment version already recorded on the run unchanged', async () => {
+      const startedAt = new Date('2026-08-04T00:00:00.000Z')
+      queueTableRows(workflowExecutionLogs, [
+        {
+          id: 'log-1',
+          workflowId: 'workflow-123',
+          executionId: 'execution-123',
+          stateSnapshotId: 'snapshot-123',
+          deploymentVersionId: 'deployment-version-old',
+          level: 'info',
+          status: 'running',
+          trigger: 'chat',
+          startedAt,
+          endedAt: null,
+          totalDurationMs: null,
+          executionData: {},
+          createdAt: startedAt,
+        },
+      ])
+
+      await logger.startWorkflowExecution({
+        ...startParams,
+        deploymentVersionId: 'deployment-version-new',
+      })
+
+      expect(dbChainMockFns.set).not.toHaveBeenCalledWith(
+        expect.objectContaining({ deploymentVersionId: expect.any(String) })
+      )
+    })
+
     test('preserves a cancellation that wins the completion update race', async () => {
       const startedAt = new Date('2026-08-03T12:00:00.000Z')
       const createdAt = new Date('2026-08-03T12:00:00.000Z')

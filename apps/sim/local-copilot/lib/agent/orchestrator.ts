@@ -9,12 +9,6 @@ import {
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import {
-  applyModelChunkToThinkingStatus,
-  ThinkingDeltaBatcher,
-  ThinkingLiveStatusAccumulator,
-} from '@/local-copilot/lib/agent/thinking-live-status'
-import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
-import {
   MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
   MAX_FILE_EDIT_CONTINUATION_ROUNDS,
   MAX_FORCED_FOLLOW_UP_ROUNDS,
@@ -42,6 +36,12 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
+import {
+  applyModelChunkToThinkingStatus,
+  ThinkingDeltaBatcher,
+  ThinkingLiveStatusAccumulator,
+} from '@/local-copilot/lib/agent/thinking-live-status'
 import {
   buildStagnationSystemMessage,
   createToolStagnationTracker,
@@ -163,12 +163,12 @@ import {
   shouldAppendWorkflowRunChatResult,
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
   turnHasDebugInspectionTools,
   turnHasFileInspectionTools,
   turnHasFileMutationTools,
   turnHasWorkflowDiscoveryTools,
   turnHasWorkflowMutationTools,
-  type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
 import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
@@ -860,9 +860,7 @@ export async function* runLocalCopilotAgent(
         getToolExecutor,
         budget: specialistBudget,
         ...(params.runId ? { runId: params.runId } : {}),
-        ...(passDomain === 'file' && turnThinkingLevel
-          ? { thinkingLevel: turnThinkingLevel }
-          : {}),
+        ...(passDomain === 'file' && turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       })
 
       let passNext = await pass.next()
@@ -928,8 +926,7 @@ export async function* runLocalCopilotAgent(
   const stagnationTracker = createToolStagnationTracker()
   let stagnationStopMessage: string | null = null
 
-  const needsLiveSearch =
-    intent.primary === 'research' || intent.secondary.includes('research')
+  const needsLiveSearch = intent.primary === 'research' || intent.secondary.includes('research')
 
   for (let round = 0; round < maxToolRounds; round++) {
     if (stagnationStopMessage) break
@@ -1460,9 +1457,7 @@ export async function* runLocalCopilotAgent(
         ? pendingToolCalls.filter((call) => call.name === 'oauth_get_auth_link')
         : pendingToolCalls
     )
-    if (
-      orderedToolCalls.some((call) => isLiveWebSearchToolCall(call.name, call.arguments))
-    ) {
+    if (orderedToolCalls.some((call) => isLiveWebSearchToolCall(call.name, call.arguments))) {
       turnHasLiveWebSearch = true
     }
     if (orderedToolCalls.length === 0) {
@@ -1478,9 +1473,7 @@ export async function* runLocalCopilotAgent(
         ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
         : {}),
       ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
-      ...(roundReasoningContent.trim()
-        ? { reasoningContent: roundReasoningContent }
-        : {}),
+      ...(roundReasoningContent.trim() ? { reasoningContent: roundReasoningContent } : {}),
     })
     assistantText = ''
     const deferredSystemMessages: Array<{ role: 'system'; content: string }> = []
@@ -2580,10 +2573,7 @@ export async function* runLocalCopilotAgent(
   }
 
   // Hard guarantee: file inspection without a write must not settle on empty Thinking….
-  if (
-    turnHasFileInspectionTools(turnToolRecords) &&
-    !turnHasFileMutationTools(turnToolRecords)
-  ) {
+  if (turnHasFileInspectionTools(turnToolRecords) && !turnHasFileMutationTools(turnToolRecords)) {
     const visible = stripIdsFromUserFacingText(
       stripOptionsTagsForDisplay(streamedUserFacingText, false)
     ).trim()

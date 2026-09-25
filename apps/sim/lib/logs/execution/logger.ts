@@ -10,7 +10,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { checkUsageStatus as checkResolvedUsageStatus } from '@/lib/billing/calculations/usage-monitor'
 import {
   type BillingAttributionSnapshot,
@@ -712,15 +712,25 @@ export class ExecutionLogger implements IExecutionLoggerService {
 
     if (existingLog.length > 0) {
       execLog.debug('Execution log already exists, skipping duplicate INSERT (idempotent)')
+      const activeExecution = and(
+        eq(workflowExecutionLogs.executionId, executionId),
+        sql`${workflowExecutionLogs.status} IN ('pending', 'running')`
+      )
       await execDb
         .update(workflowExecutionLogs)
         .set({ executionDeadlineAt: executionDeadlineAt ?? null })
-        .where(
-          and(
-            eq(workflowExecutionLogs.executionId, executionId),
-            sql`${workflowExecutionLogs.status} IN ('pending', 'running')`
-          )
-        )
+        .where(activeExecution)
+      /**
+       * Deployed chat opens the log before the snapshot version is known, so a
+       * later start must record that version. A version already on the row stays
+       * put: internal delegation trusts it as the run's immutable authority.
+       */
+      if (deploymentVersionId && existingLog[0].deploymentVersionId == null) {
+        await execDb
+          .update(workflowExecutionLogs)
+          .set({ deploymentVersionId })
+          .where(and(activeExecution, isNull(workflowExecutionLogs.deploymentVersionId)))
+      }
       const snapshot = await snapshotService.getSnapshot(existingLog[0].stateSnapshotId)
       if (!snapshot) {
         throw new Error(`Snapshot ${existingLog[0].stateSnapshotId} not found for existing log`)
