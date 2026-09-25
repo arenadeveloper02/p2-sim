@@ -93,6 +93,20 @@ export function resolveLocalCopilotThinkingLevel(
 }
 
 /**
+ * Caps thinking for file/office generation turns. Medium/high Claude thinking
+ * often burns minutes eyeballing `Unexpected token` / table syntax instead of
+ * rewriting `edit_content` — keep the tip on, but prefer `low` for file work.
+ */
+export function resolveFileTurnThinkingLevel(
+  configured: string | undefined
+): string | undefined {
+  if (!configured || configured === 'none') return configured
+  const normalized = configured.trim().toLowerCase()
+  if (normalized === 'high' || normalized === 'medium') return 'low'
+  return configured
+}
+
+/**
  * Live engagement status LLM (tool heartbeats only when enabled).
  * Model-wait copy uses provider thinking summaries instead.
  * Off by default — set `COPILOT_ENGAGEMENT_STATUS=true` to re-enable tool engagement.

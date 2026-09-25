@@ -12,6 +12,12 @@ import {
 export const TOOL_STAGNATION_THRESHOLD = 3
 
 /**
+ * Failed office `edit_content` rewrites get a lower bar — syntax retries with
+ * different content still waste minutes when Claude only ruminates in Thinking.
+ */
+export const EDIT_CONTENT_FAILURE_STAGNATION_THRESHOLD = 2
+
+/**
  * Discovery tools get a slightly higher bar so a couple of overlapping
  * lookups during a build don't abort the turn, but identical re-fetches still stop.
  */
@@ -68,7 +74,12 @@ export function createToolStagnationTracker(threshold = TOOL_STAGNATION_THRESHOL
       const fingerprint = fingerprintToolCall(toolName, argsJson, success, result)
       const count = (counts.get(fingerprint) ?? 0) + 1
       counts.set(fingerprint, count)
-      const limit = toolName === 'get_blocks_metadata' ? DISCOVERY_STAGNATION_THRESHOLD : threshold
+      const limit =
+        toolName === 'get_blocks_metadata'
+          ? DISCOVERY_STAGNATION_THRESHOLD
+          : toolName === 'edit_content' && !success
+            ? EDIT_CONTENT_FAILURE_STAGNATION_THRESHOLD
+            : threshold
       if (count < limit) return null
       return {
         toolName,
@@ -119,6 +130,11 @@ function normalizeArgsForStagnation(
     const parsed = JSON.parse(trimmed) as unknown
     if (toolName === 'get_blocks_metadata') {
       return JSON.stringify(blockIdsStagnationShape(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
+    }
+    if (toolName === 'edit_content' && !success) {
+      // Content bodies differ on every rewrite; fingerprint by failure class so
+      // repeated SyntaxError loops still trip stagnation instead of thinking forever.
+      return `edit_content:fail:${outcomeSignature(result)}`
     }
     if (toolName === 'edit_workflow' && shouldCoarseEditWorkflowArgs(success, result)) {
       return JSON.stringify(editWorkflowStagnationShape(parsed)).slice(0, FINGERPRINT_ARGS_MAX)

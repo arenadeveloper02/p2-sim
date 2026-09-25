@@ -11,6 +11,7 @@ import {
   LOAD_COPILOT_ARTIFACT_TOOL_NAME,
   loadArtifactFromRecord,
   loadArtifacts,
+  truncateArtifactBodyForModel,
 } from '@/local-copilot/lib/context/artifacts'
 import { buildGetWorkflowContextResult } from '@/local-copilot/lib/context/context-budget'
 import { reloadLocalCopilotWorkflowContext } from '@/local-copilot/lib/context/reload-workflow-context'
@@ -642,7 +643,11 @@ async function executeLocalCopilotToolInner(
 
       const fromTurn = ctx.artifactStore?.artifacts.get(artifactId)
       if (fromTurn) {
-        return { toolName, success: true, result: fromTurn.body }
+        return {
+          toolName,
+          success: true,
+          result: truncateArtifactBodyForModel(fromTurn.body),
+        }
       }
 
       if (!ctx.chatId) {
@@ -666,9 +671,17 @@ async function executeLocalCopilotToolInner(
             result: { error: `Unknown artifactId: ${artifactId}` },
           }
         }
-        return { toolName, success: true, result: legacy.body }
+        return {
+          toolName,
+          success: true,
+          result: truncateArtifactBodyForModel(legacy.body),
+        }
       }
-      return { toolName, success: true, result: artifact.body }
+      return {
+        toolName,
+        success: true,
+        result: truncateArtifactBodyForModel(artifact.body),
+      }
     }
 
     case 'get_available_blocks': {

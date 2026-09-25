@@ -104,7 +104,10 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
       const { system, anthropicMessages } = convertMessagesToAnthropic(request.messages)
       const model = request.model || config.model
       let maxTokens = request.maxTokens ?? 8192
-      const thinkingRequest = resolveLocalAnthropicThinkingRequest(model, config.thinkingLevel)
+      const thinkingRequest = resolveLocalAnthropicThinkingRequest(
+        model,
+        request.thinkingLevel ?? config.thinkingLevel
+      )
 
       if (thinkingRequest?.maxTokensFloor && maxTokens < thinkingRequest.maxTokensFloor) {
         maxTokens = thinkingRequest.maxTokensFloor
@@ -134,7 +137,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
       if (thinkingRequest) {
         logger.info('Arena Copilot Anthropic thinking enabled', {
           model,
-          thinkingLevel: config.thinkingLevel,
+          thinkingLevel: request.thinkingLevel ?? config.thinkingLevel,
           thinkingType: thinkingRequest.thinking.type,
           maxTokens,
         })

@@ -16,6 +16,7 @@ import {
 import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
 import {
   MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
+  MAX_FILE_EDIT_CONTINUATION_ROUNDS,
   MAX_FORCED_FOLLOW_UP_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
   MAX_POPULATE_EDITS,
@@ -59,6 +60,7 @@ import {
   assertLocalCopilotEnabled,
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
+  resolveFileTurnThinkingLevel,
 } from '@/local-copilot/lib/config'
 import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
@@ -154,6 +156,7 @@ import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool
 import { buildGeneratedApiKeyControl } from '@/local-copilot/lib/security/trusted-controls'
 import {
   buildDebugInspectionChatAppendix,
+  buildFileInspectionChatAppendix,
   buildToolFailureEvidenceLines,
   buildWorkflowRunChatAppendix,
   isWorkflowRunToolName,
@@ -161,6 +164,8 @@ import {
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
   turnHasDebugInspectionTools,
+  turnHasFileInspectionTools,
+  turnHasFileMutationTools,
   turnHasWorkflowDiscoveryTools,
   turnHasWorkflowMutationTools,
   type ToolTurnRecord,
@@ -187,6 +192,7 @@ import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib
 import {
   buildBlocksMetadataReuseSystemMessage,
   buildDebugExplanationContinuationMessage,
+  buildFileEditContinuationMessage,
   buildResearchSearchContinuationMessage,
   buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
@@ -195,6 +201,7 @@ import {
   editResultNeedsFollowUp,
   emptyAssistantTurnFallback,
   isBridgingAssistantNarration,
+  isFileInspectionBridgeNarration,
   isLiveWebSearchToolCall,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
@@ -202,6 +209,7 @@ import {
   resolvePostBuildRoundTools,
   shouldEmitEmptyAssistantFallback,
   shouldForceDebugExplanationContinuation,
+  shouldForceFileEditContinuation,
   shouldForceResearchSearchContinuation,
   shouldForceWorkflowBuildContinuation,
   shouldSynthesizeAssistantSummary,
@@ -552,6 +560,12 @@ export async function* runLocalCopilotAgent(
     : null
 
   const intent = classifyLocalCopilotIntent(params.message)
+  // File/office turns: keep thinking on but cap medium/high → low so Claude
+  // does not spend minutes ruminating on syntax instead of rewriting edit_content.
+  const turnThinkingLevel =
+    intent.primary === 'file' || intent.secondary.includes('file')
+      ? resolveFileTurnThinkingLevel(config.thinkingLevel)
+      : config.thinkingLevel
   const specialistTools = getParentSpecialistToolDefinitions()
   const hybridTools = resolveHybridParentTools({
     allTools,
@@ -846,6 +860,9 @@ export async function* runLocalCopilotAgent(
         getToolExecutor,
         budget: specialistBudget,
         ...(params.runId ? { runId: params.runId } : {}),
+        ...(passDomain === 'file' && turnThinkingLevel
+          ? { thinkingLevel: turnThinkingLevel }
+          : {}),
       })
 
       let passNext = await pass.next()
@@ -903,6 +920,7 @@ export async function* runLocalCopilotAgent(
   let forcedIntentContinuations = 0
   let forcedDebugExplanations = 0
   let forcedWorkflowBuildContinuations = 0
+  let forcedFileEditContinuations = 0
   let forcedResearchSearchContinuations = 0
   let turnHasLiveWebSearch = false
   let turnInputTokens = 0
@@ -1012,6 +1030,7 @@ export async function* runLocalCopilotAgent(
         tools: roundTools,
         maxTokens: maxOutputTokens,
         signal: params.signal,
+        ...(turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
@@ -1371,9 +1390,41 @@ export async function* runLocalCopilotAgent(
           forcedWorkflowBuildContinuations,
           discoveryTools: turnToolRecords
             .filter((record) =>
-              ['get_available_blocks', 'get_blocks_metadata', 'load_copilot_artifact'].includes(
-                record.name
-              )
+              ['get_available_blocks', 'get_blocks_metadata'].includes(record.name)
+            )
+            .map((record) => record.name),
+        })
+        continue
+      }
+
+      const canForceFileEdit = shouldForceFileEditContinuation({
+        postBuildToolMode,
+        forcedFileEditContinuations,
+        maxForcedFileEditContinuations: MAX_FILE_EDIT_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasFileInspectionTools: turnHasFileInspectionTools(turnToolRecords),
+        hasFileMutationTools: turnHasFileMutationTools(turnToolRecords),
+        streamedUserFacingText,
+        roundDisplayText: intentDisplay,
+      })
+
+      if (canForceFileEdit) {
+        forcedFileEditContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildFileEditContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing file-edit continuation', {
+          round,
+          forcedFileEditContinuations,
+          inspectionTools: turnToolRecords
+            .filter((record) =>
+              ['read', 'grep', 'glob', 'load_copilot_artifact'].includes(record.name)
             )
             .map((record) => record.name),
         })
@@ -1458,6 +1509,7 @@ export async function* runLocalCopilotAgent(
         budget: specialistBudget,
         parentDepth: 0,
         turnCost,
+        ...(config.thinkingLevel ? { thinkingLevel: config.thinkingLevel } : {}),
       })
 
       let specialistNext = await specialistRunner.next()
@@ -2391,6 +2443,7 @@ export async function* runLocalCopilotAgent(
         tools,
         maxTokens: maxOutputTokens,
         signal: params.signal,
+        ...(turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
@@ -2517,6 +2570,29 @@ export async function* runLocalCopilotAgent(
         buildDebugInspectionChatAppendix(turnToolRecords) ??
         synthesizeAssistantSummaryFromTools(turnToolRecords) ??
         'I checked the execution logs but could not determine why the run failed. Please share the execution ID or try again.'
+      const safe = stripIdsFromUserFacingText(guaranteed)
+      if (safe && safe !== visible) {
+        assistantText = safe
+        streamedUserFacingText = safe
+        yield { type: 'text_delta', content: safe }
+      }
+    }
+  }
+
+  // Hard guarantee: file inspection without a write must not settle on empty Thinking….
+  if (
+    turnHasFileInspectionTools(turnToolRecords) &&
+    !turnHasFileMutationTools(turnToolRecords)
+  ) {
+    const visible = stripIdsFromUserFacingText(
+      stripOptionsTagsForDisplay(streamedUserFacingText, false)
+    ).trim()
+    const looksEmpty = !visible || isFileInspectionBridgeNarration(visible)
+    if (looksEmpty) {
+      const guaranteed =
+        buildFileInspectionChatAppendix(turnToolRecords) ??
+        synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        'I inspected the file but did not finish applying the fix. Please try again.'
       const safe = stripIdsFromUserFacingText(guaranteed)
       if (safe && safe !== visible) {
         assistantText = safe

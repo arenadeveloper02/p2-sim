@@ -15,6 +15,7 @@ import {
   type SpecialistPassResult,
 } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { resolveSpecialistBrief } from '@/local-copilot/lib/agent/specialists/specialist-tools'
+import { resolveFileTurnThinkingLevel } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 import { buildSpecialistExecutionBatches } from '@/local-copilot/lib/writes/specialist-scheduling'
@@ -113,6 +114,10 @@ export async function* runParentSpecialistToolCalls(
       }
 
       try {
+        const fileThinking =
+          call.name === 'file'
+            ? resolveFileTurnThinkingLevel(params.thinkingLevel)
+            : params.thinkingLevel
         const result = await executeSpecialistLoop({
           ...params,
           domain: call.name,
@@ -120,6 +125,7 @@ export async function* runParentSpecialistToolCalls(
           parentDepth,
           onEvent: enqueue,
           parentDispatchToolCallId: call.id,
+          ...(fileThinking ? { thinkingLevel: fileThinking } : {}),
         })
         remaining -= 1
         wake?.()

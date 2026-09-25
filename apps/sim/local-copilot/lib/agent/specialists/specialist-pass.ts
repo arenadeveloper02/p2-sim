@@ -110,6 +110,8 @@ export interface RunSpecialistPassParams {
    * `waitForLocalToolConfirmation` finishes — the user never gets a chance to Approve.
    */
   onEvent?: (event: LocalCopilotStreamEvent) => void | Promise<void>
+  /** Optional thinking-level override (file passes use a capped level). */
+  thinkingLevel?: string
 }
 
 export interface SpecialistPassResult {
@@ -302,6 +304,7 @@ export async function executeSpecialistLoop(
           tools,
           maxTokens: resolveLocalCopilotMaxOutputTokens(params.model),
           signal,
+          ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}),
         })) {
           if (chunk.type === 'text' && chunk.content) assistantText += chunk.content
           if (chunk.type === 'thinking' && chunk.content) {

@@ -4,14 +4,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDebugInspectionChatAppendix,
+  buildFileInspectionChatAppendix,
   formatDebugInspectionChatResult,
   synthesizeAssistantSummaryFromTools,
   turnHasDebugInspectionTools,
+  turnHasFileInspectionTools,
+  turnHasWorkflowDiscoveryTools,
   type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import {
+  isFileInspectionBridgeNarration,
   isLiveWebSearchToolCall,
   shouldForceDebugExplanationContinuation,
+  shouldForceFileEditContinuation,
   shouldForceResearchSearchContinuation,
   shouldForceWorkflowBuildContinuation,
 } from '@/local-copilot/lib/user-facing-text'
@@ -237,6 +242,74 @@ describe('shouldForceWorkflowBuildContinuation', () => {
         roundDisplayText: '',
       })
     ).toBe(false)
+  })
+})
+
+describe('file inspection continuation', () => {
+  it('treats multi-sentence let-me-grep narration as a bridge', () => {
+    expect(
+      isFileInspectionBridgeNarration(
+        'The markup is fine. Now I need to see the toggle JavaScript — that is almost certainly where the binding fails. Let me grep the script portion narrowly.'
+      )
+    ).toBe(true)
+  })
+
+  it('does not treat a completed-fix claim as a bridge', () => {
+    expect(
+      isFileInspectionBridgeNarration('I fixed the Dark toggle by patching the click handler.')
+    ).toBe(false)
+  })
+
+  it('forces a continuation after read/grep/artifact with no file write', () => {
+    expect(
+      shouldForceFileEditContinuation({
+        postBuildToolMode: 'all',
+        forcedFileEditContinuations: 0,
+        maxForcedFileEditContinuations: 1,
+        round: 2,
+        maxToolRounds: 10,
+        hasFileInspectionTools: true,
+        hasFileMutationTools: false,
+        streamedUserFacingText:
+          'The markup is fine. Now I need to see the toggle JavaScript. Let me grep the script portion narrowly.',
+        roundDisplayText: '',
+      })
+    ).toBe(true)
+  })
+
+  it('does not force after workspace_file / edit_content already ran', () => {
+    expect(
+      shouldForceFileEditContinuation({
+        postBuildToolMode: 'all',
+        forcedFileEditContinuations: 0,
+        maxForcedFileEditContinuations: 1,
+        round: 2,
+        maxToolRounds: 10,
+        hasFileInspectionTools: true,
+        hasFileMutationTools: true,
+        streamedUserFacingText: '',
+        roundDisplayText: '',
+      })
+    ).toBe(false)
+  })
+
+  it('load_copilot_artifact alone is file inspection, not workflow discovery', () => {
+    const records: ToolTurnRecord[] = [
+      { name: 'read', success: true, result: {} },
+      { name: 'load_copilot_artifact', success: true, result: { content: '<html></html>' } },
+    ]
+    expect(turnHasFileInspectionTools(records)).toBe(true)
+    expect(turnHasWorkflowDiscoveryTools(records)).toBe(false)
+  })
+
+  it('synthesizes a closing note when only file inspection ran', () => {
+    expect(
+      buildFileInspectionChatAppendix([
+        { name: 'read', success: true, result: {} },
+        { name: 'grep', success: true, result: {} },
+        { name: 'load_copilot_artifact', success: true, result: {} },
+      ])
+    ).toMatch(/did not finish applying the fix/i)
   })
 })
 

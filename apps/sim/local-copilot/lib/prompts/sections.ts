@@ -1,4 +1,5 @@
 import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
+import { LOCAL_COMPLEX_HTML_GUIDANCE } from '@/local-copilot/lib/prompts/complex-html-guidance'
 import { MAX_POPULATE_EDITS } from '@/local-copilot/lib/agent/limits'
 import type { LocalCopilotCloudSpecialistDomain } from '@/local-copilot/lib/agent/specialists/domains'
 
@@ -203,7 +204,7 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
     /** One-off actions and the always-on live web search mandate. */
     content: `- Direct one-off actions (no workflow required):
   - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
-  - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
+  - Image / PNG / JPEG (CRITICAL): always call \`generate_image\` with \`prompt\` and \`outputs.files\` (e.g. \`files/diagram.png\`). Saying "PNG format" does **not** change the tool — still \`generate_image\`, never \`create_file\` / \`edit_content\` with base64 (that used to leave a .png full of text).
   - For variations, pass the user's exact wording in \`prompt\` (e.g. "3 variations of a red bus") — do not strip counts or the word "variations".
   - Live web / current data (CRITICAL — search BEFORE answering, never from training knowledge):
     - ANY real-world factual question (who/what/when/where about people, offices, companies, events, prices, weather, news, "current"/"today"/"latest") MUST call a search tool as the FIRST action before answering.
@@ -306,9 +307,9 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
   - When the user asks to create a new table, knowledge base, or file, call the matching create operation.
   - Chat uploads under \`uploads/\` are not sandbox-mounted — call \`materialize_file\` into \`files/...\` (or reuse an existing \`files/...\` path) before \`function_execute\`.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
-  - Create files: \`create_file_folder\` when needed, then \`create_file\` once with \`content\` for markdown/text/json/csv/html. Never call \`create_file\` twice for the same path, and never follow it with \`workspace_file\` kind=new_file or operation=create. Never echo that body in chat.
+  - Create files: \`create_file_folder\` when needed, then \`create_file\` once with \`content\` for markdown/text/json/csv/html. HTML must stay lean/modular (no mega SVG path dumps; split CSS/JS for complex UIs). Never call \`create_file\` twice for the same path, and never follow it with \`workspace_file\` kind=new_file or operation=create. Never echo that body in chat.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
-  - Read or update existing files: \`read\` the exact \`files/.../content\` path first. Targeted edits (title, heading, one string): \`workspace_file\` operation=patch with search_replace, then \`edit_content\` with only the replacement. Full rewrite: \`workspace_file\` update then \`edit_content\` starting from the read result — never parallel with workspace_file.
+  - Read or update existing files: \`read\` the exact \`files/.../content\` path first (complex HTML may truncate mega lines — use grep + patch). Targeted edits (title, heading, one string): \`workspace_file\` operation=patch with search_replace, then \`edit_content\` with only the replacement. Full rewrite only for lean files the user asked to rebuild — never full-rewrite Arena/Figma megabyte HTML.
   - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.`,
   },
   {
@@ -340,7 +341,9 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
     3. Then \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
     4. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries). Prefer \`addSection\` for DOCX — never \`docx.addSection\`. Never same batch as \`workspace_file\`.
     ${DOCUMENT_FORMAT_GUIDANCE}
+    ${LOCAL_COMPLEX_HTML_GUIDANCE}
     - These formats compile via the built-in JS sandbox (isolated-vm) even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
+    - If \`edit_content\` fails with a SyntaxError / Unexpected token / parse error: do **not** eyeball-debug in Thinking. Immediately call \`edit_content\` again with a clean full rewrite of the office JS (simpler tables, fewer nested expressions). One rewrite beat ten diagnosis paragraphs.
     - If \`edit_content\` fails with a system/sandbox crash (e.g. "Code execution failed unexpectedly" / isolated-vm / Node version), that is a host Node/isolated-vm issue — not missing deck code and not \`docSandboxEnabled\`. Tell the user to use Node 20–22 and rebuild isolated-vm; do not loop minimal PPTX/DOCX probes.
     - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.`,

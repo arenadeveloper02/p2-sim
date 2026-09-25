@@ -61,7 +61,10 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
     async *chatCompletionStream(request: ChatCompletionRequest) {
       const url = `${baseUrl}/chat/completions`
       const model = request.model || config.model
-      const thinkingBody = resolveOpenAiCompatibleThinkingBody(model, config.thinkingLevel)
+      const thinkingBody = resolveOpenAiCompatibleThinkingBody(
+        model,
+        request.thinkingLevel ?? config.thinkingLevel
+      )
 
       const body: Record<string, unknown> = {
         model,
@@ -116,7 +119,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
         // proxies usually mirror that constraint.
         logger.info('Arena Copilot OpenAI-compatible thinking enabled', {
           model,
-          thinkingLevel: config.thinkingLevel,
+          thinkingLevel: request.thinkingLevel ?? config.thinkingLevel,
           thinkingType: thinkingBody.thinking.type,
         })
       } else {

@@ -2,6 +2,7 @@ import { truncate } from '@sim/utils/string'
 import { FILE_BODY_ARG_KEYS, firstFileBodyString } from '@/local-copilot/lib/tools/file-body-args'
 
 const OFFICE_FILE_EXTENSION = /\.(pptx|docx|pdf)$/i
+const BINARY_IMAGE_FILE_EXTENSION = /\.(png|jpe?g|gif|webp)$/i
 
 /**
  * Parses a JSON object string once when models stringify nested tool args.
@@ -145,6 +146,19 @@ export function enrichCreateFileArgs(args: Record<string, unknown>): void {
       nested.content = undefined
     }
   }
+}
+
+/**
+ * Local Copilot guard: never let create_file store PNG/JPEG base64 as UTF-8 text.
+ * Prefer generate_image — keeps the shared create_file tool unchanged.
+ */
+export function rejectCreateFileImageAsText(args: Record<string, unknown>): string | null {
+  const path = resolveCreateFilePath(args)
+  if (!path || !BINARY_IMAGE_FILE_EXTENSION.test(path)) return null
+  return (
+    `create_file cannot write "${path}" as text/base64. ` +
+    'Call generate_image with prompt and outputs.files (e.g. files/diagram.png) so the image is saved as binary.'
+  )
 }
 
 /**

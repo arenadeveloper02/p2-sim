@@ -352,6 +352,63 @@ export function buildWorkflowBuildContinuationMessage(): string {
 }
 
 /**
+ * True when prose only narrates inspecting a file (read/grep/see) without
+ * claiming a completed fix — including multi-sentence bridges that exceed the
+ * short {@link isBridgingAssistantNarration} length cap.
+ */
+export function isFileInspectionBridgeNarration(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return true
+  if (isBridgingAssistantNarration(normalized)) return true
+  if (/\b(fixed|patched|updated the|applied the|search[_ ]replace)\b/i.test(normalized)) {
+    return false
+  }
+  return /\b(let me (see|read|grep|check|inspect|look)|need to see|looking at|grepping|inspect(?:ing|ion)|narrowly)\b/i.test(
+    normalized
+  )
+}
+
+/**
+ * System nudge when file inspection finished but workspace_file / edit_content never ran.
+ */
+export function buildFileEditContinuationMessage(): string {
+  return (
+    '[System] You already read/grepped the workspace file (and maybe load_copilot_artifact) ' +
+    'but have not applied the fix. Call workspace_file (patch/update) then edit_content NOW with the ' +
+    'corrected code. Do not dump HTML/JS into chat. Do not stop on Thinking after inspection tools.'
+  )
+}
+
+/**
+ * True when file inspection ran without a write and the model stopped with no
+ * real reply — force another round so toggle/HTML fixes do not stall on Thinking….
+ */
+export function shouldForceFileEditContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  forcedFileEditContinuations: number
+  maxForcedFileEditContinuations: number
+  round: number
+  maxToolRounds: number
+  hasFileInspectionTools: boolean
+  hasFileMutationTools: boolean
+  streamedUserFacingText: string
+  roundDisplayText: string
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.hasFileInspectionTools || options.hasFileMutationTools) return false
+  if (options.forcedFileEditContinuations >= options.maxForcedFileEditContinuations) return false
+  if (options.round >= options.maxToolRounds - 1) return false
+
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (streamed && !isFileInspectionBridgeNarration(streamed)) return false
+
+  const roundDisplay = stripOptionsTagsForDisplay(options.roundDisplayText, false).trim()
+  if (roundDisplay && !isFileInspectionBridgeNarration(roundDisplay)) return false
+
+  return true
+}
+
+/**
  * True when debug tools ran and the turn would otherwise settle with no real reply.
  */
 export function shouldForceDebugExplanationContinuation(options: {

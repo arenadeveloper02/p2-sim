@@ -73,6 +73,12 @@ export interface ChatCompletionRequest {
   temperature?: number
   maxTokens?: number
   signal?: AbortSignal
+  /**
+   * Optional per-request override of {@link LocalCopilotConfig.thinkingLevel}.
+   * File/office turns cap deep thinking so Claude does not burn minutes
+   * ruminating on `Unexpected token` instead of rewriting `edit_content`.
+   */
+  thinkingLevel?: string
 }
 
 export interface TokenUsage {

@@ -533,7 +533,7 @@ export async function* streamGoogleGenAiChatCompletion(params: {
   const { systemInstruction, contents } = convertMessagesToGemini(request.messages)
   const functionDeclarations = toGeminiFunctionDeclarations(request.tools)
   const hasTools = Boolean(functionDeclarations?.length)
-  const thinkingLevel = config.thinkingLevel?.trim().toLowerCase()
+  const thinkingLevel = (request.thinkingLevel ?? config.thinkingLevel)?.trim().toLowerCase()
 
   const historyThoughtParts = contents.reduce((sum, content) => {
     if (content.role !== 'model') return sum

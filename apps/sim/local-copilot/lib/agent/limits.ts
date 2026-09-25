@@ -25,6 +25,12 @@ export const MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS = 1
 export const MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS = 2
 
 /**
+ * After read / grep / load_copilot_artifact without a file write, force one more
+ * round so HTML/toggle fixes do not settle on tool rows + empty "Thinking…".
+ */
+export const MAX_FILE_EDIT_CONTINUATION_ROUNDS = 1
+
+/**
  * When research/factual intent ends with no live web search tool call, force
  * one more round so Claude/Gemini cannot settle on a memory-only answer.
  */

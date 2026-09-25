@@ -73,7 +73,28 @@ const DEBUG_INSPECTION_TOOL_NAMES = new Set([
 const WORKFLOW_DISCOVERY_TOOL_NAMES = new Set([
   'get_available_blocks',
   'get_blocks_metadata',
+])
+
+/**
+ * File inspection tools. `load_copilot_artifact` belongs here (not workflow
+ * discovery) — HTML reads are offloaded and reloaded via artifact, which must
+ * not trigger a create_workflow nudge.
+ */
+const FILE_INSPECTION_TOOL_NAMES = new Set([
+  'read',
+  'grep',
+  'glob',
   'load_copilot_artifact',
+])
+
+const FILE_MUTATION_TOOL_NAMES = new Set([
+  'create_file',
+  'create_file_folder',
+  'workspace_file',
+  'edit_content',
+  'delete_file',
+  'rename_file',
+  'move_file',
 ])
 
 const WORKFLOW_MUTATION_TOOL_NAMES = new Set(['create_workflow', 'edit_workflow'])
@@ -89,7 +110,7 @@ export function isWorkflowRunToolName(name: string): boolean {
 }
 
 /**
- * True when this turn ran block-discovery tools (catalog / metadata / artifact).
+ * True when this turn ran block-discovery tools (catalog / metadata).
  */
 export function turnHasWorkflowDiscoveryTools(records: ToolTurnRecord[]): boolean {
   return records.some((record) => WORKFLOW_DISCOVERY_TOOL_NAMES.has(record.name))
@@ -118,6 +139,38 @@ export function isDebugInspectionToolName(name: string): boolean {
 export function turnHasDebugInspectionTools(records: ToolTurnRecord[]): boolean {
   return records.some(
     (record) => isDebugInspectionToolName(record.name) || record.name === 'run'
+  )
+}
+
+/**
+ * True when this turn inspected workspace files (read/grep/artifact) without writing.
+ */
+export function turnHasFileInspectionTools(records: ToolTurnRecord[]): boolean {
+  return records.some((record) => FILE_INSPECTION_TOOL_NAMES.has(record.name))
+}
+
+/**
+ * True when this turn successfully mutated a workspace file.
+ */
+export function turnHasFileMutationTools(records: ToolTurnRecord[]): boolean {
+  return records.some(
+    (record) => FILE_MUTATION_TOOL_NAMES.has(record.name) && record.success
+  )
+}
+
+/**
+ * Closing prose when file inspection finished without an edit or reply.
+ */
+export function buildFileInspectionChatAppendix(records: ToolTurnRecord[]): string | null {
+  if (!turnHasFileInspectionTools(records) || turnHasFileMutationTools(records)) return null
+  const inspected = records
+    .filter((record) => FILE_INSPECTION_TOOL_NAMES.has(record.name))
+    .map((record) => record.name.replace(/_/g, ' '))
+  const unique = [...new Set(inspected)]
+  if (unique.length === 0) return null
+  return (
+    `I inspected the file (${unique.join(', ')}) but did not finish applying the fix. ` +
+    'Please try again — I should call workspace_file / edit_content with the corrected binding.'
   )
 }
 
@@ -644,6 +697,10 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
       'I looked up the available blocks, but did not finish creating the workflow. ' +
       'Please try again (or switch models if Vertex quota is exhausted).'
     )
+  }
+
+  if (parts.length === 0 && turnHasFileInspectionTools(records) && !turnHasFileMutationTools(records)) {
+    return buildFileInspectionChatAppendix(records)
   }
 
   const summary = parts
