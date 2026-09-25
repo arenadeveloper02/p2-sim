@@ -47,7 +47,7 @@ export const knowledgeSearchTool: InternalToolConfig<any, KnowledgeSearchRespons
       required: false,
       visibility: 'user-only',
       description:
-        "Retrieval mode: 'hybrid' fuses a full-text leg with semantic similarity, 'vector' uses semantic similarity only; omit for the workspace's default",
+        "Retrieval mode: 'vector' (default) uses semantic similarity only, 'hybrid' also runs a full-text leg and fuses both",
     },
     rerank: {
       type: 'object',
@@ -148,9 +148,9 @@ export const knowledgeSearchTool: InternalToolConfig<any, KnowledgeSearchRespons
         query: params.query,
         topK: params.topK ? Math.max(1, Math.min(100, Number(params.topK))) : 10,
         ...(structuredFilters.length > 0 && { tagFilters: structuredFilters }),
-        ...((params.searchMode === 'hybrid' || params.searchMode === 'vector') && {
-          searchMode: params.searchMode,
-        }),
+        ...(params.searchMode === 'hybrid'
+          ? { searchMode: 'hybrid' as const }
+          : { searchMode: 'vector' as const }),
         ...(rerankerEnabled && {
           rerankerEnabled: true,
           rerankerModel,

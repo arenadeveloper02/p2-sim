@@ -847,15 +847,32 @@ describe('live repository authorization follows ranked candidates', () => {
     )
   })
 
-  it('finishes empty scopes after the bounded probe without scanning HNSW or calling providers', async () => {
+  it('ranks original embeddings when the search projection probe is empty', async () => {
     probePages.push([])
-    expect(await handleVectorOnlySearch({ ...params, structuredFilters: undefined })).toEqual([])
-    expect(dbChainMockFns.select).not.toHaveBeenCalled()
+    queueTableRows(schemaMock.embedding, [
+      {
+        id: 'stored',
+        documentId: 'doc-stored',
+        connectorId: null,
+        liveAuthorizationSource: false,
+        distance: 0.2,
+      },
+    ])
+    queueTableRows(schemaMock.embedding, [
+      { id: 'stored', content: 'Indexed before the search projection', distance: 0.2 },
+    ])
+
+    expect(await handleVectorOnlySearch({ ...params, structuredFilters: undefined })).toEqual([
+      { id: 'stored', content: 'Indexed before the search projection', distance: 0.2 },
+    ])
+
     const probe = render(dbChainMockFns.execute.mock.calls[0][0])
     expect(probe.sql).toContain('CROSS JOIN LATERAL')
     expect(probe.params.filter((value) => value === 400)).toHaveLength(2)
-    expect(dbChainMockFns.orderBy).not.toHaveBeenCalled()
-    expect(getForConnectors).not.toHaveBeenCalled()
+    expect(
+      dbChainMockFns.execute.mock.calls.some(([query]) => render(query).sql.includes('AS visible'))
+    ).toBe(false)
+    expect(dbChainMockFns.orderBy).toHaveBeenCalled()
   })
 
   it('reads vectors only for the bounded IDs when a broad scope has few candidates', async () => {

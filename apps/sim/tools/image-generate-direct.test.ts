@@ -163,7 +163,12 @@ describe('image_generate direct execution', () => {
         model: 'gpt-image-2',
         prompt: 'Edit this image',
       }),
-      { userId: 'user-123' }
+      {
+        userId: 'user-123',
+        workspaceId: 'workspace-123',
+        workflowId: 'workflow-123',
+        executionId: 'execution-123',
+      }
     )
     expect(mockRunImageGenerationWrapper).not.toHaveBeenCalled()
     expect(result.output).toMatchObject({

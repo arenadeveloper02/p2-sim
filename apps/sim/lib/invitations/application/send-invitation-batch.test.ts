@@ -52,10 +52,17 @@ const invitation = {
   membershipIntent: 'internal',
 }
 
+function queueInviterAndInvitees(inviteeCount = 2) {
+  queueTableRows(user, [{ name: 'Current Admin', email: 'admin@example.com' }])
+  for (let index = 0; index < inviteeCount; index++) {
+    queueTableRows(user, [{ id: `invitee-${index + 1}` }])
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   resetDbChainMock()
-  queueTableRows(user, [{ name: 'Current Admin', email: 'admin@example.com' }])
+  queueInviterAndInvitees()
   mocks.orgContext.mockImplementation(async (context) => context)
   mocks.workspaceContext.mockResolvedValue({
     targets: [{ workspaceId: 'workspace' }],
@@ -170,6 +177,28 @@ describe('invitation batch application boundary', () => {
       },
     ])
     expect(mocks.orgSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses workspace invites when the invitee has no account', async () => {
+    resetDbChainMock()
+    queueTableRows(user, [{ name: 'Current Admin', email: 'admin@example.com' }])
+    queueTableRows(user, [])
+    const result = await sendInvitationBatch.execute({
+      principal,
+      input: { ...orgInput, workspaceIds: ['workspace'] },
+    })
+    expect(result).toMatchObject({
+      success: false,
+      successful: [],
+      failed: [
+        {
+          email: 'person@example.com',
+          error:
+            'User with email person@example.com does not exist. Please ensure the user has an account before inviting them.',
+        },
+      ],
+    })
+    expect(mocks.workspaceSend).not.toHaveBeenCalled()
   })
 
   it('reports directory-managed refusals and continues the workspace invitation batch', async () => {

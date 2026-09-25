@@ -1,4 +1,5 @@
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
+import { knowledgeExecutorContext } from '@/lib/internal/knowledge/executor-context'
 import { createExecutorPrincipalFromExecutionContext } from '@/lib/internal/principals/executor'
 import type { InternalToolOperationContext } from '@/lib/internal/tool-operations/types'
 import { KNOWLEDGE_DELEGATION_AUDIENCE } from '@/lib/knowledge/application/authorization'
@@ -32,7 +33,7 @@ export async function searchKnowledgeAsExecutor({
 }: SearchKnowledgeAsExecutorInput) {
   signal?.throwIfAborted()
   const principal = await createExecutorPrincipalFromExecutionContext({
-    context,
+    context: knowledgeExecutorContext(context),
     audience: KNOWLEDGE_DELEGATION_AUDIENCE,
   })
   const resultSecretRegistry = resolvedSecretTraceRegistry.forkForInputPaths(modelInputPaths)

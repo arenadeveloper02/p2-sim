@@ -102,7 +102,7 @@ describe('Knowledge Tools', () => {
   })
 
   it('maps nested rerank config onto the search contract fields', () => {
-    const body = knowledgeSearchTool.request.body?.({
+    const body = knowledgeSearchTool.operation.input({
       knowledgeBaseId: 'kb-1',
       query: 'find chunks',
       topK: 8,
@@ -120,6 +120,24 @@ describe('Knowledge Tools', () => {
     expect(body.rerankerModel).toBe('rerank-v4.0-fast')
     expect(body.rerankerInputCount).toBe(32)
     expect(body.rerank).toBeUndefined()
+    expect(body).toMatchObject({ searchMode: 'vector' })
+  })
+
+  it('keeps an explicit hybrid search and treats automatic as vector', () => {
+    expect(
+      knowledgeSearchTool.operation.input({
+        knowledgeBaseId: 'kb-1',
+        query: 'find chunks',
+        searchMode: 'hybrid',
+      })
+    ).toMatchObject({ searchMode: 'hybrid' })
+    expect(
+      knowledgeSearchTool.operation.input({
+        knowledgeBaseId: 'kb-1',
+        query: 'find chunks',
+        searchMode: 'auto',
+      })
+    ).toMatchObject({ searchMode: 'vector' })
   })
 
   it('keeps persisted request values raw while provenance travels out of band', () => {

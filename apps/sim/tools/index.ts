@@ -205,7 +205,9 @@ async function executeImageGenerateDirect(params: Record<string, any>): Promise<
       '@/lib/image-generation/run-image-tool.server'
     )
 
-    const context = params._context as { userId?: string } | undefined
+    const context = params._context as
+      | { userId?: string; workspaceId?: string; workflowId?: string; executionId?: string }
+      | undefined
     const userId =
       context?.userId ??
       (typeof params.userId === 'string' ? params.userId : undefined) ??
@@ -221,7 +223,21 @@ async function executeImageGenerateDirect(params: Record<string, any>): Promise<
 
     try {
       const body = buildImageToolBodyFromExecutionParams(params as Record<string, unknown>)
-      const output = await runImageToolGeneration(body, { userId })
+      const workspaceId =
+        context?.workspaceId ??
+        (typeof params.workspaceId === 'string' ? params.workspaceId : undefined)
+      const workflowId =
+        context?.workflowId ??
+        (typeof params.workflowId === 'string' ? params.workflowId : undefined)
+      const executionId =
+        context?.executionId ??
+        (typeof params.executionId === 'string' ? params.executionId : undefined)
+      const output = await runImageToolGeneration(body, {
+        userId,
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(workflowId ? { workflowId } : {}),
+        ...(executionId ? { executionId } : {}),
+      })
       return {
         success: true,
         output: { ...output },
@@ -2498,7 +2514,15 @@ async function executeToolImplementation(
     }
 
     let inProcessResult: ToolResponse | undefined
-    if (isInternalToolConfig(tool)) {
+    /**
+     * Image Generator (and Fusion via Nano Banana routing) must keep the
+     * version-6-main wrapper: provider routing, reference-image branching, and
+     * file outputs. The internal tool path would skip that and generate directly.
+     */
+    if (normalizedToolId === 'image_generate') {
+      logger.info(`[${requestId}] Using directExecution for ${toolId}`)
+      inProcessResult = await executeImageGenerateDirect(contextParams)
+    } else if (isInternalToolConfig(tool)) {
       inProcessResult = await executeDeclaredInternalOperation({
         toolId: normalizedToolId,
         tool,

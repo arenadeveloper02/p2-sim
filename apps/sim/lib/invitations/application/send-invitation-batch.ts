@@ -1,8 +1,10 @@
 import { db } from '@sim/db'
-import { user } from '@sim/db/schema'
+import { foldedEmail, permissions, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { normalizeEmail } from '@sim/utils/string'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
+import { getUserOrganization } from '@/lib/billing/organizations/membership'
+import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 import {
   assertOperationPrincipal,
   defineOperation,
@@ -127,6 +129,71 @@ export const sendInvitationBatch: OperationUseCase<
         continue
       }
       seenEmails.add(normalizedEmail)
+      /**
+       * Workspace teammate invites match version-6-main: the invitee must already
+       * have an account. Emails still go out only after that check, so a missing
+       * user is reported instead of creating a pending invite that cannot be accepted.
+       */
+      const [existingUser] = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(eq(foldedEmail(user.email), normalizedEmail))
+        .limit(1)
+      if (!existingUser?.id) {
+        result.failed.push({
+          email: normalizedEmail,
+          error: `User with email ${normalizedEmail} does not exist. Please ensure the user has an account before inviting them.`,
+        })
+        continue
+      }
+      if (workspaceContext) {
+        const workspaceIds = workspaceContext.targets.map((target) => target.workspaceId)
+        const existingPermissionRows = await db
+          .select({ workspaceId: permissions.entityId })
+          .from(permissions)
+          .where(
+            and(
+              inArray(permissions.entityId, workspaceIds),
+              eq(permissions.entityType, 'workspace'),
+              eq(permissions.userId, existingUser.id)
+            )
+          )
+        if (existingPermissionRows.length === workspaceIds.length) {
+          result.failed.push({
+            email: normalizedEmail,
+            error:
+              workspaceIds.length === 1
+                ? `${normalizedEmail} already has access to this workspace`
+                : `${normalizedEmail} already has access to every selected workspace`,
+          })
+          continue
+        }
+        const invitePolicy = workspaceContext.targets[0]?.invitePolicy
+        if (invitePolicy?.requiresSeat && invitePolicy.organizationId) {
+          const existingMembership = await getUserOrganization(existingUser.id)
+          if (
+            existingMembership &&
+            existingMembership.organizationId !== invitePolicy.organizationId
+          ) {
+            result.failed.push({
+              email: normalizedEmail,
+              error:
+                'This user is already a member of another organization. They must leave it before joining this workspace.',
+            })
+            continue
+          }
+          if (!existingMembership) {
+            const seatValidation = await validateSeatAvailability(invitePolicy.organizationId, 1)
+            if (!seatValidation.canInvite) {
+              result.failed.push({
+                email: normalizedEmail,
+                error: seatValidation.reason || 'No available seats for this organization.',
+              })
+              continue
+            }
+          }
+        }
+      }
       try {
         const invitation = organizationContext
           ? await createOrganizationInvitation({

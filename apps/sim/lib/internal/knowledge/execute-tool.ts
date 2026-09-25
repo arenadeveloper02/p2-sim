@@ -20,6 +20,7 @@ import {
 } from '@/lib/api/contracts/knowledge'
 import type { JsonErrorResponseDescriptor } from '@/lib/api/server/routes/types'
 import { getValidationErrorMessage, isZodError } from '@/lib/api/server/validation'
+import { knowledgeExecutorContext } from '@/lib/internal/knowledge/executor-context'
 import {
   createChunkOperation,
   createDocumentsOperation,
@@ -140,7 +141,7 @@ export const executeKnowledgeTool: InternalToolOperationHandler = async (request
     let principal
     try {
       principal = await createExecutorPrincipalFromExecutionContext({
-        context: request.context,
+        context: knowledgeExecutorContext(request.context),
         audience: KNOWLEDGE_DELEGATION_AUDIENCE,
       })
     } catch (error) {

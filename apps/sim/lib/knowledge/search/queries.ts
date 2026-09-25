@@ -891,7 +891,12 @@ async function selectVectorResults(params: SearchParams): Promise<SearchResult[]
           LIMIT ${candidateLimit}
         `)
       )
-      if (probe.length === 0) return { candidates: [], nextOffset: offset }
+      /**
+       * The compact projection is filled by a script backfill. A knowledge base
+       * indexed before that still has vectors only on `embedding`, so an empty
+       * probe ranks those rows instead of returning nothing.
+       */
+      if (probe.length === 0) return exactPage()
       if (probe.length < candidateLimit) {
         return exactPage(probe.map((candidate) => candidate.id))
       }
@@ -938,7 +943,11 @@ async function selectVectorResults(params: SearchParams): Promise<SearchResult[]
         vectorCandidateCount: identities.length,
         vectorCandidateScan: identities.length < candidateLimit ? 'underfilled' : 'planned',
       })
-      if (!identities.length) return { candidates: [], nextOffset: offset }
+      /**
+       * A projection row with no stored search vector cannot rank. Score the
+       * probe ids against the original embedding column instead.
+       */
+      if (!identities.length) return exactPage(probe.map((candidate) => candidate.id))
       /** Score each bounded candidate once; sorting the materialized scalar cannot invoke HNSW again. */
       const page = await runSearchQuery(params.budget, 'vector.rerank', (executor) =>
         executor.execute<SearchReadCandidate & { distance: number }>(sql`
