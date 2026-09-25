@@ -9,7 +9,7 @@ import {
   useState,
 } from 'react'
 import { cn } from '@sim/emcn'
-import { truncate } from '@sim/utils/string'
+import { ConversationTimelinePopover } from '@/components/conversation-timeline/conversation-timeline-popover'
 
 /**
  * Visibility gate: the timeline stays hidden until the conversation has more
@@ -31,6 +31,9 @@ const MAX_TIMELINE_MARKERS = 36
  */
 export const CONVERSATION_TIMELINE_GUTTER_CLASS = 'pr-11' as const
 
+/** Delay before closing the prompt popover when the pointer leaves the rail. */
+const POPOVER_CLOSE_DELAY_MS = 120
+
 /**
  * Minimal message shape shared by arena deployed chat (`type`) and mothership
  * copilot chat (`role`). Either field is enough — surfaces pass their native
@@ -51,7 +54,7 @@ interface TimelineMarker {
   id: string
   /** 1-based index among rendered markers (used for aria labels). */
   index: number
-  /** Truncated user-message preview shown in the hover tooltip. */
+  /** Truncated user-message preview shown in the hover popover. */
   label: string
 }
 
@@ -66,10 +69,10 @@ interface ConversationTimelineProps {
   onJumpToMessage: (messageId: string) => void
 }
 
-/** Build a short tooltip label from message content. */
+/** Normalize prompt text for popover rows; CSS truncate handles the ellipsis. */
 function previewLabel(content: ConversationTimelineMessage['content']): string {
   if (typeof content === 'string') {
-    return truncate(content.trim().replace(/\s+/g, ' '), 72)
+    return content.trim().replace(/\s+/g, ' ')
   }
   return 'Message'
 }
@@ -168,16 +171,13 @@ function findActiveMarkerId(
  * ChatGPT-style conversation timeline: a compact vertical stack of short
  * horizontal ticks on the right edge of the chat viewport.
  *
+ * Hovering the rail opens a prompt-list popover (see
+ * {@link ConversationTimelinePopover}) so users can scan and jump to earlier
+ * turns without scrolling.
+ *
  * Used by:
  * - Arena deployed chat (`/chat/…`)
  * - Mothership / copilot chat (`MothershipChat`)
- *
- * Design constraints (deliberate):
- * - No track rail and no scrollbar-style thumb
- * - Theme via shared tokens (`--text-primary`, `--text-muted`, `--border`,
- *   `--surface-1`) so light/dark work on both surfaces without forks
- * - `pointer-events-none` on the nav; only tick buttons capture clicks so
- *   message interactions underneath stay usable
  */
 export function ConversationTimeline({
   messages,
@@ -190,7 +190,32 @@ export function ConversationTimeline({
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const frameRef = useRef(0)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }, [])
+
+  const openPopover = useCallback(() => {
+    clearCloseTimer()
+    setIsPopoverOpen(true)
+  }, [clearCloseTimer])
+
+  const scheduleClosePopover = useCallback(() => {
+    clearCloseTimer()
+    closeTimerRef.current = setTimeout(() => {
+      setIsPopoverOpen(false)
+      setHoveredId(null)
+      closeTimerRef.current = null
+    }, POPOVER_CLOSE_DELAY_MS)
+  }, [clearCloseTimer])
+
+  useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
 
   /**
    * Update the active tick. Uses a functional setState so identical ids do not
@@ -236,10 +261,14 @@ export function ConversationTimeline({
   const handleJump = useCallback(
     (messageId: string) => {
       setActiveId(messageId)
+      setHoveredId(messageId)
+      setIsPopoverOpen(false)
       onJumpToMessage(messageId)
     },
     [onJumpToMessage]
   )
+
+  const highlightedId = hoveredId ?? activeId
 
   if (markers.length <= CONVERSATION_TIMELINE_MIN_TURNS) {
     return null
@@ -249,30 +278,29 @@ export function ConversationTimeline({
     <nav
       aria-label='Conversation timeline'
       className={cn(
-        'pointer-events-none absolute top-1/2 right-2 z-10 hidden w-7 -translate-y-1/2 md:flex',
+        'absolute top-1/2 right-2 z-10 hidden w-7 -translate-y-1/2 md:flex',
         'max-h-[min(70vh,520px)] flex-col items-center justify-center'
       )}
+      onMouseEnter={openPopover}
+      onMouseLeave={scheduleClosePopover}
     >
+      {isPopoverOpen ? (
+        <ConversationTimelinePopover
+          items={markers}
+          highlightedId={highlightedId}
+          onSelect={handleJump}
+          onHighlight={setHoveredId}
+          onMouseEnter={openPopover}
+          onMouseLeave={scheduleClosePopover}
+        />
+      ) : null}
+
       {markers.map((marker) => {
         const isActive = marker.id === activeId
-        const isHovered = marker.id === hoveredId
+        const isHighlighted = marker.id === highlightedId
 
         return (
           <div key={marker.id} className='relative flex items-center justify-center'>
-            {/* Tooltip opens to the left so it stays inside the viewport. */}
-            {isHovered ? (
-              <span
-                role='tooltip'
-                className={cn(
-                  'pointer-events-none absolute right-full mr-2.5 max-w-[220px] truncate',
-                  'rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1',
-                  'font-medium text-[11px] text-[var(--text-primary)] shadow-sm'
-                )}
-              >
-                {marker.label || `Message ${marker.index}`}
-              </span>
-            ) : null}
-
             {/*
               Hit target is taller than the 2–3px visual tick so ticks stay
               easy to click without looking like a scrollbar thumb.
@@ -282,23 +310,28 @@ export function ConversationTimeline({
               aria-label={`Jump to message ${marker.index}: ${marker.label}`}
               aria-current={isActive ? 'true' : undefined}
               className={cn(
-                'pointer-events-auto flex h-2.5 w-7 items-center justify-center',
+                'flex h-2.5 w-7 items-center justify-center',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)]'
               )}
               onClick={() => handleJump(marker.id)}
-              onMouseEnter={() => setHoveredId(marker.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              onFocus={() => setHoveredId(marker.id)}
-              onBlur={() => setHoveredId(null)}
+              onMouseEnter={() => {
+                openPopover()
+                setHoveredId(marker.id)
+              }}
+              onFocus={() => {
+                openPopover()
+                setHoveredId(marker.id)
+              }}
+              onBlur={scheduleClosePopover}
             >
               <span
                 aria-hidden
                 className={cn(
                   'block rounded-full transition-all duration-200 ease-out',
-                  isActive
+                  isActive || isHighlighted
                     ? 'h-[3px] w-[22px] bg-[var(--text-primary)]'
                     : 'h-[2px] w-[18px] bg-[var(--text-muted)] opacity-55',
-                  !isActive && isHovered && 'w-[20px] opacity-90'
+                  isHighlighted && !isActive && 'opacity-90'
                 )}
               />
             </button>

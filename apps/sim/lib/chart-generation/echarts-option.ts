@@ -547,7 +547,86 @@ export function sanitizeEChartsOption(option: EChartsOptionLike): EChartsOptionL
     }
   }
 
+  // Chat charts should paint immediately; the intro animation only delays
+  // perceived render time. Respect an explicit animation setting if present.
+  if (clone.animation === undefined) {
+    clone.animation = false
+  }
+
   applyCartesianLabelLayout(clone)
 
   return clone
+}
+
+/** Fields that strongly suggest a JSON payload is an ECharts option. */
+const CHART_JSON_HINT_PATTERN = /"(series|xAxis|yAxis|dataset|tooltip|legend)"\s*:/
+
+/**
+ * Returns true when every `{` in the candidate string is matched by a `}`
+ * (ignoring braces inside JSON string literals).
+ */
+function hasBalancedJsonBraces(candidate: string): boolean {
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (const char of candidate) {
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      if (inString) escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+    if (char === '{') depth++
+    else if (char === '}') depth--
+  }
+
+  return depth <= 0
+}
+
+/**
+ * Removes a partially streamed trailing chart JSON payload from message
+ * content so raw JSON does not flash as text while an assistant response is
+ * still streaming. Complete chart payloads are left untouched. Intended to be
+ * called only while a message is streaming.
+ */
+export function stripIncompleteTrailingChartJson(content: string): string {
+  if (!content) return content
+
+  // Case 1: an unclosed ``` fence at the end of the content.
+  const fenceMatches = content.match(/```/g)
+  if (fenceMatches && fenceMatches.length % 2 === 1) {
+    const lastFence = content.lastIndexOf('```')
+    const fenceBody = content.slice(lastFence + 3)
+    const language = fenceBody.match(/^([A-Za-z0-9_-]*)/)?.[1]?.toLowerCase() ?? ''
+    const looksLikeChartFence =
+      language === '' ||
+      language === 'json' ||
+      language === 'echarts' ||
+      CHART_JSON_HINT_PATTERN.test(fenceBody)
+    if (looksLikeChartFence) {
+      return content.slice(0, lastFence).trimEnd()
+    }
+    return content
+  }
+
+  // Case 2: a bare trailing `{ ...` object that looks like an ECharts option
+  // but has not closed yet.
+  const lastBareStart = content.lastIndexOf('\n{')
+  const candidateStart = lastBareStart >= 0 ? lastBareStart + 1 : content.startsWith('{') ? 0 : -1
+  if (candidateStart >= 0) {
+    const candidate = content.slice(candidateStart)
+    if (CHART_JSON_HINT_PATTERN.test(candidate) && !hasBalancedJsonBraces(candidate)) {
+      return content.slice(0, candidateStart).trimEnd()
+    }
+  }
+
+  return content
 }
