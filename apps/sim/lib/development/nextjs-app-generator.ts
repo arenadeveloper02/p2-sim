@@ -2,20 +2,24 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
 import { mkdir, rm, writeFile } from 'fs/promises'
 import { dirname, join, normalize, relative } from 'path'
-import Anthropic from '@anthropic-ai/sdk'
-import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
-import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { env } from '@/lib/core/config/env'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import { appendArenaSystemPrompt } from '@/lib/development/arena/prompts'
+import { deployPreparedVercelProject, prepareVercelProjectForDeploy } from '@/lib/development/deploy-generated-app-to-vercel'
 import {
-  deployPreparedVercelProject,
-  prepareVercelProjectForDeploy,
-} from '@/lib/development/deploy-generated-app-to-vercel'
+  createDevelopmentLlmClient,
+  type DevLlmClient,
+  type DevLlmMessage,
+  type DevelopmentLlmProvider,
+  type DevelopmentModelPurpose,
+  getDevelopmentMaxOutputTokens,
+  getDevelopmentModelId,
+  parseDevelopmentLlmProvider,
+  requestStructuredJsonMessage,
+  runWithDevelopmentLlmProvider,
+} from '@/lib/development/dev-llm-provider'
 import {
   formatBuildErrorsSummary,
   logGeneratedAppValidationErrors,
@@ -63,13 +67,13 @@ import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-develo
 import {
   validateGeneratedAppPreDeploy,
   validateGeneratedAppProductionBuild,
+  withGeneratedAppE2bValidationSession,
 } from '@/lib/development/validate-generated-app-build'
 import {
   collectReferencedAliasPathsInFiles,
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
 } from '@/lib/development/validate-generated-app-structure'
-import { supportsTemperature } from '@/providers/utils'
 
 const logger = createLogger('NextjsAppGenerator')
 
@@ -115,42 +119,13 @@ function getTrackedLlmUsage(): ModelUsageByModel | undefined {
   return Object.fromEntries(acc)
 }
 
-/** Creation and edit/repair both use Claude Fable. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
-const DEFAULT_CREATION_MODEL = 'claude-fable-5'
-const DEFAULT_EDIT_MODEL = 'claude-fable-5'
+/**
+ * Model selection, max-output-token caps, and the anthropic/vertex switch live
+ * in {@link "@/lib/development/dev-llm-provider"}. Callers thread a
+ * {@link DevLlmClient} through instead of a bare SDK client so both providers
+ * exercise the same continuation loop.
+ */
 
-type DevelopmentModelPurpose = 'creation' | 'edit'
-
-function resolveEnvModel(...values: Array<string | undefined>): string | undefined {
-  for (const value of values) {
-    const trimmed = value?.trim()
-    if (trimmed) {
-      return trimmed
-    }
-  }
-  return undefined
-}
-
-function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
-  if (purpose === 'edit') {
-    return (
-      resolveEnvModel(
-        env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL,
-        process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL
-      ) ?? DEFAULT_EDIT_MODEL
-    )
-  }
-
-  return (
-    resolveEnvModel(
-      process.env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
-      process.env.DEVELOPMENT_ANTHROPIC_MODEL
-    ) ?? DEFAULT_CREATION_MODEL
-  )
-}
-const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
-/** Opus 4.8+ supports 128k output; Sonnet 4.6 caps at 64k. */
-const DEFAULT_MAX_OUTPUT_TOKENS = 128_000
 /** More files allow complex multi-page apps without stub components. */
 const MAX_GENERATED_FILES = 45
 const FILES_PER_BATCH = 10
@@ -253,6 +228,8 @@ export interface GenerateNextjsAppInput {
   referenceImage?: DevelopmentReferenceMedia
   /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
   arenaMode?: boolean
+  /** Block UI Model selection. Defaults to vertex (Gemini 3.8 Flash). */
+  llmProvider?: DevelopmentLlmProvider
 }
 
 export interface GeneratedAppFile {
@@ -382,13 +359,6 @@ function parseAppSpecJson(text: string): LlmAppSpec {
   }
 }
 
-function createDevelopmentAnthropicClient(apiKey: string): Anthropic {
-  return new Anthropic({
-    apiKey,
-    defaultHeaders: { 'anthropic-beta': STRUCTURED_OUTPUTS_BETA },
-  })
-}
-
 function truncateBuildLog(output: string): string {
   if (output.length <= MAX_BUILD_LOG_CHARS) {
     return output
@@ -509,34 +479,6 @@ function normalizeAppSpec(
   return parsed
 }
 
-function getAnthropicApiKey(): string {
-  try {
-    return getRotatingApiKey('anthropic')
-  } catch {
-    throw new Error(
-      'ANTHROPIC_API_KEY is not configured. Set ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 through _3 to enable Next.js app generation.'
-    )
-  }
-}
-
-function getMaxOutputTokens(modelId: string): number {
-  if (/claude-sonnet-4-[0-5]/.test(modelId) || modelId === 'claude-sonnet-4-6') {
-    return 64_000
-  }
-  return DEFAULT_MAX_OUTPUT_TOKENS
-}
-
-function getMessageText(message: Anthropic.Messages.Message): string {
-  const text = message.content
-    .filter((block): block is Anthropic.Messages.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
-  if (!text.trim()) {
-    throw new Error('LLM did not return text content for app generation')
-  }
-  return text
-}
-
 function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = []
   for (let i = 0; i < items.length; i += size) {
@@ -626,31 +568,6 @@ function isLikelyTruncationOrParseFailure(error: unknown): boolean {
   )
 }
 
-async function requestStructuredLlm(
-  anthropic: Anthropic,
-  systemPrompt: string,
-  messages: Anthropic.Messages.MessageParam[],
-  schema: Record<string, unknown>,
-  purpose: DevelopmentModelPurpose
-): Promise<Anthropic.Messages.Message> {
-  const modelId = getDevelopmentModelId(purpose)
-  const message = await createAnthropicMessage(anthropic, {
-    model: modelId,
-    max_tokens: getMaxOutputTokens(modelId),
-    ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
-    system: systemPrompt,
-    messages,
-    output_config: {
-      format: {
-        type: 'json_schema',
-        schema: transformJSONSchema(schema),
-      },
-    },
-  })
-  trackLlmUsage(modelId, message.usage)
-  return message
-}
-
 function augmentSystemPromptForReferenceImage(
   systemPrompt: string,
   referenceMedia?: DevelopmentReferenceMedia
@@ -662,45 +579,25 @@ function augmentSystemPromptForReferenceImage(
   return `${prompt}\n\n- ${GENERATED_APP_REFERENCE_PDF_GUIDANCE}`
 }
 
-function buildReferenceContentBlock(
-  referenceMedia: DevelopmentReferenceMedia
-): Anthropic.Messages.ContentBlockParam {
-  if (referenceMedia.mediaType !== 'application/pdf') {
-    throw new Error('Reference media must be a PDF')
-  }
-
-  return {
-    type: 'document',
-    source: {
-      type: 'base64',
-      media_type: 'application/pdf',
-      data: referenceMedia.base64,
-    },
-  }
-}
-
-function buildUserMessageContent(
-  text: string,
-  referenceMedia?: DevelopmentReferenceMedia
-): Anthropic.Messages.MessageParam['content'] {
-  if (!referenceMedia) {
-    return text
-  }
-
-  return [
-    buildReferenceContentBlock(referenceMedia),
-    {
-      type: 'text',
-      text: `Reference design PDF attached — read every page and treat it as the visual source of truth. Match layout, color palette, typography, spacing, borders, component hierarchy, and visible copy. Define theme tokens in app/globals.css and tailwind.config.ts from the PDF colors and fonts — do not use a generic default theme.\n\n${text}`,
-    },
-  ]
+/**
+ * Wraps the first user prompt with the reference-PDF instruction whenever a
+ * design PDF is attached. Provider-neutral — the underlying LLM boundary
+ * handles the actual attachment as a `document` (Anthropic) or `inlineData`
+ * (Vertex) part.
+ */
+function buildInitialUserText(text: string, referenceMedia?: DevelopmentReferenceMedia): string {
+  if (!referenceMedia) return text
+  return `Reference design PDF attached — read every page and treat it as the visual source of truth. Match layout, color palette, typography, spacing, borders, component hierarchy, and visible copy. Define theme tokens in app/globals.css and tailwind.config.ts from the PDF colors and fonts — do not use a generic default theme.\n\n${text}`
 }
 
 /**
- * Requests JSON from the model; on max_tokens, continues the same JSON across turns and merges text.
+ * Requests JSON from the resolved model; on max_tokens, continues the same
+ * JSON across turns and merges text. Works identically for the Anthropic and
+ * Vertex Gemini backends — provider specifics live in
+ * {@link "@/lib/development/dev-llm-provider"}.
  */
 async function requestStructuredJsonWithContinuations<T>(
-  anthropic: Anthropic,
+  client: DevLlmClient,
   systemPrompt: string,
   initialUserPrompt: string,
   schema: Record<string, unknown>,
@@ -708,37 +605,44 @@ async function requestStructuredJsonWithContinuations<T>(
   referenceImage?: DevelopmentReferenceMedia,
   purpose: DevelopmentModelPurpose = 'creation'
 ): Promise<T> {
-  const messages: Anthropic.Messages.MessageParam[] = [
+  const modelId = getDevelopmentModelId(client, purpose)
+  const maxOutputTokens = getDevelopmentMaxOutputTokens(client, modelId)
+  const effectiveSystemPrompt = augmentSystemPromptForReferenceImage(systemPrompt, referenceImage)
+
+  const messages: DevLlmMessage[] = [
     {
       role: 'user',
-      content: buildUserMessageContent(initialUserPrompt, referenceImage),
+      text: buildInitialUserText(initialUserPrompt, referenceImage),
+      pdf: referenceImage,
     },
   ]
   let accumulated = ''
 
   for (let turn = 0; turn <= MAX_LLM_CONTINUATION_TURNS; turn++) {
-    const message = await requestStructuredLlm(
-      anthropic,
-      augmentSystemPromptForReferenceImage(systemPrompt, referenceImage),
+    const response = await requestStructuredJsonMessage(client, {
+      systemPrompt: effectiveSystemPrompt,
       messages,
       schema,
-      purpose
-    )
-    const text = getMessageText(message)
+      modelId,
+      maxOutputTokens,
+    })
+    trackLlmUsage(modelId, {
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    })
 
-    accumulated = turn === 0 ? text : `${accumulated}${text}`
+    accumulated = turn === 0 ? response.text : `${accumulated}${response.text}`
 
-    if (message.stop_reason !== 'max_tokens') {
+    if (!response.hitMaxTokens) {
       return parse(accumulated)
     }
 
     logger.warn('LLM response hit max_tokens; requesting continuation', { turn: turn + 1 })
 
-    messages.push({ role: 'assistant', content: text })
+    messages.push({ role: 'assistant', text: response.text })
     messages.push({
       role: 'user',
-      content:
-        'Your previous JSON response was cut off. Continue from the exact cut-off point and output ONLY the remaining characters needed to complete the JSON object. Do not repeat content from the start.',
+      text: 'Your previous JSON response was cut off. Continue from the exact cut-off point and output ONLY the remaining characters needed to complete the JSON object. Do not repeat content from the start.',
     })
   }
 
@@ -846,7 +750,7 @@ Constraints:
 - Never include secrets`
 
 async function requestAppManifestFromLlm(
-  anthropic: Anthropic,
+  client: DevLlmClient,
   userInput: string,
   repoNameHint?: string,
   referenceImage?: DevelopmentReferenceMedia
@@ -856,7 +760,7 @@ async function requestAppManifestFromLlm(
     : `User request:\n${userInput}`
 
   const manifest = await requestStructuredJsonWithContinuations(
-    anthropic,
+    client,
     MANIFEST_SYSTEM_PROMPT,
     userPrompt,
     APP_MANIFEST_JSON_SCHEMA,
@@ -879,7 +783,7 @@ async function requestAppManifestFromLlm(
 }
 
 async function requestFileBatchFromLlm(
-  anthropic: Anthropic,
+  client: DevLlmClient,
   options: {
     paths: string[]
     userInput: string
@@ -919,7 +823,7 @@ ${
 }`
 
   const result = await requestStructuredJsonWithContinuations(
-    anthropic,
+    client,
     FILE_BATCH_SYSTEM_PROMPT,
     userPrompt,
     FILE_BATCH_JSON_SCHEMA,
@@ -968,7 +872,7 @@ ${
 
   logger.warn('Batch missing files; retrying batch once', { missing })
   const retryFiles = await requestFileBatchFromLlm(
-    anthropic,
+    client,
     { paths: missing, userInput, appName, description, referenceImage },
     false
   )
@@ -977,22 +881,28 @@ ${
   return files
 }
 
+function resolveInputLlmProvider(value: unknown): DevelopmentLlmProvider {
+  return parseDevelopmentLlmProvider(typeof value === 'string' ? value : undefined) ?? 'vertex'
+}
+
 async function requestSingleShotAppSpecFromLlm(
   userInput: string,
-  repoNameHint?: string,
-  referenceImage?: DevelopmentReferenceMedia
+  repoNameHint: string | undefined,
+  referenceImage: DevelopmentReferenceMedia | undefined,
+  llmProvider: DevelopmentLlmProvider
 ): Promise<LlmAppSpec> {
-  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+  const client = createDevelopmentLlmClient(llmProvider)
   const userPrompt = repoNameHint
     ? `User request:\n${userInput}\n\nPreferred repository folder name: ${repoNameHint}`
     : `User request:\n${userInput}`
 
   logger.info('Generating app in a single LLM request', {
+    provider: client.kind,
     hasReferenceImage: Boolean(referenceImage),
   })
 
   const parsed = await requestStructuredJsonWithContinuations(
-    anthropic,
+    client,
     SINGLE_SHOT_SYSTEM_PROMPT,
     userPrompt,
     APP_SPEC_JSON_SCHEMA,
@@ -1008,20 +918,17 @@ async function requestSingleShotAppSpecFromLlm(
  */
 async function requestBatchedAppSpecFromLlm(
   userInput: string,
-  repoNameHint?: string,
-  referenceImage?: DevelopmentReferenceMedia
+  repoNameHint: string | undefined,
+  referenceImage: DevelopmentReferenceMedia | undefined,
+  llmProvider: DevelopmentLlmProvider
 ): Promise<LlmAppSpec> {
-  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
-  const manifest = await requestAppManifestFromLlm(
-    anthropic,
-    userInput,
-    repoNameHint,
-    referenceImage
-  )
+  const client = createDevelopmentLlmClient(llmProvider)
+  const manifest = await requestAppManifestFromLlm(client, userInput, repoNameHint, referenceImage)
 
   const pathBatches = chunkArray(manifest.filePaths, FILES_PER_BATCH)
 
   logger.info('Generating app files in parallel batches', {
+    provider: client.kind,
     totalPaths: manifest.filePaths.length,
     batches: pathBatches.length,
   })
@@ -1029,7 +936,7 @@ async function requestBatchedAppSpecFromLlm(
   const allFiles: GeneratedAppFile[] = []
 
   for (const paths of pathBatches) {
-    const batchFiles = await requestFileBatchFromLlm(anthropic, {
+    const batchFiles = await requestFileBatchFromLlm(client, {
       paths,
       userInput,
       appName: manifest.appName,
@@ -1057,13 +964,14 @@ async function requestBatchedAppSpecFromLlm(
 async function requestFullAppSpecFromLlm(
   systemPrompt: string,
   userPrompt: string,
-  repoNameHint?: string,
-  options: NormalizeAppSpecOptions = {}
+  repoNameHint: string | undefined,
+  options: NormalizeAppSpecOptions = {},
+  llmProvider: DevelopmentLlmProvider = 'vertex'
 ): Promise<LlmAppSpec> {
-  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+  const client = createDevelopmentLlmClient(llmProvider)
 
   const parsed = await requestStructuredJsonWithContinuations(
-    anthropic,
+    client,
     systemPrompt,
     userPrompt,
     APP_SPEC_JSON_SCHEMA,
@@ -1077,11 +985,17 @@ async function requestFullAppSpecFromLlm(
 
 async function generateAppSpecWithLlm(
   userInput: string,
-  repoNameHint?: string,
-  referenceImage?: DevelopmentReferenceMedia
+  repoNameHint: string | undefined,
+  referenceImage: DevelopmentReferenceMedia | undefined,
+  llmProvider: DevelopmentLlmProvider
 ): Promise<LlmAppSpec> {
   try {
-    return await requestSingleShotAppSpecFromLlm(userInput, repoNameHint, referenceImage)
+    return await requestSingleShotAppSpecFromLlm(
+      userInput,
+      repoNameHint,
+      referenceImage,
+      llmProvider
+    )
   } catch (error) {
     if (!isLikelyTruncationOrParseFailure(error)) {
       throw error
@@ -1090,7 +1004,7 @@ async function generateAppSpecWithLlm(
       error: toError(error).message,
       hasReferenceImage: Boolean(referenceImage),
     })
-    return requestBatchedAppSpecFromLlm(userInput, repoNameHint, referenceImage)
+    return requestBatchedAppSpecFromLlm(userInput, repoNameHint, referenceImage, llmProvider)
   }
 }
 
@@ -1299,13 +1213,13 @@ async function repairAppSpecWithLlm(
   spec: LlmAppSpec,
   buildLog: string,
   userInput: string,
-  options: { originalPrismaSchema?: string } = {}
+  options: { originalPrismaSchema?: string; llmProvider?: DevelopmentLlmProvider } = {}
 ): Promise<LlmAppSpec> {
   const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed pre-deploy validation (structure checks and/or npm install + prisma generate + next build in E2B).
 
 Respond ONLY with JSON matching the provided schema.
 
-The user message contains the CURRENT contents of every repository file. Treat them as the source of truth: read the files named in the build log, fix the reported errors with minimal targeted edits, and keep every cross-file contract (types, exports, prop names, Prisma fields) consistent with the files you are NOT changing.
+The user message contains the CURRENT contents of SELECTED repository files (not the full tree) plus a complete path index. Treat the selected files as the source of truth: read the files named in the build log, fix the reported errors with minimal targeted edits, and keep every cross-file contract (types, exports, prop names, Prisma fields) consistent with the files you are NOT changing.
 Return ONLY the files you change or add — complete final contents for each returned file. Unchanged files are preserved automatically; do NOT echo them back, and do NOT rewrite files the build log does not implicate unless a fix requires it.
 
 ${GENERATED_APP_GENERATION_MANDATES}
@@ -1327,9 +1241,17 @@ Common TypeScript error codes and their generic fixes:
 - TS2322/TS2538/TS2464 involving \`unknown\`: replace \`unknown\`/\`unknown[]\` props and \`.map()\` params with concrete interfaces from lib/types.ts (string ids/labels)
 - TS1109 "Expression expected": usually a split import — give each package its own \`import { ... } from '...'\` block
 - TS2459 "declares X locally, but it is not exported": import the type from @/lib/types, not @/lib/actions
-- TS2304 "Cannot find name": add the missing \`import type\` (from @/lib/types) or define the type locally
+- TS2304 "Cannot find name": add the missing \`import type\` (from @/lib/types) or define the type locally; if the name is \`Metadata\` in app/layout.tsx, add \`import type { Metadata } from 'next'\` (never from @/lib/types)
 - TS2345 "Date not assignable to string": widen date/time helpers to accept \`string | Date\`, or pass \`.toISOString()\`
 - TS1005 "'>' expected": fix JSX — \`return (\` with the opening tag on one line, never \`return\` then a newline before \`<\`
+- TS1005 "," expected / ":" expected cascade (often lines 10–50 of ArtifactsWorkspace / CopilotChat / Sidebar / *Client.tsx): types were put INSIDE destructuring — rewrite as \`interface XxxProps { ... }\` then \`function Xxx({ a, b }: XxxProps)\` (names only inside \`{}\`). Do NOT leave \`{ title: string, items: Item[] }\` in the parameter list
+- TS1128 "Declaration or statement expected" at the last line of a .tsx: the file was truncated — rewrite the ENTIRE file complete (balanced braces/parens/tags) or split into smaller complete components; never patch a half-written file
+- TS17008 / TS1381 / TS1109 in .tsx (unclosed JSX / unexpected token): the file was truncated mid-component — rewrite the ENTIRE file complete (balanced tags/braces) or split into smaller components; never leave half a ChatAreaClient / ArtifactsWorkspace
+- TS2300 Duplicate identifier (getArenaEmailId / ArenaEmailProvider / ArenaThemeProvider): keep a SINGLE import of each Arena symbol from the canonical modules (\`@/lib/arena-email\`, \`@/components/arena-email-provider\`, \`@/components/arena-theme-provider\`) — delete duplicate import lines and any custom ArenaProviders barrel imports
+- TS7034 / TS7005 implicit any[]: annotate empty arrays — \`let messages: Message[] = []\` (type from lib/types.ts), never bare \`=[]\`
+- Prisma P1012 ("not a valid definition within a datasource" / "provider is missing"): expand prisma/schema.prisma so datasource and generator are MULTI-LINE blocks (never \`datasource db { provider = ... url = ... }\` on one line)
+- Prisma P1012 ("This line is not a valid field or attribute definition" on \`model Foo {\`): a prior model/enum/datasource/generator is missing \`}\` — close every block, then place each \`model\` at the top level (never nested); rewrite the full schema file if braces are unbalanced
+- TS2322 LucideProps (\`title\` / unknown props on lucide-react icons): remove \`title={...}\` from \`<Icon />\` — wrap with \`<span title="...">\` or use \`aria-label\` / \`aria-hidden\` only
 - TS2353/TS2339/TS2551 in lib/actions.ts: align Prisma include/select keys and field access with prisma/schema.prisma; keep lib/types.ts in sync
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
@@ -1356,26 +1278,70 @@ Keep the same app purpose and repo name unless a rename is required to fix the b
 Prefer minimal, targeted file changes over rewriting unrelated files.
 Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
 
+  const requiresDatabase = resolveRequiresDatabase(spec)
+  const contextPaths = resolveRepairContextPaths(buildLog, spec.files, requiresDatabase)
+  logger.info('Repair context files selected', {
+    contextCount: contextPaths.length,
+    totalFiles: spec.files.length,
+    paths: contextPaths,
+  })
+
   const schemaBaseline = buildPrismaSchemaBaselineContext(spec.files, options.originalPrismaSchema)
+  const byPath = indexGeneratedAppFiles(spec.files)
+  const selectedFiles = contextPaths
+    .map((path) => byPath.get(normalizeGeneratedAppPath(path)))
+    .filter((file): file is GeneratedAppFile => Boolean(file))
+  const repoSummary = buildRepoSummaryForEdit(
+    spec.repoName,
+    {
+      appName: spec.appName,
+      description: spec.description,
+      features: spec.features,
+      requiresDatabase,
+    },
+    spec.files
+  )
+  const fileIndex = spec.files
+    .map((file) => normalizeGeneratedAppPath(file.path))
+    .sort()
+    .join('\n')
 
   const userPrompt = `Original request:\n${userInput}
 
 App name: ${spec.appName}
 Repository name: ${spec.repoName}
 
+Repository summary (architecture, routes, and scope):
+
+${repoSummary}
+
 ${schemaBaseline ? `${schemaBaseline}\n\n` : ''}Build log (errors to fix):
 ${truncateBuildLog(buildLog)}
 
-Current repository files (source of truth — fix the errors above IN this code):
+Complete file index (${spec.files.length} paths — bodies below are SELECTED only):
+${fileIndex}
 
-${buildRepairFileContext(spec.files)}
+Selected file index (${selectedFiles.length} of ${spec.files.length} paths):
+${contextPaths.join('\n')}
+
+Selected repository files (source of truth — fix the errors above IN this code; keep cross-file contracts consistent with files you do not change):
+
+${buildRepairFileContext(selectedFiles, {
+  extraSkipPaths: schemaBaseline ? ['prisma/schema.prisma'] : undefined,
+})}
 
 Return ONLY the files you changed or added (complete final contents each) so the app passes npm install, prisma generate (when used), and next build.`
 
-  const repaired = await requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName, {
-    preserveAllFiles: spec.files.length > MAX_GENERATED_FILES,
-    skipFileNormalization: true,
-  })
+  const repaired = await requestFullAppSpecFromLlm(
+    repairSystemPrompt,
+    userPrompt,
+    spec.repoName,
+    {
+      preserveAllFiles: spec.files.length > MAX_GENERATED_FILES,
+      skipFileNormalization: true,
+    },
+    options.llmProvider ?? 'vertex'
+  )
 
   const mergedFiles = mergeEditedFiles(spec.files, repaired.files)
 
@@ -1457,6 +1423,8 @@ interface ValidateAndRepairOptions {
   originalPrismaSchema?: string
   /** When true, keep Arena iframe emailId scaffold during repair normalization. */
   arenaMode?: boolean
+  /** Block UI Model selection for repair LLM calls. */
+  llmProvider?: DevelopmentLlmProvider
 }
 
 async function validateAndRepairUntilBuildPasses(
@@ -1465,69 +1433,123 @@ async function validateAndRepairUntilBuildPasses(
   userInput: string,
   options: ValidateAndRepairOptions = {}
 ): Promise<BuildRepairResult> {
-  let currentSpec = spec
-  let buildOutput = ''
-  let repairRounds = 0
   const validationOptions = { requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE }
+  const llmProvider = options.llmProvider ?? 'vertex'
 
-  for (let round = 0; round <= MAX_BUILD_REPAIR_ROUNDS; round++) {
-    currentSpec.requiresDatabase = resolveRequiresDatabase(currentSpec)
-    currentSpec.files = normalizeGeneratedAppFiles(currentSpec.files, {
-      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
-      appName: currentSpec.appName,
-      description: currentSpec.description,
-      features: currentSpec.features,
-      repoName: currentSpec.repoName,
-      latestUserRequest: userInput,
-      arenaMode: options.arenaMode ?? isArenaMode(),
-    })
-    await writeAppFiles(outputDir, currentSpec.files)
+  return withGeneratedAppE2bValidationSession(validationOptions, async (e2bSession) => {
+    let currentSpec = spec
+    let buildOutput = ''
+    let repairRounds = 0
 
-    const structureResult = validateGeneratedAppStructure(currentSpec.files, {
-      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
-      originalPrismaSchema: options.originalPrismaSchema,
-    })
-
-    if (!structureResult.valid) {
-      buildOutput = `Structure validation failed:\n${formatStructureValidationIssues(structureResult.issues)}`
-      logGeneratedAppValidationErrors({
-        phase: 'structure',
-        round,
-        output: buildOutput,
-        issues: structureResult.issues,
-      })
-
-      if (round >= MAX_BUILD_REPAIR_ROUNDS) {
-        break
-      }
-
-      repairRounds += 1
-      logger.warn('Generated app structure validation failed, requesting LLM repair', {
-        round: repairRounds,
-        issueCount: structureResult.issues.length,
-      })
-
-      currentSpec = await repairAppSpecWithLlm(
-        currentSpec,
-        `${buildOutput}\n\nFix every structure issue above before the app can build.`,
-        userInput,
-        { originalPrismaSchema: options.originalPrismaSchema }
-      )
-      continue
+    if (e2bSession) {
+      logger.info('Using reused E2B sandbox session for generated-app validate/repair/build')
     }
 
-    const fastResult = await validateGeneratedAppPreDeploy(
-      outputDir,
-      currentSpec.files,
-      validationOptions
-    )
-    buildOutput = `[${fastResult.method}:typecheck] ${fastResult.output}`
+    for (let round = 0; round <= MAX_BUILD_REPAIR_ROUNDS; round++) {
+      currentSpec.requiresDatabase = resolveRequiresDatabase(currentSpec)
+      currentSpec.files = normalizeGeneratedAppFiles(currentSpec.files, {
+        requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+        appName: currentSpec.appName,
+        description: currentSpec.description,
+        features: currentSpec.features,
+        repoName: currentSpec.repoName,
+        latestUserRequest: userInput,
+        arenaMode: options.arenaMode ?? isArenaMode(),
+      })
+      await writeAppFiles(outputDir, currentSpec.files)
 
-    if (!fastResult.validated) {
+      const structureResult = validateGeneratedAppStructure(currentSpec.files, {
+        requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+        originalPrismaSchema: options.originalPrismaSchema,
+      })
+
+      if (!structureResult.valid) {
+        buildOutput = `Structure validation failed:\n${formatStructureValidationIssues(structureResult.issues)}`
+        logGeneratedAppValidationErrors({
+          phase: 'structure',
+          round,
+          output: buildOutput,
+          issues: structureResult.issues,
+        })
+
+        if (round >= MAX_BUILD_REPAIR_ROUNDS) {
+          break
+        }
+
+        repairRounds += 1
+        logger.warn('Generated app structure validation failed, requesting LLM repair', {
+          round: repairRounds,
+          issueCount: structureResult.issues.length,
+        })
+
+        currentSpec = await repairAppSpecWithLlm(
+          currentSpec,
+          `${buildOutput}\n\nFix every structure issue above before the app can build.`,
+          userInput,
+          { originalPrismaSchema: options.originalPrismaSchema, llmProvider }
+        )
+        continue
+      }
+
+      const fastResult = await validateGeneratedAppPreDeploy(
+        outputDir,
+        currentSpec.files,
+        validationOptions,
+        e2bSession
+      )
+      buildOutput = `[${fastResult.method}:typecheck] ${fastResult.output}`
+
+      if (!fastResult.validated) {
+        logGeneratedAppValidationErrors({
+          phase: 'typecheck',
+          round,
+          output: fastResult.output,
+        })
+
+        if (round >= MAX_BUILD_REPAIR_ROUNDS) {
+          break
+        }
+
+        repairRounds += 1
+        logger.warn('Generated app typecheck failed, requesting LLM repair', {
+          round: repairRounds,
+          maxRounds: MAX_BUILD_REPAIR_ROUNDS,
+          method: fastResult.method,
+        })
+
+        currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput, {
+          originalPrismaSchema: options.originalPrismaSchema,
+          llmProvider,
+        })
+
+        const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
+        if (existsSync(nextCacheDir)) {
+          await rm(nextCacheDir, { recursive: true, force: true })
+        }
+        continue
+      }
+
+      const finalResult = await validateGeneratedAppProductionBuild(
+        outputDir,
+        currentSpec.files,
+        validationOptions,
+        e2bSession
+      )
+      buildOutput = `[${fastResult.method}:typecheck]\n${fastResult.output}\n\n[${finalResult.method}:build]\n${finalResult.output}`
+
+      if (finalResult.validated) {
+        return {
+          spec: currentSpec,
+          buildValidated: true,
+          buildOutput,
+          repairRounds,
+        }
+      }
+
       logGeneratedAppValidationErrors({
-        phase: 'typecheck',
+        phase: 'build',
         round,
-        output: fastResult.output,
+        output: finalResult.output,
       })
 
       if (round >= MAX_BUILD_REPAIR_ROUNDS) {
@@ -1535,72 +1557,30 @@ async function validateAndRepairUntilBuildPasses(
       }
 
       repairRounds += 1
-      logger.warn('Generated app typecheck failed, requesting LLM repair', {
+      logger.warn('Generated app production build failed, requesting LLM repair', {
         round: repairRounds,
         maxRounds: MAX_BUILD_REPAIR_ROUNDS,
-        method: fastResult.method,
+        method: finalResult.method,
       })
 
-      currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput, {
+      currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput, {
         originalPrismaSchema: options.originalPrismaSchema,
+        llmProvider,
       })
 
       const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
       if (existsSync(nextCacheDir)) {
         await rm(nextCacheDir, { recursive: true, force: true })
       }
-      continue
     }
 
-    const finalResult = await validateGeneratedAppProductionBuild(
-      outputDir,
-      currentSpec.files,
-      validationOptions
-    )
-    buildOutput = `[${fastResult.method}:typecheck]\n${fastResult.output}\n\n[${finalResult.method}:build]\n${finalResult.output}`
-
-    if (finalResult.validated) {
-      return {
-        spec: currentSpec,
-        buildValidated: true,
-        buildOutput,
-        repairRounds,
-      }
+    return {
+      spec: currentSpec,
+      buildValidated: false,
+      buildOutput,
+      repairRounds,
     }
-
-    logGeneratedAppValidationErrors({
-      phase: 'build',
-      round,
-      output: finalResult.output,
-    })
-
-    if (round >= MAX_BUILD_REPAIR_ROUNDS) {
-      break
-    }
-
-    repairRounds += 1
-    logger.warn('Generated app production build failed, requesting LLM repair', {
-      round: repairRounds,
-      maxRounds: MAX_BUILD_REPAIR_ROUNDS,
-      method: finalResult.method,
-    })
-
-    currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput, {
-      originalPrismaSchema: options.originalPrismaSchema,
-    })
-
-    const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
-    if (existsSync(nextCacheDir)) {
-      await rm(nextCacheDir, { recursive: true, force: true })
-    }
-  }
-
-  return {
-    spec: currentSpec,
-    buildValidated: false,
-    buildOutput,
-    repairRounds,
-  }
+  })
 }
 
 const DB_PUSH_UNEXECUTABLE_PATTERN =
@@ -1629,6 +1609,7 @@ async function syncDatabaseWithSchemaRepair(params: {
   neonProjectId?: string
   neonApiKey?: string
   originalPrismaSchema?: string
+  llmProvider?: DevelopmentLlmProvider
 }): Promise<DatabaseSyncWithRepairResult> {
   let spec = params.spec
 
@@ -1694,7 +1675,10 @@ async function syncDatabaseWithSchemaRepair(params: {
         '- Keep lib/actions.ts and lib/types.ts aligned with the corrected schema',
       ].join('\n'),
       params.userInput,
-      { originalPrismaSchema: params.originalPrismaSchema }
+      {
+        originalPrismaSchema: params.originalPrismaSchema,
+        llmProvider: params.llmProvider,
+      }
     )
     await writeAppFiles(params.outputDir, spec.files)
   }
@@ -1713,9 +1697,13 @@ export async function generateNextjsApp(
     return { success: false, error: 'userInput is required' }
   }
 
+  const llmProvider = resolveInputLlmProvider(input.llmProvider)
+
   return runWithLlmUsageTracking(async () => {
-    const result = await runWithArenaMode(input.arenaMode === true, () =>
-      generateNextjsAppInner(input, userInput)
+    const result = await runWithDevelopmentLlmProvider(llmProvider, () =>
+      runWithArenaMode(input.arenaMode === true, () =>
+        generateNextjsAppInner({ ...input, llmProvider }, userInput)
+      )
     )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
@@ -1723,17 +1711,23 @@ export async function generateNextjsApp(
 }
 
 async function generateNextjsAppInner(
-  input: GenerateNextjsAppInput,
+  input: GenerateNextjsAppInput & { llmProvider: DevelopmentLlmProvider },
   userInput: string
 ): Promise<GenerateNextjsAppResult> {
   try {
     const generationStartedAt = Date.now()
-    let spec = await generateAppSpecWithLlm(userInput, input.repoName?.trim(), input.referenceImage)
+    let spec = await generateAppSpecWithLlm(
+      userInput,
+      input.repoName?.trim(),
+      input.referenceImage,
+      input.llmProvider
+    )
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
       requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
       hasReferenceImage: Boolean(input.referenceImage),
+      llmProvider: input.llmProvider,
     })
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
@@ -1761,7 +1755,10 @@ async function generateNextjsAppInner(
       privateRepo: input.privateRepo === true,
     })
 
-    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
+    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput, {
+      llmProvider: input.llmProvider,
+      arenaMode: input.arenaMode === true,
+    })
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated
@@ -1869,6 +1866,7 @@ async function generateNextjsAppInner(
             databaseUrl: prepareResult.databaseUrl,
             neonProjectId: prepareResult.neonProjectId,
             neonApiKey,
+            llmProvider: input.llmProvider,
           })
           spec = dbSyncResult.spec
 
@@ -2027,6 +2025,8 @@ export interface EditNextjsAppInput {
   referenceImage?: DevelopmentReferenceMedia
   /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
   arenaMode?: boolean
+  /** Block UI Model selection. Defaults to vertex (Gemini 3.8 Flash). */
+  llmProvider?: DevelopmentLlmProvider
 }
 
 const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
@@ -2290,6 +2290,86 @@ function resolveEditContextPaths(
   return [...pins, ...others]
 }
 
+/**
+ * Pulls repo-relative paths named in tsc / Prisma / structure-validation logs so
+ * repair context can stay selective (same idea as edit's select pass).
+ */
+function extractPathsFromBuildLog(
+  buildLog: string,
+  existingPaths: Iterable<string>
+): string[] {
+  const byLower = new Map<string, string>()
+  for (const path of existingPaths) {
+    const normalized = normalizeGeneratedAppPath(path)
+    byLower.set(normalized.toLowerCase(), normalized)
+  }
+
+  const resolveCandidate = (raw: string): string | undefined => {
+    const cleaned = normalizeGeneratedAppPath(
+      raw.replace(/^\.\//, '').replace(/^\/+/, '').replace(/\\/g, '/')
+    )
+    if (!cleaned) return undefined
+    const direct = byLower.get(cleaned.toLowerCase())
+    if (direct) return direct
+
+    const withoutExt = cleaned.replace(/\.(tsx?|jsx?|css|json|prisma|mjs|cjs)$/i, '')
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js', '.css', '.json', '.prisma']) {
+      const hit = byLower.get(`${withoutExt}${ext}`.toLowerCase())
+      if (hit) return hit
+    }
+    const indexHit = byLower.get(`${withoutExt}/index.ts`.toLowerCase())
+    if (indexHit) return indexHit
+    const indexTsx = byLower.get(`${withoutExt}/index.tsx`.toLowerCase())
+    if (indexTsx) return indexTsx
+    return undefined
+  }
+
+  const found: string[] = []
+  const seen = new Set<string>()
+  const add = (raw: string) => {
+    const resolved = resolveCandidate(raw)
+    if (!resolved || seen.has(resolved)) return
+    seen.add(resolved)
+    found.push(resolved)
+  }
+
+  // tsc: path(line,col) / path: line / Prisma --> path:line
+  for (const match of buildLog.matchAll(
+    /(?:^|[\s"'`(>\]])((?:app|components|lib|prisma|hooks|types|utils|public)\/[\w./@-]+\.(?:tsx?|jsx?|css|json|prisma|mjs|cjs))(?=[\s:(]|$)/gim
+  )) {
+    add(match[1])
+  }
+
+  // Structure: Missing file for import @/components/X (referenced in app/page.tsx)
+  for (const match of buildLog.matchAll(/referenced in\s+([\w./@-]+\.(?:tsx?|jsx?|css|json))/gi)) {
+    add(match[1])
+  }
+
+  // Alias imports in logs: @/lib/actions → lib/actions.ts
+  for (const match of buildLog.matchAll(
+    /@\/((?:app|components|lib|hooks|types|utils)\/[\w./-]+)/gi
+  )) {
+    add(match[1])
+  }
+
+  return found
+}
+
+/**
+ * Repair context paths: build-log hits + edit pins/DB anchors + heuristic fill.
+ */
+function resolveRepairContextPaths(
+  buildLog: string,
+  existingFiles: GeneratedAppFile[],
+  requiresDatabase: boolean
+): string[] {
+  const fromLog = extractPathsFromBuildLog(
+    buildLog,
+    existingFiles.map((file) => file.path)
+  )
+  return resolveEditContextPaths(fromLog, existingFiles, requiresDatabase, buildLog)
+}
+
 function buildRepoSummaryForEdit(
   repoName: string,
   metadata: Pick<LlmAppSpec, 'appName' | 'description' | 'features' | 'requiresDatabase'>,
@@ -2379,9 +2459,10 @@ async function requestAppEditsFromLlm(
   userInput: string,
   repoName: string,
   existingFiles: GeneratedAppFile[],
-  referenceImage?: DevelopmentReferenceMedia
+  referenceImage: DevelopmentReferenceMedia | undefined,
+  llmProvider: DevelopmentLlmProvider
 ): Promise<LlmAppSpec> {
-  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+  const client = createDevelopmentLlmClient(llmProvider)
   const metadata = inferAppMetadataFromFiles(repoName, existingFiles)
   const requiresDatabase = metadata.requiresDatabase === true
 
@@ -2400,7 +2481,7 @@ Return JSON with the repo-relative paths whose contents are required to implemen
   let requestedPaths: string[] = []
   try {
     const selection = await requestStructuredJsonWithContinuations(
-      anthropic,
+      client,
       EDIT_FILE_SELECTION_SYSTEM_PROMPT,
       selectionPrompt,
       EDIT_FILE_SELECTION_JSON_SCHEMA,
@@ -2451,7 +2532,7 @@ DATABASE RULE (non-negotiable): ALWAYS return prisma/schema.prisma in this edit 
 Return JSON with app metadata and the files you changed or added (plus prisma/schema.prisma whenever the app uses a database).`
 
   const parsed = await requestStructuredJsonWithContinuations(
-    anthropic,
+    client,
     EDIT_APP_SYSTEM_PROMPT,
     userPrompt,
     EDIT_APP_JSON_SCHEMA,
@@ -2494,9 +2575,13 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     return { success: false, error: 'repoName is required' }
   }
 
+  const llmProvider = resolveInputLlmProvider(input.llmProvider)
+
   return runWithLlmUsageTracking(async () => {
-    const result = await runWithArenaMode(input.arenaMode === true, () =>
-      editNextjsAppInner(input, userInput, repoName)
+    const result = await runWithDevelopmentLlmProvider(llmProvider, () =>
+      runWithArenaMode(input.arenaMode === true, () =>
+        editNextjsAppInner({ ...input, llmProvider }, userInput, repoName)
+      )
     )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
@@ -2504,7 +2589,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
 }
 
 async function editNextjsAppInner(
-  input: EditNextjsAppInput,
+  input: EditNextjsAppInput & { llmProvider: DevelopmentLlmProvider },
   userInput: string,
   repoName: string
 ): Promise<GenerateNextjsAppResult> {
@@ -2536,7 +2621,8 @@ async function editNextjsAppInner(
       userInput,
       repoName,
       existingFiles,
-      input.referenceImage
+      input.referenceImage,
+      input.llmProvider
     )
     logger.info('LLM app edit finished', {
       durationMs: Date.now() - generationStartedAt,
@@ -2564,6 +2650,8 @@ async function editNextjsAppInner(
 
     const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput, {
       originalPrismaSchema,
+      llmProvider: input.llmProvider,
+      arenaMode: input.arenaMode === true,
     })
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
@@ -2669,6 +2757,7 @@ async function editNextjsAppInner(
             neonProjectId: prepareResult.neonProjectId,
             neonApiKey,
             originalPrismaSchema,
+            llmProvider: input.llmProvider,
           })
           spec = dbSyncResult.spec
 

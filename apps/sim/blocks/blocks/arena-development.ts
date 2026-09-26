@@ -38,13 +38,13 @@ export const ArenaDevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> 
   type: 'arena_development',
   name: 'Arena Development',
   description:
-    'Generate or edit an iframe-ready Next.js app with emailId access gate from the parent URL',
+    'Generate or edit an iframe-ready Next.js app with emailId + theme from the parent URL (Sim UI)',
   longDescription:
-    'Same full-stack automation as Development (Next.js App Router, Neon + Prisma, GitHub, Vercel), plus Arena mode: generated apps read emailId from the iframe query string, deny access when missing, expose emailId via cookie + React Context for every page/SSR, allow frame-ancestors *, and follow Arena branch guidelines in the system prompt.',
+    'Same full-stack automation as Development (Next.js App Router, Neon + Prisma, GitHub, Vercel), plus Arena mode: generated apps read emailId and theme from the iframe query string (default light/white theme), deny access when emailId is missing, expose emailId/theme via cookies + React Context, allow frame-ancestors *, and follow Sim UI token standards.',
   bestPractices: `
   - Use Generate mode for new Arena apps. Describe the app name, main features, pages, UI style, authentication needs, and API routes in User Input.
-  - Embed the deployed app as <iframe src="https://your-app/?emailId=user@example.com" />. Missing emailId shows "do not have access".
-  - Use getArenaEmailId() / requireArenaEmailId() in Server Components and useArenaEmailId() in client components for user-scoped data.
+  - Embed as <iframe src="https://your-app/?emailId=user@example.com&theme=dark" />. theme=light|white|dark (default light/white when omitted). Missing emailId shows "do not have access".
+  - Use getArenaEmailId() / useArenaEmailId() for identity and getArenaTheme() / useArenaTheme() for theme. Style with Sim CSS vars (--bg, --surface-*, --text-body, --brand-*).
   - Optional: upload a Reference Design PDF in Generate or Edit mode.
   - Use Edit mode to update an existing generated app. Pick a repository from the list, then describe the changes.
   - Set Repository Name (generate mode) to control the folder name under generated-apps/ (kebab-case).
@@ -67,6 +67,17 @@ export const ArenaDevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> 
         { label: 'Edit Existing App', id: 'edit' },
       ],
       value: () => 'generate',
+    },
+    {
+      id: 'llmProvider',
+      title: 'Model',
+      type: 'dropdown',
+      options: [
+        { label: 'Gemini 3.8 Flash (Vertex)', id: 'vertex' },
+        { label: 'Claude Fable (Anthropic)', id: 'anthropic' },
+      ],
+      value: () => 'vertex',
+      description: 'LLM used for generate and edit. Vertex requires VERTEX_PROJECT + credentials.',
     },
     {
       id: 'userInput',
@@ -144,25 +155,36 @@ Return ONLY the specification text. No markdown wrappers.`,
         params.operation === 'edit'
           ? 'arena_development_edit_app'
           : 'arena_development_generate_app',
-      params: (params) =>
-        params.operation === 'edit'
+      params: (params) => {
+        const llmProvider =
+          params.llmProvider === 'anthropic' || params.llmProvider === 'vertex'
+            ? params.llmProvider
+            : 'vertex'
+        return params.operation === 'edit'
           ? {
               userInput: params.userInput,
               repoName: params.existingRepo,
               referenceImage: normalizeFileInput(params.referenceImage, { single: true }),
+              llmProvider,
             }
           : {
               userInput: params.userInput,
               repoName: params.repoName,
               privateRepo: params.privateRepo === true,
               referenceImage: normalizeFileInput(params.referenceImage, { single: true }),
-            },
+              llmProvider,
+            }
+      },
     },
   },
   inputs: {
     operation: {
       type: 'string',
       description: 'Whether to generate a new app or edit an existing repository',
+    },
+    llmProvider: {
+      type: 'string',
+      description: 'LLM backend: vertex (Gemini 3.8 Flash) or anthropic (Claude Fable)',
     },
     userInput: {
       type: 'string',

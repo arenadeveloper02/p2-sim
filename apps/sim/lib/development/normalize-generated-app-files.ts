@@ -81,6 +81,7 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "0.479.0" (React 19 compatible) — never 0.395.x
+- lucide-react icons: NEVER pass \`title={...}\` (TS2322 vs LucideProps) — use wrapping \`<span title="...">\` or \`aria-label\` / \`aria-hidden\` instead
 - NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
 - NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
@@ -88,6 +89,7 @@ next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — bu
 
 export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structure (zero errors required):
 - Use strict TypeScript: strict true in tsconfig.json, no @ts-ignore, no implicit any, no unused variables
+- NEVER initialize empty arrays without an explicit element type — \`let messages: Message[] = []\` / \`const items: Item[] = []\` (import the type from lib/types.ts). Bare \`let messages = []\` causes TS7034 / TS7005
 - Every identifier in a file must be declared or imported — NEVER use a type, interface, or variable name without defining it in the same file or importing it (TS2304 "Cannot find name 'X'" means add \`import type { X } from '@/lib/types'\` or define the type locally)
 - Every React component props interface must be explicit (e.g. interface HeroProps { title: string }) and every type in that interface must be imported or defined in the file
 - NEVER type Client component props or \`.map()\` callback parameters as \`unknown\` or \`unknown[]\` when those values are used in JSX, React \`key={...}\`, object indexes (\`obj[field]\`), or computed property names (\`{ [field]: value }\`) — TypeScript rejects unknown for Key, ReactNode, and index types (TS2322/TS2538/TS2464). Define a concrete interface in lib/types.ts instead
@@ -154,7 +156,12 @@ ${GENERATED_APP_UPDATED_AT_NOTE}
    - NEVER generate *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx, __tests__/ folders, e2e/, or test config (vitest, jest, playwright, cypress)
    - Do not add vitest, jest, @testing-library/*, playwright, or cypress to package.json dependencies or devDependencies
    - package.json scripts: dev, build, start, lint only — no "test" script
-   - files[] is production app code only — pages, components, lib, API routes, config`
+   - files[] is production app code only — pages, components, lib, API routes, config
+
+5. Component props typing (prevents TS1005 "," / ":" cascades):
+   - ALWAYS declare \`interface XxxProps { ... }\` then \`function Xxx({ a, b }: XxxProps)\`
+   - NEVER write types inside destructuring: \`function Xxx({ a: string, b: Item[] })\` is illegal and fails typecheck
+   - Every .tsx file must be COMPLETE — last line is \`}\`; never truncate mid-component`
 
 export const GENERATED_APP_NO_TESTS_GUIDANCE = `Tests — do NOT include unless the user explicitly requests tests:
 - NEVER add test files: no *.test.ts(x), *.spec.ts(x), __tests__/, e2e/, tests/, or test setup files
@@ -176,7 +183,7 @@ export const GENERATED_APP_ZERO_ERRORS_GUIDANCE = `Zero-defect bar (MANDATORY �
 
 export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requirements:
 - package.json has scripts: dev, build, start, lint
-- app/layout.tsx exists and exports metadata; app/page.tsx, app/not-found.tsx, and app/globals.css exist (globals.css imported only in layout)
+- app/layout.tsx exists and exports metadata with \`import type { Metadata } from 'next'\`; app/page.tsx, app/not-found.tsx, and app/globals.css exist (globals.css imported only in layout)
 - Every @/ import must resolve to a generated file — no placeholder imports like @/components/ui/... unless those files are generated
 - Structure validation fails when a page imports @/components/X but components/X.tsx is missing from the output — generate every imported component with full JSX
 - Client components rendered with props must declare matching props interfaces
@@ -209,14 +216,17 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
 5. Config / server files stay simple:
    - next.config.ts, tailwind.config.ts, lib/prisma.ts: minimal imports then const/export — no split import blocks
    - lib/prisma.ts: only \`import { PrismaClient } from '@prisma/client'\` plus singleton export
-6. Prisma schema drift (TS2353 / TS2339 / TS2551 in lib/actions.ts):
+6. Prisma schema drift (TS2353 / TS2339 / TS2551 in lib/actions.ts) AND Prisma P1012:
    - Read prisma/schema.prisma FIRST — use the exact relation and scalar field names defined there
    - include/select keys MUST match schema relation names exactly; access included relations by the SAME name after the query
    - lib/actions.ts Prisma queries/DTO mapping and lib/types.ts interfaces MUST match schema.prisma — update all three together on every schema change
    - Do NOT reference scalar fields absent from the model unless defined in schema.prisma
    - Aggregate/stat types are NOT database rows — do not add a required \`id\` field unless the return object includes one
+   - NEVER compress datasource/generator onto one line — multi-line blocks only or \`prisma generate\` fails with P1012
+   - P1012 "not a valid field or attribute definition" on a \`model Name {\` line: a previous model/enum/datasource/generator is missing its closing \`}\` — close every block before starting the next top-level model (models are never nested)
 7. Missing third-party dependencies (TS2307 "Cannot find module"):
    - When any file imports a package (lucide-react, recharts, jsonwebtoken, bcryptjs, zod, etc.), package.json dependencies MUST include it, with matching @types/* in devDependencies when the package ships no types
+   - lucide-react icons accept LucideProps only (className, size, strokeWidth, color, aria-*, etc.) — NEVER pass HTML \`title={...}\` to an icon (TS2322 IntrinsicAttributes & LucideProps). For tooltips use a wrapping \`<span title="...">\` or visible text, not an icon prop
 8. Missing component files ("Missing file for import @/components/X" in structure validation):
    - Every page/layout that imports @/components/Foo MUST have components/Foo.tsx in files[] with complete UI — generate the component, do not delete the import
    - Reuse one shared component across similar routes (one components/Foo.tsx file) rather than dangling per-route imports
@@ -254,7 +264,32 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - TypeScript resolves the browser global instead of your type when the import is missed — use domain-specific names (TripFormInput, ContactFormValues)
 17. Server action return contracts (TS2339 "Property 'success' does not exist on type 'void'"):
    - Every action whose result is inspected (\`result.success\`, \`result.error\`) MUST declare \`Promise<{ success: boolean; error?: string }>\` (or a named result type in lib/types.ts) and return that object on every code path
-   - The action, its declared return type, and every caller must agree — update all in the same response`
+   - The action, its declared return type, and every caller must agree — update all in the same response
+18. Truncated / incomplete TSX (TS17008 / TS1109 / TS1381 / TS1128 "Declaration or statement expected" at EOF):
+   - Never cut a component mid-JSX, mid-string, or mid-props — return the FULL file, or omit it and return a smaller complete component instead
+   - Prefer splitting large UIs into Navbar + Panel + Client pieces rather than one 300+ line ArtifactsWorkspace / CopilotChat / Sidebar that hits output limits
+   - Self-check: last non-empty line of a component file must be \`}\` closing the function/export — never end inside \`className="...\`, a ternary, or an unclosed \`(\`
+   - Cascade of TS1005 across many lines PLUS TS1128 at the last line of the file = truncated file — rewrite the ENTIRE file complete (do not patch around the cut)
+19. Types inside parameter destructuring (TS1005 "," expected / ":" expected — #1 recurring .tsx parse failure):
+   - WRONG: \`function Foo({ title: string, items: Item[], onSelect: (id: string) => void }) { ... }\`
+   - WRONG: \`function Foo({ title: string, items: Item[] }: FooProps) { ... }\` — annotations inside \`{}\` are rename patterns, not types
+   - RIGHT: \`interface FooProps { title: string; items: Item[]; onSelect: (id: string) => void }\` then \`function Foo({ title, items, onSelect }: FooProps) { ... }\`
+   - Destructuring lists NAMES only (\`title\`, \`items\`) — every type lives on the Props interface (or a type alias) AFTER the \`}\`
+   - If the build log shows alternating TS1005 "," expected and ":" expected starting near the top of a .tsx (often lines 10–50), this is the bug — rewrite that file's props as interface + name-only destructuring
+20. Duplicate Arena identifiers (TS2300 Duplicate identifier getArenaEmailId / ArenaEmailProvider):
+   - Import each Arena symbol ONCE from the canonical modules only — never also from a custom ArenaProviders barrel or lib/arena.ts
+   - Do not list the same import twice in app/layout.tsx
+21. Implicit any[] (TS7034 / TS7005):
+   - NEVER write \`let messages = []\` or \`const items = []\` without a type — use \`let messages: Message[] = []\` (import Message from lib/types.ts)
+   - Empty arrays passed as props must be typed: \`const messages: ChatMessage[] = []\`
+22. Missing Next.js Metadata import (TS2304 Cannot find name 'Metadata' in app/layout.tsx):
+   - Whenever you write \`export const metadata: Metadata = {...}\`, you MUST also have \`import type { Metadata } from 'next'\` in the same file
+   - Metadata is a Next.js type — NEVER import it from @/lib/types or invent a local type named Metadata
+   - RIGHT: \`import type { Metadata } from 'next'\` then \`export const metadata: Metadata = { title: '...', description: '...' }\`
+23. Lucide icon props (TS2322 IntrinsicAttributes & LucideProps — \`title\` not assignable):
+   - WRONG: \`<Settings className="h-4 w-4" title="Settings" />\` — lucide-react 0.479 does not accept \`title\`
+   - RIGHT: \`<span title="Settings"><Settings className="h-4 w-4" aria-hidden /></span>\` or \`<Settings className="h-4 w-4" aria-label="Settings" />\`
+   - Only pass props Lucide icons declare (className, size, strokeWidth, color, absoluteStrokeWidth, aria-*). Never invent HTML attribute props like \`title\`, \`alt\`, or \`loading\` on icons`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -307,10 +342,11 @@ export const GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE = `Page ↔ Client cont
 Generation order (strict):
 1. lib/types.ts — all DTOs 
 2. lib/actions.ts — export every get*/create*/update* function pages will import
-3. components/<Name>Client.tsx — declare \`interface <Name>ClientProps { ... }\` FIRST, then the component destructuring those exact field names
+3. components/<Name>Client.tsx — declare \`interface <Name>ClientProps { ... }\` FIRST, then the component destructuring those exact field NAMES only (never \`{ items: Item[] }\` in the parameter list)
 4. app/**/page.tsx — thin server pages that fetch via actions and pass props using the SAME names as step 3
 
 Hard rules:
+- Destructuring = names only: \`({ items, total }: DashboardClientProps)\` — NEVER \`({ items: Item[], total: number })\`
 - Prop names on the page JSX MUST exactly match fields in the Client's Props interface (items not initialItems, user not currentUser unless both sides use currentUser)
 - Include EVERY prop the page passes — if the page renders \`<DashboardClient items={items} total={total} />\`, DashboardClientProps MUST declare items AND total with correct types
 - NEVER use \`unknown\` or \`unknown[]\` for props that are rendered in JSX or iterated with \`.map()\` — import concrete types from lib/types.ts with string ids for keys and string labels/values for display
@@ -321,14 +357,19 @@ Hard rules:
 - When this batch includes any app/**/page.tsx or app/api/**/route.ts, you MUST also return lib/actions.ts with \`export async function\` for EVERY action those files import — even if lib/actions.ts was generated in an earlier batch, return the full updated file
 - Prisma enum fields: type props and useState as the enum union from lib/types.ts, not bare string`
 
-export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS17008 errors):
+export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS17008 / TS1128 errors):
 - TS1005 "'>' expected" almost always means broken JSX or a line break before JSX — fix the syntax, do not leave the file half-edited
+- TS1005 "," expected / ":" expected cascade near the top of a .tsx = types written INSIDE destructuring — see COMMON_FAILURES #19. Fix by moving types to \`interface XxxProps\` and destructuring names only
 - When returning JSX, use \`return (\` on the SAME line as the opening tag, or put the opening \`<\` immediately after \`return\` — NEVER put a newline between \`return\` and \`<\` (ASI makes TypeScript parse \`<\` as less-than, causing TS1005)
 - Every JSX tag must be properly closed: \`<div>...</div>\`, \`<input />\`, \`<Component />\` — no stray \`<\` or half-written tags
+- CRITICAL — never truncate mid-file: every .tsx you return must be COMPLETE (balanced braces/parens, every opened JSX tag closed, function ends with \`}\`). Truncation causes TS1128 at EOF plus cascades of TS1005 / TS17008 / TS1109 / TS1381. Prefer smaller components (Sidebar, CopilotChat, ArtifactsPanel as separate files under ~150 lines) over one huge file
+- Self-check before finishing a .tsx file: the last non-empty line must be \`}\` closing the function/export — never cut off inside \`className="...\`, a ternary, or props destructuring
 - "use client" MUST be the very first line of Client component files (before imports), exactly: \`"use client"\` with double quotes
 - Each \`import\` / \`import type\` must be a complete statement on one or valid multi-line form ending with \`from '...'\` — never leave \`import type { UserData }\` without a \`from '@/lib/types'\` clause
 - TS1109 "Expression expected" after imports often means a split import: specifiers listed after \`} from 'other-package';\` without \`import {\` — fix by adding a separate import block per package
-- Props interfaces belong OUTSIDE the component function — define \`interface SettingsClientProps { ... }\` then \`export default function SettingsClient({ user }: SettingsClientProps) { return ( <div>...</div> ) }\`
+- Props interfaces belong OUTSIDE the component function — ALWAYS:
+  RIGHT: \`interface SettingsClientProps { user: UserData; onSave: () => void }\` then \`export default function SettingsClient({ user, onSave }: SettingsClientProps) { return ( <div>...</div> ) }\`
+  WRONG (causes TS1005 "," / ":" cascades): \`export default function SettingsClient({ user: UserData, onSave: () => void }) { ... }\`
 - In .tsx files, wrap multiline JSX in parentheses: \`return (\n  <div>...</div>\n)\`
 - Do not use TypeScript generics with a bare \`<T>\` at the start of a line in .tsx without a trailing comma (\`<T,>\`) — prefer explicit prop interfaces instead of inline generic components
 - App Router: NEVER import from \`next/document\` in app/** — no \`Html\`, \`Head\`, \`Main\`, or \`NextScript\`; only app/layout.tsx renders \`<html>\` and \`<body>\`; app/not-found.tsx uses a simple \`<div>\` or \`<main>\` layout`
@@ -412,12 +453,26 @@ export const GENERATED_APP_REFERENCE_IMAGE_GUIDANCE = GENERATED_APP_REFERENCE_PD
 
 export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Sim does not inject or patch schema/models):
 - Generate prisma/schema.prisma with domain-specific models matching the app — never rely on a generic Record placeholder
-- Datasource block MUST be exactly:
-  datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
-  }
-  Do NOT add directUrl, DATABASE_URL_UNPOOLED, or DIRECT_URL — Vercel Neon injects DATABASE_URL only
+- CRITICAL — prisma/schema.prisma formatting (Prisma P1012 otherwise):
+  - NEVER put datasource or generator on a single compressed line
+  - ALWAYS use multi-line blocks with a blank line between datasource, generator, and models — COPY THIS EXACTLY:
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+  - Single-line forms like \`datasource db { provider = "postgresql" url = env("DATABASE_URL") }\` FAIL \`prisma generate\` (P1012: "not a valid definition within a datasource" / "provider is missing")
+  - Each model block must be multi-line: \`model Name {\` on its own line, fields indented, closing \`}\` alone on a line
+  - Every \`{\` MUST have a matching \`}\` before the next top-level \`model\` / \`enum\` / \`datasource\` / \`generator\` — NEVER nest a \`model\` inside another model or leave a previous block unclosed
+  - P1012 "This line is not a valid field or attribute definition" pointing at \`model Foo {\` means a prior block is still open (missing \`}\`) — close it, then start the next model at the top level
+  - File order: datasource → generator → models/enums only — no markdown fences, no explanatory prose, no truncated mid-line fields above the first model
+- Datasource: provider = "postgresql" and url = env("DATABASE_URL") only — Do NOT add directUrl, DATABASE_URL_UNPOOLED, or DIRECT_URL — Vercel Neon injects DATABASE_URL only
+- Generator: always include \`generator client { provider = "prisma-client-js" }\` as a multi-line block before the first model
 - Generate lib/prisma.ts with the PrismaClient singleton (globalForPrisma pattern for dev hot reload)
 - Generate .env.example with a single DATABASE_URL= placeholder (no UNPOOLED/DIRECT_URL lines)
 - package.json must include @prisma/client (dependencies) and prisma (devDependencies); build script runs prisma generate && prisma db push before next build
@@ -1801,9 +1856,77 @@ model AppSetting {
 }
 `
 
+const CANONICAL_PRISMA_DATASOURCE = `datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+`
+
+const CANONICAL_PRISMA_GENERATOR = `generator client {
+  provider = "prisma-client-js"
+}
+`
+
+const DEFAULT_PRISMA_MODEL = `model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}`
+
+/**
+ * Expands / repairs prisma/schema.prisma so it always has a valid multi-line
+ * datasource + generator with DATABASE_URL, and at least one model.
+ * Fixes Gemini stubs that omit url/models and single-line P1012 forms.
+ */
+export function normalizePrismaSchemaContent(content: string): string {
+  let next = content.trim()
+
+  if (!next) {
+    return DEFAULT_PRISMA_SCHEMA.trimStart()
+  }
+
+  // Expand single-line datasource/generator (P1012).
+  next = next.replace(
+    /datasource\s+db\s*\{[^\n}]*\}/g,
+    CANONICAL_PRISMA_DATASOURCE.trimEnd()
+  )
+  next = next.replace(
+    /generator\s+client\s*\{[^\n}]*\}/g,
+    CANONICAL_PRISMA_GENERATOR.trimEnd()
+  )
+
+  // Datasource missing entirely — prepend canonical blocks.
+  if (!/datasource\s+db\s*\{/.test(next)) {
+    next = `${CANONICAL_PRISMA_DATASOURCE}\n${CANONICAL_PRISMA_GENERATOR}\n${next}`
+  } else if (!/env\s*\(\s*["']DATABASE_URL["']\s*\)/.test(next)) {
+    // Datasource present but missing DATABASE_URL — rewrite the whole block.
+    next = next.replace(
+      /datasource\s+db\s*\{[\s\S]*?\n\}/,
+      CANONICAL_PRISMA_DATASOURCE.trimEnd()
+    )
+  }
+
+  if (!/generator\s+client\s*\{/.test(next)) {
+    next = next.replace(
+      /(datasource\s+db\s*\{[\s\S]*?\n\})/,
+      `$1\n\n${CANONICAL_PRISMA_GENERATOR.trimEnd()}`
+    )
+  }
+
+  // No model blocks — append a minimal AppSetting model so structure validation passes.
+  if (!/^\s*model\s+\w+/m.test(next)) {
+    next = `${next.trimEnd()}\n\n${DEFAULT_PRISMA_MODEL}\n`
+  }
+
+  return next.replace(/\n{3,}/g, '\n\n')
+}
+
 /**
  * Ensures prisma/schema.prisma carries the updatedAt preservation note after
- * generate/edit. Idempotent — skips when the note is already present.
+ * generate/edit. Also expands single-line datasource/generator blocks (P1012).
+ * Idempotent — skips the note when already present.
  */
 export function ensurePrismaUpdatedAtNote(files: GeneratedAppFile[]): GeneratedAppFile[] {
   return files.map((file) => {
@@ -1811,14 +1934,17 @@ export function ensurePrismaUpdatedAtNote(files: GeneratedAppFile[]): GeneratedA
     if (path !== 'prisma/schema.prisma' && !path.endsWith('/prisma/schema.prisma')) {
       return file
     }
-    if (file.content.includes(GENERATED_APP_UPDATED_AT_NOTE)) {
+
+    let content = normalizePrismaSchemaContent(file.content)
+    if (!content.includes(GENERATED_APP_UPDATED_AT_NOTE)) {
+      content = `${GENERATED_APP_UPDATED_AT_SCHEMA_COMMENT}\n${content.trimStart()}`
+    }
+
+    if (content === file.content) {
       return file
     }
-    const content = file.content.trimStart()
-    return {
-      ...file,
-      content: `${GENERATED_APP_UPDATED_AT_SCHEMA_COMMENT}\n${content}`,
-    }
+
+    return { ...file, content }
   })
 }
 
