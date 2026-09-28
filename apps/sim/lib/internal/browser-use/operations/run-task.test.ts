@@ -375,6 +375,31 @@ describe('executeRunTaskOperation', () => {
     expect(mockFetch.mock.calls[0]?.[0]).toBe('https://browser-use.internal/api/v2/tasks')
   })
 
+  it('accepts Browser Use v2 string cost on task-status poll', async () => {
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ id: 'task-1', sessionId: 'session-1' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'finished',
+          sessionId: 'session-1',
+          output: 'done',
+          steps: [],
+          cost: '0.42',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          liveUrl: null,
+          publicShareUrl: 'https://browser-use.com/share/session-1',
+        })
+      )
+
+    const result = await executeRunTaskOperation({ task: 'Open the page', apiKey: 'api-key' })
+
+    expect(result.success).toBe(true)
+    expect(result.output.__totalCostUsd).toBe(0.42)
+  })
+
   it('forwards API-reported totalCostUsd as __totalCostUsd', async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse({ id: 'task-1', sessionId: 'session-1' }))

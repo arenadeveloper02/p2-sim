@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { omit } from '@sim/utils/object'
 import { isCanonicalBase64 } from '@/lib/api/contracts/primitives'
 import { isUserFile, type UserFileLike } from '@/lib/core/utils/user-file'
@@ -9,6 +10,11 @@ import {
 } from '@/lib/internal/tool-operations/file-result'
 import { storeInternalToolFileResult } from '@/lib/internal/tool-operations/file-result.server'
 import type { InternalToolOperationContext } from '@/lib/internal/tool-operations/types'
+import {
+  extractStorageKey,
+  inferContextFromKey,
+  isInternalFileUrl,
+} from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
 import { MAX_FILE_SIZE } from '@/lib/uploads/utils/validation'
 import type { UserFile } from '@/executor/types'
@@ -18,6 +24,34 @@ const logger = createLogger('FileToolProcessor')
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isAccessDeniedError(error: unknown): boolean {
+  return getErrorMessage(error).toLowerCase().includes('access denied')
+}
+
+/**
+ * Image Generator already persisted bytes via `saveGeneratedImage`. version-6-main
+ * kept that serve URL when the later execution-storage copy could not re-read it
+ * (deployed chat actor vs session owner). Failing the tool dropped a stored image.
+ */
+function keepStoredGeneratedImage(
+  url: string,
+  name: string,
+  mimeType: string
+): UserFileLike | null {
+  if (!isInternalFileUrl(url)) return null
+  const key = extractStorageKey(url)
+  if (!key || inferContextFromKey(key) !== 'agent-generated-images') return null
+  const basename = key.split('/').pop()
+  return {
+    id: generateId(),
+    name: basename && basename.trim().length > 0 ? basename : name,
+    url,
+    key,
+    type: mimeType,
+    context: 'agent-generated-images',
+  }
 }
 
 /**
@@ -145,9 +179,28 @@ export class FileToolProcessor {
             continue
           }
           if (pendingFiles.has(file)) continue
-          const buffered = await FileToolProcessor.readFile(file, context, remainingBytes, signal)
-          remainingBytes -= buffered.buffer.length
-          pendingFiles.set(file, buffered)
+          try {
+            const buffered = await FileToolProcessor.readFile(file, context, remainingBytes, signal)
+            remainingBytes -= buffered.buffer.length
+            pendingFiles.set(file, buffered)
+          } catch (readError) {
+            signal?.throwIfAborted()
+            const url = typeof file.url === 'string' ? file.url : ''
+            const mimeType =
+              (typeof file.mimeType === 'string' && file.mimeType) ||
+              (typeof file.contentType === 'string' && file.contentType) ||
+              'application/octet-stream'
+            const kept =
+              url && isAccessDeniedError(readError)
+                ? keepStoredGeneratedImage(
+                    url,
+                    typeof file.name === 'string' ? file.name : 'generated-image.png',
+                    mimeType
+                  )
+                : null
+            if (!kept) throw readError
+            replacements.set(file, kept)
+          }
         }
       } catch (error) {
         signal?.throwIfAborted()

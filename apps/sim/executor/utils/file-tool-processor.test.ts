@@ -277,4 +277,42 @@ describe('FileToolProcessor', () => {
 
     expect(mockUploadExecutionFile).not.toHaveBeenCalled()
   })
+
+  it('keeps a saved agent-generated image when the execution copy is denied', async () => {
+    mockDownloadFileFromUrl.mockRejectedValue(
+      new Error('Access denied: file not found or insufficient permissions')
+    )
+    const url =
+      'https://test-agent.thearena.ai/api/files/serve/agent-generated-images/workflow-1/user-1/image.png'
+
+    const processed = await FileToolProcessor.processToolOutputs(
+      { file: url },
+      toolConfig,
+      executionContext
+    )
+
+    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
+    expect(processed.file).toMatchObject({
+      name: 'image.png',
+      url,
+      key: 'agent-generated-images/workflow-1/user-1/image.png',
+      context: 'agent-generated-images',
+    })
+  })
+
+  it('still fails when an external file URL is denied', async () => {
+    mockDownloadFileFromUrl.mockRejectedValue(
+      new Error('Access denied: file not found or insufficient permissions')
+    )
+
+    await expect(
+      FileToolProcessor.processToolOutputs(
+        { file: 'https://example.com/generated.png' },
+        toolConfig,
+        executionContext
+      )
+    ).rejects.toThrow("Failed to process file output 'file'")
+
+    expect(mockUploadExecutionFile).not.toHaveBeenCalled()
+  })
 })

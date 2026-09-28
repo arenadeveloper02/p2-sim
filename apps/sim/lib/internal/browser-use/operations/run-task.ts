@@ -58,18 +58,20 @@ const taskStepSchema: z.ZodType<BrowserUseTaskStep> = z
   })
   .passthrough()
 
+const browserUseCostValueSchema = z.union([z.number(), z.string(), z.null()]).optional()
+
 const taskStatusResponseSchema = z
   .object({
     status: z.string(),
     sessionId: z.string().nullable().optional(),
     output: z.unknown().optional(),
     steps: z.array(taskStepSchema).optional(),
-    totalCostUsd: z.number().optional(),
-    cost: z.number().optional(),
-    __totalCostUsd: z.number().optional(),
+    totalCostUsd: browserUseCostValueSchema,
+    cost: browserUseCostValueSchema,
+    __totalCostUsd: browserUseCostValueSchema,
     usage: z
       .object({
-        totalCostUsd: z.number().optional(),
+        totalCostUsd: browserUseCostValueSchema,
       })
       .passthrough()
       .optional(),
@@ -323,6 +325,10 @@ async function fetchTaskStatus(
     const parsed = taskStatusResponseSchema.safeParse(await response.json())
     signal?.throwIfAborted()
     if (!parsed.success) {
+      logger.warn('BrowserUse returned an invalid task-status response', {
+        taskId,
+        issues: parsed.error.issues,
+      })
       return { ok: false, error: 'BrowserUse returned an invalid task-status response' }
     }
     return { ok: true, data: parsed.data }
@@ -333,20 +339,38 @@ async function fetchTaskStatus(
 }
 
 /**
+ * Parses a Browser Use cost field. The v2 TaskView documents `cost` as a decimal string.
+ */
+function parseBrowserUseCostUsd(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed
+    }
+  }
+  return undefined
+}
+
+/**
  * Extracts a dollar cost from a Browser Use task status payload when present.
  */
 function extractTaskTotalCostUsd(
   taskData: z.infer<typeof taskStatusResponseSchema>
 ): number | undefined {
-  const candidates = [taskData.totalCostUsd, taskData.cost, taskData.__totalCostUsd]
+  const candidates = [
+    taskData.totalCostUsd,
+    taskData.cost,
+    taskData.__totalCostUsd,
+    taskData.usage?.totalCostUsd,
+  ]
   for (const value of candidates) {
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      return value
+    const parsed = parseBrowserUseCostUsd(value)
+    if (parsed !== undefined) {
+      return parsed
     }
-  }
-  const usageCost = taskData.usage?.totalCostUsd
-  if (typeof usageCost === 'number' && Number.isFinite(usageCost) && usageCost >= 0) {
-    return usageCost
   }
   return undefined
 }

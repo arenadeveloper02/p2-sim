@@ -102,6 +102,20 @@ const getEnv = (variable: string): string | undefined => {
 export const publicEnvMissingAtModuleInit =
   typeof window !== 'undefined' && window.__ENV === undefined
 
+/**
+ * When `BROWSER_USE_API_KEY` is set, expose `NEXT_PUBLIC_BROWSER_USE_CONFIGURED`
+ * so the Browser Use block can hide its API key field. The secret is never copied.
+ * An explicit public flag (including `false`) is left unchanged.
+ */
+export function syncBrowserUseConfiguredPublicFlag(envVars: NodeJS.ProcessEnv = process.env): void {
+  if (envVars.NEXT_PUBLIC_BROWSER_USE_CONFIGURED?.trim()) return
+  if (envVars.BROWSER_USE_API_KEY?.trim()) {
+    envVars.NEXT_PUBLIC_BROWSER_USE_CONFIGURED = 'true'
+  }
+}
+
+syncBrowserUseConfiguredPublicFlag()
+
 // biome-ignore format: keep alignment for readability
 export const env = createEnv({
   skipValidation: true,

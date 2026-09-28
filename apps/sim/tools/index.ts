@@ -1561,9 +1561,9 @@ function createTransformedErrorFromErrorInfo(errorInfo?: ErrorInfo, extractorId?
 
 /**
  * Store declared file outputs using the trusted workflow or Copilot context.
- * Skip when no trusted context exists — image generation still returns stored
- * URLs from `saveGeneratedImage`, matching version-6-main. Throwing here failed
- * every Image Generator model because the v2 wrapper nested `executeTool` without context.
+ * Skip when no trusted context exists. Image generation already stored bytes via
+ * `saveGeneratedImage`; version-6-main returned that URL if the execution copy
+ * failed. `FileToolProcessor` keeps those URLs on access-denied re-download.
  */
 async function processFileOutputs(
   result: ToolResponse,
