@@ -180,12 +180,22 @@ function checkMissingImportFiles(files: GeneratedAppFile[]): string[] {
   return issues
 }
 
+function isArenaScaffoldProviderPath(path: string): boolean {
+  return (
+    /(^|\/)components\/arena-email-provider\.tsx$/.test(path) ||
+    /(^|\/)components\/arena-theme-provider\.tsx$/.test(path)
+  )
+}
+
 function checkMissingPropsInterfaces(files: GeneratedAppFile[]): string[] {
   const issues: string[] = []
 
   for (const file of files) {
     const path = normalizePath(file.path)
     if (!path.startsWith('components/') || !path.endsWith('.tsx')) {
+      continue
+    }
+    if (isArenaScaffoldProviderPath(path)) {
       continue
     }
 
@@ -211,6 +221,11 @@ function checkPropsNameAlignment(files: GeneratedAppFile[]): string[] {
   for (const file of files) {
     const path = normalizePath(file.path)
     if (!path.startsWith('components/') || !path.endsWith('.tsx')) {
+      continue
+    }
+    // Scaffold-owned Arena providers are rewritten by ensureArenaScaffoldFiles — skip
+    // LLM prop-name drift checks so repairs are not wasted on injected contracts.
+    if (isArenaScaffoldProviderPath(path)) {
       continue
     }
 
@@ -383,6 +398,16 @@ function checkPrismaUsage(files: GeneratedAppFile[], requiresDatabase: boolean):
       }
       if (!/env\s*\(\s*["']DATABASE_URL["']\s*\)/.test(schemaContent)) {
         issues.push('prisma/schema.prisma datasource must use url = env("DATABASE_URL")')
+      }
+      if (/datasource\s+db\s*\{[^\n}]*\}/.test(schemaContent)) {
+        issues.push(
+          'prisma/schema.prisma datasource must be a multi-line block (single-line forms fail prisma generate with P1012)'
+        )
+      }
+      if (/generator\s+client\s*\{[^\n}]*\}/.test(schemaContent)) {
+        issues.push(
+          'prisma/schema.prisma generator must be a multi-line block (single-line forms fail prisma generate with P1012)'
+        )
       }
       if (!/^\s*model\s+\w+/m.test(schemaContent)) {
         issues.push('prisma/schema.prisma must define at least one model block')

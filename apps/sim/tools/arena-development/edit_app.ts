@@ -36,6 +36,13 @@ export const arenaDevelopmentEditAppTool: ToolConfig<
       description:
         'Optional design PDF — layout, theme, and styling follow the reference when editing UI',
     },
+    llmProvider: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'LLM backend: vertex (Gemini 3.8 Flash) or anthropic (Claude Fable)',
+      default: 'vertex',
+    },
   },
 
   request: {
@@ -47,6 +54,10 @@ export const arenaDevelopmentEditAppTool: ToolConfig<
       userInput: params.userInput,
       repoName: params.repoName,
       ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
+      llmProvider:
+        params.llmProvider === 'anthropic' || params.llmProvider === 'vertex'
+          ? params.llmProvider
+          : 'vertex',
       arenaMode: true,
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,

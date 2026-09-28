@@ -70,6 +70,17 @@ export const DevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> = {
       value: () => 'generate',
     },
     {
+      id: 'llmProvider',
+      title: 'Model',
+      type: 'dropdown',
+      options: [
+        { label: 'Gemini 3.8 Flash (Vertex)', id: 'vertex' },
+        { label: 'Claude Fable (Anthropic)', id: 'anthropic' },
+      ],
+      value: () => 'vertex',
+      description: 'LLM used for generate and edit. Vertex requires VERTEX_PROJECT + credentials.',
+    },
+    {
       id: 'userInput',
       title: 'User Input',
       type: 'long-input',
@@ -143,25 +154,36 @@ Return ONLY the specification text. No markdown wrappers.`,
     config: {
       tool: (params) =>
         params.operation === 'edit' ? 'development_edit_app' : 'development_generate_app',
-      params: (params) =>
-        params.operation === 'edit'
+      params: (params) => {
+        const llmProvider =
+          params.llmProvider === 'anthropic' || params.llmProvider === 'vertex'
+            ? params.llmProvider
+            : 'vertex'
+        return params.operation === 'edit'
           ? {
               userInput: params.userInput,
               repoName: params.existingRepo,
               referenceImage: normalizeFileInput(params.referenceImage, { single: true }),
+              llmProvider,
             }
           : {
               userInput: params.userInput,
               repoName: params.repoName,
               privateRepo: params.privateRepo === true,
               referenceImage: normalizeFileInput(params.referenceImage, { single: true }),
-            },
+              llmProvider,
+            }
+      },
     },
   },
   inputs: {
     operation: {
       type: 'string',
       description: 'Whether to generate a new app or edit an existing repository',
+    },
+    llmProvider: {
+      type: 'string',
+      description: 'LLM backend: vertex (Gemini 3.8 Flash) or anthropic (Claude Fable)',
     },
     userInput: {
       type: 'string',

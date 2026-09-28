@@ -34,6 +34,7 @@ const RequestSchema = z.object({
   privateRepo: z.boolean().optional(),
   referenceImage: RawFileInputSchema.nullish(),
   arenaMode: z.boolean().optional(),
+  llmProvider: z.enum(['vertex', 'anthropic']).optional(),
   workspaceId: z.string().optional(),
   workflowId: z.string().optional(),
   executionId: z.string().optional(),
@@ -84,6 +85,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     privateRepo: parsed.data.privateRepo,
     hasReferenceImage: Boolean(referenceImage),
     arenaMode: parsed.data.arenaMode === true,
+    llmProvider: parsed.data.llmProvider ?? 'vertex',
   })
 
   const result = await generateNextjsApp({
@@ -92,6 +94,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     privateRepo: parsed.data.privateRepo,
     referenceImage,
     arenaMode: parsed.data.arenaMode === true,
+    llmProvider: parsed.data.llmProvider ?? 'vertex',
   })
 
   // Cost is returned on the response for span → usage_log billing (no side-channel).
