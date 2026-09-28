@@ -17,6 +17,14 @@ export function firstFileBodyString(params: Record<string, unknown>): string | u
   for (const key of FILE_BODY_ARG_KEYS) {
     const value = params[key]
     if (typeof value === 'string' && value.length > 0) return value
+    // Claude often passes JSON as a native object/array in `content`.
+    if (value && typeof value === 'object') {
+      try {
+        return JSON.stringify(value, null, 2)
+      } catch {
+        continue
+      }
+    }
   }
   return undefined
 }

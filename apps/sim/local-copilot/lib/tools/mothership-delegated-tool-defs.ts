@@ -18,11 +18,11 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Loads workflow structure and metadata by workflowId (useful on home chat when no workflow is open).',
   list_integration_tools:
     'Lists available operations for a connected integration service (e.g. gmail, google_sheets, slack). Then call invoke_integration_tool with the exact tool id — do not call load_integration_tool.',
-  read: 'Reads a workspace file by canonical VFS path. For file bytes/text use files/<name>/content (e.g. files/page.html/content). Required before workspace_file operation=update on existing HTML/text so the edit starts from the current file.',
+  read: 'Reads a workspace file by canonical VFS path. For file bytes/text use files/<name>/content (e.g. files/page.html/content). Required before workspace_file operation=update on existing HTML/text so the edit starts from the current file. Complex/Arena HTML may return truncated mega SVG lines — that is expected; use offset/limit or grep, then patch — never full-rewrite.',
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
-    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body — markdown must be finished GFM (# title, ## sections, lists, blank lines), not a wall of prose or a file wrapped in one code fence. Do not also print that body in chat. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
+    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body — markdown must be finished GFM (# title, ## sections, lists, blank lines), not a wall of prose or a file wrapped in one code fence. HTML must stay lean (no multi-hundred-KB inline SVG path dumps); for complex UIs split CSS/JS into sibling files or grow via append — never one-shot Arena/Figma-export megabyte pages. Do not also print that body in chat. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds. For PNG/JPEG/GIF/WebP: do NOT use create_file with base64 — call generate_image with outputs.files instead.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
     'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..." }, title. For HTML/text, targeted changes (title, heading, one string) MUST use operation=patch with strategy=search_replace — update replaces the ENTIRE file. Always read files/<path>/content first before update. Never operation=create or target.kind=new_file. Example patch: {"operation":"patch","target":{"kind":"path","path":"files/page.html"},"title":"Title","edit":{"strategy":"search_replace","search":"<title>Old</title>"}}. Does not write the body — call edit_content in the NEXT tool round with content.',
@@ -40,9 +40,9 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Live web search via Exa (same keys as the Exa block: workspace EXA_API_KEY, BYOK, or hosted). Call this FIRST for real-world factual / current questions (who/what/when/where, news, prices, weather) — do not answer from memory. For citation-heavy Q&A you may use invoke_integration_tool with exa_answer instead. REQUIRED: query and toolTitle.',
   enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
-    'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools. DEFAULT-FIRST: omit sandboxId unless a required npm/PyPI/apt package or managed CLI is missing from the default Function image.',
+    'Runs Python or shell in the remote E2B Mothership sandbox (Python-oriented template — never pass javascript). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Requires e2b.enabled in context. Prefer this over Daytona integration tools. DEFAULT-FIRST: omit sandboxId unless a required PyPI/apt package or managed CLI is missing from the default image.',
   manage_sandbox:
-    'Creates, lists, updates, or deletes a persistent Sim sandbox (custom E2B image with npm/PyPI deps, Debian packages, and managed CLIs). Use add when function_execute fails because a third-party package is missing, then pass the returned sandboxId to function_execute. Required: operation (add|edit|list|delete). add also needs name and language (javascript|python).',
+    'Creates, lists, updates, or deletes a persistent Sim sandbox (custom E2B image with PyPI deps, Debian packages, and managed CLIs). Use add when function_execute fails because a third-party package is missing, then pass the returned sandboxId to function_execute. Required: operation (add|edit|list|delete). add also needs name and language — Arena Copilot must use language=python (Mothership template has no JS runtime).',
   edit_content:
     'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — never require/import. PPTX: SLIDE_W/MARGIN/CONTENT_W, title + bullets, one idea per slide. DOCX: __docxDocOptions + HeadingLevel + addSection (never docx.addSection). PDF: LETTER pages, margins, wrapped text. Markdown: finished GFM. Never a single unstyled dump. Never emit in the same batch as workspace_file.',
   deploy_chat:
@@ -285,6 +285,30 @@ export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefin
         },
       }
       parameters = { ...baseParameters, properties }
+    }
+
+    if (
+      (name === 'function_execute' || name === 'manage_sandbox') &&
+      baseParameters.type === 'object'
+    ) {
+      const existingProperties = (baseParameters.properties as Record<string, unknown>) ?? {}
+      const languageProp = existingProperties.language as Record<string, unknown> | undefined
+      if (languageProp) {
+        const isManageSandbox = name === 'manage_sandbox'
+        parameters = {
+          ...parameters,
+          properties: {
+            ...existingProperties,
+            language: {
+              ...languageProp,
+              description: isManageSandbox
+                ? 'Dependency language. Arena Copilot Mothership template supports python (PyPI) only.'
+                : 'Execution language. Arena Copilot Mothership template supports python and shell (not javascript).',
+              enum: isManageSandbox ? ['python'] : ['python', 'shell'],
+            },
+          },
+        }
+      }
     }
 
     return {

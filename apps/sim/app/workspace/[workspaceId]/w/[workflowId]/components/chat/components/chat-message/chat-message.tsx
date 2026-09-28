@@ -4,6 +4,7 @@ import { Check, Copy } from 'lucide-react'
 import {
   resolveEChartsOptionsFromContent,
   stripEChartsJsonFromContent,
+  stripIncompleteTrailingChartJson,
 } from '@/lib/chart-generation/echarts-option'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
@@ -211,9 +212,18 @@ export function ChatMessage({
     return new Map(entries)
   }, [message.generatedImages])
 
+  // While streaming, hide a partially received trailing chart JSON payload so
+  // raw JSON never flashes as text; the chart renders once its payload completes.
+  const displayContent = useMemo(() => {
+    if (message.isStreaming && typeof message.content === 'string') {
+      return stripIncompleteTrailingChartJson(message.content)
+    }
+    return message.content
+  }, [message.content, message.isStreaming])
+
   const messageChartOptions = useMemo(
-    () => resolveEChartsOptionsFromContent(message.content),
-    [message.content]
+    () => resolveEChartsOptionsFromContent(displayContent),
+    [displayContent]
   )
 
   const getGeneratedImageSelectionProps = useCallback(
@@ -287,7 +297,7 @@ export function ChatMessage({
       return null
     }
 
-    if (content === message.content && messageChartOptions) {
+    if (content === displayContent && messageChartOptions) {
       const prose = typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
       return (
         <>
@@ -461,7 +471,7 @@ export function ChatMessage({
     <div className='w-full max-w-full overflow-hidden pl-[2px] opacity-100 transition-opacity duration-200'>
       <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
         {/* <WordWrap text={formattedContent} /> */}
-        {renderContent(message?.content)}
+        {renderContent(displayContent)}
         {message?.isStreaming && <StreamingIndicator className='mt-1 text-[#E8E8E8]' />}
       </div>
       {message.files && message.files.length > 0 && (

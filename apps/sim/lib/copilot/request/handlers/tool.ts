@@ -474,6 +474,15 @@ async function handleCallPhase(
     registerMainToolCall(context, toolCallId, toolName, args, existing, agentId, ui, !isPartial)
   }
 
+  const thoughtSignature =
+    typeof (data as { thoughtSignature?: unknown }).thoughtSignature === 'string'
+      ? (data as { thoughtSignature: string }).thoughtSignature
+      : undefined
+  if (thoughtSignature) {
+    const stamped = context.toolCalls.get(toolCallId)
+    if (stamped) stamped.thoughtSignature = thoughtSignature
+  }
+
   if (isPartial) return
   if (!isSubagent && wasToolResultSeen(toolCallId)) return
   if (context.pendingToolPromises.has(toolCallId) || existing?.status === 'executing') {

@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   clearSpecialistCheckpoint,
@@ -25,7 +26,12 @@ import {
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { resolveLocalCopilotMaxOutputTokens } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
-import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
+import type {
+  AnthropicThinkingHistoryBlock,
+  ChatMessage,
+  GeminiHistoryPart,
+  LocalCopilotProvider,
+} from '@/local-copilot/lib/providers/types'
 import {
   prepareLocalToolConfirmation,
   waitForLocalToolConfirmation,
@@ -43,7 +49,13 @@ import {
   resolveMandatoryFollowUps,
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
+import {
+  buildDebugInspectionChatAppendix,
+  isDebugInspectionToolName,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
 import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
+import { buildDebugExplanationContinuationMessage } from '@/local-copilot/lib/user-facing-text'
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
 import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
 import { buildSpecialistStructuredResult } from '@/local-copilot/lib/verification/specialist-result'
@@ -61,6 +73,8 @@ const logger = createLogger('LocalCopilotSpecialistPass')
  */
 export const SPECIALIST_PASS_MAX_ROUNDS = 10
 const MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS = 4
+/** When log/debug tools finish with no prose, force one closing explanation round. */
+const MAX_SPECIALIST_DEBUG_EXPLANATION_ROUNDS = 1
 export const SPECIALIST_FINDINGS_MAX_CHARS = 12_000
 
 export interface RunSpecialistPassParams {
@@ -96,6 +110,8 @@ export interface RunSpecialistPassParams {
    * `waitForLocalToolConfirmation` finishes — the user never gets a chance to Approve.
    */
   onEvent?: (event: LocalCopilotStreamEvent) => void | Promise<void>
+  /** Optional thinking-level override (file passes use a capped level). */
+  thinkingLevel?: string
 }
 
 export interface SpecialistPassResult {
@@ -220,7 +236,7 @@ export async function executeSpecialistLoop(
       }
     }
 
-    await emitSpecialistEvent(events, { type: 'status', message: 'Working on it…' }, params.onEvent)
+    await emitSpecialistEvent(events, { type: 'status', message: 'Thinking…' }, params.onEvent)
 
     const messages: ChatMessage[] = [
       {
@@ -253,9 +269,11 @@ export async function executeSpecialistLoop(
     const mutationOutcomes: MutationOutcome[] = []
     const verifications: VerificationRecord[] = []
     const errors: string[] = []
+    const debugToolRecords: ToolTurnRecord[] = []
     let toolRoundCount = 0
     let pendingFollowUps: MandatoryFollowUp[] = []
     let forcedFollowUpRounds = 0
+    let forcedDebugExplanations = 0
     const persistFileIntentChannel =
       params.domain === 'file' && Boolean(params.parentDispatchToolCallId)
     let fileIntentChannelId = persistFileIntentChannel
@@ -266,10 +284,18 @@ export async function executeSpecialistLoop(
     for (let round = 0; round < maxRounds; round++) {
       if (signal.aborted) break
 
-      const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
+      const pendingToolCalls: Array<{
+        id: string
+        name: string
+        arguments: string
+        thoughtSignature?: string
+      }> = []
       let assistantText = ''
       let roundInputTokens = 0
       let roundOutputTokens = 0
+      let roundGeminiModelParts: GeminiHistoryPart[] = []
+      let roundReasoningContent = ''
+      const roundAnthropicThinkingBlocks: AnthropicThinkingHistoryBlock[] = []
 
       try {
         for await (const chunk of params.provider.chatCompletionStream({
@@ -278,8 +304,25 @@ export async function executeSpecialistLoop(
           tools,
           maxTokens: resolveLocalCopilotMaxOutputTokens(params.model),
           signal,
+          ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}),
         })) {
           if (chunk.type === 'text' && chunk.content) assistantText += chunk.content
+          if (chunk.type === 'thinking' && chunk.content) {
+            roundReasoningContent += chunk.content
+          }
+          if (chunk.type === 'thinking_block' && chunk.thinkingBlock) {
+            roundAnthropicThinkingBlocks.push(chunk.thinkingBlock)
+            if (chunk.thinkingBlock.type === 'thinking') {
+              const suffix = unresolvedThinkingBlockText(
+                roundReasoningContent,
+                chunk.thinkingBlock.thinking
+              )
+              if (suffix) roundReasoningContent += suffix
+            }
+          }
+          if (chunk.type === 'gemini_model_parts' && chunk.geminiModelParts) {
+            roundGeminiModelParts = chunk.geminiModelParts
+          }
           if (chunk.type === 'tool_call' && chunk.toolCall) pendingToolCalls.push(chunk.toolCall)
           if (chunk.type === 'done' && chunk.usage) {
             roundInputTokens = chunk.usage.inputTokens
@@ -332,13 +375,58 @@ export async function executeSpecialistLoop(
           })
           continue
         }
-        if (assistantText.trim()) findings.push(assistantText.trim())
+
+        if (
+          !assistantText.trim() &&
+          debugToolRecords.length > 0 &&
+          forcedDebugExplanations < MAX_SPECIALIST_DEBUG_EXPLANATION_ROUNDS &&
+          round < maxRounds - 1
+        ) {
+          forcedDebugExplanations += 1
+          messages.push({
+            role: 'system',
+            content: buildDebugExplanationContinuationMessage(),
+          })
+          logger.info('Arena Copilot specialist forcing debug-explanation continuation', {
+            domain: params.domain,
+            round,
+            forcedDebugExplanations,
+            debugTools: debugToolRecords.map((record) => record.name),
+          })
+          continue
+        }
+
+        if (assistantText.trim()) {
+          findings.push(assistantText.trim())
+        } else if (debugToolRecords.length > 0) {
+          // Model stopped after log tools with no prose — surface a real answer now.
+          const synthesized = buildDebugInspectionChatAppendix(debugToolRecords)
+          if (synthesized) {
+            findings.push(synthesized)
+            await emitSpecialistEvent(
+              events,
+              { type: 'text_delta', content: synthesized },
+              params.onEvent
+            )
+          }
+        }
         break
       }
 
       toolRoundCount += 1
       const ordered = sortToolCallsForExecution(pendingToolCalls)
-      messages.push({ role: 'assistant', content: assistantText, toolCalls: ordered })
+      messages.push({
+        role: 'assistant',
+        content: assistantText,
+        toolCalls: ordered,
+        ...(roundAnthropicThinkingBlocks.length > 0
+          ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
+          : {}),
+        ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
+        ...(roundReasoningContent.trim()
+          ? { reasoningContent: roundReasoningContent }
+          : {}),
+      })
 
       for (const call of ordered) {
         let parsedArgs: Record<string, unknown> = {}
@@ -541,6 +629,14 @@ export async function executeSpecialistLoop(
           toolResult.result
         )
         findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
+        if (isDebugInspectionToolName(call.name)) {
+          debugToolRecords.push({
+            name: call.name,
+            success: toolResult.success,
+            result: toolResult.result,
+            ...(toolResult.error ? { error: toolResult.error } : {}),
+          })
+        }
         if (!toolResult.success && toolResult.error) {
           errors.push(toolResult.error)
         }

@@ -527,6 +527,23 @@ export function formatToolResultForLlm(
       followUpHint:
         'If you just created a workflow, call edit_workflow now to add blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
     }
+  } else if (toolName === 'edit_content') {
+    const record = asRecord(result)
+    const message =
+      (typeof record.message === 'string' && record.message) ||
+      (typeof record.error === 'string' && record.error) ||
+      ''
+    if (
+      record.success === false &&
+      /unexpected token|syntaxerror|syntax error|parse error|unexpected end/i.test(message)
+    ) {
+      formatted = {
+        ...record,
+        regenerateNow: true,
+        followUpHint:
+          'Syntax/parse error in office JS. Do NOT keep Thinking about parentheses or table rows. Call edit_content immediately with a clean full rewrite (simpler tables, fewer nested expressions). One rewrite beats ten diagnosis paragraphs.',
+      }
+    }
   }
 
   if (toolName === 'generate_api_key') {

@@ -312,6 +312,21 @@ describe('reduceEvent — text segmentation', () => {
     const texts = m.order.map((id) => m.nodes.get(id)).filter((n) => n?.kind === 'text')
     expect(texts.map((t) => (t as { text: string }).text)).toEqual(['Hello world', 'after'])
   })
+
+  it('closes thinking on tool call so a later round opens a fresh thinking segment', () => {
+    const m = apply([
+      textEvent(1, 'thinking', 'plan A'),
+      toolCall(2, 'tc-1', 'search'),
+      toolResult(3, 'tc-1', true),
+      textEvent(4, 'thinking', 'plan B after tools'),
+    ])
+    const thinking = m.order
+      .map((id) => m.nodes.get(id))
+      .filter((n) => n?.kind === 'text' && n.channel === 'thinking') as TextNode[]
+    expect(thinking.map((t) => t.text)).toEqual(['plan A', 'plan B after tools'])
+    expect(thinking[0].endedAtMs).toBe(2)
+    expect(thinking[1].endedAtMs).toBeUndefined()
+  })
 })
 
 describe('reduceEvent — idempotency', () => {

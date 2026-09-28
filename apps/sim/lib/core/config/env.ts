@@ -274,8 +274,15 @@ export const env = createEnv({
     OCR_AZURE_API_KEY:                     z.string().min(1).optional(),           // Azure Mistral OCR API key
 
     // Vertex AI Configuration
-    VERTEX_PROJECT:                        z.string().optional(),                  // Google Cloud project ID for Vertex AI
-    VERTEX_LOCATION:                       z.string().optional(),                  // Google Cloud location/region for Vertex AI (defaults to us-central1)
+    VERTEX_PROJECT:                        z.string().optional(),                  // Primary GCP project for Vertex AI (Local Copilot rotation slot 0)
+    VERTEX_PROJECT_1:                      z.string().optional(),                  // Local Copilot Vertex rotation slot 1 project
+    VERTEX_PROJECT_2:                      z.string().optional(),                  // Local Copilot Vertex rotation slot 2 project
+    VERTEX_LOCATION:                       z.string().optional(),                  // Primary Vertex location (global|us|eu|region; default global)
+    VERTEX_LOCATION_1:                     z.string().optional(),                  // Local Copilot Vertex rotation slot 1 location
+    VERTEX_LOCATION_2:                     z.string().optional(),                  // Local Copilot Vertex rotation slot 2 location
+    VERTEX_SERVICE_ACCOUNT_JSON:           z.string().optional(),                  // Primary Vertex service-account JSON (slot 0)
+    VERTEX_SERVICE_ACCOUNT_JSON_1:         z.string().optional(),                  // Local Copilot Vertex rotation slot 1 service-account JSON
+    VERTEX_SERVICE_ACCOUNT_JSON_2:         z.string().optional(),                  // Local Copilot Vertex rotation slot 2 service-account JSON
 
     // Monitoring & Analytics
     TELEMETRY_ENDPOINT:                    z.string().url().optional(),            // Custom telemetry/analytics endpoint

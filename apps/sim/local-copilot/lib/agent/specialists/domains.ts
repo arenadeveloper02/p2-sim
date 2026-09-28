@@ -1,4 +1,5 @@
 import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
+import { LOCAL_COMPLEX_HTML_GUIDANCE } from '@/local-copilot/lib/prompts/complex-html-guidance'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 /**
@@ -341,13 +342,13 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
-      return 'Focus on integration tools, MCP tools, skills, function_execute, and manage_sandbox.'
+      return 'Focus on integration tools, MCP tools, skills, function_execute (python or shell; Mothership template has no JS), and manage_sandbox (language=python).'
     case 'research':
       return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. When the question is about a workspace file, glob/read/grep that exact VFS path — do not open a similarly named file. Use search_documentation only for Sim product questions.'
     case 'media':
-      return 'Focus on image/audio/video generation and ffmpeg.'
+      return 'Focus on image/audio/video generation and ffmpeg. For PNG/JPEG/GIF/WebP (even when the user says "PNG format"), call generate_image with outputs.files — never create_file with base64.'
     case 'file':
-      return `Read, create, and update workspace files. Create NEW html/md/txt/json/csv with create_file once (full body in content). Edit EXISTING text/html: MUST read files/<path>/content first; targeted changes (title, heading, one string) use workspace_file operation=patch with search_replace then edit_content with ONLY the replacement — never regenerate the file. Use operation=update only for empty shells or an explicit full rewrite, and then edit_content must start from the read result. After create_file, workspace_file target.kind=path (never kind=new_file / operation=create — that duplicates the file). There is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never dump HTML/CSS/JS in the user-facing reply or findings (no \`\`\`html fences). You MUST still read existing files via the read tool. Put write bodies only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}`
+      return `Read, create, and update workspace files. Create NEW lean html/md/txt/json/csv with create_file once (full body in content) — HTML must stay modular (no mega inline SVG dumps; split CSS/JS; Arena/Figma-scale pages cannot be one-shot). Edit EXISTING text/html: MUST read files/<path>/content first (mega lines may truncate); targeted changes use workspace_file operation=patch with search_replace then edit_content with ONLY the replacement — never regenerate complex HTML. Use operation=update only for empty shells or an explicit full rewrite of a lean file. After create_file, workspace_file target.kind=path (never kind=new_file / operation=create — that duplicates the file). There is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never dump HTML/CSS/JS in the user-facing reply or findings (no \`\`\`html fences). You MUST still read existing files via the read tool. Put write bodies only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}\n\n${LOCAL_COMPLEX_HTML_GUIDANCE}`
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:

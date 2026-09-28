@@ -44,18 +44,49 @@ describe('convertMessagesToAnthropic system caching', () => {
     expect(system).toBeUndefined()
   })
 
-  it('skips blank system messages when building blocks', () => {
-    const { system } = convertMessagesToAnthropic([
-      { role: 'system', content: '   ' },
-      { role: 'system', content: 'STATIC RULES' },
-      { role: 'system', content: 'Current context:\nx' },
-      { role: 'user', content: 'hi' },
+  it('echoes Anthropic thinking blocks before tool_use for history round-trip', () => {
+    const { anthropicMessages } = convertMessagesToAnthropic([
+      { role: 'user', content: 'edit the file' },
+      {
+        role: 'assistant',
+        content: '',
+        anthropicThinkingBlocks: [
+          { type: 'thinking', thinking: 'I should read first.', signature: 'sig-abc' },
+        ],
+        toolCalls: [{ id: 't1', name: 'grep', arguments: '{"query":"x"}' }],
+      },
+      { role: 'tool', toolCallId: 't1', content: '{"ok":true}' },
     ])
-    expect(system?.[0]).toEqual({
-      type: 'text',
-      text: 'STATIC RULES',
-      cache_control: getAnthropicAutomaticCacheControl(),
+
+    expect(anthropicMessages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'I should read first.', signature: 'sig-abc' },
+        { type: 'tool_use', id: 't1', name: 'grep', input: { query: 'x' } },
+      ],
     })
-    expect(system?.[1]).toEqual({ type: 'text', text: 'Current context:\nx' })
+  })
+
+  it('skips unsigned Anthropic thinking blocks so tool-loop history stays valid', () => {
+    const { anthropicMessages } = convertMessagesToAnthropic([
+      { role: 'user', content: 'edit the file' },
+      {
+        role: 'assistant',
+        content: '',
+        anthropicThinkingBlocks: [
+          { type: 'thinking', thinking: 'orphan summary', signature: '' },
+          { type: 'thinking', thinking: 'signed', signature: 'sig-ok' },
+        ],
+        toolCalls: [{ id: 't1', name: 'grep', arguments: '{}' }],
+      },
+    ])
+
+    expect(anthropicMessages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'signed', signature: 'sig-ok' },
+        { type: 'tool_use', id: 't1', name: 'grep', input: {} },
+      ],
+    })
   })
 })

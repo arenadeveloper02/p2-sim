@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildGetWorkflowContextResult,
+  LOCAL_COPILOT_CLAUDE_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_GEMINI_38_FLASH_PROMPT_TOKEN_BUDGET,
@@ -107,6 +108,15 @@ describe('resolveLocalCopilotMaxOutputTokens', () => {
     )
     expect(resolveLocalCopilotMaxOutputTokens('vertex/gemini-3.8-flash')).toBe(
       LOCAL_COPILOT_GEMINI_38_FLASH_MAX_OUTPUT_TOKENS
+    )
+  })
+
+  it('returns 32k for Claude models', () => {
+    expect(resolveLocalCopilotMaxOutputTokens('claude-sonnet-4-6')).toBe(
+      LOCAL_COPILOT_CLAUDE_MAX_OUTPUT_TOKENS
+    )
+    expect(resolveLocalCopilotMaxOutputTokens('anthropic/claude-sonnet-4-5')).toBe(
+      LOCAL_COPILOT_CLAUDE_MAX_OUTPUT_TOKENS
     )
   })
 

@@ -81,6 +81,9 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     weight: 3,
     patterns: [
       /\b(image|logo|thumbnail|audio|tts|music|video|ffmpeg|generate\s+(an?\s+)?(image|audio|video))\b/i,
+      // Explicit raster formats — "create a PNG" must not route to file/create_file base64.
+      /\b(png|jpe?g|gif|webp)\b/i,
+      /\b(create|make|generate|build|draw|render)\s+(an?\s+)?(png|jpe?g|gif|webp)\b/i,
     ],
   },
   {
