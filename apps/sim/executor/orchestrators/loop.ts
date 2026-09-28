@@ -26,7 +26,6 @@ import {
   buildParallelSentinelStartId,
   buildSentinelEndId,
   buildSentinelStartId,
-  deleteLoopScopedOutputs,
   emitSubflowSuccessEvents,
   extractBaseBlockId,
   extractLoopIdFromSentinel,
@@ -81,8 +80,6 @@ export class LoopOrchestrator {
     if (!loopConfig) {
       throw new Error(`Loop config not found: ${loopId}`)
     }
-
-    this.clearLoopScopedBlockOutputs(loopId)
 
     if (loopConfig.nodes.length === 0) {
       const errorMessage =
@@ -154,8 +151,7 @@ export class LoopOrchestrator {
             resolutionCtx,
             loopConfig.forEachItems,
             this.resolver,
-            buildSentinelStartId(loopId),
-            { inputPath: ['forEachItems'] }
+            buildSentinelStartId(loopId)
           )
         } catch (error) {
           const errorMessage = `ForEach loop resolution failed: ${toError(error).message}`
@@ -186,10 +182,10 @@ export class LoopOrchestrator {
         }
 
         scope.items = items
-        if (resolutionRegistry?.isComplete()) {
-          scope.inputResolvedSecretTraceProvenance =
-            resolutionRegistry.exportCommittedProvenanceForValue(items)
-          parentRegistry?.mergeToolCallRegistry(resolutionRegistry)
+        scope.inputResolvedSecretTraceProvenance =
+          resolutionRegistry?.exportCommittedProvenanceForValue(items)
+        if (parentRegistry && resolutionRegistry?.isComplete()) {
+          parentRegistry.mergeToolCallRegistry(resolutionRegistry)
         }
         scope.maxIterations = items.length
         scope.item = items[0]
@@ -500,20 +496,6 @@ export class LoopOrchestrator {
           this.resetNestedParallelScopes(nodeId, ctx)
         }
       }
-    }
-  }
-
-  /**
-   * Drops leftover `_loopN` copies before a loop (re)starts so a nested loop
-   * that runs fewer times on the next outer iteration cannot leak old values.
-   */
-  private clearLoopScopedBlockOutputs(loopId: string): void {
-    for (const nodeId of this.collectAllLoopNodeIds(loopId)) {
-      deleteLoopScopedOutputs(
-        (id) => this.state.getBlockOutput(id),
-        (id) => this.state.deleteBlockState(id),
-        extractBaseBlockId(nodeId)
-      )
     }
   }
 

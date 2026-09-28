@@ -8,10 +8,8 @@ import { StartBlockPath } from '@/lib/workflows/triggers/triggers'
 import type { DAG } from '@/executor/dag/builder'
 import { DAGBuilder } from '@/executor/dag/builder'
 import { BlockExecutor } from '@/executor/execution/block-executor'
-import type { EdgeManager } from '@/executor/execution/edge-manager'
-import { EdgeManagerV2 } from '@/executor/execution/edge-manager-v2'
-import type { ExecutionEngine } from '@/executor/execution/engine'
-import { ExecutionEngineV2 } from '@/executor/execution/engine-v2'
+import { EdgeManager } from '@/executor/execution/edge-manager'
+import { ExecutionEngine } from '@/executor/execution/engine'
 import { ExecutionState } from '@/executor/execution/state'
 import type {
   ContextExtensions,
@@ -19,8 +17,7 @@ import type {
   WorkflowInput,
 } from '@/executor/execution/types'
 import { createBlockHandlers } from '@/executor/handlers/registry'
-import type { LoopOrchestrator } from '@/executor/orchestrators/loop'
-import { LoopOrchestratorV2 } from '@/executor/orchestrators/loop-v2'
+import { LoopOrchestrator } from '@/executor/orchestrators/loop'
 import { NodeExecutionOrchestrator } from '@/executor/orchestrators/node'
 import { ParallelOrchestrator } from '@/executor/orchestrators/parallel'
 import type { BlockState, ExecutionContext, ExecutionResult } from '@/executor/types'
@@ -359,8 +356,8 @@ export class DAGExecutor {
     })
     const allHandlers = createBlockHandlers()
     const blockExecutor = new BlockExecutor(allHandlers, resolver, this.contextExtensions, state)
-    const edgeManager = new EdgeManagerV2(dag)
-    const loopOrchestrator = new LoopOrchestratorV2(
+    const edgeManager = new EdgeManager(dag)
+    const loopOrchestrator = new LoopOrchestrator(
       dag,
       state,
       resolver,
@@ -372,7 +369,7 @@ export class DAGExecutor {
       state,
       resolver,
       this.contextExtensions,
-      edgeManager as unknown as EdgeManager
+      edgeManager
     )
     edgeManager.restoreDeactivatedEdges(
       snapshotState?.deactivatedEdges,
@@ -382,15 +379,10 @@ export class DAGExecutor {
       dag,
       state,
       blockExecutor,
-      loopOrchestrator as unknown as LoopOrchestrator,
+      loopOrchestrator,
       parallelOrchestrator
     )
-    return new ExecutionEngineV2(
-      context,
-      dag,
-      edgeManager as unknown as EdgeManager,
-      nodeOrchestrator
-    ) as unknown as ExecutionEngine
+    return new ExecutionEngine(context, dag, edgeManager, nodeOrchestrator)
   }
 
   private createExecutionContext(
