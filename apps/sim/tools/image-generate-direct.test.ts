@@ -108,6 +108,9 @@ vi.mock('@/tools/registry', () => ({
         method: 'POST',
         headers: () => ({ 'Content-Type': 'application/json' }),
       },
+      outputs: {
+        image: { type: 'file', description: 'Generated image' },
+      },
     },
   },
 }))
@@ -194,15 +197,33 @@ describe('image_generate direct execution', () => {
 
     expect(result.success).toBe(true)
     expect(mockRunImageGenerationWrapper).toHaveBeenCalledTimes(1)
-    expect(mockRunImageGenerationWrapper).toHaveBeenCalledWith({
-      baseToolId: 'image_generate',
-      params: expect.objectContaining({
-        provider: 'openai',
-        model: 'gpt-image-2',
-        prompt: 'A red sports car',
-      }),
-    })
+    expect(mockRunImageGenerationWrapper).toHaveBeenCalledWith(
+      {
+        baseToolId: 'image_generate',
+        params: expect.objectContaining({
+          provider: 'openai',
+          model: 'gpt-image-2',
+          prompt: 'A red sports car',
+        }),
+      },
+      expect.any(Object)
+    )
     expect(mockRunImageToolGeneration).not.toHaveBeenCalled()
+    expect(result.error).toBeUndefined()
+    expect(result.output).toMatchObject({
+      image: 'https://example.com/wrapper.png',
+    })
+  })
+
+  it('returns generated images when no trusted execution context is present', async () => {
+    const result = await executeTool('image_generate', {
+      provider: 'openai',
+      model: 'gpt-image-2',
+      prompt: 'A red sports car',
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.error).toBeUndefined()
     expect(result.output).toMatchObject({
       image: 'https://example.com/wrapper.png',
     })

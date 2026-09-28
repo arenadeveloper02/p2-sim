@@ -2055,72 +2055,72 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 1048576,
         releaseDate: '2025-12-17',
       },
-      {
-        id: 'gemini-2.5-pro',
-        pricing: {
-          input: 1.25,
-          cachedInput: 0.125,
-          output: 10.0,
-          tiers: [
-            {
-              aboveInputTokens: 200000,
-              input: 2.5,
-              cachedInput: 0.25,
-              output: 15.0,
-            },
-          ],
-          updatedAt: '2026-09-14',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-          maxOutputTokens: 65536,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-03-25',
-      },
-      {
-        id: 'gemini-2.5-flash',
-        pricing: {
-          input: 0.3,
-          cachedInput: 0.03,
-          output: 2.5,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'medium',
-          },
-          maxOutputTokens: 65536,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-05-20',
-      },
-      {
-        id: 'gemini-2.5-flash-lite',
-        pricing: {
-          input: 0.1,
-          cachedInput: 0.01,
-          output: 0.4,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'low',
-          },
-          maxOutputTokens: 65536,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-06-17',
-        speedOptimized: true,
-      },
+      // {
+      //   id: 'gemini-2.5-pro',
+      //   pricing: {
+      //     input: 1.25,
+      //     cachedInput: 0.125,
+      //     output: 10.0,
+      //     tiers: [
+      //       {
+      //         aboveInputTokens: 200000,
+      //         input: 2.5,
+      //         cachedInput: 0.25,
+      //         output: 15.0,
+      //       },
+      //     ],
+      //     updatedAt: '2026-09-14',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //     maxOutputTokens: 65536,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-03-25',
+      // },
+      // {
+      //   id: 'gemini-2.5-flash',
+      //   pricing: {
+      //     input: 0.3,
+      //     cachedInput: 0.03,
+      //     output: 2.5,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'medium',
+      //     },
+      //     maxOutputTokens: 65536,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-05-20',
+      // },
+      // {
+      //   id: 'gemini-2.5-flash-lite',
+      //   pricing: {
+      //     input: 0.1,
+      //     cachedInput: 0.01,
+      //     output: 0.4,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'low',
+      //     },
+      //     maxOutputTokens: 65536,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-06-17',
+      //   speedOptimized: true,
+      // },
       // {
       //   id: 'gemini-2.0-flash',
       //   pricing: {

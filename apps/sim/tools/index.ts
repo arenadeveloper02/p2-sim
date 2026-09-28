@@ -198,7 +198,10 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
   return toolResponse
 }
 
-async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
+async function executeImageGenerateDirect(
+  params: Record<string, any>,
+  executeOptions?: Pick<ExecuteToolOptions, 'executionContext' | 'operationContext' | 'signal'>
+): Promise<ToolResponse> {
   if (params.__skipSmartWrapper === true) {
     logger.info('Running direct image generation provider in-process')
     const { buildImageToolBodyFromExecutionParams, runImageToolGeneration } = await import(
@@ -253,10 +256,13 @@ async function executeImageGenerateDirect(params: Record<string, any>): Promise<
 
   logger.info('Running image generation wrapper in-process')
   const { runImageGenerationWrapper } = await import('@/lib/image-generation/run-wrapper.server')
-  const result = await runImageGenerationWrapper({
-    baseToolId: 'image_generate',
-    params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
-  })
+  const result = await runImageGenerationWrapper(
+    {
+      baseToolId: 'image_generate',
+      params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
+    },
+    executeOptions
+  )
 
   if (!result.success) {
     return {
@@ -278,7 +284,8 @@ async function executeOpenAIImageDirect(params: Record<string, any>): Promise<To
 
 async function executeImageGenerationWrapperV2Direct(
   toolId: string,
-  params: Record<string, any>
+  params: Record<string, any>,
+  executeOptions?: Pick<ExecuteToolOptions, 'executionContext' | 'operationContext' | 'signal'>
 ): Promise<ToolResponse> {
   const baseToolId = getImageGenerationWrapperBaseToolId(toolId)
   if (!baseToolId) {
@@ -291,10 +298,13 @@ async function executeImageGenerationWrapperV2Direct(
 
   logger.info('Running image generation wrapper in-process', { toolId, baseToolId })
   const { runImageGenerationWrapper } = await import('@/lib/image-generation/run-wrapper.server')
-  const result = await runImageGenerationWrapper({
-    baseToolId,
-    params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
-  })
+  const result = await runImageGenerationWrapper(
+    {
+      baseToolId,
+      params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
+    },
+    executeOptions
+  )
 
   if (!result.success) {
     return {
@@ -1551,7 +1561,9 @@ function createTransformedErrorFromErrorInfo(errorInfo?: ErrorInfo, extractorId?
 
 /**
  * Store declared file outputs using the trusted workflow or Copilot context.
- * Uses dynamic imports to avoid client-side bundling issues
+ * Skip when no trusted context exists — image generation still returns stored
+ * URLs from `saveGeneratedImage`, matching version-6-main. Throwing here failed
+ * every Image Generator model because the v2 wrapper nested `executeTool` without context.
  */
 async function processFileOutputs(
   result: ToolResponse,
@@ -1575,8 +1587,12 @@ async function processFileOutputs(
       return result
     }
 
-    const context = operationContext ?? executionContext
-    if (!context) throw new Error('File output requires trusted execution context')
+    const context =
+      operationContext ??
+      (executionContext ? createInternalToolOperationContext(executionContext) : undefined)
+    if (!context) {
+      return result
+    }
     const processedOutput = await FileToolProcessor.processToolOutputs(
       result.output,
       tool,
@@ -2521,7 +2537,11 @@ async function executeToolImplementation(
      */
     if (normalizedToolId === 'image_generate') {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
-      inProcessResult = await executeImageGenerateDirect(contextParams)
+      inProcessResult = await executeImageGenerateDirect(contextParams, {
+        ...(executionContext ? { executionContext } : {}),
+        ...(operationContext ? { operationContext } : {}),
+        ...(effectiveSignal ? { signal: effectiveSignal } : {}),
+      })
     } else if (isInternalToolConfig(tool)) {
       inProcessResult = await executeDeclaredInternalOperation({
         toolId: normalizedToolId,
@@ -2540,12 +2560,21 @@ async function executeToolImplementation(
         normalizedToolId === 'google_nano_banana'
           ? executeNanoBananaDirect
           : normalizedToolId === 'image_generate'
-            ? executeImageGenerateDirect
+            ? (params: Record<string, any>, signal?: AbortSignal) =>
+                executeImageGenerateDirect(params, {
+                  ...(executionContext ? { executionContext } : {}),
+                  ...(operationContext ? { operationContext } : {}),
+                  ...(signal ? { signal } : {}),
+                })
             : normalizedToolId === 'openai_image'
               ? executeOpenAIImageDirect
               : wrapperBaseToolId
-                ? (params: Record<string, any>) =>
-                    executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+                ? (params: Record<string, any>, signal?: AbortSignal) =>
+                    executeImageGenerationWrapperV2Direct(normalizedToolId, params, {
+                      ...(executionContext ? { executionContext } : {}),
+                      ...(operationContext ? { operationContext } : {}),
+                      ...(signal ? { signal } : {}),
+                    })
                 : normalizedToolId === 'development_generate_app' ||
                     normalizedToolId === 'arena_development_generate_app'
                   ? (params: Record<string, any>) =>
