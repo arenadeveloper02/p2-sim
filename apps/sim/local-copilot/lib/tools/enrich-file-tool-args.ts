@@ -2,6 +2,7 @@ import { truncate } from '@sim/utils/string'
 import { FILE_BODY_ARG_KEYS, firstFileBodyString } from '@/local-copilot/lib/tools/file-body-args'
 
 const OFFICE_FILE_EXTENSION = /\.(pptx|docx|pdf)$/i
+const BINARY_IMAGE_FILE_EXTENSION = /\.(png|jpe?g|gif|webp)$/i
 
 /**
  * Parses a JSON object string once when models stringify nested tool args.
@@ -125,6 +126,39 @@ export function enrichCreateFileArgs(args: Record<string, unknown>): void {
     const body = firstFileBodyString(args) ?? (nested ? firstFileBodyString(nested) : undefined)
     if (body) args.content = body
   }
+
+  // Native object/array `content` (common from Claude tool_use) must become a string
+  // before create_file — otherwise it is ignored and an empty shell is written.
+  if (args.content && typeof args.content === 'object') {
+    try {
+      args.content = JSON.stringify(args.content, null, 2)
+    } catch {
+      args.content = undefined
+    }
+  }
+  if (nested?.content && typeof nested.content === 'object') {
+    try {
+      nested.content = JSON.stringify(nested.content, null, 2)
+      if (typeof args.content !== 'string' || !args.content) {
+        args.content = nested.content
+      }
+    } catch {
+      nested.content = undefined
+    }
+  }
+}
+
+/**
+ * Local Copilot guard: never let create_file store PNG/JPEG base64 as UTF-8 text.
+ * Prefer generate_image — keeps the shared create_file tool unchanged.
+ */
+export function rejectCreateFileImageAsText(args: Record<string, unknown>): string | null {
+  const path = resolveCreateFilePath(args)
+  if (!path || !BINARY_IMAGE_FILE_EXTENSION.test(path)) return null
+  return (
+    `create_file cannot write "${path}" as text/base64. ` +
+    'Call generate_image with prompt and outputs.files (e.g. files/diagram.png) so the image is saved as binary.'
+  )
 }
 
 /**
@@ -201,6 +235,13 @@ export function enrichWorkspaceFileArgs(args: Record<string, unknown>): void {
  * Remaps common `edit_content` aliases when the model omits required `content`.
  */
 export function enrichEditContentArgs(args: Record<string, unknown>): void {
+  if (args.content && typeof args.content === 'object') {
+    try {
+      args.content = JSON.stringify(args.content, null, 2)
+    } catch {
+      args.content = undefined
+    }
+  }
   if (typeof args.content === 'string' && args.content.length > 0) return
   const body = firstFileBodyString(args)
   if (body) args.content = body

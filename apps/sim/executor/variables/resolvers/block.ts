@@ -14,7 +14,14 @@ import {
   resolveBlockReferenceAsync,
 } from '@/executor/utils/block-reference'
 import { formatLiteralForCode } from '@/executor/utils/code-formatting'
-import { buildClonedSubflowId, extractOuterBranchIndex } from '@/executor/utils/subflow-utils'
+import {
+  aggregateLoopIterationOutputs,
+  buildClonedSubflowId,
+  collectLoopScopedOutputs,
+  extractBaseBlockId,
+  extractOuterBranchIndex,
+  stripCloneSuffixes,
+} from '@/executor/utils/subflow-utils'
 import {
   type AsyncPathNavigator,
   navigatePath,
@@ -362,6 +369,13 @@ export class BlockResolver implements Resolver {
       }
     }
 
+    if (this.shouldAggregateLoopOutputs(blockId, context.currentNodeId)) {
+      const aggregated = this.collectAggregatedLoopOutput(blockId, context)
+      if (aggregated) {
+        return aggregated
+      }
+    }
+
     const state = context.executionState.getBlockState(blockId, context.currentNodeId)
     if (state !== undefined) {
       return state
@@ -380,6 +394,35 @@ export class BlockResolver implements Resolver {
     }
 
     return undefined
+  }
+
+  private shouldAggregateLoopOutputs(blockId: string, currentNodeId: string): boolean {
+    const loopId = this.findLoopContainingBlock(blockId)
+    if (!loopId) return false
+    const currentBase = stripCloneSuffixes(extractBaseBlockId(currentNodeId))
+    if (currentBase === loopId) return false
+    const loopNodes = this.workflow.loops?.[loopId]?.nodes
+    return Array.isArray(loopNodes) && !loopNodes.includes(currentBase)
+  }
+
+  private findLoopContainingBlock(blockId: string): string | undefined {
+    for (const [loopId, loop] of Object.entries(this.workflow.loops ?? {})) {
+      if (loop.nodes?.includes(blockId)) return loopId
+    }
+    return undefined
+  }
+
+  private collectAggregatedLoopOutput(
+    blockId: string,
+    context: ResolutionContext
+  ): BlockState | undefined {
+    const outputs = collectLoopScopedOutputs(
+      (id) => context.executionState.getBlockOutput(id),
+      blockId
+    )
+    const aggregated = aggregateLoopIterationOutputs(outputs)
+    if (!aggregated) return undefined
+    return { output: aggregated, executed: true, executionTime: 0 }
   }
 
   private findBlockIdByName(name: string): string | undefined {

@@ -158,7 +158,10 @@ const FOLLOW_UP_FIELD_KEYS = [
  * Copies mandatory-follow-up flags onto an artifact stub so offload cannot
  * drop `create_workflow` populate (or other required next tools).
  */
-function copyFollowUpFields(source: unknown, stub: Record<string, unknown>): Record<string, unknown> {
+function copyFollowUpFields(
+  source: unknown,
+  stub: Record<string, unknown>
+): Record<string, unknown> {
   const record = asRecord(source)
   const next = { ...stub }
   for (const key of FOLLOW_UP_FIELD_KEYS) {
@@ -510,7 +513,7 @@ export function formatToolResultForLlm(
     ) {
       // Keep the create payload small so populate flags are not lost to artifact
       // offload. The model already has workflowId + startBlockId.
-      delete next.copilotSanitizedWorkflowState
+      next.copilotSanitizedWorkflowState = undefined
       next.needsFollowUpPopulate = true
       next.followUpHint =
         'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
@@ -523,6 +526,23 @@ export function formatToolResultForLlm(
       ...record,
       followUpHint:
         'If you just created a workflow, call edit_workflow now to add blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+    }
+  } else if (toolName === 'edit_content') {
+    const record = asRecord(result)
+    const message =
+      (typeof record.message === 'string' && record.message) ||
+      (typeof record.error === 'string' && record.error) ||
+      ''
+    if (
+      record.success === false &&
+      /unexpected token|syntaxerror|syntax error|parse error|unexpected end/i.test(message)
+    ) {
+      formatted = {
+        ...record,
+        regenerateNow: true,
+        followUpHint:
+          'Syntax/parse error in office JS. Do NOT keep Thinking about parentheses or table rows. Call edit_content immediately with a clean full rewrite (simpler tables, fewer nested expressions). One rewrite beats ten diagnosis paragraphs.',
+      }
     }
   }
 
@@ -589,7 +609,6 @@ function detectMandatoryFollowUpFromRecord(
   toolName: string,
   parsed: Record<string, unknown>
 ): MandatoryFollowUp | null {
-
   const hint =
     typeof parsed.followUpHint === 'string' && parsed.followUpHint.trim()
       ? parsed.followUpHint.trim()

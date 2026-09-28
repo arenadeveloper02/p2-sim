@@ -42,6 +42,7 @@ const CLONE = {
 const LOOP_DIGEST = {
   MATCH: /_loop\d+/,
   STRIP: /_loop\d+/g,
+  INDEX: /_loop(\d+)/,
 } as const
 
 /**
@@ -234,6 +235,22 @@ function extractLoopSuffix(id: string): string {
 }
 
 /**
+ * Builds a per-iteration output ID so loop-body results are not overwritten
+ * across iterations. Example: (`block-1`, 2) → `block-1_loop2`.
+ */
+function buildLoopScopedId(blockId: string, iteration: number): string {
+  return `${blockId}_loop${iteration}`
+}
+
+/**
+ * Returns the iteration index encoded in a `_loopN` digest, or null when absent.
+ */
+function extractLoopIndex(id: string): number | null {
+  const match = id.match(LOOP_DIGEST.INDEX)
+  return match ? Number(match[1]) : null
+}
+
+/**
  * Codec exposing all subflow node-ID parsing/building operations as a single,
  * pattern-free interface. Implementation owns every regex and string template.
  */
@@ -260,4 +277,6 @@ export const SubflowNodeIdCodec = {
   normalizeLookupId,
   extractBranchSuffix,
   extractLoopSuffix,
+  buildLoopScopedId,
+  extractLoopIndex,
 } as const

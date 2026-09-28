@@ -3392,8 +3392,10 @@ export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', 
  */
 export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model', [
   'claude',
+  'gemini-3.8-flash',
   'gemini-2.5-pro',
   'gemini-3.1-pro',
+  'vertex-gemini-3.8-flash',
   'bedrock-claude-opus-5',
   'bedrock-claude-sonnet-5',
   'bedrock-claude-opus-4-8',
@@ -4374,8 +4376,16 @@ export const usageLog = pgTable(
     vendor: text('vendor'),
     /** Provider integration slug (e.g. "anthropic", "openai"). */
     provider: text('provider'),
-    /** Registry tool id for tool-category rows (snake_case). */
+    /**
+     * Tool display label for tool-category rows (canvas / agent tool title).
+     * May be a user rename such as "Competitor Research".
+     */
     toolId: text('tool_id'),
+    /**
+     * Registry operation id for tool-category rows (e.g. `exa_search`).
+     * Used only by Usage By Tools analytics; other billing paths use `tool_id`.
+     */
+    toolName: text('tool_name'),
     /** Copilot/mothership chat this row bills against. */
     chatId: uuid('chat_id').references(() => copilotChats.id, { onDelete: 'set null' }),
     /** Copilot run this row bills against. */

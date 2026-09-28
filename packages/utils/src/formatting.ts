@@ -85,6 +85,194 @@ export function formatDateTime(date: Date, timezone?: string): string {
 }
 
 /**
+ * Parts for UI surfaces that need several date/time shapes from one instant.
+ *
+ * Stored API timestamps are UTC/ISO. These fields convert that instant into
+ * wall-clock strings for the caller's IANA zone (`settings.timezone` via
+ * `useTimezone()`). When `timezone` is omitted, the runtime local zone is used.
+ *
+ * Prefer {@link formatUserDateTime} over ad-hoc `toLocaleString` so logs and
+ * other surfaces stay consistent when the account timezone changes.
+ */
+export interface UserDateTimeParts {
+  /** `MMM D, YYYY, HH:mm:ss` (24h) */
+  full: string
+  /** `HH:mm:ss` (24h) */
+  time: string
+  /** Same as {@link UserDateTimeParts.time} */
+  formatted: string
+  /** `MMM D HH:mm:ss` */
+  compact: string
+  /** `MMM D` uppercased — used by the logs table date column */
+  compactDate: string
+  /** `h:mm AM/PM` — paired with {@link UserDateTimeParts.compactDate} in logs */
+  compactTime: string
+  /** Relative string such as `2h ago` (zone-independent; based on elapsed ms) */
+  relative: string
+}
+
+/** Zero-pads a numeric clock field to two digits. */
+function pad2(value: string | number): string {
+  return String(value).padStart(2, '0')
+}
+
+/**
+ * Reads calendar and clock fields for `date` in an optional IANA timezone.
+ *
+ * Uses `Intl.DateTimeFormat#formatToParts` so we can rebuild 12h and 24h
+ * strings without depending on the host locale's combined format.
+ */
+function getZonedDateParts(
+  date: Date,
+  timezone?: string
+): {
+  year: string
+  month: string
+  day: string
+  hour24: string
+  hour12: string
+  minute: string
+  second: string
+  dayPeriod: string
+} {
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone || undefined,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }
+
+  const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(date)
+  const byType = Object.fromEntries(
+    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value])
+  ) as Record<string, string>
+
+  const hour12 = Number(byType.hour ?? '0')
+  const dayPeriod = (byType.dayPeriod ?? 'AM').toUpperCase()
+  const hour24 =
+    dayPeriod === 'PM'
+      ? String(hour12 === 12 ? 12 : hour12 + 12)
+      : String(hour12 === 12 ? 0 : hour12)
+
+  return {
+    year: byType.year ?? '',
+    month: byType.month ?? '',
+    day: byType.day ?? '',
+    hour24: pad2(hour24),
+    hour12: String(hour12),
+    minute: pad2(byType.minute ?? '0'),
+    second: pad2(byType.second ?? '0'),
+    dayPeriod,
+  }
+}
+
+/**
+ * Formats an instant for display in the user's timezone.
+ *
+ * Use this wherever UI shows a stored UTC/ISO timestamp as local wall time
+ * (logs, activity, etc.). Pass the account preference IANA id from
+ * `useTimezone()` / `settings.timezone`.
+ *
+ * @param input - ISO string, epoch ms, or `Date`
+ * @param timezone - Optional IANA timezone (e.g. `America/New_York`). When
+ *   omitted, uses the runtime local zone.
+ */
+export function formatUserDateTime(
+  input: string | number | Date,
+  timezone?: string
+): UserDateTimeParts {
+  const date = input instanceof Date ? input : new Date(input)
+
+  if (Number.isNaN(date.getTime())) {
+    const fallback = typeof input === 'string' ? input : String(input)
+    return {
+      full: fallback,
+      time: fallback,
+      formatted: fallback,
+      compact: fallback,
+      compactDate: fallback,
+      compactTime: fallback,
+      relative: 'just now',
+    }
+  }
+
+  const iso = date.toISOString()
+  const zoned = getZonedDateParts(date, timezone)
+  const time = `${zoned.hour24}:${zoned.minute}:${zoned.second}`
+  const compactDate = `${zoned.month} ${zoned.day}`.toUpperCase()
+  const compactTime = `${zoned.hour12}:${zoned.minute} ${zoned.dayPeriod}`
+
+  return {
+    full: `${zoned.month} ${zoned.day}, ${zoned.year}, ${time}`,
+    time,
+    formatted: time,
+    compact: `${zoned.month} ${zoned.day} ${time}`,
+    compactDate,
+    compactTime,
+    relative: formatRelativeTime(iso),
+  }
+}
+
+/**
+ * Formats an instant as a single wall-clock string in `timezone`.
+ *
+ * Lighter alternative to {@link formatUserDateTime} when only one string is
+ * needed (e.g. trace span start/end). Pass `useTimezone()` so the value tracks
+ * the account preference instead of the browser device zone.
+ *
+ * @param input - ISO string, epoch ms, or `Date`
+ * @param timezone - Optional IANA timezone from `useTimezone()` / settings
+ * @param options.style - `datetime` (default), `date`, or `time`
+ * @param options.hour12 - 12-hour clock when true (default); 24-hour when false
+ */
+export function formatInUserTimezone(
+  input: string | number | Date,
+  timezone?: string,
+  options?: { style?: 'datetime' | 'date' | 'time'; hour12?: boolean }
+): string {
+  const date = input instanceof Date ? input : new Date(input)
+  if (Number.isNaN(date.getTime())) {
+    return typeof input === 'string' ? input : String(input)
+  }
+
+  const style = options?.style ?? 'datetime'
+  const hour12 = options?.hour12 ?? true
+
+  if (style === 'date') {
+    return date.toLocaleDateString('en-US', {
+      timeZone: timezone || undefined,
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+
+  if (style === 'time') {
+    return date.toLocaleTimeString('en-US', {
+      timeZone: timezone || undefined,
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12,
+    })
+  }
+
+  return date.toLocaleString('en-US', {
+    timeZone: timezone || undefined,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12,
+  })
+}
+
+/**
  * Format a date into a short format
  * @param date - The date to format
  * @returns A formatted date string in the format "MMM D, YYYY"

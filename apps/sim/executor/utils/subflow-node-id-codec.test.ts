@@ -116,6 +116,13 @@ describe('SubflowNodeIdCodec', () => {
       expect(SubflowNodeIdCodec.extractLoopSuffix('block-1₍2₎_loop3')).toBe('_loop3')
       expect(SubflowNodeIdCodec.extractLoopSuffix('block-1')).toBe('')
     })
+
+    it('builds and parses per-iteration loop-scoped IDs', () => {
+      expect(SubflowNodeIdCodec.buildLoopScopedId('block-1', 0)).toBe('block-1_loop0')
+      expect(SubflowNodeIdCodec.buildLoopScopedId('block-1', 3)).toBe('block-1_loop3')
+      expect(SubflowNodeIdCodec.extractLoopIndex('block-1_loop3')).toBe(3)
+      expect(SubflowNodeIdCodec.extractLoopIndex('block-1')).toBeNull()
+    })
   })
 
   describe('findEffectiveContainerId', () => {

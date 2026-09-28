@@ -1,3 +1,5 @@
+import { renumberMarkdownOrderedLists } from '@/lib/core/utils/markdown-ordered-lists'
+
 const HIDDEN_INLINE_REFERENCE_PATTERN =
   /`[^`\n]*(?:internal\/tool-results\/|internal\/blocktips\/|components\/integrations\/[^`\n]*README)[^`\n]*`/g
 
@@ -48,16 +50,18 @@ const CODE_SPAN_OR_FLANKED_TAG = new RegExp(
 )
 
 export function sanitizeChatDisplayContent(content: string): string {
-  return content
-    .replace(CODE_SPAN_OR_FLANKED_TAG, (match, tag?: string) => {
-      // A tag with stray backticks against it: keep the tag, drop the strays.
-      if (tag !== undefined) return tag
+  return renumberMarkdownOrderedLists(
+    content
+      .replace(CODE_SPAN_OR_FLANKED_TAG, (match, tag?: string) => {
+        // A tag with stray backticks against it: keep the tag, drop the strays.
+        if (tag !== undefined) return tag
 
-      // A code span. Unwrap it only when it genuinely holds a tag — the parser
-      // lifts the tag out either way, so leaving the delimiters would strand a
-      // pair of backticks around a hole. Anything else is someone else's span.
-      const inner = match.slice(1, -1)
-      return COMPLETE_WORKSPACE_RESOURCE_TAG.test(inner) ? inner : match
-    })
-    .replace(HIDDEN_INLINE_REFERENCE_PATTERN, '')
+        // A code span. Unwrap it only when it genuinely holds a tag — the parser
+        // lifts the tag out either way, so leaving the delimiters would strand a
+        // pair of backticks around a hole. Anything else is someone else's span.
+        const inner = match.slice(1, -1)
+        return COMPLETE_WORKSPACE_RESOURCE_TAG.test(inner) ? inner : match
+      })
+      .replace(HIDDEN_INLINE_REFERENCE_PATTERN, '')
+  )
 }

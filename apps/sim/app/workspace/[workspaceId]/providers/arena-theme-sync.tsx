@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useTheme } from 'next-themes'
 import { createLogger } from '@sim/logger'
 import { normalizeEmail } from '@sim/utils/string'
+import { useTheme } from 'next-themes'
 import { useSession } from '@/lib/auth/auth-client'
 
 const logger = createLogger('ArenaThemeSync')

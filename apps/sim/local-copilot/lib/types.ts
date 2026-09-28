@@ -8,11 +8,17 @@ import type {
   TurnCompletionStatus,
   VerificationRecord,
 } from '@/local-copilot/lib/verification/types'
+import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
   docSandboxEnabled: boolean
-  supportedCodeLanguages: Array<'javascript' | 'python' | 'shell'>
+  customSandboxesEnabled?: boolean
+  /**
+   * Arena Copilot compute matches the Mothership template: Python + shell when
+   * the remote sandbox is enabled (not JavaScript).
+   */
+  supportedCodeLanguages: Array<'python' | 'shell'>
 }
 
 export type LocalCopilotProviderId =
@@ -21,6 +27,7 @@ export type LocalCopilotProviderId =
   | 'azure-openai'
   | 'bedrock'
   | 'gemini'
+  | 'vertex'
   | 'openai-compatible'
 
 export interface LocalCopilotConfig {
@@ -33,6 +40,12 @@ export interface LocalCopilotConfig {
    * Anthropic Haiku when provider is anthropic; otherwise matches {@link model}.
    */
   specialistModel: string
+  /**
+   * Thinking level for Gemini / Vertex Local Copilot LLM calls (`low` /
+   * `medium` / `high`, plus `minimal` on some Flash SKUs). Lower = faster /
+   * cheaper. Unset for other providers.
+   */
+  thinkingLevel?: string
   apiKey?: string
   baseUrl?: string
   /** AWS region for Bedrock (defaults to `AWS_REGION` / `us-east-1`). */
@@ -210,12 +223,15 @@ export interface LocalCopilotToolCallRecord {
 }
 
 export type LocalCopilotStreamEvent =
-  | { type: 'text_delta'; content: string }
+  | { type: 'text_delta'; content: string; thoughtSignature?: string }
+  | { type: 'thinking_delta'; content: string; thoughtSignature?: string }
   | {
       type: 'tool_call_start'
       toolCallId: string
       toolName: string
       args?: Record<string, unknown>
+      /** Gemini 3+ thought signature — required for follow-up turn CoT. */
+      thoughtSignature?: string
     }
   | {
       type: 'tool_call_result'
@@ -268,6 +284,14 @@ export type LocalCopilotStreamEvent =
         inputTokens: number
         outputTokens: number
       }
+    }
+  | {
+      /**
+       * Exact Gemini/Vertex model parts for one tool-loop round. Persisted so
+       * the next user turn can echo signatures verbatim (required for CoT).
+       */
+      type: 'gemini_model_parts'
+      parts: GeminiHistoryPart[]
     }
 
 export interface LocalCopilotMessageContent {

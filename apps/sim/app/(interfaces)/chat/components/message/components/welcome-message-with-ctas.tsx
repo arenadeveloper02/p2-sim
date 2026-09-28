@@ -90,7 +90,7 @@ export function WelcomeMessageWithCtas({
                   key={`w-query-${index}-${queryIndex}`}
                   type='button'
                   className={cn(
-                    'w-fit max-w-full cursor-pointer rounded-lg border bg-white px-3 py-1.5 text-left font-medium text-[14px] leading-[21px] transition-colors',
+                    'w-fit max-w-full cursor-pointer rounded-lg border bg-[var(--color-ds-surface-raised)] px-3 py-1.5 text-left font-medium text-[14px] leading-[21px] transition-colors',
                     'text-[var(--color-ds-text-primary,#2C2D33)]',
                     'hover:bg-[var(--color-ds-brand-surface,#F3F8FE)] hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
                   )}

@@ -58,7 +58,6 @@ import {
   type WorkspaceCredentialRole,
 } from '@/hooks/queries/credentials'
 import {
-  useArenaV3IntegrationsAutoLogin,
   useConnectOAuthService,
   useDisconnectOAuthService,
   useOAuthConnections,
@@ -137,7 +136,6 @@ export function IntegrationsManager() {
   }, [searchParams])
 
   useOAuthReturnRouter()
-  useArenaV3IntegrationsAutoLogin(workspaceId)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)

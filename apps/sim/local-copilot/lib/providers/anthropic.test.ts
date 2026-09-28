@@ -3,7 +3,28 @@
  */
 import { describe, expect, it } from 'vitest'
 import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
-import { parseAnthropicUsage, toAnthropicTools } from '@/local-copilot/lib/providers/anthropic'
+import {
+  parseAnthropicUsage,
+  resolveLocalAnthropicThinkingRequest,
+  toAnthropicTools,
+} from '@/local-copilot/lib/providers/anthropic'
+
+describe('resolveLocalAnthropicThinkingRequest', () => {
+  it('returns adaptive thinking for sonnet 4.6 with summarized display', () => {
+    const result = resolveLocalAnthropicThinkingRequest('claude-sonnet-4-6', 'medium')
+    expect(result).not.toBeNull()
+    expect(result?.thinking).toMatchObject({
+      type: 'adaptive',
+      display: 'summarized',
+    })
+    expect(result?.outputConfig).toMatchObject({ effort: 'medium' })
+  })
+
+  it('returns null when thinking is disabled', () => {
+    expect(resolveLocalAnthropicThinkingRequest('claude-sonnet-4-6', 'none')).toBeNull()
+    expect(resolveLocalAnthropicThinkingRequest('claude-sonnet-4-6', undefined)).toBeNull()
+  })
+})
 
 describe('toAnthropicTools', () => {
   it('adds cache_control only on the last tool', () => {

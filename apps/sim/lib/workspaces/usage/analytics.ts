@@ -33,6 +33,7 @@ import {
   bySourceDisplayBucketExpr,
   bySourceDisplayLabelExpr,
   bySourceLedgerSourceExpr,
+  byToolBucketIdExpr,
   chargeTypeExpr,
   coerceToDate,
   densifyTimeSeries,
@@ -58,6 +59,7 @@ import {
   resolvedActorUserIdExpr,
   resolveExplicitPeriod,
   resolvePeriodFromDateCandidates,
+  shouldUseHourlyTimeBuckets,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
@@ -155,11 +157,12 @@ export async function getWorkspaceUsageAnalytics(
       eq(workflowExecutionLogs.workspaceId, workspaceId),
       period
     )
-    const useHourlyBuckets = !options.allTime && (options.period ?? '30d') === '1d'
+    const useHourlyBuckets = shouldUseHourlyTimeBuckets(options, period)
     const bucketExpr = timeBucketExpr(useHourlyBuckets)
     const executionBucket = executionBucketExpr(useHourlyBuckets)
 
     const chargeType = chargeTypeExpr()
+    const toolBucketId = byToolBucketIdExpr()
 
     const [
       bySourceRows,
@@ -180,6 +183,7 @@ export async function getWorkspaceUsageAnalytics(
       byModelRows,
       byProviderRows,
       byToolRows,
+      copilotModelSpendRows,
       byVendorRows,
       timeSeriesLedgerRows,
       timeSeriesExecutionRows,
@@ -404,12 +408,23 @@ export async function getWorkspaceUsageAnalytics(
 
       dbReplica
         .select({
-          toolId: usageLog.toolId,
+          toolId: toolBucketId,
           ...ledgerCostSelect(),
         })
         .from(usageLog)
-        .where(and(...ledgerConditions, isNotNull(usageLog.toolId)))
-        .groupBy(usageLog.toolId),
+        .where(and(...ledgerConditions, eq(usageLog.category, 'tool'), isNotNull(usageLog.toolId)))
+        .groupBy(toolBucketId),
+
+      dbReplica
+        .select(ledgerCostSelect())
+        .from(usageLog)
+        .where(
+          and(
+            ...ledgerConditions,
+            eq(usageLog.category, 'model'),
+            inArray(usageLog.source, COPILOT_USAGE_SOURCES)
+          )
+        ),
 
       dbReplica
         .select({
@@ -899,6 +914,11 @@ export async function getWorkspaceUsageAnalytics(
             count: parseIntMetric(row.count),
           }))
         ),
+        modelSpend: {
+          billableCost: parseDecimal(copilotModelSpendRows[0]?.billableCost),
+          rawCost: parseDecimal(copilotModelSpendRows[0]?.rawCost),
+          count: parseIntMetric(copilotModelSpendRows[0]?.count),
+        },
         triggeredWorkflows: {
           executionCount: triggeredWorkflowTotal.executionCount,
           billableCost: triggeredWorkflowTotal.billableCost,

@@ -1,13 +1,16 @@
 export { getErrorMessage, getPostgresErrorCode, toError } from './errors'
+export type { UserDateTimeParts } from './formatting'
 export {
   formatAbsoluteDate,
   formatCompactTimestamp,
   formatDate,
   formatDateTime,
   formatDuration,
+  formatInUserTimezone,
   formatRelativeTime,
   formatTime,
   formatTimeWithSeconds,
+  formatUserDateTime,
   getTimezoneAbbreviation,
 } from './formatting'
 export { chunkArray, noop, sleep } from './helpers'

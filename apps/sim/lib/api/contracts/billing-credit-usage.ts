@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineRouteContract } from '@/lib/api/contracts'
-import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import { booleanQueryFlagSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
 
 export const creditUsageBreakdownSchema = z.object({
   totalCredits: z.number(),
@@ -43,6 +43,11 @@ export const getCreditUsageSummaryContract = defineRouteContract({
   path: '/api/billing/credit-usage',
   query: z.object({
     workspaceId: workspaceIdSchema,
+    /**
+     * When true, org admins/owners receive their own usage + org pool instead of
+     * org-wide totals. Used by the Usage User tab remaining-credits card.
+     */
+    personal: booleanQueryFlagSchema.optional(),
   }),
   response: {
     mode: 'json',

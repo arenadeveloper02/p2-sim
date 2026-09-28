@@ -3,9 +3,11 @@ import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import {
   accumulateEmbeddedToolCosts,
+  buildEmbeddedToolIds,
   extractEmbeddedToolCostsFromSpan,
   normalizeEmbeddedToolCosts,
-  resolveEmbeddedToolCostKey,
+  resolveBillableToolDisplayName,
+  resolveBillableToolOperationId,
 } from '@/lib/logs/embedded-tool-costs'
 import type {
   ExecutionEnvironment,
@@ -104,6 +106,8 @@ export interface CostSummaryModel {
   toolCost?: number
   /** Per-tool embedded costs normalized to `toolCost`; merged with max across boundaries. */
   embeddedToolCosts?: Record<string, number>
+  /** Cost-key → Usage By Tools bucket id for {@link embeddedToolCosts} keys. */
+  embeddedToolIds?: Record<string, string>
   tokens: { input: number; output: number; total: number }
 }
 
@@ -111,10 +115,12 @@ export interface CostSummaryModel {
  * Non-model billable charge (e.g. a standalone hosted-key tool block such as
  * Exa/Tavily/falai run outside an agent). These spans contribute to the run's
  * total cost but carry no `model`, so they live here rather than in `models`.
- * Summed per span name so the ledger has one row per integration.
+ * Summed per canvas display name; registry operation ids go on `toolName`.
  */
 export interface CostSummaryCharge {
   total: number
+  /** Registry operation id (`exa_search`) when known from span input. */
+  toolName?: string
 }
 
 /**
@@ -344,6 +350,10 @@ export function calculateCostSummary(
         target[model].embeddedToolCosts,
         normalized
       )
+      target[model].embeddedToolIds = buildEmbeddedToolIds(
+        target[model].embeddedToolCosts,
+        target[model].embeddedToolIds
+      )
     }
   }
 
@@ -371,16 +381,17 @@ export function calculateCostSummary(
         external[description].total += span.cost.total || 0
       } else {
         // Non-model billable span (e.g. a standalone hosted-key tool block).
-        // These previously contributed to the run total but were never itemized
-        // in the ledger (the "standalone tool gap"). Key by span name so each
-        // integration gets a single, reconciling charge row.
-        const rawName = span.name || span.type || 'tool'
-        const description =
-          span.type === 'tool' ? resolveEmbeddedToolCostKey(rawName, span.output) : rawName
+        // Charge/display key stays the canvas title; registry operation ids are
+        // carried on `toolName` for By Tools grouping (`usage_log.tool_name`).
+        const description = resolveBillableToolDisplayName(span)
+        const toolName = resolveBillableToolOperationId(span)
         if (!charges[description]) {
-          charges[description] = { total: 0 }
+          charges[description] = { total: 0, ...(toolName ? { toolName } : {}) }
         }
         charges[description].total += span.cost.total || 0
+        if (toolName && !charges[description].toolName) {
+          charges[description].toolName = toolName
+        }
       }
     }
   }

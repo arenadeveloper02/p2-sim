@@ -16,7 +16,6 @@ import {
 import { CreditConversionConfigScript } from '@/app/_shell/credit-conversion-config-script'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
-import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
@@ -333,11 +332,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
               <QueryProvider>
                 <SessionProvider>
                   <AutoLoginSessionMigrationProvider>
-                    <AutoLoginProvider>
-                      <TooltipProvider>
-                        <BrandedLayout>{children}</BrandedLayout>
-                      </TooltipProvider>
-                    </AutoLoginProvider>
+                    <TooltipProvider>
+                      <BrandedLayout>{children}</BrandedLayout>
+                    </TooltipProvider>
                   </AutoLoginSessionMigrationProvider>
                 </SessionProvider>
               </QueryProvider>

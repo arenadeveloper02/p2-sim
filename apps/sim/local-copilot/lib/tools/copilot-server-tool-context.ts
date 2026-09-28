@@ -23,5 +23,8 @@ export function toCopilotServerToolContext(
       ? { parentToolCallId: ctx.fileIntentChannelId.trim() }
       : {}),
     ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
+    ...(ctx.resolvedSecretTraceRegistry
+      ? { resolvedSecretTraceRegistry: ctx.resolvedSecretTraceRegistry }
+      : {}),
   }
 }

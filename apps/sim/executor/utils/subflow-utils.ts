@@ -2,7 +2,12 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { DEFAULTS } from '@/executor/constants'
 import type { ContextExtensions } from '@/executor/execution/types'
-import { type BlockLog, type ExecutionContext, getNextExecutionOrder } from '@/executor/types'
+import {
+  type BlockLog,
+  type ExecutionContext,
+  getNextExecutionOrder,
+  type NormalizedBlockOutput,
+} from '@/executor/types'
 import { buildContainerIterationContext } from '@/executor/utils/iteration-context'
 import { SubflowNodeIdCodec } from '@/executor/utils/subflow-node-id-codec'
 import type { SerializedWorkflow } from '@/serializer/types'
@@ -57,6 +62,78 @@ export function buildBranchNodeId(baseId: string, branchIndex: number): string {
 
 export function extractBaseBlockId(branchNodeId: string): string {
   return SubflowNodeIdCodec.extractBaseBlockId(branchNodeId)
+}
+
+/**
+ * Builds a per-iteration output ID (`blockId_loopN`) for loop-body block state.
+ */
+export function buildLoopScopedId(blockId: string, iteration: number): string {
+  return SubflowNodeIdCodec.buildLoopScopedId(blockId, iteration)
+}
+
+/**
+ * Returns the iteration index encoded in a `_loopN` digest, or null when absent.
+ */
+export function extractLoopIndex(id: string): number | null {
+  return SubflowNodeIdCodec.extractLoopIndex(id)
+}
+
+/**
+ * Collects contiguous `_loop0`…`_loopN` outputs for a block. Stops at the first gap.
+ */
+export function collectLoopScopedOutputs(
+  getOutput: (id: string) => NormalizedBlockOutput | undefined,
+  blockId: string
+): NormalizedBlockOutput[] {
+  const outputs: NormalizedBlockOutput[] = []
+  for (let iteration = 0; iteration <= DEFAULTS.DEFAULT_LOOP_ITERATIONS; iteration++) {
+    const output = getOutput(buildLoopScopedId(blockId, iteration))
+    if (output === undefined) break
+    outputs.push(output)
+  }
+  return outputs
+}
+
+/**
+ * Deletes contiguous `_loop0`…`_loopN` states for a block. Stops at the first gap.
+ */
+export function deleteLoopScopedOutputs(
+  getOutput: (id: string) => unknown,
+  deleteState: (id: string) => void,
+  blockId: string
+): void {
+  for (let iteration = 0; iteration <= DEFAULTS.DEFAULT_LOOP_ITERATIONS; iteration++) {
+    const scopedId = buildLoopScopedId(blockId, iteration)
+    if (getOutput(scopedId) === undefined) break
+    deleteState(scopedId)
+  }
+}
+
+/**
+ * Field-wise aggregation so `<InnerBlock.result>` after a loop is `[r0, r1, …]`.
+ */
+export function aggregateLoopIterationOutputs(
+  outputs: NormalizedBlockOutput[]
+): NormalizedBlockOutput | undefined {
+  if (outputs.length === 0) return undefined
+  if (outputs.length === 1) return outputs[0]
+
+  const keys = new Set<string>()
+  for (const output of outputs) {
+    if (output && typeof output === 'object' && !Array.isArray(output)) {
+      for (const key of Object.keys(output)) keys.add(key)
+    }
+  }
+
+  const aggregated: Record<string, unknown> = {}
+  for (const key of keys) {
+    aggregated[key] = outputs.map((output) =>
+      output && typeof output === 'object' && !Array.isArray(output)
+        ? (output as Record<string, unknown>)[key]
+        : undefined
+    )
+  }
+  return aggregated as NormalizedBlockOutput
 }
 
 export function extractBranchIndex(branchNodeId: string): number | null {

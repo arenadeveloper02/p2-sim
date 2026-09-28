@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
@@ -9,8 +10,14 @@ import {
   enrichCreateFileArgs,
   enrichEditContentArgs,
   enrichWorkspaceFileArgs,
+  rejectCreateFileImageAsText,
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
+import {
+  clampSuccessfulReadResult,
+  isOversizedVfsReadError,
+  recoverOversizedVfsReadForLocal,
+} from '@/local-copilot/lib/tools/clamped-vfs-read'
 import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,
@@ -32,6 +39,43 @@ export {
 }
 
 const logger = createLogger('LocalCopilotMothershipDelegatedTools')
+
+/** Default when the model omits language — Mothership template is Python-based. */
+const LOCAL_COPILOT_DEFAULT_LANGUAGE = 'python' as const
+const LOCAL_COPILOT_FUNCTION_LANGUAGES = new Set(['python', 'shell'])
+const LOCAL_COPILOT_SANDBOX_LANGUAGES = new Set(['python'])
+
+function enforceLocalCopilotSandboxLanguages(
+  toolName: MothershipDelegatedToolName,
+  args: Record<string, unknown>
+): ToolExecutionResult | null {
+  if (toolName !== 'function_execute' && toolName !== 'manage_sandbox') return null
+
+  const allowed =
+    toolName === 'manage_sandbox'
+      ? LOCAL_COPILOT_SANDBOX_LANGUAGES
+      : LOCAL_COPILOT_FUNCTION_LANGUAGES
+  const raw = args.language
+  if (raw === undefined || raw === null || (typeof raw === 'string' && !raw.trim())) {
+    args.language = LOCAL_COPILOT_DEFAULT_LANGUAGE
+    return null
+  }
+
+  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (!allowed.has(normalized)) {
+    const allowedList = [...allowed].join('" or "')
+    const message = `Arena Copilot sandbox execution supports "${allowedList}" only (Mothership template is Python-oriented; javascript is not allowed).`
+    return {
+      toolName,
+      success: false,
+      error: message,
+      result: { success: false, message },
+    }
+  }
+
+  args.language = normalized
+  return null
+}
 
 let copilotServerToolNames: Set<string> | null = null
 let handlersRegistered = false
@@ -204,13 +248,20 @@ async function executeCopilotServerTool(
   )
   const handler = createServerToolHandler(toolName)
   const result = await handler(args, toCopilotServerToolContext(ctx, workflowId))
+  const output = result.output ?? (result.error ? { error: result.error } : {})
+  const resources =
+    result.resources && result.resources.length > 0
+      ? result.resources
+      : result.success
+        ? extractResourcesFromToolResult(toolName, args, output)
+        : []
 
   return {
     toolName,
     success: result.success,
-    result: result.output ?? (result.error ? { error: result.error } : {}),
+    result: output,
     error: result.error,
-    resources: result.resources,
+    ...(resources.length > 0 ? { resources } : {}),
   }
 }
 
@@ -288,6 +339,9 @@ export async function executeMothershipDelegatedTool(
   const enrichedArgs = { ...args }
   let workflowId = resolveWorkflowIdForDelegatedTool(enrichedArgs, ctx)
 
+  const languageError = enforceLocalCopilotSandboxLanguages(toolName, enrichedArgs)
+  if (languageError) return languageError
+
   if (!workflowId && ctx.workspaceId) {
     workflowId = await resolveWorkflowIdFromDatabase(ctx.workspaceId, enrichedArgs)
   }
@@ -316,6 +370,15 @@ export async function executeMothershipDelegatedTool(
 
   if (toolName === 'create_file') {
     enrichCreateFileArgs(enrichedArgs)
+    const imageReject = rejectCreateFileImageAsText(enrichedArgs)
+    if (imageReject) {
+      return {
+        toolName,
+        success: false,
+        error: imageReject,
+        result: { success: false, message: imageReject },
+      }
+    }
   }
 
   if (toolName === 'workspace_file') {
@@ -356,6 +419,9 @@ export async function executeMothershipDelegatedTool(
         result: adaptListIntegrationToolsForLocal(result.result),
       })
     }
+    if (toolName === 'read') {
+      return withBillingFromResult(await finalizeLocalReadResult(enrichedArgs, ctx, result))
+    }
     return withBillingFromResult(result)
   }
 
@@ -369,11 +435,42 @@ export async function executeMothershipDelegatedTool(
     workspaceId: ctx.workspaceId,
   })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
-  const result = await executeTool(
+  let result = await executeTool(
     toolName,
     enrichedArgs,
     toCopilotServerToolContext(ctx, workflowId)
   )
+
+  // Cloud mothership post-processes function_execute with maybeWriteOutputToFile
+  // so path-only `outputs.files` land in the workspace VFS. Arena must do the
+  // same — otherwise Claude sees a sandbox "success" while files/ never updates.
+  if (toolName === 'function_execute' && result.success) {
+    const { maybeWriteOutputToFile } = await import('@/lib/copilot/request/tools/files')
+    const written = await maybeWriteOutputToFile(
+      toolName,
+      enrichedArgs,
+      { success: result.success, output: result.output, error: result.error },
+      {
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+        workflowId: workflowId ?? ctx.workflowId ?? '',
+        userPermission: ctx.userPermission ?? 'write',
+        chatId: ctx.chatId,
+        messageId: ctx.messageId,
+        abortSignal: ctx.abortSignal,
+        ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
+        ...(ctx.resolvedSecretTraceRegistry
+          ? { resolvedSecretTraceRegistry: ctx.resolvedSecretTraceRegistry }
+          : {}),
+      }
+    )
+    result = {
+      success: written.success,
+      output: written.output,
+      error: written.error,
+      resources: written.resources ?? result.resources,
+    }
+  }
 
   if (!result.success) {
     logger.warn('Delegated Mothership tool failed', {
@@ -398,17 +495,42 @@ export async function executeMothershipDelegatedTool(
     })
   }
 
-  return withBillingFromResult({
+  const delegatedResult: ToolExecutionResult = {
     toolName,
     success: result.success,
     result: result.output ?? (result.error ? { error: result.error } : {}),
     error: result.error,
     resources: result.resources,
-  })
+  }
+
+  if (toolName === 'read') {
+    return withBillingFromResult(await finalizeLocalReadResult(enrichedArgs, ctx, delegatedResult))
+  }
+
+  return withBillingFromResult(delegatedResult)
 }
 
 function withBillingFromResult(result: ToolExecutionResult): ToolExecutionResult {
   if (result.billing) return result
   const billing = extractLocalToolBillingMetadata(result.result)
   return billing ? { ...result, billing } : result
+}
+
+/**
+ * Local Copilot post-process for `read`: clamp mega lines on success, or recover
+ * when shared vfs_read hard-fails on Arena-scale HTML — without changing shared VFS.
+ */
+async function finalizeLocalReadResult(
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext,
+  result: ToolExecutionResult
+): Promise<ToolExecutionResult> {
+  if (result.success) {
+    return clampSuccessfulReadResult(result)
+  }
+  if (!isOversizedVfsReadError(result.error)) {
+    return result
+  }
+  const recovered = await recoverOversizedVfsReadForLocal(args, ctx)
+  return recovered ?? result
 }

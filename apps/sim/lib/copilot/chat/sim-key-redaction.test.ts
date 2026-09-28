@@ -5,9 +5,14 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@/app/workspace/[workspaceId]/home/types'
 import {
+  MothershipStreamV1EventType,
+  MothershipStreamV1TextChannel,
+} from '@/lib/copilot/generated/mothership-stream-v1'
+import {
   captureRevealedSimKeys,
   extractRevealedSimKeys,
   extractRevealedSimKeysFromBlocks,
+  mergeAndRedactPersistedBlocks,
   redactSensitiveContent,
   restoreRevealedSimKeysForMessage,
   toolResultForModel,
@@ -26,6 +31,38 @@ const apiKeyBlock = (key: string) => ({
 })
 
 describe('sim-key-redaction', () => {
+  describe('mergeAndRedactPersistedBlocks', () => {
+    it('keeps thoughtSignature from the last chunk when coalescing assistant text', () => {
+      const merged = mergeAndRedactPersistedBlocks([
+        {
+          type: MothershipStreamV1EventType.text,
+          channel: MothershipStreamV1TextChannel.assistant,
+          content: 'Hello ',
+        },
+        {
+          type: MothershipStreamV1EventType.text,
+          channel: MothershipStreamV1TextChannel.assistant,
+          content: 'world',
+        },
+        {
+          type: MothershipStreamV1EventType.text,
+          channel: MothershipStreamV1TextChannel.assistant,
+          content: '',
+          thoughtSignature: 'sig-final',
+        },
+      ])
+
+      expect(merged).toEqual([
+        {
+          type: MothershipStreamV1EventType.text,
+          channel: MothershipStreamV1TextChannel.assistant,
+          content: 'Hello world',
+          thoughtSignature: 'sig-final',
+        },
+      ])
+    })
+  })
+
   describe('extractRevealedSimKeys', () => {
     it('returns sim_key values in document order', () => {
       const text = `first ${credential('sk-sim-A')} mid ${credential('sk-sim-B')}`

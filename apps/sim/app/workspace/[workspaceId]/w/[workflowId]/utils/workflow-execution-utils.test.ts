@@ -302,6 +302,66 @@ describe('workflow-execution-utils', () => {
       expect(JSON.stringify(updateConsole.mock.calls)).not.toContain('sk-resolved-secret')
     })
 
+    it('records per-iteration block state and log identity for loop-body completions', () => {
+      const accumulatedBlockLogs: BlockLog[] = []
+      const accumulatedBlockStates = new Map()
+      const updateConsole = vi.fn()
+      const handlers = createBlockEventHandlers(
+        {
+          workflowId: 'wf-1',
+          executionIdRef: { current: 'exec-1' },
+          workflowEdges: [],
+          activeBlocksSet: new Set<string>(),
+          activeBlockRefCounts: new Map<string, number>(),
+          accumulatedBlockLogs,
+          accumulatedBlockStates,
+          executedBlockIds: new Set<string>(),
+          includeStartConsoleEntry: true,
+        },
+        {
+          addConsole: vi.fn(),
+          updateConsole,
+          setActiveBlocks: vi.fn(),
+          setBlockRunStatus: vi.fn(),
+          setEdgeRunStatus: vi.fn(),
+        }
+      )
+
+      handlers.onBlockCompleted({
+        blockId: 'fn-1',
+        blockName: 'Function 1',
+        blockType: 'function',
+        executionOrder: 4,
+        input: {},
+        output: { result: 'iter-3' },
+        durationMs: 5,
+        startedAt: '2026-07-31T00:00:00.000Z',
+        endedAt: '2026-07-31T00:00:00.005Z',
+        iterationCurrent: 3,
+        iterationTotal: 4,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+      })
+
+      expect(accumulatedBlockLogs[0]).toMatchObject({
+        iterationIndex: 3,
+        loopId: 'loop-1',
+        output: { result: 'iter-3' },
+      })
+      expect(accumulatedBlockStates.get('fn-1')?.output).toEqual({ result: 'iter-3' })
+      expect(accumulatedBlockStates.get('fn-1_loop3')?.output).toEqual({ result: 'iter-3' })
+      expect(updateConsole).toHaveBeenCalledWith(
+        'fn-1',
+        expect.objectContaining({
+          iterationCurrent: 3,
+          iterationType: 'loop',
+          iterationContainerId: 'loop-1',
+          replaceOutput: { result: 'iter-3' },
+        }),
+        'exec-1'
+      )
+    })
+
     it('falls back to functional completion payload when display is empty without clearLiveDisplay', () => {
       const updateConsole = vi.fn()
       const handlers = createBlockEventHandlers(
@@ -697,6 +757,40 @@ describe('workflow-execution-utils', () => {
         success: true,
         isRunning: false,
         replaceOutput: { items: [] },
+      })
+    })
+
+    it('forwards loop iteration identity when reconciling final block logs', () => {
+      terminalConsoleMockFns.mockAddConsole({
+        workflowId: 'wf-1',
+        blockId: 'fn-1',
+        blockName: 'Function',
+        blockType: 'function',
+        executionId: 'exec-1',
+        executionOrder: 5,
+        isRunning: true,
+        iterationCurrent: 2,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+      })
+
+      const updateConsole = vi.fn()
+      reconcileFinalBlockLogs(updateConsole, 'wf-1', 'exec-1', [
+        makeLog({
+          blockId: 'fn-1',
+          executionOrder: 5,
+          loopId: 'loop-1',
+          iterationIndex: 2,
+          output: { result: 'iter-2' },
+        }),
+      ])
+
+      expect(updateConsole.mock.calls[0][1]).toMatchObject({
+        executionOrder: 5,
+        iterationCurrent: 2,
+        iterationType: 'loop',
+        iterationContainerId: 'loop-1',
+        replaceOutput: { result: 'iter-2' },
       })
     })
 

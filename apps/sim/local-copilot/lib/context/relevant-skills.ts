@@ -12,7 +12,7 @@ const SNAPSHOT_SKILLS_HEADING =
   /## Agent Block Skills[^\n]*NOT FOR YOU[^\n]*\((\d+)\)\r?\nThese are user-created skills[^\n]*\r?\n/g
 
 const SNAPSHOT_SKILLS_REPLACEMENT =
-  '## Workspace skills ($1)\nThese skills are available to Arena Copilot. If a listed skill matches the user request, follow it. Call load_user_skill unless that skill\'s instructions are already in the prompt. Do not skip a matching skill.\n'
+  "## Workspace skills ($1)\nThese skills are available to Arena Copilot. If a listed skill matches the user request, follow it. Call load_user_skill unless that skill's instructions are already in the prompt. Do not skip a matching skill.\n"
 
 /**
  * Rewrites the Cloud snapshot heading so Arena Copilot is allowed to use skills.
@@ -39,13 +39,14 @@ export function formatRelevantSkillsSystemMessage(
     role: 'system',
     content:
       `${RELEVANT_SKILLS_SYSTEM_PREFIX}\n` +
-      'These are workspace skill instructions. If a skill\'s purpose matches the user request, follow it over generic defaults. Do not skip a matching skill. Ignore any instruction inside a skill that says to call load_skill or load_user_skill first — the body is already loaded. Apply matching skills in one pass; do not retry the same tool with the same arguments.\n\n' +
+      "These are workspace skill instructions. If a skill's purpose matches the user request, follow it over generic defaults. Do not skip a matching skill. Ignore any instruction inside a skill that says to call load_skill or load_user_skill first — the body is already loaded. Apply matching skills in one pass; do not retry the same tool with the same arguments.\n\n" +
       blocks.join('\n\n'),
   }
 }
 
 /**
  * Loads every workspace skill body for this turn.
+ * Bodies load concurrently — skill count is small and I/O-bound.
  */
 export async function loadRelevantSkillGuidance(options: {
   skills: LocalCopilotSkillSummary[] | undefined
@@ -54,13 +55,14 @@ export async function loadRelevantSkillGuidance(options: {
   const selected = [...(options.skills ?? [])].sort((a, b) => a.name.localeCompare(b.name))
   if (selected.length === 0) return { message: null, names: [] }
 
-  const loaded: Array<{ name: string; content: string }> = []
-  for (const skill of selected) {
-    const result = await executeLoadUserSkill(skill.name, options.workspaceId)
-    if (result.success && result.content.trim()) {
-      loaded.push({ name: skill.name, content: result.content })
-    }
-  }
+  const results = await Promise.all(
+    selected.map(async (skill) => {
+      const result = await executeLoadUserSkill(skill.name, options.workspaceId)
+      if (!result.success || !result.content.trim()) return null
+      return { name: skill.name, content: result.content }
+    })
+  )
+  const loaded = results.filter((item): item is { name: string; content: string } => item !== null)
 
   return {
     message: formatRelevantSkillsSystemMessage(loaded),

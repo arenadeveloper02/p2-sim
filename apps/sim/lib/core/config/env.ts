@@ -274,8 +274,15 @@ export const env = createEnv({
     OCR_AZURE_API_KEY:                     z.string().min(1).optional(),           // Azure Mistral OCR API key
 
     // Vertex AI Configuration
-    VERTEX_PROJECT:                        z.string().optional(),                  // Google Cloud project ID for Vertex AI
-    VERTEX_LOCATION:                       z.string().optional(),                  // Google Cloud location/region for Vertex AI (defaults to us-central1)
+    VERTEX_PROJECT:                        z.string().optional(),                  // Primary GCP project for Vertex AI (Local Copilot rotation slot 0)
+    VERTEX_PROJECT_1:                      z.string().optional(),                  // Local Copilot Vertex rotation slot 1 project
+    VERTEX_PROJECT_2:                      z.string().optional(),                  // Local Copilot Vertex rotation slot 2 project
+    VERTEX_LOCATION:                       z.string().optional(),                  // Primary Vertex location (global|us|eu|region; default global)
+    VERTEX_LOCATION_1:                     z.string().optional(),                  // Local Copilot Vertex rotation slot 1 location
+    VERTEX_LOCATION_2:                     z.string().optional(),                  // Local Copilot Vertex rotation slot 2 location
+    VERTEX_SERVICE_ACCOUNT_JSON:           z.string().optional(),                  // Primary Vertex service-account JSON (slot 0)
+    VERTEX_SERVICE_ACCOUNT_JSON_1:         z.string().optional(),                  // Local Copilot Vertex rotation slot 1 service-account JSON
+    VERTEX_SERVICE_ACCOUNT_JSON_2:         z.string().optional(),                  // Local Copilot Vertex rotation slot 2 service-account JSON
 
     // Monitoring & Analytics
     TELEMETRY_ENDPOINT:                    z.string().url().optional(),            // Custom telemetry/analytics endpoint
@@ -652,6 +659,7 @@ export const env = createEnv({
     // Arena
     ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
+    SIM_APIS_SECRET_KEY:                  z.string().min(1).optional(),           // Shared secret for sol SSO redeem (must match sol sim.apis.secret.key)
 
     UNIPILE_API_KEY:                      z.string().min(1).optional(),           // Unipile API key (X-API-KEY)
   },
@@ -718,6 +726,7 @@ export const env = createEnv({
     NEXT_PUBLIC_INBOX_ENABLED:             z.boolean().optional(),                   // Enable inbox (Sim Mailer) on self-hosted
     NEXT_PUBLIC_CHAT_DISABLED:             z.boolean().optional(),                   // Hide the Chat module (Chat is shown when unset)
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: z.boolean().optional().default(true), // Control visibility of email/password login forms
+    NEXT_PUBLIC_LOCAL_LOGIN_ENABLED:       z.boolean().optional(),                   // Serve /login instead of Arena SSO when the hub is unavailable
 
 
     // Firecrawl API Key            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
@@ -774,6 +783,7 @@ export const env = createEnv({
     NEXT_PUBLIC_INBOX_ENABLED: process.env.NEXT_PUBLIC_INBOX_ENABLED,
     NEXT_PUBLIC_CHAT_DISABLED: process.env.NEXT_PUBLIC_CHAT_DISABLED,
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: process.env.NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED,
+    NEXT_PUBLIC_LOCAL_LOGIN_ENABLED: process.env.NEXT_PUBLIC_LOCAL_LOGIN_ENABLED,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_E2B_ENABLED: process.env.NEXT_PUBLIC_E2B_ENABLED,
     NEXT_PUBLIC_SANDBOXES_ENABLED: process.env.NEXT_PUBLIC_SANDBOXES_ENABLED,

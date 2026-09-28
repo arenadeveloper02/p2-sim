@@ -1,14 +1,11 @@
 import { truncate } from '@sim/utils/string'
 
 /**
- * Short fixed fallback only — shown until the cheap engagement model returns a
- * dynamic batch. Prefer AI-driven copy from `generateEngagementStatusMessages`.
+ * Short fixed fallback only — shown after a quiet gap if provider thinking has
+ * not started yet. Callers publish phase status first (e.g. Proposing…); this
+ * must not immediately overwrite that with "Working on it…".
  */
-export const MODEL_WAIT_STATUS_FALLBACK = [
-  'Working on it…',
-  'Still working…',
-  'Thinking through next steps…',
-] as const
+export const MODEL_WAIT_STATUS_FALLBACK = ['Thinking…'] as const
 
 /** @deprecated Use {@link MODEL_WAIT_STATUS_FALLBACK}; kept for older imports. */
 export const MODEL_WAIT_STATUS_MESSAGES = MODEL_WAIT_STATUS_FALLBACK

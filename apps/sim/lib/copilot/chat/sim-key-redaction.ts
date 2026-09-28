@@ -173,10 +173,21 @@ export function mergeAndRedactPersistedBlocks(
     }
     const head = run[0]
     const tail = run[run.length - 1]
+    // Gemini 3 stamps thoughtSignature on the final (often empty) trailer chunk.
+    // Keep the last signature in the run — spreading only `head` drops it.
+    let thoughtSignature: string | undefined
+    for (let i = run.length - 1; i >= 0; i--) {
+      const signature = run[i]?.thoughtSignature
+      if (typeof signature === 'string' && signature.length > 0) {
+        thoughtSignature = signature
+        break
+      }
+    }
     out.push({
       ...head,
       content: redactSensitiveContent(run.map((b) => b.content ?? '').join('')),
       ...(tail.endedAt !== undefined ? { endedAt: tail.endedAt } : {}),
+      ...(thoughtSignature ? { thoughtSignature } : {}),
     })
   }
 

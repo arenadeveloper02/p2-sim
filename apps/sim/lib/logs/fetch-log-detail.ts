@@ -49,6 +49,7 @@ function mergeLedgerMetadata(existing: LedgerItem, metadata: ModelUsageMetadata)
         Object.fromEntries((existing.embeddedTools ?? []).map((tool) => [tool.name, tool.cost])),
         metadata.embeddedToolCosts
       ),
+      embeddedToolIds: metadata.embeddedToolIds,
     })
     existing.embeddedTools = resolved.tools
   }
@@ -197,6 +198,7 @@ async function buildCostLedger(
           model: row.description,
           toolCost: metadata.toolCost,
           embeddedToolCosts: metadata.embeddedToolCosts,
+          embeddedToolIds: metadata.embeddedToolIds,
         }).tools
       }
       byKey.set(key, item)

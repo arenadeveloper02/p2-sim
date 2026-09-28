@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 
@@ -22,6 +23,16 @@ describe('toCopilotServerToolContext', () => {
         toolCallId: 'tool-call-1',
         userId: 'user-1',
         workspaceId: 'workspace-1',
+      })
+    )
+  })
+
+  it('forwards the turn-scoped secret registry for model-egress projection', () => {
+    const resolvedSecretTraceRegistry = new ResolvedSecretTraceRegistry()
+
+    expect(toCopilotServerToolContext(baseCtx({ resolvedSecretTraceRegistry }))).toEqual(
+      expect.objectContaining({
+        resolvedSecretTraceRegistry,
       })
     )
   })

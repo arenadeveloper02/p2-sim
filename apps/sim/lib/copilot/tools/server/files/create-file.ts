@@ -17,10 +17,12 @@ import {
 
 const logger = createLogger('CreateFileServerTool')
 const CREATE_FILE_TOOL_ID = 'create_file'
+/** Extensions that should carry an inline string body (not an empty office shell). */
+const INLINE_TEXT_FILE_EXTENSION = /\.(md|txt|json|csv|html)$/i
 
 interface CreateFileArgs {
   fileName: string
-  content?: string
+  content?: string | Record<string, unknown> | unknown[]
   contentType?: string
   outputs?: { files?: Array<{ path: string; mode?: 'create' | 'overwrite'; mimeType?: string }> }
   args?: Record<string, unknown>
@@ -38,11 +40,23 @@ interface CreateFileResult {
   }
 }
 
+function stringifyCreateFileContent(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object') {
+    try {
+      return JSON.stringify(value, null, 2)
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 function resolveCreateFileContent(params: CreateFileArgs): string | undefined {
   const nested = params.args
-  if (typeof params.content === 'string') return params.content
-  if (typeof nested?.content === 'string') return nested.content
-  return undefined
+  const fromTop = stringifyCreateFileContent(params.content)
+  if (fromTop !== undefined) return fromTop
+  return stringifyCreateFileContent(nested?.content)
 }
 
 export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResult> = {
@@ -81,6 +95,23 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
     const mode = outputFile?.mode ?? 'create'
     const fileContent = content ?? ''
 
+    // Text/json creates with no body are almost always a model mistake (object
+    // `content` dropped, or content omitted). Fail instead of a silent empty shell.
+    if (
+      INLINE_TEXT_FILE_EXTENSION.test(outputPath) &&
+      fileContent.length === 0 &&
+      mode !== 'overwrite'
+    ) {
+      const hadContentKey =
+        params.content !== undefined ||
+        (params.args !== undefined && 'content' in params.args)
+      return {
+        success: false,
+        message: hadContentKey
+          ? `create_file for "${outputPath}" received content that could not be written as text. Pass a string (or a JSON object for .json files) in \`content\`.`
+          : `create_file for "${outputPath}" requires non-empty \`content\` for text/json/html/csv/markdown. Pass the full body in \`content\` — empty shells are only for DOCX/PPTX/PDF.`,
+      }
+    }
     try {
       const result =
         mode === 'overwrite'

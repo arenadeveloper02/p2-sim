@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import {
+  BookOpen,
   ClipboardList,
   Clock,
   Credit,
@@ -39,6 +40,7 @@ import {
   isSsoEnabled,
   isWhitelabelingEnabled,
 } from '@/lib/core/config/env-flags'
+import { DEFAULT_WORKSPACE_DOCS_PATH } from '@/ee/whitelabeling/org-branding-utils'
 
 export type SettingsPlane = 'account' | 'organization' | 'selfhost' | 'workspace'
 
@@ -141,6 +143,7 @@ export type UnifiedSettingsSection =
   | 'mothership'
   | 'recently-deleted'
   | 'self-host'
+  | 'docs'
 
 export type UnifiedNavigationSection =
   | 'account'
@@ -148,6 +151,7 @@ export type UnifiedNavigationSection =
   | 'workspace'
   | 'organization'
   | 'platform'
+  | 'help'
 
 /**
  * A bridge surface the desktop shell must expose for a section to be worth
@@ -420,15 +424,25 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   {
     label: 'General',
     icon: Settings,
-    unified: {
-      id: 'general',
-      description: 'Manage your profile, appearance, and preferences.',
-      group: 'account',
-      order: 0,
-    },
+    // unified: {
+    //   id: 'general',
+    //   description: 'Manage your profile, appearance, and preferences.',
+    //   group: 'account',
+    //   order: 0,
+    // },
     planes: {
-      account: { id: 'general', group: 'account', order: 0 },
-      selfhost: { id: 'general', group: 'account', order: 0 },
+      account: {
+        id: 'general',
+        description: 'Manage your profile, appearance, and preferences.',
+        group: 'account',
+        order: 0,
+      },
+      selfhost: {
+        id: 'general',
+        description: 'Manage your profile, appearance, and preferences.',
+        group: 'account',
+        order: 0,
+      },
     },
   },
   {
@@ -561,7 +575,8 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     unified: {
       id: 'teammates',
       description: 'Manage your teammates in this workspace.',
-      group: 'workspace',
+      // Lives under the General heading (account), not Configuration (workspace).
+      group: 'account',
       order: 0,
     },
     planes: {
@@ -760,8 +775,9 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     unified: {
       id: 'recently-deleted',
       description: 'Restore items deleted in the last 30 days.',
-      group: 'workspace',
-      order: 10,
+      // Lives under the General heading (account), not Configuration (workspace).
+      group: 'account',
+      order: 1,
     },
     planes: {
       workspace: { id: 'recently-deleted', group: 'system', order: 9 },
@@ -919,6 +935,17 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   //     workspace: { id: 'custom-blocks', group: 'enterprise', order: 11 },
   //   },
   // },
+  {
+    label: 'Docs',
+    icon: BookOpen,
+    unified: {
+      id: 'docs',
+      description: 'Open Arena documentation in a new tab.',
+      group: 'help',
+      order: 0,
+      externalUrl: DEFAULT_WORKSPACE_DOCS_PATH,
+    },
+  },
   {
     label: 'Admin',
     icon: Lock,

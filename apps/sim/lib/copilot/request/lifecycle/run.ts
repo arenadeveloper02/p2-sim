@@ -443,6 +443,9 @@ export async function runCopilotLifecycle(
       errors: !succeeded && context.errors.length ? context.errors : undefined,
       usage: context.usage,
       cost: context.cost,
+      ...(context.geminiModelPartRounds?.length
+        ? { geminiModelPartRounds: context.geminiModelPartRounds }
+        : {}),
     }
     if (lifecycleOptions.onComplete) {
       onCompleteStarted = true
@@ -466,6 +469,9 @@ export async function runCopilotLifecycle(
         errors: context.errors.length ? context.errors : undefined,
         usage: context.usage,
         cost: context.cost,
+        ...(context.geminiModelPartRounds?.length
+          ? { geminiModelPartRounds: context.geminiModelPartRounds }
+          : {}),
       }
       if (lifecycleOptions.onComplete) {
         onCompleteStarted = true
@@ -516,6 +522,9 @@ export async function runCopilotLifecycle(
       errors: context.errors.length ? context.errors : undefined,
       usage: context.usage,
       cost: context.cost,
+      ...(context.geminiModelPartRounds?.length
+        ? { geminiModelPartRounds: context.geminiModelPartRounds }
+        : {}),
     }
 
     if (!wasCancelled) {

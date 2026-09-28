@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
+import { renumberMarkdownOrderedLists } from '@/lib/core/utils/markdown-ordered-lists'
 
 /**
  * Recursively extracts text content from React elements
@@ -158,6 +159,7 @@ export default function ArenaCopilotMarkdownRenderer({
   headingTextClassName = 'text-gray-900 dark:text-gray-100',
 }: ArenaCopilotMarkdownRendererProps) {
   const [copiedCodeBlocks, setCopiedCodeBlocks] = useState<Record<string, boolean>>({})
+  const displayContent = useMemo(() => renumberMarkdownOrderedLists(content), [content])
 
   // Reset copy success state after 2 seconds
   useEffect(() => {
@@ -234,8 +236,9 @@ export default function ArenaCopilotMarkdownRenderer({
           {children}
         </ul>
       ),
-      ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => (
+      ol: ({ children, start }: React.OlHTMLAttributes<HTMLOListElement>) => (
         <ol
+          start={start}
           className={cn('ml-7 pl-2', bodyTextClassName, fontClassName)}
           style={{ listStyleType: 'decimal' }}
         >
@@ -542,6 +545,9 @@ export default function ArenaCopilotMarkdownRenderer({
                 attributes: {
                   a: ['href', 'title', 'target', 'rel'],
                   img: ['src', 'alt', 'title', 'width', 'height'],
+                  // GFM sets start when a split ordered list continues (2., 3.…).
+                  // Without it, every separate <ol> renders as 1. 1. 1.
+                  ol: ['start'],
                   '*': ['className', 'id'],
                 },
               },
@@ -549,7 +555,7 @@ export default function ArenaCopilotMarkdownRenderer({
           ]}
           components={markdownComponents}
         >
-          {content}
+          {displayContent}
         </ReactMarkdown>
       </Root>
     </Tooltip.Provider>

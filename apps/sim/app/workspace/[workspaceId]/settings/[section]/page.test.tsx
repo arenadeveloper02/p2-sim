@@ -43,6 +43,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/components/settings/navigation', () => ({
   getOrganizationSettingsFeatures: vi.fn(() => ({})),
   isOrganizationSettingsSectionAvailable: mockIsOrganizationSettingsSectionAvailable,
+  isPlatformAdminSettingsSection: vi.fn(() => false),
   resolveWorkspaceNavigation: mockResolveWorkspaceNavigation,
 }))
 

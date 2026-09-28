@@ -74,6 +74,7 @@ import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/provide
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { getBlock } from '@/blocks/registry'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
+import { useTimezone } from '@/hooks/queries/general-settings'
 import {
   prefetchLogDetail,
   useCancelExecution,
@@ -234,6 +235,12 @@ export default function Logs() {
     setDateRange,
     clearDateRange,
   } = useLogFilters()
+
+  /**
+   * Account timezone for log timestamps. Saved preference when set; otherwise
+   * the browser zone. Passed into `formatDate` so list rows match General settings.
+   */
+  const timezone = useTimezone()
 
   const viewMode = useFilterStore((s) => s.viewMode)
   const setViewMode = useFilterStore((s) => s.setViewMode)
@@ -831,7 +838,7 @@ export default function Logs() {
   const rows: ResourceRow[] = useMemo(
     () =>
       logs.map((log) => {
-        const formattedDate = formatDate(log.createdAt)
+        const formattedDate = formatDate(log.createdAt, timezone)
         const displayStatus = getDisplayStatus(log.status)
         const isMothershipJob = log.trigger === 'mothership'
         const isDeletedWorkflow = !isMothershipJob && !log.workflow?.id && !log.workflowId
@@ -864,7 +871,7 @@ export default function Logs() {
           },
         }
       }),
-    [logs]
+    [logs, timezone]
   )
 
   const sidebarOverlay = (

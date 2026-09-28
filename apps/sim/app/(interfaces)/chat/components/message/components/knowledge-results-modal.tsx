@@ -32,10 +32,10 @@ export function KnowledgeResultsModal({
 
   return (
     <Modal open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <ModalContent className='max-h-[85vh] max-w-2xl'>
-        <ModalHeader className='border-gray-200 border-b pb-3 dark:border-gray-700'>
+      <ModalContent className='max-h-[85vh] max-w-2xl bg-[var(--color-ds-surface-raised)]'>
+        <ModalHeader className='border-[var(--color-ds-border-default)] border-b pb-3'>
           <div className='flex items-center justify-between gap-2'>
-            <h2 className='font-semibold text-gray-900 text-lg dark:text-gray-100'>
+            <h2 className='font-semibold text-[var(--color-ds-text-primary)] text-lg'>
               {documentName}
             </h2>
             {viewInKbUrl && (
@@ -43,7 +43,7 @@ export function KnowledgeResultsModal({
                 href={viewInKbUrl}
                 target='_blank'
                 rel='noopener noreferrer'
-                className='inline-flex shrink-0 items-center gap-1.5 rounded border border-gray-200 bg-white px-2.5 py-1.5 text-gray-700 text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+                className='inline-flex shrink-0 items-center gap-1.5 rounded border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-raised)] px-2.5 py-1.5 text-[var(--color-ds-text-secondary)] text-sm transition-colors hover:bg-[var(--color-ds-brand-surface)] hover:text-[var(--color-ds-text-link-hover)]'
               >
                 <ExternalLink className='h-3.5 w-3.5' strokeWidth={2} />
                 View in Knowledge Base
@@ -56,18 +56,18 @@ export function KnowledgeResultsModal({
             {sortedChunks.map((chunk, index) => (
               <div
                 key={`${chunk.documentId}-${chunk.chunkIndex}-${index}`}
-                className='rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50'
+                className='rounded-lg border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-subtle)] p-3'
               >
-                <div className='mb-1.5 font-medium text-gray-500 text-xs dark:text-gray-400'>
+                <div className='mb-1.5 font-medium text-[var(--color-ds-text-tertiary)] text-xs'>
                   Chunk {chunk.chunkIndex}
                 </div>
-                <div className='whitespace-pre-wrap break-words font-medium text-gray-800 text-sm leading-relaxed dark:text-gray-200'>
+                <div className='whitespace-pre-wrap break-words font-medium text-[var(--color-ds-text-primary)] text-sm leading-relaxed'>
                   {chunk.content}
                 </div>
                 {chunk.metadata &&
                   typeof chunk.metadata === 'object' &&
                   Object.keys(chunk.metadata).length > 0 && (
-                    <div className='mt-2 border-gray-200 border-t pt-2 text-gray-500 text-xs dark:border-gray-700 dark:text-gray-400'>
+                    <div className='mt-2 border-[var(--color-ds-border-default)] border-t pt-2 text-[var(--color-ds-text-tertiary)] text-xs'>
                       {JSON.stringify(chunk.metadata)}
                     </div>
                   )}

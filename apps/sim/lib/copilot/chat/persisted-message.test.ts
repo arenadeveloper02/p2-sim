@@ -13,6 +13,34 @@ import {
 } from './persisted-message'
 
 describe('persisted-message', () => {
+  it('persists thinking blocks so the session can show them after reload', () => {
+    const result: OrchestratorResult = {
+      success: true,
+      content: 'Here is the answer',
+      requestId: 'req-1',
+      contentBlocks: [
+        { type: 'thinking', content: 'I should check the workflow first.', timestamp: 1 },
+        { type: 'text', content: 'Here is the answer', timestamp: 2 },
+      ],
+      toolCalls: [],
+    }
+
+    const persisted = buildPersistedAssistantMessage(result)
+    expect(persisted.contentBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          channel: 'thinking',
+          content: 'I should check the workflow first.',
+        }),
+        expect.objectContaining({
+          type: 'text',
+          content: 'Here is the answer',
+        }),
+      ])
+    )
+  })
+
   it('round-trips canonical tool blocks through normalizeMessage', () => {
     const blockTimestamp = 1_700_000_000_000
     const result: OrchestratorResult = {

@@ -10,8 +10,8 @@ import {
   DEPLOYED_CHAT_TEXT_DISPLAY,
 } from '@/app/(interfaces)/chat/constants'
 
-const DEPLOYED_CHAT_DEPARTMENT_BADGE_TEXT = '#B364D7'
-const DEPLOYED_CHAT_DEPARTMENT_BADGE_BORDER = '#F0E0F7'
+const DEPLOYED_CHAT_DEPARTMENT_BADGE_TEXT = 'var(--color-ds-purple-600)'
+const DEPLOYED_CHAT_DEPARTMENT_BADGE_BORDER = 'var(--color-ds-purple-200)'
 
 interface DeployedChatDescriptionModalProps {
   open: boolean
@@ -69,7 +69,7 @@ export function DeployedChatDescriptionModal({
             </h2>
             {showBadge ? (
               <span
-                className='shrink-0 rounded-md border bg-white px-3 py-1 font-medium text-[13px]'
+                className='shrink-0 rounded-md border bg-[var(--color-ds-surface-raised)] px-3 py-1 font-medium text-[13px]'
                 style={{
                   color: DEPLOYED_CHAT_DEPARTMENT_BADGE_TEXT,
                   borderColor: DEPLOYED_CHAT_DEPARTMENT_BADGE_BORDER,
@@ -81,7 +81,7 @@ export function DeployedChatDescriptionModal({
           </div>
 
           <div
-            className='rounded-xl border bg-white p-6'
+            className='rounded-xl border bg-[var(--color-ds-surface-raised)] p-6'
             style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
           >
             <p

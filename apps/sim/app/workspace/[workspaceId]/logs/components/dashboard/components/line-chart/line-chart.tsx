@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { Button, cn } from '@sim/emcn'
 import { generateShortId } from '@sim/utils/id'
 import { formatDate, formatLatency } from '@/app/workspace/[workspaceId]/logs/utils'
+import { useTimezone } from '@/hooks/queries/general-settings'
 
 export interface LineChartPoint {
   timestamp: string
@@ -66,6 +67,11 @@ function LineChartComponent({
   const [activeSeriesId, setActiveSeriesId] = useState<string | null>(null)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
   const [resolvedColors, setResolvedColors] = useState<Record<string, string>>({})
+  /**
+   * Dashboard hover labels and axis ticks use the account timezone so chart
+   * times stay aligned with the logs table (not the raw browser zone).
+   */
+  const timezone = useTimezone()
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -213,12 +219,13 @@ function LineChartComponent({
   const getCompactDateLabel = (timestamp?: string) => {
     if (!timestamp) return ''
     try {
-      const f = formatDate(timestamp)
+      const f = formatDate(timestamp, timezone)
       return `${f.compactDate} ${f.compactTime}`
     } catch (e) {
       const d = new Date(timestamp)
       if (Number.isNaN(d.getTime())) return ''
       return d.toLocaleString('en-US', {
+        timeZone: timezone,
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -548,15 +555,24 @@ function LineChartComponent({
             const formatTick = (d: Date) => {
               if (spanMs <= 36 * 60 * 60 * 1000) {
                 return d.toLocaleTimeString('en-US', {
+                  timeZone: timezone,
                   hour: '2-digit',
                   minute: '2-digit',
                   hour12: false,
                 })
               }
               if (spanMs <= 90 * 24 * 60 * 60 * 1000) {
-                return d.toLocaleString('en-US', { month: 'short', day: 'numeric' })
+                return d.toLocaleString('en-US', {
+                  timeZone: timezone,
+                  month: 'short',
+                  day: 'numeric',
+                })
               }
-              return d.toLocaleString('en-US', { month: 'short', year: 'numeric' })
+              return d.toLocaleString('en-US', {
+                timeZone: timezone,
+                month: 'short',
+                year: 'numeric',
+              })
             }
 
             return idx.map((i) => {

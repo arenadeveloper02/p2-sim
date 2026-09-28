@@ -25,9 +25,11 @@ export interface OrgMemberCreditDisplay {
 }
 
 /**
- * Derive org-member billing card values: org pool total/remaining plus optional
- * per-member allocation. Remaining matches enforcement — capped members cannot
- * exceed their allocation or the shared org pool, whichever is tighter.
+ * Derive User-scope remaining-credits values for org members.
+ * Allocation wins when set (hero = allocation remaining of allocation total);
+ * otherwise falls back to the shared organization pool. Organization-tab
+ * remaining should keep using the org pool directly and ignore allocation.
+ * Remaining still matches enforcement — capped by allocation and org pool.
  */
 export function resolveOrgMemberCreditDisplay(params: {
   orgPool: { totalCredits: number; usedCredits: number; isUnlimited: boolean }
@@ -36,9 +38,12 @@ export function resolveOrgMemberCreditDisplay(params: {
 }): OrgMemberCreditDisplay {
   const { orgPool, allocatedCredits, memberUsedCredits } = params
 
-  const totalCredits: number | 'unlimited' = orgPool.isUnlimited
-    ? 'unlimited'
-    : orgPool.totalCredits
+  const totalCredits: number | 'unlimited' =
+    allocatedCredits != null
+      ? allocatedCredits
+      : orgPool.isUnlimited
+        ? 'unlimited'
+        : orgPool.totalCredits
 
   const orgRemaining = orgPool.isUnlimited
     ? Number.POSITIVE_INFINITY

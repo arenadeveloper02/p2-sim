@@ -21,6 +21,13 @@ interface UsageTimeSeriesChartProps {
   periodActiveUserCount?: number
   /** When false, hides the active-users chart (e.g. user-scoped usage). Defaults to true. */
   showActiveUsers?: boolean
+  /**
+   * When false, shows credits-only on the cost chart (admin Usage mock).
+   * Defaults to true for the denser analytics overlays.
+   */
+  showExecutionsOverlay?: boolean
+  /** Override the cost chart header title. */
+  costChartTitle?: string
 }
 
 /**
@@ -35,6 +42,8 @@ export function UsageTimeSeriesChart({
   timeSeries,
   periodActiveUserCount,
   showActiveUsers = true,
+  showExecutionsOverlay = true,
+  costChartTitle,
 }: UsageTimeSeriesChartProps) {
   const billableData = useMemo((): LineChartPoint[] => {
     return timeSeries.map((bucket) => ({
@@ -44,7 +53,7 @@ export function UsageTimeSeriesChart({
   }, [timeSeries])
 
   const series = useMemo((): LineChartMultiSeries[] => {
-    if (timeSeries.length === 0) return []
+    if (!showExecutionsOverlay || timeSeries.length === 0) return []
 
     return [
       {
@@ -58,7 +67,7 @@ export function UsageTimeSeriesChart({
         dashed: true,
       },
     ]
-  }, [timeSeries])
+  }, [showExecutionsOverlay, timeSeries])
 
   const activeUserData = useMemo((): LineChartPoint[] => {
     if (!showActiveUsers) return []
@@ -81,13 +90,14 @@ export function UsageTimeSeriesChart({
       ? null
       : `${periodActiveUserCount.toLocaleString()} ${periodActiveUserCount === 1 ? 'user' : 'users'}`
 
+  const resolvedCostTitle =
+    costChartTitle ?? (showExecutionsOverlay ? 'Cost & activity over time' : 'Cost over time')
+
   return (
     <div className='flex flex-col gap-4'>
-      <div className='overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)]'>
-        <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b bg-[var(--surface-3)] px-4 py-2'>
-          <p className='font-medium text-[var(--text-primary)] text-small'>
-            Cost & activity over time
-          </p>
+      <div className='overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)]'>
+        <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b px-4 py-3'>
+          <p className='font-medium text-[var(--text-primary)] text-small'>{resolvedCostTitle}</p>
           <div className='flex items-center gap-3 text-[var(--text-muted)] text-micro'>
             <span className='inline-flex items-center gap-1.5'>
               <span
@@ -96,13 +106,15 @@ export function UsageTimeSeriesChart({
               />
               Credits
             </span>
-            <span className='inline-flex items-center gap-1.5'>
-              <span
-                aria-hidden='true'
-                className='inline-block h-[2px] w-3 border-[var(--brand-secondary)] border-t border-dashed'
-              />
-              Executions
-            </span>
+            {showExecutionsOverlay ? (
+              <span className='inline-flex items-center gap-1.5'>
+                <span
+                  aria-hidden='true'
+                  className='inline-block h-[2px] w-3 border-[var(--brand-secondary)] border-t border-dashed'
+                />
+                Executions
+              </span>
+            ) : null}
           </div>
         </div>
         <div className='px-3.5 py-2.5'>
@@ -117,8 +129,8 @@ export function UsageTimeSeriesChart({
       </div>
 
       {showActiveUsers && (
-        <div className='overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)]'>
-          <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b bg-[var(--surface-3)] px-4 py-2'>
+        <div className='overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)]'>
+          <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b px-4 py-3'>
             <p className='font-medium text-[var(--text-primary)] text-small'>
               Active users over time
             </p>

@@ -65,7 +65,11 @@ function getInitials(name: string | undefined | null): string {
   return parts[0][0].toUpperCase()
 }
 
-export function General() {
+interface GeneralProps {
+  hideProfile?: boolean
+}
+
+export function General({ hideProfile = false }: GeneralProps) {
   const router = useRouter()
   const brandConfig = useOrgBrandConfig()
   const { data: session } = useSession()
@@ -289,114 +293,116 @@ export function General() {
       <SettingsPanel
       // actions={actions}
       >
-        <SettingsSection label='Profile'>
-          <div className='flex flex-col gap-3'>
-            <div className='flex items-center gap-3'>
-              <div className='relative'>
-                <button
-                  type='button'
-                  aria-label='Change profile picture'
-                  className={`group relative flex size-9 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover-hover:bg-[var(--bg)] ${!imageUrl ? 'border border-[var(--border)]' : ''}`}
-                  onClick={handleProfilePictureClick}
-                >
-                  {(() => {
-                    if (imageUrl) {
-                      return (
-                        <Image
-                          src={imageUrl}
-                          alt={profile?.name || 'User'}
-                          width={36}
-                          height={36}
-                          unoptimized
-                          className={`h-full w-full object-cover transition-opacity duration-300 ${
-                            isUploadingProfilePicture ? 'opacity-50' : 'opacity-100'
-                          }`}
-                        />
-                      )
-                    }
-                    return (
-                      <span className='text-[var(--text-primary)] text-base'>
-                        {getInitials(profile?.name) || ''}
-                      </span>
-                    )
-                  })()}
-                  <div
-                    className={`absolute inset-0 flex items-center justify-center rounded-full bg-black/50 transition-opacity ${
-                      isUploadingProfilePicture
-                        ? 'opacity-100'
-                        : 'opacity-0 group-hover:opacity-100'
-                    }`}
+        {!hideProfile && (
+          <SettingsSection label='Profile'>
+            <div className='flex flex-col gap-3'>
+              <div className='flex items-center gap-3'>
+                <div className='relative'>
+                  <button
+                    type='button'
+                    aria-label='Change profile picture'
+                    className={`group relative flex size-9 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover-hover:bg-[var(--bg)] ${!imageUrl ? 'border border-[var(--border)]' : ''}`}
+                    onClick={handleProfilePictureClick}
                   >
-                    {isUploadingProfilePicture ? (
-                      <div className='size-4 animate-spin rounded-full border-2 border-white border-t-transparent' />
+                    {(() => {
+                      if (imageUrl) {
+                        return (
+                          <Image
+                            src={imageUrl}
+                            alt={profile?.name || 'User'}
+                            width={36}
+                            height={36}
+                            unoptimized
+                            className={`h-full w-full object-cover transition-opacity duration-300 ${
+                              isUploadingProfilePicture ? 'opacity-50' : 'opacity-100'
+                            }`}
+                          />
+                        )
+                      }
+                      return (
+                        <span className='text-[var(--text-primary)] text-base'>
+                          {getInitials(profile?.name) || ''}
+                        </span>
+                      )
+                    })()}
+                    <div
+                      className={`absolute inset-0 flex items-center justify-center rounded-full bg-black/50 transition-opacity ${
+                        isUploadingProfilePicture
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      {isUploadingProfilePicture ? (
+                        <div className='size-4 animate-spin rounded-full border-2 border-white border-t-transparent' />
+                      ) : (
+                        <Camera className='size-4 text-white' />
+                      )}
+                    </div>
+                  </button>
+                  <Input
+                    type='file'
+                    accept='image/png,image/jpeg,image/jpg'
+                    className='hidden'
+                    ref={profilePictureInputRef}
+                    onChange={handleProfilePictureChange}
+                    disabled={isUploadingProfilePicture}
+                  />
+                </div>
+                <div className='flex flex-1 flex-col justify-center gap-[1px]'>
+                  <div className='flex items-center gap-2'>
+                    {isEditingName ? (
+                      <>
+                        <div className='relative inline-flex'>
+                          <span className='invisible whitespace-pre text-base' aria-hidden='true'>
+                            {name || ' '}
+                          </span>
+                          <input
+                            ref={inputRef}
+                            aria-label='Your name'
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            onBlur={handleInputBlur}
+                            className='absolute top-0 left-0 h-full w-full border-0 bg-transparent p-0 text-base outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                            maxLength={100}
+                            disabled={updateProfile.isPending}
+                            autoComplete='off'
+                            autoCorrect='off'
+                            autoCapitalize='off'
+                            spellCheck='false'
+                          />
+                        </div>
+                        <Button
+                          variant='ghost'
+                          className='size-[12px] flex-shrink-0 p-0'
+                          onClick={handleUpdateName}
+                          disabled={updateProfile.isPending}
+                          aria-label='Save name'
+                        >
+                          <Check className='size-[12px]' />
+                        </Button>
+                      </>
                     ) : (
-                      <Camera className='size-4 text-white' />
+                      <>
+                        <h3 className='text-base'>{profile?.name || ''}</h3>
+                        <Button
+                          variant='ghost'
+                          className='size-[10.5px] flex-shrink-0 p-0'
+                          onClick={() => setIsEditingName(true)}
+                          aria-label='Edit name'
+                        >
+                          <Pencil className='size-[10.5px]' />
+                        </Button>
+                      </>
                     )}
                   </div>
-                </button>
-                <Input
-                  type='file'
-                  accept='image/png,image/jpeg,image/jpg'
-                  className='hidden'
-                  ref={profilePictureInputRef}
-                  onChange={handleProfilePictureChange}
-                  disabled={isUploadingProfilePicture}
-                />
-              </div>
-              <div className='flex flex-1 flex-col justify-center gap-[1px]'>
-                <div className='flex items-center gap-2'>
-                  {isEditingName ? (
-                    <>
-                      <div className='relative inline-flex'>
-                        <span className='invisible whitespace-pre text-base' aria-hidden='true'>
-                          {name || ' '}
-                        </span>
-                        <input
-                          ref={inputRef}
-                          aria-label='Your name'
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          onBlur={handleInputBlur}
-                          className='absolute top-0 left-0 h-full w-full border-0 bg-transparent p-0 text-base outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
-                          maxLength={100}
-                          disabled={updateProfile.isPending}
-                          autoComplete='off'
-                          autoCorrect='off'
-                          autoCapitalize='off'
-                          spellCheck='false'
-                        />
-                      </div>
-                      <Button
-                        variant='ghost'
-                        className='size-[12px] flex-shrink-0 p-0'
-                        onClick={handleUpdateName}
-                        disabled={updateProfile.isPending}
-                        aria-label='Save name'
-                      >
-                        <Check className='size-[12px]' />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <h3 className='text-base'>{profile?.name || ''}</h3>
-                      <Button
-                        variant='ghost'
-                        className='size-[10.5px] flex-shrink-0 p-0'
-                        onClick={() => setIsEditingName(true)}
-                        aria-label='Edit name'
-                      >
-                        <Pencil className='size-[10.5px]' />
-                      </Button>
-                    </>
-                  )}
+                  <p className='text-[var(--text-tertiary)] text-sm'>{profile?.email || ''}</p>
                 </div>
-                <p className='text-[var(--text-tertiary)] text-sm'>{profile?.email || ''}</p>
               </div>
+              {uploadError && <p className='text-[var(--text-error)] text-sm'>{uploadError}</p>}
             </div>
-            {uploadError && <p className='text-[var(--text-error)] text-sm'>{uploadError}</p>}
-          </div>
-        </SettingsSection>
+          </SettingsSection>
+        )}
 
         <SettingsSection label='Preferences'>
           <div className='flex flex-col gap-4'>

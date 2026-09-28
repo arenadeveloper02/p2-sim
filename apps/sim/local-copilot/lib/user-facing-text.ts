@@ -48,9 +48,15 @@ export function resolvePostBuildRoundTools<T extends { name: string }>(
 
 const COMPLETION_MARKERS = [
   'connect gmail',
+  'connect google',
+  'fully built',
   'built and wired',
+  'structurally complete',
   'start → fetch',
   'start -> fetch',
+  'start —',
+  'start -',
+  'fetch emails',
   'newer_than:',
   'one step left',
   'one thing left',
@@ -58,6 +64,18 @@ const COMPLETION_MARKERS = [
   'authorize gmail',
 ] as const
 
+/**
+ * True when earlier-round prose already delivered a post-build completion pitch
+ * (workflow built + connect accounts). Used to suppress re-streaming duplicates.
+ */
+export function contentLooksLikeCompletion(text: string): boolean {
+  const normalized = normalizeCompletionText(text)
+  if (normalized.length < 80) return false
+  const markers = COMPLETION_MARKERS.filter((marker) =>
+    normalized.includes(normalizeCompletionText(marker))
+  ).length
+  return markers >= 2
+}
 /**
  * Removes internal ids from prose without destroying auth/callback URLs or
  * privileged control tags that need ids for Apply/Approve UI.
@@ -175,10 +193,25 @@ function normalizeCompletionText(text: string): string {
 export function isNearDuplicateCompletion(previous: string, next: string): boolean {
   const a = normalizeCompletionText(previous)
   const b = normalizeCompletionText(next)
+  if (!a || !b) return false
+
+  // Earlier round already looked like a full completion — any new completion
+  // pitch is a duplicate (do not wait for both sides to hit 100 chars).
+  if (contentLooksLikeCompletion(previous) && b.length >= 40) {
+    const bMarkers = COMPLETION_MARKERS.filter((marker) =>
+      b.includes(normalizeCompletionText(marker))
+    ).length
+    if (bMarkers >= 1) return true
+  }
+
   if (b.length < 100 || a.length < 100) return false
 
-  const aMarkers = COMPLETION_MARKERS.filter((marker) => a.includes(marker)).length
-  const bMarkers = COMPLETION_MARKERS.filter((marker) => b.includes(marker)).length
+  const aMarkers = COMPLETION_MARKERS.filter((marker) =>
+    a.includes(normalizeCompletionText(marker))
+  ).length
+  const bMarkers = COMPLETION_MARKERS.filter((marker) =>
+    b.includes(normalizeCompletionText(marker))
+  ).length
   if (aMarkers >= 2 && bMarkers >= 2) return true
 
   const probe = b.slice(0, Math.min(160, b.length))
@@ -297,6 +330,197 @@ export function buildUnfulfilledIntentContinuationMessage(): string {
 }
 
 /**
+ * System nudge when log/debug tools finished but the model returned no user-facing explanation.
+ */
+export function buildDebugExplanationContinuationMessage(): string {
+  return (
+    '[System] You already fetched execution logs / error analysis. ' +
+    'Reply to the user NOW with a clear plain-language explanation of why the workflow failed, ' +
+    'which block failed, and what to fix. Do not call more tools unless a critical detail is still missing.'
+  )
+}
+
+/**
+ * System nudge when block discovery finished but create/edit never ran.
+ */
+export function buildWorkflowBuildContinuationMessage(): string {
+  return (
+    '[System] You already called get_available_blocks / get_blocks_metadata (and maybe load_copilot_artifact) ' +
+    'but have not created or edited a workflow yet. Call create_workflow (if needed) then edit_workflow NOW ' +
+    'to add the blocks for the user request. Do not stop after discovery tools and do not only narrate the plan.'
+  )
+}
+
+/**
+ * True when prose only narrates inspecting a file (read/grep/see) without
+ * claiming a completed fix — including multi-sentence bridges that exceed the
+ * short {@link isBridgingAssistantNarration} length cap.
+ */
+export function isFileInspectionBridgeNarration(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return true
+  if (isBridgingAssistantNarration(normalized)) return true
+  if (/\b(fixed|patched|updated the|applied the|search[_ ]replace)\b/i.test(normalized)) {
+    return false
+  }
+  return /\b(let me (see|read|grep|check|inspect|look)|need to see|looking at|grepping|inspect(?:ing|ion)|narrowly)\b/i.test(
+    normalized
+  )
+}
+
+/**
+ * System nudge when file inspection finished but workspace_file / edit_content never ran.
+ */
+export function buildFileEditContinuationMessage(): string {
+  return (
+    '[System] You already read/grepped the workspace file (and maybe load_copilot_artifact) ' +
+    'but have not applied the fix. Call workspace_file (patch/update) then edit_content NOW with the ' +
+    'corrected code. Do not dump HTML/JS into chat. Do not stop on Thinking after inspection tools.'
+  )
+}
+
+/**
+ * True when file inspection ran without a write and the model stopped with no
+ * real reply — force another round so toggle/HTML fixes do not stall on Thinking….
+ */
+export function shouldForceFileEditContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  forcedFileEditContinuations: number
+  maxForcedFileEditContinuations: number
+  round: number
+  maxToolRounds: number
+  hasFileInspectionTools: boolean
+  hasFileMutationTools: boolean
+  streamedUserFacingText: string
+  roundDisplayText: string
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.hasFileInspectionTools || options.hasFileMutationTools) return false
+  if (options.forcedFileEditContinuations >= options.maxForcedFileEditContinuations) return false
+  if (options.round >= options.maxToolRounds - 1) return false
+
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (streamed && !isFileInspectionBridgeNarration(streamed)) return false
+
+  const roundDisplay = stripOptionsTagsForDisplay(options.roundDisplayText, false).trim()
+  if (roundDisplay && !isFileInspectionBridgeNarration(roundDisplay)) return false
+
+  return true
+}
+
+/**
+ * True when debug tools ran and the turn would otherwise settle with no real reply.
+ */
+export function shouldForceDebugExplanationContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  forcedDebugExplanations: number
+  maxForcedDebugExplanations: number
+  round: number
+  maxToolRounds: number
+  hasDebugTools: boolean
+  streamedUserFacingText: string
+  roundDisplayText: string
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.hasDebugTools) return false
+  if (options.forcedDebugExplanations >= options.maxForcedDebugExplanations) return false
+  if (options.round >= options.maxToolRounds - 1) return false
+
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (streamed && !isBridgingAssistantNarration(streamed)) return false
+
+  const roundDisplay = stripOptionsTagsForDisplay(options.roundDisplayText, false).trim()
+  if (roundDisplay && !isBridgingAssistantNarration(roundDisplay)) return false
+
+  return true
+}
+
+/**
+ * True when workflow discovery tools ran without create/edit and the model
+ * stopped with no tools — force another round so chat does not settle empty.
+ */
+export function shouldForceWorkflowBuildContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  forcedWorkflowBuildContinuations: number
+  maxForcedWorkflowBuildContinuations: number
+  round: number
+  maxToolRounds: number
+  hasDiscoveryTools: boolean
+  hasMutationTools: boolean
+  streamedUserFacingText: string
+  roundDisplayText: string
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.hasDiscoveryTools || options.hasMutationTools) return false
+  if (options.forcedWorkflowBuildContinuations >= options.maxForcedWorkflowBuildContinuations) {
+    return false
+  }
+  if (options.round >= options.maxToolRounds - 1) return false
+
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (streamed && !isBridgingAssistantNarration(streamed)) return false
+
+  const roundDisplay = stripOptionsTagsForDisplay(options.roundDisplayText, false).trim()
+  if (roundDisplay && !isBridgingAssistantNarration(roundDisplay)) return false
+
+  return true
+}
+
+/**
+ * System nudge when research/factual intent settled without a live web search.
+ */
+export function buildResearchSearchContinuationMessage(): string {
+  return (
+    '[System] This is a real-world / current factual question. ' +
+    'You must call search_online({ query, toolTitle }) OR ' +
+    'invoke_integration_tool({ toolId: "exa_answer", params: { query } }) NOW ' +
+    'before answering. Do not answer from training memory. ' +
+    'After the tool returns, reply using only those live results.'
+  )
+}
+
+/**
+ * True when a tool call is a live Exa / web search (search_online or exa_* invoke).
+ */
+export function isLiveWebSearchToolCall(name: string, argumentsJson?: string): boolean {
+  if (name === 'search_online') return true
+  if (name !== 'invoke_integration_tool') return false
+  if (!argumentsJson) return false
+  try {
+    const args = JSON.parse(argumentsJson) as { toolId?: unknown }
+    const toolId = typeof args.toolId === 'string' ? args.toolId.trim() : ''
+    return toolId === 'exa_search' || toolId === 'exa_answer'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when research/factual intent tried to settle without calling a live search tool.
+ * Forces even if the model already streamed a memory answer — that is the failure mode.
+ */
+export function shouldForceResearchSearchContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  needsLiveSearch: boolean
+  forcedResearchSearchContinuations: number
+  maxForcedResearchSearchContinuations: number
+  round: number
+  maxToolRounds: number
+  hasLiveWebSearch: boolean
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.needsLiveSearch) return false
+  if (options.hasLiveWebSearch) return false
+  if (
+    options.forcedResearchSearchContinuations >= options.maxForcedResearchSearchContinuations
+  ) {
+    return false
+  }
+  if (options.round >= options.maxToolRounds - 1) return false
+  return true
+}
+
+/**
  * Whether buffered model prose for this round should be streamed to the UI.
  * Tool rounds keep text in the LLM transcript only — streaming it between tool
  * batches creates repeated "Arena Copilot" mothership headers. Bridging
@@ -310,6 +534,8 @@ export function shouldStreamAssistantRoundText(options: {
   if (!options.display.trim()) return false
   if (options.hasToolCalls) return false
   if (isBridgingAssistantNarration(options.display)) return false
+  // Prior round already delivered the post-build pitch — do not stream another.
+  if (contentLooksLikeCompletion(options.contentBeforeRound)) return false
   if (
     options.contentBeforeRound.trim().length > 120 &&
     isNearDuplicateCompletion(options.contentBeforeRound, options.display)
@@ -402,6 +628,10 @@ export function createAssistantRoundTextStreamer(
         options.toolsAvailable &&
         (isBridgingAssistantNarration(display) || isLikelyMidStreamToken(display))
       ) {
+        return null
+      }
+
+      if (contentLooksLikeCompletion(options.contentBeforeRound)) {
         return null
       }
 

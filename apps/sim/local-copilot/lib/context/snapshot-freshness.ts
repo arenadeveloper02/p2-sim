@@ -19,12 +19,20 @@ export interface StampedWorkspaceSnapshotBundle {
 
 /**
  * Stable content revision for a VFS snapshot (FNV-1a over canonical JSON).
+ * Prefer {@link computeContentRevisionFromText} when markdown is already available —
+ * JSON.stringify of a large snapshot is multi-second CPU on big workspaces.
  */
 export function computeSnapshotContentRevision(snapshot: VfsSnapshotV1): string {
-  const canonical = JSON.stringify(snapshot)
+  return computeContentRevisionFromText(JSON.stringify(snapshot))
+}
+
+/**
+ * FNV-1a content revision over an already-materialized string (e.g. inventory markdown).
+ */
+export function computeContentRevisionFromText(text: string): string {
   let hash = 0x811c9dc5
-  for (let i = 0; i < canonical.length; i++) {
-    hash ^= canonical.charCodeAt(i)
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
     hash = Math.imul(hash, 0x01000193)
   }
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`
@@ -41,10 +49,17 @@ export function stampWorkspaceSnapshotBundle(
     typeof bundle.generatedAt === 'string' && bundle.generatedAt.trim()
       ? bundle.generatedAt.trim()
       : new Date().toISOString()
-  const contentRevision =
+  const existingRevision =
     typeof bundle.contentRevision === 'string' && bundle.contentRevision.trim()
       ? bundle.contentRevision.trim()
-      : computeSnapshotContentRevision(bundle.snapshot)
+      : null
+  // Prefer hashing markdown (already a string from mothership) over stringifying
+  // the full VFS object — that stringify dominated contextBuildMs on large workspaces.
+  const contentRevision =
+    existingRevision ??
+    (bundle.markdown.trim()
+      ? computeContentRevisionFromText(bundle.markdown)
+      : computeSnapshotContentRevision(bundle.snapshot))
   return {
     ...bundle,
     generatedAt,

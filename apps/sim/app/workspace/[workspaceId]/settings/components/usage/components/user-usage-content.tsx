@@ -20,10 +20,12 @@ import {
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-collapsible-group'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
+  COPILOT_USAGE_TOOL_BUCKET_ID,
   formatBillableWithCredits,
   formatSourceLabel,
   formatTokenCount,
   formatToolLabel,
+  hasBillableCredits,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
   isLegacyUnattributedChatId,
@@ -76,6 +78,9 @@ export function UserUsageContent({
   const showWorkflow = tab === 'all' || tab === 'workflow'
   const showMothership = tab === 'all' || tab === 'mothership'
   const { openGroups, setGroupOpen } = useUsageCollapsibleGroups(tab)
+  const toolRows = data.byTool.filter(
+    (row) => hasBillableCredits(row.billableCost) && row.toolId !== COPILOT_USAGE_TOOL_BUCKET_ID
+  )
 
   const userNameById = useMemo(() => new Map<string, string>(), [])
 
@@ -637,7 +642,7 @@ export function UserUsageContent({
         )}
 
         {tab === 'all' &&
-          (data.byModel.length > 0 || data.byProvider.length > 0 || data.byTool.length > 0) && (
+          (data.byModel.length > 0 || data.byProvider.length > 0 || toolRows.length > 0) && (
             <SettingsSection label='Model & tool usage'>
               {data.byModel.length > 0 && (
                 <CostBreakdownTable
@@ -688,11 +693,11 @@ export function UserUsageContent({
                   />
                 </div>
               )}
-              {data.byTool.length > 0 && (
+              {toolRows.length > 0 && (
                 <div className='mt-6'>
                   <p className='mb-2 text-[var(--text-muted)] text-small'>By tool</p>
                   <CostBreakdownTable
-                    rows={data.byTool}
+                    rows={toolRows}
                     getRowKey={(row) => row.toolId}
                     columns={[
                       {

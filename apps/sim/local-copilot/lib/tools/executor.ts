@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
 import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
@@ -10,6 +11,7 @@ import {
   LOAD_COPILOT_ARTIFACT_TOOL_NAME,
   loadArtifactFromRecord,
   loadArtifacts,
+  truncateArtifactBodyForModel,
 } from '@/local-copilot/lib/context/artifacts'
 import { buildGetWorkflowContextResult } from '@/local-copilot/lib/context/context-budget'
 import { reloadLocalCopilotWorkflowContext } from '@/local-copilot/lib/context/reload-workflow-context'
@@ -62,13 +64,13 @@ import {
 import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
 import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
 import {
+  type CreatedWorkflowThisTurn,
   createTurnMutations,
+  type LocalCopilotTurnMutations,
   rememberCreatedFile,
   rememberCreatedWorkflow,
   reuseCreatedFile,
   reuseCreatedWorkflow,
-  type CreatedWorkflowThisTurn,
-  type LocalCopilotTurnMutations,
 } from '@/local-copilot/lib/writes/turn-mutations'
 import {
   assertWorkflowWritableInWorkspace,
@@ -158,6 +160,11 @@ export interface ToolExecutionContext {
     startBlockId?: string
     workflowName?: string
   }
+  /**
+   * Turn-scoped model-egress secret registry. Required by server tools that
+   * project queries/results through secret provenance (e.g. knowledge_base query).
+   */
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
 }
 
 export interface ToolExecutionResult {
@@ -232,6 +239,13 @@ function reusedWorkflowResult(existing: CreatedWorkflowThisTurn): ToolExecutionR
     toolName: 'create_workflow',
     success: true,
     createdWorkflowId: existing.workflowId,
+    resources: [
+      {
+        type: 'workflow',
+        id: existing.workflowId,
+        title: existing.workflowName?.trim() || 'Workflow',
+      },
+    ],
     result: {
       success: true,
       alreadyCreatedThisTurn: true,
@@ -280,7 +294,20 @@ async function runCreateWorkflowOnce(
     success: mutation.success,
     result: mutation.output ?? { error: mutation.error },
     error: mutation.error,
-    ...(createdWorkflowId ? { createdWorkflowId } : {}),
+    ...(createdWorkflowId
+      ? {
+          createdWorkflowId,
+          resources: [
+            {
+              type: 'workflow',
+              id: createdWorkflowId,
+              title:
+                (typeof output?.workflowName === 'string' && output.workflowName.trim()) ||
+                'Workflow',
+            },
+          ],
+        }
+      : {}),
   }
   if (created.success) {
     rememberIdempotentResult(
@@ -616,7 +643,11 @@ async function executeLocalCopilotToolInner(
 
       const fromTurn = ctx.artifactStore?.artifacts.get(artifactId)
       if (fromTurn) {
-        return { toolName, success: true, result: fromTurn.body }
+        return {
+          toolName,
+          success: true,
+          result: truncateArtifactBodyForModel(fromTurn.body),
+        }
       }
 
       if (!ctx.chatId) {
@@ -640,9 +671,17 @@ async function executeLocalCopilotToolInner(
             result: { error: `Unknown artifactId: ${artifactId}` },
           }
         }
-        return { toolName, success: true, result: legacy.body }
+        return {
+          toolName,
+          success: true,
+          result: truncateArtifactBodyForModel(legacy.body),
+        }
       }
-      return { toolName, success: true, result: artifact.body }
+      return {
+        toolName,
+        success: true,
+        result: truncateArtifactBodyForModel(artifact.body),
+      }
     }
 
     case 'get_available_blocks': {

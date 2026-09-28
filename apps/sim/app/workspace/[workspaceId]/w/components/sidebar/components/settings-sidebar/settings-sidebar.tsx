@@ -11,21 +11,19 @@ import {
 import { ChevronLeft } from '@sim/emcn/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
-import type { DesktopSettingsSurface } from '@/components/settings/navigation'
-import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
-import { useSession } from '@/lib/auth/auth-client'
+// import type { DesktopSettingsSurface } from '@/components/settings/navigation'
+// import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
+// import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
-import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
+// import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { isHosted } from '@/lib/core/config/env-flags'
-import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
+// import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+// import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
-import {
-  allNavigationItems,
-  isBillingEnabled,
-  sectionConfig,
-} from '@/app/workspace/[workspaceId]/settings/navigation'
+// import { allNavigationItems, isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
+import { sectionConfig } from '@/app/workspace/[workspaceId]/settings/navigation'
+import { useVisibleSettingsNavigation } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/use-visible-settings-navigation'
 import { SidebarSection } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-section'
 import {
   SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
@@ -35,24 +33,31 @@ import {
   SIDEBAR_SECTION_GAP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
-import { useSSOProviders } from '@/ee/sso/hooks/sso'
-import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-available'
+// import { useSSOProviders } from '@/ee/sso/hooks/sso'
+// import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-available'
 import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
-import { prefetchGeneralSettings, useGeneralSettings } from '@/hooks/queries/general-settings'
+// import { useGeneralSettings } from '@/hooks/queries/general-settings'
+import { prefetchGeneralSettings } from '@/hooks/queries/general-settings'
 import { useInboxConfig } from '@/hooks/queries/inbox'
-import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
-import { usePermissionConfig } from '@/hooks/use-permission-config'
+// import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
+// import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 interface SettingsSidebarProps {
   isCollapsed?: boolean
   showCollapsedTooltips?: boolean
+  /**
+   * When set, Back closes the settings list without leaving the current page.
+   * Used when More opens the list before any settings route is selected.
+   */
+  onClose?: () => void
 }
 
 export function SettingsSidebar({
   isCollapsed = false,
   showCollapsedTooltips = false,
+  onClose,
 }: SettingsSidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
@@ -71,6 +76,15 @@ export function SettingsSidebar({
   const showDiscardDialog = pendingLeave !== null
 
   const [hasOverflowTop, setHasOverflowTop] = useState(false)
+
+  const hostContext = useWorkspaceHostContext()
+  const { data: inboxConfig } = useInboxConfig(workspaceId)
+  const navigationItems = useVisibleSettingsNavigation(workspaceId)
+
+  const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
+  const inboxEntitled = inboxConfig?.entitled ?? false
+
+  /*
   const [desktopSurfaces, setDesktopSurfaces] = useState<Record<DesktopSettingsSurface, boolean>>({
     settings: false,
     browser: false,
@@ -78,10 +92,8 @@ export function SettingsSidebar({
   })
 
   const { data: session } = useSession()
-  const hostContext = useWorkspaceHostContext()
   const { data: generalSettings } = useGeneralSettings()
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId)
-  const { data: inboxConfig } = useInboxConfig(workspaceId)
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
     enabled: !isHosted,
   })
@@ -93,8 +105,6 @@ export function SettingsSidebar({
   const userId = session?.user?.id
 
   const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
-  const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
-  const inboxEntitled = inboxConfig?.entitled ?? false
   const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
   const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
   const isEnterprisePlan = subscriptionAccess.isEnterprise
@@ -154,12 +164,6 @@ export function SettingsSidebar({
       }
 
       if (item.selfHostedOverride && !isHosted) {
-        /**
-         * Org-plane sections route through the organization gate in
-         * `settings/[section]/page.tsx` (host organization + org-admin viewer),
-         * which 404s other viewers — mirror it here so the item never links to
-         * a dead page.
-         */
         if (ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) && !isOrgAdminOrOwner) {
           return false
         }
@@ -226,14 +230,24 @@ export function SettingsSidebar({
     canAdminWorkspace,
     desktopSurfaces,
   ])
+  */
+
+  // useEffect(() => {
+  //   setDesktopSurfaces({
+  //     settings: hasDesktopSettings(),
+  //     browser: hasBrowserAgent(),
+  //     terminal: hasTerminal(),
+  //   })
+  // }, [])
 
   const activeSection = useMemo(() => {
     const segments = pathname?.split('/') ?? []
     const settingsIdx = segments.indexOf('settings')
+    // Null while More is only previewing the list, so no row looks selected yet.
     if (settingsIdx !== -1 && segments[settingsIdx + 1]) {
       return segments[settingsIdx + 1] as SettingsSection
     }
-    return 'general'
+    return null
   }, [pathname])
 
   const handlePrefetch = useCallback(
@@ -273,10 +287,15 @@ export function SettingsSidebar({
   const { popSettingsReturnUrl, getSettingsHref } = useSettingsNavigation()
 
   const handleBack = useCallback(() => {
+    // Preview mode: close the list and stay on the current page.
+    if (onClose) {
+      onClose()
+      return
+    }
     requestLeave(() => {
       router.push(popSettingsReturnUrl(`/workspace/${workspaceId}`))
     })
-  }, [requestLeave, router, popSettingsReturnUrl, workspaceId])
+  }, [onClose, requestLeave, router, popSettingsReturnUrl, workspaceId])
 
   const handleConfirmDiscard = useCallback(() => {
     confirmLeave()
@@ -285,14 +304,6 @@ export function SettingsSidebar({
   const handleCancelDiscard = useCallback(() => {
     cancelLeave()
   }, [cancelLeave])
-
-  useEffect(() => {
-    setDesktopSurfaces({
-      settings: hasDesktopSettings(),
-      browser: hasBrowserAgent(),
-      terminal: hasTerminal(),
-    })
-  }, [])
 
   useEffect(() => {
     const container = scrollContainerRef.current

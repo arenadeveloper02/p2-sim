@@ -3,17 +3,17 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockWriteWorkspaceFileByPath, mockEnsureWorkspaceAccess } = vi.hoisted(() => ({
-  mockWriteWorkspaceFileByPath: vi.fn(),
-  mockEnsureWorkspaceAccess: vi.fn(),
+const { mockExecuteFileUseCase } = vi.hoisted(() => ({
+  mockExecuteFileUseCase: vi.fn(),
 }))
 
-vi.mock('@/lib/copilot/tools/handlers/access', () => ({
-  ensureWorkspaceAccess: mockEnsureWorkspaceAccess,
+vi.mock('@/lib/copilot/application/execute-file-use-case', () => ({
+  executeCopilotFileUseCase: mockExecuteFileUseCase,
 }))
 
-vi.mock('@/lib/copilot/vfs/resource-writer', () => ({
-  writeWorkspaceFileByPath: mockWriteWorkspaceFileByPath,
+vi.mock('@/lib/workspace-files/application/write-workspace-file-by-path', () => ({
+  createWorkspaceFileByPath: vi.fn(),
+  updateWorkspaceFileContentByPath: vi.fn(),
 }))
 
 import { createFileServerTool } from '@/lib/copilot/tools/server/files/create-file'
@@ -21,13 +21,14 @@ import { createFileServerTool } from '@/lib/copilot/tools/server/files/create-fi
 describe('createFileServerTool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockEnsureWorkspaceAccess.mockResolvedValue(undefined)
-    mockWriteWorkspaceFileByPath.mockResolvedValue({
-      id: 'file-1',
-      name: 'notes.md',
-      vfsPath: 'files/notes.md',
-      backingVfsPath: 'files/notes.md',
-    })
+    mockExecuteFileUseCase.mockImplementation(
+      async (_ctx: unknown, _useCase: unknown, input: { path: string; content: string }) => ({
+        id: 'file-1',
+        name: input.path.split('/').pop() ?? input.path,
+        vfsPath: input.path,
+        size: Buffer.byteLength(input.content, 'utf-8'),
+      })
+    )
   })
 
   it('writes markdown content when content is provided', async () => {
@@ -41,25 +42,62 @@ describe('createFileServerTool', () => {
 
     expect(result.success).toBe(true)
     expect(result.data?.size).toBeGreaterThan(0)
-    expect(mockWriteWorkspaceFileByPath).toHaveBeenCalledWith(
+    expect(mockExecuteFileUseCase).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
       expect.objectContaining({
-        buffer: Buffer.from('# Hello\n\nBody text', 'utf-8'),
+        path: 'files/notes.md',
+        content: '# Hello\n\nBody text',
       })
     )
   })
 
-  it('creates an empty shell when content is omitted', async () => {
+  it('rejects empty text/json create without content', async () => {
     const result = await createFileServerTool.execute(
       { outputs: { files: [{ path: 'files/notes.md', mode: 'create' }] } },
+      { userId: 'user-1', workspaceId: 'ws-1' }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('requires non-empty')
+    expect(mockExecuteFileUseCase).not.toHaveBeenCalled()
+  })
+
+  it('creates an empty office shell when content is omitted', async () => {
+    const result = await createFileServerTool.execute(
+      { outputs: { files: [{ path: 'files/Deck.pptx', mode: 'create' }] } },
       { userId: 'user-1', workspaceId: 'ws-1' }
     )
 
     expect(result.success).toBe(true)
     expect(result.data?.size).toBe(0)
     expect(result.message).toContain('Empty file shell')
-    expect(mockWriteWorkspaceFileByPath).toHaveBeenCalledWith(
+    expect(mockExecuteFileUseCase).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
       expect.objectContaining({
-        buffer: Buffer.from('', 'utf-8'),
+        path: 'files/Deck.pptx',
+        content: '',
+      })
+    )
+  })
+
+  it('stringifies object content for json files', async () => {
+    const result = await createFileServerTool.execute(
+      {
+        fileName: 'files/samples.json',
+        content: { samples: [{ id: 1 }] },
+      },
+      { userId: 'user-1', workspaceId: 'ws-1' }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockExecuteFileUseCase).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        path: 'files/samples.json',
+        content: JSON.stringify({ samples: [{ id: 1 }] }, null, 2),
       })
     )
   })

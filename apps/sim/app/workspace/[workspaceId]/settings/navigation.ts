@@ -1,5 +1,6 @@
 import {
   buildUnifiedSettingsNavigation,
+  getSettingsSectionMeta as getPlaneSettingsSectionMeta,
   isPlatformAdminSettingsSection,
   SETTINGS_NAVIGATION_BILLING_ENABLED,
   type UnifiedNavigationSection,
@@ -17,10 +18,15 @@ export type NavigationItem = UnifiedSettingsNavigationItem
 
 export const isBillingEnabled = SETTINGS_NAVIGATION_BILLING_ENABLED
 
+/**
+ * Settings left-nav section headings. `account` is shown as General and holds
+ * Teammates and Recently deleted. `workspace` is shown as Configuration.
+ */
 export const sectionConfig: { key: NavigationSection; title: string }[] = [
-  { key: 'account', title: 'Account' },
+  { key: 'account', title: 'General' },
   { key: 'subscription', title: 'Subscription' },
-  { key: 'workspace', title: 'Workspace' },
+  { key: 'help', title: 'Help' },
+  { key: 'workspace', title: 'Configuration' },
   { key: 'organization', title: 'Organization' },
   { key: 'platform', title: 'Platform' },
 ]
@@ -36,5 +42,8 @@ export function getSettingsSectionMeta(
   section: SettingsSection
 ): { label: string; description: string; docsLink?: string } | null {
   const item = allNavigationItems.find((navItem) => navItem.id === section)
-  return item ? { label: item.label, description: item.description, docsLink: item.docsLink } : null
+  if (item) {
+    return { label: item.label, description: item.description, docsLink: item.docsLink }
+  }
+  return getPlaneSettingsSectionMeta('account', section)
 }

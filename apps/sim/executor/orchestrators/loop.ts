@@ -26,6 +26,7 @@ import {
   buildParallelSentinelStartId,
   buildSentinelEndId,
   buildSentinelStartId,
+  deleteLoopScopedOutputs,
   emitSubflowSuccessEvents,
   extractBaseBlockId,
   extractLoopIdFromSentinel,
@@ -80,6 +81,8 @@ export class LoopOrchestrator {
     if (!loopConfig) {
       throw new Error(`Loop config not found: ${loopId}`)
     }
+
+    this.clearLoopScopedBlockOutputs(loopId)
 
     if (loopConfig.nodes.length === 0) {
       const errorMessage =
@@ -497,6 +500,20 @@ export class LoopOrchestrator {
           this.resetNestedParallelScopes(nodeId, ctx)
         }
       }
+    }
+  }
+
+  /**
+   * Drops leftover `_loopN` copies before a loop (re)starts so a nested loop
+   * that runs fewer times on the next outer iteration cannot leak old values.
+   */
+  private clearLoopScopedBlockOutputs(loopId: string): void {
+    for (const nodeId of this.collectAllLoopNodeIds(loopId)) {
+      deleteLoopScopedOutputs(
+        (id) => this.state.getBlockOutput(id),
+        (id) => this.state.deleteBlockState(id),
+        extractBaseBlockId(nodeId)
+      )
     }
   }
 
