@@ -30,6 +30,7 @@ import type { EdgeManager } from '@/executor/execution/edge-manager'
 import type { NodeExecutionOrchestrator } from '@/executor/orchestrators/node'
 import type { ExecutionContext, ExecutionResult } from '@/executor/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
+import { buildSentinelEndId } from '@/executor/utils/subflow-utils'
 import type { SerializedBlock } from '@/serializer/types'
 import { ExecutionEngine } from './engine'
 
@@ -1713,6 +1714,81 @@ describe('ExecutionEngine', () => {
       expect(result.success).toBe(true)
       expect(result.output).toEqual({ data: { fast: true }, status: 200, headers: {} })
       expect(executedNodes).not.toContain('after-slow')
+    })
+
+    it('should continue loop iterations when a Response block fires inside a loop', async () => {
+      const loopId = 'loop1'
+      const sentinelEndId = buildSentinelEndId(loopId)
+
+      const startNode = createMockNode('start', 'starter')
+      const responseNode = createMockNode('response', 'response')
+      responseNode.metadata = { isLoopNode: true, subflowId: loopId, subflowType: 'loop' }
+
+      const loopEndNode = createMockNode(sentinelEndId, 'loop_sentinel')
+      loopEndNode.metadata = {
+        isSentinel: true,
+        sentinelType: 'end',
+        subflowId: loopId,
+        subflowType: 'loop',
+      }
+
+      startNode.outgoingEdges.set('edge1', { target: 'response' })
+      loopEndNode.outgoingEdges.set('loop_continue', {
+        target: 'response',
+        sourceHandle: 'loop_continue',
+      })
+
+      const dag = createMockDAG([startNode, responseNode, loopEndNode])
+      const context = createMockContext()
+
+      let responseExecutions = 0
+      const edgeManager = createMockEdgeManager((node) => {
+        if (node.id === 'start') return ['response']
+        if (node.id === sentinelEndId) {
+          if (responseExecutions < 2) return ['response']
+          return []
+        }
+        return []
+      })
+
+      const executedNodes: string[] = []
+      const nodeOrchestrator = {
+        executionCount: 0,
+        executeNode: vi.fn().mockImplementation(async (_ctx: ExecutionContext, nodeId: string) => {
+          executedNodes.push(nodeId)
+          nodeOrchestrator.executionCount++
+          if (nodeId === 'response') {
+            responseExecutions++
+            return {
+              nodeId,
+              output: { data: { iteration: responseExecutions }, status: 200, headers: {} },
+              isFinalOutput: true,
+            }
+          }
+          if (nodeId === sentinelEndId) {
+            const shouldExit = responseExecutions >= 2
+            return {
+              nodeId,
+              output: {
+                shouldContinue: !shouldExit,
+                shouldExit,
+                selectedRoute: shouldExit ? EDGE.LOOP_EXIT : EDGE.LOOP_CONTINUE,
+              },
+              isFinalOutput: false,
+            }
+          }
+          return { nodeId, output: {}, isFinalOutput: false }
+        }),
+        handleNodeCompletion: vi.fn(),
+      } as unknown as MockNodeOrchestrator
+
+      const engine = new ExecutionEngine(context, dag, edgeManager, nodeOrchestrator)
+      const result = await engine.run('start')
+
+      expect(result.success).toBe(true)
+      expect(executedNodes.filter((id) => id === 'response')).toHaveLength(2)
+      expect(executedNodes.filter((id) => id === sentinelEndId)).toHaveLength(2)
+      expect(result.output).toEqual({ data: { iteration: 2 }, status: 200, headers: {} })
     })
 
     it('should use standard finalOutput logic when no Response block exists', async () => {

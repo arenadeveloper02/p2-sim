@@ -571,13 +571,21 @@ export class ExecutionEngine {
     await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
 
     const isResponseBlock = node.block.metadata?.id === BlockType.RESPONSE
-    if (isResponseBlock) {
+    const isInsideLoop = !!loopId
+
+    // Response outside a loop is a workflow exit. Response inside a loop only
+    // ends that iteration — fall through so the sentinel-end can continue.
+    if (isResponseBlock && !isInsideLoop) {
       if (!this.responseOutputLocked) {
         this.setFinalOutput(nodeId, output)
         this.responseOutputLocked = true
       }
       this.stoppedEarlyFlag = true
       return
+    }
+
+    if (isResponseBlock && isInsideLoop) {
+      this.setFinalOutput(nodeId, output)
     }
 
     if (isFinalOutput && !this.responseOutputLocked) {
@@ -587,24 +595,7 @@ export class ExecutionEngine {
     // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
     // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
-    const isInsideLoop = !!loopId
     const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
-
-    if (isResponseBlock && !isInsideLoop) {
-      // Response block outside of loops - stop entire workflow execution
-      // Verify this is actually a Response block output (has 'status' and 'data')
-      if (output && 'status' in output && 'data' in output) {
-        logger.info('Response block executed outside loop - stopping workflow execution', {
-          nodeId,
-          blockId: node.block.id,
-        })
-        // Clear the ready queue to prevent further nodes from executing
-        this.readyQueue = []
-        // Set final output to the Response block output
-        this.finalOutput = output
-        return
-      }
-    }
     if (this.context.stopAfterBlockId === nodeId) {
       // For loop/parallel sentinels, only stop if the subflow has fully exited (all iterations done)
       // shouldContinue: true means more iterations, shouldExit: true means loop is done
