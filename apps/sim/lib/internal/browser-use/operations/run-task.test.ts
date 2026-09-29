@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockEnv = vi.hoisted(() => ({
   BROWSER_USE_API_KEY: undefined as string | undefined,
-  BROWSER_USE_BASE_URL: undefined as string | undefined,
 }))
 
 vi.mock('@/lib/core/config/env', () => ({
@@ -50,7 +49,6 @@ describe('executeRunTaskOperation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockEnv.BROWSER_USE_API_KEY = undefined
-    mockEnv.BROWSER_USE_BASE_URL = undefined
     vi.stubGlobal('fetch', mockFetch)
   })
 
@@ -326,6 +324,8 @@ describe('executeRunTaskOperation', () => {
     const result = await executeRunTaskOperation({ task: 'Open the page' })
 
     expect(result.success).toBe(true)
+    expect(mockFetch.mock.calls[0]?.[0]).toBe('https://api.browser-use.com/api/v2/tasks')
+    expect(mockFetch.mock.calls[1]?.[0]).toBe('https://api.browser-use.com/api/v2/tasks/task-1')
     for (const [, request] of mockFetch.mock.calls) {
       expect(request).toEqual(
         expect.objectContaining({
@@ -366,16 +366,7 @@ describe('executeRunTaskOperation', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('uses BROWSER_USE_BASE_URL when set', async () => {
-    mockEnv.BROWSER_USE_BASE_URL = 'https://browser-use.internal/api/v2/'
-    mockSuccessfulTask()
-
-    await executeRunTaskOperation({ task: 'Open the page', apiKey: 'api-key' })
-
-    expect(mockFetch.mock.calls[0]?.[0]).toBe('https://browser-use.internal/api/v2/tasks')
-  })
-
-  it('accepts Browser Use v2 string cost on task-status poll', async () => {
+  it('accepts Browser Use v2 string cost on task status', async () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse({ id: 'task-1', sessionId: 'session-1' }))
       .mockResolvedValueOnce(
@@ -397,30 +388,6 @@ describe('executeRunTaskOperation', () => {
     const result = await executeRunTaskOperation({ task: 'Open the page', apiKey: 'api-key' })
 
     expect(result.success).toBe(true)
-    expect(result.output.__totalCostUsd).toBe(0.42)
-  })
-
-  it('forwards API-reported totalCostUsd as __totalCostUsd', async () => {
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse({ id: 'task-1', sessionId: 'session-1' }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'finished',
-          sessionId: 'session-1',
-          output: 'done',
-          steps: [],
-          totalCostUsd: 0.42,
-        })
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          liveUrl: null,
-          publicShareUrl: 'https://browser-use.com/share/session-1',
-        })
-      )
-
-    const result = await executeRunTaskOperation({ task: 'Open the page', apiKey: 'api-key' })
-
     expect(result.output.__totalCostUsd).toBe(0.42)
   })
 })

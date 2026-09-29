@@ -16,19 +16,10 @@ const logger = createLogger('BrowserUseTool')
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = getMaxExecutionTimeout()
 const MAX_CONSECUTIVE_ERRORS = 3
-const DEFAULT_BROWSER_USE_BASE_URL = 'https://api.browser-use.com/api/v2'
+const API_BASE = 'https://api.browser-use.com/api/v2'
 
 /**
- * Resolves the Browser Use API base URL from server environment, falling back to the cloud default.
- */
-function resolveBrowserUseBaseUrl(): string {
-  const fromEnv = env.BROWSER_USE_BASE_URL?.trim()
-  if (fromEnv) return fromEnv.replace(/\/+$/, '')
-  return DEFAULT_BROWSER_USE_BASE_URL
-}
-
-/**
- * Resolves the Browser Use API key from block params or `BROWSER_USE_API_KEY`.
+ * Resolves the Browser Use API key from the block or `BROWSER_USE_API_KEY`.
  */
 function resolveBrowserUseApiKey(params: BrowserUseRunTaskParams): string {
   const fromBlock = params.apiKey?.trim()
@@ -58,22 +49,21 @@ const taskStepSchema: z.ZodType<BrowserUseTaskStep> = z
   })
   .passthrough()
 
-const browserUseCostValueSchema = z.union([z.number(), z.string(), z.null()]).optional()
-
 const taskStatusResponseSchema = z
   .object({
     status: z.string(),
     sessionId: z.string().nullable().optional(),
     output: z.unknown().optional(),
     steps: z.array(taskStepSchema).optional(),
-    totalCostUsd: browserUseCostValueSchema,
-    cost: browserUseCostValueSchema,
-    __totalCostUsd: browserUseCostValueSchema,
+    totalCostUsd: z.union([z.number(), z.string(), z.null()]).optional(),
+    cost: z.union([z.number(), z.string(), z.null()]).optional(),
+    __totalCostUsd: z.union([z.number(), z.string(), z.null()]).optional(),
     usage: z
       .object({
-        totalCostUsd: browserUseCostValueSchema,
+        totalCostUsd: z.union([z.number(), z.string(), z.null()]).optional(),
       })
       .passthrough()
+      .nullable()
       .optional(),
   })
   .passthrough()
@@ -118,7 +108,7 @@ async function fetchBrowserUse(
 ): Promise<Response> {
   options.signal?.throwIfAborted()
   const hasBody = options.body !== undefined
-  const response = await fetch(`${resolveBrowserUseBaseUrl()}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? 'GET',
     headers: {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
@@ -325,10 +315,6 @@ async function fetchTaskStatus(
     const parsed = taskStatusResponseSchema.safeParse(await response.json())
     signal?.throwIfAborted()
     if (!parsed.success) {
-      logger.warn('BrowserUse returned an invalid task-status response', {
-        taskId,
-        issues: parsed.error.issues,
-      })
       return { ok: false, error: 'BrowserUse returned an invalid task-status response' }
     }
     return { ok: true, data: parsed.data }
@@ -338,9 +324,6 @@ async function fetchTaskStatus(
   }
 }
 
-/**
- * Parses a Browser Use cost field. The v2 TaskView documents `cost` as a decimal string.
- */
 function parseBrowserUseCostUsd(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
     return value
@@ -354,9 +337,6 @@ function parseBrowserUseCostUsd(value: unknown): number | undefined {
   return undefined
 }
 
-/**
- * Extracts a dollar cost from a Browser Use task status payload when present.
- */
 function extractTaskTotalCostUsd(
   taskData: z.infer<typeof taskStatusResponseSchema>
 ): number | undefined {
