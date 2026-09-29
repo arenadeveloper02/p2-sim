@@ -56,7 +56,7 @@ type SettingsPanelProps = SettingsPanelBaseProps &
     | {
         back?: undefined
         title?: never
-        description?: never
+        description?: string
       }
   )
 

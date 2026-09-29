@@ -94,8 +94,9 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
 
-      // Arena billing is the Subscription entry. The upstream billing section stays
-      // routable for legacy links and account settings, and is omitted from this sidebar.
+      // Arena billing is the workspace Subscription entry. Upstream `billing`
+      // stays routable for account-plane links and is omitted from this sidebar
+      // so managers see one Billing row, matching version-6-main.
       if (item.id === 'billing') {
         return false
       }
@@ -108,7 +109,10 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
 
-      if (item.id === 'arena-billing' && !canManageWorkspaceBilling(hostContext, userId)) {
+      if (
+        (item.id === 'billing' || item.id === 'arena-billing') &&
+        !canManageWorkspaceBilling(hostContext, userId)
+      ) {
         return false
       }
 

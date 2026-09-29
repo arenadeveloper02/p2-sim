@@ -143,6 +143,19 @@ function isPipeSegmentCopyable(partsLen: number, index: number, part: string): b
   return partsLen >= 3 && index >= 1 && index <= partsLen - 2 && part.trim().length > 0
 }
 
+/**
+ * True for a `| cell | cell |` row. A single pipe, as in `iPhone | 128GB`, stays prose
+ * so the rest of the message is not parsed one line at a time.
+ */
+function isPipeDataRow(line: string): boolean {
+  if (!line.includes('|')) return false
+  const parts = line.split('|')
+  for (let index = 0; index < parts.length; index++) {
+    if (isPipeSegmentCopyable(parts.length, index, parts[index])) return true
+  }
+  return false
+}
+
 interface LineWithPipeHoverProps {
   line: string
   onCopySegment: (text: string) => void
@@ -331,62 +344,88 @@ export const ArenaClientChatMessage = memo(
       [getGeneratedImageSelectionProps]
     )
 
-    /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: each pipe splits the line; columns strictly between two other columns are click-to-copy (trimmed). Markdown in every column still renders (e.g. **bold**). */
+    const renderDeployedMarkdown = useCallback(
+      (content: string) => (
+        <ArenaCopilotMarkdownRenderer
+          content={content}
+          renderImage={renderMarkdownImage}
+          fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+          bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+          headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
+        />
+      ),
+      [renderMarkdownImage]
+    )
+
+    /**
+     * Renders string content. Fenced code and markdown tables stay one document.
+     * Pipe-copy applies only to `| cell | cell |` rows; surrounding lines stay together
+     * so indented code is not turned into a code block per line.
+     */
     const renderStringContent = useCallback(
       (str: string) => {
         if (message.isInitialMessage) {
           return renderWelcomeMessage(str)
         }
 
-        if (!onCopySegmentToInput || !str.includes('|')) {
-          return (
-            <ArenaCopilotMarkdownRenderer
-              content={str}
-              renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
-              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
-              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
-            />
-          )
+        if (
+          !onCopySegmentToInput ||
+          !str.includes('|') ||
+          isLikelyMarkdownTable(str) ||
+          hasFencedCodeBlock(str)
+        ) {
+          return renderDeployedMarkdown(str)
         }
-        if (isLikelyMarkdownTable(str) || hasFencedCodeBlock(str)) {
-          return (
-            <ArenaCopilotMarkdownRenderer
-              content={str}
-              renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
-              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
-              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
-            />
-          )
-        }
+
         const lines = str.split(/\r?\n/)
+        const chunks: Array<{ type: 'markdown'; text: string } | { type: 'pipe'; line: string }> =
+          []
+        let markdownLines: string[] = []
+        const flushMarkdown = () => {
+          if (markdownLines.length === 0) return
+          chunks.push({ type: 'markdown', text: markdownLines.join('\n') })
+          markdownLines = []
+        }
+        for (const line of lines) {
+          if (isPipeDataRow(line)) {
+            flushMarkdown()
+            chunks.push({ type: 'pipe', line })
+            continue
+          }
+          markdownLines.push(line)
+        }
+        flushMarkdown()
+
+        if (chunks.every((chunk) => chunk.type === 'markdown')) {
+          return renderDeployedMarkdown(str)
+        }
+
         return (
           <span className='whitespace-normal'>
-            {lines.map((line, i) => (
+            {chunks.map((chunk, i) => (
               <span key={i}>
                 {i > 0 && '\n'}
-                {line.includes('|') ? (
+                {chunk.type === 'pipe' ? (
                   <LineWithPipeHover
-                    line={line}
+                    line={chunk.line}
                     onCopySegment={onCopySegmentToInput}
                     renderImage={renderMarkdownImage}
                   />
                 ) : (
-                  <ArenaCopilotMarkdownRenderer
-                    content={line}
-                    renderImage={renderMarkdownImage}
-                    fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
-                    bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
-                    headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
-                  />
+                  renderDeployedMarkdown(chunk.text)
                 )}
               </span>
             ))}
           </span>
         )
       },
-      [message.isInitialMessage, onCopySegmentToInput, renderMarkdownImage, renderWelcomeMessage]
+      [
+        message.isInitialMessage,
+        onCopySegmentToInput,
+        renderDeployedMarkdown,
+        renderMarkdownImage,
+        renderWelcomeMessage,
+      ]
     )
 
     const handleUserAttachmentDownload = useCallback((attachment: { dataUrl: string }) => {
