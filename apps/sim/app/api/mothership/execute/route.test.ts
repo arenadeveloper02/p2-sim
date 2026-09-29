@@ -91,6 +91,7 @@ vi.mock('@/lib/copilot/request/session/explicit-abort', () => ({
 
 vi.mock('@/lib/core/config/env-flags', () => ({
   isDocSandboxEnabled: false,
+  isSimCloudHosted: false,
 }))
 
 vi.mock('@/lib/environment/utils', () => ({

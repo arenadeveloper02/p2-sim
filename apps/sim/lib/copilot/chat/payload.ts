@@ -22,7 +22,7 @@ import { getToolEntry } from '@/lib/copilot/tool-executor/router'
 import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import { encodeVfsSegment } from '@/lib/copilot/vfs/path-utils'
 import type { BlockVisibilityState } from '@/lib/core/config/block-visibility'
-import { isDocSandboxEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { isDocSandboxEnabled, isHosted, isSimCloudHosted } from '@/lib/core/config/env-flags'
 import { isOAuthServiceDeploymentAvailable } from '@/lib/integrations/availability.server'
 import type { WorkspaceSearchFilters } from '@/lib/knowledge/search/filters'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
@@ -463,6 +463,8 @@ export async function buildCopilotRequestPayload(
           },
         }
       : {}),
-    isHosted,
+    // Arena sets `isHosted` for product features, but Cloud mothership still
+    // classifies this process as a customer. Only Sim Cloud may send true.
+    isHosted: isSimCloudHosted,
   }
 }

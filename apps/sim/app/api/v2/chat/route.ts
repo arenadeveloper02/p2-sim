@@ -48,7 +48,7 @@ import {
   requireUserCredentialCapabilities,
   type WorkspaceAuthorizationContext,
 } from '@/lib/core/application'
-import { isDocSandboxEnabled } from '@/lib/core/config/env-flags'
+import { isDocSandboxEnabled, isSimCloudHosted } from '@/lib/core/config/env-flags'
 import { acceptsMediaType } from '@/lib/core/utils/media-types'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
@@ -350,7 +350,7 @@ export const POST = withRouteHandler(
         chatId,
         mode: 'agent',
         messageId,
-        isHosted: true,
+        isHosted: isSimCloudHosted,
         workspaceContext,
         ...(isDocSandboxEnabled ? { docCompiler: 'python' } : {}),
         ...(integrationTools.length > 0 ? { integrationTools } : {}),

@@ -19,7 +19,7 @@ import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/hea
 import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
 import type { OrchestratorResult } from '@/lib/copilot/request/types'
 import { normalizeSecretMountPolicy } from '@/lib/copilot/secret-mount-policy'
-import { isDocSandboxEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { isDocSandboxEnabled, isSimCloudHosted } from '@/lib/core/config/env-flags'
 import * as agentmail from '@/lib/mothership/inbox/agentmail-client'
 import { formatEmailAsMessage } from '@/lib/mothership/inbox/format'
 import { sendInboxResponse } from '@/lib/mothership/inbox/response'
@@ -259,7 +259,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       chatId,
       mode: 'agent',
       messageId: userMessageId,
-      isHosted,
+      isHosted: isSimCloudHosted,
       workspaceContext,
       ...(isDocSandboxEnabled ? { docCompiler: 'python' } : {}),
       ...(integrationTools.length > 0 ? { integrationTools } : {}),

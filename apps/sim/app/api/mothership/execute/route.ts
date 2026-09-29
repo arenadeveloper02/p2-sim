@@ -25,7 +25,7 @@ import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/hea
 import { requestExplicitStreamAbort } from '@/lib/copilot/request/session/explicit-abort'
 import type { StreamEvent } from '@/lib/copilot/request/types'
 import { normalizeSecretMountPolicy } from '@/lib/copilot/secret-mount-policy'
-import { isDocSandboxEnabled } from '@/lib/core/config/env-flags'
+import { isDocSandboxEnabled, isSimCloudHosted } from '@/lib/core/config/env-flags'
 import { acceptsMediaType } from '@/lib/core/utils/media-types'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
@@ -307,7 +307,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       chatId: effectiveChatId,
       mode: 'agent',
       messageId,
-      isHosted: true,
+      isHosted: isSimCloudHosted,
       workspaceContext,
       ...(isDocSandboxEnabled ? { docCompiler: 'python' } : {}),
       ...(userMetadata ? { userMetadata } : {}),
