@@ -5,7 +5,7 @@ import type { Edge } from '@xyflow/react'
 import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
 import { isDynamicHandleSubblock } from '@/lib/workflows/dynamic-handle-topology'
-import { escapeRegExp, normalizeName } from '@/executor/constants'
+import { escapeRegExp, normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { validateEdges } from '@/stores/workflows/workflow/edge-validation'
@@ -64,6 +64,12 @@ export function getUniqueBlockName(baseName: string, existingBlocks: Record<stri
   const namePrefix = baseNameMatch ? baseNameMatch[1].trim() : baseName
 
   const normalizedBase = normalizeName(namePrefix)
+  /*
+   * `loop`, `parallel`, and `variable` are reference prefixes (`<loop.index>`).
+   * A block named "Loop" normalizes to `loop`, so `<loop.results>` never reads
+   * that block. The first of those series is "Loop 1" (`<loop1.results>`).
+   */
+  const bareNameIsReserved = (RESERVED_BLOCK_NAMES as readonly string[]).includes(normalizedBase)
 
   /*
    * A bare name counts as the first of its kind, so `Send Email` and
@@ -82,7 +88,9 @@ export function getUniqueBlockName(baseName: string, existingBlocks: Record<stri
     })
 
   /* The first of a kind carries no suffix — "Send Email", not "Send Email 1". */
-  if (existingNumbers.length === 0) return namePrefix
+  if (existingNumbers.length === 0) {
+    return bareNameIsReserved ? `${namePrefix} 1` : namePrefix
+  }
 
   return `${namePrefix} ${Math.max(...existingNumbers) + 1}`
 }
