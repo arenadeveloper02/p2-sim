@@ -31,6 +31,8 @@ const CORE_AGENT_TOOL_TYPES = new Set([
   'function',
   'table',
   'file',
+  'image_generator',
+  'chart_generator',
 ])
 
 /**
