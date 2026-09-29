@@ -118,6 +118,7 @@ vi.mock('@/lib/copilot/secret-mount-policy', () => ({
 
 vi.mock('@/lib/core/config/env-flags', () => ({
   isDocSandboxEnabled: false,
+  isSimCloudHosted: true,
 }))
 
 vi.mock('@/lib/permission-groups/config-scope.server', () => permissionGroupScopeMock)

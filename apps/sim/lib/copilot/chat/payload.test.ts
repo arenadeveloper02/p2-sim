@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { envFlagsMockFns, resetEnvFlagsMock, workflowsUtilsMock } from '@sim/testing'
+import { envFlagsMockFns, resetEnvFlagsMock, setEnvFlags, workflowsUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -822,5 +822,37 @@ describe('Assistant payload', () => {
         oauth: { required: true, provider: 'google-email' },
       }),
     ])
+  })
+
+  it('sends isHosted only for Sim Cloud, even when Arena product hosting is on', async () => {
+    setEnvFlags({ isHosted: true, isSimCloudHosted: false })
+    const arenaPayload = await buildCopilotRequestPayload(
+      {
+        message: 'hi',
+        userId: 'user-1',
+        userMessageId: 'msg-1',
+        mode: 'agent',
+        model: 'claude-opus-4-8',
+        workspaceId: 'ws-1',
+        chatId: 'chat-1',
+      },
+      { selectedModel: 'claude-opus-4-8' }
+    )
+    expect(arenaPayload.isHosted).toBe(false)
+
+    setEnvFlags({ isHosted: true, isSimCloudHosted: true })
+    const cloudPayload = await buildCopilotRequestPayload(
+      {
+        message: 'hi',
+        userId: 'user-1',
+        userMessageId: 'msg-1',
+        mode: 'agent',
+        model: 'claude-opus-4-8',
+        workspaceId: 'ws-1',
+        chatId: 'chat-1',
+      },
+      { selectedModel: 'claude-opus-4-8' }
+    )
+    expect(cloudPayload.isHosted).toBe(true)
   })
 })

@@ -75,6 +75,7 @@ vi.mock('@/lib/copilot/request/lifecycle/start', () => ({
 vi.mock('@/lib/core/config/env-flags', () => ({
   isDocSandboxEnabled: false,
   isHosted: true,
+  isSimCloudHosted: false,
 }))
 
 vi.mock('@/lib/mothership/inbox/agentmail-client', () => ({}))
