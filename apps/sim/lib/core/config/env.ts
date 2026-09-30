@@ -526,6 +526,11 @@ export const env = createEnv({
     IVM_MAX_BROKER_RESULT_JSON_CHARS:      z.string().optional().default('16777216'),// Max JSON payload size for sandbox task broker results (host→isolate)
     IVM_MAX_BROKERS_PER_EXECUTION:         z.string().optional().default('1000'),    // Max broker calls per sandbox task execution
 
+    // Manual-run SSE event Redis byte budgets (execution:redis-budget:*)
+    EXECUTION_REDIS_MAX_SINGLE_WRITE_BYTES: z.string().optional().default('33554432'),  // Max bytes in one buffered SSE write (default 32 MiB)
+    EXECUTION_REDIS_MAX_OWNER_BYTES:        z.string().optional().default('268435456'), // Max bytes per execution stream (default 256 MiB)
+    EXECUTION_REDIS_MAX_USER_BYTES:         z.string().optional().default('1073741824'), // Max SSE event bytes per user per hour (default 1 GiB)
+
     // Knowledge Base Processing Configuration - Shared across all processing methods
     KB_CONFIG_MAX_DURATION:                z.number().optional().default(600),     // Max processing duration in seconds (10 minutes)
     KB_CONFIG_MAX_ATTEMPTS:                z.number().optional().default(3),       // Max retry attempts

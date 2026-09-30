@@ -4,6 +4,7 @@
 import { redisConfigMockFns, resetRedisConfigMock } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { KnowledgeAccessProvider } from '@/lib/knowledge/access/types'
+import { getRedisBudgetLimits } from '@/lib/core/redis/byte-budget.server'
 import {
   cleanupExecutionBase64Cache,
   hydrateUserFilesWithBase64,
@@ -508,12 +509,13 @@ describe('hydrateUserFilesWithBase64', () => {
 
   /**
    * Reproduces the agent-attachment failure: a file under the inline limit whose base64 exceeds
-   * the 8 MiB single-Redis-write cap. The bytes are already read by the time the cache is
+   * the single-Redis-write cap. The bytes are already read by the time the cache is
    * written, so a refused cache write must degrade to "not cached", not fail the execution.
    */
   it('still returns base64 when the value is too large to cache', async () => {
     mockGetRedisClient.mockReturnValue(mockRedis)
-    const buffer = Buffer.alloc(9 * 1024 * 1024, 0x61)
+    const { maxSingleWriteBytes } = getRedisBudgetLimits('execution')
+    const buffer = Buffer.alloc(Math.floor((maxSingleWriteBytes * 3) / 4) + 4096, 0x61)
     mockDownloadFile.mockResolvedValueOnce(buffer)
     const file: UserFile = {
       id: 'file-1',
@@ -532,7 +534,7 @@ describe('hydrateUserFilesWithBase64', () => {
         workflowId: 'workflow',
         executionId: 'exec-1',
         userId: 'user-1',
-        maxBytes: 10 * 1024 * 1024,
+        maxBytes: buffer.length,
       }
     )
 
@@ -603,8 +605,8 @@ describe('hydrateUserFilesWithBase64', () => {
         userId: 'user-1',
       }),
       Buffer.from('hello world!').toString('base64').length,
-      64 * 1024 * 1024,
-      256 * 1024 * 1024,
+      getRedisBudgetLimits('execution').maxOwnerBytes,
+      getRedisBudgetLimits('execution').maxUserBytes,
       60 * 60
     )
     expect(mockRedis.hget).not.toHaveBeenCalled()

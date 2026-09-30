@@ -47,11 +47,11 @@ describe('getRedisBudgetKeys', () => {
 })
 
 describe('getRedisBudgetLimits', () => {
-  it('preserves the ceilings the execution buffer has always enforced', () => {
+  it('uses the raised execution SSE Redis ceilings', () => {
     expect(getRedisBudgetLimits('execution')).toEqual({
-      maxSingleWriteBytes: 8 * 1024 * 1024,
-      maxOwnerBytes: 64 * 1024 * 1024,
-      maxUserBytes: 256 * 1024 * 1024,
+      maxSingleWriteBytes: 32 * 1024 * 1024,
+      maxOwnerBytes: 256 * 1024 * 1024,
+      maxUserBytes: 1024 * 1024 * 1024,
       ttlSeconds: 60 * 60,
     })
   })

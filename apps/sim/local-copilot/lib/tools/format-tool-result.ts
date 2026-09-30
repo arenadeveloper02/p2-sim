@@ -697,8 +697,7 @@ function detectMandatoryFollowUpFromRecord(
       return {
         id: 'edit_workflow:metadata',
         hint:
-          hint ??
-          'Call get_blocks_metadata for the missing block types, then edit_workflow again.',
+          hint ?? 'Call get_blocks_metadata for the missing block types, then edit_workflow again.',
         resolveWith: ['get_blocks_metadata', 'edit_workflow'],
       }
     }

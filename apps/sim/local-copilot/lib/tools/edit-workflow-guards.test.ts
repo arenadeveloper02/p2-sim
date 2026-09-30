@@ -25,13 +25,13 @@ vi.mock('@/triggers/constants', () => ({
   TRIGGER_WEBHOOK_URL_FIELD: 'webhookUrl',
 }))
 
+import { fingerprintToolCall } from '@/local-copilot/lib/agent/tool-stagnation'
 import {
   classifyEditWorkflowPrecondition,
   detectMandatoryFollowUp,
   editWorkflowNeedsFollowUp,
   formatToolResultForLlm,
 } from '@/local-copilot/lib/tools/format-tool-result'
-import { fingerprintToolCall } from '@/local-copilot/lib/agent/tool-stagnation'
 
 describe('editWorkflowNeedsFollowUp precondition gates', () => {
   it('does not treat get_blocks_metadata gate as a bare edit repair', () => {

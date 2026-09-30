@@ -21,7 +21,10 @@ vi.mock('@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args', () =
 }))
 
 import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
-import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
+import {
+  runCreateWorkflowTool,
+  runEditWorkflowTool,
+} from '@/local-copilot/lib/tools/workflow-mutations'
 
 describe('runCreateWorkflowTool', () => {
   beforeEach(() => {

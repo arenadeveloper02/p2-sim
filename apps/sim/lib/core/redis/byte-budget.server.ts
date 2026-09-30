@@ -1,4 +1,5 @@
 import type { Logger } from '@sim/logger'
+import { env } from '@/lib/core/config/env'
 
 /**
  * Per-owner byte accounting for shared Redis.
@@ -70,12 +71,29 @@ export interface RedisBudgetLimits {
  */
 const REDIS_BUDGET_TTL_SECONDS = 60 * 60
 
+const DEFAULT_EXECUTION_SINGLE_WRITE_BYTES = 32 * 1024 * 1024
+const DEFAULT_EXECUTION_OWNER_BYTES = 256 * 1024 * 1024
+const DEFAULT_EXECUTION_USER_BYTES = 1024 * 1024 * 1024
+
+function parseBudgetBytes(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 const LIMITS: Record<RedisBudgetOwnerKind, Omit<RedisBudgetLimits, 'ttlSeconds'>> = {
-  /** Unchanged from what the execution event buffer has always enforced. */
   execution: {
-    maxSingleWriteBytes: 8 * 1024 * 1024,
-    maxOwnerBytes: 64 * 1024 * 1024,
-    maxUserBytes: 256 * 1024 * 1024,
+    maxSingleWriteBytes: parseBudgetBytes(
+      env.EXECUTION_REDIS_MAX_SINGLE_WRITE_BYTES,
+      DEFAULT_EXECUTION_SINGLE_WRITE_BYTES
+    ),
+    maxOwnerBytes: parseBudgetBytes(
+      env.EXECUTION_REDIS_MAX_OWNER_BYTES,
+      DEFAULT_EXECUTION_OWNER_BYTES
+    ),
+    maxUserBytes: parseBudgetBytes(
+      env.EXECUTION_REDIS_MAX_USER_BYTES,
+      DEFAULT_EXECUTION_USER_BYTES
+    ),
   },
   /**
    * A copilot turn streams text and tool frames, not payloads — a single frame past
