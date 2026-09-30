@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
+import { resolveSpecialistTimeoutMs } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   clearSpecialistCheckpoint,
   formatSpecialistCheckpointSystemMessage,
@@ -204,7 +205,10 @@ export async function executeSpecialistLoop(
     }
   }
 
-  const { signal, clear } = await withTimeoutSignal(params.signal, params.budget.timeoutMs)
+  const { signal, clear } = await withTimeoutSignal(
+    params.signal,
+    resolveSpecialistTimeoutMs(params.domain, params.budget.timeoutMs)
+  )
   const events: LocalCopilotStreamEvent[] = []
 
   try {

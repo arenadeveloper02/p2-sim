@@ -152,6 +152,7 @@ const FOLLOW_UP_FIELD_KEYS = [
   'needsFollowUpRun',
   'needsOAuthConnect',
   'followUpHint',
+  'editPrecondition',
 ] as const
 
 /**
@@ -292,9 +293,13 @@ export function isOAuthOnlyEditResult(output: unknown): boolean {
 /**
  * Returns true when edit_workflow applied partially and the agent should retry with fixes.
  * OAuth/credential-only lint is excluded — that requires user authorization, not another edit.
+ * Precondition failures (missing metadata / workflowId / stale revision) are excluded — those
+ * need a different tool first; forcing bare edit_workflow loops forever.
  */
 export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   const record = asRecord(output)
+  if (classifyEditWorkflowPrecondition(record)) return false
+
   if (record.success === false) return true
 
   if (record.partialApply === true) return true
@@ -311,6 +316,31 @@ export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   }
 
   return false
+}
+
+export type EditWorkflowPreconditionKind =
+  | 'metadata'
+  | 'workflow_id'
+  | 'stale_revision'
+  | 'tool_call_id'
+
+/**
+ * Classifies hard gate failures that must not become mandatory bare edit_workflow retries.
+ */
+export function classifyEditWorkflowPrecondition(
+  output: unknown
+): EditWorkflowPreconditionKind | null {
+  const record = asRecord(output)
+  const error =
+    (typeof record.error === 'string' && record.error) ||
+    (typeof record.message === 'string' && record.message) ||
+    ''
+  if (!error) return null
+  if (/get_blocks_metadata/i.test(error)) return 'metadata'
+  if (/stale revision|changed since this turn loaded/i.test(error)) return 'stale_revision'
+  if (/workflowId is required|create a workflow first/i.test(error)) return 'workflow_id'
+  if (/tool call ID/i.test(error)) return 'tool_call_id'
+  return null
 }
 
 function stringifyCapturedValue(value: unknown): string {
@@ -499,6 +529,18 @@ export function formatToolResultForLlm(
       next.needsFollowUpEdit = true
       next.followUpHint =
         'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
+    } else if (classifyEditWorkflowPrecondition(record)) {
+      const kind = classifyEditWorkflowPrecondition(record)!
+      next.needsFollowUpEdit = true
+      next.editPrecondition = kind
+      next.followUpHint =
+        kind === 'metadata'
+          ? 'Call get_blocks_metadata for the missing block types, then edit_workflow again.'
+          : kind === 'stale_revision'
+            ? 'Call get_workflow_context to refresh the graph, then edit_workflow again.'
+            : kind === 'workflow_id'
+              ? 'Pass workflowId (or create_workflow first), then edit_workflow.'
+              : 'Retry edit_workflow with a trusted tool call.'
     } else if (isOAuthOnlyEditResult(record)) {
       next.needsOAuthConnect = true
       next.followUpHint =
@@ -643,6 +685,38 @@ function detectMandatoryFollowUpFromRecord(
   }
 
   if (parsed.needsFollowUpEdit === true) {
+    const precondition =
+      parsed.editPrecondition === 'metadata' ||
+      parsed.editPrecondition === 'workflow_id' ||
+      parsed.editPrecondition === 'stale_revision' ||
+      parsed.editPrecondition === 'tool_call_id'
+        ? parsed.editPrecondition
+        : classifyEditWorkflowPrecondition(parsed)
+
+    if (precondition === 'metadata') {
+      return {
+        id: 'edit_workflow:metadata',
+        hint:
+          hint ??
+          'Call get_blocks_metadata for the missing block types, then edit_workflow again.',
+        resolveWith: ['get_blocks_metadata', 'edit_workflow'],
+      }
+    }
+    if (precondition === 'stale_revision') {
+      return {
+        id: 'edit_workflow:reread',
+        hint: hint ?? 'Call get_workflow_context to refresh, then edit_workflow again.',
+        resolveWith: ['get_workflow_context', 'edit_workflow'],
+      }
+    }
+    if (precondition === 'workflow_id') {
+      return {
+        id: 'edit_workflow:workflow-id',
+        hint: hint ?? 'Pass workflowId or create_workflow first, then edit_workflow.',
+        resolveWith: ['create_workflow', 'edit_workflow'],
+      }
+    }
+
     return {
       id: `${toolName}:edit-repair`,
       hint:
@@ -731,8 +805,25 @@ export function resolveMandatoryFollowUps(
 
   if (toolName === 'edit_workflow' && !editWorkflowNeedsFollowUp(result)) {
     next = next.filter(
-      (item) => item.id !== 'create_workflow:populate' && !item.id.endsWith(':edit-repair')
+      (item) =>
+        item.id !== 'create_workflow:populate' &&
+        !item.id.endsWith(':edit-repair') &&
+        item.id !== 'edit_workflow:metadata' &&
+        item.id !== 'edit_workflow:reread' &&
+        item.id !== 'edit_workflow:workflow-id'
     )
+  }
+
+  if (toolName === 'get_blocks_metadata') {
+    next = next.filter((item) => item.id !== 'edit_workflow:metadata')
+  }
+
+  if (toolName === 'get_workflow_context') {
+    next = next.filter((item) => item.id !== 'edit_workflow:reread')
+  }
+
+  if (toolName === 'create_workflow') {
+    next = next.filter((item) => item.id !== 'edit_workflow:workflow-id')
   }
 
   if (toolName === 'oauth_get_auth_link') {

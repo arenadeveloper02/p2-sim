@@ -20,7 +20,8 @@ vi.mock('@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args', () =
   resolveEditWorkflowOperations: () => null,
 }))
 
-import { runCreateWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
+import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
+import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 
 describe('runCreateWorkflowTool', () => {
   beforeEach(() => {
@@ -61,5 +62,22 @@ describe('runCreateWorkflowTool', () => {
         toolCallId: 'tool-call-1',
       })
     )
+  })
+})
+
+describe('runEditWorkflowTool', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('refuses to edit without a trusted tool call ID', async () => {
+    const result = await runEditWorkflowTool(
+      { workflowId: 'wf-1', operations: [{ block_id: 'a', operation_type: 'add' }] },
+      { userId: 'user-1', workspaceId: 'workspace-1' }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/tool call ID/)
+    expect(editWorkflowServerTool.execute).not.toHaveBeenCalled()
   })
 })

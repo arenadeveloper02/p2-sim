@@ -140,7 +140,7 @@ function matchWorkflowByName(
   return undefined
 }
 
-async function resolveWorkflowIdFromDatabase(
+export async function resolveWorkflowIdFromDatabase(
   workspaceId: string,
   args: Record<string, unknown>
 ): Promise<string | undefined> {
