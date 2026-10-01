@@ -4,6 +4,7 @@ import { documentLayoutFollowUpHint } from '@/lib/copilot/chat/document-format-g
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getBlock } from '@/blocks/registry'
+import { MAX_POPULATE_EDITS } from '@/local-copilot/lib/agent/limits'
 import type { ArtifactStore } from '@/local-copilot/lib/context/artifacts'
 import {
   LOAD_COPILOT_ARTIFACT_TOOL_NAME,
@@ -531,7 +532,13 @@ export function formatToolResultForLlm(
     const record = asRecord(result)
     const data = asRecord(record.data)
     const size = typeof data.size === 'number' ? data.size : 0
-    if (size === 0 && record.success !== false) {
+    if (record.success === false) {
+      formatted = {
+        ...record,
+        followUpHint:
+          'create_file failed — fix the args and call create_file again (fileName for office shells; fileName + content for html/md/txt/json/csv). Do NOT switch to manage_sandbox, function_execute, or python-pptx, and do not tell the user office tools are unavailable.',
+      }
+    } else if (size === 0) {
       const filePath =
         (typeof data.vfsPath === 'string' && data.vfsPath) ||
         (typeof data.name === 'string' && data.name) ||
@@ -652,7 +659,7 @@ export function formatToolResultForLlm(
       next.copilotSanitizedWorkflowState = undefined
       next.needsFollowUpPopulate = true
       next.followUpHint =
-        'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
+        `New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.`
     }
 
     formatted = next

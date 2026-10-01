@@ -727,6 +727,7 @@ export async function executeSpecialistLoop(
         success: false,
         error: 'Specialist aborted',
         depth: entered.depth,
+        ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
       }
     }
 

@@ -98,7 +98,10 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
     id: 'specialists',
     /** When to delegate to a specialist entry tool instead of a leaf tool. */
     content: `Specialists (hybrid orchestration):
+- Route by calling tools — there is no separate intent classifier. Pick the leaf tool or specialist that matches the user ask.
 - Prefer specialist tools for multi-step domain work: workflow, run, deploy, auth, knowledge, table, scheduled_task, agent, research, media, file, superagent.
+- File / office / docs: call \`create_file\` → \`workspace_file\` → \`edit_content\` directly (or the \`file\` specialist for a long multi-step job). Those leaf tools are always in the catalog — never say they are "not found" / "not accessible", never require the file specialist first, never fall back to sandbox/python-pptx for decks.
+- Knowledge bases: use \`knowledge_base\` (create / query / add_file). To seed a KB, \`create_file\` the docs then \`knowledge_base\` create + add_file (or call the \`knowledge\` specialist).
 - Keep leaf tools for simple single calls. Do not re-run research/auth already present in pre-pass findings unless stale or failed.
 - Use \`superagent\` for third-party integration actions; \`agent\` for listing/invoking tools and skills; \`auth\` when credentials are missing.
 `,
@@ -348,6 +351,7 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
     ${DOCUMENT_FORMAT_GUIDANCE}
     ${LOCAL_COMPLEX_HTML_GUIDANCE}
     - These formats compile via the built-in JS sandbox (isolated-vm) even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
+    - \`create_file\` / \`workspace_file\` / \`edit_content\` are ALWAYS available for PPTX/DOCX/PDF/HTML — never say "office file tools are unavailable", never switch to \`manage_sandbox\` / \`function_execute\` / python-pptx because of a prior tool hiccup.
     - Prefer create_file → workspace_file → edit_content for workspace PDF/DOCX/PPTX. \`function_execute\` / \`manage_sandbox\` are for real compute, not the default office path. If a remote sandbox is temporarily unavailable, continue with the office file tools — do not loop on sandbox creation.
     - If \`edit_content\` fails with a SyntaxError / Unexpected token / parse error: do **not** eyeball-debug in Thinking. Immediately call \`edit_content\` again with a clean full rewrite of the office JS (simpler tables, fewer nested expressions). One rewrite beat ten diagnosis paragraphs.
     - If \`edit_content\` fails with a system/sandbox crash (e.g. "Code execution failed unexpectedly" / isolated-vm / Node version), that is a host Node/isolated-vm issue — not missing deck code and not \`docSandboxEnabled\`. Tell the user to use Node 20–22 and rebuild isolated-vm; do not loop minimal PPTX/DOCX probes.

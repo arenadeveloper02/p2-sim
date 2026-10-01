@@ -38,8 +38,10 @@ function resolveActiveDomains(intent: LocalCopilotIntent): Set<LocalCopilotCloud
  * Domain work the parent does not carry itself is delegated to a specialist,
  * which receives its own domain guidance via `domainSystemHint`.
  *
- * `useFullCatalog` turns pruning off entirely, matching the tool-side escape
- * hatch, and yields the full prompt byte for byte.
+ * Local Copilot turns use `useFullCatalog: true` (no message regex classifier),
+ * so every section is included and the model routes via tool calls.
+ *
+ * `useFullCatalog` turns pruning off entirely and yields the full prompt.
  */
 export function buildLocalCopilotSystemPrompt(
   intent: LocalCopilotIntent

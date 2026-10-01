@@ -112,6 +112,56 @@ export function turnHasWorkflowMutationTools(records: ToolTurnRecord[]): boolean
 }
 
 /**
+ * Closing prose when a workflow build turn would otherwise settle incomplete or blank.
+ */
+export function buildWorkflowBuildChatAppendix(
+  records: ToolTurnRecord[],
+  options?: {
+    createdWorkflowThisTurn?: boolean
+    successfulPopulateEdits?: number
+    unresolvedFollowUpHint?: string | null
+  }
+): string | null {
+  const createdWithoutPopulate =
+    options?.createdWorkflowThisTurn === true && (options.successfulPopulateEdits ?? 0) === 0
+
+  if (options?.unresolvedFollowUpHint?.trim()) {
+    return `I made partial progress but still need to finish: ${options.unresolvedFollowUpHint.trim()}`
+  }
+
+  if (createdWithoutPopulate) {
+    const fromTools = synthesizeAssistantSummaryFromTools(
+      records.filter((record) => record.name === 'create_workflow' || record.name === 'edit_workflow')
+    )
+    if (fromTools) return fromTools
+    return (
+      'Created an empty workflow. The requested blocks still need to be added — ' +
+      'continue so I can call edit_workflow to populate it.'
+    )
+  }
+
+  if (turnHasWorkflowDiscoveryTools(records) && !turnHasWorkflowMutationTools(records)) {
+    return (
+      'I looked up available blocks but did not finish creating or editing the workflow. ' +
+      'Please continue so I can call create_workflow / edit_workflow.'
+    )
+  }
+
+  if (turnHasWorkflowMutationTools(records)) {
+    return synthesizeAssistantSummaryFromTools(
+      records.filter(
+        (record) =>
+          WORKFLOW_MUTATION_TOOL_NAMES.has(record.name) ||
+          WORKFLOW_DISCOVERY_TOOL_NAMES.has(record.name)
+      )
+    )
+  }
+
+  return null
+}
+
+
+/**
  * True for log/debug tools that gather failure evidence but do not themselves
  * produce user-facing chat prose.
  */

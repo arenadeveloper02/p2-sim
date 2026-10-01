@@ -17,6 +17,7 @@ import {
   PrepareFileEdit,
   UserTable,
 } from '@/lib/copilot/generated/tool-catalog-v1'
+import { ARENA_SERVER_TOOL_SCHEMA_ALIASES } from '@/lib/copilot/tools/arena-server-tool-aliases'
 import { copilotToolCanWrite } from '@/lib/copilot/tools/permissions'
 import {
   assertServerToolNotAborted,
@@ -115,6 +116,22 @@ const WRITE_ACTIONS: Record<string, string[]> = {
     'delete_connector',
     'sync_connector',
   ],
+  // Arena Copilot leaf name (same write ops as manage_knowledge_base).
+  knowledge_base: [
+    'create',
+    'add_file',
+    'update',
+    'delete',
+    'delete_document',
+    'update_document',
+    'create_tag',
+    'update_tag',
+    'delete_tag',
+    'add_connector',
+    'update_connector',
+    'delete_connector',
+    'sync_connector',
+  ],
   [UserTable.id]: [
     'create',
     'create_from_file',
@@ -147,8 +164,12 @@ const WRITE_ACTIONS: Record<string, string[]> = {
   [ManageSkill.id]: ['add', 'edit', 'delete'],
   [ManageCredential.id]: ['rename', 'delete'],
   [PrepareFileEdit.id]: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
+  // Arena Copilot leaf names (same handlers as the Cloud catalog ids above).
+  workspace_file: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
   [editContentServerTool.name]: ['*'],
+  edit_content: ['*'],
   [CreateEmptyFile.id]: ['*'],
+  create_file: ['*'],
   rename_file: ['*'],
   [shareFileServerTool.name]: ['*'],
   move_file: ['*'],
@@ -182,10 +203,14 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [queryLogsServerTool.name]: queryLogsServerTool,
   [searchDocsServerTool.name]: searchDocsServerTool,
   [searchOnlineServerTool.name]: searchOnlineServerTool,
+  // Arena leaf name — model calls search_online; Cloud catalog id is web_search.
+  search_online: searchOnlineServerTool,
   [userMemoryServerTool.name]: userMemoryServerTool,
   [setEnvironmentVariablesServerTool.name]: setEnvironmentVariablesServerTool,
   [getCredentialsServerTool.name]: getCredentialsServerTool,
   [knowledgeBaseServerTool.name]: knowledgeBaseServerTool,
+  // Arena leaf name — model calls knowledge_base; Cloud catalog id is manage_knowledge_base.
+  knowledge_base: knowledgeBaseServerTool,
   [searchKnowledgeBaseServerTool.name]: searchKnowledgeBaseServerTool,
   [searchWorkspaceServerTool.name]: searchWorkspaceServerTool,
   [readDocumentServerTool.name]: readDocumentServerTool,
@@ -199,8 +224,14 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [tableEnrichmentsServerTool.name]: tableEnrichmentsServerTool,
   [tableViewsServerTool.name]: tableViewsServerTool,
   [workspaceFileServerTool.name]: workspaceFileServerTool,
+  // Arena Copilot leaf names — same handlers as Cloud catalog ids so Local
+  // Copilot `create_file` / `workspace_file` / `edit_content` never fall through
+  // to executeAppTool ("Tool not found: create_file").
+  workspace_file: workspaceFileServerTool,
   [editContentServerTool.name]: editContentServerTool,
+  edit_content: editContentServerTool,
   [createFileServerTool.name]: createFileServerTool,
+  create_file: createFileServerTool,
   [renameFileServerTool.name]: renameFileServerTool,
   [shareFileServerTool.name]: shareFileServerTool,
   [moveFileServerTool.name]: moveFileServerTool,
@@ -218,6 +249,17 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
 
 function getServerToolRegistry(): Record<string, BaseServerTool> {
   return baseServerToolRegistry
+}
+
+/**
+ * Arena Copilot leaf names → Cloud schema ids. Single source:
+ * `@/lib/copilot/tools/arena-server-tool-aliases`.
+ */
+const SERVER_TOOL_SCHEMA_ALIASES: Readonly<Record<string, string>> =
+  ARENA_SERVER_TOOL_SCHEMA_ALIASES
+
+function resolveServerToolSchemaName(toolName: string): string {
+  return SERVER_TOOL_SCHEMA_ALIASES[toolName] ?? toolName
 }
 
 export function getRegisteredServerToolNames(): string[] {
@@ -280,9 +322,10 @@ export async function routeExecution(
     normalizedPayload = normalizeGenerateImageArgs(normalizedPayload as Record<string, unknown>)
   }
 
+  const schemaToolName = resolveServerToolSchemaName(toolName)
   const args = tool.inputSchema
     ? tool.inputSchema.parse(normalizedPayload)
-    : validateGeneratedToolPayload(toolName, 'parameters', normalizedPayload)
+    : validateGeneratedToolPayload(schemaToolName, 'parameters', normalizedPayload)
 
   assertServerToolNotAborted(context, `User stop signal aborted ${toolName} after validation`)
 
@@ -310,5 +353,5 @@ export async function routeExecution(
   // generated JSON schema contract emitted from Go.
   return tool.outputSchema
     ? tool.outputSchema.parse(result)
-    : validateGeneratedToolPayload(toolName, 'resultSchema', result)
+    : validateGeneratedToolPayload(schemaToolName, 'resultSchema', result)
 }

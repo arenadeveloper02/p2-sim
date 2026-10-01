@@ -92,6 +92,16 @@ describe('office empty-shell create_file results', () => {
     const parsed = JSON.parse(formatted) as Record<string, unknown>
     expect(String(parsed.followUpHint)).toMatch(/not a tool failure/i)
   })
+
+  it('redirects create_file failures away from sandbox fallback', () => {
+    const formatted = formatToolResultForLlm('create_file', {
+      success: false,
+      message: 'Failed to create file',
+    })
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(String(parsed.followUpHint)).toMatch(/Do NOT switch to manage_sandbox/i)
+    expect(String(parsed.followUpHint)).toMatch(/create_file again/i)
+  })
 })
 
 describe('coalesceToolExecutionPayloadForLlm', () => {

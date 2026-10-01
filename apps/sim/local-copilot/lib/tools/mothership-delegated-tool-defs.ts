@@ -1,4 +1,5 @@
 import { TOOL_RUNTIME_SCHEMAS } from '@/lib/copilot/generated/tool-schemas-v1'
+import { toServerRegistryToolName } from '@/local-copilot/lib/tools/resolve-tool-name-alias'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
@@ -260,7 +261,8 @@ export function isMothershipDelegatedTool(
  */
 export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefinition[] {
   return MOTHERSHIP_DELEGATED_TOOL_NAMES.map((name) => {
-    const schema = TOOL_RUNTIME_SCHEMAS[name]?.parameters
+    // Arena leaf names (create_file) share Cloud JSON schemas (create_empty_file).
+    const schema = TOOL_RUNTIME_SCHEMAS[toServerRegistryToolName(name)]?.parameters
     const baseParameters = (schema ?? {
       type: 'object',
       properties: {},

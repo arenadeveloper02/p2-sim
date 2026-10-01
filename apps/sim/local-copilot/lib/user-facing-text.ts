@@ -352,6 +352,30 @@ export function buildWorkflowBuildContinuationMessage(): string {
 }
 
 /**
+ * System nudge when create_workflow succeeded but populate never started.
+ */
+export function buildIncompleteWorkflowPopulateContinuationMessage(): string {
+  return (
+    '[System] create_workflow already succeeded this turn but edit_workflow has not populated it yet. ' +
+    'Call get_blocks_metadata (if needed) then edit_workflow NOW to add the requested blocks and connections. ' +
+    'Do not create another workflow and do not stop on an empty shell.'
+  )
+}
+
+/**
+ * Soft wrap-up nudge: populate edits hit the soft ceiling but tools stay available
+ * until the model settles or the hard lock fires.
+ */
+export function buildWorkflowBuildSoftCompleteSystemMessage(): string {
+  return (
+    '[System] You have already made several successful edit_workflow populate calls this turn. ' +
+    'If the graph still needs more blocks or wires for the user request, finish those edits now. ' +
+    'Otherwise stop tools and reply once with a short summary (display names only) and at most one <options> block.'
+  )
+}
+
+
+/**
  * True when prose only narrates inspecting a file (read/grep/see) without
  * claiming a completed fix — including multi-sentence bridges that exceed the
  * short {@link isBridgingAssistantNarration} length cap.
@@ -465,6 +489,74 @@ export function shouldForceWorkflowBuildContinuation(options: {
 
   return true
 }
+
+/**
+ * True when create_workflow ran this turn but no successful populate edit yet —
+ * and mandatory follow-ups are somehow empty — so the turn does not settle on
+ * an empty shell.
+ */
+export function shouldForceIncompleteWorkflowPopulateContinuation(options: {
+  postBuildToolMode: PostBuildToolMode
+  createdWorkflowThisTurn: boolean
+  successfulPopulateEdits: number
+  pendingFollowUpCount: number
+  forcedIncompletePopulateContinuations: number
+  maxForcedIncompletePopulateContinuations: number
+  round: number
+  maxToolRounds: number
+}): boolean {
+  if (options.postBuildToolMode !== 'all') return false
+  if (!options.createdWorkflowThisTurn) return false
+  if (options.successfulPopulateEdits > 0) return false
+  if (options.pendingFollowUpCount > 0) return false
+  if (
+    options.forcedIncompletePopulateContinuations >=
+    options.maxForcedIncompletePopulateContinuations
+  ) {
+    return false
+  }
+  if (options.round >= options.maxToolRounds - 1) return false
+  return true
+}
+
+/**
+ * True when a workflow-build turn must leave a user-visible closing message —
+ * incomplete create/populate, unresolved follow-ups, or empty/bridging prose
+ * after discovery/mutation tools.
+ */
+export function shouldEnsureWorkflowBuildClosingMessage(options: {
+  hasDiscoveryTools: boolean
+  hasMutationTools: boolean
+  createdWorkflowThisTurn: boolean
+  successfulPopulateEdits: number
+  pendingFollowUpCount: number
+  streamedUserFacingText: string
+}): boolean {
+  if (!options.hasDiscoveryTools && !options.hasMutationTools) return false
+
+  if (options.createdWorkflowThisTurn && options.successfulPopulateEdits === 0) return true
+  if (options.pendingFollowUpCount > 0) return true
+
+  const visible = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
+  if (!visible || isBridgingAssistantNarration(visible)) return true
+
+  return false
+}
+
+/**
+ * Closing copy when the turn still has unresolved mandatory follow-ups.
+ */
+export function buildUnresolvedFollowUpClosingMessage(
+  pending: Array<{ hint: string }>
+): string | null {
+  if (pending.length === 0) return null
+  const hint = pending[0]?.hint?.trim()
+  if (hint) {
+    return `I made partial progress but still need to finish: ${hint}`
+  }
+  return 'I made partial progress but still need another step to finish the request. Please continue in chat.'
+}
+
 
 /**
  * System nudge when research/factual intent settled without a live web search.
@@ -668,12 +760,20 @@ export function createAssistantRoundTextStreamer(
 /**
  * True when the only user-visible prose so far is empty or bridging, so a tool
  * turn should synthesize a real closing summary instead of settling on it.
+ * Also true for incomplete workflow builds (create without populate, or
+ * unresolved mandatory follow-ups) even when mid-progress prose already exists.
  */
 export function shouldSynthesizeAssistantSummary(options: {
   streamedUserFacingText: string
   toolRecordCount: number
+  /** create_workflow succeeded this turn but no clean populate edit yet. */
+  createdWithoutPopulate?: boolean
+  /** Mandatory follow-ups still pending when the tool loop exited. */
+  unresolvedFollowUpCount?: number
 }): boolean {
   if (options.toolRecordCount <= 0) return false
+  if (options.createdWithoutPopulate) return true
+  if ((options.unresolvedFollowUpCount ?? 0) > 0) return true
   const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
   if (!streamed) return true
   return isBridgingAssistantNarration(streamed)

@@ -12,7 +12,10 @@ export function toCopilotServerToolContext(
     userId: ctx.userId,
     workspaceId: ctx.workspaceId,
     workflowId: workflowId ?? ctx.workflowId ?? ctx.structuredContext.workflow?.id ?? '',
-    userPermission: ctx.userPermission ?? '',
+    // Arena chat admission always sets read/write/admin. Empty/missing must not
+    // fail-closed as "no write" — that makes create_file look "unavailable" and
+    // pushes the model into the stuck python-pptx sandbox loop.
+    userPermission: ctx.userPermission?.trim() || 'write',
     chatId: ctx.chatId,
     messageId: ctx.messageId,
     abortSignal: ctx.abortSignal,

@@ -3,37 +3,45 @@
  */
 import { describe, expect, it } from 'vitest'
 import { classifyLocalCopilotIntent } from '@/local-copilot/lib/agent/specialists/classify'
-import { toolNamesForIntent } from '@/local-copilot/lib/agent/specialists/domains'
+import { resolveHybridParentTools } from '@/local-copilot/lib/agent/specialists/domains'
+import { getParentSpecialistToolDefinitions } from '@/local-copilot/lib/agent/specialists/specialist-tools'
+import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
-describe('knowledge base create intent includes file writes', () => {
-  const message = `create a knowledgebase which has below data:
-1. Recipe - south indian style food
-2. Cricket - All laws and available BCCI approved grounds in India
-3. Football - Football laws in detail
-4. List of Ministers - Names and roles in Karnataka for the year 2026`
-
-  it('keeps both knowledge and file in the intent for seed-KB asks', () => {
-    const intent = classifyLocalCopilotIntent(message)
-    const domains = [intent.primary, ...intent.secondary]
-    expect(domains).toContain('knowledge')
-    expect(domains).toContain('file')
-  })
-
-  it('exposes create_file and knowledge_base for knowledge seed intents', () => {
-    const intent = classifyLocalCopilotIntent(message)
-    const names = toolNamesForIntent(intent)
-    expect(names).not.toBeNull()
-    expect(names!.has('knowledge_base')).toBe(true)
-    expect(names!.has('create_file')).toBe(true)
-  })
-
-  it('still exposes create_file when only knowledge is classified', () => {
-    const names = toolNamesForIntent({
-      primary: 'knowledge',
+describe('local copilot routes via full catalog + tool calling', () => {
+  it('does not classify messages with domain heuristics', () => {
+    const intent = classifyLocalCopilotIntent(
+      'Create a knowledgebase that has some document like biriyani recipes'
+    )
+    expect(intent).toEqual({
+      primary: 'general',
       secondary: [],
-      useFullCatalog: false,
+      useFullCatalog: true,
     })
-    expect(names!.has('create_file')).toBe(true)
-    expect(names!.has('knowledge_base')).toBe(true)
+  })
+
+  it('exposes create_file, workspace_file, edit_content, and knowledge_base', () => {
+    const intent = classifyLocalCopilotIntent('Create a 12-slide investor pitch deck')
+    const allTools: LocalCopilotToolDefinition[] = [
+      'create_file',
+      'workspace_file',
+      'edit_content',
+      'knowledge_base',
+      'search_online',
+    ].map((name) => ({
+      name,
+      description: name,
+      parameters: { type: 'object', properties: {} },
+    }))
+    const hybrid = resolveHybridParentTools({
+      allTools,
+      intent,
+      specialistTools: getParentSpecialistToolDefinitions(),
+    })
+    expect(hybrid.usedFullCatalog).toBe(true)
+    const names = new Set(hybrid.tools.map((tool) => tool.name))
+    expect(names.has('create_file')).toBe(true)
+    expect(names.has('workspace_file')).toBe(true)
+    expect(names.has('edit_content')).toBe(true)
+    expect(names.has('knowledge_base')).toBe(true)
   })
 })
