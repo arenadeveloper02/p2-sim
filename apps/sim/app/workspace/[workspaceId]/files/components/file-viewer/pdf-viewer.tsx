@@ -8,6 +8,7 @@ import '@/lib/core/utils/browser-polyfills'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bindPreviewWheelZoom } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
+import pdfWorkerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { pdfjs, Document as ReactPdfDocument, Page as ReactPdfPage } from 'react-pdf'
 import { toPdfDocumentFile } from '@/app/workspace/[workspaceId]/files/components/file-viewer/pdf-preview'
 import { PREVIEW_LOADING_OVERLAY } from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-shared'
@@ -17,11 +18,12 @@ import 'react-pdf/dist/Page/TextLayer.css'
 /**
  * The worker runs in its own context that browser-polyfills cannot reach, so
  * serve the legacy worker build, which bundles its own polyfills.
+ *
+ * Use the `?url` asset import: webpack (`next build --webpack`) rejects
+ * `new URL('pdfjs-dist/...', import.meta.url)` against ESM packages marked in
+ * `serverExternalPackages` with `import-esm-externals`.
  */
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
-  import.meta.url
-).href
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc
 
 const logger = createLogger('PdfViewer')
 

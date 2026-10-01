@@ -324,9 +324,6 @@ const nextConfig: NextConfig = {
   },
   output: isDockerBuild ? 'standalone' : undefined,
   serverExternalPackages: [
-    '@xyflow/react',
-    'pdfjs-dist',
-    '@napi-rs/canvas',
     '@1password/sdk',
     'unpdf',
     'fluent-ffmpeg',
@@ -349,6 +346,14 @@ const nextConfig: NextConfig = {
     '@json-render/core',
     '@json-render/react',
     '@json-render/react-email',
+    /**
+     * Keep PDF.js and its native canvas implementation intact. The shared server
+     * loader initializes canvas primitives before PDF.js evaluates its module.
+     * Do not put client-only packages here — webpack then treats ESM worker
+     * `new URL(...)` imports as externals and fails the client bundle.
+     */
+    'pdfjs-dist',
+    '@napi-rs/canvas',
     // Webpack bundles `@trigger.dev/core` and fails on `z.ZodSchema` (removed as
     // a named export in Zod 4). Turbopack never analyzed that path. Leave the
     // SDK as a Node require — it is server-only.
@@ -490,6 +495,7 @@ const nextConfig: NextConfig = {
      */
     optimizePackageImports: [
       'framer-motion',
+      '@xyflow/react',
       'reactflow',
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',
