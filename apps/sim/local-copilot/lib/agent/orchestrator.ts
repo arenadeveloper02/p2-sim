@@ -177,6 +177,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
+  coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
@@ -1824,7 +1825,12 @@ export async function* runLocalCopilotAgent(
 
             const formattedToolResult = formatToolResultForLlm(
               parallelCall.name,
-              toolResult.result,
+              coalesceToolExecutionPayloadForLlm({
+                success: toolResult.success,
+                result: toolResult.result,
+                error: toolResult.error,
+                toolName: parallelCall.name,
+              }),
               {
                 artifactStore: toolCtx.artifactStore,
               }
@@ -2209,9 +2215,18 @@ export async function* runLocalCopilotAgent(
         }
       }
 
-      const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result, {
-        artifactStore: toolCtx.artifactStore,
-      })
+      const formattedToolResult = formatToolResultForLlm(
+        call.name,
+        coalesceToolExecutionPayloadForLlm({
+          success: toolResult.success,
+          result: toolResult.result,
+          error: toolResult.error,
+          toolName: call.name,
+        }),
+        {
+          artifactStore: toolCtx.artifactStore,
+        }
+      )
       const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
         call.name,
         toolResult.success,

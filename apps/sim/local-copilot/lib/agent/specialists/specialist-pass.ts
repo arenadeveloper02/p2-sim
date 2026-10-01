@@ -49,6 +49,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
+  coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
@@ -607,7 +608,12 @@ export async function executeSpecialistLoop(
 
         const llmPayload = formatToolResultForLlm(
           call.name,
-          toolResult.result ?? toolResult.error,
+          coalesceToolExecutionPayloadForLlm({
+            success: toolResult.success,
+            result: toolResult.result,
+            error: toolResult.error,
+            toolName: call.name,
+          }),
           {
             artifactStore: params.toolCtx.artifactStore,
           }

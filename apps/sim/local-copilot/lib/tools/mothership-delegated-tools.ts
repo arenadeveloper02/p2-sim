@@ -248,7 +248,13 @@ async function executeCopilotServerTool(
   )
   const handler = createServerToolHandler(toolName)
   const result = await handler(args, toCopilotServerToolContext(ctx, workflowId))
-  const output = result.output ?? (result.error ? { error: result.error } : {})
+  const output =
+    result.output ??
+    (result.error
+      ? { error: result.error }
+      : result.success
+        ? { success: true, message: `${toolName} completed`, toolName }
+        : {})
   const resources =
     result.resources && result.resources.length > 0
       ? result.resources
@@ -498,7 +504,13 @@ export async function executeMothershipDelegatedTool(
   const delegatedResult: ToolExecutionResult = {
     toolName,
     success: result.success,
-    result: result.output ?? (result.error ? { error: result.error } : {}),
+    result:
+      result.output ??
+      (result.error
+        ? { error: result.error }
+        : result.success
+          ? { success: true, message: `${toolName} completed`, toolName }
+          : {}),
     error: result.error,
     resources: result.resources,
   }

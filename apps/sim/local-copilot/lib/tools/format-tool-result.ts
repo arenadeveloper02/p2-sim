@@ -143,6 +143,78 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+/**
+ * Builds the value passed into {@link formatToolResultForLlm} so failures with
+ * an empty `result` still surface `error`, and bare success does not become `{}`.
+ */
+export function coalesceToolExecutionPayloadForLlm(params: {
+  success: boolean
+  result: unknown
+  error?: string
+  toolName?: string
+}): unknown {
+  const record = asRecord(params.result)
+  const hasFields = Object.keys(record).length > 0
+  if (hasFields) {
+    if (
+      !params.success &&
+      params.error &&
+      typeof record.error !== 'string' &&
+      typeof record.message !== 'string'
+    ) {
+      return { ...record, success: false, error: params.error }
+    }
+    return params.result
+  }
+
+  if (params.error) {
+    return { success: false, error: params.error }
+  }
+
+  return {
+    success: params.success !== false,
+    message: params.toolName
+      ? `${params.toolName} completed`
+      : 'Tool completed with no detail payload.',
+    ...(params.toolName ? { toolName: params.toolName } : {}),
+  }
+}
+
+const FILE_TOOLS_NEEDING_EMPTY_GUARD = new Set([
+  'create_file',
+  'create_file_folder',
+  'workspace_file',
+  'edit_content',
+  'list_file_folders',
+])
+
+/**
+ * When a file tool succeeds with a near-empty body, add an explicit hint so the
+ * model does not invent "tools returned empty results."
+ */
+function guardEmptyFileToolPayload(
+  toolName: string,
+  formatted: unknown
+): unknown {
+  if (!FILE_TOOLS_NEEDING_EMPTY_GUARD.has(toolName)) return formatted
+  const record = asRecord(formatted)
+  const keys = Object.keys(record).filter(
+    (key) => key !== 'success' && key !== 'toolName' && record[key] !== undefined
+  )
+  if (keys.length > 0) return formatted
+  if (record.success === false) return formatted
+  return {
+    ...record,
+    success: true,
+    message:
+      typeof record.message === 'string' && record.message.trim()
+        ? record.message
+        : `${toolName} completed`,
+    followUpHint:
+      'Tool succeeded but returned no detail fields. Continue the file pipeline (workspace_file / edit_content) or check files/ — do not narrate empty tool results or restart.',
+  }
+}
+
 const FOLLOW_UP_FIELD_KEYS = [
   'needsFollowUpPopulate',
   'needsFollowUpEdit',
@@ -464,14 +536,23 @@ export function formatToolResultForLlm(
         (typeof data.vfsPath === 'string' && data.vfsPath) ||
         (typeof data.name === 'string' && data.name) ||
         ''
-      const isOfficeShell = /\.(pptx|docx|pdf)$/i.test(filePath)
+      const message =
+        (typeof record.message === 'string' && record.message) ||
+        (typeof record.error === 'string' && record.error) ||
+        ''
+      const isOfficeShell =
+        /\.(pptx|docx|pdf)$/i.test(filePath) || /empty file shell/i.test(message)
       if (isOfficeShell) {
-        // edit_content alone fails without a prior workspace_file intent — force that step.
+        // size=0 is the intended first step for office docs — models often
+        // misread it as "tools returned empty" and waste minutes retrying /
+        // escalating to the file agent.
         formatted = {
           ...record,
+          success: true,
+          expectedEmptyShell: true,
           needsFollowUpWorkspaceFile: true,
           followUpHint:
-            'Office file shell is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath (plus title), then edit_content in a later round.',
+            'SUCCESS — empty PDF/DOCX/PPTX shell is expected (size 0). Do NOT retry create_file, list folders, or call the file agent. Next: workspace_file operation=update with target.kind=path and data.vfsPath (plus title), then edit_content in a later round.',
         }
       } else {
         formatted = {
@@ -480,6 +561,19 @@ export function formatToolResultForLlm(
           followUpHint:
             'File is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath, then edit_content with the full body.',
         }
+      }
+    } else {
+      formatted = record
+    }
+  } else if (toolName === 'list_file_folders') {
+    const record = asRecord(result)
+    const data = asRecord(record.data)
+    const folders = Array.isArray(data.folders) ? data.folders : []
+    if (record.success !== false && folders.length === 0) {
+      formatted = {
+        ...record,
+        followUpHint:
+          'No folders yet — that is normal. Call create_file_folder if you need a subfolder, or create_file directly under files/. An empty folder list is not a tool failure.',
       }
     } else {
       formatted = record
@@ -599,6 +693,8 @@ export function formatToolResultForLlm(
     }
   }
 
+  formatted = guardEmptyFileToolPayload(toolName, formatted)
+
   const sanitized = sanitizeForLlm(formatted)
   if (options?.artifactStore && toolName !== LOAD_COPILOT_ARTIFACT_TOOL_NAME) {
     const offload = maybeOffloadToolResult(toolName, sanitized, options.artifactStore)
@@ -671,7 +767,7 @@ function detectMandatoryFollowUpFromRecord(
       id: 'create_file:workspace-file',
       hint:
         hint ??
-        'Office file shell is empty. Call workspace_file operation=update on the file path, then edit_content in a later round.',
+        'SUCCESS — empty office shell is expected. Call workspace_file operation=update on the file path, then edit_content in a later round. Do not retry create_file or call the file agent.',
       resolveWith: ['workspace_file'],
     }
   }
