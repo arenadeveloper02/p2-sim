@@ -212,6 +212,24 @@ html.dark [data-gui-theme],
   }
 }
 
+[data-gui-theme] [data-gui-language='editorial'] {
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+[data-gui-language='dense'] {
+  --gui-body-size: 14px;
+  --gui-label-size: 12px;
+}
+
+[data-gui-language='task'] {
+  --gui-body-size: 16px;
+}
+
+[data-gui-language='operational'] {
+  --gui-body-size: 14px;
+}
+
 [data-gui-theme] [data-chart-palette='colorblind-safe'] {
   --gui-chart-series-6: var(--color-ds-sea-blue-800, #10458b);
   --gui-chart-series-7: var(--color-ds-warning-800, #974d29);

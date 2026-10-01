@@ -57,6 +57,46 @@ export function collectionItemLabel(
   return `${fallbackPrefix} ${index + 1}`
 }
 
+const SHORT_FIELD_SKIP = new Set([
+  'id',
+  'key',
+  'slug',
+  'lat',
+  'lng',
+  'lon',
+  'latitude',
+  'longitude',
+  'children',
+])
+
+/**
+ * Short scalar lines on a row, skipping the title, the group, and identity keys.
+ * Long prose stays out so a card title is not a paragraph.
+ */
+export function shortRecordLines(
+  item: unknown,
+  omit: ReadonlySet<string>,
+  limit = 3
+): string[] {
+  const record = recordFromUnknown(item)
+  if (!record) return []
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(record)) {
+    if (omit.has(key) || SHORT_FIELD_SKIP.has(key)) continue
+    if (typeof value === 'string') {
+      const text = value.trim()
+      if (!text || text.length > 80) continue
+      lines.push(text)
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      lines.push(String(value))
+    } else if (typeof value === 'boolean') {
+      lines.push(value ? 'Yes' : 'No')
+    }
+    if (lines.length >= limit) break
+  }
+  return lines
+}
+
 export function collectionItemText(item: unknown, field: string): string {
   const record = recordFromUnknown(item)
   const raw = record?.[field]

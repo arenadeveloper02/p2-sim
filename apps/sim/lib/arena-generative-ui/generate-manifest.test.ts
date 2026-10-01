@@ -118,8 +118,6 @@ import {
   REPLAN_GENERATE_INSTRUCTION,
   SCOPED_EDIT_INSTRUCTION,
 } from '@/lib/arena-generative-ui/generate-manifest'
-import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
-import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import {
   multiPageApiBindings,
   multiPageManifest,
@@ -262,7 +260,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).not.toContain('one Card')
     expect(system).not.toContain('one primary CTA per page')
     expect(system).not.toContain('full-page app shell')
-    expect(system).toContain('full page up to 1280px')
+    expect(system).toContain('WIRING')
     expect(system).toContain('Grid')
     expect(system).toContain('Table')
     expect(system).toContain('Repeat')
@@ -276,22 +274,11 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('brandColor')
     expect(system).toContain('#1A73E8')
     expect(system).toContain('always emit manifest.theme')
-    expect(system).toContain('ARENA DESIGN SYSTEM')
-    expect(system).toContain('UNIVERSAL UI/UX CONSTITUTION')
-    expect(system).toContain('DESIGN RULES / TOKENS')
-    expect(system).toContain('UX RULES / STATES')
-    expect(system).toContain('DESIGN GUIDELINES')
-    expect(system).toContain('DESIGN INTENT')
-    expect(system).toContain('COMPONENT SELECTION RULES')
-    expect(system).not.toContain('PROFESSIONAL LAYOUT')
-    expect(system).not.toContain('UI CRITIC')
-    expect(system).toContain('ANTI-PATTERNS')
-    expect(system).toContain('COMPONENT RULES')
-    expect(system).toContain('DATA STATE CONTRACT')
+    expect(system).not.toContain('ARENA DESIGN SYSTEM')
+    expect(system).not.toContain('UNIVERSAL UI/UX CONSTITUTION')
+    expect(system).not.toContain('DESIGN GUIDELINES')
+    expect(system).not.toContain('ANTI-PATTERNS')
     expect(system).toContain('ACTION CONTRACT')
-    expect(system).toContain('INTERACTION / STATE RULES')
-    expect(system).toContain('HOST UX')
-    expect(system).toContain('WorkingCard')
     expect(system).not.toContain('PROCESSING PATTERN')
     expect(system).not.toContain('CAPABILITY: LONG-RUNNING')
   })
@@ -310,29 +297,26 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('no markdown fences')
   })
 
-  it('appends the gold standard reference layout', async () => {
+  it('sends the wiring contract instead of a gold app', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
     await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
-    expect(system).toContain('"entryPath": "home"')
-    expect(system).toContain('"type": "PageHeader"')
+    expect(system).toContain('WIRING')
+    expect(system).toContain('layoutPlan host key')
+    expect(system).not.toContain('GOLD STANDARD')
   })
 
-  it('carries the design constraints translated from the master template', async () => {
+  it('does not send the design-guideline essay', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
     await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('there are exactly two')
-    expect(system).toContain('spacing tokens')
-    expect(system).toContain('Never let prose run the full 1280px')
-    expect(system).toContain('nest levels sequentially')
-    expect(system).toContain('every interactive field carries an explicit label')
-    expect(system).toContain('Skeleton')
+    expect(system).not.toContain('Never let prose run the full 1280px')
+    expect(system).not.toContain('DESIGN GUIDELINES')
+    expect(system).toContain('Do not emit hex')
   })
 
   it('tells the model the host compiles UX and not to emit fake progress', async () => {
@@ -341,13 +325,10 @@ describe('generateArenaGenerativeManifest', () => {
     await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('HOST UX')
     expect(system).toContain('ACTION CONTRACT')
-    expect(system).toContain('Do not emit ProgressSteps')
-    expect(system).toContain('ANTI-PATTERNS')
-    expect(system).toContain('Never hard-code dynamic data')
-    expect(system).not.toContain('only when the user asked')
-    expect(system).not.toContain('ProgressBar and ProgressSteps belong')
+    expect(system).toContain('The host paints theme, loaders, Back, empty states, and errors.')
+    expect(system).toContain('Do not emit hex')
+    expect(system).not.toContain('ANTI-PATTERNS')
   })
 
   it('drops the old rule that told the model to paint backgrounds', async () => {
@@ -380,25 +361,12 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('each binding includes layoutPlan')
-    expect(system).toContain('never an output.')
-    expect(system).toContain('coverage_report.summary, not output.coverage_report.summary')
-    expect(system).toContain('data.articles')
-    expect(system).toContain('never "field.content"')
+    expect(system).toContain('layoutPlan host key')
+    expect(system).toContain('CTA inputs:')
     expect(system).toContain('must not onLoad that same action')
-    expect(system).toContain('Submitted form fields land in host state under "inputs"')
-    expect(system).toContain('{targetKeyword}')
-    expect(system).toContain('not History row keys')
-    expect(system).toContain('outputSchema')
-    expect(system).toContain('selectItem')
-    expect(system).toContain('clearItem')
-    expect(system).toContain('!selectedId')
-    expect(system).toContain('Same-page History')
-    expect(system).toContain('Workspace and Drawer keep the collection visible')
-    expect(system).toContain('Cross-page History')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')
-    expect(system).toContain('Pagination mode pages')
+    expect(system).not.toContain('never an output.')
 
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('articles[].title')
@@ -416,7 +384,8 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).not.toContain('each binding includes layoutPlan')
+    expect(system).toContain('WIRING')
+    expect(system).not.toContain('CTA inputs:')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Dummy/local actions stay in manifest.actions')
     expect(userMessage).toContain('page onLoad setState')
@@ -625,7 +594,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.success).toBe(false)
     expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
     expect(result.error).toContain(GENERATOR_OMITTED_PAGES_ERROR)
-    expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
+    expect(result.error).toContain(`Could not generate a valid app after ${MAX_REPAIR_ATTEMPTS} repair attempts.`)
     expect(result.error).toContain('What you can do:')
     expect(result.error).toContain('Pin a JSON sitemap')
     expect(result.error).not.toMatch(/keyed by page path/)
@@ -691,7 +660,7 @@ describe('generateArenaGenerativeManifest', () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('invented_key')
-    expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
+    expect(result.error).toContain(`Could not generate a valid app after ${MAX_REPAIR_ATTEMPTS} repair attempts.`)
     expect(result.error).toContain('What still needs to be fixed:')
     expect(result.error).toContain('What you can do:')
     expect(result.error).toContain('Add an API')
@@ -829,13 +798,7 @@ describe('generateArenaGenerativeManifest', () => {
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(payload).toContain('Visual brief from uploaded screenshot')
       expect(payload).toContain('Lead form')
-      expect(mockAnalyzeIntent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          visualBrief: expect.objectContaining({
-            layout: expect.objectContaining({ brandColor: '#1A73E8' }),
-          }),
-        })
-      )
+      expect(mockAnalyzeIntent).not.toHaveBeenCalled()
     })
   })
 
@@ -887,19 +850,11 @@ describe('generateArenaGenerativeManifest', () => {
         apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
       })
 
-      expect(mockAnalyzeIntent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userInput: 'Order inbox with a detail page.',
-        })
-      )
       expect(mockPlanBrief).toHaveBeenCalledWith(
         expect.objectContaining({
           userInput: 'Order inbox with a detail page.',
-          intent: sampleIntent,
+          intent: null,
         })
-      )
-      expect(mockAnalyzeIntent.mock.invocationCallOrder[0]).toBeLessThan(
-        mockPlanBrief.mock.invocationCallOrder[0]
       )
       expect(mockPlanBrief.mock.invocationCallOrder[0]).toBeLessThan(
         mockCreateAnthropicMessage.mock.invocationCallOrder[0]
@@ -951,19 +906,11 @@ describe('generateArenaGenerativeManifest', () => {
           userInput: expect.stringContaining('Turn this into a dashboard'),
         })
       )
-      expect(mockAnalyzeIntent).toHaveBeenCalled()
-      expect(mockAnalyzeIntent.mock.invocationCallOrder[0]).toBeLessThan(
-        mockPlanBrief.mock.invocationCallOrder[0]
-      )
-      const plannerInput = mockPlanBrief.mock.calls[0]?.[0].userInput as string
-      expect(plannerInput).toContain('Re-plan request')
-      expect(plannerInput).toContain('Lead qualifier')
-      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
-      expect(system).toContain('ARCHETYPE RECIPE: dashboard')
-      expect(system).toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
-      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+      expect(system).toContain('WIRING')
+      expect(system).not.toContain('GOLD STANDARD')
       expect(payload).toContain(REPLAN_GENERATE_INSTRUCTION)
       expect(payload).not.toContain(EDIT_PRESERVATION_INSTRUCTION)
       expect(payload).not.toContain('Existing manifest:')
@@ -986,9 +933,8 @@ describe('generateArenaGenerativeManifest', () => {
       expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
-      expect(system).toContain('ARCHETYPE RECIPE: collection')
-      expect(system).toContain('ARCHETYPE RECIPE: detail')
-      expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL)
+      expect(system).toContain('WIRING')
+      expect(system).not.toContain('GOLD STANDARD')
       expect(payload).toContain('Original structured brief (context only')
       expect(payload).toContain('"archetype": "collection"')
       expect(payload).not.toContain('emit exactly these page paths')
@@ -1007,9 +953,8 @@ describe('generateArenaGenerativeManifest', () => {
 
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
-      expect(system).toContain('ARCHETYPE RECIPE: collection')
-      expect(system).toContain('ARCHETYPE RECIPE: detail')
-      expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL)
+      expect(system).toContain('WIRING')
+      expect(system).not.toContain('GOLD STANDARD')
       expect(system).not.toContain('Watchtower')
       expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
       expect(payload).toContain('Structured brief')
@@ -1057,10 +1002,9 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-      expect(system).toContain('ARCHETYPE RECIPE: task')
-      expect(system).toContain('ARCHETYPE RECIPE: results')
-      expect(system).toContain('CAPABILITY: LONG-RUNNING')
-      expect(system).toContain('CAPABILITY: CANCELLABLE')
+      expect(system).toContain('WIRING')
+      expect(system).toContain('WorkingCard')
+      expect(system).not.toContain('CAPABILITY: LONG-RUNNING')
       expect(system).not.toContain('PROCESSING PATTERN')
     })
 
@@ -1246,13 +1190,9 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(result.content).toContain('Intent skipped (haiku down)')
       expect(result.content).toContain('Visual skipped (vision timeout)')
+      expect(result.content).not.toContain('Intent skipped')
       expect(result.generateWarnings).toEqual([
-        {
-          code: 'intent-skipped',
-          message: 'Intent skipped (haiku down); planner inferred from prose.',
-        },
         {
           code: 'visual-skipped',
           message: 'Visual skipped (vision timeout); planned from prose.',
@@ -1301,7 +1241,6 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(result.content).toContain('Intent: Browse orders and open one record.')
       expect(result.content).toContain('Planner: collection · home, results.')
       expect(result.structuredBrief).toEqual({
         title: 'Orders',
@@ -1602,7 +1541,7 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(mockPlanBrief).toHaveBeenCalled()
-      expect(mockAnalyzeIntent).toHaveBeenCalled()
+      expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(payload).toContain(REPLAN_GENERATE_INSTRUCTION)
       expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
@@ -1733,7 +1672,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       expect(result.success).toBe(false)
       expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
-      expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
+      expect(result.error).toContain(`Could not generate a valid app after ${MAX_REPAIR_ATTEMPTS} repair attempts.`)
       expect(result.error).toContain('share API key')
       expect(result.error).toContain('What you can do:')
       expect(result.error).toContain('one actionId per API job')
@@ -1768,7 +1707,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect(repairTurn.content).toContain('1. ')
       expect(repairTurn.content).toContain('Fix every numbered issue')
       expect(repairTurn.content).toContain('share API key')
-      expect(result.content).toContain('UI critic: passed')
+      expect(result.content).toBe('ok')
     })
 
     it('sends every host-critic issue from the first spec in one repair turn', async () => {
@@ -1799,13 +1738,11 @@ describe('generateArenaGenerativeManifest', () => {
       expect(repairTurn.content).toContain('2. ')
       expect(repairTurn.content).toContain('share API key')
       expect(repairTurn.content).toContain('Fix every numbered issue')
-      expect(result.content).toContain('UI critic: passed')
+      expect(result.content).toBe('ok')
     })
 
-    it('sends one extra spec turn when the LLM critic returns must-fix', async () => {
-      mockCreateAnthropicMessage
-        .mockResolvedValueOnce(textMessage(validReply))
-        .mockResolvedValueOnce(textMessage(validReply))
+    it('keeps the valid spec when a critic would have asked for a rewrite', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage(validReply))
       mockCritique.mockResolvedValue({
         pass: false,
         issues: [
@@ -1825,22 +1762,13 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockCritique).toHaveBeenCalledTimes(1)
-      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
-      const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
-        role: string
-        content: string
-      }
-      expect(repairTurn.content).toContain('1. UI critic must-fix')
-      expect(repairTurn.content).toContain('Primary task is buried')
-      expect(repairTurn.content).toContain('Fix every numbered issue')
-      expect(result.content).toContain('UI critic: repaired')
+      expect(mockCritique).not.toHaveBeenCalled()
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(result.content).toBe('ok')
     })
 
-    it('numbers every LLM critic must-fix in one repair turn', async () => {
-      mockCreateAnthropicMessage
-        .mockResolvedValueOnce(textMessage(validReply))
-        .mockResolvedValueOnce(textMessage(validReply))
+    it('does not spend a spec turn on critic notes', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage(validReply))
       mockCritique.mockResolvedValue({
         pass: false,
         issues: [
@@ -1858,13 +1786,6 @@ describe('generateArenaGenerativeManifest', () => {
             message: 'Hierarchy is flat.',
             fixHint: 'Promote the score.',
           },
-          {
-            category: 'ux',
-            severity: 'should-fix',
-            page: 'home',
-            message: 'Subtitle is long.',
-            fixHint: 'Shorten it.',
-          },
         ],
       })
 
@@ -1874,17 +1795,9 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(mockCritique).toHaveBeenCalledTimes(1)
-      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
-      const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
-        role: string
-        content: string
-      }
-      expect(repairTurn.content).toContain('1. UI critic must-fix (ux) on page "home"')
-      expect(repairTurn.content).toContain('2. UI critic must-fix (visual) on page "results"')
-      expect(repairTurn.content).not.toContain('Subtitle is long')
-      expect(repairTurn.content).toContain('Fix every numbered issue')
-      expect(result.content).toContain('UI critic: repaired')
+      expect(mockCritique).not.toHaveBeenCalled()
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(result.content).toBe('ok')
     })
 
     it('host-repairs two primary CTAs and still returns a valid manifest', async () => {
@@ -2035,13 +1948,9 @@ describe('generateArenaGenerativeManifest', () => {
       expect(result.success).toBe(true)
       expect(result.manifest?.pages.home).toBeTruthy()
       expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
-      expect(result.content).toContain('UI critic: skipped (unavailable)')
-      expect(result.generateWarnings).toEqual([
-        {
-          code: 'critic-skipped',
-          message: 'UI critic: skipped (unavailable)',
-        },
-      ])
+      expect(mockCritique).not.toHaveBeenCalled()
+      expect(result.content).toBe('ok')
+      expect(result.generateWarnings ?? []).toEqual([])
     })
 
     it('keeps a stored planner warning when an edit skips the critic', async () => {
@@ -2067,10 +1976,6 @@ describe('generateArenaGenerativeManifest', () => {
           code: 'planner-failed',
           message:
             'Planner failed (Planner reply was not a valid structured brief); generated from the prose brief.',
-        },
-        {
-          code: 'critic-skipped',
-          message: 'UI critic: skipped (unavailable)',
         },
       ])
     })
@@ -2103,22 +2008,18 @@ describe('generateArenaGenerativeManifest', () => {
     )
     const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(payload).toContain('COMPILED HONOR LIST')
-    expect(payload).toContain('Chart')
+    expect(payload).toContain('Do not plan browser geolocation')
     expect(payload).toContain('src/lib/weather.ts')
     expect(payload.indexOf('COMPILED HONOR LIST')).toBeLessThan(payload.indexOf('User request:'))
     expect(result.adoptedChanges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'product-map', adopted: expect.stringContaining('Chart') }),
         expect.objectContaining({
-          code: 'product-map',
+          code: 'product-drop',
           asked: expect.stringContaining('geolocation'),
-        }),
-        expect.objectContaining({
-          code: 'product-map',
-          asked: expect.stringContaining('Weather icons'),
         }),
       ])
     )
+    expect(result.adoptedChanges?.some((change) => change.adopted.includes('Chart'))).toBe(false)
   })
 
   it('does not inject a compiled honor list for a short Arena job', async () => {

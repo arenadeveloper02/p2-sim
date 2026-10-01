@@ -93,9 +93,9 @@ describe('formatCompiledHonorForUserInputWand', () => {
     ])
 
     expect(summary).toContain('geolocation')
-    expect(summary).toContain('SearchField')
-    expect(summary).toContain('Filmstrip')
     expect(summary).toContain('localStorage')
+    expect(summary).not.toContain('SearchField')
+    expect(summary).not.toContain('Filmstrip')
     expect(summary).not.toContain('example.internal')
   })
 

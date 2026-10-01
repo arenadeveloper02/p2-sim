@@ -743,6 +743,204 @@ export function injectSamePageSelectChrome(spec: Spec, pagePath: string): Spec {
  * Compiles a semantic manifest into in-memory page specs plus a UX plan.
  * Never mutates the input. Well-wired pages stay deep-equal to a clone.
  */
+const SHELL_NAV_KEY = 'ux-compiler-shell-nav'
+const DESTINATION_BACK_KEY = 'ux-compiler-destination-back'
+const WAIT_CARD_KEY = 'ux-compiler-wait-card'
+
+const EMPTY_COPY_TYPES = new Set([
+  'Table',
+  'Repeat',
+  'Kanban',
+  'Calendar',
+  'Timeline',
+  'Collection',
+  'List',
+])
+
+function pageLinksTo(spec: Spec, paths: Set<string>): boolean {
+  for (const element of Object.values(specElements(spec))) {
+    const raw = asString(element.props?.to) || asString(element.props?.navigateTo)
+    if (!raw) continue
+    const path = splitNavTarget(raw).path
+    if (paths.has(path)) return true
+  }
+  return false
+}
+
+/**
+ * Paints sitemap links when the page did not author a way to the other pages.
+ * In-page Back and Open stay as the spec wrote them.
+ */
+export function injectPlannedShellNav(
+  pages: Record<string, ArenaGenerativePageManifest>
+): Record<string, ArenaGenerativePageManifest> {
+  const paths = Object.keys(pages)
+  if (paths.length < 2) return pages
+  const next: Record<string, ArenaGenerativePageManifest> = { ...pages }
+  for (const [path, page] of Object.entries(pages)) {
+    const others = new Set(paths.filter((candidate) => candidate !== path))
+    if (pageLinksTo(page.spec, others)) continue
+    const linkElements = paths
+      .filter((candidate) => candidate !== path)
+      .map((candidate) => ({
+        key: `${SHELL_NAV_KEY}-${candidate.replace(/[^a-z0-9]+/gi, '-')}`,
+        element: {
+          type: 'NavLink',
+          props: { label: pages[candidate]?.title || candidate, to: candidate },
+          children: [],
+        },
+      }))
+    const spec = attachElements(page.spec, [
+      {
+        key: SHELL_NAV_KEY,
+        element: {
+          type: 'Stack',
+          props: { direction: 'horizontal' },
+          children: [],
+        },
+      },
+      ...linkElements,
+    ])
+    const elements = specElements(spec)
+    const stackId = Object.keys(elements).find(
+      (id) => id === SHELL_NAV_KEY || id.startsWith(`${SHELL_NAV_KEY}-`) && elements[id]?.type === 'Stack'
+    )
+    if (!stackId || !elements[stackId]) {
+      next[path] = { ...page, spec }
+      continue
+    }
+    const linkIds = Object.keys(elements).filter(
+      (id) => elements[id]?.type === 'NavLink' && id.includes(SHELL_NAV_KEY)
+    )
+    elements[stackId] = { ...elements[stackId], children: linkIds }
+    const parentId = findInsertParentId(spec)
+    if (parentId && elements[parentId]) {
+      const parent = elements[parentId]
+      elements[parentId] = {
+        ...parent,
+        children: [stackId, ...(parent.children ?? []).filter((childId) => childId !== stackId && !linkIds.includes(childId))],
+      }
+    }
+    next[path] = { ...page, spec: { ...spec, elements } }
+  }
+  return next
+}
+
+/**
+ * Back on every non-entry page an action navigates to, when the page has no way back.
+ */
+export function injectDestinationBack(
+  pages: Record<string, ArenaGenerativePageManifest>,
+  manifest: ArenaGenerativeAppManifest
+): Record<string, ArenaGenerativePageManifest> {
+  const next: Record<string, ArenaGenerativePageManifest> = { ...pages }
+  for (const [path, page] of Object.entries(pages)) {
+    if (path === manifest.entryPath) continue
+    const source = sourcePageForDestination(pages, manifest, path) ?? manifest.entryPath
+    if (!source || source === path || !pages[source]) continue
+    if (pageLinksTo(page.spec, new Set([source]))) continue
+    next[path] = {
+      ...page,
+      spec: attachElements(page.spec, [
+        {
+          key: DESTINATION_BACK_KEY,
+          element: {
+            type: 'NavLink',
+            props: { label: 'Back', to: source },
+            children: [],
+          },
+        },
+      ]),
+    }
+  }
+  return next
+}
+
+function sourcePageForDestination(
+  pages: Record<string, ArenaGenerativePageManifest>,
+  manifest: ArenaGenerativeAppManifest,
+  destination: string
+): string | null {
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    if (splitNavTarget(action.onSuccess?.navigate).path !== destination) continue
+    for (const [path, page] of Object.entries(pages)) {
+      if (path === destination) continue
+      if (actionIdsInSpec(page.spec).includes(actionId)) return path
+    }
+  }
+  return null
+}
+
+/**
+ * WorkingCard on the page where a long run waits, unless that page already shimmers.
+ */
+export function injectLongWaitSurface(
+  pages: Record<string, ArenaGenerativePageManifest>,
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[]
+): Record<string, ArenaGenerativePageManifest> {
+  const bindingsByKey = bindingByKey(bindings)
+  const onLoad = onLoadActionIds(manifest)
+  const next: Record<string, ArenaGenerativePageManifest> = { ...pages }
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const binding = action.apiKey ? bindingsByKey.get(action.apiKey) : undefined
+    if (inferAsyncKind({ usedOnLoad: onLoad.has(actionId), binding }) !== 'longRunning') {
+      continue
+    }
+    const waitPath = waitPathForAction(pages, actionId, action)
+    if (!waitPath || !next[waitPath]) continue
+    if (specHasLoadingSurface(next[waitPath].spec)) continue
+    next[waitPath] = {
+      ...next[waitPath],
+      spec: attachElements(next[waitPath].spec, [
+        {
+          key: WAIT_CARD_KEY,
+          element: {
+            type: 'WorkingCard',
+            props: { title: 'Working', steps: 'Working', actionId },
+            children: [],
+          },
+        },
+      ]),
+    }
+  }
+  return next
+}
+
+function waitPathForAction(
+  pages: Record<string, ArenaGenerativePageManifest>,
+  actionId: string,
+  action: ArenaGenerativeAppManifest['actions'][string]
+): string | null {
+  let source: string | null = null
+  for (const [path, page] of Object.entries(pages)) {
+    if (actionIdsInSpec(page.spec).includes(actionId)) {
+      source = path
+      break
+    }
+  }
+  const navigate = asString(action.onSuccess?.navigate)
+  if (!navigate) return source
+  const dest = splitNavTarget(navigate).path
+  if (!dest || !pages[dest]) return source
+  if (action.onSuccess?.navigateWhen === 'success') return source
+  return dest
+}
+
+function applyEmptyCopy(spec: Spec, emptyCopy: string | undefined): Spec {
+  const text = emptyCopy?.trim()
+  if (!text) return spec
+  const elements = { ...specElements(spec) }
+  let changed = false
+  for (const [id, element] of Object.entries(elements)) {
+    if (!element.type || !EMPTY_COPY_TYPES.has(element.type)) continue
+    if (asString(element.props?.emptyText)) continue
+    elements[id] = { ...element, props: { ...element.props, emptyText: text } }
+    changed = true
+  }
+  return changed ? { ...spec, elements } : spec
+}
+
 export function compileGenerativeUx(
   manifest: ArenaGenerativeAppManifest,
   bindings: ArenaGenerativeApiBinding[] = []
@@ -765,11 +963,14 @@ export function compileGenerativeUx(
     }
   }
   const relocated = relocateNavigateFirstLoaders(strippedPages, manifest.actions)
+  const withBack = injectDestinationBack(relocated, manifest)
+  const withShell = injectPlannedShellNav(withBack)
+  const withWait = injectLongWaitSurface(withShell, manifest, bindings)
   const onLoadIds = onLoadActionIds(manifest)
   const fallbackLoading: Record<string, ArenaGenerativeFallbackLoading> = {}
   const pages: Record<string, ArenaGenerativePageManifest> = {}
-  for (const [path, page] of Object.entries(relocated)) {
-    const withSelectChrome = injectSamePageSelectChrome(page.spec, path)
+  for (const [path, page] of Object.entries(withWait)) {
+    const withSelectChrome = applyEmptyCopy(injectSamePageSelectChrome(page.spec, path), page.emptyCopy)
     const loaderActionId =
       incomingGenerateActionId(path, manifest, onLoadIds) || formActionIdFromSpec(withSelectChrome)
     const stamped = stampPendingLoaderActionIds(withSelectChrome, loaderActionId)

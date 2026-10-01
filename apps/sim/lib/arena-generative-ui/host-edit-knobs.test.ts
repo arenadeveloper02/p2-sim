@@ -157,4 +157,15 @@ describe('applySplitResultsBack', () => {
     expect(back).toBeTruthy()
     expect(result.adoptedChanges[0]?.code).toBe('split-results-back')
   })
+
+  it('flips navigateWhen without rewriting pages', () => {
+    expect(parseHostEditKnobs('Wait here until it succeeds').navigateWhen).toBe('success')
+    expect(parseHostEditKnobs('Leave now and open the results page first').navigateWhen).toBe(
+      'immediate'
+    )
+    expect(parseHostEditKnobs('Show it on this page').navigateWhen).toBeUndefined()
+    const applied = applyHostEditKnobs(twoPageManifest, { navigateWhen: 'success' })
+    expect(applied.manifest.actions.submit_lead?.onSuccess?.navigateWhen).toBe('success')
+    expect(applied.manifest.pages).toBe(twoPageManifest.pages)
+  })
 })

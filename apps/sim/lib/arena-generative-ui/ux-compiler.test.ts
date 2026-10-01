@@ -434,7 +434,8 @@ describe('compileGenerativeUx', () => {
       (element) => (element as { type?: string }).type
     )
     expect(types).not.toContain('ProgressSteps')
-    expect(types).toContain('Spinner')
+    expect(types).not.toContain('Spinner')
+    expect(types).toContain('WorkingCard')
   })
 
   it('strips a Refresh Button and Repeat item.output at compile time', () => {
@@ -867,5 +868,63 @@ describe('compiledPageFromManifest', () => {
     expect(elements.grid?.props?.showWhen).toBe('!selectedId')
     expect(elements.body?.props?.showWhen).toBe('selectedId')
     expect(elements[UX_COMPILER_SELECT_BACK_KEY]).toBeTruthy()
+  })
+
+  it('paints shell links, a destination Back, empty copy, and a wait card', () => {
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: {
+          title: 'Form',
+          path: 'home',
+          spec: {
+            root: 'page',
+            elements: {
+              page: { type: 'Page', props: {}, children: ['form'] },
+              form: { type: 'Form', props: { actionId: 'run' }, children: [] },
+            },
+          },
+        },
+        results: {
+          title: 'Results',
+          path: 'results',
+          emptyCopy: 'Nothing yet.',
+          spec: {
+            root: 'page',
+            elements: {
+              page: { type: 'Page', props: {}, children: ['list'] },
+              list: { type: 'Repeat', props: { statePath: 'rows' }, children: [] },
+            },
+          },
+        },
+      },
+      actions: {
+        run: {
+          apiKey: 'job',
+          onSuccess: { navigate: 'results', navigateWhen: 'success' },
+        },
+      },
+    }
+    const compiled = compileGenerativeUx(manifest, [
+      { key: 'job', label: 'Job', kind: 'workflow' },
+    ])
+    const home = compiled.pages.home?.spec.elements as Record<
+      string,
+      { type?: string; props?: Record<string, unknown>; children?: string[] }
+    >
+    const results = compiled.pages.results?.spec.elements as Record<
+      string,
+      { type?: string; props?: Record<string, unknown> }
+    >
+    expect(
+      Object.values(home).some((element) => element.type === 'NavLink' && element.props?.to === 'results')
+    ).toBe(true)
+    expect(
+      Object.values(results).some(
+        (element) => element.type === 'NavLink' && element.props?.label === 'Back'
+      )
+    ).toBe(true)
+    expect(results.list?.props?.emptyText).toBe('Nothing yet.')
+    expect(Object.values(home).some((element) => element.type === 'WorkingCard')).toBe(true)
   })
 })

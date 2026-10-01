@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest'
 import {
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
+  buildElementParents,
+  discoveryRegionId,
+  workspacePaneId,
   filterCollectionItems,
   filterCollectionItemsBySelection,
   filterStaticTableRows,
@@ -89,6 +92,38 @@ describe('collectLocalDiscoveryQuery', () => {
     })
     expect(query.search).toBe('')
     expect(query.filters).toEqual({ status: 'Active' })
+  })
+
+  it('ignores a search that lives in another section', () => {
+    const regional = {
+      page: { type: 'Page', children: ['orders', 'notes'] },
+      orders: { type: 'Section', children: ['orderSearch', 'orderTable'] },
+      orderSearch: { type: 'SearchField', props: { name: 'query' } },
+      orderTable: { type: 'Table', props: { statePath: 'orders' } },
+      notes: { type: 'Section', children: ['noteTable'] },
+      noteTable: { type: 'Table', props: { statePath: 'notes' } },
+    }
+    const parents = buildElementParents(regional)
+    const orders = collectLocalDiscoveryQuery({
+      formValues: { query: 'acme' },
+      elements: regional,
+      scopeRootId: discoveryRegionId(regional, parents, 'orderTable'),
+    })
+    const notes = collectLocalDiscoveryQuery({
+      formValues: { query: 'acme' },
+      elements: regional,
+      scopeRootId: discoveryRegionId(regional, parents, 'noteTable'),
+    })
+    expect(discoveryRegionId(regional, parents, 'orderTable')).toBe('orders')
+    expect(orders.search).toBe('acme')
+    expect(notes.search).toBe('')
+    const flatParents = buildElementParents(elements)
+    const flat = collectLocalDiscoveryQuery({
+      formValues: { query: 'budget' },
+      elements,
+      scopeRootId: discoveryRegionId(elements, flatParents, 'table'),
+    })
+    expect(flat.search).toBe('budget')
   })
 
   it('treats a Filter TextInput named query as extra search text', () => {
@@ -698,6 +733,23 @@ describe('sortCollectionItems', () => {
     expect(hostStatePatchAtPath({ report: { items: [1] } }, 'report.items', [2])).toEqual({
       report: { items: [2] },
     })
+  })
+})
+
+describe('workspacePaneId', () => {
+  it('returns the workspace pane that contains the collection', () => {
+    const elements = {
+      page: { type: 'Page', children: ['workspace'] },
+      workspace: { type: 'Workspace', children: ['list', 'detail'] },
+      list: { type: 'Stack', children: ['table'] },
+      table: { type: 'Table', children: [] },
+      detail: { type: 'Stack', children: ['article'] },
+      article: { type: 'DataText', children: [] },
+    }
+    const parents = buildElementParents(elements)
+    expect(workspacePaneId(elements, parents, 'table')).toBe('list')
+    expect(workspacePaneId(elements, parents, 'article')).toBe('detail')
+    expect(workspacePaneId(elements, parents, 'page')).toBeNull()
   })
 })
 

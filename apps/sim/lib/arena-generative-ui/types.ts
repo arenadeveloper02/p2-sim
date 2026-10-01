@@ -185,6 +185,10 @@ export interface ArenaGenerativePageManifest {
    * query params are passed as the action values.
    */
   onLoad?: string[]
+  /** Brief empty line. The compiler copies it onto collections that have none. */
+  emptyCopy?: string
+  /** Finished look for this page. The host paints it; the model does not emit it. */
+  language?: 'task' | 'operational' | 'dense' | 'editorial'
 }
 
 export interface ArenaGenerativeActionManifest {

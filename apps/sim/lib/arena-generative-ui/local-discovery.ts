@@ -160,14 +160,85 @@ function addFilterValue(
   filters[key] = text
 }
 
+/** Parent id for each element. First parent wins when a child is listed twice. */
+export function buildElementParents(
+  elements: Record<string, SpecElement>
+): Map<string, string> {
+  const parents = new Map<string, string>()
+  for (const [id, element] of Object.entries(elements)) {
+    for (const childId of element.children ?? []) {
+      if (!parents.has(childId)) parents.set(childId, id)
+    }
+  }
+  return parents
+}
+
+/**
+ * Section or Workspace pane that owns this collection. A flat page with no
+ * sections is one region, so a search next to the table still applies.
+ * A search in another section does not.
+ */
+export function discoveryRegionId(
+  elements: Record<string, SpecElement>,
+  parents: ReadonlyMap<string, string>,
+  elementId: string
+): string {
+  let current = elementId
+  let pageId: string | null = null
+  const seen = new Set<string>()
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const parentId = parents.get(current)
+    if (!parentId) return pageId ?? current
+    const parentType = elements[parentId]?.type
+    if (parentType === 'Section') return parentId
+    if (parentType === 'Workspace') return current
+    if (parentType === 'Page') pageId = parentId
+    current = parentId
+  }
+  return pageId ?? elementId
+}
+
+/**
+ * Direct child of Workspace that contains `elementId`.
+ * Workspace panes keep their own selection. Other pages use the global slot.
+ */
+export function workspacePaneId(
+  elements: Record<string, SpecElement>,
+  parents: ReadonlyMap<string, string>,
+  elementId: string
+): string | null {
+  let current: string | undefined = elementId
+  const seen = new Set<string>()
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const parentId = parents.get(current)
+    if (!parentId) return null
+    if (elements[parentId]?.type === 'Workspace') return current
+    current = parentId
+  }
+  return null
+}
+
+function subtreeIds(elements: Record<string, SpecElement>, rootId: string): Set<string> {
+  const ids = new Set<string>()
+  walk(elements, [rootId], (id) => {
+    ids.add(id)
+  })
+  return ids
+}
+
 /**
  * Builds the local query from page form values. SearchFields and Filter /
  * Toolbar fields with a known actionId are skipped so an API CTA owns them.
+ * `scopeRootId` limits the scan to one region so a search in another section
+ * does not filter this collection.
  */
 export function collectLocalDiscoveryQuery(options: {
   formValues: Record<string, unknown>
   elements: Record<string, SpecElement>
   knownActionIds?: ReadonlySet<string>
+  scopeRootId?: string
 }): LocalDiscoveryQuery {
   const known = options.knownActionIds ?? new Set<string>()
   const searches: string[] = []
@@ -196,11 +267,16 @@ export function collectLocalDiscoveryQuery(options: {
     addFilterValue(filters, name, options.formValues[name])
   }
 
-  for (const element of Object.values(options.elements)) {
+  const scope = options.scopeRootId ? subtreeIds(options.elements, options.scopeRootId) : null
+  const inScope = (id: string) => !scope || scope.has(id)
+
+  for (const [id, element] of Object.entries(options.elements)) {
+    if (!inScope(id)) continue
     if (element.type === 'SearchField') visitField(element, false)
   }
 
-  for (const element of Object.values(options.elements)) {
+  for (const [id, element] of Object.entries(options.elements)) {
+    if (!inScope(id)) continue
     if (!FILTER_PARENT_TYPES.has(element.type ?? '')) continue
     walk(options.elements, element.children ?? [], (_childId, child) => {
       if (child.type === 'SearchField') return

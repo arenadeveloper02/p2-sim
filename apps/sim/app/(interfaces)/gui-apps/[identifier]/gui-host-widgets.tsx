@@ -15,6 +15,7 @@ import {
   GUI_WIDGET_SURFACE_CLASS,
 } from '@/app/(interfaces)/gui-apps/gui-chrome'
 import { formatBoundDateDisplay } from '@/lib/arena-generative-ui/bound-date-format'
+import { shortRecordLines } from '@/lib/arena-generative-ui/gui-collection-fields'
 import {
   carouselSlidesFromCollection,
   defaultCarouselSrcField,
@@ -137,6 +138,39 @@ export function GuiHostMap({
           No coordinates to plot.
         </p>
       )}
+      {located.length > 0 ? (
+        <div data-testid='gui-map-pins' className='relative h-24 w-full'>
+          {located.map((marker) => {
+            const lats = located.map((item) => item.lat as number)
+            const lngs = located.map((item) => item.lng as number)
+            const minLat = Math.min(...lats)
+            const maxLat = Math.max(...lats)
+            const minLng = Math.min(...lngs)
+            const maxLng = Math.max(...lngs)
+            const latSpan = maxLat - minLat || 1
+            const lngSpan = maxLng - minLng || 1
+            const top = `${((maxLat - (marker.lat as number)) / latSpan) * 80 + 10}%`
+            const left = `${(((marker.lng as number) - minLng) / lngSpan) * 80 + 10}%`
+            return (
+              <button
+                key={marker.index}
+                type='button'
+                data-testid='gui-map-pin'
+                aria-label={marker.title}
+                title={marker.title}
+                className={cn(
+                  'absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full',
+                  marker.index === selectedIndex
+                    ? 'bg-[var(--gui-brand,#1a73e8)]'
+                    : 'bg-[var(--gui-text-muted,#575a66)]'
+                )}
+                style={{ top, left }}
+                onClick={() => selectMarker(marker)}
+              />
+            )
+          })}
+        </div>
+      ) : null}
       <ul className='flex flex-col gap-1'>
         {markers.map((marker) => (
           <li key={marker.index}>
@@ -498,6 +532,14 @@ export function GuiHostTimeline({
         <span className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)]'>
           {entry.title}
         </span>
+        {shortRecordLines(entry.item, new Set([resolvedDate, resolvedTitle])).map((line) => (
+          <span
+            key={line}
+            className='block truncate text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
+          >
+            {line}
+          </span>
+        ))}
       </button>
     </li>
   )
@@ -535,6 +577,7 @@ interface GuiHostKanbanProps {
   emptyText: string
   busy?: boolean
   onSelectItem?: (item: unknown, index: number) => void
+  onMoveCard?: (index: number, columnId: string, groupField: string) => void
 }
 
 export function GuiHostKanban({
@@ -545,6 +588,7 @@ export function GuiHostKanban({
   emptyText,
   busy,
   onSelectItem,
+  onMoveCard,
 }: GuiHostKanbanProps) {
   const resolvedGroup = groupField || defaultKanbanGroupField(items)
   const resolvedTitle = titleField || defaultKanbanTitleField(items, resolvedGroup)
@@ -579,18 +623,50 @@ export function GuiHostKanban({
             {lane.title}
             <span className='ml-1 font-normal'>({lane.cards.length})</span>
           </p>
-          <ul className='flex flex-col gap-2'>
-            {lane.cards.map((card) => (
+          <ul
+            className='flex min-h-16 flex-col gap-2'
+            onDragOver={(event) => {
+              if (!onMoveCard) return
+              event.preventDefault()
+            }}
+            onDrop={(event) => {
+              if (!onMoveCard) return
+              event.preventDefault()
+              const from = Number(event.dataTransfer.getData('text/plain'))
+              if (!Number.isInteger(from)) return
+              onMoveCard(from, lane.id, resolvedGroup)
+            }}
+          >
+            {lane.cards.map((card) => {
+              const details = shortRecordLines(
+                card.item,
+                new Set([resolvedGroup, resolvedTitle])
+              )
+              return (
               <li key={card.index}>
                 <button
                   type='button'
+                  draggable={Boolean(onMoveCard)}
                   className='w-full rounded-[var(--gui-radius-sm,8px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-3 py-2 text-left text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]'
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData('text/plain', String(card.index))
+                    event.dataTransfer.effectAllowed = 'move'
+                  }}
                   onClick={() => onSelectItem?.(card.item, card.index)}
                 >
-                  {card.title}
+                  <span className='block'>{card.title}</span>
+                  {details.map((line) => (
+                    <span
+                      key={line}
+                      className='mt-1 block truncate text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
+                    >
+                      {line}
+                    </span>
+                  ))}
                 </button>
               </li>
-            ))}
+              )
+            })}
           </ul>
         </section>
       ))}

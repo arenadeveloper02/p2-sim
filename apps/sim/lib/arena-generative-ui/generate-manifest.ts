@@ -13,15 +13,10 @@ import {
   withComposition,
 } from '@/lib/arena-generative-ui/composition'
 import {
-  type ArenaGenerativeCritique,
-  critiqueArenaGenerativeManifest,
-  formatCriticRepairError,
-  mustFixCriticIssues,
-} from '@/lib/arena-generative-ui/critique-manifest'
-import {
   type ArenaGenerativeDesignIntent,
   stampThemeFromIntent,
 } from '@/lib/arena-generative-ui/design-intent'
+import { editImpact, formatEditImpact } from '@/lib/arena-generative-ui/edit-impact'
 import {
   type ArenaGenerativeEditScope,
   planArenaGenerativeEditScope,
@@ -43,10 +38,7 @@ import {
   isPaintOnlyEdit,
   parseHostEditKnobs,
 } from '@/lib/arena-generative-ui/host-edit-knobs'
-import {
-  type ArenaGenerativeIntent,
-  analyzeArenaGenerativeIntent,
-} from '@/lib/arena-generative-ui/intent-analyzer'
+import type { ArenaGenerativeIntent } from '@/lib/arena-generative-ui/intent-analyzer'
 import { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 import {
   extractManifestCandidate,
@@ -110,7 +102,8 @@ const MAX_OUTPUT_TOKENS = 128_000
 const ASSUMED_PAGE_COUNT = 4
 
 /** Repair turns allowed after the first reply fails validation. */
-export const MAX_REPAIR_ATTEMPTS = 3
+/** One catalog or host-critic repair. A second full rewrite does not converge. */
+export const MAX_REPAIR_ATTEMPTS = 1
 
 /** Host-critic issues packed into one repair turn. Remaining issues wait for the next scan. */
 export const HOST_CRITIC_REPAIR_ISSUE_CAP = 8
@@ -244,12 +237,6 @@ function formatEditScopeStatus(
     return `Edit scope: pages [${scope.pages.join(', ')}].`
   }
   return 'Edit scope: global rewrite.'
-}
-
-function formatCriticStatus(critique: ArenaGenerativeCritique, repaired: boolean): string {
-  if (repaired) return 'UI critic: repaired'
-  if (critique.skipped) return 'UI critic: skipped (unavailable)'
-  return 'UI critic: passed'
 }
 
 function withStatusPrefix(content: string, ...lines: string[]): string {
@@ -589,6 +576,27 @@ export async function generateArenaGenerativeManifest(
     }
   }
 
+  const impact =
+    isPreserveEdit && params.existingManifest
+      ? editImpact(params.existingManifest, userInput)
+      : null
+  if (impact?.kind === 'knob' && impact.navigateWhen && params.existingManifest) {
+    const applied = applyHostEditKnobs(
+      params.existingManifest,
+      { navigateWhen: impact.navigateWhen },
+      { userInput }
+    )
+    return {
+      success: true,
+      title:
+        params.existingManifest.pages[params.existingManifest.entryPath]?.title || 'Generated app',
+      content: withStatusPrefix(impact.summary, formatEditScopeStatus(null, true)),
+      manifest: applied.manifest,
+      adoptedChanges: applied.adoptedChanges,
+      editScope: { mode: 'global', pages: [] },
+    }
+  }
+
   const plannerUserInput = isReplan
     ? plannerInputForReplan({
         editInstructions: userInput,
@@ -603,25 +611,7 @@ export async function generateArenaGenerativeManifest(
   let analyzedIntent: ArenaGenerativeIntent | null = isPreserveEdit
     ? (params.existingStructuredBrief?.intent ?? null)
     : (params.lockedStructuredBrief?.intent ?? null)
-  let intentError: string | undefined
-  if (!isPreserveEdit && !params.lockedStructuredBrief) {
-    const analyzed = await analyzeArenaGenerativeIntent({
-      userInput: plannerUserInput || 'Adjust this plan.',
-      apiBindings: params.apiBindings,
-      designNotes: params.designNotes,
-      visualBrief,
-    })
-    analyzedIntent = analyzed.intent
-    intentError = analyzed.error
-    if (analyzedIntent) {
-      logger.info('Analyzed Arena Generative UI intent', {
-        task: analyzedIntent.task,
-        workflowComplexity: analyzedIntent.workflowComplexity,
-        replan: isReplan,
-      })
-    }
-  }
-
+  const intentError: string | undefined = undefined
   const planned =
     isPreserveEdit || params.lockedStructuredBrief
       ? {
@@ -711,7 +701,12 @@ export async function generateArenaGenerativeManifest(
           apiBindings: params.apiBindings,
         })
       : null
-  const scopedPaths = isPreserveEdit && editScope?.mode === 'pages' ? editScope.pages : []
+  const scopedPaths =
+    impact?.kind === 'partial-replan'
+      ? []
+      : isPreserveEdit && editScope?.mode === 'pages'
+        ? editScope.pages
+        : []
   const isScopedEdit = scopedPaths.length > 0
   if (isPreserveEdit && params.existingManifest) {
     logger.info('Scoped Arena Generative UI edit', {
@@ -743,7 +738,11 @@ export async function generateArenaGenerativeManifest(
    * edit that means to add or remove a page would reject the very change requested.
    */
   const editPageHints =
-    isPreserveEdit && !isScopedEdit && editScope?.pageSetStable === true && params.existingManifest
+    isPreserveEdit &&
+    !isScopedEdit &&
+    impact?.kind !== 'partial-replan' &&
+    editScope?.pageSetStable === true &&
+    params.existingManifest
       ? pageHintsFromManifest(params.existingManifest)
       : []
   const pageHints =
@@ -773,6 +772,7 @@ export async function generateArenaGenerativeManifest(
     isPreserveEdit && intentBrief ? formatStructuredBriefForEdit(intentBrief) : '',
     isPreserveEdit ? EDIT_RESULT_VIEWS_INSTRUCTION : '',
     isPreserveEdit ? EDIT_HOST_KNOBS_INSTRUCTION : '',
+    isPreserveEdit && impact ? formatEditImpact(impact) : '',
   ]
   const userPayload = (
     isScopedEdit && params.existingManifest
@@ -922,64 +922,10 @@ export async function generateArenaGenerativeManifest(
       )
     }
 
-    let critique: ArenaGenerativeCritique = { pass: true, issues: [] }
-    let criticRepaired = false
-    try {
-      critique = await critiqueArenaGenerativeManifest({
-        manifest: validation.manifest,
-        apiBindings: params.apiBindings,
-        brief: intentBrief,
-        authoredPagePaths: isScopedEdit ? scopedPaths : undefined,
-      })
-    } catch (error) {
-      logger.warn('Arena Generative UI critic threw; skipping', { error: toError(error).message })
-      critique = { pass: true, issues: [], skipped: true }
-    }
-
-    const mustFix = mustFixCriticIssues(critique)
-    if (mustFix.length > 0 && attempt < MAX_REPAIR_ATTEMPTS) {
-      logger.warn('Arena Generative UI critic requested a repair turn', {
-        issues: mustFix.length,
-      })
-      messages.push(
-        { role: 'assistant', content: lastRawText },
-        { role: 'user', content: repairUserMessage(formatCriticRepairError(mustFix), scopedPaths) }
-      )
-      const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
-      const rawText = extractMessageText(message)
-      if (!rawText) {
-        return {
-          success: false,
-          error: validation.error ?? 'Model returned an empty response',
-        }
-      }
-      try {
-        parsed = parseLlmJsonObject(rawText)
-      } catch (error) {
-        logger.warn('Arena Generative UI critic repair held no parseable JSON object', {
-          stopReason: message.stop_reason,
-          preview: truncate(rawText, 600),
-        })
-        throw error
-      }
-      validation = evaluateGeneratedCandidate(extractManifestCandidate(parsed), evaluateOptions)
-      if (!validation.success || !validation.manifest) {
-        logger.warn('Arena Generative UI critic repair failed validation', {
-          error: validation.error,
-        })
-        return generateFailureForUser(
-          extractManifestCandidate(parsed),
-          evaluateOptions,
-          validation.error ?? 'Generated manifest failed validation'
-        )
-      }
-      criticRepaired = true
-    }
-
     const landAdopted: ArenaGenerativeAdoptedChange[] = []
     if (isPreserveEdit && validation.manifest) {
       let misses = hostEditLandMisses(validation.manifest, userInput)
-      if (misses.length > 0 && attempt < MAX_REPAIR_ATTEMPTS) {
+      if (misses.length > 0) {
         logger.warn('Arena Generative UI land-check requested a repair turn', {
           misses: misses.length,
         })
@@ -1036,7 +982,6 @@ export async function generateArenaGenerativeManifest(
       typeof parsed.content === 'string' && parsed.content.trim()
         ? parsed.content.trim()
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
-    const criticStatus = formatCriticStatus(critique, criticRepaired)
     const intentStatus = formatIntentStatus(analyzedIntent, intentError)
     const plannerStatus = formatPlannerStatus(
       structuredBrief,
@@ -1051,7 +996,7 @@ export async function generateArenaGenerativeManifest(
       droppedActions,
       uncoordinatedPages,
       visualBriefError: params.visualBriefError,
-      criticSkipped: Boolean(critique.skipped),
+      criticSkipped: false,
       isPreserveEdit,
       existing: params.existingGenerateWarnings,
     })
@@ -1065,16 +1010,10 @@ export async function generateArenaGenerativeManifest(
       ],
     })
     const statusLines = isReplan
-      ? [
-          formatEditScopeStatus(null, false, true),
-          visualStatus,
-          intentStatus,
-          plannerStatus,
-          criticStatus,
-        ]
+      ? [formatEditScopeStatus(null, false, true), visualStatus, intentStatus, plannerStatus]
       : isPreserveEdit
-        ? [formatEditScopeStatus(editScope, false), visualStatus, criticStatus]
-        : [visualStatus, intentStatus, plannerStatus, criticStatus]
+        ? [formatEditScopeStatus(editScope, false), visualStatus]
+        : [visualStatus, intentStatus, plannerStatus]
 
     return {
       success: true,

@@ -33,8 +33,8 @@ describe('buildPlannerSystemPrompt', () => {
       },
     })
     expect(prompt).toContain('You are the application planner')
-    expect(prompt).toContain('SCOPE DISCIPLINE')
-    expect(prompt).toContain('HONOR LIST WINS')
+    expect(prompt).toContain('PRODUCT GAPS')
+    expect(prompt).toContain('IMPOSSIBILITIES')
     expect(prompt).toContain('ARCHETYPE is the primary user job')
     expect(prompt).toContain('COMPOSITION SEMANTICS')
     expect(prompt).toContain('WHAT can be composed')
@@ -231,7 +231,7 @@ describe('compiled honor in the planner system prompt', () => {
       userInput: 'Weather paste.',
       compiledHonor: 'COMPILED HONOR LIST\n- Job is a dashboard.',
     })
-    expect(prompt).toContain('HONOR LIST WINS')
+    expect(prompt).toContain('IMPOSSIBILITIES')
     expect(prompt).toContain('COMPILED HONOR LIST')
     expect(prompt).toContain('Job is a dashboard')
     expect(prompt).toContain('STATS AND DASHBOARDS')

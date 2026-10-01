@@ -7,6 +7,7 @@ import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import { resolvePageLanguage } from '@/lib/arena-generative-ui/visual-language'
 import { mergePageLoadValues } from '@/lib/arena-generative-ui/form-fields'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
@@ -207,6 +208,9 @@ export function GenerativeAppHost({
       ) : null}
       {canRefresh ? <ActionRefreshButton onRefresh={reload} pending={refreshing} /> : null}
       <SpecRenderErrorBoundary key={pagePath} fallbackTitle='This page failed to render'>
+        <div
+          data-gui-language={resolvePageLanguage(pageSpec, configQuery.data.config.theme?.language)}
+        >
         <SpecRenderer
           spec={pageSpec}
           state={state}
@@ -240,6 +244,7 @@ export function GenerativeAppHost({
           }}
           onCancelPending={runtime.cancelPending}
         />
+        </div>
       </SpecRenderErrorBoundary>
       {runtime.toast ? (
         <ActionSuccessToast message={runtime.toast} onDone={runtime.clearToast} />

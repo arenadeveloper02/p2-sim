@@ -48,6 +48,7 @@ export function GenerativeAppThemeRoot({ theme, children }: GenerativeAppThemeRo
   return (
     <div
       data-gui-theme={scheme}
+      data-gui-language={theme?.language ?? 'operational'}
       className='min-h-screen'
       style={arenaGenerativeThemeStyle(theme, scheme)}
       suppressHydrationWarning

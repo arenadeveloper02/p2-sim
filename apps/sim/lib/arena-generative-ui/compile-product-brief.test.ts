@@ -13,7 +13,7 @@ describe('compileProductBrief', () => {
     })
   })
 
-  it('maps a ChatGPT weather dashboard onto catalog/host behavior without rewriting the brief', () => {
+  it('notes host limits and does not turn a weather brief into a catalog layout', () => {
     const compiled = compileProductBrief(CHATGPT_WEATHER_DASHBOARD_BRIEF, [
       {
         key: 'forecast',
@@ -21,61 +21,18 @@ describe('compileProductBrief', () => {
         outputSchema: [
           { name: 'hourly', type: 'array' },
           { name: 'temperature_2m', type: 'number' },
-          { name: 'daily', type: 'array' },
         ],
       },
     ])
 
-    expect(compiled.honorPrompt).toContain('COMPILED HONOR LIST')
-    expect(compiled.honorPrompt).toContain('Job is a performance dashboard')
-    expect(compiled.honorPrompt).toContain('Filmstrip')
-    expect(compiled.honorPrompt).toContain('SearchField')
-    expect(compiled.honorPrompt).toContain('live true')
-    expect(compiled.honorPrompt).toContain('Do not emit a Card that wraps Repeat of Cards')
+    expect(compiled.honorPrompt).toContain('host limits only')
     expect(compiled.honorPrompt).toContain('Do not plan browser geolocation')
-    expect(compiled.honorPrompt).toContain('catalog Icon')
-    expect(compiled.honorPrompt).toContain('weather_code')
+    expect(compiled.honorPrompt).toContain('localStorage')
+    expect(compiled.honorPrompt).toContain('unit toggle')
     expect(compiled.honorPrompt).toContain('catalog json-render')
-    expect(compiled.adoptedChanges.map((change) => change.code).sort()).toEqual(
-      [
-        'product-drop',
-        'product-drop',
-        'product-drop',
-        'product-drop',
-        'product-drop',
-        'product-map',
-        'product-map',
-        'product-map',
-        'product-map',
-        'product-map',
-        'product-map',
-      ].sort()
-    )
-    expect(compiled.adoptedChanges).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: 'product-map',
-          adopted: expect.stringContaining('Chart'),
-        }),
-        expect.objectContaining({
-          code: 'product-map',
-          asked: expect.stringContaining('geolocation'),
-          adopted: expect.stringContaining('SearchField'),
-        }),
-        expect.objectContaining({
-          code: 'product-map',
-          asked: expect.stringContaining('Weather icons'),
-        }),
-        expect.objectContaining({
-          code: 'product-drop',
-          asked: expect.stringContaining('localStorage'),
-        }),
-        expect.objectContaining({
-          code: 'product-drop',
-          asked: expect.stringContaining('°C/°F'),
-        }),
-      ])
-    )
+    expect(compiled.honorPrompt).not.toContain('performance dashboard')
+    expect(compiled.honorPrompt).not.toContain('Filmstrip')
+    expect(compiled.adoptedChanges.every((change) => change.code === 'product-drop')).toBe(true)
   })
 
   it('does not honor a negated dashboard or a result-field location', () => {
@@ -86,45 +43,34 @@ describe('compileProductBrief', () => {
     expect(compiled.adoptedChanges).toEqual([])
   })
 
-  it('still honors a positive weather dashboard after a later negation', () => {
+  it('records geolocation and localStorage as limits, not as a dashboard order', () => {
     const compiled = compileProductBrief(
       'Build a weather dashboard. Do not add extra pages. Use browser geolocation and persist last city in localStorage.'
     )
-    expect(compiled.honorPrompt).toContain('Job is a performance dashboard')
-    expect(compiled.honorPrompt).toContain('They win over SCOPE DISCIPLINE')
+    expect(compiled.honorPrompt).not.toContain('performance dashboard')
+    expect(compiled.honorPrompt).toContain('Do not plan browser geolocation')
+    expect(compiled.honorPrompt).toContain('localStorage')
     expect(compiled.adoptedChanges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ asked: expect.stringContaining('dashboard') }),
         expect.objectContaining({ asked: expect.stringContaining('geolocation') }),
         expect.objectContaining({ asked: expect.stringContaining('localStorage') }),
       ])
     )
   })
 
-  it('maps command palette and breadcrumbs onto catalog types', () => {
-    const compiled = compileProductBrief(
-      'Add a command palette (⌘K) and breadcrumbs under the header.'
-    )
-    expect(compiled.honorPrompt).toContain('CommandPalette')
-    expect(compiled.honorPrompt).toContain('Breadcrumb')
-    expect(compiled.adoptedChanges).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: 'product-map',
-          asked: expect.stringContaining('Command palette'),
-        }),
-        expect.objectContaining({
-          code: 'product-map',
-          asked: expect.stringContaining('Breadcrumb'),
-        }),
-      ])
-    )
+  it('does not map command palette or breadcrumbs into catalog orders', () => {
+    expect(
+      compileProductBrief('Add a command palette (⌘K) and breadcrumbs under the header.')
+    ).toEqual({
+      honorPrompt: '',
+      adoptedChanges: [],
+    })
   })
 
-  it('maps Google Ads metrics onto a performance dashboard honor string', () => {
-    const compiled = compileProductBrief('Google Ads last 7 days dashboard with spend and CTR.')
-    expect(compiled.honorPrompt).toContain('performance dashboard')
-    expect(compiled.honorPrompt).toContain('Stat size "display"')
-    expect(compiled.honorPrompt).toContain('Do not emit an Operations Filter')
+  it('does not map a metrics sentence into a performance-dashboard order', () => {
+    expect(compileProductBrief('Google Ads last 7 days dashboard with spend and CTR.')).toEqual({
+      honorPrompt: '',
+      adoptedChanges: [],
+    })
   })
 })

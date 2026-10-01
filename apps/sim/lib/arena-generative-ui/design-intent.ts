@@ -8,6 +8,7 @@ import {
   DEFAULT_ARENA_GENERATIVE_THEME,
 } from '@/lib/arena-generative-ui/theme'
 import { parseThemeHints } from '@/lib/arena-generative-ui/theme-from-edit'
+import { visualLanguageFromIntent } from '@/lib/arena-generative-ui/visual-language'
 
 export const ARENA_GENERATIVE_PRODUCT_TYPES = [
   'saas',
@@ -191,6 +192,7 @@ export function stampThemeFromIntent(
     ...theme,
     ...hints,
     ...notes,
+    language: theme?.language ?? visualLanguageFromIntent(intent),
   }
 }
 
@@ -200,7 +202,7 @@ export function stampThemeFromIntent(
  */
 export const ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT = [
   'DESIGN INTENT',
-  'Honour a structured-brief designIntent / design object when present. These are classification axes — do not emit them as component props, and do not paint chrome, hex, fonts, or radius to express tone. Classification does change gold (briefing vs performance vs operations) and theme.density / theme.ink. DESIGN GUIDELINES still owns how to compose. If omitted, default comfortable / professional / task-oriented.',
+  'Honour a structured-brief designIntent / design object when present. These are classification axes — do not emit them as component props. The host stamps one visual language from this classification. Do not emit hex, fontSize, or a language id. Classification still sets theme.density / theme.ink. If omitted, default comfortable / professional / task-oriented.',
   'productType: saas | analytics | crm | marketing | finance | productivity | content. marketing or analytics with a metrics job uses the performance gold (display Stats, one Chart, exception Table). marketing / content / discovery research uses the briefing gold (DataText first, Chip views, no KPI row). saas / productivity dashboards keep the operations gold.',
   'density: compact | comfortable | roomy — manifest.theme.density only (spacious means roomy). marketing or editorial stamps roomy unless Design Notes name density. If density is compact or roomy and Design Notes did not name density, emit that theme.density. Tokens scale with it.',
   'tone: professional | friendly | premium | technical | editorial. professional is the default Arena voice. friendly — warmer copy, still the same chrome. premium — more whitespace, Card variant "muted", gap "lg", not glassmorphism or extra fills. technical — labels and KeyValue over marketing prose. editorial — long DataText, Section "narrow", theme.ink "strong".',

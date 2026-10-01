@@ -24,6 +24,8 @@ export interface HostEditKnobs {
   textContrast?: 'strong' | 'default'
   loadingChrome?: 'skeleton' | 'spinner'
   emptyWhilePending?: boolean
+  /** When to leave a form. The compiler moves the loader to match. */
+  navigateWhen?: 'immediate' | 'success'
 }
 
 interface FlatElement {
@@ -139,6 +141,25 @@ export function parseHostEditKnobs(text: string): HostEditKnobs {
     knobs.emptyWhilePending = true
   }
 
+  const movesSurface = /\b(?:own page|separate page|its own page|on this page|same page)\b/i.test(
+    trimmed
+  )
+  if (!movesSurface) {
+    if (
+      /\b(?:wait here|stay on (?:this|the) (?:page|form)|show (?:the )?loader (?:here|on the form)|leave after (?:it |the )?(?:succeeds|success))\b/i.test(
+        trimmed
+      )
+    ) {
+      knobs.navigateWhen = 'success'
+    } else if (
+      /\b(?:leave now|navigate first|open the results page first|show the loader on the results)\b/i.test(
+        trimmed
+      )
+    ) {
+      knobs.navigateWhen = 'immediate'
+    }
+  }
+
   return knobs
 }
 
@@ -148,7 +169,8 @@ function hasHostKnobs(knobs: HostEditKnobs): boolean {
       knobs.headingScale ||
       knobs.textContrast ||
       knobs.loadingChrome ||
-      knobs.emptyWhilePending
+      knobs.emptyWhilePending ||
+      knobs.navigateWhen
   )
 }
 
@@ -493,6 +515,31 @@ export function applyHostEditKnobs(
         code: 'heading-scale',
         asked: 'Title is too big; use an appropriate size.',
         adopted: 'Demoted extra Heading h1 to the host type scale (h2).',
+      })
+    }
+  }
+
+  if (knobs.navigateWhen) {
+    const actions = { ...next.actions }
+    let actionsChanged = false
+    for (const [actionId, action] of Object.entries(actions)) {
+      if (!action.onSuccess?.navigate) continue
+      if (action.onSuccess.navigateWhen === knobs.navigateWhen) continue
+      actions[actionId] = {
+        ...action,
+        onSuccess: { ...action.onSuccess, navigateWhen: knobs.navigateWhen },
+      }
+      actionsChanged = true
+    }
+    if (actionsChanged) {
+      next = { ...next, actions }
+      adoptedChanges.push({
+        code: 'host-wait-chrome',
+        asked: 'Change when the page leaves for results.',
+        adopted:
+          knobs.navigateWhen === 'success'
+            ? 'Host waits on the form and keeps the loader there.'
+            : 'Host leaves first and moves the loader to the results page.',
       })
     }
   }

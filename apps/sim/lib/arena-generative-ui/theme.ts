@@ -113,6 +113,12 @@ export const ARENA_GENERATIVE_THEME_FONTS = ['sans', 'serif'] as const
 export const ARENA_GENERATIVE_THEME_COLOR_SCHEMES = ['light', 'dark', 'system'] as const
 export const ARENA_GENERATIVE_THEME_INKS = ['default', 'strong'] as const
 export const ARENA_GENERATIVE_THEME_LOADING_CHROMES = ['skeleton', 'spinner'] as const
+export const ARENA_GENERATIVE_THEME_LANGUAGES = [
+  'task',
+  'operational',
+  'dense',
+  'editorial',
+] as const
 
 export type ArenaGenerativeThemeRadius = (typeof ARENA_GENERATIVE_THEME_RADII)[number]
 export type ArenaGenerativeThemeDensity = (typeof ARENA_GENERATIVE_THEME_DENSITIES)[number]
@@ -121,6 +127,7 @@ export type ArenaGenerativeThemeColorScheme = (typeof ARENA_GENERATIVE_THEME_COL
 export type ArenaGenerativeThemeInk = (typeof ARENA_GENERATIVE_THEME_INKS)[number]
 export type ArenaGenerativeThemeLoadingChrome =
   (typeof ARENA_GENERATIVE_THEME_LOADING_CHROMES)[number]
+export type ArenaGenerativeThemeLanguage = (typeof ARENA_GENERATIVE_THEME_LANGUAGES)[number]
 
 export interface ArenaGenerativeTheme {
   brandColor?: string
@@ -132,6 +139,10 @@ export interface ArenaGenerativeTheme {
   ink?: ArenaGenerativeThemeInk
   /** Pending region chrome. Host paints this; do not emit spec Spinner. */
   loadingChrome?: ArenaGenerativeThemeLoadingChrome
+  /**
+   * Finished look the host paints. Stamped from the brief. The model does not emit it.
+   */
+  language?: ArenaGenerativeThemeLanguage
 }
 
 export const DEFAULT_ARENA_GENERATIVE_THEME: ArenaGenerativeTheme = {
@@ -170,6 +181,8 @@ export function parseArenaGenerativeTheme(raw: unknown): ArenaGenerativeTheme | 
   if (ink) theme.ink = ink
   const loadingChrome = asEnum(record.loadingChrome, ARENA_GENERATIVE_THEME_LOADING_CHROMES)
   if (loadingChrome) theme.loadingChrome = loadingChrome
+  const language = asEnum(record.language, ARENA_GENERATIVE_THEME_LANGUAGES)
+  if (language) theme.language = language
   return Object.keys(theme).length > 0 ? theme : undefined
 }
 

@@ -1189,7 +1189,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('flat blueprint — not a nested app wrapper')
     expect(system).toContain('bare kebab-case keys')
     expect(system).toContain('audience is a real role')
-    expect(system).toContain('Do not add dashboards, statistics, history')
+    expect(system).toContain('PRODUCT GAPS')
     expect(system).toContain('When Analyzed intent is present')
     expect(system).toContain('requested mutations')
     expect(system).toContain('even if intent omitted it')
@@ -1228,7 +1228,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
     })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('HONOR LIST WINS')
+    expect(system).toContain('IMPOSSIBILITIES')
     expect(system).toContain('COMPILED HONOR LIST')
     expect(system).toContain('Job is a dashboard')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
@@ -1543,9 +1543,8 @@ describe('target blueprint fixtures', () => {
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
-    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
-    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
-    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
+    expect(prompt).toContain('WIRING')
+    expect(prompt).not.toContain('GOLD STANDARD')
     expect(prompt).not.toContain('SWOT')
     expect(prompt).not.toContain('COMPOSITION SEMANTICS')
     expect(prompt).not.toContain('PLANNER_CONTRACT')
@@ -1628,9 +1627,9 @@ describe('target blueprint fixtures', () => {
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
-    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
-    expect(prompt).toContain('SHELL RECIPE')
-    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(prompt).toContain('WIRING')
+    expect(prompt).not.toContain('GOLD STANDARD')
+    expect(prompt).not.toContain('SHELL RECIPE')
     expect(prompt).not.toContain('COMPOSITION SEMANTICS')
   })
 
@@ -1744,8 +1743,9 @@ describe('target blueprint fixtures', () => {
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
-    expect(prompt).toContain('ARCHETYPE RECIPE: workspace')
-    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(prompt).toContain('WIRING')
+    expect(prompt).not.toContain('GOLD STANDARD')
+    expect(prompt).not.toContain('ARCHETYPE RECIPE')
     expect(prompt).not.toContain('COMPOSITION SEMANTICS')
   })
 

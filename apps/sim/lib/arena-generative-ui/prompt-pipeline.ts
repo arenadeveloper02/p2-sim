@@ -1,17 +1,10 @@
 import { ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/action-contract'
-import { ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT } from '@/lib/arena-generative-ui/anti-patterns'
 import {
   type ArenaGenerativeCapability,
-  capabilityRecipePrompt,
 } from '@/lib/arena-generative-ui/capabilities'
 import {
-  ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES,
   ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
-  ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
-  ARENA_GENERATIVE_UI_COMPONENT_RULES,
-  ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
   ARENA_GENERATIVE_UI_ENVELOPE_RULES,
-  ARENA_GENERATIVE_UI_INTERACTION_RULES,
   ARENA_GENERATIVE_UI_ON_LOAD_RULE,
   ARENA_GENERATIVE_UI_PAGINATION_RULE,
   ARENA_GENERATIVE_UI_PERSONA,
@@ -21,31 +14,18 @@ import {
   buildArenaGenerativeUiPrompt,
   resolveCatalogComponentNames,
 } from '@/lib/arena-generative-ui/catalog'
-import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-generative-ui/component-decisions'
-import {
-  constitutionPromptFor,
-  resolveConstitutionSections,
-} from '@/lib/arena-generative-ui/constitution'
-import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
-import { ARENA_GENERATIVE_UI_COMPOSITION_PROMPT } from '@/lib/arena-generative-ui/design-guidelines'
-import {
-  ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
-  type ArenaGenerativeProductType,
-  type ArenaGenerativeVisualPriority,
-} from '@/lib/arena-generative-ui/design-intent'
-import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
-import { ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT } from '@/lib/arena-generative-ui/representation'
 import {
   ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT,
   type ArenaGenerativeArchetype,
   type ArenaGenerativeShell,
   type ArenaGenerativeStructuredBrief,
-  archetypeRecipe,
   briefHasDummyOrLocalData,
   recipesForBlueprint,
-  shellRecipe,
 } from '@/lib/arena-generative-ui/structured-brief'
-import { ARENA_GENERATIVE_UI_HOST_UX_PROMPT } from '@/lib/arena-generative-ui/ux-policy'
+import type {
+  ArenaGenerativeProductType,
+  ArenaGenerativeVisualPriority,
+} from '@/lib/arena-generative-ui/design-intent'
 
 export interface BuildGeneratorSystemPromptOptions {
   archetype?: ArenaGenerativeArchetype
@@ -171,39 +151,23 @@ export function generatorPromptOptionsFromBrief(
   }
 }
 
-function headedRules(heading: string, rules: readonly string[]): string {
-  return [heading, ...rules].join('\n')
-}
-
-function wrapColumn(heading: string, sections: readonly string[]): string {
-  const body = sections.filter((section) => section.length > 0)
-  if (body.length === 0) return ''
-  return [heading, ...body].join('\n\n')
-}
-
 /**
- * LAYOUT / CARDS / PROFESSIONALISM stay on every generate, including planner
- * fail-open. Unused catalog families and recipes stay selectively injected.
+ * Spec model prompt: persona, wiring, and the catalog schema for this blueprint.
+ * Archetype names stay on the brief the user message already carries.
  */
-function compositionFor(): string {
-  return ARENA_GENERATIVE_UI_COMPOSITION_PROMPT
-}
+export const GENERATOR_WIRING_CONTRACT = [
+  'WIRING',
+  'Bind statePath only to a layoutPlan host key, or to inputs.<field>, content, selected, or selectedId. Do not invent keys. Do not prefix output., data., result., or response.',
+  'A control that calls an API sets actionId to a declared action. onSuccess.navigate is a page path. navigateWhen immediate leaves before the request; success waits, and errors stay on the form.',
+  'A page that shows data on arrival lists that action in onLoad. Do not onLoad a navigate-first action on the destination page.',
+  'Do not emit hex, fontSize, or CSS. The host paints theme, loaders, Back, empty states, and errors.',
+].join('\n')
 
 /**
- * Spec-LLM system prompt in three columns: Design rules/tokens, UX rules/states,
- * then archetype recipe. Serial order is Design → UX → Archetype so tokens still
- * constrain recipes. Persona stays first. Still one generate call. The planner
- * contract is never included. Constitution sections and catalog families are
- * gated from the blueprint so unused UX/catalog mass stays out.
+ * Spec-LLM system prompt. The brief in the user message names the archetype.
+ * Catalog families stay gated so an unused widget schema is not sent.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
-  const baseRecipe =
-    options.recipes || (options.archetype ? archetypeRecipe(options.archetype) : '')
-  const chrome = shellRecipe(options.shell)
-  const recipe =
-    chrome && !baseRecipe.includes('SHELL RECIPE')
-      ? [baseRecipe, chrome].filter((section) => section.length > 0).join('\n\n')
-      : baseRecipe
   const includeRemoteRules = options.hasBindings || options.needsWait
   const includeComponents = resolveCatalogComponentNames({
     archetype: options.archetype,
@@ -220,78 +184,20 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     customRules: [
       ...ARENA_GENERATIVE_UI_ENVELOPE_RULES,
       ARENA_GENERATIVE_UI_THEME_RULE,
+      GENERATOR_WIRING_CONTRACT,
+      ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,
       ...(includeRemoteRules
         ? [
             ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
-            ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
             ARENA_GENERATIVE_UI_ON_LOAD_RULE,
             ARENA_GENERATIVE_UI_PAGINATION_RULE,
           ]
         : []),
-      ...(options.hasDummyData && !recipe.includes('DUMMY / LOCAL DATA')
-        ? [ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT]
-        : []),
+      ...(options.hasDummyData ? [ARENA_GENERATIVE_UI_DUMMY_DATA_PROMPT] : []),
       ...(options.hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
       ...(options.isScopedEdit ? ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES : []),
     ],
   })
-  const representation = recipe.includes('REPRESENTATION')
-    ? ''
-    : options.needsTables
-      ? ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT
-      : ''
-  const dataState =
-    includeRemoteRules || !options.hasDummyData ? ARENA_GENERATIVE_UI_DATA_STATE_PROMPT : ''
-  const actionContract = ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT
-  const capabilities = capabilityRecipePrompt(options.capabilities ?? [])
-  const constitution = constitutionPromptFor(
-    resolveConstitutionSections({
-      needsForms: options.needsForms,
-      needsTables: options.needsTables,
-      needsWorkspace: options.needsWorkspace,
-      pageArchetypes: options.pageArchetypes,
-      shellNavigation: options.shell?.navigation,
-    })
-  )
 
-  return [
-    ARENA_GENERATIVE_UI_PERSONA,
-    wrapColumn('DESIGN RULES / TOKENS', [
-      ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
-      ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
-      compositionFor(),
-    ]),
-    wrapColumn('UX RULES / STATES', [
-      constitution,
-      dataState,
-      actionContract,
-      headedRules('INTERACTION / STATE RULES', [
-        ARENA_GENERATIVE_UI_HOST_UX_PROMPT,
-        ...ARENA_GENERATIVE_UI_INTERACTION_RULES,
-      ]),
-      headedRules('ACCESSIBILITY RULES', ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES),
-      ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT,
-    ]),
-    wrapColumn('ARCHETYPE RECIPE', [
-      ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
-      recipe,
-      representation,
-      capabilities,
-      goldExamplePromptForArchetype(options.archetype, {
-        pageArchetypes: options.pageArchetypes,
-        hasRegions: options.hasRegions,
-        shell: options.shell,
-        needsCalendar: options.needsCalendar,
-        needsTimeline: options.needsTimeline,
-        needsKanban: options.needsKanban,
-        needsTables: options.needsTables,
-        productType: options.productType,
-        visualPriority: options.visualPriority,
-      }),
-      headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
-      catalogAndEnvelope,
-    ]),
-  ]
-    .filter((section) => section.length > 0)
-    .join('\n\n')
+  return [ARENA_GENERATIVE_UI_PERSONA, catalogAndEnvelope].join('\n\n')
 }

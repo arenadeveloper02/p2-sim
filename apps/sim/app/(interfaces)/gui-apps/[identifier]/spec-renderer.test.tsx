@@ -855,10 +855,8 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec })
     expect(container.querySelector('section')?.className).toContain('max-w-2xl')
     expect(container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
-    const surface = container.querySelector('[data-testid="task-surface"]')
-    expect(surface).toBeTruthy()
-    expect(surface?.className).toContain('gui-shadow-card')
-    expect(surface?.querySelector('[data-testid="search-field"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="task-surface"]')).toBeNull()
+    expect(container.querySelector('[data-testid="search-field"]')).toBeTruthy()
   })
 
   it('does not wrap a SearchField already inside a Card', () => {
@@ -905,7 +903,7 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('[data-testid="search-field"]')).toBeTruthy()
   })
 
-  it('paints a task surface around a Form that is not in a Card', () => {
+  it('leaves a Form unwrapped when it is not already in a Card', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -916,9 +914,8 @@ describe('SpecRenderer', () => {
       },
     }
     const { container } = render({ spec })
-    const surface = container.querySelector('[data-testid="task-surface"]')
-    expect(surface).toBeTruthy()
-    expect(surface?.querySelector('form')).toBeTruthy()
+    expect(container.querySelector('[data-testid="task-surface"]')).toBeNull()
+    expect(container.querySelector('form')).toBeTruthy()
   })
 
   it('keeps a featured Card title at the title type size', () => {
@@ -1133,7 +1130,7 @@ describe('SpecRenderer', () => {
     expect(grid.style.gridTemplateColumns).toBe('')
   })
 
-  it('collapses a one-child two-column Grid wrapping Form, not Repeat', () => {
+  it('keeps a two-column Grid around a single Form', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -1149,8 +1146,8 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec })
     const grid = container.querySelector('.grid') as HTMLElement
-    expect(grid.className).toContain('grid-cols-1')
-    expect(grid.style.gridTemplateColumns).toBe('')
+    expect(grid.className).not.toContain('grid-cols-1')
+    expect(grid.style.gridTemplateColumns.length).toBeGreaterThan(0)
   })
 
   it('makes a Card a direct child of a horizontal Stack instead of wrapping it in a span', () => {
@@ -3978,7 +3975,7 @@ describe('SpecRenderer', () => {
     expect(gapsChip?.getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('places result-view Chips above Card body instead of the footer', () => {
+  it('keeps Card children in authored order', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -4012,14 +4009,14 @@ describe('SpecRenderer', () => {
     }
     const { container } = render({ spec, state: { content: '# Report body' } })
     const card = container.querySelector('[data-testid="card"]') as HTMLElement
-    const switchRow = card.querySelector('[data-testid="view-switch-chips"]') as HTMLElement
-    const footer = card.querySelector('[data-testid="card-footer"]') as HTMLElement
-    expect(switchRow?.textContent).toContain('Enhanced Article')
-    expect(switchRow?.textContent).toContain('Gap Analysis')
-    expect(footer?.textContent).toContain('Export')
-    expect(footer?.textContent).not.toContain('Enhanced Article')
+    expect(card.querySelector('[data-testid="view-switch-chips"]')).toBeNull()
+    expect(card.querySelector('[data-testid="card-footer"]')).toBeNull()
+    expect(card.textContent).toContain('Export')
+    expect(card.textContent?.indexOf('Report body') ?? -1).toBeLessThan(
+      card.textContent?.indexOf('Enhanced Article') ?? 0
+    )
     expect(card.textContent?.indexOf('Enhanced Article') ?? -1).toBeLessThan(
-      card.textContent?.indexOf('Report body') ?? 0
+      card.textContent?.indexOf('Export') ?? 0
     )
   })
 
@@ -4049,19 +4046,17 @@ describe('SpecRenderer', () => {
     const title = card.querySelector('h2') as HTMLElement
     const footer = card.querySelector('[data-testid="card-footer"]') as HTMLElement
     expect(title.className).toContain('line-clamp-2')
-    expect(title.className).toContain('break-all')
+    expect(title.className).toContain('break-words')
+    expect(title.getAttribute('title')).toBe(longUrl)
     expect(title.className).toContain('min-w-0')
     expect(title.textContent).toBe(longUrl)
     expect(footer?.textContent).toContain('Sep 9, 2026')
-    expect(footer?.textContent).toContain('View Results')
-    expect(footer?.textContent).not.toContain('News')
-    expect(footer?.textContent).not.toContain('Score: 87')
-    expect(card.textContent?.indexOf('News') ?? -1).toBeLessThan(
-      card.textContent?.indexOf('Sep 9, 2026') ?? 0
-    )
+    expect(footer?.textContent).not.toContain('View Results')
+    expect(card.textContent).toContain('View Results')
+    expect(card.textContent).toContain('News')
   })
 
-  it('hoists loose result-view Chips in a horizontal Stack into a top horizontal row', () => {
+  it('keeps result-view Chips in the authored horizontal Stack', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -4099,12 +4094,12 @@ describe('SpecRenderer', () => {
       },
     }
     const { container } = render({ spec, state: { content: '# Body' } })
-    const switchRow = container.querySelector('[data-testid="view-switch-chips"]') as HTMLElement
-    expect(switchRow).toBeTruthy()
-    expect(switchRow.className).toContain('flex-row')
-    expect(switchRow.className).not.toContain('flex-col')
-    expect(switchRow.textContent).toContain('Enhanced Article')
-    expect(switchRow.textContent).toContain('Recommendations')
+    expect(container.querySelector('[data-testid="view-switch-chips"]')).toBeNull()
+    const row = container.querySelector('.flex-row') as HTMLElement
+    expect(row).toBeTruthy()
+    expect(row.textContent).toContain('Enhanced Article')
+    expect(row.textContent).toContain('Recommendations')
+    expect(row.textContent).toContain('Body')
     expect(container.textContent?.indexOf('Enhanced Article') ?? -1).toBeLessThan(
       container.textContent?.indexOf('Body') ?? 0
     )
@@ -4290,7 +4285,8 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('[data-testid="avatar"]')?.textContent).toBe('ST')
     const footer = container.querySelector('[data-testid="card-footer"]')
     expect(footer?.textContent).toContain('Enterprise · 2010')
-    expect(footer?.textContent).toContain('Analyze')
+    expect(footer?.textContent).not.toContain('Analyze')
+    expect(container.textContent).toContain('Analyze')
   })
 
   it('paints a default Card as a bordered surface with rest shadow', () => {

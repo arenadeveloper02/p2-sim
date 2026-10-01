@@ -22,6 +22,7 @@ import {
   Calendar,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Cloud,
   CloudLightning,
@@ -137,9 +138,12 @@ import {
 } from '@/lib/arena-generative-ui/host-content-actions'
 import {
   type CollectionSort,
+  buildElementParents,
   collectionHasApiOwnedSort,
+  collectionItemIdentity,
   collectKnownActionIds,
   collectLocalDiscoveryQuery,
+  discoveryRegionId,
   dummyCollectionSeedFromSpec,
   filterCollectionItems,
   filterCollectionItemsBySelection,
@@ -154,7 +158,9 @@ import {
   sortStaticTableRows,
   spliceVisibleCollectionItems,
   withDummyCollectionSeed,
+  workspacePaneId,
 } from '@/lib/arena-generative-ui/local-discovery'
+import { unboundCollections } from '@/lib/arena-generative-ui/unbound-collections'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { sectionIsMeasureOnly } from '@/lib/arena-generative-ui/section-measure'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
@@ -165,7 +171,6 @@ import {
   collectionClickPromotesSelection,
   collectionFromBoundValue,
   displayTextFromActionData,
-  GENERATIVE_APP_VIEW_SWITCH_TEST_ID,
   interpolateElementProps,
   parseTabItems,
   type RepeatItemScope,
@@ -341,23 +346,34 @@ const ICON_BY_NAME: Record<string, LucideIcon> = {
   wind: Wind,
   droplet: Droplets,
   thermometer: Thermometer,
+  back: ChevronLeft,
 }
 
-const CARD_MEDIA_TYPES = new Set(['Icon', 'Avatar'])
-const CARD_FOOTER_TYPES = new Set(['Button', 'Chip', 'NavLink', 'Link', 'Toolbar'])
-/** Badges sit with the title row, not as free-floating body under an h2. */
-const CARD_META_TYPES = new Set(['Badge'])
-/** Keep Back / form / wait chrome ahead of a hoisted result-view Chip row. */
-const VIEW_SWITCH_LEAD_TYPES = new Set([
-  'PageHeader',
-  'Form',
-  'SearchField',
-  'WorkingCard',
-  'Stepper',
-  'Tabs',
-  'Button',
-  'NavLink',
-])
+function roleIconName(label: string): string | null {
+  const text = label.trim().toLowerCase()
+  if (text === 'back') return 'back'
+  if (text === 'search' || text === 'find') return 'search'
+  if (text === 'delete' || text === 'remove') return 'trash'
+  if (text === 'edit') return 'pencil'
+  if (text === 'add' || text === 'create' || text === 'new') return 'plus'
+  if (text === 'download') return 'download'
+  if (text === 'copy') return 'copy'
+  if (text === 'filter') return 'filter'
+  if (text === 'upload') return 'upload'
+  if (text === 'settings') return 'settings'
+  return null
+}
+
+function RoleLabel({ label }: { label: string }) {
+  const icon = roleIconName(label)
+  if (!label && !icon) return null
+  return (
+    <>
+      {icon ? <CatalogIcon name={icon} well='none' /> : null}
+      {label}
+    </>
+  )
+}
 
 function looksLikeImageSrc(value: string): boolean {
   return /^(https?:|data:|\/)/i.test(value) || /\.(png|jpe?g|gif|svg|webp)(\?|$)/i.test(value)
@@ -444,82 +460,6 @@ function chipIdsForSetValueField(
   return ids
 }
 
-function chipSetValueField(element: SpecElement | undefined): string | null {
-  if (element?.type !== 'Chip') return null
-  return parseChipSetValue(asString(element.props?.setValue)).name
-}
-
-function isViewSwitchChip(
-  elements: Record<string, SpecElement>,
-  rootId: string,
-  id: string
-): boolean {
-  const field = chipSetValueField(elements[id])
-  if (!field) return false
-  return chipIdsForSetValueField(elements, rootId, field).length >= 2
-}
-
-function isViewSwitchChrome(
-  elements: Record<string, SpecElement>,
-  rootId: string,
-  id: string
-): boolean {
-  const element = elements[id]
-  if (!element) return false
-  if (element.type === 'Chip') return isViewSwitchChip(elements, rootId, id)
-  if (element.type !== 'Stack' && element.type !== 'Toolbar') return false
-  const kids = element.children ?? []
-  if (kids.length === 0) return false
-  return kids.every((childId) => isViewSwitchChrome(elements, rootId, childId))
-}
-
-/**
- * True when chrome is one authored vertical Stack/Toolbar of view-switch Chips.
- * That is the only left-rail pattern — loose Chips always become a top row.
- */
-function isAuthoredLeftRailViewSwitch(
-  elements: Record<string, SpecElement>,
-  chromeIds: string[]
-): boolean {
-  if (chromeIds.length !== 1) return false
-  const only = elements[chromeIds[0]]
-  if (!only || (only.type !== 'Stack' && only.type !== 'Toolbar')) return false
-  const direction = asString(
-    only.props?.direction,
-    only.type === 'Toolbar' ? 'horizontal' : 'vertical'
-  )
-  return direction === 'vertical'
-}
-
-function partitionViewSwitchChrome(
-  childIds: string[],
-  elements: Record<string, SpecElement>,
-  rootId: string
-): { leadIds: string[]; chromeIds: string[]; bodyIds: string[] } {
-  const chromeIds: string[] = []
-  const restIds: string[] = []
-  for (const id of childIds) {
-    if (isViewSwitchChrome(elements, rootId, id)) chromeIds.push(id)
-    else restIds.push(id)
-  }
-  let insertAt = 0
-  while (
-    insertAt < restIds.length &&
-    VIEW_SWITCH_LEAD_TYPES.has(elements[restIds[insertAt]]?.type ?? '')
-  ) {
-    insertAt += 1
-  }
-  return {
-    leadIds: restIds.slice(0, insertAt),
-    chromeIds,
-    bodyIds: restIds.slice(insertAt),
-  }
-}
-
-/**
- * First Chip value for each same-page view-switch field that is still empty,
- * so showWhen matches the host-painted selected Chip before the first click.
- */
 function viewSwitchDefaultValues(
   elements: Record<string, SpecElement>,
   rootId: string,
@@ -1331,6 +1271,8 @@ function StateTable({
   nowMs,
   reorderable = false,
   onReorder,
+  onSelectRow,
+  renderRowActions,
 }: {
   value: unknown
   columns?: string
@@ -1343,6 +1285,8 @@ function StateTable({
   nowMs?: number
   reorderable?: boolean
   onReorder?: (fromIndex: number, toIndex: number) => void
+  onSelectRow?: (item: unknown, index: number) => void
+  renderRowActions?: (item: unknown, index: number) => ReactNode
 }) {
   const items = Array.isArray(value) ? value : []
   const declaredColumns = parseBoundTableColumns(columns)
@@ -1402,6 +1346,7 @@ function StateTable({
                   </th>
                 )
               })}
+              {renderRowActions ? <th className={headerClass}>Actions</th> : null}
             </tr>
           </thead>
         ) : null}
@@ -1436,6 +1381,16 @@ function StateTable({
                 }
               }}
               className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
+              onClick={
+                onSelectRow
+                  ? (event) => {
+                      const target = event.target
+                      if (!(target instanceof Element)) return
+                      if (target.closest('button, a, input, select, textarea')) return
+                      onSelectRow(item, rowIndex)
+                    }
+                  : undefined
+              }
             >
               {reorderable ? (
                 <td className='px-2 py-3'>
@@ -1459,6 +1414,9 @@ function StateTable({
                   />
                 </td>
               ))}
+              {renderRowActions ? (
+                <td className='px-4 py-3 align-top'>{renderRowActions(item, rowIndex)}</td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -1481,6 +1439,7 @@ function StateTable({
                   </td>
                 )
               })}
+              {renderRowActions ? <td className='px-4 py-3' /> : null}
             </tr>
           </tfoot>
         ) : null}
@@ -1808,17 +1767,8 @@ function styleFromProps(props: Record<string, unknown>): CSSProperties {
   return style
 }
 
-function wrapTaskSurface(
-  node: ReactNode,
-  props: Record<string, unknown>,
-  withinCard: boolean
-): ReactNode {
-  if (withinCard || asString(props.surface) === 'none') return node
-  return (
-    <div data-testid='task-surface' className={cn('w-full min-w-0', SURFACE_CARD)}>
-      {node}
-    </div>
-  )
+function wrapTaskSurface(node: ReactNode): ReactNode {
+  return node
 }
 
 function WorkspaceView({
@@ -2232,6 +2182,9 @@ export function SpecRenderer({
     pageKey ? host.pageLocalPages(pageKey) : {}
   )
   const [disclosureOpen, setDisclosureOpen] = useState<Record<string, boolean>>({})
+  const [regionSelection, setRegionSelection] = useState<
+    Record<string, { id: string; item: unknown }>
+  >({})
   const [tableSorts, setTableSorts] = useState<Record<string, CollectionSort>>({})
   const usesRelativeDates = specUsesRelativeDates(elements)
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -2273,6 +2226,14 @@ export function SpecRenderer({
     uxPlan?.actions
   )
   const headerSortDisabled = collectionHasApiOwnedSort(elements, knownActionIds)
+  const elementParents = buildElementParents(elements)
+  const discoveryForElement = (elementId: string) =>
+    collectLocalDiscoveryQuery({
+      formValues,
+      elements,
+      knownActionIds,
+      scopeRootId: discoveryRegionId(elements, elementParents, elementId),
+    })
   const localDiscovery = collectLocalDiscoveryQuery({
     formValues,
     elements,
@@ -2311,8 +2272,35 @@ export function SpecRenderer({
     selectedIdSet &&
     specHasSamePageSelectItem(spec, currentPath) &&
     !specKeepsCollectionVisible(spec)
-  const collectionOnSelect = (statePath: string) =>
-    collectionClickPromotesSelection(state, statePath) ? onSelectItem : undefined
+  const collectionOnSelect = (elementId: string, statePath: string) => {
+    if (!collectionClickPromotesSelection(state, statePath)) return undefined
+    const paneId = workspacePaneId(elements, elementParents, elementId)
+    if (!paneId) return onSelectItem
+    const workspaceId = elementParents.get(paneId)
+    const navigatorId = elements[workspaceId ?? '']?.children?.[0]
+    if (paneId === navigatorId) return onSelectItem
+    return (item: unknown) => {
+      const itemId = collectionItemIdentity(item)
+      if (!itemId) return
+      setRegionSelection((current) => ({
+        ...current,
+        [paneId]: { id: itemId, item },
+      }))
+    }
+  }
+  const applySelectionFilter = (elementId: string, items: unknown[]) => {
+    const paneId = workspacePaneId(elements, elementParents, elementId)
+    const picked = paneId ? regionSelection[paneId] : undefined
+    if (picked) return filterCollectionItemsBySelection(items, picked.id, picked.item)
+    if ((paneId || specKeepsCollectionVisible(spec)) && selectedIdSet) {
+      return filterCollectionItemsBySelection(
+        items,
+        state[ARENA_GENERATIVE_SELECTED_ID_KEY],
+        state[ARENA_GENERATIVE_SELECTED_KEY]
+      )
+    }
+    return items
+  }
 
   const boundPending = (statePath: string) => {
     if (suppressBoundSkeleton) return false
@@ -2452,6 +2440,22 @@ export function SpecRenderer({
     host.mergeState(hostStatePatchAtPath(state, statePath, next))
   }
 
+  const applyItemField = (
+    statePath: string,
+    source: readonly unknown[],
+    index: number,
+    field: string,
+    value: string
+  ) => {
+    if (!statePath) return
+    const target = source[index]
+    if (!target || typeof target !== 'object' || Array.isArray(target)) return
+    const next = source.map((item, itemIndex) =>
+      itemIndex === index ? { ...(item as Record<string, unknown>), [field]: value } : item
+    )
+    host.mergeState(hostStatePatchAtPath(state, statePath, next))
+  }
+
   /**
    * Chrome hoisted out of Section is rendered once at Page, then skipped when
    * the Section walks the same child id.
@@ -2542,25 +2546,6 @@ export function SpecRenderer({
         </Fragment>
       ))
 
-    const renderViewSwitchRow = (chromeIds: string[], placement: 'top' | 'left') => {
-      if (chromeIds.length === 0) return null
-      const only = chromeIds.length === 1 ? elements[chromeIds[0]] : undefined
-      if (only && (only.type === 'Stack' || only.type === 'Toolbar')) {
-        return renderChildNodes(chromeIds)
-      }
-      return (
-        <div
-          data-testid={GENERATIVE_APP_VIEW_SWITCH_TEST_ID}
-          className={cn(
-            'flex flex-wrap gap-2',
-            placement === 'left' ? 'flex-col items-stretch' : 'flex-row items-center'
-          )}
-        >
-          {renderChildNodes(chromeIds)}
-        </div>
-      )
-    }
-
     switch (element.type) {
       case 'Page': {
         const hasPageHeader = childIds.some((childId) => elements[childId]?.type === 'PageHeader')
@@ -2590,7 +2575,6 @@ export function SpecRenderer({
       }
       case 'Section': {
         if (!fieldIsVisible(props, visibilityValues)) return null
-        const partitioned = partitionViewSwitchChrome(childIds, elements, spec.root)
         return (
           <section
             className={cn(
@@ -2599,9 +2583,7 @@ export function SpecRenderer({
             )}
             style={styleFromProps(props)}
           >
-            {renderChildNodes(partitioned.leadIds)}
-            {renderViewSwitchRow(partitioned.chromeIds, 'top')}
-            {renderChildNodes(partitioned.bodyIds)}
+            {renderChildNodes(childIds)}
           </section>
         )
       }
@@ -2613,91 +2595,25 @@ export function SpecRenderer({
           gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
           ...styleFromProps(props),
         }
-        const stackClassName = cn(
-          'flex',
-          horizontal ? 'flex-row' : 'flex-col',
-          alignItemsClass(props.align, 'stretch'),
-          justify === 'center' && 'justify-center',
-          justify === 'between' && 'justify-between',
-          justify === 'end' && 'justify-end',
-          asBoolean(props.wrap) && 'flex-wrap'
-        )
-        /** Pure Chip rails keep authored direction (vertical left rail stays vertical). */
-        const chipRailOnly =
-          childIds.length > 0 &&
-          childIds.every((childId) => isViewSwitchChrome(elements, spec.root, childId))
-        if (chipRailOnly) {
-          return (
-            <div className={stackClassName} style={gapStyle}>
-              {renderChildNodes(childIds)}
-            </div>
-          )
-        }
-        const partitioned = partitionViewSwitchChrome(childIds, elements, spec.root)
-        const leftRail =
-          horizontal &&
-          partitioned.chromeIds.length > 0 &&
-          isAuthoredLeftRailViewSwitch(elements, partitioned.chromeIds)
-        /** Loose Chips beside content were a vertical left rail — hoist to a top row. */
-        if (horizontal && partitioned.chromeIds.length > 0 && !leftRail) {
-          return (
-            <div
-              className={cn(
-                'flex w-full min-w-0 flex-col',
-                alignItemsClass(props.align, 'stretch')
-              )}
-              style={gapStyle}
-            >
-              {renderChildNodes(partitioned.leadIds)}
-              {renderViewSwitchRow(partitioned.chromeIds, 'top')}
-              {partitioned.bodyIds.length > 0 ? (
-                <div
-                  className={cn(
-                    'flex min-w-0 flex-row',
-                    alignItemsClass(props.align, 'stretch'),
-                    justify === 'center' && 'justify-center',
-                    justify === 'between' && 'justify-between',
-                    justify === 'end' && 'justify-end',
-                    asBoolean(props.wrap) && 'flex-wrap'
-                  )}
-                  style={{
-                    gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
-                  }}
-                >
-                  {renderChildNodes(partitioned.bodyIds)}
-                </div>
-              ) : null}
-            </div>
-          )
-        }
         return (
-          <div className={stackClassName} style={gapStyle}>
-            {renderChildNodes(partitioned.leadIds)}
-            {renderViewSwitchRow(partitioned.chromeIds, leftRail ? 'left' : 'top')}
-            {renderChildNodes(partitioned.bodyIds)}
+          <div
+            className={cn(
+              'flex',
+              horizontal ? 'flex-row' : 'flex-col',
+              alignItemsClass(props.align, 'stretch'),
+              justify === 'center' && 'justify-center',
+              justify === 'between' && 'justify-between',
+              justify === 'end' && 'justify-end',
+              asBoolean(props.wrap) && 'flex-wrap'
+            )}
+            style={gapStyle}
+          >
+            {renderChildNodes(childIds)}
           </div>
         )
       }
       case 'Grid': {
         if (!fieldIsVisible(props, visibilityValues)) return null
-        const onlyChildId = singleVisibleLayoutChildId(elements, childIds, visibilityValues)
-        if (
-          onlyChildId &&
-          gridColumnCount(props) === '2' &&
-          !isRepeatCollectionRoot(elements, onlyChildId, visibilityValues)
-        ) {
-          return (
-            <div
-              className='grid w-full grid-cols-1'
-              style={{
-                gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
-                ...styleFromProps(props),
-              }}
-            >
-              {children}
-            </div>
-          )
-        }
         if (isEqualTwoColFormGrid(withinForm, props)) {
           return (
             <div
@@ -2730,15 +2646,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3062,16 +2972,11 @@ export function SpecRenderer({
         }
         const sourceCollection = rawCollection ?? proseTable?.records
         const discoveredCollection = sourceCollection
-          ? filterCollectionItems(sourceCollection, localDiscovery)
+          ? filterCollectionItems(sourceCollection, discoveryForElement(id))
           : undefined
-        const filteredCollection =
-          discoveredCollection && specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discoveredCollection,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discoveredCollection
+        const filteredCollection = discoveredCollection
+          ? applySelectionFilter(id, discoveredCollection)
+          : discoveredCollection
         const tableSort = tableSorts[id]
         const collection = filteredCollection
           ? sortCollectionItems(filteredCollection, tableSort)
@@ -3103,6 +3008,25 @@ export function SpecRenderer({
           Boolean(statePath) &&
           !collectionUsesApiPagination(statePath, actionHostKeys)
         const headerSortable = !headerSortDisabled
+        const selectRow = collectionOnSelect(id, statePath)
+        const rowActions =
+          childIds.length > 0
+            ? (item: unknown, index: number) => (
+                <div className='flex flex-wrap items-center gap-2'>
+                  {childIds.map((childId) => (
+                    <Fragment key={childId}>
+                      {renderNode(
+                        childId,
+                        { item, index },
+                        childWithinForm,
+                        nextFormActionId,
+                        childWithinCard
+                      )}
+                    </Fragment>
+                  ))}
+                </div>
+              )
+            : undefined
         if (collection && collection.length > 0) {
           const { visible, chrome } = pageCollection(id, collection, statePath, scope)
           return (
@@ -3126,6 +3050,8 @@ export function SpecRenderer({
                 onReorder={(from, to) =>
                   applyCollectionReorder(statePath, collection, visible, from, to)
                 }
+                onSelectRow={selectRow}
+                renderRowActions={rowActions}
               />
               {chrome}
             </div>
@@ -3143,10 +3069,18 @@ export function SpecRenderer({
               .map((row) => row.trim())
               .filter(Boolean)
               .map(splitTableRow),
-            localDiscovery
+            discoveryForElement(id)
           )
+          const panePick = regionSelection[workspacePaneId(elements, elementParents, id) ?? '']
           const selectedRows =
-            specKeepsCollectionVisible(spec) && selectedIdSet
+            panePick
+              ? filterStaticTableRowsBySelection(
+                  headers,
+                  discoveredRows,
+                  panePick.id,
+                  panePick.item
+                )
+              : specKeepsCollectionVisible(spec) && selectedIdSet
               ? filterStaticTableRowsBySelection(
                   headers,
                   discoveredRows,
@@ -3183,6 +3117,8 @@ export function SpecRenderer({
                 }
                 footerItems={records}
                 nowMs={nowMs}
+                onSelectRow={selectRow}
+                renderRowActions={rowActions}
               />
               {chrome}
             </div>
@@ -3203,15 +3139,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3234,7 +3164,7 @@ export function SpecRenderer({
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
             allowViewToggle={!view}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
           />
         )
       }
@@ -3243,15 +3173,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3270,7 +3194,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
           />
         )
       }
@@ -3279,15 +3203,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3307,7 +3225,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
           />
         )
       }
@@ -3316,15 +3234,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3343,7 +3255,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
           />
         )
       }
@@ -3352,15 +3264,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3380,7 +3286,7 @@ export function SpecRenderer({
             titleField={asString(props.titleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
           >
             {boundItems.length === 0 ? children : null}
           </GuiHostCarousel>
@@ -3391,15 +3297,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3419,7 +3319,23 @@ export function SpecRenderer({
             columns={asString(props.columns) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
+            onMoveCard={
+              statePath && !collectionUsesApiPagination(statePath, actionHostKeys)
+                ? (index, columnId, groupField) => {
+                    const source = rawItems ?? items
+                    const moved = items[index]
+                    const sourceIndex = source.indexOf(moved)
+                    applyItemField(
+                      statePath,
+                      source,
+                      sourceIndex >= 0 ? sourceIndex : index,
+                      groupField,
+                      columnId
+                    )
+                  }
+                : undefined
+            }
           />
         )
       }
@@ -3428,15 +3344,9 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           statePath &&
           boundPending(statePath) &&
@@ -3455,7 +3365,7 @@ export function SpecRenderer({
             subtitleField={asString(props.subtitleField) || undefined}
             emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
             busy={Boolean(statePath && boundPending(statePath))}
-            onSelectItem={collectionOnSelect(statePath)}
+            onSelectItem={collectionOnSelect(id, statePath)}
           />
         )
       }
@@ -3477,15 +3387,9 @@ export function SpecRenderer({
         if (!statePath) return null
         const stateValue = readStatePath(state, statePath, scope)
         const rawItems = collectionFromBoundValue(stateValue) ?? []
-        const discovered = filterCollectionItems(rawItems, localDiscovery)
+        const discovered = filterCollectionItems(rawItems, discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         const key = collectionPageKey(id, statePath, scope)
         const paged = paginateCollection(items, localPages[key] ?? 1)
         return (
@@ -3867,38 +3771,18 @@ export function SpecRenderer({
       }
       case 'Card': {
         if (!fieldIsVisible(props, visibilityValues)) return null
-        const mediaIds: string[] = []
-        const footerIds: string[] = []
-        const chromeIds: string[] = []
-        const metaIds: string[] = []
-        const bodyIds: string[] = []
-        for (const childId of childIds) {
-          const childType = elements[childId]?.type ?? ''
-          if (CARD_MEDIA_TYPES.has(childType) && mediaIds.length === 0) {
-            mediaIds.push(childId)
-          } else if (isViewSwitchChrome(elements, spec.root, childId)) {
-            chromeIds.push(childId)
-          } else if (CARD_FOOTER_TYPES.has(childType)) {
-            footerIds.push(childId)
-          } else if (CARD_META_TYPES.has(childType)) {
-            metaIds.push(childId)
-          } else {
-            bodyIds.push(childId)
-          }
-        }
         const title = asString(props.title)
         const subtitle = asString(props.subtitle)
         const description = asString(props.description)
         const footerText = asString(props.footerText)
-        const mediaType = mediaIds[0] ? elements[mediaIds[0]]?.type : undefined
-        const mediaBesideTitle = mediaType === 'Avatar'
         const heading =
-          title || subtitle || description || metaIds.length > 0 ? (
+          title || subtitle || description ? (
             <div className='flex min-w-0 flex-col gap-1'>
               {title ? (
                 <h2
+                  title={title}
                   className={cn(
-                    'line-clamp-2 min-w-0 break-all font-semibold text-[var(--gui-text,#2c2d33)]',
+                    'line-clamp-2 min-w-0 break-words font-semibold text-[var(--gui-text,#2c2d33)]',
                     scope ? CARD_TITLE_ITEM_CLASS : CARD_TITLE_FEATURED_CLASS
                   )}
                 >
@@ -3915,21 +3799,6 @@ export function SpecRenderer({
                   {description}
                 </p>
               ) : null}
-              {metaIds.length > 0 ? (
-                <div className='flex flex-wrap items-center gap-2 pt-1'>
-                  {metaIds.map((childId) => (
-                    <Fragment key={childId}>
-                      {renderNode(
-                        childId,
-                        scope,
-                        childWithinForm,
-                        nextFormActionId,
-                        childWithinCard
-                      )}
-                    </Fragment>
-                  ))}
-                </div>
-              ) : null}
             </div>
           ) : null
         return (
@@ -3939,56 +3808,18 @@ export function SpecRenderer({
             className={cn('flex w-full min-w-0 flex-col gap-4', cardSurfaceClass(props.variant))}
             style={styleFromProps(props)}
           >
-            {mediaBesideTitle ? (
-              <div className='flex min-w-0 items-start gap-3'>
-                {mediaIds.map((childId) => (
-                  <Fragment key={childId}>
-                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
-                  </Fragment>
-                ))}
-                {heading}
-              </div>
-            ) : (
-              <>
-                {mediaIds.map((childId) => (
-                  <Fragment key={childId}>
-                    {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
-                  </Fragment>
-                ))}
-                {heading}
-              </>
-            )}
-            {renderViewSwitchRow(chromeIds, 'top')}
-            {bodyIds.map((childId) => (
+            {heading}
+            {childIds.map((childId) => (
               <Fragment key={childId}>
                 {renderNode(childId, scope, childWithinForm, nextFormActionId, childWithinCard)}
               </Fragment>
             ))}
-            {footerText || footerIds.length > 0 ? (
+            {footerText ? (
               <div
                 data-testid='card-footer'
-                className='flex flex-wrap items-center justify-between gap-2 border-[var(--gui-border,#e2e3e5)] border-t pt-4'
+                className='border-[var(--gui-border,#e2e3e5)] border-t pt-4 text-[length:var(--gui-caption-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-caption-leading,20px)]'
               >
-                {footerText ? (
-                  <span className='text-[length:var(--gui-caption-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-caption-leading,20px)]'>
-                    {footerText}
-                  </span>
-                ) : (
-                  <span />
-                )}
-                <div className='flex flex-wrap items-center gap-2'>
-                  {footerIds.map((childId) => (
-                    <Fragment key={childId}>
-                      {renderNode(
-                        childId,
-                        scope,
-                        childWithinForm,
-                        nextFormActionId,
-                        childWithinCard
-                      )}
-                    </Fragment>
-                  ))}
-                </div>
+                {footerText}
               </div>
             ) : null}
           </div>
@@ -4761,8 +4592,14 @@ export function SpecRenderer({
         if (!fieldIsVisible(props, visibilityValues)) return null
         if (href) {
           return (
-            <a href={href} className={className} style={styleFromProps(props)} rel='noreferrer'>
-              {asString(props.label)}
+            <a
+              href={href}
+              className={className}
+              style={styleFromProps(props)}
+              rel='noreferrer'
+              title={asString(props.label) || undefined}
+            >
+              <RoleLabel label={asString(props.label)} />
             </a>
           )
         }
@@ -4776,6 +4613,7 @@ export function SpecRenderer({
             style={styleFromProps(props)}
             disabled={actionBusy}
             aria-busy={actionBusy || undefined}
+            title={asString(props.label) || asString(props.ariaLabel) || undefined}
             data-testid={
               hostExport === 'copy'
                 ? 'host-copy-markdown'
@@ -4854,7 +4692,7 @@ export function SpecRenderer({
             }}
           >
             <ActionBusyMark show={actionBusy} />
-            {asString(props.label)}
+            <RoleLabel label={asString(props.label)} />
           </button>
         )
       }
@@ -4862,10 +4700,11 @@ export function SpecRenderer({
         return (
           <button
             type='button'
-            className='font-medium text-[length:var(--gui-body-size,16px)] text-[var(--gui-brand,#1a73e8)] underline-offset-2 hover:text-[var(--gui-brand-hover,#155cba)] hover:underline'
+            className='inline-flex items-center gap-1 font-medium text-[length:var(--gui-body-size,16px)] text-[var(--gui-brand,#1a73e8)] underline-offset-2 hover:text-[var(--gui-brand-hover,#155cba)] hover:underline'
+            title={asString(props.label) || undefined}
             onClick={() => requestNavigate(asString(props.to))}
           >
-            {asString(props.label)}
+            <RoleLabel label={asString(props.label)} />
           </button>
         )
       case 'Link':
@@ -4899,15 +4738,9 @@ export function SpecRenderer({
         if (!fieldIsVisible(props, visibilityValues)) return null
         const stateValue = readStatePath(state, statePath, scope)
         const rawItems = collectionFromBoundValue(stateValue)
-        const discovered = filterCollectionItems(rawItems ?? [], localDiscovery)
+        const discovered = filterCollectionItems(rawItems ?? [], discoveryForElement(id))
         const items =
-          specKeepsCollectionVisible(spec) && selectedIdSet
-            ? filterCollectionItemsBySelection(
-                discovered,
-                state[ARENA_GENERATIVE_SELECTED_ID_KEY],
-                state[ARENA_GENERATIVE_SELECTED_KEY]
-              )
-            : discovered
+          applySelectionFilter(id, discovered)
         if (
           boundPending(statePath) &&
           isEmptyStateValue(stateValue) &&
@@ -4928,7 +4761,7 @@ export function SpecRenderer({
               emptyText={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)}
               busy={boundPending(statePath)}
               ordered={asBoolean(props.ordered)}
-              onSelectItem={collectionOnSelect(statePath)}
+              onSelectItem={collectionOnSelect(id, statePath)}
             />
             {chrome}
           </>
@@ -4950,6 +4783,14 @@ export function SpecRenderer({
       value={uxPlan?.loadingChrome === 'spinner' ? 'spinner' : 'skeleton'}
     >
       {renderNode(spec.root)}
+      {unboundCollections(spec, state).map((entry) => (
+        <section key={entry.key} data-testid='unbound-collection' className='mx-auto w-full max-w-3xl px-4 py-4'>
+          <GuiHostCollectionList
+            items={entry.items}
+            emptyText='No rows'
+          />
+        </section>
+      ))}
     </LoadingChromeContext.Provider>
   )
 }

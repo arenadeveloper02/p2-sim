@@ -13,6 +13,7 @@ import {
   proseAliasKeysFromPlans,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import { resolvePageLanguage } from '@/lib/arena-generative-ui/visual-language'
 import { mergePageLoadValues } from '@/lib/arena-generative-ui/form-fields'
 import {
   buildPreviewEditInstructions,
@@ -286,6 +287,12 @@ export function GenerativeAppPreviewHost({
             setThrowByKey((current) => ({ ...current, [renderKey]: message }))
           }}
         >
+          <div
+            data-gui-language={resolvePageLanguage(
+              compiledPages?.[pagePath]?.spec ?? page.spec,
+              liveTheme?.language
+            )}
+          >
           <SpecRenderer
             spec={compiledPages?.[pagePath]?.spec ?? page.spec}
             state={state}
@@ -319,6 +326,7 @@ export function GenerativeAppPreviewHost({
             }}
             onCancelPending={runtime.cancelPending}
           />
+          </div>
         </SpecRenderErrorBoundary>
         {runtime.toast ? (
           <ActionSuccessToast message={runtime.toast} onDone={runtime.clearToast} />
