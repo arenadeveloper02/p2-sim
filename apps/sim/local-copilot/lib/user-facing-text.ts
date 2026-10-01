@@ -231,7 +231,7 @@ const BRIDGING_NARRATION_PATTERN =
  * Treat as bridging so the turn does not settle on intent-only prose.
  */
 const MUTATION_INTENT_NARRATION_PATTERN =
-  /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)?(?:(?:i(?:'| a)?m |i(?:'| wi)?ll |let me )+)?(?:now\s+)?(?:applying|editing|updating|fixing|redeploying|deploying|wiring|patching|saving)\b[\s\S]{0,220}$/i
+  /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)?(?:(?:i(?:'| a)?m |i(?:'| wi)?ll |let me )+)?(?:now\s+)?(?:applying|editing|updating|fixing|redeploying|deploying|wiring|patching|saving|assembling|creating|ingesting|writing)\b[\s\S]{0,220}$/i
 
 const POLITE_BRIDGING_PREFIX =
   /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)/i

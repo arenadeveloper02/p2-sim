@@ -141,7 +141,17 @@ const AUTH_TOOLS = [
   'list_integration_tools',
 ] as const
 
-const KNOWLEDGE_TOOLS = ['knowledge_base', 'materialize_file'] as const
+const KNOWLEDGE_TOOLS = [
+  'knowledge_base',
+  'materialize_file',
+  // KB create/ingest needs workspace docs first — without these, "create a KB with
+  // this content" can only call knowledge_base and never write the source files.
+  'create_file',
+  'create_file_folder',
+  'glob',
+  'read',
+  'list_file_folders',
+] as const
 const TABLE_TOOLS = ['user_table', 'enrichment_run', 'materialize_file'] as const
 
 const SCHEDULED_TASK_TOOLS = [
@@ -328,7 +338,7 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Build, edit, and run workflows. Use get_workflow_data / get_workflow_context or get_workflow_run_options when inspecting an existing workflow; create_workflow when the user wants a new one. When adding blocks, use current types from get_blocks_metadata (never sunset/legacy types like gmail or router). For Agent/Router model, use a current recommended id or omit to keep the default (gpt-5) — never gpt-4o or other sunset/legacy models.'
+      return 'Build, edit, and run workflows. Use get_workflow_data / get_workflow_context or get_workflow_run_options when inspecting an existing workflow; create_workflow when the user wants a new one. When adding blocks, use current types from get_blocks_metadata (never sunset/legacy types like gmail, router, or image_generator — use gmail_v2, router_v2, image_generator_v2). When the user asks to add tools TO an Agent (Image Generator, Chart Generator, Exa, etc.), edit that Agent\'s tools array — do not add those as canvas blocks. For Agent/Router model, use a current recommended id or omit to keep the default (gpt-5) — never gpt-4o or other sunset/legacy models.'
     case 'run':
       return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
@@ -336,7 +346,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Query, create, and ingest knowledge bases (knowledge_base get / list / query / create / add_file).'
+      return 'Query, create, and ingest knowledge bases (knowledge_base get / list / query / create / add_file). To seed a new KB with content: create_file markdown/text under files/ (full body in content), then knowledge_base operation=create, then add_file with those VFS paths. Do not finish after research alone — write the files and ingest them.'
     case 'table':
       return 'Create and manage tables, rows, schemas, and enrichments (user_table).'
     case 'scheduled_task':

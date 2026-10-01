@@ -57,6 +57,9 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     patterns: [
       /\b(file|folder|vfs|markdown|html|htm|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
       /\b(create|make|generate|build|write)\s+(an?\s+)?(ppt|pptx|powerpoint|presentation|slides?|deck|docx?|pdf|document)\b/i,
+      // Seed-KB asks ("create a knowledgebase with this data") need file writes too.
+      /\b(knowledge\s*base|kb)\b.*\b(data|content|documents?|files?|recipes?|laws?)\b/i,
+      /\b(data|content|documents?|files?)\b.*\b(knowledge\s*base|kb)\b/i,
     ],
   },
   {

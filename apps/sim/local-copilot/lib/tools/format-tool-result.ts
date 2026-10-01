@@ -559,7 +559,7 @@ export function formatToolResultForLlm(
           ...record,
           needsFollowUpWrite: true,
           followUpHint:
-            'File is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath, then edit_content with the full body.',
+            'Text/markdown file is empty — call create_file again on the same path with the full body in `content` (do not use the office workspace_file → edit_content pipeline for .md/.txt/.html/.json/.csv).',
         }
       }
     } else {
@@ -658,10 +658,14 @@ export function formatToolResultForLlm(
     formatted = next
   } else if (toolName === 'get_blocks_metadata') {
     const record = asRecord(result)
+    const metadata = asRecord(record.metadata)
+    const metadataKeys = Object.keys(metadata)
     formatted = {
       ...record,
       followUpHint:
-        'If you just created a workflow, call edit_workflow now to add blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+        metadataKeys.length === 0
+          ? 'No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent\'s tools array — do not add them as canvas blocks.'
+          : 'If you just created a workflow, call edit_workflow now to add blocks. To attach tools to an existing Agent, edit that Agent\'s tools array (type image_generator_v2 / chart_generator / exa, …) — do not add those as canvas blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
     }
   } else if (toolName === 'edit_content') {
     const record = asRecord(result)
@@ -757,8 +761,8 @@ function detectMandatoryFollowUpFromRecord(
       id: 'create_file:write',
       hint:
         hint ??
-        'File shell is empty. Write content via create_file with content or workspace_file then edit_content.',
-      resolveWith: ['workspace_file', 'edit_content'],
+        'Text/markdown file is empty. Call create_file again with the full body in content.',
+      resolveWith: ['create_file'],
     }
   }
 

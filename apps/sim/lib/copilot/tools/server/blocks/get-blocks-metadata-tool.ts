@@ -35,6 +35,40 @@ import { AuthMode, type BlockConfig, type SubBlockConfig } from '@/blocks/types'
 import { isHiddenUnder, overlayVisibility } from '@/blocks/visibility/context'
 
 /**
+ * Resolves a requested block id to the registry entry Copilot may write.
+ *
+ * Sunset/legacy ids (e.g. `image_generator`) stay in the registry with
+ * `hideFromToolbar` so existing workflows keep loading, but a bare metadata
+ * lookup used to return nothing — models then concluded the type was invalid
+ * and stalled. Prefer `sunset.replacedBy`, then the access-control successor map.
+ */
+function resolveCopilotBlockLookup(blockId: string): {
+  lookupId: string
+  redirectedFrom?: string
+} {
+  const direct = getBlock(blockId)
+  if (direct?.hideFromToolbar && typeof direct.sunset?.replacedBy === 'string') {
+    const successorId = direct.sunset.replacedBy
+    const successor = getBlock(successorId)
+    if (successor && !successor.hideFromToolbar) {
+      return { lookupId: successorId, redirectedFrom: blockId }
+    }
+  }
+
+  if (!direct) {
+    const successorId = resolveAccessControlBlockType(blockId)
+    if (successorId !== blockId) {
+      const successor = getBlock(successorId)
+      if (successor && !successor.hideFromToolbar) {
+        return { lookupId: successorId, redirectedFrom: blockId }
+      }
+    }
+  }
+
+  return { lookupId: blockId }
+}
+
+/**
  * The block shape this tool reports, projected by the shared catalog projection
  * (`@/lib/catalog/projection`) and then reshaped for the agent below.
  *
@@ -206,7 +240,18 @@ export const getBlocksMetadataServerTool: BaseServerTool<
     const visibility = overlayVisibility()
 
     const result: Record<string, CopilotBlockMetadata> = {}
-    for (const blockId of blockIds || []) {
+    /** Requested id → canonical successor when a sunset/legacy id was remapped. */
+    const legacyRedirects = new Map<string, string>()
+    for (const requestedBlockId of blockIds || []) {
+      const { lookupId: blockId, redirectedFrom } = resolveCopilotBlockLookup(requestedBlockId)
+      if (redirectedFrom) {
+        legacyRedirects.set(requestedBlockId, blockId)
+        logger.debug('Redirected sunset/legacy block id to successor', {
+          requestedBlockId,
+          blockId,
+        })
+      }
+
       const specialBlock = SPECIAL_BLOCKS_METADATA[blockId]
       if (!isIntegrationDeploymentAvailableForVisibility(blockId, visibility)) {
         logger.debug('Block unavailable for this deployment', { blockId })
@@ -316,12 +361,24 @@ export const getBlocksMetadataServerTool: BaseServerTool<
         })
       }
 
-      result[blockId] = metadata
+      // Key under the requested id (so the model finds what it asked for) and
+      // the canonical id when they differ (so look-before-write / later edits
+      // that already use the successor still hit the cache).
+      result[requestedBlockId] = metadata
+      if (blockId !== requestedBlockId) {
+        result[blockId] = metadata
+      }
     }
 
     const transformedResult: Record<string, any> = {}
     for (const [blockId, metadata] of Object.entries(result)) {
-      transformedResult[blockId] = transformBlockMetadata(metadata)
+      const transformed = transformBlockMetadata(metadata)
+      const successorId = legacyRedirects.get(blockId)
+      if (successorId) {
+        transformed.legacyBlockType = blockId
+        transformed.hint = `"${blockId}" is sunset/legacy — use blockType "${successorId}" for canvas adds and Agent tools entries.`
+      }
+      transformedResult[blockId] = transformed
     }
 
     return GetBlocksMetadataResultSchema.parse({ metadata: transformedResult })

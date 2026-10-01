@@ -795,6 +795,7 @@ async function executeLocalCopilotToolInner(
         if (cached !== undefined) metadata[id] = cached
       }
 
+      const unresolvedIds = normalizedIds.filter((id) => !(id in metadata))
       return {
         toolName,
         success: metadataResult.success,
@@ -802,7 +803,14 @@ async function executeLocalCopilotToolInner(
           ? {
               metadata,
               ...(missingIds.length < normalizedIds.length ? { partiallyCached: true } : {}),
-              hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types.',
+              ...(unresolvedIds.length > 0
+                ? {
+                    unresolvedBlockIds: unresolvedIds,
+                    hint: `No metadata for [${unresolvedIds.join(', ')}]. Those may be sunset/legacy ids — retry with current successors (e.g. image_generator → image_generator_v2). To attach Image/Chart/Exa to an Agent, edit that Agent's tools array — do not add them as canvas blocks.`,
+                  }
+                : {
+                    hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types. To attach tools to an Agent, edit Agent.tools — do not add tool types as canvas blocks.',
+                  }),
             }
           : (metadataResult.output ??
             (metadataResult.error ? { error: metadataResult.error } : {})),

@@ -830,9 +830,34 @@ export async function* runLocalCopilotAgent(
 
     const { findings, results } = parallelNext.value
     if (findings.trim()) {
+      const wroteFiles = results.some((result) =>
+        (result.mutationOutcomes ?? []).some(
+          (outcome) =>
+            outcome.success &&
+            (outcome.toolName === 'create_file' ||
+              outcome.toolName === 'edit_content' ||
+              outcome.toolName === 'workspace_file')
+        )
+      )
+      const wroteWorkflows = results.some((result) =>
+        (result.mutationOutcomes ?? []).some(
+          (outcome) => outcome.success && outcome.toolName === 'create_workflow'
+        )
+      )
+      const writeGuard = [
+        wroteWorkflows
+          ? 'Do NOT call create_workflow again unless a specialist failed.'
+          : null,
+        wroteFiles
+          ? 'Do NOT call create_file again unless a specialist failed.'
+          : 'Research/lookup findings above do not create workspace files — if the user still needs documents or a seeded knowledge base, call create_file (then knowledge_base add_file as needed).',
+      ]
+        .filter(Boolean)
+        .join(' ')
+
       messages.splice(specialistHintInsertAt, 0, {
         role: 'system',
-        content: `Parallel specialist findings — these writes already happened. Do NOT call create_workflow or create_file again unless a specialist failed. Synthesize the outcome for the user using the ids below:\n${findings}`,
+        content: `Parallel specialist findings. ${writeGuard} Synthesize the outcome for the user using the ids below:\n${findings}`,
       })
     }
     logger.info('Arena Copilot parallel subagents injected', {

@@ -259,7 +259,11 @@ async function executeCopilotServerTool(
     result.resources && result.resources.length > 0
       ? result.resources
       : result.success
-        ? extractResourcesFromToolResult(toolName, args, output)
+        ? extractResourcesFromToolResult(
+            toolName === 'create_file' ? 'create_empty_file' : toolName,
+            args,
+            output
+          )
         : []
 
   return {
