@@ -127,20 +127,23 @@ ENV BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
 # Docker builders are memory-constrained. BuildKit's sandbox blocks swapon()
 # without the security.insecure entitlement, which many CI setups don't (and
 # shouldn't have to) grant. Cap the heap via BUILD_MAX_OLD_SPACE_MB —
-# package.json's `build` script reads this directly (defaults to 12288 if unset)
+# package.json's `build` script reads this directly (defaults to 15360 if unset)
 # and passes it to `next build` as NODE_OPTIONS itself, so set it here rather
 # than NODE_OPTIONS directly (an ENV NODE_OPTIONS here would just get overridden
 # by that script).
 # version-6-main keeps 3072 because it compiles with Turbopack. This branch
 # must use webpack (Turbopack 16.2.12 chunk-name collision). Webpack +
 # productionBrowserSourceMaps OOM'd at 3072 and again at 8192 (~8026 MB used).
-# Docker builds now skip browser source maps and pin webpack parallelism to 1;
-# 12288 leaves headroom on GH Actions ubuntu-latest (16GB + host swap).
-# Override: docker build --build-arg BUILD_MAX_OLD_SPACE_MB=8192 ...
+# Post version-6.1-main merge the webpack graph still OOM'd at 12288 (~10 GB used
+# against an ~11 GB V8 ceiling). Docker builds skip browser source maps and pin
+# webpack parallelism to 1; 15360 fits GH Actions ubuntu-latest (16 GB + 20 GB
+# host swap). Override: docker build --build-arg BUILD_MAX_OLD_SPACE_MB=12288 ...
 # next.config also sets experimental.cpus=1 and staticGenerationMaxConcurrency=1
 # under DOCKER_BUILD.
-ARG BUILD_MAX_OLD_SPACE_MB=12288
+ARG BUILD_MAX_OLD_SPACE_MB=15360
 ENV BUILD_MAX_OLD_SPACE_MB=${BUILD_MAX_OLD_SPACE_MB}
+# Keep turbo from overlapping package builds while next build holds the heap.
+ENV TURBO_CONCURRENCY=1
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \

@@ -12,6 +12,14 @@ import {
 
 const require = createRequire(import.meta.url)
 
+/**
+ * Docker image builds set `DOCKER_BUILD=1`. Prefer `process.env` so the flag is
+ * observed even if t3-env's typed `env.DOCKER_BUILD` is unset under
+ * `skipValidation` — without it, browser source maps and multi-worker static
+ * generation come back and the webpack heap OOMs in GHCR.
+ */
+const isDockerBuild = isTruthy(process.env.DOCKER_BUILD) || isTruthy(env.DOCKER_BUILD)
+
 /** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
 const monorepoRoot = path.resolve(__dirname, '../..')
 
@@ -123,7 +131,7 @@ const nextConfig: NextConfig = {
   // no additional exposure versus Next's default (disabled to avoid leaking
   // source on the client). Off under DOCKER_BUILD: webpack source-map
   // generation is what pushed the heap past 8GB (V8 OOM at 8192).
-  productionBrowserSourceMaps: !isTruthy(env.DOCKER_BUILD),
+  productionBrowserSourceMaps: !isDockerBuild,
   /**
    * Production `next build` uses webpack (`package.json` `build` passes `--webpack`).
    * Next 16.2.12 Turbopack truncates chunk idents to 7 base38 chars; this branch's
@@ -235,7 +243,7 @@ const nextConfig: NextConfig = {
         tls: false,
       }
     }
-    if (isTruthy(env.DOCKER_BUILD)) {
+    if (isDockerBuild) {
       config.parallelism = 1
     }
     return config
@@ -312,9 +320,9 @@ const nextConfig: NextConfig = {
     ],
   },
   typescript: {
-    ignoreBuildErrors: isTruthy(env.DOCKER_BUILD),
+    ignoreBuildErrors: isDockerBuild,
   },
-  output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
+  output: isDockerBuild ? 'standalone' : undefined,
   serverExternalPackages: [
     '@xyflow/react',
     'pdfjs-dist',
@@ -466,7 +474,7 @@ const nextConfig: NextConfig = {
      * pages. Cap both knobs when DOCKER_BUILD is set. Do not also set
      * memoryBasedWorkersCount — that path enforces a minimum of 4 workers.
      */
-    ...(isTruthy(env.DOCKER_BUILD)
+    ...(isDockerBuild
       ? {
           cpus: 1,
           staticGenerationMaxConcurrency: 1,

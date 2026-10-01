@@ -227,6 +227,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
+            BUILD_MAX_OLD_SPACE_MB=15360
           provenance: false
           sbom: false
 
@@ -817,6 +818,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-arm64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
+            BUILD_MAX_OLD_SPACE_MB=15360
           provenance: false
           sbom: false
 
