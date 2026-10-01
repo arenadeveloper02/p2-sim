@@ -1,4 +1,4 @@
-import { formatChartTimestamp } from '@sim/emcn'
+import { formatChartTimestamp } from './chart-format'
 
 interface ChartDataTableProps {
   label: string

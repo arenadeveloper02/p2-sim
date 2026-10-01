@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { cn } from '@sim/emcn'
+import { cn } from '../../lib/cn'
 
 export const PAGE_CONTENT_WIDTH = 'mx-auto w-full max-w-[1728px]'
 export const PAGE_GUTTER = 'px-10 max-md:px-7 max-lg:px-8 max-xl:px-9'

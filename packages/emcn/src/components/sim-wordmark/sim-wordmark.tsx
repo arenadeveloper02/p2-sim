@@ -1,4 +1,4 @@
-import { WORDMARK_PATHS, WORDMARK_VIEW_BOX } from '@sim/emcn'
+import { WORDMARK_PATHS, WORDMARK_VIEW_BOX } from './paths'
 import Image from 'next/image'
 
 const WORDMARK_FILLS = {
