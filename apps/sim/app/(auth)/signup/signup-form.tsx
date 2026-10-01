@@ -5,7 +5,9 @@ import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 import { createLogger } from '@sim/logger'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
+import { trackGoogleEvent } from '@/lib/analytics/google'
 import { client, useSession } from '@/lib/auth/auth-client'
+import { useTrackingConsent } from '@/lib/consent/tracking-consent'
 import { getEnv, isFalsy } from '@/lib/core/config/env'
 import { isSsoEnabled } from '@/lib/core/config/env-flags'
 import { validateCallbackUrl } from '@/lib/core/security/input-validation'
@@ -91,7 +93,6 @@ interface SignupFormProps {
   githubAvailable: boolean
   googleAvailable: boolean
   microsoftAvailable: boolean
-  isProduction: boolean
   emailSignupEnabled: boolean
   /** Server-derived: verification is enabled AND a mail provider is configured. */
   emailVerificationEnabled: boolean
@@ -101,7 +102,6 @@ function SignupFormContent({
   githubAvailable,
   googleAvailable,
   microsoftAvailable,
-  isProduction,
   emailSignupEnabled,
   emailVerificationEnabled,
 }: SignupFormProps) {
@@ -109,6 +109,7 @@ function SignupFormContent({
   const searchParams = useSearchParams()
   const { refetch: refetchSession } = useSession()
   const posthog = usePostHog()
+  const { measurement } = useTrackingConsent()
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
@@ -346,6 +347,8 @@ function SignupFormContent({
         return
       }
 
+      if (measurement) trackGoogleEvent('sign_up', { method: 'email' })
+
       try {
         await refetchSession()
         logger.info('Session refreshed after successful signup')
@@ -369,12 +372,10 @@ function SignupFormContent({
 
       if (destination.kind === 'verify') {
         router.push(VERIFY_FROM_SIGNUP_ROUTE)
-      } else if (destination.kind === 'redirect') {
-        // Full navigation, matching the verify hop: the destination (invite, CLI
-        // handoff) is server-rendered and must see the fresh session cookie.
-        window.location.href = destination.url
       } else {
-        router.push(DEFAULT_POST_AUTH_ROUTE)
+        /** Match login/verification: refresh session-bound shells and their theme default. */
+        window.location.href =
+          destination.kind === 'redirect' ? destination.url : DEFAULT_POST_AUTH_ROUTE
       }
     } catch (error) {
       logger.error('Signup error:', error)
@@ -405,7 +406,9 @@ function SignupFormContent({
     <div className='space-y-6'>
       <AuthHeader title='Create an account' description='Create an account or log in' />
 
-      {hasOnlySSO && <SSOLoginButton callbackURL={redirectUrl || '/workspace'} variant='primary' />}
+      {hasOnlySSO && (
+        <SSOLoginButton callbackURL={redirectUrl || DEFAULT_POST_AUTH_ROUTE} variant='primary' />
+      )}
 
       {emailEnabled && (
         <form onSubmit={onSubmit} className='space-y-6'>
@@ -483,11 +486,13 @@ function SignupFormContent({
           githubAvailable={githubAvailable}
           googleAvailable={googleAvailable}
           microsoftAvailable={microsoftAvailable}
-          callbackURL={redirectUrl || '/workspace'}
-          isProduction={isProduction}
+          callbackURL={redirectUrl || DEFAULT_POST_AUTH_ROUTE}
         >
           {ssoEnabled && !hasOnlySSO && (
-            <SSOLoginButton callbackURL={redirectUrl || '/workspace'} variant='outline' />
+            <SSOLoginButton
+              callbackURL={redirectUrl || DEFAULT_POST_AUTH_ROUTE}
+              variant='outline'
+            />
           )}
         </SocialLoginButtons>
       )}
@@ -507,7 +512,6 @@ export default function SignupPage({
   githubAvailable,
   googleAvailable,
   microsoftAvailable,
-  isProduction,
   emailSignupEnabled,
   emailVerificationEnabled,
 }: SignupFormProps) {
@@ -519,7 +523,6 @@ export default function SignupPage({
         githubAvailable={githubAvailable}
         googleAvailable={googleAvailable}
         microsoftAvailable={microsoftAvailable}
-        isProduction={isProduction}
         emailSignupEnabled={emailSignupEnabled}
         emailVerificationEnabled={emailVerificationEnabled}
       />

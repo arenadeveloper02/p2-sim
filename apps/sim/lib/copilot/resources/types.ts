@@ -20,6 +20,20 @@ export interface MothershipResource {
   id: string
   title: string
   path?: string
+  /** Saved table view to open pinned (type "table" only). */
+  viewId?: string
+  /**
+   * The run this log row records (type "log" only). Distinct from `id`, which
+   * is the log row's own key: the tab loads by row id, while chat context and
+   * the logs deep-link address the run itself.
+   */
+  executionId?: string
+}
+
+/** A resource upsert may explicitly clear metadata that omission preserves. */
+export interface MothershipResourceUpdate extends MothershipResource {
+  /** Removes a table's saved-view pin instead of preserving it. */
+  clearViewId?: true
 }
 
 /**
@@ -72,8 +86,11 @@ const RESOURCE_POLICY: Record<MothershipResourceType, ResourcePolicy> = {
   integration: { persisted: true },
   // A synthetic panel with no addressable entity behind it to reopen.
   generic: { persisted: false },
-  browser: { persisted: true, desktopOnly: true },
-  terminal: { persisted: true, desktopOnly: true },
+  // One tab per live desktop page or shell, keyed by the native id. The
+  // desktop app owns those lists and restores them itself, so the chat row
+  // never stores these; they are re-derived from the live lists on open.
+  browser: { persisted: false, desktopOnly: true },
+  terminal: { persisted: false, desktopOnly: true },
 }
 
 /**
@@ -103,39 +120,6 @@ export function isEphemeralResource(resource: MothershipResource): boolean {
 }
 
 /**
- * Singleton id for the live browser-session panel, which hosts the desktop
- * app's natively embedded browser view. Only this metadata is stored with the
- * chat: reopening restores the tab, while the page and browser profile stay
- * owned by the desktop app.
- */
-export const BROWSER_SESSION_RESOURCE_ID = 'browser-session'
-
-/**
- * Singleton id for the live terminal panel. As with the browser, only the
- * metadata is stored — reopening the chat brings the panel back with a fresh
- * shell, since the pty and its scrollback belong to the desktop app and do not
- * outlive it.
- */
-export const TERMINAL_SESSION_RESOURCE_ID = 'terminal-session'
-
-/**
- * Collapses page/shell-shaped metadata onto the one top-level desktop panel
- * each chat can restore. Browser pages and terminal tabs are inner tabs, not
- * independently addressable Mothership resources.
- */
-export function canonicalizeDesktopSessionResource(
-  resource: MothershipResource
-): MothershipResource {
-  if (resource.type === 'browser') {
-    return { type: 'browser', id: BROWSER_SESSION_RESOURCE_ID, title: 'Browser' }
-  }
-  if (resource.type === 'terminal') {
-    return { type: 'terminal', id: TERMINAL_SESSION_RESOURCE_ID, title: 'Terminal' }
-  }
-  return resource
-}
-
-/**
  * Whether an id value names something the app can act on.
  *
  * This is the definition every layer defers to, so they cannot disagree about
@@ -160,38 +144,61 @@ export function isAddressableResource(resource: MothershipResource): boolean {
 }
 
 /**
- * Canonicalizes and deduplicates the singleton desktop panels in display order.
- * Module-private: callers want {@link sanitizeChatResources}, which also drops
- * unaddressable resources.
+ * Drops browser and terminal rows: older clients stored the desktop panels on
+ * the chat, but their live tabs are derived from the desktop app rather than
+ * the chat row. Module-private: callers want {@link sanitizeChatResources},
+ * which also drops unaddressable resources.
  */
-function canonicalizeDesktopSessionResources(
+function withoutDesktopSessionResources(
   resources: readonly MothershipResource[]
 ): MothershipResource[] {
-  const seenDesktopTypes = new Set<'browser' | 'terminal'>()
-  const canonical: MothershipResource[] = []
-
-  for (const resource of resources) {
-    if (resource.type === 'browser' || resource.type === 'terminal') {
-      if (seenDesktopTypes.has(resource.type)) continue
-      seenDesktopTypes.add(resource.type)
-    }
-    canonical.push(canonicalizeDesktopSessionResource(resource))
-  }
-
-  return canonical
+  return resources.filter((resource) => !RESOURCE_POLICY[resource.type]?.desktopOnly)
 }
 
 /**
- * The canonical form of a chat's resource list: singleton desktop panels
- * collapsed, unaddressable resources dropped. Every path that reads or writes
- * stored resources goes through this, which is what heals chats that already
- * hold one. Canonicalization runs first, so the browser and terminal panels —
- * which are given their ids there — are never dropped for arriving without one.
+ * The canonical form of a chat's resource list: legacy desktop panel rows and
+ * unaddressable resources dropped. Every path that reads or writes stored
+ * resources goes through this, which is what heals chats that already hold
+ * one.
  */
 export function sanitizeChatResources(
   resources: readonly MothershipResource[]
 ): MothershipResource[] {
-  return canonicalizeDesktopSessionResources(resources).filter(isAddressableResource)
+  return withoutDesktopSessionResources(resources).filter(isAddressableResource)
+}
+
+/**
+ * Applies a client-supplied order to the canonical stored entries. Reordering
+ * carries identity only: metadata echoed by a stale tab must never overwrite a
+ * newer pin, path, title, or execution id already persisted on the chat.
+ */
+export function reorderStoredChatResources(
+  storedResources: readonly MothershipResource[],
+  requestedOrder: readonly MothershipResource[]
+): MothershipResource[] | null {
+  const stored = sanitizeChatResources(storedResources)
+  const requested = sanitizeChatResources(requestedOrder)
+
+  // Compared as key SETS, not lengths: a chat that already holds a duplicated
+  // row (nothing writes one today, but stored data predates the merge-by-key
+  // writers) sends one fewer entry from the deduplicated client. Matching on
+  // sets keeps that reorder valid and collapses the duplicate on write, where
+  // a length check would reject every reorder for that chat forever.
+  const storedByKey = new Map(
+    stored.map((resource) => [`${resource.type}:${resource.id}`, resource])
+  )
+  const requestedKeys = Array.from(
+    new Set(requested.map((resource) => `${resource.type}:${resource.id}`))
+  )
+  if (requestedKeys.length !== storedByKey.size) return null
+
+  const reordered: MothershipResource[] = []
+  for (const key of requestedKeys) {
+    const resource = storedByKey.get(key)
+    if (!resource) return null
+    reordered.push(resource)
+  }
+  return reordered
 }
 
 /** Placeholder resource titles that a more specific title may overwrite during dedup. */
@@ -203,6 +210,78 @@ export const GENERIC_RESOURCE_TITLES = new Set<string>([
   'Folder',
   'Log',
 ])
+
+/**
+ * Every field {@link mergeChatResource} carries over from the newcomer. `type`
+ * and `id` identify the entry and can never differ; `title` has its own
+ * placeholder rule. Declared once so a field added to {@link MothershipResource}
+ * fails to compile here rather than being silently dropped from both the merge
+ * and its no-op check.
+ */
+const MERGED_FIELDS = {
+  title: true,
+  path: true,
+  viewId: true,
+  executionId: true,
+} as const satisfies Record<Exclude<keyof MothershipResource, 'type' | 'id'>, true>
+
+const MERGED_FIELD_NAMES = Object.keys(MERGED_FIELDS) as (keyof typeof MERGED_FIELDS)[]
+
+/**
+ * Folds a re-added resource into the stored entry with the same type+id. The
+ * stored title wins unless it was a placeholder. Every other field the
+ * newcomer defines replaces the stored one — a file's `path`, a log's
+ * `executionId`, a table's saved-view pin (the tab reopens on the view the
+ * agent touched last) — while a field the newcomer omits is kept, so an
+ * unrelated row edit never unpins a table. Returns `prev` itself when nothing
+ * changes, so callers can skip a no-op write.
+ */
+export function mergeChatResource(
+  prev: MothershipResource | undefined,
+  next: MothershipResourceUpdate
+): MothershipResource {
+  if (!prev) {
+    // Copied, never aliased: the result lands in React state, the query cache
+    // and the pending-write queue at once, and `next` is the caller's object.
+    const { clearViewId: _clearViewId, ...resource } = next
+    return resource
+  }
+  const { viewId: _previousViewId, ...prevWithoutViewId } = prev
+  const merged: MothershipResource = {
+    ...(next.clearViewId === true ? prevWithoutViewId : prev),
+    ...(next.path !== undefined ? { path: next.path } : {}),
+    ...(next.clearViewId !== true && next.viewId !== undefined ? { viewId: next.viewId } : {}),
+    ...(next.executionId !== undefined ? { executionId: next.executionId } : {}),
+    title:
+      GENERIC_RESOURCE_TITLES.has(prev.title) && !GENERIC_RESOURCE_TITLES.has(next.title)
+        ? next.title
+        : prev.title,
+  }
+  const unchanged = MERGED_FIELD_NAMES.every((field) => merged[field] === prev[field])
+  return unchanged ? prev : merged
+}
+
+/**
+ * Coalesces durable updates that have not all reached the server yet. Unlike a
+ * stored resource, the pending value must retain an explicit pin-clear until a
+ * write succeeds; a later row edit that omits `viewId` must not cancel it.
+ */
+export function mergePendingChatResourceUpdate(
+  prev: MothershipResourceUpdate | undefined,
+  next: MothershipResourceUpdate
+): MothershipResourceUpdate {
+  let previousClearViewId: true | undefined
+  let previousResource: MothershipResource | undefined
+  if (prev) {
+    const { clearViewId, ...resource } = prev
+    previousClearViewId = clearViewId
+    previousResource = resource
+  }
+  const merged = mergeChatResource(previousResource, next)
+  const shouldClearViewId =
+    next.viewId === undefined && (next.clearViewId === true || previousClearViewId === true)
+  return shouldClearViewId ? { ...merged, clearViewId: true } : merged
+}
 
 export const VFS_DIR_TO_RESOURCE: Record<string, MothershipResourceType> = {
   tables: 'table',

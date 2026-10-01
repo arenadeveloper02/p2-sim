@@ -1060,19 +1060,72 @@ function collectImageUrlsFromPatternMatches(text: string, seen: Set<string>, url
 }
 
 /**
+ * Visits each line, marking opening fences, their body, and closing fences.
+ * An unclosed fence runs through the end of the string so a streaming code
+ * sample is not rewritten before its closing fence arrives.
+ */
+function forEachMarkdownFenceLine(
+  raw: string,
+  visit: (line: string, insideFence: boolean) => void
+): void {
+  let inFence = false
+  let fenceChar: '`' | '~' | null = null
+  let fenceLen = 0
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (!inFence) {
+      const fenceOpen = /^(\s*)([`~]{3,})(.*)$/.exec(line)
+      if (fenceOpen) {
+        inFence = true
+        fenceChar = fenceOpen[2][0] as '`' | '~'
+        fenceLen = fenceOpen[2].length
+        visit(line, true)
+        continue
+      }
+      visit(line, false)
+      continue
+    }
+
+    const fenceClose = /^(\s*)([`~]{3,})\s*$/.exec(line)
+    if (fenceClose && fenceClose[2][0] === fenceChar && fenceClose[2].length >= fenceLen) {
+      visit(line, true)
+      inFence = false
+      fenceChar = null
+      fenceLen = 0
+      continue
+    }
+    visit(line, true)
+  }
+}
+
+/**
+ * Returns assistant text with fenced code removed, so sample HTML `<img>` URLs
+ * stay source text instead of being hoisted into a preview.
+ */
+function textOutsideMarkdownFences(raw: string): string {
+  const lines: string[] = []
+  forEachMarkdownFenceLine(raw, (line, insideFence) => {
+    if (!insideFence) lines.push(line)
+  })
+  return lines.join('\n')
+}
+
+/**
  * Extracts every renderable image URL from arbitrary assistant text (lists, markdown, inline labels, etc.).
+ * URLs inside fenced code blocks are left in the source.
  */
 function extractAllImageUrlsFromText(text: string): string[] {
   if (!text || typeof text !== 'string') {
     return []
   }
 
+  const visible = textOutsideMarkdownFences(text)
   const urls: string[] = []
   const seen = new Set<string>()
 
-  collectImageUrlsFromPatternMatches(text, seen, urls)
+  collectImageUrlsFromPatternMatches(visible, seen, urls)
 
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of visible.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed) continue
 
@@ -1102,15 +1155,55 @@ function isOrphanLabelLine(text: string): boolean {
   return /^[\w#.-]+(?:\s+[\w#.-]+){0,3}\s*:?\s*$/.test(trimmed)
 }
 
+/**
+ * Drops hoisted image URLs from prose lines. Fenced code is copied through
+ * unchanged, including its backticks, so a sample page stays one code block.
+ */
 function removeImageUrlsFromProse(raw: string, urls: string[]): string {
   if (urls.length === 0) {
     return raw.trim()
   }
 
   const knownKeys = new Set(urls.map(normalizeUrlDedupeKey))
+  const parts: string[] = []
+  let outsideLines: string[] = []
+  let fenceLines: string[] = []
+
+  const flushOutside = () => {
+    if (outsideLines.length === 0) return
+    const cleaned = stripImageUrlsFromProseLines(outsideLines, knownKeys)
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, '')
+    outsideLines = []
+    if (cleaned) parts.push(cleaned)
+  }
+
+  const flushFence = () => {
+    if (fenceLines.length === 0) return
+    parts.push(fenceLines.join('\n'))
+    fenceLines = []
+  }
+
+  forEachMarkdownFenceLine(raw, (line, insideFence) => {
+    if (insideFence) {
+      flushOutside()
+      fenceLines.push(line)
+      return
+    }
+    flushFence()
+    outsideLines.push(line)
+  })
+  flushOutside()
+  flushFence()
+
+  return parts.join('\n').trim()
+}
+
+function stripImageUrlsFromProseLines(lines: string[], knownKeys: Set<string>): string[] {
   const proseLines: string[] = []
 
-  for (const line of raw.split(/\r?\n/)) {
+  for (const line of lines) {
     const trimmed = line.trim()
     if (!trimmed) {
       proseLines.push('')
@@ -1146,9 +1239,6 @@ function removeImageUrlsFromProse(raw: string, urls: string[]): string {
   }
 
   return proseLines
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
 }
 
 /**
@@ -1170,6 +1260,7 @@ export function isImageUrlLine(s: string): boolean {
  * Resolves assistant message text into deduped image URLs and remaining markdown prose.
  * Handles: (1) multiple outputs joined with \\n\\n (same URL twice from content+image picks),
  * (2) JSON payloads `{ content, image, metadata }`, (3) single URL lines.
+ * Image URLs inside fenced code stay in the prose so sample HTML is not previewed as a chat image.
  */
 export function resolveMessageImagesAndProse(raw: string): { urls: string[]; prose: string } {
   if (!raw || typeof raw !== 'string') {

@@ -7,12 +7,15 @@ import {
   resolveBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
-import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import {
+  MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
+  MAX_FILE_EDIT_CONTINUATION_ROUNDS,
   MAX_FORCED_FOLLOW_UP_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
   MAX_POPULATE_EDITS,
+  MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS,
+  MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS,
 } from '@/local-copilot/lib/agent/limits'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import { createSpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
@@ -33,6 +36,12 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
+import {
+  applyModelChunkToThinkingStatus,
+  ThinkingDeltaBatcher,
+  ThinkingLiveStatusAccumulator,
+} from '@/local-copilot/lib/agent/thinking-live-status'
 import {
   buildStagnationSystemMessage,
   createToolStagnationTracker,
@@ -51,7 +60,7 @@ import {
   assertLocalCopilotEnabled,
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
-  isLocalCopilotEngagementStatusEnabled,
+  resolveFileTurnThinkingLevel,
 } from '@/local-copilot/lib/config'
 import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
@@ -134,7 +143,11 @@ import {
   createLocalCopilotProvider,
   getLocalCopilotProvider,
 } from '@/local-copilot/lib/providers/registry'
-import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import type {
+  AnthropicThinkingHistoryBlock,
+  ChatMessage,
+  GeminiHistoryPart,
+} from '@/local-copilot/lib/providers/types'
 import {
   prepareLocalToolConfirmation,
   waitForLocalToolConfirmation,
@@ -142,6 +155,8 @@ import {
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { buildGeneratedApiKeyControl } from '@/local-copilot/lib/security/trusted-controls'
 import {
+  buildDebugInspectionChatAppendix,
+  buildFileInspectionChatAppendix,
   buildToolFailureEvidenceLines,
   buildWorkflowRunChatAppendix,
   isWorkflowRunToolName,
@@ -149,6 +164,11 @@ import {
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
   type ToolTurnRecord,
+  turnHasDebugInspectionTools,
+  turnHasFileInspectionTools,
+  turnHasFileMutationTools,
+  turnHasWorkflowDiscoveryTools,
+  turnHasWorkflowMutationTools,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
 import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
@@ -171,17 +191,27 @@ import {
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 import {
   buildBlocksMetadataReuseSystemMessage,
+  buildDebugExplanationContinuationMessage,
+  buildFileEditContinuationMessage,
+  buildResearchSearchContinuationMessage,
   buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
+  buildWorkflowBuildContinuationMessage,
   createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
   emptyAssistantTurnFallback,
   isBridgingAssistantNarration,
+  isFileInspectionBridgeNarration,
+  isLiveWebSearchToolCall,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
   shouldEmitEmptyAssistantFallback,
+  shouldForceDebugExplanationContinuation,
+  shouldForceFileEditContinuation,
+  shouldForceResearchSearchContinuation,
+  shouldForceWorkflowBuildContinuation,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
 } from '@/local-copilot/lib/user-facing-text'
@@ -529,6 +559,12 @@ export async function* runLocalCopilotAgent(
     : null
 
   const intent = classifyLocalCopilotIntent(params.message)
+  // File/office turns: keep thinking on but cap medium/high → low so Claude
+  // does not spend minutes ruminating on syntax instead of rewriting edit_content.
+  const turnThinkingLevel =
+    intent.primary === 'file' || intent.secondary.includes('file')
+      ? resolveFileTurnThinkingLevel(config.thinkingLevel)
+      : config.thinkingLevel
   const specialistTools = getParentSpecialistToolDefinitions()
   const hybridTools = resolveHybridParentTools({
     allTools,
@@ -685,6 +721,29 @@ export async function* runLocalCopilotAgent(
   ) {
     throw new Error('Arena Copilot billing attribution does not match its actor and workspace')
   }
+  let resolvedSecretTraceRegistry: ToolExecutionContext['resolvedSecretTraceRegistry']
+  try {
+    const { prepareCopilotEnvironmentContext } = await import('@/lib/copilot/environment-context')
+    const environmentContext = await prepareCopilotEnvironmentContext(
+      params.userId,
+      params.workspaceId
+    )
+    resolvedSecretTraceRegistry = environmentContext.resolvedSecretTraceRegistry
+  } catch (error) {
+    logger.warn('Failed to build Arena Copilot model-egress secret catalog', {
+      error: getErrorMessage(error),
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+    })
+    const { createIncompleteResolvedSecretTraceRegistry } = await import(
+      '@/executor/utils/resolved-secret-trace-registry'
+    )
+    resolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+    })
+  }
+
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
@@ -704,6 +763,7 @@ export async function* runLocalCopilotAgent(
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
     turnMutations: createTurnMutations(),
+    resolvedSecretTraceRegistry,
     ...(relevantSkills.message ? { relevantSkillGuidance: relevantSkills.message.content } : {}),
   }
 
@@ -799,6 +859,7 @@ export async function* runLocalCopilotAgent(
         getToolExecutor,
         budget: specialistBudget,
         ...(params.runId ? { runId: params.runId } : {}),
+        ...(passDomain === 'file' && turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       })
 
       let passNext = await pass.next()
@@ -854,10 +915,17 @@ export async function* runLocalCopilotAgent(
   let pendingFollowUps: MandatoryFollowUp[] = []
   let forcedFollowUpRounds = 0
   let forcedIntentContinuations = 0
+  let forcedDebugExplanations = 0
+  let forcedWorkflowBuildContinuations = 0
+  let forcedFileEditContinuations = 0
+  let forcedResearchSearchContinuations = 0
+  let turnHasLiveWebSearch = false
   let turnInputTokens = 0
   let turnOutputTokens = 0
   const stagnationTracker = createToolStagnationTracker()
   let stagnationStopMessage: string | null = null
+
+  const needsLiveSearch = intent.primary === 'research' || intent.secondary.includes('research')
 
   for (let round = 0; round < maxToolRounds; round++) {
     if (stagnationStopMessage) break
@@ -936,8 +1004,21 @@ export async function* runLocalCopilotAgent(
       marks: timing.snapshot(),
     })
 
-    // Status heartbeats cover the immediate first line + rotation while the
-    // model stream is quiet (including pauses after the first token).
+    const thinkingStatus = new ThinkingLiveStatusAccumulator()
+    const thinkingBatcher = new ThinkingDeltaBatcher()
+    const roundAnthropicThinkingBlocks: AnthropicThinkingHistoryBlock[] = []
+    let roundGeminiModelParts: GeminiHistoryPart[] = []
+    let roundReasoningContent = ''
+
+    const flushThinkingBatch = function* (): Generator<
+      { type: 'thinking_delta'; content: string },
+      void,
+      undefined
+    > {
+      const batched = thinkingBatcher.flush()
+      if (batched) yield { type: 'thinking_delta', content: batched }
+    }
+
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -945,29 +1026,92 @@ export async function* runLocalCopilotAgent(
         tools: roundTools,
         maxTokens: maxOutputTokens,
         signal: params.signal,
+        ...(turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 0,
+      idleMs: 2500,
       intervalMs: 2500,
-      enrichMessages: isLocalCopilotEngagementStatusEnabled()
-        ? (abortSignal) =>
-            generateEngagementStatusMessages({
-              phase: 'model_wait',
-              userHint: params.message,
-              signal: abortSignal,
-            })
-        : undefined,
     })) {
       if (event.type === 'status') {
-        yield event
+        if (!thinkingStatus.isPublishing) yield event
         continue
       }
 
       const chunk = event.item
-      if (chunk.type === 'text' && chunk.content) {
+      if (chunk.type === 'thinking_block' && chunk.thinkingBlock) {
+        roundAnthropicThinkingBlocks.push(chunk.thinkingBlock)
+        // Claude-via-proxy (and some summarized Anthropic turns) only deliver
+        // signed thinking_blocks — promote unread body into the thinking channel.
+        if (chunk.thinkingBlock.type === 'thinking') {
+          const suffix = unresolvedThinkingBlockText(
+            roundReasoningContent,
+            chunk.thinkingBlock.thinking
+          )
+          if (suffix) {
+            roundReasoningContent += suffix
+            const announceThinking = !thinkingStatus.isPublishing
+            applyModelChunkToThinkingStatus(thinkingStatus, {
+              type: 'thinking',
+              content: suffix,
+            })
+            const batched = thinkingBatcher.push(suffix) ?? thinkingBatcher.flush()
+            if (batched) yield { type: 'thinking_delta', content: batched }
+            if (announceThinking) {
+              yield { type: 'status', message: 'Thinking…' }
+            }
+          }
+        }
+        continue
+      }
+      if (chunk.type === 'gemini_model_parts' && chunk.geminiModelParts) {
+        roundGeminiModelParts = chunk.geminiModelParts
+        continue
+      }
+      if (chunk.type === 'thinking' && (chunk.content || chunk.thoughtSignature)) {
+        if (chunk.content) {
+          roundReasoningContent += chunk.content
+          const announceThinking = !thinkingStatus.isPublishing
+          applyModelChunkToThinkingStatus(thinkingStatus, chunk)
+          // Thought signatures stay on `gemini_model_parts` / text trailers only.
+          // Stamping them onto thinking UI blocks poisons history rebuild and
+          // triggers Vertex 400 "Corrupted thought signature."
+          const batched = thinkingBatcher.push(chunk.content)
+          if (batched) yield { type: 'thinking_delta', content: batched }
+          // Announce Thinking… once per model wait — not on every delta
+          // (that flooded mothership logs / SSE at ~10Hz).
+          if (announceThinking) {
+            yield { type: 'status', message: 'Thinking…' }
+          }
+        }
+        // Signature-only thought trailers are absorbed into gemini_model_parts;
+        // nothing to show in Thinking chrome.
+        continue
+      }
+      applyModelChunkToThinkingStatus(thinkingStatus, chunk)
+      if (chunk.type === 'text' && (chunk.content || chunk.thoughtSignature)) {
+        yield* flushThinkingBatch()
+        if (!chunk.content) {
+          if (chunk.thoughtSignature) {
+            yield {
+              type: 'text_delta',
+              content: '',
+              thoughtSignature: chunk.thoughtSignature,
+            }
+          }
+          continue
+        }
         const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
-        if (!cleaned) continue
+        if (!cleaned) {
+          if (chunk.thoughtSignature) {
+            yield {
+              type: 'text_delta',
+              content: '',
+              thoughtSignature: chunk.thoughtSignature,
+            }
+          }
+          continue
+        }
         const delta = textStreamer.pushText(cleaned)
         if (delta) {
           if (firstModelOutputMs === null) {
@@ -985,10 +1129,21 @@ export async function* runLocalCopilotAgent(
             })
           }
           streamedUserFacingText += delta
-          yield { type: 'text_delta', content: delta }
+          yield {
+            type: 'text_delta',
+            content: delta,
+            ...(chunk.thoughtSignature ? { thoughtSignature: chunk.thoughtSignature } : {}),
+          }
+        } else if (chunk.thoughtSignature) {
+          yield {
+            type: 'text_delta',
+            content: '',
+            thoughtSignature: chunk.thoughtSignature,
+          }
         }
       }
       if (chunk.type === 'tool_call' && chunk.toolCall) {
+        yield* flushThinkingBatch()
         if (firstModelOutputMs === null) {
           firstModelOutputMs = timing.elapsed()
           timing.mark('firstModelOutput')
@@ -1008,6 +1163,7 @@ export async function* runLocalCopilotAgent(
         pendingToolCalls.push(chunk.toolCall)
       }
       if (chunk.type === 'done') {
+        yield* flushThinkingBatch()
         if (chunk.finishReason) lastFinishReason = chunk.finishReason
         if (chunk.usage) {
           roundInputTokens = chunk.usage.inputTokens
@@ -1017,6 +1173,8 @@ export async function* runLocalCopilotAgent(
         }
       }
     }
+
+    yield* flushThinkingBatch()
 
     const roundRawText = textStreamer.roundRawText
     {
@@ -1043,6 +1201,16 @@ export async function* runLocalCopilotAgent(
       toolCallCount: pendingToolCalls.length,
       toolNames: pendingToolCalls.map((call) => call.name),
       assistantChars: assistantText.length,
+      thinkingBlockCount: roundAnthropicThinkingBlocks.length,
+      thinkingChars: roundAnthropicThinkingBlocks.reduce(
+        (sum, block) => sum + (block.type === 'thinking' ? block.thinking.length : 0),
+        0
+      ),
+      reasoningChars: roundReasoningContent.length,
+      geminiModelPartCount: roundGeminiModelParts.length,
+      geminiThoughtSignatures: roundGeminiModelParts.filter((part) =>
+        Boolean(part.thoughtSignature)
+      ).length,
       inputTokens: roundInputTokens,
       outputTokens: roundOutputTokens,
       cacheReadTokens: roundCacheReadTokens,
@@ -1051,6 +1219,10 @@ export async function* runLocalCopilotAgent(
       ttftMs: firstModelOutputMs === null ? null : timing.since(modelRoundMark, 'firstModelOutput'),
       memory: getLocalCopilotMemorySnapshot(),
     })
+
+    if (roundGeminiModelParts.length > 0) {
+      yield { type: 'gemini_model_parts', parts: roundGeminiModelParts }
+    }
 
     turnInputTokens += roundInputTokens
     turnOutputTokens += roundOutputTokens
@@ -1079,6 +1251,15 @@ export async function* runLocalCopilotAgent(
 
       if (canForceFollowUp) {
         forcedFollowUpRounds += 1
+        // Record the already-streamed pitch so the next round does not regenerate
+        // the same "workflow is fully built + Connect Gmail" paragraph.
+        const settledFollowUp =
+          stripIdsFromUserFacingText(stripOptionsTagsForDisplay(roundRawText, false)) ||
+          roundRawText
+        if (settledFollowUp.trim()) {
+          messages.push({ role: 'assistant', content: settledFollowUp })
+          assistantText = ''
+        }
         const continuation = buildFollowUpContinuationMessage(pendingFollowUps)
         messages.push({ role: 'user', content: continuation })
         logger.info('Arena Copilot forcing mandatory follow-up continuation', {
@@ -1116,6 +1297,136 @@ export async function* runLocalCopilotAgent(
         continue
       }
 
+      const canForceResearchSearch = shouldForceResearchSearchContinuation({
+        postBuildToolMode,
+        needsLiveSearch,
+        forcedResearchSearchContinuations,
+        maxForcedResearchSearchContinuations: MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasLiveWebSearch: turnHasLiveWebSearch,
+      })
+
+      if (canForceResearchSearch) {
+        forcedResearchSearchContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildResearchSearchContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing research live-search continuation', {
+          round,
+          forcedResearchSearchContinuations,
+          intentPrimary: intent.primary,
+          preview: truncate(intentDisplay, 120),
+        })
+        continue
+      }
+
+      const canForceDebugExplanation = shouldForceDebugExplanationContinuation({
+        postBuildToolMode,
+        forcedDebugExplanations,
+        maxForcedDebugExplanations: MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasDebugTools: turnHasDebugInspectionTools(turnToolRecords),
+        streamedUserFacingText,
+        roundDisplayText: intentDisplay,
+      })
+
+      if (canForceDebugExplanation) {
+        forcedDebugExplanations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildDebugExplanationContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing debug-explanation continuation', {
+          round,
+          forcedDebugExplanations,
+          debugTools: turnToolRecords
+            .filter((record) =>
+              ['query_logs', 'get_execution_logs', 'explain_error'].includes(record.name)
+            )
+            .map((record) => record.name),
+        })
+        continue
+      }
+
+      const canForceWorkflowBuild = shouldForceWorkflowBuildContinuation({
+        postBuildToolMode,
+        forcedWorkflowBuildContinuations,
+        maxForcedWorkflowBuildContinuations: MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasDiscoveryTools: turnHasWorkflowDiscoveryTools(turnToolRecords),
+        hasMutationTools: turnHasWorkflowMutationTools(turnToolRecords),
+        streamedUserFacingText,
+        roundDisplayText: intentDisplay,
+      })
+
+      if (canForceWorkflowBuild) {
+        forcedWorkflowBuildContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildWorkflowBuildContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing workflow-build continuation', {
+          round,
+          forcedWorkflowBuildContinuations,
+          discoveryTools: turnToolRecords
+            .filter((record) =>
+              ['get_available_blocks', 'get_blocks_metadata'].includes(record.name)
+            )
+            .map((record) => record.name),
+        })
+        continue
+      }
+
+      const canForceFileEdit = shouldForceFileEditContinuation({
+        postBuildToolMode,
+        forcedFileEditContinuations,
+        maxForcedFileEditContinuations: MAX_FILE_EDIT_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+        hasFileInspectionTools: turnHasFileInspectionTools(turnToolRecords),
+        hasFileMutationTools: turnHasFileMutationTools(turnToolRecords),
+        streamedUserFacingText,
+        roundDisplayText: intentDisplay,
+      })
+
+      if (canForceFileEdit) {
+        forcedFileEditContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildFileEditContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing file-edit continuation', {
+          round,
+          forcedFileEditContinuations,
+          inspectionTools: turnToolRecords
+            .filter((record) =>
+              ['read', 'grep', 'glob', 'load_copilot_artifact'].includes(record.name)
+            )
+            .map((record) => record.name),
+        })
+        continue
+      }
+
       if (postBuildToolMode === 'final_only' || postBuildToolMode === 'oauth_only') {
         // Text-only (or oauth-only with no call) — finish the turn.
         postBuildToolMode = 'done'
@@ -1145,6 +1456,9 @@ export async function* runLocalCopilotAgent(
         ? pendingToolCalls.filter((call) => call.name === 'oauth_get_auth_link')
         : pendingToolCalls
     )
+    if (orderedToolCalls.some((call) => isLiveWebSearchToolCall(call.name, call.arguments))) {
+      turnHasLiveWebSearch = true
+    }
     if (orderedToolCalls.length === 0) {
       postBuildToolMode = postBuildToolMode === 'all' ? 'all' : 'done'
       break
@@ -1154,6 +1468,11 @@ export async function* runLocalCopilotAgent(
       role: 'assistant',
       content: assistantText,
       toolCalls: orderedToolCalls,
+      ...(roundAnthropicThinkingBlocks.length > 0
+        ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
+        : {}),
+      ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
+      ...(roundReasoningContent.trim() ? { reasoningContent: roundReasoningContent } : {}),
     })
     assistantText = ''
     const deferredSystemMessages: Array<{ role: 'system'; content: string }> = []
@@ -1182,6 +1501,7 @@ export async function* runLocalCopilotAgent(
         budget: specialistBudget,
         parentDepth: 0,
         turnCost,
+        ...(config.thinkingLevel ? { thinkingLevel: config.thinkingLevel } : {}),
       })
 
       let specialistNext = await specialistRunner.next()
@@ -1373,6 +1693,9 @@ export async function* runLocalCopilotAgent(
               toolCallId: item.call.id,
               toolName: item.call.name,
               args: item.parsedArgs,
+              ...(item.call.thoughtSignature
+                ? { thoughtSignature: item.call.thoughtSignature }
+                : {}),
             }
           }
 
@@ -1576,6 +1899,7 @@ export async function* runLocalCopilotAgent(
         toolCallId: call.id,
         toolName: call.name,
         args: parsedArgs,
+        ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
       }
 
       const { executeLocalCopilotTool, refreshToolContext } = await getToolExecutor()
@@ -2103,6 +2427,7 @@ export async function* runLocalCopilotAgent(
     // — Bedrock requires toolConfig when history already has tool content.
     // If the model stays silent, surface the stop message directly.
     const priorAssistantChars = assistantText.length
+    const stagnationThinkingStatus = new ThinkingLiveStatusAccumulator()
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -2110,17 +2435,30 @@ export async function* runLocalCopilotAgent(
         tools,
         maxTokens: maxOutputTokens,
         signal: params.signal,
+        ...(turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
-      idleMs: 0,
+      idleMs: 2500,
       intervalMs: 2500,
     })) {
       if (event.type === 'status') {
-        yield event
+        if (!stagnationThinkingStatus.isPublishing) yield event
         continue
       }
       const chunk = event.item
+      if (chunk.type === 'thinking_block') continue
+      if (chunk.type === 'gemini_model_parts') continue
+      if (chunk.type === 'thinking' && chunk.content) {
+        const announceThinking = !stagnationThinkingStatus.isPublishing
+        applyModelChunkToThinkingStatus(stagnationThinkingStatus, chunk)
+        yield { type: 'thinking_delta', content: chunk.content }
+        if (announceThinking) {
+          yield { type: 'status', message: 'Thinking…' }
+        }
+        continue
+      }
+      applyModelChunkToThinkingStatus(stagnationThinkingStatus, chunk)
       if (chunk.type === 'text' && chunk.content) {
         const cleaned = stripIdsFromUserFacingText(
           stripLeakedToolMarkers(chunk.content, { trim: false })
@@ -2176,6 +2514,7 @@ export async function* runLocalCopilotAgent(
     if (turnToolRecords.length > 0) {
       const synthesized =
         synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        buildDebugInspectionChatAppendix(turnToolRecords) ??
         'I finished the requested steps, but had nothing further to add.'
       const safe = stripIdsFromUserFacingText(synthesized)
       assistantText = safe
@@ -2204,6 +2543,51 @@ export async function* runLocalCopilotAgent(
       assistantText += chunk
       streamedUserFacingText += chunk
       yield { type: 'text_delta', content: chunk }
+    }
+  }
+
+  // Hard guarantee: debug/log turns (incl. `run` specialist) must leave visible prose.
+  // Nested specialist text can sit inside a collapsed agent group while the main
+  // bubble stays empty — always promote a top-level explanation when needed.
+  if (turnHasDebugInspectionTools(turnToolRecords)) {
+    const visible = stripIdsFromUserFacingText(
+      stripOptionsTagsForDisplay(streamedUserFacingText, false)
+    ).trim()
+    const looksEmpty =
+      !visible ||
+      isBridgingAssistantNarration(visible) ||
+      /^Finished the run steps\b/i.test(visible)
+    if (looksEmpty) {
+      const guaranteed =
+        buildDebugInspectionChatAppendix(turnToolRecords) ??
+        synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        'I checked the execution logs but could not determine why the run failed. Please share the execution ID or try again.'
+      const safe = stripIdsFromUserFacingText(guaranteed)
+      if (safe && safe !== visible) {
+        assistantText = safe
+        streamedUserFacingText = safe
+        yield { type: 'text_delta', content: safe }
+      }
+    }
+  }
+
+  // Hard guarantee: file inspection without a write must not settle on empty Thinking….
+  if (turnHasFileInspectionTools(turnToolRecords) && !turnHasFileMutationTools(turnToolRecords)) {
+    const visible = stripIdsFromUserFacingText(
+      stripOptionsTagsForDisplay(streamedUserFacingText, false)
+    ).trim()
+    const looksEmpty = !visible || isFileInspectionBridgeNarration(visible)
+    if (looksEmpty) {
+      const guaranteed =
+        buildFileInspectionChatAppendix(turnToolRecords) ??
+        synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        'I inspected the file but did not finish applying the fix. Please try again.'
+      const safe = stripIdsFromUserFacingText(guaranteed)
+      if (safe && safe !== visible) {
+        assistantText = safe
+        streamedUserFacingText = safe
+        yield { type: 'text_delta', content: safe }
+      }
     }
   }
 

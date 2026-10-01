@@ -1,9 +1,15 @@
 import { Command } from 'commander'
+import { attachChat } from './chat'
 import { attachFileGet } from './files-get'
 import { attachFileUpload } from './files-upload'
 import { attachKnowledgeDocumentUpload } from './knowledge-document-upload'
+import { attachKnowledgeExport } from './knowledge-export'
+import { attachLogsFollow } from './logs-follow'
 import { attachResourceDirectoryCommands } from './resource-directory'
 import { attachTableImport } from './tables-import'
+import { attachWorkflowRunFollow } from './workflow-run-follow'
+import { attachWorkflowRunWait } from './workflow-run-wait'
+import { attachWorkspaceOperationWait } from './workspace-operation-wait'
 
 function group(program: Command, name: string): Command {
   const existing = program.commands.find((command) => command.name() === name)
@@ -27,6 +33,7 @@ export function attachProtocolCommands(program: Command): void {
 
   const knowledge = group(program, 'knowledge')
   attachKnowledgeDocumentUpload(group(knowledge, 'documents'))
+  attachKnowledgeExport(knowledge)
   attachResourceDirectoryCommands(knowledge, {
     kind: 'knowledge',
     resources: 'listKnowledgeBases',
@@ -43,10 +50,22 @@ export function attachProtocolCommands(program: Command): void {
     createFolder: 'createTableFolder',
   })
 
-  attachResourceDirectoryCommands(group(program, 'workflows'), {
+  const workflows = group(program, 'workflows')
+  attachResourceDirectoryCommands(workflows, {
     kind: 'workflow',
     resources: 'listWorkflows',
     folders: 'listWorkflowFolders',
     createFolder: 'createWorkflowFolder',
   })
+  // Both augment commands the generated pass already built — `run` gains
+  // `--follow`, and `runs` gains `wait` — so they must attach after it, which is
+  // the order `buildProgram` calls them in.
+  attachWorkflowRunFollow(workflows)
+  attachWorkflowRunWait(group(workflows, 'runs'))
+
+  attachWorkspaceOperationWait(group(group(program, 'workspaces'), 'operations'))
+
+  attachLogsFollow(group(program, 'logs'))
+
+  attachChat(program)
 }

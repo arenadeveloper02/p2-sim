@@ -10,10 +10,16 @@ import {
   LARGE_ARRAY_MANIFEST_VERSION,
   type LargeArrayManifest,
 } from '@/lib/execution/payloads/large-array-manifest-metadata'
+import {
+  collectSandboxFileMountRefs,
+  replaceSandboxFileMountRefs,
+} from '@/lib/execution/payloads/sandbox-file-mount-ref'
+import { StartBlockPath } from '@/lib/workflows/triggers/triggers'
 import { BlockType } from '@/executor/constants'
 import { ExecutionState } from '@/executor/execution/state'
 import type { ExecutionContext } from '@/executor/types'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
+import { buildStartBlockOutput } from '@/executor/utils/start-block'
 import { VariableResolver } from '@/executor/variables/resolver'
 import { navigatePathAsync } from '@/executor/variables/resolvers/reference-async.server'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
@@ -127,6 +133,79 @@ function createResolver(
   }
 }
 
+describe('Start file path references', () => {
+  const workspaceId = '11111111-1111-4111-8111-111111111111'
+  const key = `workspace/${workspaceId}/photo.png`
+  const uploadedFile = {
+    id: 'file-1',
+    name: 'photo.png',
+    size: 128,
+    type: 'image/png',
+  }
+
+  it.each([
+    {
+      language: 'shell',
+      file: { ...uploadedFile, key, url: 'https://storage.example.com/photo.png' },
+    },
+    {
+      language: 'shell',
+      file: {
+        ...uploadedFile,
+        url: `/api/files/serve/s3/${encodeURIComponent(key)}?context=workspace`,
+      },
+    },
+    {
+      language: 'python',
+      file: { ...uploadedFile, key, url: 'https://storage.example.com/photo.png' },
+    },
+    {
+      language: 'javascript',
+      file: { ...uploadedFile, key, url: 'https://storage.example.com/photo.png' },
+    },
+  ])('mounts a Start upload referenced from $language code', async ({ language, file }) => {
+    const start = createBlock('start', 'Start', 'start_trigger', {
+      inputFormat: [{ name: 'files', type: 'file[]', value: '' }],
+    })
+    const functionBlock = createBlock('function', 'Function', BlockType.FUNCTION, { language })
+    const output = buildStartBlockOutput({
+      resolution: { blockId: start.id, block: start, path: StartBlockPath.UNIFIED },
+      workspaceId,
+      workflowInput: { input: 'Edit the image', files: [file] },
+    })
+    const { ctx } = createResolver(language)
+    const state = new ExecutionState()
+    state.setBlockOutput(start.id, output)
+    ctx.blockStates = state.getBlockStates()
+    const workflow: SerializedWorkflow = {
+      version: '1',
+      blocks: [start, functionBlock],
+      connections: [],
+      loops: {},
+      parallels: {},
+    }
+    const resolver = new VariableResolver(workflow, {}, state, { navigatePathAsync })
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      functionBlock.id,
+      { code: 'IN="<start.files[0].path>"' },
+      functionBlock
+    )
+
+    expect(collectSandboxFileMountRefs(result.contextVariables)).toEqual([
+      { ...file, key, context: 'workspace' },
+    ])
+    expect(
+      replaceSandboxFileMountRefs(result.contextVariables, () => '/tmp/sim/inputs/photo.png')
+    ).toEqual({ __blockRef_0: '/tmp/sim/inputs/photo.png' })
+    expect(result.resolvedInputs.code).not.toContain('<start.files[0].path>')
+    expect(result.resolvedInputs.code).not.toContain('null')
+    if (language === 'shell') {
+      expect(result.resolvedInputs.code).toBe(`IN="\${__blockRef_0}"`)
+    }
+  })
+})
+
 /** Runs one condition expression through the resolver and returns the value the handler receives. */
 async function resolveConditionExpression(
   value: string,
@@ -142,6 +221,43 @@ async function resolveConditionExpression(
     conditionBlock
   )
   return (result.conditions as Array<{ value: string }>)[0].value
+}
+
+/** Resolves one condition expression against a producer output an attacker supplied. */
+async function resolveConditionWithBlockOutput(value: string, result: unknown): Promise<string> {
+  const { ctx, resolver, state } = createResolver()
+  state.setBlockOutput('producer', { result } as never)
+  const conditionBlock = createBlock('condition', 'Condition', BlockType.CONDITION)
+  const resolved = await resolver.resolveInputs(
+    ctx,
+    conditionBlock.id,
+    { conditions: JSON.stringify([{ id: 'condition-1', title: 'if', value }]) },
+    conditionBlock
+  )
+  return (resolved.conditions as Array<{ value: string }>)[0].value
+}
+
+const INJECTION_CANARY = '__conditionInjectionCanary'
+
+/**
+ * Evaluates a resolved expression inside the same `Boolean(...)` wrapper the handler builds,
+ * reporting both the branch verdict and whether anything the resolved data carried executed.
+ */
+function runResolvedCondition(expression: string): { matched: boolean; injected: boolean } {
+  Reflect.set(globalThis, INJECTION_CANARY, 'not-executed')
+  try {
+    const matched = Boolean(
+      new Function(`const context = {};\nreturn Boolean(\n${expression}\n)`)()
+    )
+    return { matched, injected: Reflect.get(globalThis, INJECTION_CANARY) !== 'not-executed' }
+  } catch {
+    return {
+      matched: false,
+      injected: Reflect.get(globalThis, INJECTION_CANARY) !== 'not-executed',
+    }
+  } finally {
+    Reflect.deleteProperty(globalThis, INJECTION_CANARY)
+  }
 }
 
 /**
@@ -199,14 +315,75 @@ describe('VariableResolver function block inputs', () => {
     )
 
     expect(result.conditions).toEqual([
-      { id: 'condition-1', title: 'if', value: '123 === 123' },
-      { id: 'condition-2', title: 'else if', value: 'true === true' },
+      { id: 'condition-1', title: 'if', value: '123 === 123', _readsEnvironmentVariables: false },
+      {
+        id: 'condition-2',
+        title: 'else if',
+        value: 'true === true',
+        _readsEnvironmentVariables: false,
+      },
       {
         id: 'condition-3',
         title: 'else if',
         value: '"Bearer {{API_KEY}}" === "Bearer token"',
+        _readsEnvironmentVariables: false,
       },
     ])
+  })
+
+  it('records whether the author, not the trigger data, reads the environment map', async () => {
+    const { ctx, resolver } = createResolver()
+    ctx.environmentVariables = {}
+    const conditionBlock = createBlock('condition', 'Condition', BlockType.CONDITION)
+    // The second branch only quotes a producer output that happens to contain the word.
+    const conditions = [
+      { id: 'c1', title: 'if', value: `environmentVariables.FLAG === 'on'` },
+      { id: 'c2', title: 'else if', value: `"<producer.result>" === 'x'` },
+    ]
+    ;(ctx.blockStates as Map<string, any>).set('producer', {
+      output: { result: 'environmentVariables.OPENAI_API_KEY' },
+      executed: true,
+      executionTime: 0,
+    })
+
+    const result = await resolver.resolveInputs(
+      ctx,
+      conditionBlock.id,
+      { conditions: JSON.stringify(conditions) },
+      conditionBlock
+    )
+
+    const resolvedConditions = result.conditions as Array<Record<string, unknown>>
+    expect(resolvedConditions[0]._readsEnvironmentVariables).toBe(true)
+    expect(resolvedConditions[1]._readsEnvironmentVariables).toBe(false)
+    expect(resolvedConditions[1].value).toContain('environmentVariables.OPENAI_API_KEY')
+  })
+
+  it('counts an environment read only where it can execute', async () => {
+    const { ctx, resolver } = createResolver()
+    const conditionBlock = createBlock('condition', 'Condition', BlockType.CONDITION)
+    const conditions = [
+      // Reads, in the shapes a pattern would have to anticipate.
+      { id: 'c1', title: 'if', value: `environmentVariables?.FLAG === 'on'` },
+      { id: 'c2', title: 'else if', value: 'Object.keys(environmentVariables).length > 0' },
+      // Mentions: text, not code.
+      { id: 'c3', title: 'else if', value: `'environmentVariables.FLAG' === 'x'` },
+      { id: 'c4', title: 'else if', value: '`environmentVariables` === "x"' },
+      { id: 'c5', title: 'else if', value: `/environmentVariables/.test('x')` },
+    ]
+
+    const result = await resolver.resolveInputs(
+      ctx,
+      conditionBlock.id,
+      { conditions: JSON.stringify(conditions) },
+      conditionBlock
+    )
+
+    expect(
+      (result.conditions as Array<Record<string, unknown>>).map(
+        (condition) => condition._readsEnvironmentVariables
+      )
+    ).toEqual([true, true, false, false, false])
   })
 
   it('preserves legacy condition outcomes end to end through the boundary compiler', async () => {
@@ -253,6 +430,135 @@ describe('VariableResolver function block inputs', () => {
     await expect(
       evaluateResolvedCondition(`'{{NAME}}' === 'a\\nb'`, { NAME: 'a\nb' })
     ).resolves.toBe(true)
+  })
+
+  it('stops trigger data from breaking out of a quoted condition reference', async () => {
+    // Every quoting an author can put around a reference. The author picks the context;
+    // the resolved value must be data in all of them, not just the one it wraps itself in.
+    const quotings = [
+      `"<producer.result>".includes('urgent')`,
+      '"<producer.result>" === "admin"',
+      '`<producer.result>`.length > 0',
+      '/<producer.result>/.test("x")',
+      `<producer.result> === 'admin'`,
+    ]
+    const payloads = [
+      `" + (globalThis.${INJECTION_CANARY} = "ran") + "`,
+      `\${(globalThis.${INJECTION_CANARY} = "ran")}`,
+      `' + (globalThis.${INJECTION_CANARY} = "ran") + '`,
+      `/ + (globalThis.${INJECTION_CANARY} = "ran") + /`,
+    ]
+
+    for (const value of quotings) {
+      for (const payload of payloads) {
+        const expression = await resolveConditionWithBlockOutput(value, payload)
+        expect(
+          runResolvedCondition(expression).injected,
+          `condition ${value} executed trigger data: ${expression}`
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('stops a trigger-supplied object from closing the string it is quoted inside', async () => {
+    // JSON's own structural quotes close the author's string, and the key is the attacker's.
+    const expression = await resolveConditionWithBlockOutput('"<producer.result>" === "{}"', {
+      [`+(globalThis.${INJECTION_CANARY}=1)+`]: 1,
+    })
+    expect(runResolvedCondition(expression).injected).toBe(false)
+  })
+
+  it('stops a trigger-supplied object from escaping wherever the quote scanner mis-reads', async () => {
+    // A regex literal is not tracked by the quote scanner, and a quote inside one
+    // desynchronizes it for everything that follows, so the emitted object must be inert
+    // whichever context the scanner reports.
+    const payloads = [
+      { [`+(globalThis.${INJECTION_CANARY}=1)+`]: 1 },
+      { forged: `/ + (globalThis.${INJECTION_CANARY}=1) + /` },
+      { closed: `" + (globalThis.${INJECTION_CANARY}=1) + "` },
+    ]
+    const quotings = [
+      '/<producer.result>/.test("x")',
+      `/['"]/.test('a') && <producer.result>.count === 2`,
+      `/['"]/.test('a') && "<producer.result>" === "{}"`,
+      '<producer.result>.count === 2',
+    ]
+
+    for (const value of quotings) {
+      for (const payload of payloads) {
+        const expression = await resolveConditionWithBlockOutput(value, payload)
+        expect(
+          runResolvedCondition(expression).injected,
+          `condition ${value} executed object data: ${expression}`
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('keeps navigating an object reference the scanner reports as unquoted', async () => {
+    const expression = await resolveConditionWithBlockOutput('<producer.result>.count === 2', {
+      count: 2,
+      note: `a "quoted" / slashed ' value`,
+    })
+    expect(runResolvedCondition(expression).matched).toBe(true)
+  })
+
+  it('evaluates references that follow a regex literal, quote-bearing or not', async () => {
+    // A regex body is the one place a lone quote is not a string delimiter. Reading it as one
+    // left every later reference formatted for a context it was not in — a quoted object
+    // reference stayed raw source, and a bare one was emitted as escaped JSON that cannot parse.
+    const cases: Array<{ value: string; result: unknown; expected: boolean }> = [
+      // Every case reaches its reference — a short-circuit would pass on a formatter that
+      // emits source the sandbox cannot parse, which is the failure being pinned here.
+      {
+        value: `/['"a]/.test('a') && <producer.result>.count === 2`,
+        result: { count: 2 },
+        expected: true,
+      },
+      { value: `/['"]/.test('a') || <producer.result> === 'x'`, result: 'x', expected: true },
+      {
+        value: `/it's/.test('a') || "<producer.result>".includes('b')`,
+        result: 'abc',
+        expected: true,
+      },
+      {
+        value: `/[a-z]/.test('a') && <producer.result>.count === 2`,
+        result: { count: 2 },
+        expected: true,
+      },
+      // Division, not a regex: the scan must not swallow the rest of the expression.
+      { value: `<producer.result>.total / 2 === 5`, result: { total: 10 }, expected: true },
+      {
+        value: `(<producer.result>.total / 2) === 5 && '<producer.result>'.length > 0`,
+        result: { total: 10 },
+        expected: true,
+      },
+    ]
+
+    for (const { value, result, expected } of cases) {
+      const expression = await resolveConditionWithBlockOutput(value, result)
+      const verdict = runResolvedCondition(expression)
+      expect(verdict.injected, `condition ${value} executed data: ${expression}`).toBe(false)
+      expect(verdict.matched, `condition ${value} resolved to: ${expression}`).toBe(expected)
+    }
+  })
+
+  it('keeps quoted and bare condition references comparing what they compared before', async () => {
+    const cases: Array<{ value: string; result: unknown; expected: boolean }> = [
+      { value: `<producer.result> === 'urgent'`, result: 'urgent', expected: true },
+      { value: `<producer.result> === 'urgent'`, result: 'other', expected: false },
+      { value: `"<producer.result>".includes('urgent')`, result: 'urgent ticket', expected: true },
+      { value: `"<producer.result>".includes('urgent')`, result: 'calm ticket', expected: false },
+      { value: '`<producer.result>`.length > 3', result: 'hello', expected: true },
+      { value: `<producer.result> === 'a"b'`, result: 'a"b', expected: true },
+      { value: '<producer.result> === `a$b/c`', result: 'a$b/c', expected: true },
+      { value: `<producer.result>.count === 2`, result: { count: 2 }, expected: true },
+    ]
+
+    for (const { value, result, expected } of cases) {
+      const expression = await resolveConditionWithBlockOutput(value, result)
+      expect(runResolvedCondition(expression).matched, `condition ${value}`).toBe(expected)
+    }
   })
 
   it('compares a bare string placeholder instead of throwing a reference error', async () => {
@@ -719,6 +1025,161 @@ describe('VariableResolver function block inputs', () => {
     expect(result.contextVariables).toEqual({ __blockRef_0: ref })
   })
 
+  it('reads the context of a reference that follows a statement-position regex', async () => {
+    // `)` ends a value in `(a + b) / 2` and a control-flow head in `if (a) /re/.test(b)`, and
+    // the closing parenthesis alone does not say which. Guessing either way misreads one of
+    // them, and a quote inside the regex then decides how every later reference is spliced.
+    const { block, ctx, resolver } = createResolver('javascript')
+
+    // Both cases stay on one line: a string mode ends at a newline, so only a reference sharing
+    // the line with the misread slash sees the wrong context.
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      {
+        code: [
+          `if (params.a) /['"]/.test('<producer.result>')`,
+          `const divided = (params.c + 1) / 2 + Number('<producer.result>')`,
+          'return divided',
+        ].join('\n'),
+      },
+      block
+    )
+
+    const code = result.resolvedInputs.code as string
+    // Statement-position regex: the reference after it is inside the author's quotes.
+    expect(code).toContain(`.test('' + JSON.stringify(globalThis["__blockRef_0"]) + '')`)
+    // Division after a value: the slash must not open a regex that swallows the quotes.
+    expect(code).toContain(`Number('' + JSON.stringify(globalThis["__blockRef_1"]) + '')`)
+  })
+
+  it('steps over a comment rather than reading it as the preceding token', async () => {
+    const { block, ctx, resolver } = createResolver('javascript')
+
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      {
+        code: [
+          `/* lead */ if (params.a) /['"]/.test('<producer.result>')`,
+          `const n = params.p./* mid */catch(() => 0) / 2 + Number('<producer.result>')`,
+          // A comment body may contain another opening delimiter; the comment still ends at
+          // the first `*/`, which only the scan that passed through it knows.
+          `const m = params.q./* a /* b */catch(() => 0) / 2 + Number('<producer.result>')`,
+        ].join('\n'),
+      },
+      block
+    )
+
+    // A comment before a control-flow keyword leaves it a head; one hiding a property dot
+    // still leaves the call a call.
+    const code = result.resolvedInputs.code as string
+    expect(code).toContain(`.test('' + JSON.stringify(globalThis["__blockRef_0"]) + '')`)
+    expect(code).toContain(`Number('' + JSON.stringify(globalThis["__blockRef_1"]) + '')`)
+    expect(code).toContain(`Number('' + JSON.stringify(globalThis["__blockRef_2"]) + '')`)
+  })
+
+  it('starts a new identifier at a line break rather than continuing the last one', async () => {
+    const { block, ctx, resolver } = createResolver('javascript')
+
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      {
+        // `if` begins a statement here; reading the previous *significant* character would
+        // see the `b` of `params.b` and carry its property-access answer into this token.
+        code: ['const seen = params.a.b', `if (seen) /['"]/.test('<producer.result>')`].join('\n'),
+      },
+      block
+    )
+
+    expect(result.resolvedInputs.code).toContain(
+      `.test('' + JSON.stringify(globalThis["__blockRef_0"]) + '')`
+    )
+  })
+
+  it('divides after a postfix update rather than opening a regex', async () => {
+    const { block, ctx, resolver } = createResolver('javascript')
+
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      {
+        code: [
+          `let i = params.i; const half = i++ / 2 + Number('<producer.result>')`,
+          // The same characters as an operator still precede a regex.
+          `const hit = params.n + /['"]/.test('<producer.result>')`,
+        ].join('\n'),
+      },
+      block
+    )
+
+    const code = result.resolvedInputs.code as string
+    expect(code).toContain(`Number('' + JSON.stringify(globalThis["__blockRef_0"]) + '')`)
+    expect(code).toContain(`.test('' + JSON.stringify(globalThis["__blockRef_1"]) + '')`)
+  })
+
+  it('does not read a method named after a keyword as a control-flow head', async () => {
+    const { block, ctx, resolver } = createResolver('javascript')
+
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      { code: `const n = params.p.catch(() => 0) / 2 + Number('<producer.result>')` },
+      block
+    )
+
+    // `.catch(…)` is a call, so the slash after it divides — it must not open a regex that
+    // runs over the quotes around the reference.
+    expect(result.resolvedInputs.code).toContain(
+      `Number('' + JSON.stringify(globalThis["__blockRef_0"]) + '')`
+    )
+  })
+
+  it('binds a run value that names a secret instead of expanding it', async () => {
+    const { block, ctx, resolver } = createResolver('javascript')
+    ctx.workflowVariables = {
+      'var-1': { id: 'var-1', name: 'authTemplate', type: 'string', value: 'Bearer {{API_KEY}}' },
+    }
+
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      { code: `const header = '<variable.authTemplate>'; const item = <producer.result>` },
+      block
+    )
+
+    // An author-configured variable keeps its placeholder in source, where the boundary
+    // compiler expands it; a run value naming a secret binds instead, so whoever supplies
+    // the text cannot pick what the compiler materializes next to it.
+    const code = result.resolvedInputs.code as string
+    expect(code).toContain('{{API_KEY}}')
+    expect(code).toContain('const item = globalThis["__blockRef_0"]')
+    expect(result.contextVariables).toEqual({ __blockRef_0: 'hello world' })
+  })
+
+  it('binds a workflow variable carrying quote characters instead of splicing it into code', async () => {
+    // A Variables block can assign trigger data at runtime, so a variable's value is not
+    // necessarily the author's. Inlined as a literal it closed the string it landed in.
+    const { block, ctx, resolver } = createResolver('javascript')
+    const payload = `' + (globalThis.__functionInjection = 1) + '`
+    ctx.workflowVariables = {
+      'var-1': { id: 'var-1', name: 'userinput', type: 'string', value: payload },
+    }
+
+    const result = await resolver.resolveInputsForFunctionBlock(
+      ctx,
+      'function',
+      { code: `const x = '<variable.userinput>'; return x` },
+      block
+    )
+
+    expect(result.resolvedInputs.code).toBe(
+      `const x = '' + JSON.stringify(globalThis["__blockRef_0"]) + ''; return x`
+    )
+    expect(result.contextVariables).toEqual({ __blockRef_0: payload })
+  })
+
   it('rewrites whole manifest workflow variables to lazy JavaScript array reads', async () => {
     const { block, ctx, resolver } = createResolver('javascript')
     const manifest = createTestManifest()
@@ -791,8 +1252,11 @@ describe('VariableResolver function block inputs', () => {
       ['0', 'key'],
       expect.objectContaining({ allowLargeValueRefs: true })
     )
-    expect(result.resolvedInputs.code).toBe('return "SIM-0"')
-    expect(result.contextVariables).toEqual({})
+    // The navigated element binds like any other resolved value; what must not appear is
+    // the manifest, or the array it stands for.
+    expect(result.resolvedInputs.code).toBe('return globalThis["__blockRef_0"]')
+    expect(result.displayInputs.code).toBe('return "SIM-0"')
+    expect(result.contextVariables).toEqual({ __blockRef_0: 'SIM-0' })
   })
 
   it('resolves named loop result bracket paths in function code', async () => {
@@ -1723,6 +2187,13 @@ describe('VariableResolver agent model levels', () => {
       reasoningEffort: '<Producer.result>',
       verbosity: '<variable.Detail>',
       thinkingLevel: '{{THINKING}}',
+      tools: [
+        {
+          type: 'search',
+          usageControl: 'auto',
+          usageControlExpression: '<variable.Detail>',
+        },
+      ],
     })
     const workflow: SerializedWorkflow = {
       version: '1',
@@ -1753,6 +2224,7 @@ describe('VariableResolver agent model levels', () => {
     expect(result.reasoningEffort).toBe('high')
     expect(result.verbosity).toBe('low')
     expect(result.thinkingLevel).toBe('medium')
+    expect(result.tools[0].usageControlExpression).toBe('low')
     expect(result.model).toBe('gpt-5')
   })
 })

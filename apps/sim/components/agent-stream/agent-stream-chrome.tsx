@@ -113,7 +113,7 @@ export function AgentStreamThinkingChrome({
     setOverflowing(el.scrollHeight > el.clientHeight + 1)
   }
 
-  const label = isStreaming ? 'Thinking…' : 'Thought for a moment'
+  const label = isStreaming ? 'Thinking…' : 'Thoughts'
 
   return (
     <div className='mb-3'>
@@ -178,7 +178,7 @@ export function AgentStreamThinkingChrome({
             {open && isStreaming && overflowing && (
               <div
                 aria-hidden
-                className='pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[var(--bg)] to-transparent'
+                className='pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-linear-to-t from-[var(--bg)] to-transparent'
               />
             )}
           </div>

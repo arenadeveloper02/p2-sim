@@ -11,8 +11,6 @@ import type {
 } from '@/lib/webhooks/providers/types'
 import { buildFallbackDeliveryFingerprint, verifyTokenAuth } from '@/lib/webhooks/providers/utils'
 
-export { extractSalesforceObjectTypeFromPayload }
-
 const logger = createLogger('WebhookProvider:Salesforce')
 
 function verifySalesforceSharedSecret(request: Request, secret: string): boolean {

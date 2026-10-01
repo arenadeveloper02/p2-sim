@@ -34,6 +34,20 @@ const {
   mockRunHeadlessCopilotLifecycle: vi.fn(),
 }))
 
+vi.mock('@/lib/auth/internal', () => ({
+  verifyInternalDelegationToken: vi.fn().mockResolvedValue({
+    workflowId: 'workflow-1',
+    executionId: 'execution-1',
+    mcpBlockId: 'block-1',
+    subjectUserId: 'user-1',
+  }),
+}))
+vi.mock('@/lib/internal/principals/executor', () => ({
+  createExecutorPrincipalFromExecutionContext: vi
+    .fn()
+    .mockResolvedValue({ workspaceId: 'workspace-1' }),
+}))
+
 vi.mock('@/lib/core/security/encryption', () => ({
   decryptSecret: mockDecryptSecret,
 }))
@@ -112,6 +126,8 @@ describe('buildExecuteResponsePayload', () => {
 
 describe('mothership private trace provenance transport', () => {
   const requestBody = {
+    workflowId: 'workflow-1',
+    executionId: 'execution-1',
     messages: [{ role: 'user', content: 'hello' }],
     workspaceId: 'workspace-1',
     userId: 'user-1',
@@ -177,7 +193,11 @@ describe('mothership private trace provenance transport', () => {
       createMockRequest(
         'POST',
         requestBody,
-        { Authorization: 'Bearer internal', 'x-sim-billing-attribution': 'billing' },
+        {
+          'X-Sim-Mcp-Delegation': 'signed-block',
+          Authorization: 'Bearer internal',
+          'x-sim-billing-attribution': 'billing',
+        },
         'http://localhost:3000/api/mothership/execute'
       )
     )
@@ -204,7 +224,11 @@ describe('mothership private trace provenance transport', () => {
       createMockRequest(
         'POST',
         requestBody,
-        { Authorization: 'Bearer internal', 'x-sim-billing-attribution': 'billing' },
+        {
+          'X-Sim-Mcp-Delegation': 'signed-block',
+          Authorization: 'Bearer internal',
+          'x-sim-billing-attribution': 'billing',
+        },
         'http://localhost:3000/api/mothership/execute'
       )
     )
@@ -226,7 +250,11 @@ describe('mothership private trace provenance transport', () => {
           messages: [{ role: 'user', content: 'secret-value __var_FOREIGN' }],
           contexts: [{ kind: 'docs', label: 'Docs' }],
         },
-        { Authorization: 'Bearer internal', 'x-sim-billing-attribution': 'billing' },
+        {
+          'X-Sim-Mcp-Delegation': 'signed-block',
+          Authorization: 'Bearer internal',
+          'x-sim-billing-attribution': 'billing',
+        },
         'http://localhost:3000/api/mothership/execute'
       )
     )
@@ -237,8 +265,13 @@ describe('mothership private trace provenance transport', () => {
       'user-1',
       'secret-value __var_FOREIGN',
       'workspace-1',
-      'chat-1'
+      'chat-1',
+      expect.any(Object)
     )
+
+    const contextRegistry = mockProcessContextsServer.mock.calls.at(-1)?.[5]
+    const lifecycleOptions = mockRunHeadlessCopilotLifecycle.mock.calls.at(-1)?.[1]
+    expect(contextRegistry).toBe(lifecycleOptions.environmentContext?.resolvedSecretTraceRegistry)
   })
 
   it('keeps context routing and display inputs raw until the lifecycle boundary', async () => {
@@ -269,13 +302,22 @@ describe('mothership private trace provenance transport', () => {
             },
           ],
         },
-        { Authorization: 'Bearer internal', 'x-sim-billing-attribution': 'billing' },
+        {
+          'X-Sim-Mcp-Delegation': 'signed-block',
+          Authorization: 'Bearer internal',
+          'x-sim-billing-attribution': 'billing',
+        },
         'http://localhost:3000/api/mothership/execute'
       )
     )
 
     expect(response.status).toBe(200)
-    expect(mockBuildTaggedMcpToolSchemas).toHaveBeenCalledWith('user-1', 'workspace-1', ['123'])
+    expect(mockBuildTaggedMcpToolSchemas).toHaveBeenCalledWith(
+      'user-1',
+      'workspace-1',
+      ['123'],
+      expect.objectContaining({ mcpBlockId: 'block-1' })
+    )
     expect(mockProcessContextsServer).toHaveBeenCalledWith(
       [
         {
@@ -290,7 +332,8 @@ describe('mothership private trace provenance transport', () => {
       'user-1',
       'hello',
       'workspace-1',
-      'chat-1'
+      'chat-1',
+      expect.any(Object)
     )
   })
 
@@ -318,7 +361,11 @@ describe('mothership private trace provenance transport', () => {
           secretScope: 'selected',
           mountedSecrets: ['API_KEY'],
         },
-        { Authorization: 'Bearer internal', 'x-sim-billing-attribution': 'billing' },
+        {
+          'X-Sim-Mcp-Delegation': 'signed-block',
+          Authorization: 'Bearer internal',
+          'x-sim-billing-attribution': 'billing',
+        },
         'http://localhost:3000/api/mothership/execute'
       )
     )
@@ -349,6 +396,7 @@ describe('mothership private trace provenance transport', () => {
         'POST',
         requestBody,
         {
+          'X-Sim-Mcp-Delegation': 'signed-block',
           Authorization: 'Bearer internal',
           'x-sim-billing-attribution': 'billing',
           'x-sim-request-private-tool-metadata': 'resolved-secret-provenance-v1',
@@ -391,6 +439,7 @@ describe('mothership private trace provenance transport', () => {
         'POST',
         requestBody,
         {
+          'X-Sim-Mcp-Delegation': 'signed-block',
           Authorization: 'Bearer internal',
           'x-sim-billing-attribution': 'billing',
           'x-sim-request-private-tool-metadata': 'resolved-secret-provenance-v1',
@@ -426,6 +475,7 @@ describe('mothership private trace provenance transport', () => {
         'POST',
         requestBody,
         {
+          'X-Sim-Mcp-Delegation': 'signed-block',
           Authorization: 'Bearer internal',
           'x-sim-billing-attribution': 'billing',
           'x-sim-request-private-tool-metadata': 'resolved-secret-provenance-v1',
@@ -479,6 +529,7 @@ describe('mothership private trace provenance transport', () => {
           contexts: [{ kind: 'mcp', label: 'Docs', serverId: 'server-1' }],
         },
         {
+          'X-Sim-Mcp-Delegation': 'signed-block',
           Authorization: 'Bearer internal',
           'x-sim-billing-attribution': 'billing',
           'x-sim-request-private-tool-metadata': 'resolved-secret-provenance-v1',
@@ -518,6 +569,7 @@ describe('mothership private trace provenance transport', () => {
         'POST',
         requestBody,
         {
+          'X-Sim-Mcp-Delegation': 'signed-block',
           Authorization: 'Bearer internal',
           'x-sim-billing-attribution': 'billing',
           'x-sim-request-private-tool-metadata': 'resolved-secret-provenance-v1',
@@ -548,6 +600,7 @@ describe('mothership private trace provenance transport', () => {
         'POST',
         requestBody,
         {
+          'X-Sim-Mcp-Delegation': 'signed-block',
           Authorization: 'Bearer internal',
           'x-sim-billing-attribution': 'billing',
           'x-sim-request-private-tool-metadata': 'resolved-secret-provenance-v1',

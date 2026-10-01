@@ -1,6 +1,8 @@
+import { browserToolRendererTimeoutMs, isCurrentBrowserToolName } from '@sim/browser-protocol'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { isRecordLike } from '@sim/utils/object'
+import { AsyncToolCallOwnershipError } from '@/lib/copilot/async-runs/errors'
 import type {
   AsyncCompletionEnvelope,
   AsyncCompletionSignal,
@@ -20,35 +22,35 @@ import {
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import {
-  BrowserRequestTakeover,
-  CrawlWebsite,
-  CreateFile,
+  ApplyFileEdit,
+  CreateEmptyFile,
   CreateWorkflow,
-  DeployApi,
-  DeployChat,
-  DeployCustomBlock,
-  DeployMcp,
-  DownloadToWorkspaceFile,
-  EditContent,
+  DeployAsApi,
+  DeployAsChat,
+  DeployAsMcp,
+  DownloadFile,
   Ffmpeg,
-  FunctionExecute,
+  GenerateApiKey,
   GenerateAudio,
   GenerateImage,
   GenerateVideo,
-  KnowledgeBase,
   LoadDeployment,
-  MaterializeFile,
+  ManageKnowledgeBase,
   Media,
+  PrepareFileEdit,
   PromoteToLive,
+  PublishCustomBlock,
   Redeploy,
   Run,
   RunBlock,
   RunCode,
   RunFromBlock,
+  RunFunction,
   RunWorkflow,
   RunWorkflowUntilBlock,
+  SaveUpload,
   Search,
-  WorkspaceFile,
+  WebCrawl,
 } from '@/lib/copilot/generated/tool-catalog-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { publishToolConfirmation } from '@/lib/copilot/persistence/tool-confirm'
@@ -60,8 +62,15 @@ import {
   requireToolCallError,
   setTerminalToolCallState,
 } from '@/lib/copilot/request/tool-call-state'
+import {
+  sealClientToolCompletion,
+  sealClientToolContext,
+} from '@/lib/copilot/request/tools/client-completion-seal.server'
 import { maybeWriteOutputToFile } from '@/lib/copilot/request/tools/files'
-import { inspectToolResultForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
+import {
+  describeWithholdingCause,
+  inspectToolResultForCopilot,
+} from '@/lib/copilot/request/tools/resolved-secret-result'
 import { handleResourceSideEffects } from '@/lib/copilot/request/tools/resources'
 import {
   maybeWriteOutputToTable,
@@ -116,11 +125,11 @@ function summarizeToolResultForSpan(result: {
   const output = (result as { output: unknown }).output
   if (typeof output === 'string') {
     summary.outputKind = 'string'
-    summary.outputBytes = output.length
+    summary.outputBytes = Buffer.byteLength(output)
   } else if (output && typeof output === 'object') {
     summary.outputKind = Array.isArray(output) ? 'array' : 'object'
     try {
-      summary.outputBytes = JSON.stringify(output).length
+      summary.outputBytes = Buffer.byteLength(JSON.stringify(output))
     } catch {
       summary.outputBytes = 0
     }
@@ -134,7 +143,7 @@ function summarizeToolResultForSpan(result: {
     }
   } else if (output !== undefined && output !== null) {
     summary.outputKind = typeof output
-    summary.outputBytes = String(output).length
+    summary.outputBytes = Buffer.byteLength(String(output))
   }
   return summary
 }
@@ -216,7 +225,7 @@ const LONG_RUNNING_TOOL_IDS: ReadonlySet<string> = new Set([
   RunFromBlock.id,
   RunWorkflow.id,
   RunWorkflowUntilBlock.id,
-  FunctionExecute.id,
+  RunFunction.id,
   RunCode.id,
   GenerateImage.id,
   GenerateAudio.id,
@@ -224,17 +233,17 @@ const LONG_RUNNING_TOOL_IDS: ReadonlySet<string> = new Set([
   Ffmpeg.id,
   Media.id,
   Search.id,
-  CrawlWebsite.id,
-  KnowledgeBase.id,
-  DownloadToWorkspaceFile.id,
-  CreateFile.id,
-  EditContent.id,
-  MaterializeFile.id,
-  WorkspaceFile.id,
-  DeployApi.id,
-  DeployChat.id,
-  DeployCustomBlock.id,
-  DeployMcp.id,
+  WebCrawl.id,
+  ManageKnowledgeBase.id,
+  DownloadFile.id,
+  CreateEmptyFile.id,
+  ApplyFileEdit.id,
+  SaveUpload.id,
+  PrepareFileEdit.id,
+  DeployAsApi.id,
+  DeployAsChat.id,
+  PublishCustomBlock.id,
+  DeployAsMcp.id,
   Redeploy.id,
   LoadDeployment.id,
   PromoteToLive.id,
@@ -247,21 +256,19 @@ export function toolWatchdogTimeoutMs(toolName: string | undefined): number {
 }
 
 /**
- * How long the resume gate may wait on one pending tool call. Null means the
- * tool is durably waiting on a person and has no deadline.
- *
- * A call sitting on a permission prompt is waiting on a person, not on the
- * executor, so the tool's own watchdog is the wrong bound — the 60s default
- * would force-fail the prompt while the user was still reading it. Such a call
- * gets the long-running budget, which matches the gate's own wait timeout.
+ * How long the resume gate may wait on one pending tool call. Permission
+ * prompts receive the long-running budget. Browser calls share the renderer's
+ * budget so authorization and native queueing cannot outlive the resume gate.
  */
 export function pendingToolWaitBudgetMs(
-  toolCall: Pick<ToolCallState, 'name' | 'status'> | undefined
-): number | null {
-  if (toolCall?.name === BrowserRequestTakeover.id && toolCall.status === 'executing') {
-    return null
-  }
+  toolCall:
+    | (Pick<ToolCallState, 'name' | 'status'> & Partial<Pick<ToolCallState, 'params'>>)
+    | undefined
+): number {
   if (toolCall?.status === 'awaiting_approval') return TOOL_WATCHDOG_LONG_RUNNING_MS
+  if (toolCall?.name && isCurrentBrowserToolName(toolCall.name)) {
+    return browserToolRendererTimeoutMs(toolCall.name, toolCall.params)
+  }
   return toolWatchdogTimeoutMs(toolCall?.name)
 }
 
@@ -317,46 +324,85 @@ async function executeToolWithWatchdog(toolCall: ToolCallState, toolContext: Exe
   }
 }
 
+const HUNG_TOOL_MESSAGE =
+  'Tool execution hung and was abandoned so the conversation could continue. Its outcome is unknown; do not retry it automatically.'
+const UNAVAILABLE_TOOL_SETTLEMENT_MESSAGE =
+  'The tool result could not be restored before the conversation resumed. Its outcome is unknown; do not retry it automatically.'
+
 /**
- * Last-resort settlement for a tool whose promise never settled (a hang the
- * per-tool watchdog could not see, e.g. in post-processing or persistence).
- * Records a terminal error state + failed async row so the checkpoint loop
- * can resume Go with an error result instead of waiting forever.
+ * Settles an abandoned tool with a fixed server-owned failure. Client waiters consume the same
+ * sealed transport as ordinary client completions; no abandoned tool content is certified.
  */
 export async function forceFailHungToolCall(
   toolCallId: string,
   context: StreamingContext,
-  message: string
+  execContext: ExecutionContext
 ): Promise<void> {
   const toolCall = context.toolCalls.get(toolCallId)
   if (!toolCall || toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) return
+
+  const failure = { error: HUNG_TOOL_MESSAGE, outcomeUnknown: true, doNotRetry: true }
+  let durableData: unknown = failure
+  let completed = false
+  let lostSettlementRace = false
+  try {
+    if (context.runId && execContext.resolvedSecretTraceRegistry) {
+      const binding = { toolCallId, runId: context.runId, userId: execContext.userId }
+      const [completion, provenance] = await Promise.all([
+        sealClientToolCompletion({ ...binding, message: HUNG_TOOL_MESSAGE, data: failure }),
+        sealClientToolContext({
+          ...binding,
+          registry: execContext.resolvedSecretTraceRegistry,
+          /** The fixed failure contains no output or arguments from the abandoned tool. */
+          toolInput: undefined,
+        }),
+      ])
+      durableData = { ...completion, ...provenance }
+    }
+    if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) return
+
+    completed = Boolean(
+      await completeAsyncToolCall({
+        toolCallId,
+        status: MothershipStreamV1AsyncToolRecordStatus.failed,
+        result: durableData,
+        error: HUNG_TOOL_MESSAGE,
+      })
+    )
+    if (!completed) {
+      if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) return
+      lostSettlementRace = true
+    }
+  } catch (error) {
+    logger.warn('Failed to persist force-failed async tool status', {
+      toolCallId,
+      error: toError(error).message,
+    })
+    if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) return
+  }
+
+  /** A durable winner whose waiter is still hung must not become a fabricated local success. */
+  const message = lostSettlementRace ? UNAVAILABLE_TOOL_SETTLEMENT_MESSAGE : HUNG_TOOL_MESSAGE
   setTerminalToolCallState(toolCall, {
     status: MothershipStreamV1ToolOutcome.error,
+    output: { ...failure, error: message },
     error: message,
   })
   logger.error('Force-failed hung tool call', {
     toolCallId,
     toolName: toolCall.name,
-    message,
+    persisted: completed,
+    lostSettlementRace,
   })
   markToolResultSeen(toolCallId)
-  await completeAsyncToolCall({
-    toolCallId,
-    status: MothershipStreamV1AsyncToolRecordStatus.failed,
-    result: { error: message },
-    error: message,
-  }).catch((err) => {
-    logger.warn('Failed to persist force-failed async tool status', {
+  if (completed) {
+    publishTerminalToolConfirmation({
       toolCallId,
-      error: toError(err).message,
+      status: MothershipStreamV1ToolOutcome.error,
+      message: HUNG_TOOL_MESSAGE,
+      data: durableData,
     })
-  })
-  publishTerminalToolConfirmation({
-    toolCallId,
-    status: MothershipStreamV1ToolOutcome.error,
-    message,
-    data: { error: message },
-  })
+  }
 }
 
 function cancelledCompletion(message: string): AsyncToolCompletion {
@@ -497,8 +543,11 @@ async function executeToolAndReportInner(
     })
   }
 
+  // Loads the handler map on first use; the abort check below covers that wait.
+  await ensureHandlersRegistered()
   if (abortRequested(context, execContext, options)) {
     markToolCallCancelled('Request aborted before tool execution')
+    const cancellationResult = toolCall.result
     markToolResultSeen(toolCall.id)
     await completeAsyncToolCall({
       toolCallId: toolCall.id,
@@ -511,6 +560,9 @@ async function executeToolAndReportInner(
         error: toError(err).message,
       })
     })
+    if (toolCall.result !== cancellationResult) {
+      return terminalCompletionFromToolCall(toolCall)
+    }
     publishTerminalToolConfirmation({
       toolCallId: toolCall.id,
       status: MothershipStreamV1ToolOutcome.cancelled,
@@ -527,6 +579,7 @@ async function executeToolAndReportInner(
     toolName: toolCall.name,
     args: toolCall.params,
   }).catch((err) => {
+    if (err instanceof AsyncToolCallOwnershipError) throw err
     logger.warn('Failed to persist async tool row before execution', {
       toolCallId: toolCall.id,
       error: toError(err).message,
@@ -600,7 +653,6 @@ async function executeToolAndReportInner(
   }
 
   try {
-    ensureHandlersRegistered()
     let result = await executeToolWithWatchdog(toolCall, toolExecutionContext)
     if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
       endToolSpanFromTerminalState()
@@ -609,9 +661,11 @@ async function executeToolAndReportInner(
     if (abortRequested(context, execContext, options)) {
       const copilotResult = inspectToolResultForCopilot(
         result,
-        toolExecutionContext.resolvedSecretTraceRegistry
+        toolExecutionContext.resolvedSecretTraceRegistry,
+        toolCall.name
       ).result
       markToolCallCancelled('Request aborted during tool execution')
+      const cancellationResult = toolCall.result
       markToolResultSeen(toolCall.id)
       await completeAsyncToolCall({
         toolCallId: toolCall.id,
@@ -624,6 +678,9 @@ async function executeToolAndReportInner(
           error: toError(err).message,
         })
       })
+      if (toolCall.result !== cancellationResult) {
+        return terminalCompletionFromToolCall(toolCall)
+      }
       publishTerminalToolConfirmation({
         toolCallId: toolCall.id,
         status: MothershipStreamV1ToolOutcome.cancelled,
@@ -642,8 +699,13 @@ async function executeToolAndReportInner(
       result,
       toolExecutionContext
     )
+    if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
+      endToolSpanFromTerminalState()
+      return terminalCompletionFromToolCall(toolCall)
+    }
     if (abortRequested(context, execContext, options)) {
       markToolCallCancelled('Request aborted during tool post-processing')
+      const cancellationResult = toolCall.result
       markToolResultSeen(toolCall.id)
       await completeAsyncToolCall({
         toolCallId: toolCall.id,
@@ -656,6 +718,9 @@ async function executeToolAndReportInner(
           error: toError(err).message,
         })
       })
+      if (toolCall.result !== cancellationResult) {
+        return terminalCompletionFromToolCall(toolCall)
+      }
       publishTerminalToolConfirmation({
         toolCallId: toolCall.id,
         status: MothershipStreamV1ToolOutcome.cancelled,
@@ -671,8 +736,13 @@ async function executeToolAndReportInner(
       result,
       toolExecutionContext
     )
+    if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
+      endToolSpanFromTerminalState()
+      return terminalCompletionFromToolCall(toolCall)
+    }
     if (abortRequested(context, execContext, options)) {
       markToolCallCancelled('Request aborted during tool post-processing')
+      const cancellationResult = toolCall.result
       markToolResultSeen(toolCall.id)
       await completeAsyncToolCall({
         toolCallId: toolCall.id,
@@ -685,6 +755,9 @@ async function executeToolAndReportInner(
           error: toError(err).message,
         })
       })
+      if (toolCall.result !== cancellationResult) {
+        return terminalCompletionFromToolCall(toolCall)
+      }
       publishTerminalToolConfirmation({
         toolCallId: toolCall.id,
         status: MothershipStreamV1ToolOutcome.cancelled,
@@ -700,8 +773,13 @@ async function executeToolAndReportInner(
       result,
       toolExecutionContext
     )
+    if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
+      endToolSpanFromTerminalState()
+      return terminalCompletionFromToolCall(toolCall)
+    }
     if (abortRequested(context, execContext, options)) {
       markToolCallCancelled('Request aborted during tool post-processing')
+      const cancellationResult = toolCall.result
       markToolResultSeen(toolCall.id)
       await completeAsyncToolCall({
         toolCallId: toolCall.id,
@@ -714,6 +792,9 @@ async function executeToolAndReportInner(
           error: toError(err).message,
         })
       })
+      if (toolCall.result !== cancellationResult) {
+        return terminalCompletionFromToolCall(toolCall)
+      }
       publishTerminalToolConfirmation({
         toolCallId: toolCall.id,
         status: MothershipStreamV1ToolOutcome.cancelled,
@@ -725,7 +806,8 @@ async function executeToolAndReportInner(
     }
     const projection = inspectToolResultForCopilot(
       result,
-      toolExecutionContext.resolvedSecretTraceRegistry
+      toolExecutionContext.resolvedSecretTraceRegistry,
+      toolCall.name
     )
     const copilotResult = projection.result
     mergeToolRegistry(projection.safe)
@@ -734,6 +816,21 @@ async function executeToolAndReportInner(
     toolSpan.attributes = {
       ...toolSpan.attributes,
       ...summarizeToolResultForSpan(copilotResult),
+      ...(projection.safe
+        ? {}
+        : { resultWithheld: true, ...describeWithholdingCause(projection.cause) }),
+    }
+    if (!projection.safe) {
+      // A withheld SUCCESS otherwise leaves no trace anywhere: the span reads
+      // ok and the model just sees a bare `{success: true}` with no output.
+      // The cause is what says whether a guard latched, no catalog was built,
+      // or the payload itself was unprojectable — three different fixes.
+      logger.warn('Tool result withheld by egress projection', {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        runtimeSucceeded: result.success,
+        ...describeWithholdingCause(projection.cause),
+      })
     }
 
     setTerminalToolCallState(toolCall, {
@@ -779,6 +876,7 @@ async function executeToolAndReportInner(
       : MothershipStreamV1ToolOutcome.error
     const terminalMessage = modelSucceeded ? 'Tool completed' : requireToolCallError(toolCall)
     const terminalData = getToolCallTerminalData(toolCall)
+    const terminalResult = toolCall.result
 
     markToolResultSeen(toolCall.id)
     await completeAsyncToolCall({
@@ -794,6 +892,10 @@ async function executeToolAndReportInner(
         error: toError(err).message,
       })
     })
+    if (toolCall.result !== terminalResult) {
+      endToolSpanFromTerminalState()
+      return terminalCompletionFromToolCall(toolCall)
+    }
     publishTerminalToolConfirmation({
       toolCallId: toolCall.id,
       status: terminalStatus,
@@ -807,8 +909,12 @@ async function executeToolAndReportInner(
       return cancelledCompletion('Request aborted before tool result delivery')
     }
 
-    // Fire-and-forget: notify the copilot backend that the tool completed.
-    // IMPORTANT: We must NOT await this — the Go backend may block on the
+    // A newly generated API key is intentionally included only in this
+    // live/replay client event. Model-facing results and long-term chat records stay redacted.
+    const clientEventOutput =
+      toolCall.name === GenerateApiKey.id && modelSucceeded && hasOutputValue(copilotResult)
+        ? copilotResult.output
+        : terminalData
     const resultEvent: StreamEvent = {
       type: MothershipStreamV1EventType.tool,
       payload: {
@@ -818,7 +924,7 @@ async function executeToolAndReportInner(
         mode: MothershipStreamV1ToolMode.async,
         phase: MothershipStreamV1ToolPhase.result,
         success: modelSucceeded,
-        output: terminalData,
+        output: clientEventOutput,
         ...(modelSucceeded
           ? { status: MothershipStreamV1ToolOutcome.success }
           : { status: MothershipStreamV1ToolOutcome.error, error: terminalMessage }),
@@ -853,16 +959,22 @@ async function executeToolAndReportInner(
       ...(terminalData !== undefined ? { data: terminalData } : {}),
     })
   } catch (error) {
+    if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
+      endToolSpanFromTerminalState()
+      return terminalCompletionFromToolCall(toolCall)
+    }
     const thrownMessage = toError(error).message
     const projection = inspectToolResultForCopilot(
       { success: false, error: thrownMessage },
-      toolExecutionContext.resolvedSecretTraceRegistry
+      toolExecutionContext.resolvedSecretTraceRegistry,
+      toolCall.name
     )
     const copilotError = projection.result
     mergeToolRegistry(projection.safe)
     const safeThrownMessage = copilotError.error || 'Tool failed'
     if (abortRequested(context, execContext, options)) {
       markToolCallCancelled('Request aborted during tool execution')
+      const cancellationResult = toolCall.result
       markToolResultSeen(toolCall.id)
       await completeAsyncToolCall({
         toolCallId: toolCall.id,
@@ -875,6 +987,9 @@ async function executeToolAndReportInner(
           error: toError(err).message,
         })
       })
+      if (toolCall.result !== cancellationResult) {
+        return terminalCompletionFromToolCall(toolCall)
+      }
       publishTerminalToolConfirmation({
         toolCallId: toolCall.id,
         status: MothershipStreamV1ToolOutcome.cancelled,
@@ -892,6 +1007,7 @@ async function executeToolAndReportInner(
       error: safeThrownMessage,
     })
 
+    const terminalErrorResult = toolCall.result
     logger.error('Tool execution threw', {
       toolCallId: toolCall.id,
       toolName: toolCall.name,
@@ -911,6 +1027,10 @@ async function executeToolAndReportInner(
         error: toError(err).message,
       })
     })
+    if (toolCall.result !== terminalErrorResult) {
+      endToolSpanFromTerminalState()
+      return terminalCompletionFromToolCall(toolCall)
+    }
     publishTerminalToolConfirmation({
       toolCallId: toolCall.id,
       status: MothershipStreamV1ToolOutcome.error,

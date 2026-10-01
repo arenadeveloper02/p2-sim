@@ -18,6 +18,10 @@ import {
   readStreamToBufferWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { CodeLanguage } from '@/lib/execution/languages'
+import {
+  isNonRetryableExecutionError,
+  SandboxLaunchIndeterminateError,
+} from '@/lib/execution/non-retryable-error'
 import { classifyInstallOutput, tailBuildLog } from '@/lib/execution/remote-sandbox/build-errors'
 import {
   sandboxCliEnvironment,
@@ -31,6 +35,7 @@ import {
 } from '@/lib/execution/remote-sandbox/function-resources'
 import {
   assertSandboxProcessOutputWithinLimit,
+  isSandboxOutputLimitError,
   MAX_SANDBOX_OUTPUT_BYTES,
   MAX_SANDBOX_PROCESS_OUTPUT_BYTES,
   SandboxOutputFileError,
@@ -38,6 +43,7 @@ import {
   SandboxProcessOutputBudget,
   tailStreamedSandboxOutput,
 } from '@/lib/execution/remote-sandbox/output-limits'
+import { resolveSandboxDirectoryEntryPath } from '@/lib/execution/remote-sandbox/sandbox-paths'
 import {
   quoteDependency,
   type SandboxSpec,
@@ -50,6 +56,7 @@ import type {
   RunCommandOptions,
   SandboxCodeResult,
   SandboxCommandResult,
+  SandboxDirectoryEntry,
   SandboxHandle,
   SandboxImageBuild,
   SandboxImageBuilder,
@@ -90,6 +97,11 @@ export const E2B_SANDBOX_MATERIALIZER_REVISION = FUNCTION_SANDBOX_MATERIALIZER_R
 /** Maximum continuous sandbox lifetime supported by E2B. */
 export const E2B_MAX_SANDBOX_LIFETIME_MS = 60 * 60 * 1000
 
+/** E2B sends sandbox lifetimes as whole seconds. */
+export function resolveE2BSandboxLifetimeMs(lifetimeMs: number): number {
+  return Math.min(Math.ceil(lifetimeMs / 1000) * 1000, E2B_MAX_SANDBOX_LIFETIME_MS)
+}
+
 const E2B_PROVIDER_LIMIT_ERROR =
   'E2B reached its 24-hour limit for a single sandbox execution. The workflow timeout may be longer, but this Function call must finish within 24 hours.'
 const E2B_TIMEOUT_MESSAGE_PATTERN =
@@ -109,6 +121,8 @@ function isE2BExecutionTimeout(error: unknown): boolean {
         ? error.name
         : ''
   const message =
+    // utils-lint-allow: probes E2B's own error shape — a record-like carrying `message`
+    // or `value` — which getErrorMessage cannot express.
     error instanceof Error
       ? error.message
       : isRecordLike(error)
@@ -339,6 +353,7 @@ class E2BSandboxHandle implements SandboxHandle {
           timeoutMs: options.timeoutMs,
           maxOutputBytes: options.maxOutputBytes,
           signal: options.signal,
+          atMostOnce: true,
           envs: {
             ...options.envs,
             SIM_CODE_PATH: codePath,
@@ -357,7 +372,7 @@ class E2BSandboxHandle implements SandboxHandle {
         return { text: '', stdout: result.stdout, stderr: result.stderr, timedOut: true }
       }
       if (result.exitCode !== 0) {
-        if (result.stderr === E2B_PROVIDER_LIMIT_ERROR) {
+        if (result.providerFailure === 'provider_limit') {
           return {
             text: '',
             stdout: result.stdout,
@@ -367,6 +382,7 @@ class E2BSandboxHandle implements SandboxHandle {
               value: E2B_PROVIDER_LIMIT_ERROR,
               traceback: E2B_PROVIDER_LIMIT_ERROR,
             },
+            providerFailure: result.providerFailure,
           }
         }
         return processCodeFailure(result)
@@ -398,36 +414,140 @@ class E2BSandboxHandle implements SandboxHandle {
      */
     const retainStdout = options.onStdout === undefined
     const retainStderr = options.onStderr === undefined
-    const guardOutput = (value: string, callback?: (chunk: string) => void) => {
+    let observedStdout = ''
+    let observedStderr = ''
+    const guardOutput = (
+      value: string,
+      append: (chunk: string) => void,
+      callback?: (chunk: string) => void
+    ) => {
       try {
         outputBudget.add(value)
       } catch (error) {
         void this.kill().catch(() => {})
         throw error
       }
+      append(value)
       callback?.(value)
     }
     try {
       const prepared = prepareE2BCommand(command, options.envs)
-      const result = await this.sandbox.commands.run(prepared.command, {
+      const processOptions = {
         ...(prepared.envs ? { envs: prepared.envs } : {}),
         timeoutMs: e2bTimeoutMs(options.timeoutMs),
         ...(options.signal ? { signal: options.signal } : {}),
         ...(options.rootUser ? { user: 'root' as const } : {}),
-        onStdout: (chunk) => guardOutput(chunk, options.onStdout),
-        onStderr: (chunk) => guardOutput(chunk, options.onStderr),
-      })
-      assertSandboxProcessOutputWithinLimit([result.stdout, result.stderr], options.maxOutputBytes)
+      }
+      let started: Awaited<ReturnType<E2BSandbox['commands']['run']>>
+      try {
+        started = await this.sandbox.commands.run(prepared.command, {
+          ...processOptions,
+          background: true,
+          onStdout: (chunk: string) =>
+            guardOutput(
+              chunk,
+              (value) => {
+                observedStdout += value
+              },
+              options.onStdout
+            ),
+          onStderr: (chunk: string) =>
+            guardOutput(
+              chunk,
+              (value) => {
+                observedStderr += value
+              },
+              options.onStderr
+            ),
+        })
+      } catch (error) {
+        if (options.signal?.aborted || isE2BExecutionTimeout(error)) throw error
+        const failure = error as { stdout?: string; stderr?: string; exitCode?: number }
+        if (
+          failure.stdout !== undefined ||
+          failure.stderr !== undefined ||
+          failure.exitCode !== undefined
+        ) {
+          throw error
+        }
+        if (options.atMostOnce) {
+          throw new SandboxLaunchIndeterminateError('E2B', { cause: error })
+        }
+        throw error
+      }
+
+      let result
+      if ('wait' in started && typeof started.wait === 'function') {
+        try {
+          result = await started.wait()
+        } catch (error) {
+          const failure = error as { stdout?: string; stderr?: string; exitCode?: number }
+          const isTerminalFailure =
+            failure.stdout !== undefined ||
+            failure.stderr !== undefined ||
+            failure.exitCode !== undefined ||
+            isE2BExecutionTimeout(error)
+          if (options.signal?.aborted || outputBudget.error || isTerminalFailure) throw error
+          if (options.atMostOnce) {
+            throw new SandboxLaunchIndeterminateError('E2B', { cause: error })
+          }
+
+          logger.warn('E2B command event stream disconnected; reconnecting to the same process', {
+            sandboxId: this.sandboxId,
+            pid: started.pid,
+          })
+          const recovered = await this.sandbox.commands.connect(started.pid, {
+            ...processOptions,
+            onStdout: (chunk: string) =>
+              guardOutput(
+                chunk,
+                (value) => {
+                  observedStdout += value
+                },
+                options.onStdout
+              ),
+            onStderr: (chunk: string) =>
+              guardOutput(
+                chunk,
+                (value) => {
+                  observedStderr += value
+                },
+                options.onStderr
+              ),
+          })
+          result = await recovered.wait()
+        }
+      } else {
+        // Older test doubles return the synchronous result shape. Production E2B always returns a
+        // process handle because `background: true` is fixed above.
+        result = started
+      }
+      const mergeObservedOutput = (observed: string, returned: string): string => {
+        if (!observed) return returned
+        if (!returned || observed.endsWith(returned)) return observed
+        if (returned.startsWith(observed)) return returned
+        return observed + returned
+      }
+      const stdout = mergeObservedOutput(observedStdout, result.stdout ?? '')
+      const stderr = mergeObservedOutput(observedStderr, result.stderr ?? '')
+      assertSandboxProcessOutputWithinLimit([stdout, stderr], options.maxOutputBytes)
       return {
-        stdout: retainStdout ? result.stdout : tailStreamedSandboxOutput(result.stdout),
-        stderr: retainStderr ? result.stderr : tailStreamedSandboxOutput(result.stderr),
-        exitCode: result.exitCode,
+        stdout: retainStdout ? stdout : tailStreamedSandboxOutput(stdout),
+        stderr: retainStderr ? stderr : tailStreamedSandboxOutput(stderr),
+        exitCode: result.exitCode ?? 1,
       }
     } catch (error) {
       if (outputBudget.error) throw outputBudget.error
+      if (isSandboxOutputLimitError(error)) throw error
+      if (isNonRetryableExecutionError(error)) throw error
       if (reachedE2BProviderLimit(error, this.providerLimitAtMs, options.signal)) {
         recordSandboxProviderLimit({ provider: 'e2b', operation })
-        return { stdout: '', stderr: E2B_PROVIDER_LIMIT_ERROR, exitCode: 1 }
+        return {
+          stdout: '',
+          stderr: E2B_PROVIDER_LIMIT_ERROR,
+          exitCode: 1,
+          providerFailure: 'provider_limit',
+        }
       }
       // The SDK throws on non-zero exit; callers want the streams, not a throw.
       const failure = error as {
@@ -519,6 +639,25 @@ class E2BSandboxHandle implements SandboxHandle {
 
   async writeFile(path: string, content: string | ArrayBuffer): Promise<void> {
     await this.sandbox.files.write(path, content as string)
+  }
+
+  async listFiles(path: string, options?: { depth?: number }): Promise<SandboxDirectoryEntry[]> {
+    const entries = await this.sandbox.files.list(path, {
+      ...(options?.depth !== undefined ? { depth: options.depth } : {}),
+    })
+
+    const files: SandboxDirectoryEntry[] = []
+    for (const entry of entries) {
+      if (entry.type !== 'file' && entry.type !== 'dir') continue
+      const resolved = resolveSandboxDirectoryEntryPath(path, entry.path)
+      if (!resolved) continue
+      files.push({
+        ...resolved,
+        kind: entry.type === 'dir' ? 'directory' : 'file',
+        size: entry.size,
+      })
+    }
+    return files
   }
 
   async kill(): Promise<void> {
@@ -735,6 +874,7 @@ export const e2bProvider: SandboxProvider = {
   id: 'e2b',
   dependencyStrategy: 'prebuilt',
   images: e2bImages,
+  resolveLifetimeMs: resolveE2BSandboxLifetimeMs,
   async create(kind: SandboxKind, options?: CreateSandboxOptions): Promise<SandboxHandle> {
     const apiKey = env.E2B_API_KEY
     if (!apiKey) {
@@ -753,7 +893,9 @@ export const e2bProvider: SandboxProvider = {
     // default — longer than the lifetime it asked for, which is the opposite of
     // what it requested.
     const effectiveLifetimeMs =
-      options?.lifetimeMs !== undefined ? e2bTimeoutMs(options.lifetimeMs) : undefined
+      options?.lifetimeMs !== undefined
+        ? resolveE2BSandboxLifetimeMs(options.lifetimeMs)
+        : undefined
     const createOptions = {
       apiKey,
       ...(effectiveLifetimeMs !== undefined ? { timeoutMs: effectiveLifetimeMs } : {}),
@@ -761,6 +903,7 @@ export const e2bProvider: SandboxProvider = {
 
     const { Sandbox } = await import('@e2b/code-interpreter')
     const lifetimeStartedAtMs = Date.now()
+    options?.onProviderRequestStarted?.(lifetimeStartedAtMs)
     const sandbox = await Sandbox.create(templateName, createOptions)
 
     return new E2BSandboxHandle(

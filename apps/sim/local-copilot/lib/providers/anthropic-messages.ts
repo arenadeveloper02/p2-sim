@@ -14,6 +14,8 @@ export type AnthropicContentBlock =
       type: 'image'
       source: { type: 'base64'; media_type: string; data: string }
     }
+  | { type: 'thinking'; thinking: string; signature: string }
+  | { type: 'redacted_thinking'; data: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string }
 
@@ -153,6 +155,21 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
 
     if (message.role === 'assistant' && message.toolCalls?.length) {
       const content: AnthropicContentBlock[] = []
+      // Anthropic requires unmodified thinking blocks (with signatures) before
+      // tool_use on the next turn of a tool loop. Skip unsigned blocks — echoing
+      // an empty signature triggers a 400 and suppresses later thinking rounds.
+      for (const block of message.anthropicThinkingBlocks ?? []) {
+        if (block.type === 'thinking') {
+          if (!block.signature) continue
+          content.push({
+            type: 'thinking',
+            thinking: block.thinking,
+            signature: block.signature,
+          })
+        } else if (block.data) {
+          content.push({ type: 'redacted_thinking', data: block.data })
+        }
+      }
       const assistantText = getMessageContentText(message.content).trim()
       if (assistantText) {
         content.push({ type: 'text', text: assistantText })

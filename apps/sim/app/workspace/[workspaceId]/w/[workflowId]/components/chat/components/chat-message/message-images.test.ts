@@ -81,6 +81,41 @@ describe('resolveMessageImagesAndProse', () => {
     expect(prose).toBe('')
   })
 
+  it('leaves image URLs inside fenced code untouched', () => {
+    const phone = 'https://cdn.example.com/phone.jpg'
+    const raw = [
+      '```html',
+      '<div>',
+      `  <img src="${phone}" alt="phone" />`,
+      '  <p>iPhone | 128GB</p>',
+      '</div>',
+      '```',
+    ].join('\n')
+
+    const { urls, prose } = resolveMessageImagesAndProse(raw)
+
+    expect(urls).toEqual([])
+    expect(prose).toBe(raw)
+  })
+
+  it('extracts an image URL after a fenced code block and keeps the fence', () => {
+    const phone = 'https://cdn.example.com/phone.jpg'
+    const fenced = [
+      '```html',
+      '<div>',
+      `  <img src="${phone}" alt="phone" />`,
+      '</div>',
+      '```',
+    ].join('\n')
+    const raw = `${fenced}\n\n${IMAGE_URL}`
+
+    const { urls, prose } = resolveMessageImagesAndProse(raw)
+
+    expect(urls).toEqual([IMAGE_URL])
+    expect(prose).toBe(fenced)
+    expect(prose).toContain(phone)
+  })
+
   it('extracts image URLs from JSON content payloads', () => {
     const raw = JSON.stringify({
       content: `Here are options:\n- ${IMAGE_URL}\n- ${IMAGE_URL_2}`,
@@ -102,6 +137,18 @@ describe('isImageUrlLine', () => {
 })
 
 describe('mergeToolOutputImageUrls', () => {
+  it('keeps a generated image when sample HTML also contains an img src', () => {
+    const sample = 'https://cdn.example.com/phone.jpg'
+    const content = `\`\`\`html\n<img src="${sample}" />\n\`\`\`\n\n${IMAGE_URL}`
+
+    const { uniqueUrls, prose } = mergeToolOutputImageUrls(IMAGE_URL, content)
+
+    expect(uniqueUrls).toEqual([IMAGE_URL])
+    expect(prose).toContain('```html')
+    expect(prose).toContain(sample)
+    expect(prose).not.toContain(IMAGE_URL)
+  })
+
   it('merges image URLs from agent content text with list markers', () => {
     const content = `Here are three new variations:\n\n- ${IMAGE_URL}\n- ${IMAGE_URL_2}\n- ${IMAGE_URL_3}`
 

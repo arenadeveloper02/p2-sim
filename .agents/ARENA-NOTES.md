@@ -98,13 +98,14 @@ Add rows here as more custom work lands.
 | Org whitelabeling / branding | `apps/sim/ee/whitelabeling/` |
 | Sidebar brand header | `apps/sim/app/workspace/.../sidebar/components/sidebar-brand-header/` |
 | Settings Enterprise nav (forks + custom-blocks off) | `apps/sim/app/workspace/.../settings/navigation.ts` |
-| Arena billing (Starter plan, flat org pricing, daily refresh policy) | `apps/sim/lib/billing/arena/` |
+| Arena billing (Starter plan, flat org pricing, daily refresh policy) | `apps/sim/lib/billing/arena/` — full Stripe/plans README: `apps/sim/lib/billing/README.md` |
 | Client org Starter provisioning | `apps/sim/lib/billing/arena/client-org-billing.ts` (called from `lib/organizations/client-organization.ts`) |
 | Arena Stripe plans (`team_1950` / `team_6500`) | `apps/sim/lib/billing/arena/plans.ts` via `getPlans()` when Arena billing is on |
 | Flat org seat reconcile skip | `apps/sim/lib/billing/arena/org-pricing.ts` → early return in `reconcileOrganizationSeats` |
 | Arena upgrade page overlay | `arena/upgrade-presenter.ts`, `arena/upgrade-comparison.ts` → `upgrade.tsx` / `use-upgrade-state.ts` |
 | Checkout ignores Starter Stripe ID | `arena/checkout-policy.ts` → `lib/billing/client/upgrade.ts` |
 | Supersede Starter on paid checkout | `arena/supersede-starter.ts` → `onSubscriptionComplete` + org ensure |
+| Personal / signup workspace creation | `apps/sim/lib/workspaces/README.md` |
 
 ---
 
@@ -117,7 +118,9 @@ When pulling upstream Sim into an Arena branch:
 3. **Deployed chat** — `page.tsx` still wires `ArenaDeployedChat`, not upstream `ChatClient`.
 4. **Image variations** — `resolve-image-count.server.ts` and related image-generation paths are not overwritten by upstream single-image defaults.
 5. **Settings Enterprise nav** — Keep `forks` and `custom-blocks` commented out in `settings/navigation.ts`.
-6. **This file** — Update the tables above if anything was added, removed, or renamed during the merge.
+6. **Stripe / plans** — Follow `apps/sim/lib/billing/README.md` (runtime `getCreditsPerDollar()`, Checkout URL + non-blocking transfer, Starter has no Stripe ID, EE entitlement includes Starter/Max).
+7. **Workspaces** — Follow `apps/sim/lib/workspaces/README.md` (signup `ensurePersonalWorkspaceOnEmailSignup`, keep `/workspace` fallbacks, keep `isPersonal` + first-personal on free/lapsed orgs).
+8. **This file** — Update the tables above if anything was added, removed, or renamed during the merge.
 
 ---
 
@@ -125,6 +128,8 @@ When pulling upstream Sim into an Arena branch:
 
 | Date | Change |
 |------|--------|
+| 2026-09-07 | Workspace creation and personal-workspace README at `apps/sim/lib/workspaces/README.md` |
+| 2026-09-07 | Stripe payments and plans README at `apps/sim/lib/billing/README.md` |
 | 2026-09-01 | Arena upgrade overlay (Starter/Pro/Max) + checkout ignores Starter Stripe ID and supersedes Starter on payment |
 | 2026-09-01 | Arena flat org pricing ($30 Pro / $100 Max) + Stripe plan catalog (`team_1950` / `team_6500`, `STRIPE_PRICE_TEAM_30_*`) |
 | 2026-09-01 | Arena billing module: Starter plan provisioning for client organizations, daily refresh disabled by default |

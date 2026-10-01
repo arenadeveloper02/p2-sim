@@ -79,6 +79,12 @@
   white-space: nowrap;
 }
 
+.labelRowWrap {
+  align-items: flex-start;
+  max-width: 100%;
+  white-space: normal;
+}
+
 /* The sweeping-band treatment itself (gradient, timing, dark mode, reduced
    motion) is owned by the shared shimmer-text module; this class only adds the
    loader-scaled font sizing. Canonical normal weight per emcn rules: body text
@@ -101,6 +107,11 @@
 .labelStack {
   position: relative;
   display: inline-flex;
+}
+
+.labelStackWrap {
+  flex: 1;
+  min-width: 0;
 }
 .labelLayer {
   display: inline-flex;

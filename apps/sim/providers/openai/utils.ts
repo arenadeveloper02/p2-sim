@@ -206,6 +206,7 @@ export async function* iterateResponsesStreamEvents(
 
 export interface ResponsesToolDefinition {
   type: 'function'
+  strict: false
   name: string
   description?: string
   parameters?: Record<string, unknown>
@@ -266,7 +267,8 @@ export function buildResponsesInputFromMessages(
 }
 
 /**
- * Converts tool definitions to the Responses API format.
+ * Converts tool definitions without changing their required and optional inputs.
+ * Responses otherwise attempts strict normalization, which can require optional fields.
  */
 export function convertToolsToResponses(
   tools: Array<{
@@ -286,6 +288,7 @@ export function convertToolsToResponses(
 
       return {
         type: 'function' as const,
+        strict: false as const,
         name,
         description: tool.function?.description ?? tool.description,
         parameters: tool.function?.parameters ?? tool.parameters,

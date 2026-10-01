@@ -23,13 +23,15 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
 /** A buffer beginning with the ZIP local-file-header magic (PK\x03\x04). */
 const ZIP_SHAPED = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00])
 
-import { WorkspaceFileGrepError } from '@/lib/copilot/vfs/operations'
 import {
   findMothershipUploadRowByChatAndName,
   grepChatUpload,
+  grepChatUploadWithProvenance,
   listChatUploads,
   readChatUpload,
-} from './upload-file-reader'
+  readChatUploadWithProvenance,
+} from '@/lib/copilot/tools/handlers/upload-file-reader'
+import { WorkspaceFileGrepError } from '@/lib/copilot/vfs/operations'
 
 const CHAT_ID = '11111111-1111-1111-1111-111111111111'
 const NOW = new Date('2026-05-05T00:00:00.000Z')
@@ -45,10 +47,11 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     originalName: 'image.png',
     displayName: 'image.png',
     contentType: 'image/png',
-    size: 1024,
+    sizeBytes: 1024,
     deletedAt: null,
     uploadedAt: NOW,
     updatedAt: NOW,
+    contentUpdatedAt: NOW,
     ...overrides,
   }
 }
@@ -164,6 +167,24 @@ describe('readChatUpload', () => {
     mockReadFileRecord.mockReset()
   })
 
+  it('captures the content revision before read and grep can race with upload promotion', async () => {
+    const row = makeRow({ displayName: 'note.txt', contentType: 'text/plain' })
+    const result = { content: 'note', totalLines: 1 }
+    for (const read of [
+      () => readChatUploadWithProvenance('note.txt', CHAT_ID),
+      () => grepChatUploadWithProvenance('note.txt', CHAT_ID, 'note'),
+    ]) {
+      mockOrderByThenLimit([row])
+      mockReadFileRecord.mockResolvedValueOnce(result)
+      expect((await read())?.file).toEqual({
+        fileId: row.id,
+        key: row.key,
+        context: 'mothership',
+        contentUpdatedAt: NOW,
+      })
+    }
+  })
+
   it('reads the row resolved by the suffixed displayName', async () => {
     const row = makeRow({ id: 'wf_2', displayName: 'image (2).png' })
     mockOrderByThenLimit([row])
@@ -184,7 +205,7 @@ describe('readChatUpload', () => {
 
     const result = await readChatUpload('bundle.zip', CHAT_ID)
 
-    expect(result?.content).toContain('materialize_file')
+    expect(result?.content).toContain('save_upload')
     expect(result?.content).toContain('extract')
     expect(mockReadFileRecord).not.toHaveBeenCalled()
   })
@@ -194,13 +215,13 @@ describe('readChatUpload', () => {
       id: 'wf_z',
       displayName: 'huge.zip',
       contentType: 'application/zip',
-      size: 50 * 1024 * 1024,
+      sizeBytes: 50 * 1024 * 1024,
     })
     mockOrderByThenLimit([row])
 
     const result = await readChatUpload('huge.zip', CHAT_ID)
 
-    expect(result?.content).toContain('materialize_file')
+    expect(result?.content).toContain('save_upload')
     expect(mockFetchBuffer).not.toHaveBeenCalled()
     expect(mockReadFileRecord).not.toHaveBeenCalled()
   })
@@ -243,7 +264,7 @@ describe('grepChatUpload', () => {
     const error = await grepChatUpload('bundle.zip', CHAT_ID, 'foo').catch((e) => e)
 
     expect(error).toBeInstanceOf(WorkspaceFileGrepError)
-    expect(error.message).toContain('materialize_file')
+    expect(error.message).toContain('save_upload')
     expect(error.message).toContain('extract')
     expect(mockReadFileRecord).not.toHaveBeenCalled()
   })

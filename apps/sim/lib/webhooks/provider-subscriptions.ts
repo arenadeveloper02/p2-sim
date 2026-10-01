@@ -2,7 +2,9 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { omit } from '@sim/utils/object'
 import type { NextRequest } from 'next/server'
+import { withResourceOutboundScope } from '@/lib/core/network/resource-scope.server'
 import {
+  resolveBackgroundWebhookEnv,
   resolveWebhookProviderConfig,
   resolveWebhookRecordProviderConfig,
 } from '@/lib/webhooks/env-resolver'
@@ -150,14 +152,15 @@ export async function createExternalWebhookSubscription(
    * outbox handler must not mint a provider resource it can no longer
    * durably record.
    */
-  options.signal?.throwIfAborted()
-
-  const result = await handler.createSubscription({
-    webhook: { ...webhookData, providerConfig: resolvedProviderConfig },
-    workflow,
-    userId,
-    requestId,
-    request,
+  const result = await withResourceOutboundScope({ workspaceId }, () => {
+    options.signal?.throwIfAborted()
+    return handler.createSubscription!({
+      webhook: { ...webhookData, providerConfig: resolvedProviderConfig },
+      workflow,
+      userId,
+      requestId,
+      request,
+    })
   })
 
   if (!result) {
@@ -172,8 +175,15 @@ export async function createExternalWebhookSubscription(
 
 /**
  * Clean up external webhook subscriptions for a webhook.
- * Resolves persisted `{{ENV_VAR}}` references with the workflow owner's
- * effective environment before invoking the provider.
+ *
+ * Resolves persisted `{{ENV_VAR}}` references the same way the delivery that
+ * created the subscription resolved them — owner for personal variables, the
+ * workspace billing account for workspace ones. Reading both slices as the owner
+ * meant cleanup could see a narrower selection than execution did: a non-admin
+ * owner without a credential grant for the referenced key left `{{VAR}}`
+ * unresolved (`onMissing` defaults to `keep`), and the provider was then handed
+ * the literal reference as its credential. Since the failure below is non-fatal
+ * by default, that silently orphaned the subscription at the provider.
  *
  * By default, cleanup failure is logged but non-fatal for legacy best-effort callers.
  * Deployment outbox cleanup passes `throwOnError` so provider failures stay retryable.
@@ -197,18 +207,26 @@ export async function cleanupExternalWebhook(
     }
 
     const workspaceId = typeof workflow.workspaceId === 'string' ? workflow.workspaceId : undefined
+    const envVars = await resolveBackgroundWebhookEnv(workflow.userId, workspaceId)
     const resolvedWebhook = await resolveWebhookRecordProviderConfig(
       webhook,
       workflow.userId,
-      workspaceId
+      workspaceId,
+      { envVars }
     )
 
-    await handler.deleteSubscription({
-      webhook: resolvedWebhook,
-      workflow,
-      requestId,
-      strict: options.throwOnError,
-    })
+    /** Workspace archival precedes provider cleanup; routing still uses its canonical owner. */
+    await withResourceOutboundScope(
+      { workspaceId },
+      () =>
+        handler.deleteSubscription!({
+          webhook: resolvedWebhook,
+          workflow,
+          requestId,
+          strict: options.throwOnError,
+        }),
+      { includeArchived: true }
+    )
   } catch (error) {
     logger.warn(`[${requestId}] Error cleaning up external webhook (non-fatal)`, {
       provider,

@@ -23,6 +23,7 @@ export interface ImageGenerationParams {
   inputImageUrls?: string
   inputImageMimeType?: string
   inputImageWarning?: string
+  numImages?: number
 }
 
 export interface ImageGenerationResponse extends ToolResponse {
@@ -48,6 +49,19 @@ export interface ImageGenerationResponse extends ToolResponse {
       s3UploadFailed?: boolean
     }
     s3UploadFailed?: boolean
+    __imageBilling?: {
+      provider: string
+      model: string
+      size?: string
+      quality?: string
+      resolution?: string
+      aspectRatio?: string
+      numImages?: number
+      hasEdit?: boolean
+      providerCostPerImage: number
+      imageCount: number
+      costMultiplier: number
+    }
     __falaiCostDollars?: number
     __falaiBilling?: {
       endpointId: string

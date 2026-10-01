@@ -1,14 +1,13 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { isPlainRecord } from '@sim/utils/object'
+import { generateInternalDelegationToken } from '@/lib/auth/internal'
 import {
   BILLING_ATTRIBUTION_HEADER,
   serializeBillingAttributionHeader,
 } from '@/lib/billing/core/billing-attribution'
 import { normalizeSecretMountPolicy } from '@/lib/copilot/secret-mount-policy'
 import { env } from '@/lib/core/config/env'
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
 import {
   projectModelSchemaAnnotations,
   projectResolvedModelInput,
@@ -22,6 +21,10 @@ import {
   RESOLVED_SECRET_PROVENANCE_FIELD,
   RESOLVED_SECRET_PROVENANCE_METADATA_V1,
 } from '@/lib/execution/private-tool-metadata'
+import { discoverMcpServerToolsAsExecutor } from '@/lib/internal/mcp/discover-tools'
+import { assertValidMcpServerToolBindings, MCP_SERVER_ADVANCED_TOOL_TYPE } from '@/lib/mcp/shared'
+import { resolveMcpToolBinding } from '@/lib/mcp/tool-binding'
+import { resolveMothershipConversation } from '@/lib/mothership/conversation-id'
 import {
   areModelSafeWorkspaceFileKeys,
   MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE,
@@ -55,7 +58,6 @@ const logger = createLogger('MothershipBlockHandler')
 const MOTHERSHIP_INPUT_REFUSAL = 'Mothership input could not be safely projected'
 const MOTHERSHIP_SKILL_SELECTOR_REFUSAL =
   'Mothership skill selector could not be safely projected for display'
-const CANCELLATION_CHECK_INTERVAL_MS = 500
 const MAX_MOTHERSHIP_ATTACHMENT_BYTES = 10 * 1024 * 1024
 const MOTHERSHIP_EXECUTE_STREAM_HEADER = 'X-Mothership-Execute-Stream'
 const MOTHERSHIP_EXECUTE_STREAM_VALUE = 'ndjson'
@@ -114,15 +116,14 @@ function selectIndexedMothershipMcpTools(tools: unknown): IndexedMothershipMcpTo
 
   return tools.flatMap((candidate, inputIndex) => {
     if (!isPlainRecord(candidate) || candidate.type !== 'mcp') return []
-    if (candidate.usageControl === 'none' || !isPlainRecord(candidate.params)) return []
+    if (candidate.usageControl === 'none') return []
 
-    const { serverId, toolName } = candidate.params
-    if (typeof serverId !== 'string' || !serverId || typeof toolName !== 'string' || !toolName) {
-      return []
-    }
+    const { serverId, toolName } = resolveMcpToolBinding(candidate)
 
     const serverName =
-      typeof candidate.params.serverName === 'string' ? candidate.params.serverName : undefined
+      isPlainRecord(candidate.params) && typeof candidate.params.serverName === 'string'
+        ? candidate.params.serverName
+        : undefined
     const schema = isPlainRecord(candidate.schema) ? candidate.schema : undefined
 
     const usageControl =
@@ -145,6 +146,69 @@ function selectIndexedMothershipMcpTools(tools: unknown): IndexedMothershipMcpTo
 
 function selectMothershipMcpTools(tools: unknown): MothershipMcpToolSelection[] {
   return selectIndexedMothershipMcpTools(tools).map(({ selection }) => selection)
+}
+
+async function expandMothershipMcpTools(
+  ctx: ExecutionContext,
+  tools: unknown
+): Promise<MothershipMcpToolSelection[]> {
+  if (!Array.isArray(tools)) return []
+  assertValidMcpServerToolBindings(tools)
+  const individual = selectMothershipMcpTools(tools)
+  const advanced: Array<{
+    serverId: string
+    usageControl: 'auto' | 'force'
+  }> = tools.flatMap((candidate) => {
+    if (!isPlainRecord(candidate) || candidate.type !== MCP_SERVER_ADVANCED_TOOL_TYPE) return []
+    if (candidate.usageControl === 'none') return []
+    if (!isPlainRecord(candidate.params)) {
+      throw new Error('MCP Server (Advanced) requires params.serverId')
+    }
+    const serverId = candidate.params.serverId
+    if (typeof serverId !== 'string') {
+      throw new Error('MCP Server (Advanced) requires params.serverId')
+    }
+    if (!serverId.trim()) throw new Error('MCP Server (Advanced) requires params.serverId')
+    const usageControl: 'auto' | 'force' = candidate.usageControl === 'force' ? 'force' : 'auto'
+    return [{ serverId, usageControl }]
+  })
+  if (advanced.length === 0) return individual
+  if (!ctx.workspaceId || !ctx.workflowId) {
+    throw new Error('Workspace and workflow context are required for MCP Server (Advanced)')
+  }
+  const workspaceId = ctx.workspaceId
+  const workflowId = ctx.workflowId
+
+  const expanded = await Promise.all(
+    advanced.map(async ({ serverId, usageControl }) => {
+      const discovered = await discoverMcpServerToolsAsExecutor({
+        workspaceId,
+        context: {
+          workflowId,
+          workspaceId,
+          executionId: ctx.executionId,
+          userId: ctx.userId,
+          executorDelegationOrigin: ctx.executorDelegationOrigin,
+          mcpBlockId: ctx.mcpBlockId,
+        },
+        serverId,
+        signal: ctx.abortSignal,
+      })
+      if (!discovered.length)
+        throw new Error(`No permitted MCP operations are available for ${serverId}`)
+      return discovered.map((tool) => ({
+        type: 'mcp' as const,
+        usageControl,
+        schema: tool.inputSchema,
+        params: {
+          serverId,
+          toolName: tool.name,
+          serverName: tool.serverName,
+        },
+      }))
+    })
+  )
+  return [...individual, ...expanded.flat()]
 }
 
 function selectIndexedMothershipSkillContexts(
@@ -291,6 +355,12 @@ function selectMothershipMetadataModelInputPaths(
       modelInputPaths.push([...root, 'params', 'serverName'])
     }
   }
+  if (Array.isArray(tools)) {
+    tools.forEach((candidate, inputIndex) => {
+      if (!isPlainRecord(candidate) || candidate.type !== MCP_SERVER_ADVANCED_TOOL_TYPE) return
+      structuralInputPaths.push(['tools', String(inputIndex), 'params', 'serverId'])
+    })
+  }
 
   for (const { inputIndex, hasExplicitLabel } of selectIndexedMothershipSkillContexts(skills)) {
     const root = ['skills', String(inputIndex)] as const
@@ -416,7 +486,7 @@ function parseMothershipExecuteStreamLine(line: string): MothershipExecuteStream
 
 function formatMothershipBlockOutput(
   result: MothershipExecuteResult,
-  fallbackChatId: string
+  conversationId: string
 ): NormalizedBlockOutput {
   const formattedList = (result.toolCalls || []).map((tc: Record<string, unknown>) => ({
     name: typeof tc.name === 'string' ? tc.name : String(tc.name ?? ''),
@@ -434,7 +504,7 @@ function formatMothershipBlockOutput(
   return {
     content: result.content || '',
     model: result.model || 'mothership',
-    conversationId: result.conversationId || fallbackChatId,
+    conversationId,
     tokens: (result.tokens || {}) as NormalizedBlockOutput['tokens'],
     toolCalls,
     cost: result.cost as NormalizedBlockOutput['cost'] | undefined,
@@ -536,7 +606,7 @@ async function readMothershipExecuteResponse(
 
 function createMothershipStreamingExecution(
   response: Response,
-  fallbackChatId: string,
+  conversationId: string,
   blockId: string,
   options: {
     onCancel?: (reason?: unknown) => void
@@ -549,7 +619,7 @@ function createMothershipStreamingExecution(
     throw new Error('Sim execution stream ended without a response body')
   }
 
-  const output = formatMothershipBlockOutput({}, fallbackChatId)
+  const output = formatMothershipBlockOutput({}, conversationId)
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   let cancelled = false
   let cleanedUp = false
@@ -595,7 +665,7 @@ function createMothershipStreamingExecution(
         if (event.type === 'final') {
           await consumeMothershipProvenance(event.data, response, options.registry)
           sawFinal = true
-          Object.assign(output, formatMothershipBlockOutput(event.data, fallbackChatId))
+          Object.assign(output, formatMothershipBlockOutput(event.data, conversationId))
           return
         }
 
@@ -689,7 +759,7 @@ async function buildMothershipFileAttachments(
   )
   const modelSafe = await areModelSafeWorkspaceFileKeys(
     userFiles.map((file) => file.key).filter((key): key is string => Boolean(key)),
-    { workspaceId: ctx.workspaceId }
+    { workspaceId: ctx.workspaceId, ...(ctx.userId ? { actorUserId: ctx.userId } : {}) }
   )
   if (!modelSafe) throw new Error(MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE)
 
@@ -821,16 +891,18 @@ export class MothershipBlockHandler implements BlockHandler {
         content: modelInputProjection.value.prompt,
       },
     ]
-    const providedConversationId =
-      typeof inputs.conversationId === 'string' ? inputs.conversationId.trim() : ''
-    const chatId = providedConversationId || generateId()
+    const { conversationId, chatId } = resolveMothershipConversation(
+      ctx.workspaceId ?? '',
+      inputs.conversationId
+    )
     const messageId = generateId()
     const requestId = generateId()
     const secretMountPolicy = normalizeSecretMountPolicy({
       secretScope: inputs.secretScope,
       mountedSecrets: inputs.mountedSecrets,
     })
-    const mcpTools = selectMothershipMcpTools(modelInputProjection.value.tools)
+    ctx.mcpBlockId = block.id
+    const mcpTools = await expandMothershipMcpTools(ctx, modelInputProjection.value.tools)
     const skillContexts = selectMothershipSkillContexts(
       modelInputProjection.value.skills,
       privateSkillSelectors.inputIndexes
@@ -844,6 +916,12 @@ export class MothershipBlockHandler implements BlockHandler {
 
     const url = buildAPIUrl('/api/mothership/execute')
     const headers = await buildAuthHeaders(ctx.userId)
+    if (!ctx.executorDelegationOrigin)
+      throw new Error('Mothership requires workflow delegation provenance')
+    headers['X-Sim-Mcp-Delegation'] = await generateInternalDelegationToken({
+      ...ctx.executorDelegationOrigin,
+      mcpBlockId: block.id,
+    })
     headers.Accept = 'application/x-ndjson'
     headers[MOTHERSHIP_EXECUTE_STREAM_HEADER] = MOTHERSHIP_EXECUTE_STREAM_VALUE
     if (ctx.resolvedSecretTraceRegistry) {
@@ -896,38 +974,7 @@ export class MothershipBlockHandler implements BlockHandler {
       ctx.abortSignal?.addEventListener('abort', onAbort, { once: true })
     }
 
-    const executionId = ctx.executionId
-    const useRedisCancellation = isRedisCancellationEnabled() && !!executionId
-    let pollInFlight = false
-    const cancellationPoller =
-      useRedisCancellation && executionId
-        ? setInterval(() => {
-            if (pollInFlight || abortController.signal.aborted) {
-              return
-            }
-            pollInFlight = true
-            void isExecutionCancelled(executionId)
-              .then((cancelled) => {
-                if (cancelled && !abortController.signal.aborted) {
-                  abortController.abort('workflow_execution_cancelled')
-                }
-              })
-              .catch((error) => {
-                logger.warn('Failed to poll workflow cancellation for Mothership block', {
-                  blockId: block.id,
-                  executionId,
-                  error: toError(error).message,
-                })
-              })
-              .finally(() => {
-                pollInFlight = false
-              })
-          }, CANCELLATION_CHECK_INTERVAL_MS)
-        : undefined
     const cleanupAbortListeners = () => {
-      if (cancellationPoller) {
-        clearInterval(cancellationPoller)
-      }
       ctx.abortSignal?.removeEventListener('abort', onAbort)
     }
 
@@ -958,15 +1005,20 @@ export class MothershipBlockHandler implements BlockHandler {
       }
 
       if (isContentSelectedForStreaming(ctx, block)) {
-        const streamingExecution = createMothershipStreamingExecution(response, chatId, block.id, {
-          onCancel: (reason) => {
-            if (!abortController.signal.aborted) {
-              abortController.abort(reason ?? 'mothership_stream_cancelled')
-            }
-          },
-          onDone: cleanupAbortListeners,
-          registry: resultRegistry,
-        })
+        const streamingExecution = createMothershipStreamingExecution(
+          response,
+          conversationId,
+          block.id,
+          {
+            onCancel: (reason) => {
+              if (!abortController.signal.aborted) {
+                abortController.abort(reason ?? 'mothership_stream_cancelled')
+              }
+            },
+            onDone: cleanupAbortListeners,
+            registry: resultRegistry,
+          }
+        )
         streamingExecution.diagnosticResolvedSecretTraceRegistry = resultRegistry
         if (resultRegistry) ctx.resolvedSecretTraceRegistry = resultRegistry
         cleanupImmediately = false
@@ -974,7 +1026,7 @@ export class MothershipBlockHandler implements BlockHandler {
       }
 
       const result = await readMothershipExecuteResponse(response, resultRegistry)
-      const output = formatMothershipBlockOutput(result, chatId)
+      const output = formatMothershipBlockOutput(result, conversationId)
       if (resultRegistry) ctx.resolvedSecretTraceRegistry = resultRegistry
       return output
     } catch (error) {

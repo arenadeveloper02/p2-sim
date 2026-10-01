@@ -19,9 +19,12 @@ export const app = {
   getPath: vi.fn(() => '/tmp/sim-desktop-test'),
   getAppPath: vi.fn(() => '/tmp/sim-desktop-test/app'),
   isReady: vi.fn(() => true),
+  isInApplicationsFolder: vi.fn(() => true),
   on: vi.fn(),
   once: vi.fn(),
   quit: vi.fn(),
+  exit: vi.fn(),
+  relaunch: vi.fn(),
   focus: vi.fn(),
   enableSandbox: vi.fn(),
   requestSingleInstanceLock: vi.fn(() => true),
@@ -72,6 +75,12 @@ export const nativeTheme = {
   on: vi.fn(),
 }
 
+export const screen = {
+  getDisplayMatching: vi.fn(() => ({
+    workArea: { x: 0, y: 0, width: 1440, height: 900 },
+  })),
+}
+
 export const Menu = {
   buildFromTemplate: vi.fn((template: unknown[]) => ({ popup: vi.fn(), items: template })),
   setApplicationMenu: vi.fn(),
@@ -84,6 +93,12 @@ export const net = {
 
 export const session = {
   fromPartition: vi.fn(),
+}
+
+export const protocol = {
+  registerSchemesAsPrivileged: vi.fn(),
+  handle: vi.fn(),
+  isProtocolHandled: vi.fn(() => false),
 }
 
 export const ipcMain = {
@@ -106,6 +121,17 @@ export const nativeImage = {
     isEmpty: vi.fn(() => false),
     setTemplateImage: vi.fn(),
     getSize: vi.fn(() => ({ width: options.width, height: options.height })),
+  })),
+  /**
+   * Decodes nothing: tests pass short base64 stand-ins rather than real images.
+   * Reports empty so callers take their undecodable-capture fallback, and let a
+   * test opt into the resize path by overriding this mock with a sized image.
+   */
+  createFromBuffer: vi.fn((_buffer: unknown) => ({
+    isEmpty: vi.fn(() => true),
+    getSize: vi.fn(() => ({ width: 0, height: 0 })),
+    resize: vi.fn(),
+    toJPEG: vi.fn(() => Buffer.alloc(0)),
   })),
 }
 
@@ -143,9 +169,12 @@ function createWebContentsMock() {
     getTitle: vi.fn(() => 'Example'),
     loadURL: vi.fn(() => Promise.resolve()),
     reload: vi.fn(),
+    stop: vi.fn(),
     print: vi.fn(),
     focus: vi.fn(),
     invalidate: vi.fn(),
+    beginFrameSubscription: vi.fn(),
+    endFrameSubscription: vi.fn(),
     isFocused: vi.fn(() => false),
     close: vi.fn(),
     isDestroyed: vi.fn(() => false),
@@ -158,6 +187,7 @@ function createWebContentsMock() {
     setIgnoreMenuShortcuts: vi.fn(),
     getZoomFactor: vi.fn(() => 1),
     setZoomFactor: vi.fn(),
+    forcefullyCrashRenderer: vi.fn(),
     copy: vi.fn(),
     paste: vi.fn(),
     capturePage: vi.fn(() => {
@@ -175,6 +205,7 @@ function createWebContentsMock() {
     navigationHistory: {
       canGoBack: vi.fn(() => false),
       canGoForward: vi.fn(() => false),
+      getActiveIndex: vi.fn(() => 0),
       goBack: vi.fn(),
       goForward: vi.fn(),
     },
@@ -209,14 +240,18 @@ export class WebContentsView {
 export class BrowserWindow {
   static fromWebContents = vi.fn(() => null)
   static getFocusedWindow = vi.fn(() => null)
+  static nextId = 1
   /** Constructor tracking for tests (the class itself is not a vi.fn mock). */
   static instances: BrowserWindow[] = []
   static lastOptions: Record<string, unknown> | undefined
+  readonly id = BrowserWindow.nextId++
   constructor(options?: Record<string, unknown>) {
     BrowserWindow.instances.push(this)
     BrowserWindow.lastOptions = options
   }
   webContents = {
+    ipc: { on: vi.fn(), handle: vi.fn() },
+    mainFrame: { url: '' },
     on: vi.fn(),
     getURL: vi.fn(() => ''),
     loadURL: vi.fn(() => Promise.resolve()),
@@ -226,6 +261,8 @@ export class BrowserWindow {
     getZoomFactor: vi.fn(() => 1),
     executeJavaScript: vi.fn(() => Promise.resolve(true)),
     focus: vi.fn(),
+    isFocused: vi.fn(() => false),
+    isDestroyed: vi.fn(() => false),
     send: vi.fn(),
     setWindowOpenHandler: vi.fn(),
     isDevToolsOpened: vi.fn(() => false),
@@ -243,6 +280,7 @@ export class BrowserWindow {
   getNormalBounds = vi.fn(() => ({ x: 0, y: 0, width: 1360, height: 860 }))
   getBounds = vi.fn(() => ({ x: 1292, y: 41, width: 420, height: 150 }))
   setBounds = vi.fn()
+  setContentSize = vi.fn()
   loadURL = vi.fn(() => Promise.resolve())
   loadFile = vi.fn(() => Promise.resolve())
   focus = vi.fn()

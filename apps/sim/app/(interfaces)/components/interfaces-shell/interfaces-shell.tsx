@@ -5,8 +5,7 @@ import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { SupportFooter } from '@/app/(auth)/components'
-import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
-import { LogoShell } from '@/app/(landing)/components'
+import { LogoShell } from '@/app/(landing)/components/logo-shell'
 
 /**
  * Chrome for the `(interfaces)` route group (chat + resume) — the lightweight,

@@ -14,7 +14,10 @@ vi.mock('@/lib/browser-agent/transport', () => ({ suspendBrowserScope }))
 vi.mock('@/lib/terminal/transport', () => ({ suspendTerminalScope }))
 
 import { mothershipChatKeys } from '@/hooks/queries/mothership-chats'
-import { handleMothershipChatStatusEvent } from '@/hooks/use-mothership-chat-events'
+import {
+  handleMothershipChatStatusEvent,
+  resyncMothershipChatCaches,
+} from '@/hooks/use-mothership-chat-events'
 
 describe('handleMothershipChatStatusEvent', () => {
   const queryClient = {
@@ -412,10 +415,65 @@ describe('handleMothershipChatStatusEvent', () => {
     expect(queryClient.removeQueries).not.toHaveBeenCalled()
   })
 
+  it.each(['created', 'updated', 'renamed', 'started', 'completed', 'deleted'])(
+    'invalidates only organization lists for organization %s events',
+    (type) => {
+      handleMothershipChatStatusEvent(
+        queryClient,
+        { organizationId: 'org-1' },
+        { chatId: 'chat-1', type }
+      )
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: mothershipChatKeys.organizationLists('org-1'),
+      })
+      expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({
+        queryKey: mothershipChatKeys.workspaceLists('org-1'),
+      })
+      if (type === 'deleted')
+        expect(queryClient.removeQueries).toHaveBeenCalledWith({
+          queryKey: mothershipChatKeys.detail('chat-1'),
+        })
+    }
+  )
+
   it('does not invalidate when task event payload is invalid', () => {
     handleMothershipChatStatusEvent(queryClient, 'ws-1', '{')
 
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
     expect(queryClient.removeQueries).not.toHaveBeenCalled()
+  })
+})
+
+describe('resyncMothershipChatCaches', () => {
+  const queryClient = {
+    invalidateQueries: vi.fn().mockResolvedValue(undefined),
+  } satisfies Pick<QueryClient, 'invalidateQueries'>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('invalidates the workspace lists', () => {
+    resyncMothershipChatCaches(queryClient, 'ws-1')
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1)
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: mothershipChatKeys.workspaceLists('ws-1'),
+    })
+  })
+
+  it('reconciles active and archived organization lists after reconnect', () => {
+    resyncMothershipChatCaches(queryClient, { organizationId: 'org-1' })
+    expect(queryClient.invalidateQueries).toHaveBeenCalledExactlyOnceWith({
+      queryKey: mothershipChatKeys.organizationLists('org-1'),
+    })
+  })
+
+  it('leaves chat details untouched so a mounted stream cannot be refetched mid-turn', () => {
+    resyncMothershipChatCaches(queryClient, 'ws-1')
+
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: mothershipChatKeys.details() })
+    )
   })
 })

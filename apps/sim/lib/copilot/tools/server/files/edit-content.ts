@@ -12,9 +12,22 @@ import {
 } from '@/lib/copilot/tools/server/base-tool'
 import { isDocSandboxEnabled } from '@/lib/core/config/env-flags'
 import { updateWorkspaceFileContent } from '@/lib/workspace-files/application/update-workspace-file-content'
+import {
+  applyWorkspaceFileContentEdit,
+  EditContentError,
+  type WorkspaceFileContentEdit,
+} from '@/lib/workspace-files/edit-content'
+import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from '@/lib/workspace-files/orchestration'
+import {
+  collectSimPageDiagnostics,
+  HAND_WRITTEN_PAGE_MESSAGE,
+  isHandWrittenCompiledPage,
+  isSimPageSource,
+  SIM_PAGE_CONTENT_TYPE,
+} from '@/lib/workspace-files/page-compile'
 import { getE2BDocFormat } from './doc-compile'
 import { buildEmbeddedImageRefWarning } from './embedded-image-refs'
-import { consumeLatestFileIntent } from './file-intent-store'
+import { waitForLatestFileIntent } from './file-intent-store'
 import { compileDocForWrite, getDocumentFormatInfo, inferContentType } from './workspace-file'
 
 const logger = createLogger('EditContentServerTool')
@@ -30,10 +43,10 @@ type EditContentResult = {
 }
 
 export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentResult> = {
-  name: 'edit_content',
+  name: 'apply_file_edit',
   async execute(params: EditContentArgs, context?: ServerToolContext): Promise<EditContentResult> {
     if (!context?.userId) {
-      logger.error('Unauthorized attempt to use edit_content')
+      logger.error('Unauthorized attempt to use apply_file_edit')
       throw new Error('Authentication required')
     }
 
@@ -52,15 +65,16 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
           : undefined
 
     if (content === undefined) {
-      return { success: false, message: 'content is required for edit_content' }
+      return { success: false, message: 'content is required for apply_file_edit' }
     }
 
     // Consume the intent from THIS file subagent's channel (its outer tool_use
     // id), not just the latest in the message — otherwise two file agents
-    // writing concurrently would each grab whichever workspace_file landed last
+    // writing concurrently would each grab whichever prepare_file_edit landed last
     // and write their content into the wrong file. Falls back to latest-in-
     // message when no channel id is present (main-agent / legacy calls).
-    const intent = await consumeLatestFileIntent(workspaceId, {
+    // Waits briefly: a prepare batched into the same round may still be running.
+    const intent = await waitForLatestFileIntent(workspaceId, {
       chatId: context.chatId,
       messageId: context.messageId,
       channelId: context.parentToolCallId,
@@ -69,7 +83,7 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
       return {
         success: false,
         message:
-          'No workspace_file context found. Call workspace_file first, wait for it to succeed, then call edit_content in the next step. Do not emit edit_content in parallel or in the same batch as workspace_file.',
+          'No prepare_file_edit context found. Call prepare_file_edit first, wait for it to succeed, then call apply_file_edit in the next step. Do not emit apply_file_edit in parallel or in the same batch as prepare_file_edit.',
       }
     }
 
@@ -77,11 +91,33 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
       const { operation, fileRecord } = intent
       const docInfo = getDocumentFormatInfo(fileRecord.name)
       const e2bFmt = isDocSandboxEnabled ? await getE2BDocFormat(fileRecord.name) : null
+      // Agent-authored pages are stored as SOURCE (frontmatter + markdown +
+      // sim: fences) and compiled to the docs-styled document at render time
+      // — the pdf model: the file holds the source, the preview/share/
+      // download surfaces serve the rendered version. Bespoke raw HTML
+      // passes through, but a hand-written copy of compiled output defeats
+      // the source format, so it is rejected with the steer back to source.
+      // Patches are exempt: small in-place fixes on a legacy stored-compiled
+      // page legitimately contain compiled fragments.
+      // Sim pages store an extensionless name; the record type marks them.
+      const isHtmlTarget =
+        fileRecord.name.toLowerCase().endsWith('.html') || fileRecord.type === SIM_PAGE_CONTENT_TYPE
+      if (
+        isHtmlTarget &&
+        (operation === 'append' || operation === 'update') &&
+        isHandWrittenCompiledPage(content)
+      ) {
+        return { success: false, message: HAND_WRITTEN_PAGE_MESSAGE }
+      }
 
       let finalContent: string
       switch (operation) {
         case 'append': {
           const existing = intent.existingContent ?? ''
+          if (isHtmlTarget) {
+            finalContent = existing ? `${existing}\n${content}` : content
+            break
+          }
           // The JS engines (isolated-vm and E2B-node pptx/docx) use the `{ ... }`
           // block-append convention — block statements scope cleanly inside the
           // compile wrapper. Python docs (pdf/xlsx) are a single cohesive script,
@@ -108,47 +144,21 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
             return { success: false, message: 'Patch intent missing edit metadata' }
           }
 
+          let edit: WorkspaceFileContentEdit
           if (intent.edit.strategy === 'search_replace') {
-            const search = intent.edit.search!
-            const firstIdx = existing.indexOf(search)
-            if (firstIdx === -1) {
+            if (!intent.edit.search) {
               return {
                 success: false,
-                message: `Patch failed: search string not found in file "${fileRecord.name}"`,
+                message: 'search_replace requires search',
               }
             }
-            finalContent = intent.edit.replaceAll
-              ? existing.split(search).join(content)
-              : existing.slice(0, firstIdx) + content + existing.slice(firstIdx + search.length)
+            edit = {
+              mode: 'search_replace',
+              search: intent.edit.search,
+              content,
+              replaceAll: intent.edit.replaceAll,
+            }
           } else if (intent.edit.strategy === 'anchored') {
-            const lines = existing.split('\n')
-            const defaultOccurrence = intent.edit.occurrence ?? 1
-
-            const findAnchorLine = (
-              anchor: string,
-              occurrence = defaultOccurrence,
-              afterIndex = -1
-            ): { index: number; error?: string } => {
-              const trimmed = anchor.trim()
-              let count = 0
-              for (let i = afterIndex + 1; i < lines.length; i++) {
-                if (lines[i].trim() === trimmed) {
-                  count++
-                  if (count === occurrence) return { index: i }
-                }
-              }
-              if (count === 0) {
-                return {
-                  index: -1,
-                  error: `Anchor line not found in "${fileRecord.name}": "${anchor.slice(0, 100)}"`,
-                }
-              }
-              return {
-                index: -1,
-                error: `Anchor line occurrence ${occurrence} not found (only ${count} match${count > 1 ? 'es' : ''}) in "${fileRecord.name}": "${anchor.slice(0, 100)}"`,
-              }
-            }
-
             if (intent.edit.mode === 'replace_between') {
               if (!intent.edit.before_anchor || !intent.edit.after_anchor) {
                 return {
@@ -156,38 +166,23 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
                   message: 'replace_between requires before_anchor and after_anchor',
                 }
               }
-              const before = findAnchorLine(intent.edit.before_anchor)
-              if (before.error) return { success: false, message: `Patch failed: ${before.error}` }
-              const after = findAnchorLine(
-                intent.edit.after_anchor,
-                defaultOccurrence,
-                before.index
-              )
-              if (after.error) return { success: false, message: `Patch failed: ${after.error}` }
-              if (after.index <= before.index) {
-                return {
-                  success: false,
-                  message: 'Patch failed: after_anchor must appear after before_anchor in the file',
-                }
+              edit = {
+                mode: 'replace_between',
+                beforeAnchor: intent.edit.before_anchor,
+                afterAnchor: intent.edit.after_anchor,
+                content,
+                occurrence: intent.edit.occurrence,
               }
-              const newLines = [
-                ...lines.slice(0, before.index + 1),
-                ...content.split('\n'),
-                ...lines.slice(after.index),
-              ]
-              finalContent = newLines.join('\n')
             } else if (intent.edit.mode === 'insert_after') {
               if (!intent.edit.anchor) {
                 return { success: false, message: 'insert_after requires anchor' }
               }
-              const found = findAnchorLine(intent.edit.anchor)
-              if (found.error) return { success: false, message: `Patch failed: ${found.error}` }
-              const newLines = [
-                ...lines.slice(0, found.index + 1),
-                ...content.split('\n'),
-                ...lines.slice(found.index + 1),
-              ]
-              finalContent = newLines.join('\n')
+              edit = {
+                mode: 'insert_after',
+                anchor: intent.edit.anchor,
+                content,
+                occurrence: intent.edit.occurrence,
+              }
             } else if (intent.edit.mode === 'delete_between') {
               if (!intent.edit.start_anchor || !intent.edit.end_anchor) {
                 return {
@@ -195,18 +190,12 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
                   message: 'delete_between requires start_anchor and end_anchor',
                 }
               }
-              const start = findAnchorLine(intent.edit.start_anchor)
-              if (start.error) return { success: false, message: `Patch failed: ${start.error}` }
-              const end = findAnchorLine(intent.edit.end_anchor, defaultOccurrence, start.index)
-              if (end.error) return { success: false, message: `Patch failed: ${end.error}` }
-              if (end.index <= start.index) {
-                return {
-                  success: false,
-                  message: 'Patch failed: end_anchor must appear after start_anchor in the file',
-                }
+              edit = {
+                mode: 'delete_between',
+                startAnchor: intent.edit.start_anchor,
+                endAnchor: intent.edit.end_anchor,
+                occurrence: intent.edit.occurrence,
               }
-              const newLines = [...lines.slice(0, start.index), ...lines.slice(end.index)]
-              finalContent = newLines.join('\n')
             } else {
               return {
                 success: false,
@@ -215,6 +204,19 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
             }
           } else {
             return { success: false, message: `Unknown patch strategy: "${intent.edit.strategy}"` }
+          }
+          try {
+            finalContent = applyWorkspaceFileContentEdit(existing, edit, {
+              maxOutputBytes: MAX_WORKSPACE_FILE_CONTENT_BYTES,
+            })
+          } catch (error) {
+            if (error instanceof EditContentError) {
+              return {
+                success: false,
+                message: `Patch failed for "${fileRecord.name}": ${error.message}`,
+              }
+            }
+            throw error
           }
           break
         }
@@ -238,6 +240,14 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
         return { success: false, message: compiled.message }
       }
 
+      // The internal page type: the record advertises what the .html holds so
+      // surfaces can force the rendered view before content loads. The file
+      // itself stays .html (serve/download emit text/html).
+      // create_empty_file stamps copilot .html as a page by default; the
+      // first real content confirms or corrects that from what was written.
+      const storedContentType =
+        isHtmlTarget && isSimPageSource(finalContent) ? SIM_PAGE_CONTENT_TYPE : compiled.sourceMime
+
       const fileBuffer = Buffer.from(finalContent, 'utf-8')
       assertServerToolNotAborted(context)
       // `updateWorkspaceFileContent` also streams this edit into any open collaborative editor as a live
@@ -251,7 +261,7 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
           assertedWorkspaceId: workspaceId,
           content: finalContent,
           encoding: 'utf-8',
-          contentType: compiled.sourceMime,
+          contentType: storedContentType,
           provenanceMode: operation === 'update' ? 'replace_empty' : 'preserve',
         },
         { fileId: intent.fileId }
@@ -259,7 +269,7 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
 
       const verb =
         operation === 'append' ? 'appended to' : operation === 'update' ? 'updated' : 'patched'
-      logger.info(`Workspace file ${verb} via copilot (edit_content)`, {
+      logger.info(`Workspace file ${verb} via copilot (apply_file_edit)`, {
         fileId: intent.fileId,
         name: fileRecord.name,
         operation,
@@ -271,20 +281,31 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
       // (non-workspace or missing), so it can self-correct on the next step.
       const embedWarning = await buildEmbeddedImageRefWarning(content, workspaceId)
 
+      // Page-source lint: a malformed sim: block renders as NOTHING for the
+      // reader — the only place the failure surfaces is right here, so the
+      // agent can fix the fence instead of shipping a silent hole.
+      let pageLint = ''
+      if (storedContentType === SIM_PAGE_CONTENT_TYPE) {
+        const diagnostics = collectSimPageDiagnostics(finalContent)
+        if (diagnostics.length > 0) {
+          pageLint = ` WARNING — ${diagnostics.length} block(s) failed to compile and are OMITTED from the rendered page; fix them: ${diagnostics.join('; ')}`
+        }
+      }
+
       return {
         success: true,
-        message: `File "${fileRecord.name}" ${verb} successfully (${fileBuffer.length} bytes)${embedWarning}`,
+        message: `File "${fileRecord.name}" ${verb} successfully (${fileBuffer.length} bytes)${embedWarning}${pageLint}`,
         data: {
           id: intent.fileId,
           name: fileRecord.name,
           size: fileBuffer.length,
-          contentType: compiled.sourceMime,
+          contentType: storedContentType,
         },
       }
     } catch (error) {
       const safeMessage = messageForCopilotFileError(error, 'Failed to edit file content')
       const errorMessage = getErrorMessage(error, 'Unknown error occurred')
-      logger.error('Error in edit_content tool', {
+      logger.error('Error in apply_file_edit tool', {
         operation: intent.operation,
         fileId: intent.fileId,
         error: errorMessage,

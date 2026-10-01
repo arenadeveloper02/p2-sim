@@ -37,7 +37,8 @@ vi.mock('@/lib/table/billing', () => ({
 }))
 vi.mock('@/lib/table/jobs/service', () => ({
   EMPTY_JOB_FIELDS: {},
-  latestJobForTable: vi.fn(async () => null),
+  latestNonExportJobJson: vi.fn(() => null),
+  mapJobRow: vi.fn(() => ({})),
   latestJobsForTables: vi.fn(async () => new Map()),
 }))
 vi.mock('@/lib/table/events', () => ({ appendTableEvent: vi.fn() }))
@@ -55,6 +56,7 @@ vi.mock('@/lib/workflows/skills/builtin-skills', () => ({
 
 import { listVisibleWorkspaceCredentials } from '@/lib/credentials/queries'
 import { listFoldersForWorkspace } from '@/lib/folders/queries'
+import { WORKSPACE_ACCESS_SCOPE } from '@/lib/knowledge/access/scope'
 import { getDocuments } from '@/lib/knowledge/documents/service'
 import { getWorkspaceKnowledgeBases } from '@/lib/knowledge/service'
 import { listWorkspaceMcpServers } from '@/lib/mcp/queries'
@@ -181,7 +183,8 @@ const CASES: ListCase[] = [
       getDocuments(
         'knowledge-1',
         { search, sortBy: sortBy as never, sortOrder: sortOrder as never },
-        'request-1'
+        'request-1',
+        WORKSPACE_ACCESS_SCOPE
       ),
     sort: {
       sortBy: 'fileSize',

@@ -461,6 +461,14 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       placeholder: 'Number of results (default: 100, max: 100)',
       condition: { field: 'operation', value: 'list' },
     },
+    {
+      id: 'pageToken',
+      title: 'Page Token',
+      type: 'short-input',
+      placeholder: 'Token from a previous nextPageToken',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list' },
+    },
     // Download File Fields - File Selector (basic mode)
     {
       id: 'downloadFileSelector',
@@ -947,6 +955,14 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
       condition: { field: 'operation', value: 'list_permissions' },
       required: true,
     },
+    {
+      id: 'permissionsPageToken',
+      title: 'Page Token',
+      type: 'short-input',
+      placeholder: 'Token from a previous nextPageToken',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_permissions' },
+    },
     // Get File Content Fields
     {
       id: 'getContentFileSelector',
@@ -1115,6 +1131,14 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       mode: 'advanced',
       condition: { field: 'operation', value: 'search' },
     },
+    {
+      id: 'searchPageToken',
+      title: 'Page Token',
+      type: 'short-input',
+      placeholder: 'Token from a previous nextPageToken',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search' },
+    },
     // Untrash File Fields
     {
       id: 'untrashFileSelector',
@@ -1234,6 +1258,14 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       condition: { field: 'operation', value: 'list_revisions' },
     },
     {
+      id: 'revisionsPageToken',
+      title: 'Page Token',
+      type: 'short-input',
+      placeholder: 'Token from a previous nextPageToken',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_revisions' },
+    },
+    {
       id: 'getRevisionFileSelector',
       title: 'Select File',
       type: 'file-selector',
@@ -1294,6 +1326,14 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       title: 'Results Per Page',
       type: 'short-input',
       placeholder: 'Number of comments (default: 20, max: 100)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_comments' },
+    },
+    {
+      id: 'commentsPageToken',
+      title: 'Page Token',
+      type: 'short-input',
+      placeholder: 'Token from a previous nextPageToken',
       mode: 'advanced',
       condition: { field: 'operation', value: 'list_comments' },
     },
@@ -1518,6 +1558,11 @@ Return ONLY the comment text - no explanations, no quotes, no extra formatting.`
           searchPageSize,
           revisionsPageSize,
           commentsPageSize,
+          pageToken,
+          searchPageToken,
+          permissionsPageToken,
+          revisionsPageToken,
+          commentsPageToken,
           getContentExportMimeType,
           exportMimeType,
           ...rest
@@ -1634,6 +1679,13 @@ Return ONLY the comment text - no explanations, no quotes, no extra formatting.`
         else if (params.operation === 'list_revisions') effectivePageSize = revisionsPageSize
         else if (params.operation === 'list_comments') effectivePageSize = commentsPageSize
 
+        let effectivePageToken: string | undefined = pageToken
+        if (params.operation === 'search') effectivePageToken = searchPageToken
+        else if (params.operation === 'list_permissions') effectivePageToken = permissionsPageToken
+        else if (params.operation === 'list_revisions') effectivePageToken = revisionsPageToken
+        else if (params.operation === 'list_comments') effectivePageToken = commentsPageToken
+        else if (params.operation !== 'list') effectivePageToken = undefined
+
         const effectiveQuery = params.operation === 'search' ? searchQuery : query
         const effectiveMimeType =
           params.operation === 'get_content'
@@ -1651,6 +1703,7 @@ Return ONLY the comment text - no explanations, no quotes, no extra formatting.`
           pageSize: effectivePageSize
             ? Number.parseInt(effectivePageSize as string, 10)
             : undefined,
+          pageToken: effectivePageToken?.trim() || undefined,
           query: effectiveQuery,
           mimeType: effectiveMimeType === 'auto' ? undefined : effectiveMimeType,
           type: shareType, // Map shareType to type for share tool
@@ -1713,6 +1766,7 @@ Return ONLY the comment text - no explanations, no quotes, no extra formatting.`
     searchFolderId: { type: 'string', description: 'Folder ID to limit search to (canonical)' },
     searchFolderSelector: { type: 'string', description: 'Selected folder to limit search to' },
     searchManualFolderId: { type: 'string', description: 'Manual folder ID to limit search to' },
+    pageToken: { type: 'string', description: 'Pagination token from a previous nextPageToken' },
     // Copy operation inputs
     newName: { type: 'string', description: 'New name for copied file' },
     // Update operation inputs

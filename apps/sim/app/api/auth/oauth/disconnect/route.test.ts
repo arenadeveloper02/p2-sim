@@ -12,7 +12,15 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { mockGetUserOrganization } = vi.hoisted(() => ({
+  mockGetUserOrganization: vi.fn(),
+}))
+
 vi.mock('@sim/audit', () => auditMock)
+
+vi.mock('@/lib/billing/organizations/membership', () => ({
+  getUserOrganization: mockGetUserOrganization,
+}))
 
 import { POST } from '@/app/api/auth/oauth/disconnect/route'
 
@@ -20,7 +28,8 @@ describe('OAuth Disconnect API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
-    dbChainMockFns.where.mockResolvedValue([])
+    dbChainMockFns.limit.mockResolvedValue([])
+    mockGetUserOrganization.mockResolvedValue(null)
   })
 
   it('should disconnect provider successfully', async () => {
@@ -93,7 +102,7 @@ describe('OAuth Disconnect API Route', () => {
       session: { id: 'session-1' },
     })
 
-    dbChainMockFns.where.mockRejectedValueOnce(new Error('Database error'))
+    dbChainMockFns.limit.mockRejectedValueOnce(new Error('Database error'))
 
     const req = createMockRequest('POST', {
       provider: 'google',

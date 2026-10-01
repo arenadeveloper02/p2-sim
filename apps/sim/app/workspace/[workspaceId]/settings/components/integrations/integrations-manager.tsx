@@ -581,6 +581,7 @@ export function IntegrationsManager() {
         preCount: oauthPreCount,
         workspaceId,
         reconnect: true,
+        credentialId: selectedCredential.id,
         requestedAt: Date.now(),
       })
 

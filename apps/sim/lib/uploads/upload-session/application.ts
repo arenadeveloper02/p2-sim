@@ -1,9 +1,17 @@
-import type { Principal } from '@sim/auth/principal'
+import { isUserCredentialPrincipal, type Principal } from '@sim/auth/principal'
 import type { CreateInternalFileUploadBody } from '@/lib/api/contracts/upload-sessions'
 import type { OrchestrationRequestContext } from '@/lib/core/orchestration/types'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { loadActiveFolderPathIndex, resolveFolderPathFromIndex } from '@/lib/folders/queries'
-import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import {
+  authorizeOrganizationAttachmentControl,
+  createOrganizationAssistantAttachment,
+} from '@/lib/uploads/contexts/organization-assistant/application'
+import {
+  authorizeOrganizationLogoControl,
+  createOrganizationLogoUpload,
+} from '@/lib/uploads/contexts/organization-logo/application'
+import { getWorkspaceFile, type WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import {
   abortUploadSession,
   assertUploadSessionAuthBinding,
@@ -82,6 +90,16 @@ export async function createInternalPurposeUploadSession(
   body: CreateInternalFileUploadBody,
   request: OrchestrationRequestContext
 ): Promise<Awaited<ReturnType<typeof createUploadSession>>> {
+  if (body.purpose === 'organization_logo') {
+    return createOrganizationLogoUpload(principal, { ...body, localOrigin: requestOrigin(request) })
+  }
+  if (body.purpose === 'mothership_attachment' && body.organizationId) {
+    return createOrganizationAssistantAttachment(principal, {
+      ...body,
+      organizationId: body.organizationId,
+      localOrigin: requestOrigin(request),
+    })
+  }
   return createPurposeUploadSession(principal, body, requestOrigin(request))
 }
 
@@ -96,7 +114,11 @@ export async function loadAuthorizedInternalUploadSession(
     uploadToken: input.uploadToken,
     userId: principalUserId(principal),
   })
-  if (session.purpose === 'workspace_file') assertUploadSessionAuthBinding(session, principal)
+  if (session.purpose === 'workspace_file' || session.purpose === 'organization_logo')
+    assertUploadSessionAuthBinding(session, principal)
+  if (session.purpose === 'mothership_attachment' && session.workspaceId === null) {
+    assertUploadSessionAuthBinding(session, principal)
+  }
   return session
 }
 
@@ -108,6 +130,10 @@ export async function issueInternalUploadPartUrls(
   const session = await loadAuthorizedInternalUploadSession(principal, input)
   if (session.purpose === 'workspace_file') {
     await reauthorizeWorkspaceUploadPurpose(principal, session, fileOperations.uploadParts)
+  } else if (session.purpose === 'organization_logo') {
+    await authorizeOrganizationLogoControl(principal, session)
+  } else if (session.purpose === 'mothership_attachment' && session.workspaceId === null) {
+    await authorizeOrganizationAttachmentControl(principal, session)
   } else {
     await reauthorizeUploadPurpose(principalUserId(principal), session)
   }
@@ -127,6 +153,10 @@ export async function abortInternalUploadSession(
   const session = await loadAuthorizedInternalUploadSession(principal, input)
   if (session.purpose === 'workspace_file') {
     await reauthorizeWorkspaceUploadPurpose(principal, session, fileOperations.uploadCancel)
+  } else if (session.purpose === 'organization_logo') {
+    await authorizeOrganizationLogoControl(principal, session)
+  } else if (session.purpose === 'mothership_attachment' && session.workspaceId === null) {
+    await authorizeOrganizationAttachmentControl(principal, session)
   } else {
     await reauthorizeUploadPurpose(principalUserId(principal), session)
   }
@@ -146,6 +176,10 @@ export async function completeInternalUploadSession(
   const authorize = async (claimed: UploadSessionRecord) => {
     if (claimed.purpose === 'workspace_file') {
       await reauthorizeWorkspaceUploadPurpose(principal, claimed, fileOperations.uploadComplete)
+    } else if (claimed.purpose === 'organization_logo') {
+      await authorizeOrganizationLogoControl(principal, claimed)
+    } else if (claimed.purpose === 'mothership_attachment' && claimed.workspaceId === null) {
+      await authorizeOrganizationAttachmentControl(principal, claimed)
     } else {
       await reauthorizeUploadPurpose(principalUserId(principal), claimed)
     }
@@ -183,6 +217,52 @@ export async function loadAuthorizedWorkspaceUploadSession(
     principal,
     workspaceId: input.workspaceId,
   })
+}
+
+/**
+ * Reads an upload session's current state after current workspace
+ * authorization. The `GET` is a control leg like every other, so the session's
+ * auth binding and the caller's present workspace permission are both
+ * re-checked here rather than the session being looked up on its id alone.
+ */
+export interface ReadWorkspaceUploadSessionResult {
+  session: UploadSessionRecord
+  /**
+   * The file the session registered, once it has one.
+   *
+   * The resource documents `file` as "the registered file after finalization",
+   * and a caller polling a transfer it lost track of is exactly who needs it —
+   * it is the only way to learn the id the upload produced without having held
+   * the `complete` response. Loaded here rather than in the presenter because
+   * it is a protected read.
+   *
+   * Still null when a completed session's file has since been deleted, which is
+   * the same shape as "not finalized yet" and needs no separate signal: in both
+   * cases there is no file to address.
+   *
+   * A failed *read*, though, is not that shape. `getWorkspaceFile` logs and
+   * returns null by default, which would let a transient database error present
+   * a finalized upload as fileless to the one caller polling to learn what it
+   * created — and they would stop, having been told there was nothing. It is
+   * read with `throwOnError` so the failure surfaces and the poll can retry,
+   * matching how `readWorkspaceFileRecord` loads the same record.
+   */
+  file: WorkspaceFileRecord | null
+}
+
+export async function readWorkspaceUploadSession(
+  principal: Principal,
+  input: UploadSessionControlInput
+): Promise<ReadWorkspaceUploadSessionResult> {
+  const session = await loadAuthorizedWorkspaceUploadSession(principal, input)
+  await reauthorizeWorkspaceUploadPurpose(principal, session, fileOperations.uploadRead)
+  if (session.status !== 'completed' || !session.completedFileId || !session.workspaceId) {
+    return { session, file: null }
+  }
+  const file = await getWorkspaceFile(session.workspaceId, session.completedFileId, {
+    throwOnError: true,
+  })
+  return { session, file: file ?? null }
 }
 
 /** Issues multipart URLs after current workspace authorization. */
@@ -323,6 +403,13 @@ export const completeWorkspaceFileUploadOperation = {
   },
 } as const
 
+export const readWorkspaceFileUploadOperation = {
+  operation: fileOperations.uploadRead,
+  async execute({ principal, input }: { principal: Principal; input: UploadSessionControlInput }) {
+    return readWorkspaceUploadSession(principal, input)
+  },
+} as const
+
 export const abortWorkspaceFileUploadOperation = {
   operation: fileOperations.uploadCancel,
   async execute({ principal, input }: { principal: Principal; input: UploadSessionControlInput }) {
@@ -331,7 +418,7 @@ export const abortWorkspaceFileUploadOperation = {
 } as const
 
 function principalUserId(principal: Principal): string {
-  if (principal.kind === 'session' || principal.kind === 'personal_api_key') {
+  if (principal.kind === 'session' || isUserCredentialPrincipal(principal)) {
     return principal.userId
   }
   throw new Error('Workspace upload attribution must be resolved from the current workspace owner')

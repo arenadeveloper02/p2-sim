@@ -11,9 +11,9 @@ import type {
   WebhookProviderHandler,
 } from '@/lib/webhooks/providers/types'
 
-export { GONG_JWT_PUBLIC_KEY_CONFIG_KEY }
-
 const logger = createLogger('WebhookProvider:Gong')
+
+/** providerConfig key: PEM or raw base64 RSA public key from Gong (Signed JWT header auth). */
 
 /**
  * Gong automation webhooks support either URL secrecy (token in path) or a signed JWT in

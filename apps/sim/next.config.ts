@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import type { NextConfig } from 'next'
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from './lib/branding/defaults'
 import { env, isTruthy } from './lib/core/config/env'
 import { isDev } from './lib/core/config/env-flags'
 import {
@@ -166,7 +167,10 @@ const nextConfig: NextConfig = {
        * `resource` is the string stored on the module and later read by scheme;
        * rewriting only `path` leaves that string as `node:crypto`.
        */
-      const emptyNodeBuiltin = path.resolve(import.meta.dirname, 'lib/webpack-empty-node-builtin.cjs')
+      const emptyNodeBuiltin = path.resolve(
+        import.meta.dirname,
+        'lib/webpack-empty-node-builtin.cjs'
+      )
       config.plugins.push({
         apply(compiler: {
           hooks: {
@@ -202,16 +206,15 @@ const nextConfig: NextConfig = {
           compiler.hooks.compilation.tap(
             'HandleNodeScheme',
             (_compilation, { normalModuleFactory }) => {
-              normalModuleFactory.hooks.resolveForScheme.for('node').tap(
-                'HandleNodeScheme',
-                (resource) => {
+              normalModuleFactory.hooks.resolveForScheme
+                .for('node')
+                .tap('HandleNodeScheme', (resource) => {
                   resource.resource = emptyNodeBuiltin
                   resource.path = emptyNodeBuiltin
                   resource.query = ''
                   resource.fragment = ''
                   return true
-                }
-              )
+                })
             }
           )
         },
@@ -313,6 +316,9 @@ const nextConfig: NextConfig = {
   },
   output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
   serverExternalPackages: [
+    '@xyflow/react',
+    'pdfjs-dist',
+    '@napi-rs/canvas',
     '@1password/sdk',
     'unpdf',
     'fluent-ffmpeg',
@@ -519,6 +525,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        /** Generated footer artwork uses content hashes, so URLs are immutable. */
+        source: '/landing/footer-artwork/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        /** Generated hero artwork uses content hashes, so URLs are immutable. */
+        source: '/landing/hero-artwork/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
         // `/public`-served assets keep their path across deploys (no content
         // hash), so a shorter TTL + revalidation window bounds how long a
         // changed asset can serve stale.
@@ -693,6 +709,24 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     const redirects = []
+
+    redirects.push(
+      {
+        source: '/terms',
+        destination: env.NEXT_PUBLIC_TERMS_URL || DEFAULT_TERMS_URL,
+        permanent: false,
+      },
+      {
+        source: '/privacy',
+        destination: env.NEXT_PUBLIC_PRIVACY_URL || DEFAULT_PRIVACY_URL,
+        permanent: false,
+      },
+      {
+        source: '/cookie-policy',
+        destination: env.NEXT_PUBLIC_PRIVACY_URL || DEFAULT_PRIVACY_URL,
+        permanent: false,
+      }
+    )
 
     // Social link redirects (used in emails to avoid spam filter issues)
     redirects.push(

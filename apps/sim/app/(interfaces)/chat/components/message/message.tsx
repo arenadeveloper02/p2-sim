@@ -62,6 +62,23 @@ export interface ChatToolCall extends AgentStreamToolCall {
   displayName: string
 }
 
+/** Live-stream status of one selected chat output. */
+export type ChatOutputSegmentStatus = 'waiting' | 'streaming' | 'done'
+
+/**
+ * One selected block output while a deployed-chat turn is still streaming.
+ * Dropped on `final` so the settled bubble renders the combined `content`.
+ */
+export interface ChatOutputSegment {
+  blockId: string
+  content: string
+  status: ChatOutputSegmentStatus
+  thinking?: string
+  isThinkingStreaming?: boolean
+  toolCalls?: ChatToolCall[]
+  isToolStreaming?: boolean
+}
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -77,6 +94,11 @@ export interface ChatMessage {
   toolCalls?: ChatToolCall[]
   /** True while any tool chip is still `running`. */
   isToolStreaming?: boolean
+  /**
+   * Per selected-output live state. Present only while `isStreaming` is true
+   * when the deployment selected one or more block outputs.
+   */
+  outputSegments?: ChatOutputSegment[]
   attachments?: ChatAttachment[]
   executionId?: string
   files?: ChatFile[]
@@ -130,11 +152,13 @@ function openAttachmentPreview(name: string, dataUrl: string): void {
   setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
 }
 
+interface ClientChatMessageProps {
+  message: ChatMessage
+}
+
 export const ClientChatMessage = memo(function ClientChatMessage({
   message,
-}: {
-  message: ChatMessage
-}) {
+}: ClientChatMessageProps) {
   const [isCopied, setIsCopied] = useState(false)
 
   const isJsonObject = typeof message.content === 'object' && message.content !== null
@@ -143,6 +167,12 @@ export const ClientChatMessage = memo(function ClientChatMessage({
   const cleanTextContent = message.content
   const hasThinking = typeof message.thinking === 'string' && message.thinking.length > 0
   const hasToolCalls = Array.isArray(message.toolCalls) && message.toolCalls.length > 0
+  const hasContent = isJsonObject || Boolean((message.content as string).trim())
+  const hasFiles = Boolean(message.files?.length)
+
+  if (message.type === 'assistant' && !hasContent && !hasFiles && !hasThinking && !hasToolCalls) {
+    return null
+  }
 
   const content =
     message.type === 'user' ? (
@@ -213,7 +243,7 @@ export const ClientChatMessage = memo(function ClientChatMessage({
                         />
                       ) : (
                         <>
-                          <div className='flex size-10 flex-shrink-0 items-center justify-center rounded bg-[var(--surface-3)] md:size-12'>
+                          <div className='flex size-10 shrink-0 items-center justify-center rounded bg-[var(--surface-3)] md:size-12'>
                             {getFileIcon(attachment.type)}
                           </div>
                           <div className='min-w-0 flex-1'>
@@ -268,15 +298,17 @@ export const ClientChatMessage = memo(function ClientChatMessage({
                   isStreaming={message.isToolStreaming}
                 />
               )}
-              <div className='break-words text-base'>
-                {isJsonObject ? (
-                  <pre className='text-[var(--text-primary)]'>
-                    {JSON.stringify(cleanTextContent, null, 2)}
-                  </pre>
-                ) : (
-                  <MarkdownRenderer content={cleanTextContent as string} />
-                )}
-              </div>
+              {hasContent && (
+                <div className='break-words text-base'>
+                  {isJsonObject ? (
+                    <pre className='text-[var(--text-primary)]'>
+                      {JSON.stringify(cleanTextContent, null, 2)}
+                    </pre>
+                  ) : (
+                    <MarkdownRenderer content={cleanTextContent as string} />
+                  )}
+                </div>
+              )}
             </div>
             {message.files && message.files.length > 0 && (
               <div className='flex flex-wrap gap-2'>
@@ -287,7 +319,7 @@ export const ClientChatMessage = memo(function ClientChatMessage({
             )}
             {message.type === 'assistant' && !isJsonObject && !message.isInitialMessage && (
               <div className='flex items-center justify-start space-x-2'>
-                {!message.isStreaming && (
+                {!message.isStreaming && hasContent && (
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <Button

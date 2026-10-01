@@ -206,6 +206,53 @@ describe('recordUsage', () => {
     expect(mockGetHighestPrioritySubscription).not.toHaveBeenCalled()
     expect(mockInsert).not.toHaveBeenCalled()
   })
+
+  it('keeps zero-cost unbilled rows and still drops every other zero-cost entry', async () => {
+    await recordUsage({
+      userId: 'user-1',
+      billingEntity: { type: 'organization', id: 'org-1' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
+      executionId: 'execution-1',
+      entries: [
+        {
+          category: 'model_unbilled',
+          source: 'workflow',
+          description: 'claude-sonnet-4',
+          cost: 0,
+          metadata: { inputTokens: 1200, outputTokens: 340 },
+        },
+        // A billed category at zero cost is still noise, and stays filtered.
+        { category: 'model', source: 'workflow', description: 'gpt-4', cost: 0 },
+        { category: 'tool', source: 'workflow', description: 'exa_search', cost: 0 },
+      ],
+    })
+
+    const values = mockValues.mock.calls[0][0]
+    expect(values).toHaveLength(1)
+    expect(values[0]).toMatchObject({
+      category: 'model_unbilled',
+      cost: '0',
+      description: 'claude-sonnet-4',
+      metadata: { inputTokens: 1200, outputTokens: 340 },
+    })
+  })
+
+  it('writes nothing when every entry is zero-cost and billable', async () => {
+    await recordUsage({
+      userId: 'user-1',
+      billingEntity: { type: 'user', id: 'user-1' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
+      entries: [{ category: 'model', source: 'workflow', description: 'gpt-4', cost: 0 }],
+    })
+
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
 })
 
 describe('resolveCumulativeTopUp', () => {
@@ -629,7 +676,11 @@ describe('recordCumulativeUsage', () => {
       cost: 0.4662453,
       eventKey: 'update-cost:msg-1-billing',
     })
+    expect(executedSqlContaining(tx, 'transaction_timeout')).toBe(true)
+    expect(executedSqlContaining(tx, 'idle_in_transaction_session_timeout')).toBe(true)
+    expect(executedSqlContaining(tx, 'statement_timeout')).toBe(true)
     expect(executedSqlContaining(tx, 'lock_timeout')).toBe(true)
+    expect(tx.execute.mock.calls[0][0]).toMatchObject({ values: ['4000ms', '3500ms', '3000ms'] })
     expect(executedSqlContaining(tx, 'pg_advisory_xact_lock')).toBe(true)
     expect(executedSqlContaining(tx, 'hashtextextended')).toBe(true)
   })
@@ -659,7 +710,7 @@ describe('usage-log query scopes', () => {
 
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
-      conditions: [{ type: 'eq', left: 'workspaceId', right: 'workspace-1' }],
+      conditions: [{ type: 'eq', left: 'usageLog.workspaceId', right: 'workspace-1' }],
     })
     expect(dbChainMockFns.limit).toHaveBeenCalledWith(26)
   })
@@ -705,7 +756,7 @@ describe('usage-log query scopes', () => {
 
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
-      conditions: [{ type: 'eq', left: 'userId', right: 'user-1' }, { type: 'or' }],
+      conditions: [{ type: 'eq', left: 'usageLog.userId', right: 'user-1' }, { type: 'or' }],
     })
   })
 
@@ -719,7 +770,7 @@ describe('usage-log query scopes', () => {
 
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
-      conditions: [{ type: 'eq', left: 'userId', right: 'user-1' }, { type: 'or' }],
+      conditions: [{ type: 'eq', left: 'usageLog.userId', right: 'user-1' }, { type: 'or' }],
     })
     expect(dbChainMockFns.limit).toHaveBeenCalledTimes(1)
     expect(dbChainMockFns.limit).toHaveBeenCalledWith(26)
@@ -735,8 +786,8 @@ describe('usage-log query scopes', () => {
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
       conditions: [
-        { type: 'eq', left: 'userId', right: 'user-1' },
-        { type: 'eq', left: 'workspaceId', right: 'workspace-1' },
+        { type: 'eq', left: 'usageLog.userId', right: 'user-1' },
+        { type: 'eq', left: 'usageLog.workspaceId', right: 'workspace-1' },
       ],
     })
   })

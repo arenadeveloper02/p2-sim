@@ -1,5 +1,11 @@
 import type { BrandConfig } from './types'
 
+/** Canonical Arena terms URL until in-app legal pages are restored. */
+export const DEFAULT_TERMS_URL = 'https://thearena.ai/terms'
+
+/** Canonical Arena privacy URL until in-app legal pages are restored. */
+export const DEFAULT_PRIVACY_URL = 'https://thearena.ai/privacy'
+
 /**
  * Default brand configuration values
  */
@@ -14,8 +20,8 @@ export const defaultBrandConfig: BrandConfig = {
   customCssUrl: undefined,
   supportEmail: 'arenadeveloper@position2.com',
   documentationUrl: undefined,
-  termsUrl: 'https://thearena.ai/terms',
-  privacyUrl: 'https://thearena.ai/privacy',
+  termsUrl: DEFAULT_TERMS_URL,
+  privacyUrl: DEFAULT_PRIVACY_URL,
   theme: {
     primaryColor: '#1a73e8',
     primaryHoverColor: '#155cba',

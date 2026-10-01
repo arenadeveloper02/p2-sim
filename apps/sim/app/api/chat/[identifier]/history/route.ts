@@ -163,7 +163,6 @@ export async function GET(
         startedAt: workflowExecutionLogs.startedAt,
         endedAt: workflowExecutionLogs.endedAt,
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
-        cost: workflowExecutionLogs.cost,
         executionData: workflowExecutionLogs.executionData,
         initialInput: workflowExecutionLogs.initialInput,
         finalChatOutput: workflowExecutionLogs.finalChatOutput,

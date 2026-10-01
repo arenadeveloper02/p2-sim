@@ -6,7 +6,7 @@ import {
   ARENA_SSO_SESSION_REQUIRED_PATH,
   buildArenaSimResumeUrl,
 } from '@/lib/auth/arena-sim-resume'
-import { isDev } from '@/lib/core/config/env-flags'
+import { isLocalLoginEnabled } from '@/lib/core/config/env-flags'
 
 const logger = createLogger('AutoLoginSessionMigrationProvider')
 
@@ -18,7 +18,7 @@ const logger = createLogger('AutoLoginSessionMigrationProvider')
  *
  * When the migration key is missing: clear cookies, mark the key (before any
  * redirect — otherwise SSO return would clear again), then re-authenticate via
- * Arena `/sso/sim-resume` (or `/login` in local/dev).
+ * Arena `/sso/sim-resume` (or `/login` when local login is enabled).
  *
  * Children mount only after migration is done when we stay on-page (already
  * migrated, or auth surface / failed resume). A successful resume navigates away.
@@ -48,7 +48,8 @@ function isAuthSurfacePath(pathname: string): boolean {
 
 /**
  * Gates children until the one-time cookie-scope clear has completed (or was
- * already done). After a clear, redirects to Arena SSO resume to mint a fresh session.
+ * already done). After a clear, redirects to Arena SSO resume, or `/login` when
+ * local login is enabled, to mint a fresh session.
  */
 export function AutoLoginSessionMigrationProvider({
   children,
@@ -88,7 +89,7 @@ export function AutoLoginSessionMigrationProvider({
         return
       }
 
-      if (isDev) {
+      if (isLocalLoginEnabled) {
         window.location.assign('/login')
         return
       }

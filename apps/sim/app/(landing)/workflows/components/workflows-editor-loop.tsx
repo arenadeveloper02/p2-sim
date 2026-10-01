@@ -33,6 +33,8 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
     {
       id: 'start',
       name: 'Start',
+      type: 'start_trigger',
+      typeLabel: 'Start',
       icon: StartIcon,
       bgColor: 'var(--text-muted)',
       isTrigger: true,
@@ -43,6 +45,8 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
     {
       id: 'agent',
       name: 'Support agent',
+      type: 'agent',
+      typeLabel: 'Agent',
       icon: AgentIcon,
       bgColor: '#FFFFFF',
       tileBorder: true,
@@ -56,6 +60,8 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
     {
       id: 'route',
       name: 'Route intent',
+      type: 'condition',
+      typeLabel: 'Condition',
       icon: ConditionalIcon,
       bgColor: 'var(--text-secondary)',
       rows: [{ title: 'Conditions', value: '-' }],
@@ -65,6 +71,9 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
     {
       id: 'slack',
       name: 'Reply in Slack',
+      type: 'slack',
+      typeLabel: 'Slack',
+      isIntegration: true,
       icon: SlackIcon,
       bgColor: '#611F69',
       isTerminal: true,
@@ -78,6 +87,9 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
     {
       id: 'jira',
       name: 'Escalate to Jira',
+      type: 'jira',
+      typeLabel: 'Jira',
+      isIntegration: true,
       icon: JiraIcon,
       bgColor: '#FFFFFF',
       tileBorder: true,
@@ -92,6 +104,8 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
     {
       id: 'tables',
       name: 'Log to Tables',
+      type: 'table',
+      typeLabel: 'Table',
       icon: TableIcon,
       bgColor: 'var(--text-body)',
       isTerminal: true,

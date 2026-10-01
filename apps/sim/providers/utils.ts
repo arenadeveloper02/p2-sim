@@ -3,7 +3,13 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { omit } from '@sim/utils/object'
 import type OpenAI from 'openai'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
-import { getCostMultiplier, isHosted } from '@/lib/core/config/env-flags'
+import { formatCreditCost } from '@/lib/billing/credits/conversion'
+import { env } from '@/lib/core/config/env'
+import {
+  getBlacklistedProvidersFromEnv,
+  getCostMultiplier,
+  isHosted,
+} from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -20,69 +26,47 @@ import {
   scopeCanonicalModesForTool,
 } from '@/lib/workflows/subblocks/visibility'
 import { assembleCustomBlockInputMapping, isCustomBlockType } from '@/blocks/custom/build-config'
+import type { SubBlockConfig } from '@/blocks/types'
 import { isCustomTool } from '@/executor/constants'
-import { getEmbeddingModelPricing, getModelPricing as getModelPricingFromDefinitions } from '@/providers/models'
+import {
+  findProviderFromModel as findProviderFromDefinitions,
+  getComputerUseModels,
+  getHostedModels as getHostedModelsFromDefinitions,
+  getMaxOutputTokensForModel as getMaxOutputTokensForModelFromDefinitions,
+  getMaxTemperature as getMaxTempFromDefinitions,
+  getModelsWithDeepResearch,
+  getModelsWithoutMemory,
+  getModelsWithPromptCaching,
+  getModelsWithReasoningEffort,
+  getModelsWithTemperatureRange,
+  getModelsWithTemperatureSupport,
+  getModelsWithThinking,
+  getModelsWithVerbosity,
+  getProviderDefaultModel as getProviderDefaultModelFromDefinitions,
+  getProviderModels as getProviderModelsFromDefinitions,
+  getProvidersWithToolUsageControl,
+  getReasoningEffortValuesForModel as getReasoningEffortValuesForModelFromDefinitions,
+  getThinkingLevelsForModel as getThinkingLevelsForModelFromDefinitions,
+  getVerbosityValuesForModel as getVerbosityValuesForModelFromDefinitions,
+  isKnownModelLevelValue,
+  PROVIDER_DEFINITIONS,
+  supportsTemperature as supportsTemperatureFromDefinitions,
+  supportsToolUsageControl as supportsToolUsageControlFromDefinitions,
+  updateOllamaModels as updateOllamaModelsInDefinitions,
+} from '@/providers/models'
+import {
+  getModelPricing as getRegisteredModelPricing,
+  resolveModelTokenPricing,
+} from '@/providers/pricing'
+import { collectToolResourceBindings, registerProviderToolBindings } from '@/providers/tool-binding'
 import {
   getProviderToolInputProvenance,
   getProviderToolModelInputRegistry,
   registerPreparedProviderToolInputProvenance,
 } from '@/providers/tool-input-provenance'
-import { getHostedModels } from '@/providers/provider-metadata'
-import type { ProviderToolConfig } from '@/providers/types'
-
-export type { ProviderMetadata } from '@/providers/provider-metadata'
-export {
-  describeModelLevel,
-  filterBlacklistedModels,
-  findProviderFromModel,
-  formatCost,
-  getAllModelProviders,
-  getAllModels,
-  getAllProviderIds,
-  getBaseModelProviders,
-  getHostedModels,
-  getMaxOutputTokensForModel,
-  getMaxTemperature,
-  getProvider,
-  getProviderConfigFromModel,
-  getProviderFromModel,
-  getProviderIcon,
-  getProviderModels,
-  getReasoningEffortValuesForModel,
-  getThinkingLevelsForModel,
-  getVerbosityValuesForModel,
-  isDeepResearchModel,
-  isGemini3Model,
-  isProviderBlacklisted,
-  MODELS_TEMP_RANGE_0_1,
-  MODELS_TEMP_RANGE_0_15,
-  MODELS_TEMP_RANGE_0_2,
-  MODELS_WITH_DEEP_RESEARCH,
-  MODELS_WITH_PROMPT_CACHING,
-  MODELS_WITH_REASONING_EFFORT,
-  MODELS_WITH_TEMPERATURE_SUPPORT,
-  MODELS_WITH_THINKING,
-  MODELS_WITH_VERBOSITY,
-  MODELS_WITHOUT_MEMORY,
-  PROVIDERS_WITH_TOOL_USAGE_CONTROL,
-  providers,
-  supportsPromptCaching,
-  supportsReasoningEffort,
-  supportsTemperature,
-  supportsThinking,
-  supportsToolUsageControl,
-  supportsVerbosity,
-  updateBasetenProviderModels,
-  updateFireworksProviderModels,
-  updateLiteLLMProviderModels,
-  updateOllamaCloudProviderModels,
-  updateOllamaProviderModels,
-  updateOpenRouterProviderModels,
-  updateTogetherProviderModels,
-  updateVLLMProviderModels,
-} from '@/providers/provider-metadata'
-import { useProvidersStore } from '@/stores/providers/store'
+import type { ModelPricing, ProviderId, ProviderToolConfig } from '@/providers/types'
 import { mergeToolParameters } from '@/tools/merge-params'
+import { buildToolParamShapes, decodeToolParams } from '@/tools/param-shape'
 import type { SchemaProperty } from '@/tools/params'
 import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 import type { WorkflowToolExecutionContext } from '@/tools/types'
@@ -108,24 +92,297 @@ function isDefaultWorkflowDescription(
   )
 }
 
-/**
- * Server-only workflow metadata lookup. The specifier is assembled at runtime so
- * webpack cannot follow `@/executor/utils/http` into the client graph.
- */
+/** Reads workflow metadata through the authorized application operation. */
 async function fetchWorkflowMetadata(
   workflowId: string,
-  executionContext: WorkflowToolExecutionContext | undefined
+  executionContext: WorkflowToolExecutionContext | undefined,
+  readWorkflowMetadata?: (
+    workflowId: string,
+    context: WorkflowToolExecutionContext
+  ) => Promise<{ name: string; description: string | null }>
 ): Promise<{ name: string; description: string | null } | null> {
-  const load = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{
-    fetchWorkflowMetadata: (
-      workflowId: string,
-      executionContext: WorkflowToolExecutionContext | undefined
-    ) => Promise<{ name: string; description: string | null } | null>
-  }>
-  const { fetchWorkflowMetadata: fetchOnServer } = await load(
-    '@/providers/fetch-workflow-metadata.server'
+  try {
+    if (!executionContext?.executorDelegationOrigin || !readWorkflowMetadata) {
+      throw new Error('Workflow metadata enrichment requires trusted execution authority')
+    }
+    return await readWorkflowMetadata(workflowId, executionContext)
+  } catch (error) {
+    logger.error('Error fetching workflow metadata:', error)
+    return null
+  }
+}
+
+/**
+ * Client-safe provider metadata.
+ * This object contains only model lists and patterns - no executeRequest implementations.
+ * For server-side execution, use @/providers/registry.
+ */
+export interface ProviderMetadata {
+  id: string
+  name: string
+  description: string
+  version: string
+  models: string[]
+  defaultModel: string
+  computerUseModels?: string[]
+  modelPatterns?: RegExp[]
+}
+
+/**
+ * Build provider metadata from PROVIDER_DEFINITIONS.
+ * This is client-safe as it doesn't import any provider implementations.
+ */
+function buildProviderMetadata(providerId: ProviderId): ProviderMetadata {
+  const def = PROVIDER_DEFINITIONS[providerId]
+  return {
+    id: providerId,
+    name: def?.name || providerId,
+    description: def?.description || '',
+    version: '1.0.0',
+    models: getProviderModelsFromDefinitions(providerId),
+    defaultModel: getProviderDefaultModelFromDefinitions(providerId),
+    modelPatterns: def?.modelPatterns,
+  }
+}
+
+export const providers: Record<ProviderId, ProviderMetadata> = {
+  ollama: buildProviderMetadata('ollama'),
+  'ollama-cloud': buildProviderMetadata('ollama-cloud'),
+  vllm: buildProviderMetadata('vllm'),
+  litellm: buildProviderMetadata('litellm'),
+  openai: {
+    ...buildProviderMetadata('openai'),
+    computerUseModels: ['computer-use-preview'],
+  },
+  anthropic: {
+    ...buildProviderMetadata('anthropic'),
+    computerUseModels: getComputerUseModels().filter((model) =>
+      getProviderModelsFromDefinitions('anthropic').includes(model)
+    ),
+  },
+  sambanova: buildProviderMetadata('sambanova'),
+  google: buildProviderMetadata('google'),
+  vertex: buildProviderMetadata('vertex'),
+  'azure-openai': buildProviderMetadata('azure-openai'),
+  'azure-anthropic': buildProviderMetadata('azure-anthropic'),
+  deepseek: buildProviderMetadata('deepseek'),
+  xai: buildProviderMetadata('xai'),
+  cerebras: buildProviderMetadata('cerebras'),
+  groq: buildProviderMetadata('groq'),
+  sakana: buildProviderMetadata('sakana'),
+  nvidia: buildProviderMetadata('nvidia'),
+  meta: buildProviderMetadata('meta'),
+  zai: buildProviderMetadata('zai'),
+  kimi: buildProviderMetadata('kimi'),
+  mistral: buildProviderMetadata('mistral'),
+  bedrock: buildProviderMetadata('bedrock'),
+  openrouter: buildProviderMetadata('openrouter'),
+  fireworks: buildProviderMetadata('fireworks'),
+  together: buildProviderMetadata('together'),
+  baseten: buildProviderMetadata('baseten'),
+}
+
+export function updateOllamaProviderModels(models: string[]): void {
+  updateOllamaModelsInDefinitions(models)
+  providers.ollama.models = getProviderModelsFromDefinitions('ollama')
+}
+
+export function updateVLLMProviderModels(models: string[]): void {
+  const { updateVLLMModels } = require('@/providers/models')
+  updateVLLMModels(models)
+  providers.vllm.models = getProviderModelsFromDefinitions('vllm')
+}
+
+export function updateLiteLLMProviderModels(models: string[]): void {
+  const { updateLiteLLMModels } = require('@/providers/models')
+  updateLiteLLMModels(models)
+  providers.litellm.models = getProviderModelsFromDefinitions('litellm')
+}
+
+export async function updateOpenRouterProviderModels(models: string[]): Promise<void> {
+  const { updateOpenRouterModels } = await import('@/providers/models')
+  updateOpenRouterModels(models)
+  providers.openrouter.models = getProviderModelsFromDefinitions('openrouter')
+}
+
+export async function updateFireworksProviderModels(models: string[]): Promise<void> {
+  const { updateFireworksModels } = await import('@/providers/models')
+  updateFireworksModels(models)
+  providers.fireworks.models = getProviderModelsFromDefinitions('fireworks')
+}
+
+export async function updateOllamaCloudProviderModels(models: string[]): Promise<void> {
+  const { updateOllamaCloudModels } = await import('@/providers/models')
+  updateOllamaCloudModels(models)
+  providers['ollama-cloud'].models = getProviderModelsFromDefinitions('ollama-cloud')
+}
+
+export async function updateTogetherProviderModels(models: string[]): Promise<void> {
+  const { updateTogetherModels } = await import('@/providers/models')
+  updateTogetherModels(models)
+  providers.together.models = getProviderModelsFromDefinitions('together')
+}
+
+export async function updateBasetenProviderModels(models: string[]): Promise<void> {
+  const { updateBasetenModels } = await import('@/providers/models')
+  updateBasetenModels(models)
+  providers.baseten.models = getProviderModelsFromDefinitions('baseten')
+}
+
+export function getBaseModelProviders(): Record<string, ProviderId> {
+  const allProviders = Object.entries(providers)
+    .filter(
+      ([providerId]) =>
+        providerId !== 'ollama' &&
+        providerId !== 'ollama-cloud' &&
+        providerId !== 'vllm' &&
+        providerId !== 'litellm' &&
+        providerId !== 'openrouter' &&
+        providerId !== 'mistral' &&
+        providerId !== 'cerebras' &&
+        providerId !== 'azure-openai' &&
+        providerId !== 'fireworks' &&
+        providerId !== 'together' &&
+        providerId !== 'baseten'
+    )
+    .reduce(
+      (map, [providerId, config]) => {
+        config.models.forEach((model) => {
+          map[model.toLowerCase()] = providerId as ProviderId
+        })
+        return map
+      },
+      {} as Record<string, ProviderId>
+    )
+
+  return filterBlacklistedModelsFromProviderMap(allProviders)
+}
+
+function filterBlacklistedModelsFromProviderMap(
+  providerMap: Record<string, ProviderId>
+): Record<string, ProviderId> {
+  const filtered: Record<string, ProviderId> = {}
+  for (const [model, providerId] of Object.entries(providerMap)) {
+    if (isProviderBlacklisted(providerId)) {
+      continue
+    }
+    if (!isModelBlacklisted(model)) {
+      filtered[model] = providerId
+    }
+  }
+  return filtered
+}
+
+export function getAllModelProviders(): Record<string, ProviderId> {
+  return Object.entries(providers).reduce(
+    (map, [providerId, config]) => {
+      config.models.forEach((model) => {
+        map[model.toLowerCase()] = providerId as ProviderId
+      })
+      return map
+    },
+    {} as Record<string, ProviderId>
   )
-  return fetchOnServer(workflowId, executionContext)
+}
+
+/**
+ * The provider that declares `model`, or `null` when none does.
+ *
+ * The non-guessing half of {@link getProviderFromModel}. A caller that *gates*
+ * on the answer needs "unknown" to stay distinct from "ollama": this registry
+ * holds chat models only, so every embedding, speech, image and video model id
+ * would otherwise read as an Ollama model and be judged against an allowlist
+ * that was never about it.
+ */
+export function findProviderFromModel(model: string): ProviderId | null {
+  return findProviderFromDefinitions(model)
+}
+
+export function getProviderFromModel(model: string): ProviderId {
+  const normalizedModel = model.toLowerCase()
+
+  let providerId = findProviderFromModel(model)
+
+  if (!providerId) {
+    logger.warn(`No provider found for model: ${model}, defaulting to ollama`)
+    providerId = 'ollama'
+  }
+
+  if (isProviderBlacklisted(providerId)) {
+    throw new Error(`Provider "${providerId}" is not available`)
+  }
+
+  if (isModelBlacklisted(normalizedModel)) {
+    throw new Error(`Model "${model}" is not available`)
+  }
+
+  return providerId
+}
+
+export function getProvider(id: string): ProviderMetadata | undefined {
+  const providerId = id.split('/')[0] as ProviderId
+  return providers[providerId]
+}
+
+export function getProviderConfigFromModel(model: string): ProviderMetadata | undefined {
+  const providerId = getProviderFromModel(model)
+  return providers[providerId]
+}
+
+export function getAllModels(): string[] {
+  return Object.values(providers).flatMap((provider) => provider.models || [])
+}
+
+export function getAllProviderIds(): ProviderId[] {
+  return Object.keys(providers) as ProviderId[]
+}
+
+export function getProviderModels(providerId: ProviderId): string[] {
+  return getProviderModelsFromDefinitions(providerId)
+}
+
+export function isProviderBlacklisted(providerId: string): boolean {
+  return getBlacklistedProvidersFromEnv().includes(providerId.toLowerCase())
+}
+
+/**
+ * Get the list of blacklisted models from env var.
+ * BLACKLISTED_MODELS supports:
+ * - Exact model names: "gpt-4,claude-3-opus"
+ * - Prefix patterns with *: "claude-*,gpt-4-*" (matches models starting with that prefix)
+ */
+function getBlacklistedModels(): { models: string[]; prefixes: string[] } {
+  if (!env.BLACKLISTED_MODELS) return { models: [], prefixes: [] }
+
+  const entries = env.BLACKLISTED_MODELS.split(',').map((m) => m.trim().toLowerCase())
+  const models = entries.filter((e) => !e.endsWith('*'))
+  const prefixes = entries.filter((e) => e.endsWith('*')).map((e) => e.slice(0, -1))
+
+  return { models, prefixes }
+}
+
+function isModelBlacklisted(model: string): boolean {
+  const lowerModel = model.toLowerCase()
+  const blacklist = getBlacklistedModels()
+
+  if (blacklist.models.includes(lowerModel)) {
+    return true
+  }
+
+  if (blacklist.prefixes.some((prefix) => lowerModel.startsWith(prefix))) {
+    return true
+  }
+
+  return false
+}
+
+export function filterBlacklistedModels(models: string[]): string[] {
+  return models.filter((model) => !isModelBlacklisted(model))
+}
+
+export function getProviderIcon(model: string): React.ComponentType<{ className?: string }> | null {
+  const providerId = getProviderFromModel(model)
+  return PROVIDER_DEFINITIONS[providerId]?.icon || null
 }
 
 /**
@@ -273,7 +530,7 @@ function mergeOAuthCredentialDefaultsFromSubBlocks(
  *
  * Selector subblocks persist their value under the subblock id (e.g.
  * `tableSelector`), not the canonical id, so any lookup that keys off the
- * canonical id — like the unique-tool-id suffix below — must resolve it first.
+ * canonical id — like {@link collectToolResourceBindings} below — must resolve it first.
  * Mode selection mirrors {@link transformBlockTool}'s execution-time
  * `paramsTransform` so the resolved id matches the params the tool actually runs
  * with. When the active selector has no value, the original canonical value is
@@ -356,6 +613,117 @@ function buildCustomBlockInputMappingSchema(
   }
 }
 
+type BlockToolParamsFn = (params: Record<string, any>) => Record<string, any>
+
+/**
+ * Builds the transform that turns a tool row's stored sub-block values into the
+ * arguments a block's tool actually expects.
+ *
+ * Four steps, in an order each of which is load-bearing:
+ *
+ * 1. Collapse canonical basic/advanced pairs onto the canonical id, so a value stored
+ *    under `manualChannel` becomes the `channel` the tool declares.
+ * 2. Decode the stringified values back to their real shapes, and expand a
+ *    `checkbox-list` onto its option params. After the collapse so a pair is decoded
+ *    once under its canonical id, and BEFORE the block's `params` function because
+ *    several blocks consume the value inside it — `if (includeAttachments)` on the
+ *    string `'false'` is the bug this closes.
+ * 3. Run the block's own `tools.config.params` mapping.
+ * 4. Parse `json`/`array` block inputs, the same loop `GenericBlockHandler` runs on the
+ *    canvas; it covers keys the tool itself does not declare.
+ *
+ * Shared so every surface that executes a block tool applies the identical pipeline —
+ * the agent block, Pi's local tools, and the Human block v2. The Human block v1 ran
+ * none of it, which is why it needed a new version rather than a fix in place.
+ */
+export function buildBlockToolParamsTransform(config: {
+  blockSubBlocks: SubBlockConfig[] | undefined
+  blockParamsFn: BlockToolParamsFn | undefined
+  blockInputDefs: Record<string, unknown> | undefined
+  toolParams: Record<string, { type?: string }> | undefined
+  canonicalGroups: CanonicalGroup[]
+  scopedCanonicalModes: CanonicalModeOverrides | undefined
+}): {
+  paramsTransform: BlockToolParamsFn | undefined
+  jsonShapedParamKeys: string[]
+} {
+  const {
+    blockSubBlocks,
+    blockParamsFn,
+    blockInputDefs,
+    toolParams,
+    canonicalGroups,
+    scopedCanonicalModes,
+  } = config
+
+  /**
+   * The value shape of every key this tool can receive. Keyed by the sub-block that
+   * produced the encoding — not by the tool's declared type — because a `dropdown`
+   * collecting a `boolean` param stores a string on the canvas too, and the block's
+   * `params` function compares it as one.
+   */
+  const paramShapes = buildToolParamShapes(blockSubBlocks ?? [], toolParams)
+
+  const needsTransform =
+    blockParamsFn || blockInputDefs || canonicalGroups.length > 0 || paramShapes.size > 0
+
+  const paramsTransform = needsTransform
+    ? (params: Record<string, any>): Record<string, any> => {
+        let result = { ...params }
+
+        for (const group of canonicalGroups) {
+          // Route through the canonical SOT: an explicit scoped override wins, else the value
+          // heuristic - no `?? 'basic'` (which dropped an advanced-only value when basic was empty).
+          const explicitMode = scopedCanonicalModes?.[group.canonicalId]
+          const chosen = resolveActiveCanonicalValue(
+            group,
+            result,
+            explicitMode ? { [group.canonicalId]: explicitMode } : undefined
+          )
+
+          const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
+          result = omit(result, sourceIds)
+
+          if (chosen !== undefined) {
+            result[group.canonicalId] = chosen
+          }
+        }
+
+        result = decodeToolParams(result, paramShapes, blockSubBlocks ?? [])
+
+        if (blockParamsFn) {
+          const transformed = blockParamsFn(result)
+          result = { ...result, ...transformed }
+        }
+
+        if (blockInputDefs) {
+          for (const [key, schema] of Object.entries(blockInputDefs)) {
+            const value = result[key]
+            if (typeof value === 'string' && value.trim().length > 0) {
+              const inputType =
+                typeof schema === 'object' && schema ? (schema as { type?: unknown }).type : schema
+              if (inputType === 'json' || inputType === 'array') {
+                try {
+                  result[key] = JSON.parse(value.trim())
+                } catch {
+                  // Not valid JSON — keep as string
+                }
+              }
+            }
+          }
+        }
+
+        return result
+      }
+    : undefined
+
+  const jsonShapedParamKeys = [...paramShapes]
+    .filter(([, shape]) => shape === 'json')
+    .map(([paramId]) => paramId)
+
+  return { paramsTransform, jsonShapedParamKeys }
+}
+
 /**
  * Transforms a block tool into a provider tool config with operation selection
  *
@@ -411,6 +779,14 @@ export async function transformBlockTool(
     getToolAsync?: (toolId: string) => Promise<any>
     canonicalModes?: Record<string, 'basic' | 'advanced'>
     enrichmentContext?: WorkflowToolExecutionContext
+    readWorkflowInputFields?: (
+      workflowId: string,
+      context: WorkflowToolExecutionContext
+    ) => Promise<Array<{ name: string; type: string; description?: string }>>
+    readWorkflowMetadata?: (
+      workflowId: string,
+      context: WorkflowToolExecutionContext
+    ) => Promise<{ name: string; description: string | null }>
     /**
      * Server-only resolver for a custom (deploy-as-block) tool's binding (bound
      * workflow + input schema), org-scoped to the consumer. Injected as a dependency
@@ -435,6 +811,8 @@ export async function transformBlockTool(
     getToolAsync,
     canonicalModes,
     enrichmentContext,
+    readWorkflowInputFields,
+    readWorkflowMetadata,
     toolIndex,
   } = options
   const scopedCanonicalModes = scopeCanonicalModesForTool(canonicalModes, toolIndex, block.type)
@@ -483,7 +861,11 @@ export async function transformBlockTool(
       logger.warn('deployed_block_executor tool not registered')
       return null
     }
-    const inputMapping = assembleCustomBlockInputMapping(block.params || {})
+    // From the BINDING, not `blockDef.subBlocks`: the server overlay builds custom-block
+    // configs with `inputFields: []`, so on the execution path the block config carries no
+    // field sub-blocks and the decode would silently no-op, handing the child workflow the
+    // string 'false' for a boolean input.
+    const inputMapping = assembleCustomBlockInputMapping(block.params || {}, binding.inputFields)
     // A `file[]` field is omitted from the model schema (the model can't synthesize
     // upload descriptors). If such a field is REQUIRED and the user hasn't
     // pre-filled it on the block, no invocation could ever satisfy the child's
@@ -501,16 +883,17 @@ export async function transformBlockTool(
       return null
     }
     return {
-      // Unique per block so two custom-block tools never collide on the wire.
-      id: `deployed_block_executor_${block.type}`,
-      // Name/description come from the block itself — never the source workflow's
-      // metadata, which the consumer has no access to.
-      name: blockDef.name,
+      id: customToolConfig.id,
+      // The description comes from the block itself — never the source workflow's metadata,
+      // which the consumer has no access to.
       description: blockDef.description || customToolConfig.description,
       params: {
         blockType: block.type,
         inputMapping,
       },
+      // The projection has to assemble its copy from the same fields, or the two mappings
+      // decode differently and the provenance comparison reads that as a shape divergence.
+      customBlockInputFields: binding.inputFields,
       parameters: buildCustomBlockInputMappingSchema(
         blockDef.name,
         binding.inputFields,
@@ -595,7 +978,9 @@ export async function transformBlockTool(
   }
 
   const canonicalGroups: CanonicalGroup[] = blockDef?.subBlocks
-    ? Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
+    ? // canonical-index-unscoped: an agent tool resolves against `block.params`, which only ever
+      // holds action-surface values — a tool is never invoked in trigger mode.
+      Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
     : []
 
   const resolvedResourceParams = resolveCanonicalResourceParams(
@@ -608,7 +993,12 @@ export async function transformBlockTool(
     schema: llmSchema,
     enrichedDescription,
     modelBlockedParams,
-  } = await createLLMToolSchema(toolConfig, resolvedResourceParams, enrichmentContext)
+  } = await createLLMToolSchema(
+    toolConfig,
+    resolvedResourceParams,
+    enrichmentContext,
+    readWorkflowInputFields
+  )
 
   /**
    * Semrush URL reports (`url_*`) need a page URL. Models often populate `domain` instead because
@@ -664,19 +1054,19 @@ export async function transformBlockTool(
     }
   }
 
-  let uniqueToolId = toolConfig.id
-  let toolName = toolConfig.name
+  const uniqueToolId = toolConfig.id
+  const toolName = toolConfig.name
   let toolDescription = enrichedDescription || toolConfig.description
+  let workflowLabel: string | undefined
 
   if (toolId === 'workflow_executor' && resolvedResourceParams.workflowId) {
-    uniqueToolId = `${toolConfig.id}_${resolvedResourceParams.workflowId}`
-
     const workflowMetadata = await fetchWorkflowMetadata(
       resolvedResourceParams.workflowId,
-      enrichmentContext
+      enrichmentContext,
+      readWorkflowMetadata
     )
     if (workflowMetadata) {
-      toolName = workflowMetadata.name || toolConfig.name
+      workflowLabel = workflowMetadata.name
       if (
         workflowMetadata.description &&
         !isDefaultWorkflowDescription(workflowMetadata.description, workflowMetadata.name)
@@ -684,84 +1074,59 @@ export async function transformBlockTool(
         toolDescription = workflowMetadata.description
       }
     }
-  } else if (toolId === 'function_execute' && resolvedResourceParams.secretScope === 'selected') {
-    // Scoping alone would leave the model guessing: the secrets are injected
-    // server-side and nothing else advertises them. Names only — values never
-    // enter the provider request, matching the copilot's workspace-context rule.
-    // `StoredTool.params` holds strings, so a multi-select arrives JSON-encoded;
-    // the executor's paramsTransform parses it later, but this runs before that.
-    const mounted = readMountedSecretNames(resolvedResourceParams.mountedSecrets)
-    toolDescription = mounted.length
-      ? `${toolDescription}\n\nWorkspace secret names available to this code: ${mounted.join(', ')}. Reference one with the exact {{NAME}} syntax. Its value is bound only while the code executes and is not included in the model request. No other secrets are readable.`
-      : `${toolDescription}\n\nThis code has no access to workspace secrets.`
-  } else if (toolId.startsWith('knowledge_') && resolvedResourceParams.knowledgeBaseId) {
-    uniqueToolId = `${toolConfig.id}_${resolvedResourceParams.knowledgeBaseId}`
-  } else if (toolId.startsWith('table_') && resolvedResourceParams.tableId) {
-    uniqueToolId = `${toolConfig.id}_${resolvedResourceParams.tableId}`
+  } else if (toolId === 'function_execute') {
+    if (resolvedResourceParams.secretScope === 'selected') {
+      // Scoping alone would leave the model guessing: the secrets are injected
+      // server-side and nothing else advertises them. Names only — values never
+      // enter the provider request, matching the copilot's workspace-context rule.
+      // `StoredTool.params` holds strings, so a multi-select arrives JSON-encoded;
+      // the executor's paramsTransform parses it later, but this runs before that.
+      const mounted = readMountedSecretNames(resolvedResourceParams.mountedSecrets)
+      toolDescription = mounted.length
+        ? `${toolDescription}\n\nWorkspace secret names available to this code: ${mounted.join(', ')}. Reference one with the exact {{NAME}} syntax. Its value is bound only while the code executes and is not included in the model request. No other secrets are readable.`
+        : `${toolDescription}\n\nThis code has no access to workspace secrets.`
+    }
   }
 
-  const blockParamsFn = blockDef?.tools?.config?.params as
-    | ((p: Record<string, any>) => Record<string, any>)
-    | undefined
-  const blockInputDefs = blockDef?.inputs as Record<string, any> | undefined
+  const { paramsTransform, jsonShapedParamKeys } = buildBlockToolParamsTransform({
+    blockSubBlocks: blockDef?.subBlocks,
+    blockParamsFn: blockDef?.tools?.config?.params as BlockToolParamsFn | undefined,
+    blockInputDefs: blockDef?.inputs as Record<string, unknown> | undefined,
+    toolParams: toolConfig.params,
+    canonicalGroups,
+    scopedCanonicalModes,
+  })
 
-  const needsTransform = blockParamsFn || blockInputDefs || canonicalGroups.length > 0
-  const paramsTransform = needsTransform
-    ? (params: Record<string, any>): Record<string, any> => {
-        let result = { ...params }
-
-        for (const group of canonicalGroups) {
-          // Route through the canonical SOT: an explicit scoped override wins, else the value
-          // heuristic - no `?? 'basic'` (which dropped an advanced-only value when basic was empty).
-          const explicitMode = scopedCanonicalModes?.[group.canonicalId]
-          const chosen = resolveActiveCanonicalValue(
-            group,
-            result,
-            explicitMode ? { [group.canonicalId]: explicitMode } : undefined
-          )
-
-          const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
-          result = omit(result, sourceIds)
-
-          if (chosen !== undefined) {
-            result[group.canonicalId] = chosen
-          }
-        }
-
-        if (blockParamsFn) {
-          const transformed = blockParamsFn(result)
-          result = { ...result, ...transformed }
-        }
-
-        if (blockInputDefs) {
-          for (const [key, schema] of Object.entries(blockInputDefs)) {
-            const value = result[key]
-            if (typeof value === 'string' && value.trim().length > 0) {
-              const inputType = typeof schema === 'object' ? schema.type : schema
-              if (inputType === 'json' || inputType === 'array') {
-                try {
-                  result[key] = JSON.parse(value.trim())
-                } catch {
-                  // Not valid JSON — keep as string
-                }
-              }
-            }
-          }
-        }
-
-        return result
-      }
-    : undefined
-
-  return {
-    id: uniqueToolId,
-    name: toolName,
+  const providerTool: ProviderToolConfig = {
+    id: toolConfig.id,
     description: toolDescription,
     params: userProvidedParams,
     parameters: llmSchema,
     modelBlockedParams,
     paramsTransform,
+    ...(jsonShapedParamKeys.length > 0 && { jsonShapedParamKeys }),
   }
+
+  // A tool that rewrote its own description from a bound param already names that resource, so the
+  // duplicate labeller must not state it twice. Keyed off the declaration rather than the rendered
+  // text; the inequality catches an enricher that returned the description unchanged.
+  const selfDescribedParamId =
+    enrichedDescription && enrichedDescription !== toolConfig.description
+      ? toolConfig.toolEnrichment?.dependsOn
+      : undefined
+
+  registerProviderToolBindings(
+    providerTool,
+    collectToolResourceBindings({
+      subBlocks: blockDef?.subBlocks,
+      userProvidedParams,
+      resolvedResourceParams,
+      selfDescribedParamId,
+      workflowLabel,
+    })
+  )
+
+  return providerTool
 }
 
 /**
@@ -782,11 +1147,7 @@ export function calculateCost(
   inputMultiplier?: number,
   outputMultiplier?: number
 ) {
-  let pricing = getEmbeddingModelPricing(model)
-
-  if (!pricing) {
-    pricing = getModelPricingFromDefinitions(model)
-  }
+  const pricing = getRegisteredModelPricing(model)
 
   if (!pricing) {
     if (!modelsMissingPricingWarned.has(model)) {
@@ -810,13 +1171,14 @@ export function calculateCost(
     }
   }
 
+  const tokenPricing = resolveModelTokenPricing(pricing, promptTokens)
   const inputCost =
     promptTokens *
-    (useCachedInput && pricing.cachedInput
-      ? pricing.cachedInput / 1_000_000
-      : pricing.input / 1_000_000)
+    (useCachedInput && tokenPricing.cachedInput
+      ? tokenPricing.cachedInput / 1_000_000
+      : tokenPricing.input / 1_000_000)
 
-  const outputCost = completionTokens * (pricing.output / 1_000_000)
+  const outputCost = completionTokens * (tokenPricing.output / 1_000_000)
   const finalInputCost = inputCost * (inputMultiplier ?? 1)
   const finalOutputCost = outputCost * (outputMultiplier ?? 1)
   const finalTotalCost = finalInputCost + finalOutputCost
@@ -896,13 +1258,27 @@ export function sumToolCosts(toolResults?: Record<string, unknown>[]): number {
   return total
 }
 
-export function getModelPricing(modelId: string): any {
-  const embeddingPricing = getEmbeddingModelPricing(modelId)
-  if (embeddingPricing) {
-    return embeddingPricing
-  }
+export function getModelPricing(modelId: string): ModelPricing | null {
+  return getRegisteredModelPricing(modelId)
+}
 
-  return getModelPricingFromDefinitions(modelId)
+/**
+ * Format cost as a credit string for display.
+ * Internally cost is in USD; this converts to credits (1 USD = 200 credits).
+ *
+ * @param cost Cost in USD
+ * @returns Formatted credit string (e.g. "200 credits", "<1 credit", "0 credits")
+ */
+export function formatCost(cost: number): string {
+  return formatCreditCost(cost) ?? '—'
+}
+
+/**
+ * Get the list of models that are hosted by the platform (don't require user API keys)
+ * These are the models for which we hide the API key field in the hosted environment
+ */
+export function getHostedModels(): string[] {
+  return getHostedModelsFromDefinitions()
 }
 
 /**
@@ -1002,27 +1378,20 @@ export function getApiKey(
     userProvidedKey && !userProvidedKey.includes('{{') && !userProvidedKey.includes('}}')
   const hasUserKey = !!isResolvedKey
 
-  const isOllamaModel =
-    provider === 'ollama' || useProvidersStore.getState().providers.ollama.models.includes(model)
-  if (isOllamaModel) {
+  if (provider === 'ollama') {
     return 'empty'
   }
 
-  const isVllmModel =
-    provider === 'vllm' || useProvidersStore.getState().providers.vllm.models.includes(model)
-  if (isVllmModel) {
+  if (provider === 'vllm') {
     return userProvidedKey || 'empty'
   }
 
-  const isLitellmModel =
-    provider === 'litellm' || useProvidersStore.getState().providers.litellm.models.includes(model)
-  if (isLitellmModel) {
+  if (provider === 'litellm') {
     return userProvidedKey || 'empty'
   }
 
-  // Bedrock uses its own credentials (bedrockAccessKeyId/bedrockSecretKey), not apiKey
-  const isBedrockModel = provider === 'bedrock' || model.startsWith('bedrock/')
-  if (isBedrockModel) {
+  /** Bedrock authenticates through its configured AWS credentials. */
+  if (provider === 'bedrock') {
     return PROVIDER_PLACEHOLDER_KEY
   }
 
@@ -1405,6 +1774,123 @@ export function trackForcedToolUsage(
   }
 }
 
+export const MODELS_TEMP_RANGE_0_2 = getModelsWithTemperatureRange(2)
+export const MODELS_TEMP_RANGE_0_15 = getModelsWithTemperatureRange(1.5)
+export const MODELS_TEMP_RANGE_0_1 = getModelsWithTemperatureRange(1)
+export const MODELS_WITH_TEMPERATURE_SUPPORT = getModelsWithTemperatureSupport()
+export const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
+export const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
+export const MODELS_WITH_THINKING = getModelsWithThinking()
+export const MODELS_WITH_PROMPT_CACHING = getModelsWithPromptCaching()
+export const MODELS_WITH_DEEP_RESEARCH = getModelsWithDeepResearch()
+export const MODELS_WITHOUT_MEMORY = getModelsWithoutMemory()
+export const PROVIDERS_WITH_TOOL_USAGE_CONTROL = getProvidersWithToolUsageControl()
+
+export function supportsTemperature(model: string): boolean {
+  return supportsTemperatureFromDefinitions(model)
+}
+
+/**
+ * Levels the pickers offer on top of what a model declares. `auto` means "say nothing" and
+ * `none` means "explicitly off"; provider adapters special-case both, so neither is an
+ * unrecognized level.
+ */
+const MODEL_LEVEL_SENTINELS = new Set(['auto', 'none'])
+
+/**
+ * Renders a tuning level for a log line or an error message.
+ *
+ * The agent block's reasoning effort, verbosity, and thinking level fields accept variable and
+ * environment references, so an unrecognized level is not necessarily a mistyped level — it is
+ * whatever the reference resolved to, up to and including secret content. Only a level the
+ * catalogue declares somewhere is safe to echo; anything else is reported by length alone,
+ * which still distinguishes a stray level from a resolved blob.
+ *
+ * Every site that puts a caller-supplied level into a message must go through this.
+ */
+export function describeModelLevel(value: string | undefined): string {
+  if (!value) return '(unset)'
+  const isSafe = MODEL_LEVEL_SENTINELS.has(value) || isKnownModelLevelValue(value)
+  return isSafe ? value : `[redacted ${value.length} chars]`
+}
+
+export function supportsReasoningEffort(model: string): boolean {
+  return MODELS_WITH_REASONING_EFFORT.includes(model.toLowerCase())
+}
+
+export function supportsVerbosity(model: string): boolean {
+  return MODELS_WITH_VERBOSITY.includes(model.toLowerCase())
+}
+
+export function supportsThinking(model: string): boolean {
+  return MODELS_WITH_THINKING.includes(model.toLowerCase())
+}
+
+/** Whether the model accepts caller-placed prompt-cache breakpoints. */
+export function supportsPromptCaching(model: string): boolean {
+  return MODELS_WITH_PROMPT_CACHING.includes(model.toLowerCase())
+}
+
+export function isDeepResearchModel(model: string): boolean {
+  return MODELS_WITH_DEEP_RESEARCH.includes(model.toLowerCase())
+}
+
+export function isGemini3Model(model: string): boolean {
+  const normalized = model
+    .toLowerCase()
+    .replace(/^vertex\//, '')
+    .replace(
+      /^(?:google\/|(?:projects\/[^/]+\/locations\/[^/]+\/)?publishers\/google\/models\/)/,
+      ''
+    )
+  return normalized.startsWith('gemini-3')
+}
+
+/**
+ * Get the maximum temperature value for a model
+ * @returns Maximum temperature value (1 or 2) or undefined if temperature not supported
+ */
+export function getMaxTemperature(model: string): number | undefined {
+  return getMaxTempFromDefinitions(model)
+}
+
+export function supportsToolUsageControl(provider: string): boolean {
+  return supportsToolUsageControlFromDefinitions(provider)
+}
+
+/**
+ * Get reasoning effort values for a specific model
+ * Returns the valid options for that model, or null if the model doesn't support reasoning effort
+ */
+export function getReasoningEffortValuesForModel(model: string): string[] | null {
+  return getReasoningEffortValuesForModelFromDefinitions(model)
+}
+
+/**
+ * Get verbosity values for a specific model
+ * Returns the valid options for that model, or null if the model doesn't support verbosity
+ */
+export function getVerbosityValuesForModel(model: string): string[] | null {
+  return getVerbosityValuesForModelFromDefinitions(model)
+}
+
+/**
+ * Get thinking levels for a specific model
+ * Returns the valid levels for that model, or null if the model doesn't support thinking
+ */
+export function getThinkingLevelsForModel(model: string): string[] | null {
+  return getThinkingLevelsForModelFromDefinitions(model)
+}
+
+/**
+ * Get max output tokens for a specific model.
+ *
+ * @param model - The model ID
+ */
+export function getMaxOutputTokensForModel(model: string): number {
+  return getMaxOutputTokensForModelFromDefinitions(model)
+}
+
 /**
  * Prepare tool execution parameters, separating tool parameters from system parameters
  */
@@ -1430,7 +1916,28 @@ export function prepareToolExecution(
     billingAttribution?: BillingAttributionSnapshot
     /** Invoking run's execution id — see `ProviderRequest.executionId`. */
     executionId?: string
-  }
+    /** Invoking agent block's id — see `ProviderRequest.blockId`. */
+    blockId?: string
+    /**
+     * The model's own id for this tool call. It is what makes a keyed tool's
+     * idempotency token distinguishing on the agent path: one agent block can
+     * issue the same tool several times inside one execution, and `executionId`
+     * plus `blockId` alone would collapse them into a single token the provider
+     * would dedupe down to one delivery. Stable across retries because it is read
+     * from the model's response rather than minted per attempt.
+     */
+    invocationId?: string
+  },
+  /**
+   * The model's own id for this tool call, read from the provider's response.
+   *
+   * Required rather than optional — `string | undefined` — so the argument
+   * cannot be forgotten. A provider with no model-supplied id must pass
+   * `undefined` explicitly and take the loud fallback; omitting it entirely
+   * would silently leave `invocationId` unset, which is the unstable-token path
+   * this parameter exists to close.
+   */
+  toolCallId: string | undefined
 ): {
   toolParams: Record<string, any>
   executionParams: Record<string, any>
@@ -1498,6 +2005,10 @@ export function prepareToolExecution(
               : {}),
             ...(request.callChain ? { callChain: request.callChain } : {}),
             ...(request.executionId ? { executionId: request.executionId } : {}),
+            ...(request.blockId ? { blockId: request.blockId } : {}),
+            ...((toolCallId ?? request.invocationId)
+              ? { invocationId: toolCallId ?? request.invocationId }
+              : {}),
             ...(request.billingAttribution
               ? { billingAttribution: request.billingAttribution }
               : {}),

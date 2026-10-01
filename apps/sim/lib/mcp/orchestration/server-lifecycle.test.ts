@@ -8,6 +8,7 @@ import {
   dbChainMockFns,
   encryptionMock,
   posthogServerMock,
+  queueTableRows,
   resetDbChainMock,
   schemaMock,
 } from '@sim/testing'
@@ -33,11 +34,14 @@ vi.mock('@sim/db', () => ({
   mcpServers: schemaMock.mcpServers,
 }))
 vi.mock('@sim/db/schema', () => ({
+  credential: schemaMock.credential,
   mcpServerOauth: schemaMock.mcpServerOauth,
 }))
 vi.mock('@sim/utils/id', () => ({ generateId: vi.fn() }))
 vi.mock('@/lib/core/security/encryption', () => encryptionMock)
 vi.mock('@/lib/mcp/domain-check', () => ({
+  MCP_EGRESS_PROFILE: 'selfHostedService',
+  OAUTH_EGRESS_PROFILE: 'contentFetch',
   McpDnsResolutionError: class extends Error {},
   McpDomainNotAllowedError: class extends Error {},
   McpSsrfError: class extends Error {},
@@ -633,9 +637,19 @@ describe('MCP server lifecycle orchestration', () => {
   })
 
   it('evicts the deleted server from the connection pool (row is already gone from clearCache)', async () => {
-    dbChainMockFns.returning.mockResolvedValueOnce([
+    queueTableRows(schemaMock.mcpServers, [
       { id: 'server-1', workspaceId: 'workspace-1', name: 'Example', transport: 'streamable-http' },
     ])
+    dbChainMockFns.returning
+      .mockResolvedValueOnce([{ id: 'mcp-cg-connection-1' }])
+      .mockResolvedValueOnce([
+        {
+          id: 'server-1',
+          workspaceId: 'workspace-1',
+          name: 'Example',
+          transport: 'streamable-http',
+        },
+      ])
 
     const result = await performDeleteMcpServer({
       workspaceId: 'workspace-1',
@@ -646,5 +660,9 @@ describe('MCP server lifecycle orchestration', () => {
     expect(result.success).toBe(true)
     expect(mockRevokeOauthTokens).toHaveBeenCalledWith('server-1', 'workspace-1')
     expect(mockEvictServerConnections).toHaveBeenCalledWith('server-1', expect.any(String))
+    expect(mockEvictServerConnections).toHaveBeenCalledWith(
+      'mcp-cg-connection-1',
+      'managed connection retired'
+    )
   })
 })

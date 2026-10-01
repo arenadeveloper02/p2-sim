@@ -4,19 +4,28 @@ import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/work
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
 import { isDev } from '@/lib/core/config/env-flags'
-import { setDeploymentAuthCookie, validateAuthToken } from '@/lib/core/security/deployment'
 import {
+  type DeploymentAuthResource,
+  setDeploymentAuthCookie,
+  validateAuthToken,
+} from '@/lib/core/security/deployment'
+import {
+  type DeploymentAuthBody,
   type DeploymentAuthResult,
   validateDeploymentAuth,
 } from '@/lib/core/security/deployment-auth'
 
-export function setChatAuthCookie(
+export async function setChatAuthCookie(
   response: NextResponse,
-  chatId: string,
-  type: string,
-  encryptedPassword?: string | null
-): void {
-  setDeploymentAuthCookie(response, 'chat', chatId, type, encryptedPassword)
+  deployment: DeploymentAuthResource,
+  verifiedEmail?: string
+): Promise<void> {
+  await setDeploymentAuthCookie({
+    response,
+    cookiePrefix: 'chat',
+    resource: deployment,
+    verifiedEmail,
+  })
 }
 
 /**
@@ -32,6 +41,7 @@ export async function canAccessAgentGeneratedImageViaDeployedChat(
       id: chat.id,
       authType: chat.authType,
       password: chat.password,
+      allowedEmails: chat.allowedEmails,
     })
     .from(chat)
     .where(and(eq(chat.workflowId, workflowId), eq(chat.isActive, true)))
@@ -45,10 +55,7 @@ export async function canAccessAgentGeneratedImageViaDeployedChat(
       return true
     }
     const authCookie = request.cookies.get(`chat_auth_${d.id}`)
-    if (
-      authCookie?.value &&
-      validateAuthToken(authCookie.value, d.id, d.authType || 'password', d.password)
-    ) {
+    if (authCookie?.value && (await validateAuthToken({ token: authCookie.value, resource: d }))) {
       return true
     }
   }
@@ -136,9 +143,9 @@ export async function checkChatAccess(
  */
 export async function validateChatAuth(
   requestId: string,
-  deployment: any,
+  deployment: DeploymentAuthResource,
   request: NextRequest,
-  parsedBody?: any
+  parsedBody?: DeploymentAuthBody
 ): Promise<DeploymentAuthResult> {
   return validateDeploymentAuth(requestId, deployment, request, parsedBody, 'chat')
 }

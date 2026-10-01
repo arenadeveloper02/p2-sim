@@ -23,10 +23,12 @@ import {
   schemaMock,
 } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { workflowStateSchema } from '@/lib/api/contracts/workflows'
 import type {
   BlockState as AppBlockState,
   WorkflowState as AppWorkflowState,
 } from '@/stores/workflows/workflow/types'
+import { generateLoopBlocks } from '@/stores/workflows/workflow/utils'
 
 /**
  * Type helper for converting test workflow state to app workflow state.
@@ -293,6 +295,13 @@ const mockWorkflowState = createWorkflowState({
   },
 })
 
+/**
+ * The ungoverned write every characterization here performs: these exercise the
+ * table mechanics, not the permission-group gate, and a `null` subject is how a
+ * caller declares the write is not a member's authoring action.
+ */
+const UNGOVERNED = { workspaceId: null, subjectUserId: null }
+
 describe('Database Helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -341,6 +350,111 @@ describe('Database Helpers', () => {
   })
 
   describe('loadWorkflowFromNormalizedTables', () => {
+    it.each(['for', 'forEach', 'while', 'doWhile'] as const)(
+      'preserves valid block counts and expressions for %s loops even when subflow counts differ',
+      async (loopType) => {
+        const data = {
+          count: 9,
+          loopType,
+          collection: '<source.items>',
+          whileCondition: '<source.hasMore>',
+          doWhileCondition: '<source.hasMore>',
+          width: 600,
+          parentId: 'outer-loop',
+          extent: 'parent' as const,
+        }
+        queueLoadFixtures({
+          blocks: [{ ...toDbBlock(createLoopBlock({ id: 'loop-1' }), mockWorkflowId), data }],
+          subflows: [
+            {
+              id: 'loop-1',
+              type: 'loop',
+              config: {
+                nodes: [],
+                loopType,
+                iterations: 3,
+                forEachItems: data.collection,
+                whileCondition: data.whileCondition,
+                doWhileCondition: data.doWhileCondition,
+              },
+            },
+          ],
+        })
+
+        const loaded = await dbHelpers.loadWorkflowFromNormalizedTables(mockWorkflowId)
+        const parsed = workflowStateSchema.parse(loaded)
+
+        expect(parsed.blocks['loop-1'].data).toEqual(data)
+        expect(parsed.loops?.['loop-1'].iterations).toBe(3)
+        expect(generateLoopBlocks(loaded!.blocks)['loop-1']).toMatchObject({
+          iterations: 9,
+          loopType,
+          forEachItems: data.collection,
+          whileCondition: data.whileCondition,
+          doWhileCondition: data.doWhileCondition,
+        })
+        expect(dbChainMockFns.update).not.toHaveBeenCalled()
+      }
+    )
+
+    it('keeps an absent block count absent so serialization retains its existing default', async () => {
+      queueLoadFixtures({
+        blocks: [
+          {
+            ...toDbBlock(createLoopBlock({ id: 'loop-1' }), mockWorkflowId),
+            data: { loopType: 'for' },
+          },
+        ],
+        subflows: [
+          { id: 'loop-1', type: 'loop', config: { nodes: [], loopType: 'for', iterations: 3 } },
+        ],
+      })
+
+      const loaded = await dbHelpers.loadWorkflowFromNormalizedTables(mockWorkflowId)
+
+      expect(loaded?.blocks['loop-1'].data?.count).toBeUndefined()
+      expect(Object.hasOwn(loaded!.blocks['loop-1'].data!, 'count')).toBe(false)
+      expect(loaded?.loops['loop-1'].iterations).toBe(3)
+      expect(generateLoopBlocks(loaded!.blocks)['loop-1'].iterations).toBe(5)
+      expect(dbChainMockFns.update).not.toHaveBeenCalled()
+    })
+
+    it('serves a legacy forEach loop with a string count through the workflow read contract', async () => {
+      const collection = '<source.items>'
+      const loopRow = toDbBlock(createLoopBlock({ id: 'loop-1' }), mockWorkflowId)
+      queueLoadFixtures({
+        blocks: [
+          {
+            ...loopRow,
+            data: { ...loopRow.data, loopType: 'forEach', count: collection, collection },
+          },
+        ],
+        subflows: [
+          {
+            id: 'loop-1',
+            type: 'loop',
+            config: {
+              nodes: [],
+              loopType: 'forEach',
+              iterations: collection,
+              forEachItems: collection,
+            },
+          },
+        ],
+      })
+
+      const loaded = await dbHelpers.loadWorkflowFromNormalizedTables(mockWorkflowId)
+      const parsed = workflowStateSchema.parse(loaded)
+
+      expect(parsed.blocks['loop-1'].data).toMatchObject({ count: 1, collection })
+      expect(parsed.loops?.['loop-1']).toMatchObject({
+        loopType: 'forEach',
+        iterations: 1,
+        forEachItems: collection,
+      })
+      expect(dbChainMockFns.update).not.toHaveBeenCalled()
+    })
+
     it('should successfully load workflow data from normalized tables', async () => {
       queueLoadFixtures({
         blocks: mockBlocksFromDb,
@@ -394,6 +508,7 @@ describe('Database Helpers', () => {
         whileCondition: '',
         enabled: true,
       })
+      expect(result?.blocks['loop-1'].data?.count).toBe(3)
 
       expect(result?.parallels['parallel-1']).toEqual({
         id: 'parallel-1',
@@ -413,10 +528,24 @@ describe('Database Helpers', () => {
       )
     })
 
-    it('should return null when no blocks are found', async () => {
+    it('should return null when the workflow row is not found', async () => {
       const result = await dbHelpers.loadWorkflowFromNormalizedTables(mockWorkflowId)
 
       expect(result).toBeNull()
+    })
+
+    it('should load an existing blockless workflow as an empty graph', async () => {
+      queueLoadFixtures({ blocks: [] })
+
+      const result = await dbHelpers.loadWorkflowFromNormalizedTables(mockWorkflowId)
+
+      expect(result).toMatchObject({
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        isFromNormalizedTables: true,
+      })
     })
 
     it('should return null when database query fails', async () => {
@@ -496,7 +625,8 @@ describe('Database Helpers', () => {
     it('should successfully save workflow data to normalized tables', async () => {
       const result = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        asAppState(mockWorkflowState)
+        asAppState(mockWorkflowState),
+        UNGOVERNED
       )
 
       expect(result.success).toBe(true)
@@ -509,7 +639,8 @@ describe('Database Helpers', () => {
 
       const result = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        asAppState(emptyWorkflowState)
+        asAppState(emptyWorkflowState),
+        UNGOVERNED
       )
 
       expect(result.success).toBe(true)
@@ -520,7 +651,8 @@ describe('Database Helpers', () => {
 
       const result = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        asAppState(mockWorkflowState)
+        asAppState(mockWorkflowState),
+        UNGOVERNED
       )
 
       expect(result.success).toBe(false)
@@ -535,7 +667,8 @@ describe('Database Helpers', () => {
 
       const result = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        asAppState(mockWorkflowState)
+        asAppState(mockWorkflowState),
+        UNGOVERNED
       )
 
       expect(result.success).toBe(false)
@@ -543,7 +676,11 @@ describe('Database Helpers', () => {
     })
 
     it('should properly format block data for database insertion', async () => {
-      await dbHelpers.saveWorkflowToNormalizedTables(mockWorkflowId, asAppState(mockWorkflowState))
+      await dbHelpers.saveWorkflowToNormalizedTables(
+        mockWorkflowId,
+        asAppState(mockWorkflowState),
+        UNGOVERNED
+      )
 
       const [capturedBlockInserts = []] = insertedRowsFor(schemaMock.workflowBlocks)
       const [capturedEdgeInserts = []] = insertedRowsFor(schemaMock.workflowEdges)
@@ -617,7 +754,11 @@ describe('Database Helpers', () => {
       staleWorkflowState.loops = {}
       staleWorkflowState.parallels = {}
 
-      await dbHelpers.saveWorkflowToNormalizedTables(mockWorkflowId, asAppState(staleWorkflowState))
+      await dbHelpers.saveWorkflowToNormalizedTables(
+        mockWorkflowId,
+        asAppState(staleWorkflowState),
+        UNGOVERNED
+      )
 
       const [capturedSubflowInserts = []] = insertedRowsFor(schemaMock.workflowSubflows)
 
@@ -723,7 +864,8 @@ describe('Database Helpers', () => {
 
       const result = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        asAppState(largeWorkflowState)
+        asAppState(largeWorkflowState),
+        UNGOVERNED
       )
 
       expect(result.success).toBe(true)
@@ -855,7 +997,8 @@ describe('Database Helpers', () => {
 
       const saveResult = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        workflowState
+        workflowState,
+        UNGOVERNED
       )
       expect(saveResult.success).toBe(true)
 
@@ -926,7 +1069,8 @@ describe('Database Helpers', () => {
 
       const saveResult = await dbHelpers.saveWorkflowToNormalizedTables(
         mockWorkflowId,
-        asAppState(testWorkflowState)
+        asAppState(testWorkflowState),
+        UNGOVERNED
       )
       expect(saveResult.success).toBe(true)
 

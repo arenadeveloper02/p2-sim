@@ -31,6 +31,7 @@ import { FloatingOverflowText } from '@/app/workspace/[workspaceId]/components/r
 import type { BreadcrumbDropConfig } from '@/app/workspace/[workspaceId]/components/resource/components/resource-header'
 import { ResourceHeader } from '@/app/workspace/[workspaceId]/components/resource/components/resource-header'
 import { ResourceOptions } from '@/app/workspace/[workspaceId]/components/resource/components/resource-options'
+import { SearchHighlight } from '@/app/workspace/[workspaceId]/components/search-highlight/search-highlight'
 
 export interface ResourceColumn {
   id: string
@@ -72,6 +73,12 @@ export interface ResourceCell {
    * layout, and the rename field replaces the label entirely while it is open.
    */
   pinned?: boolean
+  /**
+   * Find term to tint inside the label (Cmd/Ctrl+F match). Honoured only on the
+   * plain label cell, like `pinned` — a `content` cell owns its own rendering
+   * and the rename field replaces the label while open.
+   */
+  highlight?: string
 }
 
 export interface ResourceRow {
@@ -225,6 +232,17 @@ interface ResourceTableProps {
    * chrome and positioning; it never alters the table's rendering.
    */
   overlay?: ReactNode
+  /**
+   * Sanctioned empty slot. Rendered below the column headers when `rows` is
+   * empty, filling the otherwise blank scroll area. It never replaces the table
+   * region or the headers — the chrome guarantee holds — so a consumer can show
+   * a zero-data graphic without the list losing its structure.
+   *
+   * The table gives the slot a flex column that fills the remaining scroll area, so
+   * the node decides how to sit in it rather than depending on the scroll container's
+   * own layout.
+   */
+  emptyState?: ReactNode
 }
 
 /**
@@ -263,9 +281,12 @@ const ResourceTable = memo(function ResourceTable({
   isLoadingMore,
   pagination,
   overlay,
+  emptyState,
 }: ResourceTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
+
+  const showEmptyState = rows.length === 0 && Boolean(emptyState)
 
   const [contextMenuRowId, setContextMenuRowId] = useState<string | null>(null)
 
@@ -358,7 +379,10 @@ const ResourceTable = memo(function ResourceTable({
     <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden'>
       <div
         ref={scrollRef}
-        className='min-h-0 flex-1 overflow-auto overscroll-none'
+        className={cn(
+          'min-h-0 flex-1 overflow-auto overscroll-none',
+          showEmptyState && 'flex flex-col'
+        )}
         onDragOver={bodyDrop?.onDragOver}
         onDragLeave={bodyDrop?.onDragLeave}
         onDrop={bodyDrop?.onDrop}
@@ -440,6 +464,7 @@ const ResourceTable = memo(function ResourceTable({
                 ))}
           </div>
         </div>
+        {showEmptyState ? <div className='flex min-h-0 flex-1 flex-col'>{emptyState}</div> : null}
         {hasMore && (
           <div ref={loadMoreRef} className='flex items-center justify-center py-3'>
             {isLoadingMore && (
@@ -541,6 +566,7 @@ interface CellContentProps {
   content?: ReactNode
   editing?: ResourceCellEditing
   pinned?: boolean
+  highlight?: string
 }
 
 const CellContent = memo(function CellContent({
@@ -549,6 +575,7 @@ const CellContent = memo(function CellContent({
   content,
   editing,
   pinned,
+  highlight,
 }: CellContentProps) {
   if (editing) {
     return (
@@ -568,7 +595,9 @@ const CellContent = memo(function CellContent({
   return (
     <span className={cn('flex min-w-0 items-center', chipContentGap)}>
       {icon && <span className={cellIconNodeClass}>{icon}</span>}
-      <FloatingOverflowText label={label} className={cn('block', chipContentLabelClass)} />
+      <FloatingOverflowText label={label} className={cn('block', chipContentLabelClass)}>
+        {highlight ? <SearchHighlight text={label} searchQuery={highlight} /> : undefined}
+      </FloatingOverflowText>
       {pinned && (
         <Pin
           className='size-[12px] shrink-0 text-[var(--text-icon)]'
@@ -749,6 +778,7 @@ const DataRow = memo(function DataRow({
               content={cell?.content}
               editing={cell?.editing}
               pinned={cell?.pinned}
+              highlight={cell?.highlight}
             />
           </div>
         )

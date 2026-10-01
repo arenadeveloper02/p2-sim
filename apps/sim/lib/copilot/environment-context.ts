@@ -22,6 +22,8 @@ export async function createCopilotEnvironmentContext(
     personalDecrypted: environment.personalDecrypted,
     workspaceDecrypted: environment.workspaceDecrypted,
     decryptionFailures: environment.decryptionFailures,
+    personalOwners: environment.personalOwners,
+    workspaceUnredactedKeys: environment.workspaceUnredactedKeys,
     scope: { userId, workspaceId },
   })
 
@@ -32,8 +34,20 @@ export async function createCopilotEnvironmentContext(
 
 export async function prepareCopilotEnvironmentContext(
   userId: string,
-  workspaceId?: string
+  workspaceId?: string,
+  options: { includeSecrets?: boolean } = {}
 ): Promise<CopilotEnvironmentContext> {
+  if (options.includeSecrets === false) {
+    return {
+      resolvedSecretTraceRegistry: await createResolvedSecretTraceRegistry({
+        personalEncrypted: {},
+        workspaceEncrypted: {},
+        personalDecrypted: {},
+        workspaceDecrypted: {},
+        scope: { userId, workspaceId },
+      }),
+    }
+  }
   const environment = await getEffectiveEnvironmentSnapshot(userId, workspaceId)
   return createCopilotEnvironmentContext(userId, workspaceId, environment)
 }

@@ -16,6 +16,7 @@ import { createLogger } from '@sim/logger'
 import { installNodeRequestContext } from '@sim/logger/request-context.node'
 
 installNodeRequestContext()
+
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { env } from './lib/core/config/env'
 import { parseOtlpHeaders } from './lib/monitoring/otlp'
@@ -80,6 +81,23 @@ function normalizeOtlpMetricsUrl(url: string): string {
     u.pathname = path.endsWith('/v1/traces')
       ? path.replace(/\/v1\/traces$/, '/v1/metrics')
       : `${path}/v1/metrics`
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
+// Logs counterpart to `normalizeOtlpMetricsUrl` — same parsed-pathname
+// handling, targeting the /v1/logs signal path.
+function normalizeOtlpLogsUrl(url: string): string {
+  if (!url) return url
+  try {
+    const u = new URL(url)
+    const path = u.pathname.replace(/\/$/, '')
+    if (path.endsWith('/v1/logs')) return url
+    u.pathname = path.endsWith('/v1/traces')
+      ? path.replace(/\/v1\/traces$/, '/v1/logs')
+      : `${path}/v1/logs`
     return u.toString()
   } catch {
     return url
@@ -180,6 +198,8 @@ async function initializeOpenTelemetry() {
     const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
     const { OTLPMetricExporter } = await import('@opentelemetry/exporter-metrics-otlp-http')
     const { PeriodicExportingMetricReader } = await import('@opentelemetry/sdk-metrics')
+    const { OTLPLogExporter } = await import('@opentelemetry/exporter-logs-otlp-http')
+    const { BatchLogRecordProcessor } = await import('@opentelemetry/sdk-logs')
     const { BatchSpanProcessor } = await import('@opentelemetry/sdk-trace-node')
     const { TraceIdRatioBasedSampler, SamplingDecision } = await import(
       '@opentelemetry/sdk-trace-base'
@@ -274,6 +294,19 @@ async function initializeOpenTelemetry() {
       exportIntervalMillis: 60000,
     })
 
+    // Logs share the trace endpoint and headers as well (signal path
+    // /v1/logs). Every @sim/logger line fans out through the global Logs API
+    // (see packages/logger), which the NodeSDK wires to this processor — the
+    // stdout JSON lines continue to CloudWatch unchanged.
+    const logRecordProcessor = new BatchLogRecordProcessor({
+      exporter: new OTLPLogExporter({
+        url: normalizeOtlpLogsUrl(telemetryConfig.endpoint),
+        headers: otlpHeaders,
+        timeoutMillis: Math.min(telemetryConfig.batchSettings.exportTimeoutMillis, 10000),
+        keepAlive: false,
+      }),
+    })
+
     // Must be unique per process: replicas sharing one instance id collapse
     // into a single Prometheus series, so their independent cumulative
     // counters interleave and corrupt rate()/increase(). The slug keeps Sim
@@ -323,6 +356,7 @@ async function initializeOpenTelemetry() {
       spanProcessors,
       sampler,
       metricReader,
+      logRecordProcessors: [logRecordProcessor],
     })
 
     sdk.start()
@@ -436,6 +470,12 @@ async function startLocalScheduler() {
 }
 
 export async function register() {
+  // Builds the egress policies from EGRESS_ALLOWED_HOSTS and EGRESS_ALLOWED_IP_RANGES so a
+  // malformed entry stops the process here, naming the setting, rather than surfacing as a
+  // 500 on whichever request first happens to touch an outbound path.
+  const { resolveEgressPolicy } = await import('./lib/core/security/egress/profiles')
+  resolveEgressPolicy('requestTarget')
+
   await initializeOpenTelemetry()
   await startLocalScheduler()
 
@@ -460,4 +500,10 @@ export async function register() {
 
   const { startMemoryTelemetry } = await import('./lib/monitoring/memory-telemetry')
   startMemoryTelemetry()
+
+  // Not awaited: the connection is warmed in the background so the first request
+  // that needs Redis does not pay the handshake inside its own command deadline,
+  // but boot never waits on Redis to serve requests that do not touch it.
+  const { warmRedisConnection } = await import('@/lib/core/config/redis')
+  void warmRedisConnection()
 }

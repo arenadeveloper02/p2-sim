@@ -57,6 +57,14 @@ export async function runEditWorkflowTool(
   args: Record<string, unknown>,
   ctx: LocalCopilotMutationContext
 ): Promise<ToolCallResult> {
+  const toolCallId = ctx.activeToolCallId?.trim()
+  if (!toolCallId) {
+    return {
+      success: false,
+      error: 'edit_workflow requires a trusted Copilot tool call ID',
+    }
+  }
+
   const normalized = normalizeEditWorkflowArgs(args)
   const workflowId =
     (typeof normalized.workflowId === 'string' && normalized.workflowId.trim()) || ctx.workflowId
@@ -92,7 +100,7 @@ export async function runEditWorkflowTool(
         abortSignal: ctx.abortSignal,
         userStopSignal: ctx.abortSignal,
         copilotToolExecution: true,
-        ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
+        toolCallId,
       }
     )
 

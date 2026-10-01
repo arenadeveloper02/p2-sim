@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { resolvedSecretTraceProvenanceSchema } from '@/lib/api/contracts/primitives'
+import {
+  resolvedSecretTraceProvenanceSchema,
+  resourceOwnerSchema,
+} from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { RESOLVED_SECRET_PROVENANCE_FIELD } from '@/lib/execution/private-tool-metadata'
 import { DEFAULT_RERANKER_MODEL, rerankerModelSchema } from '@/lib/knowledge/reranker-models'
@@ -16,15 +19,15 @@ export const knowledgeSearchTagFilterSchema = z.object({
 export const KNOWLEDGE_SEARCH_MODES = ['vector', 'hybrid'] as const
 
 /**
- * Shared by the internal and v1 search contracts. Defaults to `vector` so every
- * existing caller keeps its current ranking; hybrid is opt-in.
+ * Shared by the internal and v1 search contracts. Omitted, the workspace's
+ * default applies: `hybrid` where permission-aware knowledge is on, else
+ * `vector`. The use case resolves that, so the schema carries no default.
  */
 export const knowledgeSearchModeSchema = z
   .enum(KNOWLEDGE_SEARCH_MODES)
   .optional()
   .nullable()
-  .default('vector')
-  .transform((val) => val ?? 'vector')
+  .transform((val) => val ?? undefined)
 
 export const knowledgeSearchBodySchema = z
   .object({
@@ -51,9 +54,11 @@ export const knowledgeSearchBodySchema = z
       .nullable()
       .transform((val) => val || undefined),
     /**
-     * `vector` (default) is semantic-only retrieval. `hybrid` additionally runs a
-     * full-text leg and fuses the two by reciprocal rank, which recovers exact
-     * tokens (error codes, ticket keys, identifiers) that embeddings rank poorly.
+     * `hybrid` runs a full-text leg alongside semantic retrieval and fuses the
+     * two by reciprocal rank, which recovers exact tokens (error codes, ticket
+     * keys, identifiers) that embeddings rank poorly. `vector` is semantic-only
+     * retrieval. Omitted, the workspace's default applies. Where that default
+     * is `hybrid`, results in either mode also get a source-recency boost.
      */
     searchMode: knowledgeSearchModeSchema,
     rerankerEnabled: z.boolean().optional().default(false),
@@ -150,6 +155,65 @@ export const internalKnowledgeSearchContract = defineRouteContract({
           })
           .optional(),
       }),
+    }),
+  },
+})
+
+/** One document a workspace search matched, with the best chunk of it. */
+export const workspaceKnowledgeSearchResultSchema = z.object({
+  documentId: z.string(),
+  knowledgeBaseId: z.string(),
+  knowledgeBaseName: z.string(),
+  documentName: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+  connectorType: z.string().nullable(),
+  sourceModifiedAt: z.string().nullable(),
+  /** The person behind the document, from its author-like tag; null when the source names none. */
+  author: z.string().nullable(),
+  content: z.string(),
+  chunkIndex: z.number(),
+  similarity: z.number(),
+})
+export type WorkspaceKnowledgeSearchResult = z.output<typeof workspaceKnowledgeSearchResultSchema>
+
+export const workspaceSearchFiltersSchema = z.object({
+  source: z.string().trim().min(1, 'Source cannot be empty').max(100).optional(),
+  modifiedAfter: z.string().datetime({ offset: true }).optional(),
+  documentIds: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
+})
+export type WorkspaceSearchFilters = z.output<typeof workspaceSearchFiltersSchema>
+
+export const workspaceKnowledgeSearchBodySchema = resourceOwnerSchema.safeExtend({
+  filters: workspaceSearchFiltersSchema.optional(),
+  query: z.string().trim().min(1, 'A search query is required').max(2000, 'Query is too long'),
+  topK: z.number().int().min(1).max(50).optional().default(20),
+})
+export type WorkspaceKnowledgeSearchBody = z.input<typeof workspaceKnowledgeSearchBodySchema>
+
+export const workspaceKnowledgeSearchDataSchema = z.object({
+  query: z.string(),
+  results: z.array(workspaceKnowledgeSearchResultSchema),
+  retrieval: z.object({
+    status: z.enum(['complete', 'partial']),
+    timedOutLegs: z.array(z.enum(['vector', 'keyword', 'tags'])).max(3),
+  }),
+})
+export type WorkspaceKnowledgeSearchData = z.output<typeof workspaceKnowledgeSearchDataSchema>
+
+/**
+ * The search a signed-in person runs from the composer: what their own
+ * account may read across the workspace's knowledge bases, presented as
+ * documents to open rather than chunks to feed a model.
+ */
+export const searchWorkspaceKnowledgeContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/knowledge/search',
+  body: workspaceKnowledgeSearchBodySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      success: z.literal(true),
+      data: workspaceKnowledgeSearchDataSchema,
     }),
   },
 })

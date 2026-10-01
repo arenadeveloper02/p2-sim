@@ -2,6 +2,7 @@ import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/wo
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
+import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 import type { LocalToolConfirmationRequirement } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import type { LocalTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type {
@@ -12,7 +13,12 @@ import type {
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
   docSandboxEnabled: boolean
-  supportedCodeLanguages: Array<'javascript' | 'python' | 'shell'>
+  customSandboxesEnabled?: boolean
+  /**
+   * Arena Copilot compute matches the Mothership template: Python + shell when
+   * the remote sandbox is enabled (not JavaScript).
+   */
+  supportedCodeLanguages: Array<'python' | 'shell'>
 }
 
 export type LocalCopilotProviderId =
@@ -217,12 +223,15 @@ export interface LocalCopilotToolCallRecord {
 }
 
 export type LocalCopilotStreamEvent =
-  | { type: 'text_delta'; content: string }
+  | { type: 'text_delta'; content: string; thoughtSignature?: string }
+  | { type: 'thinking_delta'; content: string; thoughtSignature?: string }
   | {
       type: 'tool_call_start'
       toolCallId: string
       toolName: string
       args?: Record<string, unknown>
+      /** Gemini 3+ thought signature — required for follow-up turn CoT. */
+      thoughtSignature?: string
     }
   | {
       type: 'tool_call_result'
@@ -275,6 +284,14 @@ export type LocalCopilotStreamEvent =
         inputTokens: number
         outputTokens: number
       }
+    }
+  | {
+      /**
+       * Exact Gemini/Vertex model parts for one tool-loop round. Persisted so
+       * the next user turn can echo signatures verbatim (required for CoT).
+       */
+      type: 'gemini_model_parts'
+      parts: GeminiHistoryPart[]
     }
 
 export interface LocalCopilotMessageContent {

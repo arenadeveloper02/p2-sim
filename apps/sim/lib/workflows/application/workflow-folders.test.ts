@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   recordAudit: vi.fn(),
 }))
 
-vi.mock('@/lib/workflows/application/context', () => ({
+vi.mock('@/lib/workspaces/application/workspace-context', () => ({
   resolveActiveWorkspaceApplicationContext: mocks.resolveContext,
 }))
 vi.mock('@sim/platform-authz/workspace', () => ({
@@ -41,14 +41,22 @@ vi.mock('@/lib/folders/orchestration', () => ({
 vi.mock('@/lib/folders/queries', () => ({
   listActiveFolderRows: mocks.listRows,
   loadActiveFolderPathIndex: mocks.loadIndex,
+  resolveFolderPathFilter: (index: { idByPath: Map<string, string> }, path: string | undefined) => {
+    if (path === undefined) return { kind: 'unfiltered' }
+    if (path === '/') return { kind: 'folder', folderId: null }
+    const folderId = index.idByPath.get(path)
+    return folderId === undefined ? { kind: 'noMatch' } : { kind: 'folder', folderId }
+  },
   resolveFolderPathFromIndex: (index: { idByPath: Map<string, string> }, path: string) =>
     path === '/' ? null : index.idByPath.get(path),
 }))
 
 import {
+  archivableWorkflowFolderPath,
   createWorkflowFolder,
   deleteWorkflowFolder,
   listWorkflowFolders,
+  workflowFolderPathForId,
 } from '@/lib/workflows/application/workflow-folders'
 
 const folder = {
@@ -144,6 +152,37 @@ describe('workflow folder application operations', () => {
     )
   })
 
+  /**
+   * `parentPath` is a filter, so a path naming no active folder narrows the
+   * result to nothing rather than reporting the collection missing. Falling
+   * through to `listActiveFolderRows` with an undefined `parentId` would list
+   * every folder in the workspace, so the miss has to short-circuit.
+   */
+  it('answers a parent path naming no folder with an empty page', async () => {
+    const result = await listWorkflowFolders.execute({
+      principal: principals[0],
+      input: { workspaceId: 'ws-1', parentPath: '/Missing', sortBy: 'name', sortOrder: 'asc' },
+    })
+
+    expect(result.folders).toEqual([])
+    expect(mocks.listRows).not.toHaveBeenCalled()
+  })
+
+  it('resolves a canonical parent path before listing', async () => {
+    mocks.listRows.mockResolvedValueOnce([folder])
+
+    await listWorkflowFolders.execute({
+      principal: principals[0],
+      input: { workspaceId: 'ws-1', parentPath: '/Reports', sortBy: 'name', sortOrder: 'asc' },
+    })
+
+    expect(mocks.listRows).toHaveBeenCalledWith(
+      'ws-1',
+      'workflow',
+      expect.objectContaining({ parentId: folder.id })
+    )
+  })
+
   it('rejects a workspace key outside the canonical workspace before mutation', async () => {
     await expect(
       createWorkflowFolder.execute({
@@ -209,5 +248,32 @@ describe('workflow folder application operations', () => {
     ).rejects.toBe(failure)
     expect(mocks.listRows).not.toHaveBeenCalled()
     expect(mocks.recordAudit).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Archiving a folder cascades onto the workflows inside it but leaves their
+ * `folderId` pointing at the inactive row, and the folder index holds active
+ * folders only. `scope=archived` selects exactly that population, so the strict
+ * projector would throw a bare `Error` — an unclassified 500 that takes the
+ * whole page down with no cursor position able to step past the row.
+ */
+describe('folder path projection for archived workflows', () => {
+  const archivedFolderId = 'folder-archived'
+
+  it('throws on a dangling folder when the workflow is expected to be active', () => {
+    expect(() => workflowFolderPathForId(index, archivedFolderId)).toThrow()
+  })
+
+  it('answers the root path instead, which is where restore would place it', () => {
+    expect(archivableWorkflowFolderPath(index, archivedFolderId)).toBe('/')
+  })
+
+  it('still resolves a folder that is active', () => {
+    expect(archivableWorkflowFolderPath(index, folder.id)).toBe('/Reports')
+  })
+
+  it('treats no folder as the root', () => {
+    expect(archivableWorkflowFolderPath(index, null)).toBe('/')
   })
 })

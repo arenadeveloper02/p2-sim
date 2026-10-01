@@ -43,6 +43,7 @@ export const MICROSOFT_PROVIDERS = new Set([
   'microsoft-excel',
   'microsoft-planner',
   'microsoft-teams',
+  'microsoft-word',
   'outlook',
   'onedrive',
   'sharepoint',

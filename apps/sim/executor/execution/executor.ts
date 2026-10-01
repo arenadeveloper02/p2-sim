@@ -8,10 +8,8 @@ import { StartBlockPath } from '@/lib/workflows/triggers/triggers'
 import type { DAG } from '@/executor/dag/builder'
 import { DAGBuilder } from '@/executor/dag/builder'
 import { BlockExecutor } from '@/executor/execution/block-executor'
-import type { EdgeManager } from '@/executor/execution/edge-manager'
-import { EdgeManagerV2 } from '@/executor/execution/edge-manager-v2'
-import type { ExecutionEngine } from '@/executor/execution/engine'
-import { ExecutionEngineV2 } from '@/executor/execution/engine-v2'
+import { EdgeManager } from '@/executor/execution/edge-manager'
+import { ExecutionEngine } from '@/executor/execution/engine'
 import { ExecutionState } from '@/executor/execution/state'
 import type {
   ContextExtensions,
@@ -19,8 +17,7 @@ import type {
   WorkflowInput,
 } from '@/executor/execution/types'
 import { createBlockHandlers } from '@/executor/handlers/registry'
-import type { LoopOrchestrator } from '@/executor/orchestrators/loop'
-import { LoopOrchestratorV2 } from '@/executor/orchestrators/loop-v2'
+import { LoopOrchestrator } from '@/executor/orchestrators/loop'
 import { NodeExecutionOrchestrator } from '@/executor/orchestrators/node'
 import { ParallelOrchestrator } from '@/executor/orchestrators/parallel'
 import type { BlockState, ExecutionContext, ExecutionResult } from '@/executor/types'
@@ -359,8 +356,8 @@ export class DAGExecutor {
     })
     const allHandlers = createBlockHandlers()
     const blockExecutor = new BlockExecutor(allHandlers, resolver, this.contextExtensions, state)
-    const edgeManager = new EdgeManagerV2(dag)
-    const loopOrchestrator = new LoopOrchestratorV2(
+    const edgeManager = new EdgeManager(dag)
+    const loopOrchestrator = new LoopOrchestrator(
       dag,
       state,
       resolver,
@@ -372,7 +369,7 @@ export class DAGExecutor {
       state,
       resolver,
       this.contextExtensions,
-      edgeManager as unknown as EdgeManager
+      edgeManager
     )
     edgeManager.restoreDeactivatedEdges(
       snapshotState?.deactivatedEdges,
@@ -382,15 +379,10 @@ export class DAGExecutor {
       dag,
       state,
       blockExecutor,
-      loopOrchestrator as unknown as LoopOrchestrator,
+      loopOrchestrator,
       parallelOrchestrator
     )
-    return new ExecutionEngineV2(
-      context,
-      dag,
-      edgeManager as unknown as EdgeManager,
-      nodeOrchestrator
-    ) as unknown as ExecutionEngine
+    return new ExecutionEngine(context, dag, edgeManager, nodeOrchestrator)
   }
 
   private createExecutionContext(
@@ -419,22 +411,42 @@ export class DAGExecutor {
     }
 
     const state = new ExecutionState(blockStates, executedBlocks)
+    const restoredBlockLogs = overrides?.runFromBlockContext ? [] : (snapshotState?.blockLogs ?? [])
 
     const context: ExecutionContext = {
       workflowId,
       workspaceId: this.contextExtensions.workspaceId,
       executionId: this.contextExtensions.executionId,
       largeValueExecutionIds: this.contextExtensions.largeValueExecutionIds,
-      largeValueKeys: this.contextExtensions.largeValueKeys,
-      fileKeys: this.contextExtensions.fileKeys,
+      largeValueKeys: this.contextExtensions.largeValueKeys ?? [],
+      fileKeys: this.contextExtensions.fileKeys ?? [],
       allowLargeValueWorkflowScope: this.contextExtensions.allowLargeValueWorkflowScope,
       userId: this.contextExtensions.userId,
+      principal: this.contextExtensions.principal,
       executorDelegationOrigin: this.contextExtensions.executorDelegationOrigin,
       isDeployedContext: this.contextExtensions.isDeployedContext,
       enforceCredentialAccess: this.contextExtensions.enforceCredentialAccess,
       piiBlockOutputRedaction: this.contextExtensions.piiBlockOutputRedaction,
       blockStates: state.getBlockStates(),
-      blockLogs: overrides?.runFromBlockContext ? [] : (snapshotState?.blockLogs ?? []),
+      blockLogs: restoredBlockLogs,
+      /*
+       * Resumed runs continue the counter rather than restarting it.
+       *
+       * `executionOrder` is not in the pause snapshot, so it used to reset to 0
+       * on resume — and a loop or parallel body that runs on both sides of a
+       * pause would then reuse a pre-pause value. That is only a cosmetic log
+       * ordering problem until something derives identity from it: a `keyed`
+       * tool takes its provider idempotency token from this number, so two
+       * distinct writes would present the same token and the provider would
+       * silently drop the second. Suppressing a real payment is worse than the
+       * duplicate the token exists to prevent, because it looks like success.
+       *
+       * Seeded from the restored logs rather than a new snapshot field so
+       * snapshots written before this change are repaired on resume too.
+       */
+      executionOrderCounter: {
+        value: restoredBlockLogs.reduce((max, log) => Math.max(max, log.executionOrder ?? 0), 0),
+      },
       metadata: {
         ...this.contextExtensions.metadata,
         ...(this.contextExtensions.billingAttribution
@@ -479,6 +491,9 @@ export class DAGExecutor {
       completedLoops: snapshotState?.completedLoops
         ? new Set(snapshotState.completedLoops)
         : new Set(),
+      // Deliberately not restored from a snapshot: it is a cache, so a resumed run re-resolves.
+      toolBindingLabelCache: new Map(),
+      permissionConfigCache: new Map(),
       loopExecutions: snapshotState?.loopExecutions
         ? new Map(
             Object.entries(snapshotState.loopExecutions).map(([loopId, scope]) => [
@@ -532,6 +547,8 @@ export class DAGExecutor {
       runFromBlockContext: overrides?.runFromBlockContext,
       stopAfterBlockId: this.contextExtensions.stopAfterBlockId,
       callChain: this.contextExtensions.callChain,
+      liveTraceViewerUserId: this.contextExtensions.liveTraceViewerUserId,
+      liveStreamCallbacks: this.contextExtensions.liveStreamCallbacks,
     }
 
     if (this.contextExtensions.resumeFromSnapshot) {
@@ -651,6 +668,7 @@ export class DAGExecutor {
       resolution: startResolution,
       workflowInput: this.workflowInput,
       runMetadata: this.contextExtensions.startRunMetadata,
+      workspaceId: this.contextExtensions.workspaceId,
     })
 
     state.setBlockState(startResolution.block.id, {

@@ -16,10 +16,7 @@ import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType } from '@/lib/uploads/utils/validation'
 import { authorizeWorkspaceFileAccess } from '@/lib/workspace-files/application/authorization'
 import { fileOperations } from '@/lib/workspace-files/application/operations'
-import {
-  getUserEntityPermissions,
-  isOrganizationAdminOrOwner,
-} from '@/lib/workspaces/permissions/utils'
+import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 export type InternalUploadPurpose = CreateInternalFileUploadBody['purpose']
 
@@ -27,7 +24,7 @@ const INTERNAL_UPLOAD_PURPOSES = new Set<InternalUploadPurpose>([
   'workspace_file',
   'profile_picture',
   'workspace_logo',
-  'org_logo',
+  'organization_logo',
   'mothership_attachment',
   'execution_attachment',
 ])
@@ -61,6 +58,11 @@ export async function createPurposeUploadSession(
         localOrigin,
       })
     }
+    case 'organization_logo':
+      throw new UploadSessionError(
+        'validation',
+        'Organization logos require organization authorization'
+      )
     case 'profile_picture':
       return createUploadSession({
         purpose: body.purpose,
@@ -81,19 +83,8 @@ export async function createPurposeUploadSession(
         fileSize: body.size,
         localOrigin,
       })
-    case 'org_logo':
-      await requireOrganizationPermission(userId, body.organizationId)
-      return createUploadSession({
-        purpose: body.purpose,
-        organizationId: body.organizationId,
-        userId,
-        fileName: body.name,
-        contentType: body.contentType,
-        fileSize: body.size,
-        metadata: { organizationId: body.organizationId },
-        localOrigin,
-      })
     case 'mothership_attachment':
+      if (!body.workspaceId) throw new UploadSessionError('validation', 'workspaceId is required')
       await requireWorkspacePermission(userId, body.workspaceId, 'write')
       return createUploadSession({
         purpose: body.purpose,
@@ -136,16 +127,15 @@ export async function reauthorizeUploadPurpose(
     case 'mothership_attachment':
       await requireWorkspacePermission(userId, requireSessionScope(session.workspaceId), 'write')
       return
+    case 'organization_logo':
+      throw new UploadSessionError(
+        'forbidden',
+        'Organization logos require organization authorization'
+      )
     case 'profile_picture':
       return
     case 'workspace_logo':
       await requireWorkspacePermission(userId, requireSessionScope(session.workspaceId), 'admin')
-      return
-    case 'org_logo':
-      await requireOrganizationPermission(
-        userId,
-        requireMetadataString(session.metadata, 'organizationId')
-      )
       return
     case 'execution_attachment':
       await requireExecutionPermission(
@@ -193,11 +183,7 @@ export async function resolveUploadAttributionUserId(
 }
 
 function validatePurposeFile(body: CreateInternalFileUploadBody): void {
-  if (
-    body.purpose === 'profile_picture' ||
-    body.purpose === 'workspace_logo' ||
-    body.purpose === 'org_logo'
-  ) {
+  if (body.purpose === 'profile_picture' || body.purpose === 'workspace_logo') {
     if (!isImageFileType(body.contentType)) {
       throw new UploadSessionError(
         'validation',
@@ -231,16 +217,6 @@ async function requireWorkspacePermission(
   }
 }
 
-async function requireOrganizationPermission(
-  userId: string,
-  organizationId: string
-): Promise<void> {
-  const allowed = await isOrganizationAdminOrOwner(userId, organizationId)
-  if (!allowed) {
-    throw new UploadSessionError('forbidden', 'Organization owner or admin access required')
-  }
-}
-
 async function requireExecutionPermission(
   userId: string,
   workflowId: string,
@@ -269,18 +245,14 @@ function requireSessionScope(value: string | null, label = 'scope'): string {
   return value
 }
 
-function requireMetadataString(metadata: Record<string, unknown>, key: string): string {
-  const value = metadata[key]
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new UploadSessionError('forbidden', `Upload session is missing its ${key}`)
-  }
-  return value
-}
-
 async function principalUserId(principal: Principal, workspaceId?: string): Promise<string> {
   switch (principal.kind) {
+    case 'slack_app':
+    case 'slack_installation':
+      throw new UploadSessionError('forbidden', 'Slack installations cannot create uploads')
     case 'session':
     case 'personal_api_key':
+    case 'oauth_access_token':
       return principal.userId
     case 'workspace_api_key':
       if (!workspaceId || principal.workspaceId !== workspaceId) {
@@ -295,10 +267,18 @@ async function principalUserId(principal: Principal, workspaceId?: string): Prom
       }
     case 'delegated':
       throw new UploadSessionError('forbidden', 'Delegated principals cannot create uploads')
+    case 'system':
+      throw new UploadSessionError('forbidden', 'System principals cannot create uploads')
+    case 'organization_delegated':
     case 'credential_group_enrollment':
       throw new UploadSessionError(
         'forbidden',
         'Credential Group enrollment principals cannot create uploads'
+      )
+    case 'scim_connection':
+      throw new UploadSessionError(
+        'forbidden',
+        'Directory provisioning credentials cannot create uploads'
       )
   }
 }

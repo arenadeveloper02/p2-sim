@@ -1,5 +1,5 @@
 /**
- * Tests for the fork sync (promote) route's error projection.
+ * Tests for the fork sync (promote) route's error projection and input mapping.
  *
  * `promoteFork` returns its deliberate refusals as a `blocked` result, but a classified
  * failure raised deeper in the copy — the target workspace's folder ceiling being full —
@@ -8,39 +8,56 @@
  *
  * @vitest-environment node
  */
+import { user } from '@sim/db/schema'
 import { auditMock, authMockFns, createMockRequest, type MockUser } from '@sim/testing'
+import { queueTableRows, resetDbChainMock } from '@sim/testing/mocks/database.mock'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FolderCollectionFullError } from '@/lib/folders/errors'
 
-const { mockLogger, mockPromoteFork, mockAssertCanPromote, mockRecordBackgroundWork } = vi.hoisted(
-  () => ({
-    mockLogger: {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      trace: vi.fn(),
-      fatal: vi.fn(),
-      child: vi.fn(),
-    },
-    mockPromoteFork: vi.fn(),
-    mockAssertCanPromote: vi.fn(),
-    mockRecordBackgroundWork: vi.fn(),
-  })
-)
+const { mockLogger, mockPromoteFork, mockAuthorizeWorkspaceOperation } = vi.hoisted(() => ({
+  mockLogger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(),
+  },
+  mockPromoteFork: vi.fn(),
+  mockAuthorizeWorkspaceOperation: vi.fn(),
+}))
 
 vi.mock('@sim/audit', () => auditMock)
 vi.mock('@sim/logger', () => ({
   createLogger: vi.fn().mockReturnValue(mockLogger),
   runWithRequestContext: <T>(_ctx: unknown, fn: () => T): T => fn(),
   getRequestContext: () => undefined,
+  setRequestAuth: vi.fn(),
 }))
 vi.mock('@/ee/workspace-forking/lib/promote/promote', () => ({ promoteFork: mockPromoteFork }))
 vi.mock('@/ee/workspace-forking/lib/lineage/authz', () => ({
-  assertCanPromote: mockAssertCanPromote,
+  assertForkingEnabled: vi.fn(),
+  ForkError: class extends Error {},
 }))
-vi.mock('@/ee/workspace-forking/lib/background-work/store', () => ({
-  recordBackgroundWork: mockRecordBackgroundWork,
+
+vi.mock('@/lib/core/application/workspace-authorization', () => ({
+  authorizeWorkspaceOperation: mockAuthorizeWorkspaceOperation,
+  requireAllowedWorkspacePrincipal: vi.fn(),
+}))
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  getWorkspaceWithOwner: vi.fn(async (id: string) => ({
+    id,
+    name: id === 'ws-child' ? 'Child' : 'Parent',
+    organizationId: null,
+    allowPersonalApiKeys: true,
+  })),
+}))
+vi.mock('@/ee/workspace-forking/lib/lineage/lineage', () => ({
+  resolveForkEdge: vi.fn(async () => ({
+    childWorkspaceId: 'ws-child',
+    parentWorkspaceId: 'ws-parent',
+  })),
 }))
 
 import { POST } from '@/app/api/workspaces/[id]/fork/promote/route'
@@ -64,13 +81,43 @@ function promoteRequest() {
 describe('POST /api/workspaces/[id]/fork/promote', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    authMockFns.mockGetSession.mockResolvedValue({ user: TEST_USER })
-    mockAssertCanPromote.mockResolvedValue({
-      edge: { childWorkspaceId: WORKSPACE_ID },
-      sourceWorkspaceId: WORKSPACE_ID,
-      targetWorkspaceId: 'ws-parent',
+    authMockFns.mockGetSession.mockResolvedValue({ user: TEST_USER, session: { id: 'session-1' } })
+    resetDbChainMock()
+    queueTableRows(user, [{ name: TEST_USER.name }])
+    mockAuthorizeWorkspaceOperation.mockResolvedValue(undefined)
+  })
+
+  /**
+   * The shared application use case resolves the other side's name and the actor attribution
+   * before the manager records the sync activity.
+   */
+  it('names the other side of the edge for promoteFork to record the sync', async () => {
+    mockPromoteFork.mockResolvedValue({
+      promoteRunId: 'run-1',
+      updated: 1,
+      created: 0,
+      archived: 0,
+      redeployed: 1,
+      deployFailed: 0,
+      deployWarnings: [],
+      unmappedRequired: [],
+      blockers: [],
+      blocked: null,
+      updatedNames: ['Flow'],
+      createdNames: [],
+      archivedNames: [],
+      needsConfiguration: [],
+      clearedOptional: [],
+      droppedReferences: [],
+      triggerUrlChanges: [],
     })
-    mockRecordBackgroundWork.mockResolvedValue(undefined)
+
+    const response = await POST(promoteRequest(), routeContext)
+
+    expect(response.status).toBe(200)
+    expect(mockPromoteFork).toHaveBeenCalledWith(
+      expect.objectContaining({ direction: 'push', actorName: 'A', otherWorkspaceName: 'Parent' })
+    )
   })
 
   it('renders a full-folder-tree refusal as an actionable 409', async () => {

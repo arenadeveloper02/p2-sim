@@ -34,14 +34,16 @@ export type IdleStatusMergeEvent<T> =
 /**
  * Interleaves rotating status messages with an async source.
  *
- * Starts with fallback copy, then swaps to a cheap-model engagement batch as soon
- * as it arrives (immediate status yield — does not wait for the next interval).
+ * Does **not** emit an immediate status — callers publish phase copy first
+ * (e.g. Proposing…). Fallback lines only appear after a quiet gap. Optional
+ * `enrichMessages` can swap in a batch later (tool engagement when enabled).
+ * Model-wait status prefers provider thinking deltas from the orchestrator.
  */
 export async function* iterateWithIdleStatus<T>(options: {
   source: AsyncIterable<T>
   abortSignal?: AbortSignal
   messages: readonly string[]
-  /** Kept for callers; first status is always immediate. */
+  /** Delay before the first idle fallback status. Defaults to `intervalMs`. */
   idleMs?: number
   /** Delay between status lines while the source is quiet. */
   intervalMs?: number
@@ -49,6 +51,7 @@ export async function* iterateWithIdleStatus<T>(options: {
 }): AsyncGenerator<IdleStatusMergeEvent<T>, void, undefined> {
   const { abortSignal } = options
   const intervalMs = options.intervalMs ?? 4000
+  const firstIdleMs = options.idleMs ?? intervalMs
 
   let messages = options.messages.filter((message) => message.trim().length > 0)
   if (messages.length === 0) {
@@ -87,25 +90,23 @@ export async function* iterateWithIdleStatus<T>(options: {
     aiReadyResolve?.()
   }
 
-  // Immediate fallback line so the chat never falls back to “Thinking…”.
-  yield { type: 'status', message: messages[index % messages.length]! }
-  index += 1
-
   const sourceIter = options.source[Symbol.asyncIterator]()
   let nextItem = sourceIter.next()
   let gapController = new AbortController()
 
-  const restartGap = () => {
+  const restartGap = (delayMs: number) => {
     gapController.abort()
     gapController = new AbortController()
     const onAbort = () => gapController.abort()
     abortSignal?.addEventListener('abort', onAbort, { once: true })
     const signal = gapController.signal
     const clearParent = () => abortSignal?.removeEventListener('abort', onAbort)
-    return sleepUntilAbort(intervalMs, signal).finally(clearParent)
+    return sleepUntilAbort(delayMs, signal).finally(clearParent)
   }
 
-  let nextGap = restartGap()
+  // Wait for a quiet gap before any fallback — preserves phase status
+  // (Proposing…) until thinking arrives or the model stays silent.
+  let nextGap = restartGap(firstIdleMs)
 
   try {
     while (!abortSignal?.aborted) {
@@ -127,7 +128,7 @@ export async function* iterateWithIdleStatus<T>(options: {
         gapController.abort()
         yield { type: 'status', message: messages[index % messages.length]! }
         index += 1
-        nextGap = restartGap()
+        nextGap = restartGap(intervalMs)
         continue
       }
 
@@ -136,9 +137,14 @@ export async function* iterateWithIdleStatus<T>(options: {
           if (abortSignal?.aborted) return
           continue
         }
-        yield { type: 'status', message: messages[index % messages.length]! }
+        const nextMessage = messages[index % messages.length]!
+        // Single-line fallbacks (Thinking…) only need one pulse — repeating
+        // the same string every interval flooded SSE/logs at the old 100ms rate.
+        if (messages.length > 1 || index === 0) {
+          yield { type: 'status', message: nextMessage }
+        }
         index += 1
-        nextGap = restartGap()
+        nextGap = restartGap(intervalMs)
         continue
       }
 
@@ -148,7 +154,7 @@ export async function* iterateWithIdleStatus<T>(options: {
 
       yield { type: 'item', item: winner.result.value }
       nextItem = sourceIter.next()
-      nextGap = restartGap()
+      nextGap = restartGap(intervalMs)
     }
   } finally {
     gapController.abort()

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { SIDEBAR_WIDTH } from '@/stores/constants'
-import { useSidebarStore } from '@/stores/sidebar/store'
+import { getMaxSidebarWidth, useSidebarStore } from '@/stores/sidebar/store'
 
 /**
  * Handles sidebar drag-resize with zero React renders during the drag.
@@ -55,7 +55,7 @@ export function useSidebarResize() {
       let lastWidth: number | null = null
 
       const onPointerMove = (ev: PointerEvent) => {
-        const max = Math.max(SIDEBAR_WIDTH.MIN, window.innerWidth * SIDEBAR_WIDTH.MAX_PERCENTAGE)
+        const max = getMaxSidebarWidth(window.innerWidth)
         const clamped = Math.min(Math.max(ev.clientX, SIDEBAR_WIDTH.MIN), max)
         lastWidth = clamped
         if (rafId !== null) cancelAnimationFrame(rafId)

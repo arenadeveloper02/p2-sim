@@ -19,6 +19,7 @@ export type { EmbedInfo } from './media-embed'
 export { getEmbedInfo } from './media-embed'
 export {
   filterUndefined,
+  getValueAtPath,
   isPlainRecord,
   isRecordLike,
   omit,
@@ -26,6 +27,17 @@ export {
   toRecord,
   toRecordOrNull,
 } from './object'
+export {
+  assessTextPaste,
+  countPasteRows,
+  formatPasteLimit,
+  PASTE_LIMITS,
+  type TextPasteAdmission,
+  type TextPasteAdmissionInput,
+  type TextPasteRejectionReason,
+  utf8ByteLength,
+  utf8ByteLengthRange,
+} from './paste'
 export {
   generateRandomBytes,
   generateRandomHex,
@@ -45,3 +57,10 @@ export {
   sanitizeValueForJsonb,
   truncate,
 } from './string'
+export {
+  findWorkflowReferenceTokens,
+  isLikelyWorkflowReferenceSegment,
+  splitWorkflowReferenceSegment,
+  type WorkflowReferenceToken,
+  type WorkflowReferenceTokenKind,
+} from './workflow-references'

@@ -1,6 +1,7 @@
 import { getLiveAssistantMessageId } from '@/lib/copilot/chat/effective-transcript'
 import { MothershipStreamV1SessionKind } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { PersistedStreamEventEnvelope } from '@/lib/copilot/request/session/contract'
+import { chatUrl } from '@/app/workspace/[workspaceId]/home/hooks/chat-url'
 import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
 import {
   getMothershipChatPath,
@@ -34,7 +35,11 @@ export function handleSessionEvent(ctx: StreamLoopContext, parsed: SessionEvent)
         deps.setResolvedChatId(payloadChatId)
       }
     }
-    deps.queryClient.invalidateQueries({ queryKey: mothershipChatKeys.list(deps.workspaceId) })
+    deps.queryClient.invalidateQueries<readonly unknown[]>({
+      queryKey: deps.organizationId
+        ? mothershipChatKeys.organizationList(deps.organizationId)
+        : mothershipChatKeys.list(deps.workspaceId),
+    })
     if (isNewChat) {
       const userMsg = deps.pendingUserMsgRef.current
       const activeStreamId = deps.streamIdRef.current
@@ -61,20 +66,27 @@ export function handleSessionEvent(ctx: StreamLoopContext, parsed: SessionEvent)
       deps.setPendingMessages([])
       if (!deps.workflowIdRef.current) {
         // Embed stays on /task/:id/embed so workspace chrome keeps the sidebar hidden.
+        // Organization chats use the /o/:id/chat path; workspace chats keep search.
         window.history.replaceState(
           null,
           '',
-          getMothershipChatPath(deps.workspaceId, payloadChatId, {
-            embed: deps.isEmbedPageRef.current,
-            search: readMothershipChatSearch(),
-          })
+          deps.organizationId
+            ? chatUrl({ organizationId: deps.organizationId }, payloadChatId)
+            : getMothershipChatPath(deps.workspaceId!, payloadChatId, {
+                embed: deps.isEmbedPageRef.current,
+                search: readMothershipChatSearch(),
+              })
         )
       }
     }
   }
 
   if (payload.kind === MothershipStreamV1SessionKind.title) {
-    deps.queryClient.invalidateQueries({ queryKey: mothershipChatKeys.list(deps.workspaceId) })
+    deps.queryClient.invalidateQueries<readonly unknown[]>({
+      queryKey: deps.organizationId
+        ? mothershipChatKeys.organizationList(deps.organizationId)
+        : mothershipChatKeys.list(deps.workspaceId),
+    })
     deps.onTitleUpdateRef.current?.()
   }
 }

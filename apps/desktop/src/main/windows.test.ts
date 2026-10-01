@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => import('@/test/electron-mock'))
 
 import type { WebContents } from 'electron'
-import { shell } from 'electron'
+import { dialog, shell } from 'electron'
 import { attachWindowOpenPolicy, isPopupContents, registerPopupContents } from '@/main/windows'
 
 const APP = 'https://sim.ai'
@@ -29,13 +29,14 @@ describe('attachWindowOpenPolicy', () => {
     vi.mocked(shell.openExternal).mockClear()
   })
 
-  function setup() {
+  function setup(isCommittedRelaunchPending: () => boolean = () => false) {
     const contents = makeContents()
     const openAppWindow = vi.fn()
     attachWindowOpenPolicy(contents as unknown as WebContents, {
       appOrigin: () => APP,
       openAppWindow,
       allowHttpLocalhost: false,
+      isCommittedRelaunchPending,
     })
     return { contents, openAppWindow }
   }
@@ -46,12 +47,27 @@ describe('attachWindowOpenPolicy', () => {
       url: 'https://mcp.example/authorize',
       frameName: 'mcp-oauth-s1',
     })
-    expect(result).toEqual({ action: 'allow' })
+    expect(result).toEqual({
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        webPreferences: expect.objectContaining({
+          preload: undefined,
+          additionalArguments: [],
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          webSecurity: true,
+          webviewTag: false,
+        }),
+      },
+    })
   })
 
   it('allows blank children for the blank-then-assign pattern', () => {
     const { contents } = setup()
-    expect(contents.handler?.({ url: 'about:blank', frameName: '' })).toEqual({ action: 'allow' })
+    expect(contents.handler?.({ url: 'about:blank', frameName: '' })).toMatchObject({
+      action: 'allow',
+    })
   })
 
   it('opens internal new-window requests as full Sim windows', () => {
@@ -80,6 +96,46 @@ describe('attachWindowOpenPolicy', () => {
     const { contents } = setup()
     const didCreateWindow = contents.on.mock.calls.find(([event]) => event === 'did-create-window')
     expect(didCreateWindow).toBeDefined()
+  })
+
+  it('allows a committed relaunch through a child beforeunload', () => {
+    const { contents } = setup(() => true)
+    const childContents = makeContents()
+    const child = { webContents: childContents }
+    const didCreateWindow = contents.on.mock.calls.find(([event]) => event === 'did-create-window')
+    const event = { preventDefault: vi.fn() }
+
+    didCreateWindow?.[1](child, { url: 'https://mcp.example/authorize', frameName: 'mcp-oauth-s1' })
+    const willPreventUnload = childContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-prevent-unload'
+    )
+    willPreventUnload?.[1](event)
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+  })
+
+  it('asks before leaving a child window during ordinary use', () => {
+    const { contents } = setup()
+    const childContents = makeContents()
+    const child = { webContents: childContents }
+    const didCreateWindow = contents.on.mock.calls.find(([event]) => event === 'did-create-window')
+    const event = { preventDefault: vi.fn() }
+
+    didCreateWindow?.[1](child, { url: 'https://mcp.example/authorize', frameName: 'mcp-oauth-s1' })
+    const willPreventUnload = childContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-prevent-unload'
+    )
+    willPreventUnload?.[1](event)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
+      child,
+      expect.objectContaining({
+        buttons: ['Stay', 'Leave'],
+        defaultId: 0,
+        cancelId: 0,
+      })
+    )
   })
 })
 

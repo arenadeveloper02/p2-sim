@@ -3,19 +3,16 @@ import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import {
   assertBillingAttributionSnapshot,
   type BillingAttributionSnapshot,
   createAttributedBillingRequestEnvelope,
   resolveBillingAttribution,
+  resolveOrganizationBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
 import { createRunSegment } from '@/lib/copilot/async-runs/repository'
-import { chatPubSub } from '@/lib/copilot/chat-status'
-import {
-  COPILOT_BILLING_PROTOCOL,
-  COPILOT_BILLING_PROTOCOL_HEADER,
-} from '@/lib/copilot/generated/billing-protocol-v1'
+import { publishChatStatusChanged } from '@/lib/copilot/chat-status'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1SessionKind,
@@ -52,7 +49,7 @@ import { SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/session/sse'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { env } from '@/lib/core/config/env'
-import { isCopilotBillingAttributionV1Enabled, isHosted } from '@/lib/core/config/env-flags'
+import { isSimCloudHosted } from '@/lib/core/config/env-flags'
 import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
 import { generateLocalChatTitle } from '@/local-copilot/lib/agent/chat-title'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
@@ -80,6 +77,7 @@ export interface StreamingOrchestrationParams {
   titleProvider?: string
   requestId: string
   workspaceId?: string
+  organizationId?: string
   orchestrateOptions: Omit<CopilotLifecycleOptions, 'onEvent'>
   /**
    * Pre-started root; child spans bind to it and `finish()` fires on
@@ -104,6 +102,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
     titleProvider,
     requestId,
     workspaceId,
+    organizationId,
     orchestrateOptions,
     otelRoot,
   } = params
@@ -125,7 +124,18 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
   const abortController = new AbortController()
   registerActiveStream(streamId, abortController)
 
-  const publisher = new StreamWriter({ streamId, chatId, requestId })
+  const publisher = new StreamWriter({ streamId, chatId, requestId, userId })
+
+  // Declared at function scope (same rationale as `cancelReason` below) so the
+  // leak backstop in the orchestration's outer finally can always reach them:
+  // the stream registration above, the abort poller, and the keepalive are
+  // process-held resources, and a throw that bypasses the inner finally's
+  // ordered teardown (e.g. `resetBuffer` failing on a Redis blip before the
+  // lifecycle starts) previously orphaned them — the poller and keepalive
+  // intervals then ran, and the activeStreams entry sat, for the life of the
+  // process.
+  let abortPoller: ReturnType<typeof startAbortPoller> | undefined
+  let processResourcesReleased = false
 
   // Classify cancel: signal.reason (explicit-stop set) wins, then
   // clientDisconnected, else Unknown (latent contract bug — log it).
@@ -225,7 +235,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
             })
           }
 
-          const abortPoller = startAbortPoller(streamId, abortController, {
+          abortPoller = startAbortPoller(streamId, abortController, {
             requestId,
             chatId,
           })
@@ -252,6 +262,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
             titleModel,
             titleProvider,
             workspaceId,
+            organizationId,
             billingAttribution: orchestrateOptions.billingAttribution,
             requestId,
             publisher,
@@ -354,6 +365,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
             if (chatId) {
               await releasePendingChatStream(chatId, streamId)
             }
+            processResourcesReleased = true
             await scheduleBufferCleanup(streamId)
             await scheduleFilePreviewSessionCleanup(streamId)
             await cleanupAbortMarker(streamId)
@@ -378,6 +390,24 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
           rootError = error
           throw error
         } finally {
+          // Leak backstop for throws that bypassed the inner finally's
+          // ordered teardown (a session reset failing before the lifecycle
+          // started, or the teardown itself throwing before its release
+          // lines). Every step is idempotent — clearInterval and
+          // stopKeepalive no-op when already stopped, unregister is a keyed
+          // delete, and the chat-stream release is ownership-guarded against
+          // a successor stream — and none of them throw, so the otel finish
+          // below always still runs. On the normal path the flag set by the
+          // ordered teardown skips this entirely.
+          if (!processResourcesReleased) {
+            processResourcesReleased = true
+            clearInterval(abortPoller)
+            publisher.stopKeepalive()
+            unregisterActiveStream(streamId)
+            if (chatId) {
+              await releasePendingChatStream(chatId, streamId)
+            }
+          }
           // `finish` is idempotent, so it's safe whether the POST
           // handler started the root (and may also call finish on an
           // error path before the stream ran) or we did. The cancel
@@ -440,6 +470,7 @@ function fireTitleGeneration(params: {
   titleModel: string
   titleProvider?: string
   workspaceId?: string
+  organizationId?: string
   billingAttribution?: BillingAttributionSnapshot
   requestId: string
   publisher: StreamWriter
@@ -456,6 +487,7 @@ function fireTitleGeneration(params: {
     titleModel,
     titleProvider,
     workspaceId,
+    organizationId,
     billingAttribution,
     requestId,
     publisher,
@@ -464,6 +496,7 @@ function fireTitleGeneration(params: {
   if (!chatId || currentChat?.title || !isNewChat) return
 
   requestChatTitle({
+    chatId,
     message,
     model: titleModel,
     provider: titleProvider,
@@ -471,32 +504,37 @@ function fireTitleGeneration(params: {
     userEmail,
     copilotBackend,
     workspaceId,
+    organizationId,
     billingAttribution,
     otelContext,
   })
     .then(async (title) => {
       if (!title) return
-      await db.update(copilotChats).set({ title }).where(eq(copilotChats.id, chatId))
+      // Only stamp the generated title while the chat has none. Title
+      // generation is fired at turn start and resolves asynchronously, so a
+      // user could rename the chat in the meantime; the `isNull` guard makes
+      // the write lose that race instead of clobbering the explicit rename.
+      const stamped = await db
+        .update(copilotChats)
+        .set({ title })
+        .where(and(eq(copilotChats.id, chatId), isNull(copilotChats.title)))
+        .returning({ id: copilotChats.id })
+      // The rename won — do not announce a title the row no longer holds.
+      if (stamped.length === 0) return
       await publisher.publish({
         type: MothershipStreamV1EventType.session,
         payload: { kind: MothershipStreamV1SessionKind.title, title },
       })
-      if (workspaceId) {
-        chatPubSub?.publishStatusChanged({
-          workspaceId,
-          chatId,
-          type: 'renamed',
-        })
-      }
+      publishChatStatusChanged({ workspaceId, organizationId, userId }, { chatId, type: 'renamed' })
     })
     .catch((error) => {
       logger.error(`[${requestId}] Title generation failed:`, error)
     })
 }
 
-// Chat title helper
-
+/** Requests a title through the shared Assistant backend and its attributed billing protocol. */
 export async function requestChatTitle(params: {
+  chatId?: string
   message: string
   model: string
   provider?: string
@@ -504,10 +542,13 @@ export async function requestChatTitle(params: {
   userEmail?: string
   copilotBackend?: CopilotBackendPreference
   workspaceId?: string
+  organizationId?: string
   billingAttribution?: BillingAttributionSnapshot
   otelContext?: Context
+  signal?: AbortSignal
 }): Promise<string | null> {
   const {
+    chatId,
     message,
     model,
     provider,
@@ -517,6 +558,8 @@ export async function requestChatTitle(params: {
     otelContext,
     userEmail,
     copilotBackend,
+    organizationId,
+    signal,
   } = params
   if (!message || !model) return null
 
@@ -533,16 +576,23 @@ export async function requestChatTitle(params: {
   Object.assign(headers, getMothershipSourceEnvHeaders())
 
   try {
-    if (isHosted && !isCopilotBillingAttributionV1Enabled) {
-      headers[COPILOT_BILLING_PROTOCOL_HEADER] = COPILOT_BILLING_PROTOCOL.legacy
-    } else if (isHosted) {
-      if (!userId || !workspaceId) {
+    if (organizationId && (!chatId || workspaceId)) {
+      throw new Error('Organization titles require a private chat without a workspace')
+    }
+    if (isSimCloudHosted) {
+      if (!userId || (!workspaceId && !organizationId)) {
         throw new Error('Title generation requires a billing actor and workspace')
       }
       const attribution = billingAttribution
         ? assertBillingAttributionSnapshot(billingAttribution)
-        : await resolveBillingAttribution({ actorUserId: userId, workspaceId })
-      if (attribution.actorUserId !== userId || attribution.workspaceId !== workspaceId) {
+        : organizationId
+          ? await resolveOrganizationBillingAttribution({ actorUserId: userId, organizationId })
+          : await resolveBillingAttribution({ actorUserId: userId, workspaceId: workspaceId! })
+      if (
+        attribution.actorUserId !== userId ||
+        attribution.workspaceId !== (workspaceId ?? null) ||
+        (organizationId && attribution.organizationId !== organizationId)
+      ) {
         throw new Error('Title billing attribution does not match its actor and workspace')
       }
 
@@ -554,12 +604,14 @@ export async function requestChatTitle(params: {
     const mothershipBaseURL = await getMothershipBaseURL({ userId })
     const response = await fetchGo(`${mothershipBaseURL}/api/generate-chat-title`, {
       method: 'POST',
+      signal,
       headers,
       body: JSON.stringify({
         message,
         model,
         ...(provider ? { provider } : {}),
         ...(workspaceId ? { workspaceId } : {}),
+        ...(organizationId ? { organizationId, chatId } : {}),
         ...(userId ? { userId } : {}),
       }),
       otelContext,

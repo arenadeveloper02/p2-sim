@@ -1,18 +1,16 @@
 import { createLogger } from '@sim/logger'
-import type { ToolConfig } from '@/tools/types'
+import { getErrorMessage } from '@sim/utils/errors'
+import { filterUndefined } from '@sim/utils/object'
+import type { InternalToolConfig } from '@/tools/types'
 
 const logger = createLogger('BingAdsQuery')
 
 interface BingAdsQueryParams {
   account: string
   query: string
-  workspaceId?: string
-  _context?: {
-    workspaceId?: string
-  }
 }
 
-export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
+export const bingAdsQueryTool: InternalToolConfig<BingAdsQueryParams, unknown> = {
   id: 'bing_ads_query',
   version: '1.0.0',
   name: 'Bing Ads Query',
@@ -38,17 +36,16 @@ export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
       visibility: 'hidden',
     },
   },
-  request: {
-    url: () => '/api/bing-ads/query',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: BingAdsQueryParams) => ({
-      account: params.account,
-      query: params.query,
-      workspaceId: params.workspaceId ?? params._context?.workspaceId,
-    }),
+  operation: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ query: params.query }),
+    },
+    input: (params) =>
+      filterUndefined({
+        query: params.query ?? undefined,
+        account: params.account ?? undefined,
+      }),
   },
   transformResponse: async (response: Response, params?: BingAdsQueryParams) => {
     try {
@@ -80,7 +77,7 @@ export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
       logger.error('Bing Ads query execution failed', { error, account: params?.account })
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: getErrorMessage(error, 'Unknown error occurred'),
       }
     }
   },

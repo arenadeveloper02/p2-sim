@@ -28,6 +28,7 @@ import {
   isValueCompatible,
   TYPE_SPECIFIC_COLUMN_KEYS,
 } from '@/lib/table/column-types'
+import { columnTextForEquality } from '@/lib/table/column-types/comparison-sql'
 import {
   migrationFrom,
   migrationTo,
@@ -42,6 +43,7 @@ import { updateTableRowsWithDerivedSecretProvenance } from '@/lib/table/rows/sec
 import { assertValidSchema } from '@/lib/table/schema-invariants'
 import { selectValueToNames } from '@/lib/table/select-values'
 import { withLockedTable } from '@/lib/table/service'
+import { assertTableRowTtlEnabled } from '@/lib/table/ttl-availability'
 import { scaledStatementTimeoutMs, setTableTxTimeouts } from '@/lib/table/tx'
 import type {
   ColumnDefinition,
@@ -130,6 +132,8 @@ export async function addTableColumn(
   requestId: string,
   options?: ColumnMutationOptions
 ): Promise<TableDefinition> {
+  if (column.type === 'ttl') await assertTableRowTtlEnabled()
+
   return withLockedTable(
     tableId,
     async (table, trx) => {
@@ -653,7 +657,7 @@ async function applyConstraints(
         `Cannot set column "${column.name}" as unique: ${column.type} columns compare stored values that would allow only one row per value.`
       )
     }
-    if (await hasDuplicateValues(trx, tableId, workspaceId, columnKey)) {
+    if (await hasDuplicateValues(trx, tableId, workspaceId, column)) {
       throw new OrchestrationError(
         'validation',
         `Cannot set column "${column.name}" as unique: duplicate values exist`
@@ -688,7 +692,7 @@ async function persistColumns(
 }
 
 /**
- * Whether any two rows share a stored value in this column.
+ * Whether any two rows share an equal value in this column.
  *
  * Shared by the constraint write and the retype's pre-validation so the two
  * cannot drift — the same reason {@link countEmptyCells} is shared. A retype
@@ -700,10 +704,13 @@ async function hasDuplicateValues(
   trx: DbTransaction,
   tableId: string,
   workspaceId: string,
-  columnKey: string
+  column: ColumnDefinition
 ): Promise<boolean> {
+  const columnKey = getColumnId(column)
+  const storedValue = sql`${userTableRows.data}->>${columnKey}::text`
+  const comparableValue = columnTextForEquality(storedValue, column)
   const duplicates = (await trx.execute(
-    sql`SELECT ${userTableRows.data}->>${columnKey}::text AS val, count(*) AS cnt FROM ${userTableRows} WHERE table_id = ${tableId} AND workspace_id = ${workspaceId} AND ${userTableRows.data} ? ${columnKey} AND ${userTableRows.data}->>${columnKey}::text IS NOT NULL GROUP BY val HAVING count(*) > 1 LIMIT 1`
+    sql`SELECT ${comparableValue} AS val, count(*) AS cnt FROM ${userTableRows} WHERE table_id = ${tableId} AND workspace_id = ${workspaceId} AND ${userTableRows.data} ? ${columnKey} AND ${comparableValue} IS NOT NULL GROUP BY val HAVING count(*) > 1 LIMIT 1`
   )) as { val: string; cnt: number }[]
   return duplicates.length > 0
 }
@@ -759,11 +766,9 @@ export function applyPendingRename(
  * (`countEmptyCells` does not treat `''` as empty).
  *
  * Everything else goes through the target's `coerce`, which frequently
- * *transforms* the value — an epoch becomes an ISO date, `$1,234.56` becomes
- * `1234.56`. Without writing the transformed value back the cell keeps its old
- * bytes under the new type, and since filters and sorts apply the type's
- * `jsonbCast` to whatever is stored, an epoch left in a `date` column makes
- * `::timestamptz` fail on EVERY query against that column.
+ * transforms the value — `$1,234.56` becomes `1234.56`. Without writing the
+ * transformed value back, the cell keeps its old bytes under the new type,
+ * and the type's `jsonbCast` can fail on every filter or sort.
  */
 export function retypeCellRewrite(
   value: unknown,
@@ -771,13 +776,15 @@ export function retypeCellRewrite(
 ): { value: JsonValue } | null {
   if (value === null || value === undefined) return null
 
-  if (!isValueCompatibleWithColumn(value, target)) {
+  const effective = value as JsonValue
+
+  if (!isValueCompatibleWithColumn(effective, target)) {
     // Incompatible non-blanks never reach here: the compatibility scan already
     // refused the whole conversion for them.
-    return value === '' ? { value: null } : null
+    return effective === '' ? { value: null } : null
   }
 
-  const coerced = columnTypeById(target.type).coerce(value as JsonValue, target)
+  const coerced = columnTypeById(target.type).coerce(effective, target)
   if (coerced.ok && !Object.is(coerced.value, value)) return { value: coerced.value }
   return null
 }
@@ -849,6 +856,8 @@ export async function updateColumnType(
   requestId: string,
   options?: ColumnMutationOptions
 ): Promise<TableDefinition> {
+  if (data.newType === 'ttl') await assertTableRowTtlEnabled()
+
   return withLockedTable(
     data.tableId,
     async (table, trx) => {
@@ -944,6 +953,12 @@ export async function updateColumnType(
         isSelectType,
         targetMultiple: !!targetMultiple,
       })
+      const renamedColumns = schema.columns.map((c, i) => (i === columnIndex ? convertedColumn : c))
+      const updatedColumns = renamedColumns.map((c, i) =>
+        i === columnIndex ? applyPendingRename(renamedColumns, columnIndex, data.newName) : c
+      )
+      const updatedSchema: TableSchema = { ...schema, columns: updatedColumns }
+      assertValidSchema(updatedSchema, table.metadata?.columnOrder)
 
       let incompatibleCount = 0
       let blankCount = 0
@@ -1000,11 +1015,6 @@ export async function updateColumnType(
         )
       }
 
-      const renamedColumns = schema.columns.map((c, i) => (i === columnIndex ? convertedColumn : c))
-      const updatedColumns = renamedColumns.map((c, i) =>
-        i === columnIndex ? applyPendingRename(renamedColumns, columnIndex, data.newName) : c
-      )
-
       const columnValidation = validateColumnDefinition(updatedColumns[columnIndex])
       if (!columnValidation.valid) {
         throw new OrchestrationError(
@@ -1013,7 +1023,6 @@ export async function updateColumnType(
         )
       }
 
-      const updatedSchema: TableSchema = { ...schema, columns: updatedColumns }
       const now = new Date()
 
       // Cell rewrites are owned by the column-type registry, keyed by direction.
@@ -1029,9 +1038,7 @@ export async function updateColumnType(
         resolved: new Map<string, JsonValue>(),
       }
       await migrationFrom(column.type)?.(migrationContext)
-      if (isSelectType) {
-        await migrationTo(data.newType)?.(migrationContext)
-      } else {
+      if (!isSelectType) {
         let rewriteAfterId: string | undefined
         while (true) {
           const rows = await readColumnRetypePage(
@@ -1059,6 +1066,9 @@ export async function updateColumnType(
           if (rows.length < retypeScanBatchSize) break
         }
       }
+      if (isSelectType) {
+        await migrationTo(data.newType)?.(migrationContext)
+      }
 
       // A `unique` arriving with this retype is validated HERE, against the values
       // the conversion just wrote — not by the separate constraint write that
@@ -1068,7 +1078,7 @@ export async function updateColumnType(
       // report an error with the retype already committed and the original text
       // irrecoverably rewritten.
       if (data.unique === true && !column.unique) {
-        if (await hasDuplicateValues(trx, data.tableId, table.workspaceId, columnKey)) {
+        if (await hasDuplicateValues(trx, data.tableId, table.workspaceId, convertedColumn)) {
           throw new OrchestrationError(
             'validation',
             `Cannot change column "${column.name}" to type "${data.newType}" and set it as unique: the converted values contain duplicates.`

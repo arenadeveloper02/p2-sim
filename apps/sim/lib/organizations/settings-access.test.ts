@@ -46,15 +46,51 @@ describe('organization settings access', () => {
     })
   })
 
-  it('allows members to view the roster but reserves control-plane sections for admins', async () => {
+  it('allows recovery only for current members of the target organization', async () => {
+    queueTableRows(member, [{ role: 'member' }])
+    await expect(
+      canOpenOrganizationSettingsSection('organization-route', 'viewer', 'recently-deleted')
+    ).resolves.toBe(true)
+    queueTableRows(member, [])
+    await expect(
+      canOpenOrganizationSettingsSection('organization-route', 'viewer', 'recently-deleted')
+    ).resolves.toBe(false)
+  })
+
+  it('fails closed when a stored membership has a non-canonical role', async () => {
+    queueTableRows(member, [{ role: 'billing-owner' }])
+
+    await expect(getOrganizationSettingsAccess('organization-route', 'viewer')).rejects.toThrow(
+      'Invalid role'
+    )
+  })
+
+  it('reserves the roster and control-plane sections for organization admins', async () => {
     queueTableRows(member, [{ role: 'member' }])
     await expect(
       canOpenOrganizationSettingsSection('organization-route', 'viewer', 'members')
-    ).resolves.toBe(true)
+    ).resolves.toBe(false)
 
     queueTableRows(member, [{ role: 'member' }])
     await expect(
       canOpenOrganizationSettingsSection('organization-route', 'viewer', 'sso')
     ).resolves.toBe(false)
+  })
+
+  it('reserves Sim Search source setup for admins while every member may reach the MCP setup', async () => {
+    queueTableRows(member, [{ role: 'member' }])
+    await expect(
+      canOpenOrganizationSettingsSection('organization-route', 'viewer', 'integrations')
+    ).resolves.toBe(false)
+
+    queueTableRows(member, [{ role: 'member' }])
+    await expect(
+      canOpenOrganizationSettingsSection('organization-route', 'viewer', 'search-mcp')
+    ).resolves.toBe(true)
+
+    queueTableRows(member, [{ role: 'admin' }])
+    await expect(
+      canOpenOrganizationSettingsSection('organization-route', 'viewer', 'integrations')
+    ).resolves.toBe(true)
   })
 })

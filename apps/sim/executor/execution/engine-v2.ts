@@ -1,10 +1,7 @@
 import { createLogger, type Logger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import {
-  getCancellationChannel,
-  isExecutionCancelled,
-  isRedisCancellationEnabled,
-} from '@/lib/execution/cancellation'
+import { combineExecutionAbortSignals } from '@/lib/core/execution-limits'
+import { subscribeToExecutionCancellation } from '@/lib/execution/cancellation'
 import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
@@ -38,6 +35,8 @@ export class ExecutionEngineV2 {
   private executionError: Error | null = null
   private abortPromise!: Promise<void>
   private abortResolve!: () => void
+  private cancellationController = new AbortController()
+  private abortSignalListener: (() => void) | null = null
   private cancellationUnsubscribe: (() => void) | null = null
   private skippedFlag = false // Track if workflow was skipped
   private execLogger: Logger
@@ -56,16 +55,19 @@ export class ExecutionEngineV2 {
       userId: this.context.userId,
       requestId: this.context.metadata.requestId,
     })
+    this.context.abortSignal = combineExecutionAbortSignals(
+      this.context.abortSignal
+        ? [this.context.abortSignal, this.cancellationController.signal]
+        : [this.cancellationController.signal]
+    )
     this.initializeAbortHandler()
-    this.subscribeToCancellationChannel()
   }
 
-  private subscribeToCancellationChannel(): void {
+  private async subscribeToCancellationSignal(): Promise<void> {
     if (!this.context.executionId) return
     const executionId = this.context.executionId
-    this.cancellationUnsubscribe = getCancellationChannel().subscribe((event) => {
-      if (event.executionId !== executionId) return
-      this.execLogger.info('Execution cancelled via pub/sub', { executionId })
+    this.cancellationUnsubscribe = await subscribeToExecutionCancellation(executionId, () => {
+      this.execLogger.info('Execution cancelled via Redis signal', { executionId })
       this.signalCancelled()
     })
   }
@@ -77,17 +79,22 @@ export class ExecutionEngineV2 {
 
     if (!this.context.abortSignal) return
 
-    if (this.context.abortSignal.aborted) {
-      this.signalCancelled()
+    const signal = this.context.abortSignal
+    if (signal.aborted) {
+      this.signalCancelled(signal.reason)
       return
     }
 
-    this.context.abortSignal.addEventListener('abort', () => this.signalCancelled(), { once: true })
+    this.abortSignalListener = () => this.signalCancelled(signal.reason)
+    signal.addEventListener('abort', this.abortSignalListener, { once: true })
   }
 
-  private signalCancelled(): void {
+  private signalCancelled(reason: unknown = new DOMException('user', 'AbortError')): void {
     if (this.cancelledFlag) return
     this.cancelledFlag = true
+    if (!this.cancellationController.signal.aborted) {
+      this.cancellationController.abort(reason)
+    }
     this.abortResolve()
   }
 
@@ -95,23 +102,11 @@ export class ExecutionEngineV2 {
     return this.cancelledFlag
   }
 
-  /** Catches cancellations published before this engine subscribed (e.g. resume from snapshot). */
-  private async checkCancellationBackstop(): Promise<void> {
-    if (!this.context.executionId || !isRedisCancellationEnabled()) return
-    const cancelled = await isExecutionCancelled(this.context.executionId)
-    if (cancelled) {
-      this.execLogger.info('Execution already cancelled at engine start (Redis backstop)', {
-        executionId: this.context.executionId,
-      })
-      this.signalCancelled()
-    }
-  }
-
   async run(triggerBlockId?: string): Promise<ExecutionResult> {
     const startTime = performance.now()
     try {
       this.initializeQueue(triggerBlockId)
-      await this.checkCancellationBackstop()
+      await this.subscribeToCancellationSignal()
 
       while (this.hasWork()) {
         if (this.checkCancellation() || this.errorFlag || this.stoppedEarlyFlag) {
@@ -201,6 +196,10 @@ export class ExecutionEngineV2 {
   }
 
   private cleanup(): void {
+    if (this.abortSignalListener && this.context.abortSignal) {
+      this.context.abortSignal.removeEventListener('abort', this.abortSignalListener)
+      this.abortSignalListener = null
+    }
     if (this.cancellationUnsubscribe) {
       this.cancellationUnsubscribe()
       this.cancellationUnsubscribe = null

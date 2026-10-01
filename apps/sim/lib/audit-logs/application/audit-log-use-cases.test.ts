@@ -7,16 +7,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   resolveAccess: vi.fn(),
+  resolveDefaultOrganization: vi.fn(),
   getOrgWorkspaceIds: vi.fn(),
   buildOrgScopeCondition: vi.fn(),
   buildFilterConditions: vi.fn(),
   decodeAuditLogCursor: vi.fn(),
   queryAuditLogs: vi.fn(),
   recordAudit: vi.fn(),
+  isCapabilityWithheldForUser: vi.fn(),
+}))
+
+vi.mock('@/lib/permission-groups/user-scope.server', () => ({
+  isCapabilityWithheldForUser: mocks.isCapabilityWithheldForUser,
 }))
 
 vi.mock('@/lib/audit-logs/authorization', () => ({
   resolveEnterpriseAuditAccess: mocks.resolveAccess,
+  resolveDefaultAuditOrganization: mocks.resolveDefaultOrganization,
 }))
 
 vi.mock('@/lib/audit-logs/query', () => ({
@@ -53,6 +60,11 @@ describe('audit-log application use cases', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    mocks.isCapabilityWithheldForUser.mockResolvedValue(false)
+    mocks.resolveDefaultOrganization.mockResolvedValue({
+      kind: 'resolved',
+      organizationId: 'organization-1',
+    })
     mocks.resolveAccess.mockResolvedValue({
       success: true,
       context: { organizationId: 'organization-1', orgMemberIds: ['admin-1'] },
@@ -76,6 +88,24 @@ describe('audit-log application use cases', () => {
     expect(mocks.queryAuditLogs).not.toHaveBeenCalled()
   })
 
+  it('rejects an OAuth grant without API access before organization membership is loaded', async () => {
+    const principal = {
+      kind: 'oauth_access_token',
+      userId: 'admin-1',
+      clientId: 'client-1',
+      tokenId: 'token-1',
+      scopes: ['offline_access'],
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    } as const
+
+    await expect(listAuditLogs.execute({ principal, input: listInput })).rejects.toMatchObject({
+      requiredScope: 'api:read',
+    })
+    expect(mocks.resolveAccess).not.toHaveBeenCalled()
+    expect(mocks.resolveDefaultOrganization).not.toHaveBeenCalled()
+    expect(mocks.queryAuditLogs).not.toHaveBeenCalled()
+  })
+
   it('authorizes the requested organization and scopes the query canonically', async () => {
     await expect(
       listAuditLogs.execute({ principal: sessionPrincipal, input: listInput })
@@ -89,6 +119,88 @@ describe('audit-log application use cases', () => {
       includeDeparted: false,
     })
     expect(mocks.recordAudit).not.toHaveBeenCalled()
+  })
+
+  it.each(['sim-cli', 'partner-app'])(
+    'rechecks the organization OAuth restriction for an existing %s audit token',
+    async (clientId) => {
+      const principal = {
+        kind: 'oauth_access_token',
+        userId: 'admin-1',
+        clientId,
+        tokenId: 'token-1',
+        scopes: ['api:read'],
+        expiresAt: new Date('2099-01-01T00:00:00Z'),
+      } as const
+      await expect(listAuditLogs.execute({ principal, input: listInput })).resolves.toEqual({
+        data: [],
+        nextCursor: undefined,
+      })
+      mocks.queryAuditLogs.mockClear()
+      mocks.isCapabilityWithheldForUser.mockImplementation(
+        async (_userId: string, capability: string) => capability === 'oauth_apps.use'
+      )
+      await expect(
+        listAuditLogs.execute({ principal, input: { ...listInput, organizationId: undefined } })
+      ).rejects.toMatchObject({ capability: 'oauth_apps.use' })
+      expect(mocks.isCapabilityWithheldForUser).toHaveBeenCalledWith('admin-1', 'oauth_apps.use')
+      expect(mocks.queryAuditLogs).not.toHaveBeenCalled()
+    }
+  )
+
+  it('keeps audit sessions and personal API keys independent of the OAuth app restriction', async () => {
+    mocks.isCapabilityWithheldForUser.mockImplementation(
+      async (_userId: string, capability: string) => capability === 'oauth_apps.use'
+    )
+    await expect(
+      listAuditLogs.execute({ principal: sessionPrincipal, input: listInput })
+    ).resolves.toBeDefined()
+    await expect(
+      listAuditLogs.execute({
+        principal: { kind: 'personal_api_key', userId: 'admin-1', keyId: 'key-1' },
+        input: listInput,
+      })
+    ).resolves.toBeDefined()
+  })
+
+  /**
+   * Nothing an API key can reach publishes an organization id, so a required
+   * `organizationId` made the whole resource unreachable from a key. It is
+   * derived from the caller, which `member`'s per-user unique index keeps to a
+   * single candidate.
+   */
+  it('derives the organization when the caller named none', async () => {
+    await expect(
+      listAuditLogs.execute({
+        principal: sessionPrincipal,
+        input: { ...listInput, organizationId: undefined },
+      })
+    ).resolves.toEqual({ data: [], nextCursor: undefined })
+
+    expect(mocks.resolveDefaultOrganization).toHaveBeenCalledWith('admin-1')
+    expect(mocks.resolveAccess).toHaveBeenCalledWith('admin-1', 'organization-1')
+  })
+
+  it('does not derive an organization the caller named itself', async () => {
+    await listAuditLogs.execute({ principal: sessionPrincipal, input: listInput })
+
+    expect(mocks.resolveDefaultOrganization).not.toHaveBeenCalled()
+  })
+
+  it('names the membership refusal for a caller in no organization', async () => {
+    mocks.resolveDefaultOrganization.mockResolvedValueOnce({ kind: 'none' })
+
+    await expect(
+      getAuditLog.execute({
+        principal: sessionPrincipal,
+        input: { id: 'audit-1' },
+      })
+    ).rejects.toMatchObject({
+      code: 'forbidden',
+      detailCode: 'ORGANIZATION_MEMBERSHIP_REQUIRED',
+    })
+
+    expect(mocks.resolveAccess).not.toHaveBeenCalled()
   })
 
   it('rejects a workspace filter outside the authorized organization', async () => {

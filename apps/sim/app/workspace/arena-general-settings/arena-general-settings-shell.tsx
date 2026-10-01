@@ -1,10 +1,10 @@
 'use client'
 
 import { type ReactNode, useEffect, useRef } from 'react'
-import { useTheme } from 'next-themes'
 import { SettingsHeaderProvider, SettingsHeaderShell } from '@/components/settings/settings-header'
 import { SettingsSectionProvider } from '@/components/settings/settings-panel'
 import { useSettingsBeforeUnload } from '@/components/settings/use-settings-before-unload'
+import { useTheme } from '@/app/_shell/providers/theme-provider'
 import { ArenaThemeSync } from '@/app/workspace/[workspaceId]/providers/arena-theme-sync'
 
 interface ArenaGeneralSettingsShellProps {

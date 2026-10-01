@@ -6,10 +6,30 @@
  * `parentDepth + 1`.
  */
 
-export const MAX_SPECIALIST_DEPTH = 3
+export const MAX_SPECIALIST_DEPTH = 5
 export const MAX_SPECIALIST_CONCURRENT = 4
-export const MAX_SPECIALIST_INVOCATIONS = 8
+export const MAX_SPECIALIST_INVOCATIONS = 10
+/** Default specialist wall-clock budget (research / light domains). */
 export const SPECIALIST_TIMEOUT_MS = 90_000
+/**
+ * Workflow specialist needs longer for multi-block edit_workflow sequences
+ * (metadata → add → wire → repair). Timing out mid-edit leaves the parent
+ * describing changes without applying them.
+ */
+export const SPECIALIST_WORKFLOW_TIMEOUT_MS = 240_000
+/**
+ * File specialist needs longer for brand PDFs + lean HTML rewrites.
+ */
+export const SPECIALIST_FILE_TIMEOUT_MS = 300_000
+
+/**
+ * Per-domain specialist timeout. Workflow/file get longer budgets.
+ */
+export function resolveSpecialistTimeoutMs(domain: string, fallbackMs: number): number {
+  if (domain === 'workflow') return Math.max(fallbackMs, SPECIALIST_WORKFLOW_TIMEOUT_MS)
+  if (domain === 'file') return Math.max(fallbackMs, SPECIALIST_FILE_TIMEOUT_MS)
+  return fallbackMs
+}
 
 export interface SpecialistBudgetOptions {
   maxDepth?: number

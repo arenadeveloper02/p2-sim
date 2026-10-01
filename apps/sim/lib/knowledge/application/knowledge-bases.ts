@@ -16,6 +16,7 @@ import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { loadActiveFolderPathIndex, resolveFolderPathFilter } from '@/lib/folders/queries'
+import { createKnowledgeAccessProvider } from '@/lib/knowledge/access/scope'
 import { knowledgeDelegationPolicy } from '@/lib/knowledge/application/authorization'
 import { defineAuthorizedKnowledgeUseCase } from '@/lib/knowledge/application/authorized-knowledge-use-case'
 import {
@@ -30,12 +31,14 @@ import {
   type KnowledgeWorkspaceContext,
   loadKnowledgeWorkspaceAuthorizationContext,
   resolveActiveKnowledgeBaseContext,
+  resolveArchivedKnowledgeBaseContext,
   resolveKnowledgeWorkspaceContext,
 } from '@/lib/knowledge/application/contexts'
 import {
   knowledgeFolderPathForId,
   resolveKnowledgeFolderPath,
 } from '@/lib/knowledge/application/folder-paths'
+import { authorizeSearchIndexDeletion } from '@/lib/knowledge/application/knowledge-base-access'
 import {
   knowledgeOperations,
   knowledgeSessionOperations,
@@ -44,22 +47,23 @@ import {
   DEFAULT_CHUNKING_CONFIG,
   MAX_KNOWLEDGE_FOLDERS_PER_WORKSPACE,
 } from '@/lib/knowledge/constants'
-import { EMBEDDING_DIMENSIONS, getConfiguredEmbeddingModel } from '@/lib/knowledge/embeddings'
+import { getConfiguredKbEmbedding } from '@/lib/knowledge/embeddings'
 import {
-  getRestorableKnowledgeBase,
   performDeleteKnowledgeBase,
   performRestoreKnowledgeBase,
   performUpdateKnowledgeBase,
 } from '@/lib/knowledge/orchestration'
-import type { KnowledgeOrchestrationResult } from '@/lib/knowledge/orchestration/shared'
+import type {
+  KnowledgeOperationSource,
+  KnowledgeOrchestrationResult,
+} from '@/lib/knowledge/orchestration/shared'
 import {
+  attachKnowledgeBaseConnectors,
   createAuthorizedKnowledgeBase,
   deleteKnowledgeBase,
   getKnowledgeBaseById,
-  getLegacyPersonalKnowledgeBases,
   getWorkspaceKnowledgeBases,
   type KnowledgeBaseScope,
-  listWorkspaceAndLegacyKnowledgeBases,
   updateKnowledgeBase,
 } from '@/lib/knowledge/service'
 import type { ChunkingConfig, KnowledgeBaseWithCounts } from '@/lib/knowledge/types'
@@ -68,6 +72,11 @@ const logger = createLogger('KnowledgeBaseApplication')
 
 export interface ListKnowledgeBasesInput {
   workspaceId: string
+  /**
+   * Lifecycle set to list. Defaults to `active`; `archived` reads the
+   * soft-deleted set the restore flow discovers from.
+   */
+  scope?: KnowledgeBaseScope
   folderPath?: string
   search?: string
   sortBy?: 'name' | 'createdAt' | 'updatedAt'
@@ -92,11 +101,23 @@ export interface ListKnowledgeBasesResult {
   sortOrder: 'asc' | 'desc'
 }
 
-export interface ListArchivedKnowledgeBasesResult {
-  knowledgeBases: KnowledgeBaseWithCounts[]
+export interface RestoreKnowledgeBaseInput extends ReadKnowledgeBaseInput {
+  /**
+   * Which surface asked for the restore. Required, unlike its optional siblings
+   * on the sibling inputs: this one reaches the orchestration call as well as
+   * the audit projection, and a default there would attribute one surface's
+   * restore to another.
+   */
+  source: KnowledgeOperationSource
+}
+
+export interface RestoreKnowledgeBaseResult extends KnowledgeBaseResult {
+  /** `false` when the knowledge base was already active and nothing changed. */
+  restored: boolean
 }
 
 export interface KnowledgeBaseCatalogTagDefinition {
+  id: string
   knowledgeBaseId: string
   tagSlot: string
   displayName: string
@@ -112,6 +133,8 @@ export interface ListKnowledgeBaseCatalogResult {
 export interface CreateKnowledgeBaseInput {
   workspaceId: string
   name: string
+  /** Set by workspace search setup; not accepted by HTTP creation contracts. */
+  isSearchIndex?: boolean
   description?: string
   chunkingConfig?: Partial<ChunkingConfig>
   folderPath?: string
@@ -174,7 +197,7 @@ export interface ReadInternalKnowledgeBaseInput {
 export interface UpdateInternalKnowledgeBaseInput extends ReadInternalKnowledgeBaseInput {
   name?: string
   description?: string
-  workspaceId?: string | null
+  workspaceId?: string
   folderId?: string | null
   chunkingConfig?: ChunkingConfig
 }
@@ -204,29 +227,26 @@ function throwKnowledgeOrchestrationFailure(
 
 async function loadInternalActiveKnowledgeBase(
   knowledgeBaseId: string
-): Promise<KnowledgeBaseWithCounts> {
+): Promise<KnowledgeBaseWithCounts & { workspaceId: string }> {
   const knowledgeBase = await getKnowledgeBaseById(knowledgeBaseId)
-  if (!knowledgeBase) throw new OrchestrationError('not_found', 'Knowledge base not found')
-  return knowledgeBase
+  if (!knowledgeBase?.workspaceId || knowledgeBase.organizationId) {
+    throw new OrchestrationError('not_found', 'Knowledge base not found')
+  }
+  return { ...knowledgeBase, workspaceId: knowledgeBase.workspaceId }
 }
 
 async function authorizeInternalKnowledgeBase(
   principal: SessionPrincipal,
-  knowledgeBase: Pick<KnowledgeBaseWithCounts, 'userId' | 'workspaceId'>,
+  knowledgeBase: { workspaceId: string },
   operation: WorkspaceOperation
 ): Promise<void> {
-  if (!knowledgeBase.workspaceId) {
-    if (knowledgeBase.userId !== principal.userId) {
-      throw new OrchestrationError('unauthorized', 'Unauthorized')
-    }
-    return
-  }
   const context = await loadKnowledgeWorkspaceAuthorizationContext(knowledgeBase.workspaceId)
   if (!context) throw new OrchestrationError('not_found', 'Knowledge base not found')
   await authorizeWorkspaceOperation(principal, operation, context)
 }
 
 async function executeListKnowledgeBases(args: {
+  principal: Principal
   input: ListKnowledgeBasesInput
   context: KnowledgeWorkspaceContext
 }): Promise<ListKnowledgeBasesResult> {
@@ -250,13 +270,14 @@ async function executeListKnowledgeBases(args: {
       sortOrder: args.input.sortOrder ?? 'asc',
     }
   }
-  const page = await getWorkspaceKnowledgeBases(args.context.workspaceId, 'active', {
+  const page = await getWorkspaceKnowledgeBases(args.context.workspaceId, args.input.scope, {
     folderId: folderFilter.kind === 'folder' ? folderFilter.folderId : undefined,
     search: args.input.search,
     sortBy: args.input.sortBy,
     sortOrder: args.input.sortOrder,
     limit: args.input.limit,
     cursorKeys: args.input.cursorKeys,
+    access: createKnowledgeAccessProvider(args.principal, args.context),
   })
   return {
     knowledgeBases: page.data.map((knowledgeBase) => ({
@@ -293,15 +314,17 @@ async function executeCreateKnowledgeBase(args: {
     ...DEFAULT_CHUNKING_CONFIG,
     ...args.input.chunkingConfig,
   }
+  const { model: embeddingModel, dimensions: embeddingDimension } = await getConfiguredKbEmbedding()
   const knowledgeBase = await createAuthorizedKnowledgeBase(
     {
       name: args.input.name,
+      isSearchIndex: args.input.isSearchIndex,
       description: args.input.description,
       workspaceId: args.context.workspaceId,
       folderId,
       userId: resolveKnowledgeAttributedUserId(args.principal, args.context),
-      embeddingModel: getConfiguredEmbeddingModel(),
-      embeddingDimension: EMBEDDING_DIMENSIONS,
+      embeddingModel,
+      embeddingDimension,
       chunkingConfig,
     },
     generateRequestId()
@@ -324,7 +347,10 @@ async function executeReadKnowledgeBase(args: {
     { maxRows: MAX_KNOWLEDGE_FOLDERS_PER_WORKSPACE }
   )
   return {
-    knowledgeBase: args.context.knowledgeBase,
+    knowledgeBase: await attachKnowledgeBaseConnectors(
+      args.context.knowledgeBase,
+      args.context.access
+    ),
     folderPath: knowledgeFolderPathForId(index, args.context.knowledgeBase.folderId),
   }
 }
@@ -362,14 +388,24 @@ async function executeUpdateKnowledgeBase(args: {
     workspaceId: args.context.workspaceId,
     knowledgeBaseId: knowledgeBase.id,
   })
-  return { knowledgeBase, folderPath: knowledgeFolderPathForId(index, knowledgeBase.folderId) }
+  return {
+    knowledgeBase: await attachKnowledgeBaseConnectors(knowledgeBase, args.context.access),
+    folderPath: knowledgeFolderPathForId(index, knowledgeBase.folderId),
+  }
 }
 
 async function executeDeleteKnowledgeBase(args: {
+  principal: Principal
   context: ActiveKnowledgeBaseContext
 }): Promise<{ id: string; name: string }> {
+  const allowSearchIndexDelete = await authorizeSearchIndexDeletion(
+    args.principal,
+    args.context,
+    args.context.knowledgeBase
+  )
   await deleteKnowledgeBase(args.context.knowledgeBaseId, generateRequestId(), {
     assertedWorkspaceId: args.context.workspaceId,
+    allowSearchIndexDelete,
   })
   return { id: args.context.knowledgeBaseId, name: args.context.knowledgeBase.name }
 }
@@ -385,14 +421,15 @@ export const listKnowledgeBaseCatalog = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.list,
   resolveContext: ({ input }: { input: ListKnowledgeBasesInput }) =>
     resolveKnowledgeWorkspaceContext(input),
-  async execute({ input, context }): Promise<ListKnowledgeBaseCatalogResult> {
-    const result = await executeListKnowledgeBases({ input, context })
+  async execute({ principal, input, context }): Promise<ListKnowledgeBaseCatalogResult> {
+    const result = await executeListKnowledgeBases({ principal, input, context })
     const knowledgeBaseIds = result.knowledgeBases.map(({ knowledgeBase }) => knowledgeBase.id)
     const tagDefinitions =
       knowledgeBaseIds.length === 0
         ? []
         : await db
             .select({
+              id: knowledgeBaseTagDefinitions.id,
               knowledgeBaseId: knowledgeBaseTagDefinitions.knowledgeBaseId,
               tagSlot: knowledgeBaseTagDefinitions.tagSlot,
               displayName: knowledgeBaseTagDefinitions.displayName,
@@ -416,15 +453,77 @@ export const listKnowledgeBaseCatalog = defineAuthorizedKnowledgeUseCase({
   },
 })
 
-export const listArchivedKnowledgeBases = defineAuthorizedKnowledgeUseCase({
-  operation: knowledgeOperations.listArchived,
-  resolveContext: ({ input }: { input: { workspaceId: string } }) =>
-    resolveKnowledgeWorkspaceContext(input),
-  async execute({ context }): Promise<ListArchivedKnowledgeBasesResult> {
+/**
+ * Un-archives a knowledge base and reports it as it now stands.
+ *
+ * Idempotent: a knowledge base that is already active is returned unchanged,
+ * with no restore performed and no audit entry recorded. A `409` there would
+ * make a retry after a dropped response look like a failure, and restore has no
+ * state a second call could corrupt.
+ *
+ * Suppresses orchestration audit so the application projects one entry from
+ * the authoritative result.
+ */
+export const restoreKnowledgeBase = defineAuthorizedKnowledgeUseCase({
+  operation: knowledgeOperations.restore,
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: RestoreKnowledgeBaseInput
+  }) =>
+    resolveArchivedKnowledgeBaseContext({
+      knowledgeBaseId: input.knowledgeBaseId,
+      assertedWorkspaceId: input.assertedWorkspaceId,
+    }),
+  async execute({ principal, input, context, request }): Promise<RestoreKnowledgeBaseResult> {
+    const restored = context.restorableKnowledgeBase.deletedAt !== null
+    if (restored) {
+      const outcome = await performRestoreKnowledgeBase({
+        knowledgeBaseId: context.knowledgeBaseId,
+        userId: resolveKnowledgeAttributedUserId(principal, context),
+        source: input.source,
+        recordSemanticAudit: false,
+        ...(request ? { request } : {}),
+      })
+      if (!outcome.success) {
+        throwKnowledgeOrchestrationFailure(outcome, 'Failed to restore knowledge base')
+      }
+    }
+    const knowledgeBase = await getKnowledgeBaseById(context.knowledgeBaseId)
+    if (!knowledgeBase) throw new OrchestrationError('not_found', 'Knowledge base not found')
+    const index = await loadActiveFolderPathIndex(
+      context.workspaceId,
+      'knowledge_base',
+      undefined,
+      { maxRows: MAX_KNOWLEDGE_FOLDERS_PER_WORKSPACE }
+    )
     return {
-      knowledgeBases: (await getWorkspaceKnowledgeBases(context.workspaceId, 'archived')).data,
+      knowledgeBase: await attachKnowledgeBaseConnectors(
+        knowledgeBase,
+        createKnowledgeAccessProvider(principal, context)
+      ),
+      folderPath: knowledgeFolderPathForId(index, knowledgeBase.folderId),
+      restored,
     }
   },
+  projectAudit: ({ input, result }) =>
+    result.restored
+      ? [
+          {
+            action: AuditAction.KNOWLEDGE_BASE_RESTORED,
+            resourceType: AuditResourceType.KNOWLEDGE_BASE,
+            resourceId: result.knowledgeBase.id,
+            resourceName: result.knowledgeBase.name,
+            description: `Restored knowledge base "${result.knowledgeBase.name}"`,
+            metadata: {
+              source: input.source,
+              knowledgeBaseName: result.knowledgeBase.name,
+            },
+          },
+        ]
+      : [],
 })
 
 export const listInternalKnowledgeBases = {
@@ -440,19 +539,16 @@ export const listInternalKnowledgeBases = {
       throw new PrincipalKindAuthorizationError(principal.kind, knowledgeSessionOperations.list.id)
     }
     if (input.workspaceId === undefined) {
-      return {
-        knowledgeBases: await getLegacyPersonalKnowledgeBases(principal.userId, input.scope),
-      }
+      return { knowledgeBases: [] }
     }
     const context = await resolveKnowledgeWorkspaceContext({ workspaceId: input.workspaceId })
     await authorizeWorkspaceOperation(principal, knowledgeOperations.list, context)
-    return {
-      knowledgeBases: await listWorkspaceAndLegacyKnowledgeBases(
-        principal.userId,
-        context.workspaceId,
-        input.scope
-      ),
-    }
+    const { data: knowledgeBases } = await getWorkspaceKnowledgeBases(
+      context.workspaceId,
+      input.scope,
+      { access: createKnowledgeAccessProvider(principal, context) }
+    )
+    return { knowledgeBases }
   },
 } satisfies OperationUseCase<
   (typeof knowledgeSessionOperations)['list'],
@@ -484,15 +580,20 @@ export const createKnowledgeBase = defineAuthorizedKnowledgeUseCase({
 
 export const readKnowledgeBase = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.read,
-  resolveContext: ({ input }: { input: ReadKnowledgeBaseInput }) =>
-    resolveActiveKnowledgeBaseContext(input),
+  resolveContext: ({ principal, input }: { principal: Principal; input: ReadKnowledgeBaseInput }) =>
+    resolveActiveKnowledgeBaseContext(input, principal),
   execute: executeReadKnowledgeBase,
 })
 
 export const updateKnowledgeBaseOperation = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.update,
-  resolveContext: ({ input }: { input: UpdateKnowledgeBaseInput }) =>
-    resolveActiveKnowledgeBaseContext(input),
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: UpdateKnowledgeBaseInput
+  }) => resolveActiveKnowledgeBaseContext(input, principal),
   execute: executeUpdateKnowledgeBase,
   projectAudit: ({ input, result }) => ({
     action: AuditAction.KNOWLEDGE_BASE_UPDATED,
@@ -511,8 +612,13 @@ export const updateKnowledgeBaseOperation = defineAuthorizedKnowledgeUseCase({
 
 export const deleteKnowledgeBaseOperation = defineAuthorizedKnowledgeUseCase({
   operation: knowledgeOperations.delete,
-  resolveContext: ({ input }: { input: DeleteKnowledgeBaseInput }) =>
-    resolveActiveKnowledgeBaseContext(input),
+  resolveContext: ({
+    principal,
+    input,
+  }: {
+    principal: Principal
+    input: DeleteKnowledgeBaseInput
+  }) => resolveActiveKnowledgeBaseContext(input, principal),
   execute: executeDeleteKnowledgeBase,
   projectAudit: ({ input, result }) => ({
     action: AuditAction.KNOWLEDGE_BASE_DELETED,
@@ -551,16 +657,19 @@ export const bulkDeleteKnowledgeBases = defineAuthorizedKnowledgeUseCase({
       if (input.cancellationSignal?.aborted) break
       let knowledgeBaseName = knowledgeBaseId
       try {
-        const canonical = await resolveActiveKnowledgeBaseContext({
-          knowledgeBaseId,
-          assertedWorkspaceId: context.workspaceId,
-        })
+        const canonical = await resolveActiveKnowledgeBaseContext(
+          {
+            knowledgeBaseId,
+            assertedWorkspaceId: context.workspaceId,
+          },
+          principal
+        )
         knowledgeBaseName = canonical.knowledgeBase.name
         await authorizeWorkspaceOperation(principal, knowledgeOperations.bulkDelete, canonical, {
           delegation: knowledgeDelegationPolicy,
         })
         if (input.cancellationSignal?.aborted) break
-        deleted.push(await executeDeleteKnowledgeBase({ context: canonical }))
+        deleted.push(await executeDeleteKnowledgeBase({ principal, context: canonical }))
       } catch (error) {
         const disposition = classifyBulkItemError(error)
         if (disposition.kind === 'notFound') {
@@ -620,7 +729,14 @@ export const readInternalKnowledgeBase = {
     requireSessionPrincipal(principal, knowledgeSessionOperations.read.id)
     const knowledgeBase = await loadInternalActiveKnowledgeBase(input.knowledgeBaseId)
     await authorizeInternalKnowledgeBase(principal, knowledgeBase, knowledgeOperations.read)
-    return { knowledgeBase }
+    return {
+      knowledgeBase: await attachKnowledgeBaseConnectors(
+        knowledgeBase,
+        createKnowledgeAccessProvider(principal, {
+          workspaceId: knowledgeBase.workspaceId,
+        })
+      ),
+    }
   },
 } satisfies OperationUseCase<
   (typeof knowledgeSessionOperations)['read'],
@@ -643,26 +759,21 @@ export const updateInternalKnowledgeBase = {
     const knowledgeBase = await loadInternalActiveKnowledgeBase(input.knowledgeBaseId)
     await authorizeInternalKnowledgeBase(principal, knowledgeBase, knowledgeOperations.update)
 
+    if (input.workspaceId !== undefined && !input.workspaceId) {
+      throw new OrchestrationError('validation', 'Workspace ID is required')
+    }
+
     if (input.workspaceId !== undefined && input.workspaceId !== knowledgeBase.workspaceId) {
-      if (input.workspaceId === null) {
-        if (knowledgeBase.userId !== principal.userId) {
-          throw new OrchestrationError(
-            'forbidden',
-            'Only the knowledge base owner can remove it from a workspace'
-          )
-        }
-      } else {
-        const destination = await resolveKnowledgeWorkspaceContext({
-          workspaceId: input.workspaceId,
-        })
-        await authorizeWorkspaceOperation(principal, knowledgeOperations.update, destination)
-      }
+      const destination = await resolveKnowledgeWorkspaceContext({
+        workspaceId: input.workspaceId,
+      })
+      await authorizeWorkspaceOperation(principal, knowledgeOperations.update, destination)
     }
 
     const outcome = await performUpdateKnowledgeBase({
       knowledgeBaseId: knowledgeBase.id,
       workspaceId: knowledgeBase.workspaceId,
-      assertedWorkspaceId: knowledgeBase.workspaceId ?? undefined,
+      assertedWorkspaceId: knowledgeBase.workspaceId,
       userId: principal.userId,
       source: 'ui',
       updates: {
@@ -677,7 +788,14 @@ export const updateInternalKnowledgeBase = {
     if (!outcome.success) {
       throwKnowledgeOrchestrationFailure(outcome, 'Failed to update knowledge base')
     }
-    return { knowledgeBase: outcome.knowledgeBase }
+    return {
+      knowledgeBase: await attachKnowledgeBaseConnectors(
+        outcome.knowledgeBase,
+        createKnowledgeAccessProvider(principal, {
+          workspaceId: outcome.knowledgeBase.workspaceId ?? undefined,
+        })
+      ),
+    }
   },
 } satisfies OperationUseCase<
   (typeof knowledgeSessionOperations)['update'],
@@ -699,13 +817,19 @@ export const deleteInternalKnowledgeBase = {
     requireSessionPrincipal(principal, knowledgeSessionOperations.delete.id)
     const knowledgeBase = await loadInternalActiveKnowledgeBase(input.knowledgeBaseId)
     await authorizeInternalKnowledgeBase(principal, knowledgeBase, knowledgeOperations.delete)
+    const allowSearchIndexDelete = await authorizeSearchIndexDeletion(
+      principal,
+      await resolveKnowledgeWorkspaceContext({ workspaceId: knowledgeBase.workspaceId }),
+      knowledgeBase
+    )
     const outcome = await performDeleteKnowledgeBase({
+      allowSearchIndexDelete,
       knowledgeBase: {
         id: knowledgeBase.id,
         name: knowledgeBase.name,
         workspaceId: knowledgeBase.workspaceId,
       },
-      assertedWorkspaceId: knowledgeBase.workspaceId ?? undefined,
+      assertedWorkspaceId: knowledgeBase.workspaceId,
       userId: principal.userId,
       source: 'ui',
       request,
@@ -733,27 +857,11 @@ export const restoreInternalKnowledgeBase = {
     request?: { headers: { get(name: string): string | null } }
   }): Promise<{ success: true }> {
     requireSessionPrincipal(principal, knowledgeSessionOperations.restore.id)
-    const knowledgeBase = await getRestorableKnowledgeBase(input.knowledgeBaseId)
-    if (!knowledgeBase) throw new OrchestrationError('not_found', 'Knowledge base not found')
-    if (knowledgeBase.workspaceId) {
-      const context = await loadKnowledgeWorkspaceAuthorizationContext(knowledgeBase.workspaceId, {
-        includeArchived: true,
-      })
-      if (!context) throw new OrchestrationError('not_found', 'Knowledge base not found')
-      await authorizeWorkspaceOperation(principal, knowledgeOperations.update, context)
-    } else if (knowledgeBase.userId !== principal.userId) {
-      throw new OrchestrationError('unauthorized', 'Unauthorized')
-    }
-
-    const outcome = await performRestoreKnowledgeBase({
-      knowledgeBaseId: knowledgeBase.id,
-      userId: principal.userId,
-      source: 'ui',
-      request,
+    await restoreKnowledgeBase.execute({
+      principal,
+      input: { knowledgeBaseId: input.knowledgeBaseId, source: 'ui' },
+      ...(request ? { request } : {}),
     })
-    if (!outcome.success) {
-      throwKnowledgeOrchestrationFailure(outcome, 'Failed to restore knowledge base')
-    }
     return { success: true }
   },
 } satisfies OperationUseCase<

@@ -24,7 +24,6 @@ export const SUPPORTED_DOCUMENT_EXTENSIONS = [
   'md',
   'xlsx',
   'xls',
-  'ppt',
   'pptx',
   'html',
   'htm',
@@ -79,6 +78,7 @@ export const SUPPORTED_CODE_EXTENSIONS = [
   'prettierrc',
   'eslintrc',
   'mmd',
+  'chart',
 ] as const
 
 export type SupportedCodeExtension = (typeof SUPPORTED_CODE_EXTENSIONS)[number]
@@ -98,7 +98,7 @@ export const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm'] a
 
 /**
  * Archive formats accepted as chat attachments. A `.zip` is stored once in
- * uploads/; the agent must extract it (materialize_file operation "extract") to
+ * uploads/; the agent must extract it (save_upload operation "extract") to
  * decompress it into workspace files/ before reading its contents.
  */
 export const SUPPORTED_ARCHIVE_EXTENSIONS = ['zip'] as const
@@ -156,7 +156,6 @@ export const SUPPORTED_MIME_TYPES: Record<SupportedDocumentExtension, string[]> 
     'application/x-excel',
     'application/x-msexcel',
   ],
-  ppt: ['application/vnd.ms-powerpoint', 'application/powerpoint', 'application/x-mspowerpoint'],
   pptx: [
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/octet-stream',
@@ -189,8 +188,6 @@ export const SUPPORTED_VIDEO_MIME_TYPES: Record<SupportedVideoExtension, string[
 }
 
 export const ACCEPTED_FILE_TYPES = Object.values(SUPPORTED_MIME_TYPES).flat()
-export const ACCEPTED_AUDIO_TYPES = Object.values(SUPPORTED_AUDIO_MIME_TYPES).flat()
-export const ACCEPTED_VIDEO_TYPES = Object.values(SUPPORTED_VIDEO_MIME_TYPES).flat()
 export const ACCEPTED_FILE_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS.map((ext) => `.${ext}`)
 
 export const ACCEPT_ATTRIBUTE = [...ACCEPTED_FILE_TYPES, ...ACCEPTED_FILE_EXTENSIONS].join(',')
@@ -210,7 +207,7 @@ const SUPPORTED_IMAGE_MIME_TYPES = [
   'image/vnd.microsoft.icon',
 ]
 
-const SUPPORTED_ARCHIVE_MIME_TYPES = [
+export const SUPPORTED_ARCHIVE_MIME_TYPES = [
   'application/zip',
   'application/x-zip-compressed',
   'application/x-zip',
@@ -225,7 +222,7 @@ export const CHAT_ACCEPT_ATTRIBUTE = [
 /**
  * Accept attribute for the mothership copilot input only. Archives are scoped
  * here — NOT in {@link CHAT_ACCEPT_ATTRIBUTE} — because only the copilot flow
- * has zip handling (materialize_file "extract"); a zip picked in a workflow or
+ * has zip handling (save_upload "extract"); a zip picked in a workflow or
  * deployed chat would flow into execution, where no parser exists.
  */
 export const MOTHERSHIP_ACCEPT_ATTRIBUTE = [

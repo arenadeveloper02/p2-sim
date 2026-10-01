@@ -10,9 +10,16 @@ import type {
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  routingEnabled: vi.fn(() => false),
+  resolveRoute: vi.fn(async () => ({ kind: 'direct' as const })),
   events: [] as string[],
   recordAudit: vi.fn(() => mocks.events.push('audit')),
   resolvePermission: vi.fn(),
+}))
+
+vi.mock('@/lib/core/network/config.server', () => ({
+  isOutboundRoutingEnabled: mocks.routingEnabled,
+  resolveOutboundRoute: mocks.resolveRoute,
 }))
 
 vi.mock('@sim/audit', () => ({
@@ -33,13 +40,17 @@ vi.mock('@sim/platform-authz/workspace', () => ({
 
 import { AuditAction, AuditResourceType } from '@sim/audit'
 import { defineAuthorizedWorkspaceUseCase, defineWorkspaceOperation } from '@/lib/core/application'
+import { recordProjectedUseCaseAuditEntries } from '@/lib/core/application/authorized-workspace-use-case'
+import { resolveCurrentOutboundRoute } from '@/lib/core/network/context.server'
 import type { OrchestrationError } from '@/lib/core/orchestration/types'
+import { CREDENTIAL_GROUP_CREDENTIAL_USE_ACTION } from '@/lib/resource-policies/registry'
 
 const operation = defineWorkspaceOperation({
   id: 'test.rename',
   minimumRole: 'write',
   workspaceApiKey: 'deny',
   principalKinds: ['session'],
+  capability: 'none',
 })
 
 const delegatedOperation = defineWorkspaceOperation({
@@ -48,6 +59,7 @@ const delegatedOperation = defineWorkspaceOperation({
   workspaceApiKey: 'deny',
   principalKinds: ['delegated'],
   delegatedServices: ['executor'],
+  capability: 'none',
 })
 
 const workspaceKeyOperation = defineWorkspaceOperation({
@@ -55,6 +67,19 @@ const workspaceKeyOperation = defineWorkspaceOperation({
   minimumRole: 'read',
   workspaceApiKey: 'allow',
   principalKinds: ['workspace_api_key'],
+  capability: 'none',
+})
+
+const resourcePolicyOperation = defineWorkspaceOperation({
+  id: 'test.resource_policy',
+  minimumRole: 'write',
+  workspaceApiKey: 'deny',
+  principalKinds: ['session'],
+  resourcePolicy: {
+    resourceType: 'credential_group',
+    action: CREDENTIAL_GROUP_CREDENTIAL_USE_ACTION,
+  },
+  capability: 'none',
 })
 
 interface TestInput {
@@ -84,8 +109,35 @@ const sessionPrincipal: SessionPrincipal = {
 describe('defineAuthorizedWorkspaceUseCase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.routingEnabled.mockReturnValue(false)
     mocks.events.length = 0
     mocks.resolvePermission.mockResolvedValue('write')
+  })
+
+  it('establishes outbound ownership after authorization and retains it through effects', async () => {
+    mocks.routingEnabled.mockReturnValue(true)
+    const useCase = defineAuthorizedWorkspaceUseCase({
+      operation,
+      resolveContext: async () => canonicalContext,
+      authorizationOptions: {},
+      async execute() {
+        expect(mocks.resolvePermission).toHaveBeenCalledOnce()
+        await resolveCurrentOutboundRoute()
+        return 'done'
+      },
+      async afterSuccess() {
+        await resolveCurrentOutboundRoute()
+      },
+    })
+    await expect(useCase.execute({ principal: sessionPrincipal, input: {} })).resolves.toBe('done')
+    expect(mocks.resolveRoute.mock.calls).toEqual([['organization-1'], ['organization-1']])
+    await resolveCurrentOutboundRoute()
+    expect(mocks.resolveRoute).toHaveBeenLastCalledWith(undefined)
+
+    mocks.resolveRoute.mockClear()
+    mocks.resolvePermission.mockResolvedValue(null)
+    await expect(useCase.execute({ principal: sessionPrincipal, input: {} })).rejects.toThrow()
+    expect(mocks.resolveRoute).not.toHaveBeenCalled()
   })
 
   it('narrows definition callbacks while keeping public execution principal-safe', async () => {
@@ -191,13 +243,14 @@ describe('defineAuthorizedWorkspaceUseCase', () => {
       return { ok: true as const }
     })
     const useCase = defineAuthorizedWorkspaceUseCase({
-      operation,
+      operation: resourcePolicyOperation,
       resolveContext: async (_args: { principal: SessionPrincipal; input: TestInput }) => {
         mocks.events.push('canonicalLoad')
         return canonicalContext
       },
       authorizationOptions: {},
-      authorizeResource() {
+      authorizeResource({ resourcePolicy }) {
+        expect(resourcePolicy).toBe(resourcePolicyOperation.resourcePolicy)
         mocks.events.push('resourceAuthorization')
       },
       execute,
@@ -238,6 +291,45 @@ describe('defineAuthorizedWorkspaceUseCase', () => {
       'audit',
       'afterSuccess',
     ])
+  })
+
+  it('requires policy-bound operations to define resource authorization', async () => {
+    const execute = vi.fn(async () => ({ ok: true as const }))
+    expect(() =>
+      defineAuthorizedWorkspaceUseCase({
+        operation: resourcePolicyOperation,
+        resolveContext: async (_args: { principal: SessionPrincipal; input: TestInput }) =>
+          canonicalContext,
+        authorizationOptions: {},
+        execute,
+      })
+    ).toThrow('Operation test.resource_policy requires resource policy authorization')
+
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('keeps non-policy resource authorization available to ordinary operations', async () => {
+    const authorizeResource = vi.fn()
+    const useCase = defineAuthorizedWorkspaceUseCase({
+      operation,
+      resolveContext: async (_args: { principal: SessionPrincipal; input: TestInput }) =>
+        canonicalContext,
+      authorizationOptions: {},
+      authorizeResource,
+      async execute() {
+        return { ok: true as const }
+      },
+    })
+
+    await expect(
+      useCase.execute({
+        principal: sessionPrincipal,
+        input: { resourceId: 'resource-1' },
+      })
+    ).resolves.toEqual({ ok: true })
+    expect(authorizeResource).toHaveBeenCalledWith(
+      expect.objectContaining({ context: canonicalContext })
+    )
   })
 
   it('supports zero or many semantic audit entries', async () => {
@@ -399,6 +491,37 @@ describe('defineAuthorizedWorkspaceUseCase', () => {
             keyId: 'workspace-key-1',
           },
         },
+      })
+    )
+  })
+})
+
+describe('projected audit workspace attribution', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it.each([
+    { override: undefined, expected: 'workspace-1' },
+    { override: 'workspace-2', expected: 'workspace-2' },
+    { override: null, expected: null },
+  ])('records the canonical workspace override $override', ({ override, expected }) => {
+    recordProjectedUseCaseAuditEntries(
+      operation,
+      'workspace-1',
+      sessionPrincipal,
+      undefined,
+      [
+        {
+          action: AuditAction.FILE_UPDATED,
+          resourceType: AuditResourceType.FILE,
+          workspaceId: override,
+        },
+      ],
+      'organization-1'
+    )
+    expect(mocks.recordAudit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        workspaceId: expected,
+        metadata: expect.objectContaining({ organizationId: 'organization-1' }),
       })
     )
   })

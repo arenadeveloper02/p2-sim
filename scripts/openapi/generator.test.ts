@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { defineRouteContract } from '../../apps/sim/lib/api/contracts/types'
+import {
+  V2_ERROR_STATUS_BY_CODE,
+  type V2ErrorCode,
+} from '../../apps/sim/lib/api/contracts/v2/error-codes'
 import { billingOpenApiDocument } from '../../apps/sim/lib/api/contracts/v2/openapi/billing'
 import { filesAuditOpenApiDocument } from '../../apps/sim/lib/api/contracts/v2/openapi/files-audit'
 import { workflowsOpenApiDocument } from '../../apps/sim/lib/api/contracts/v2/openapi/workflows'
@@ -17,6 +21,18 @@ import {
 } from './generator'
 
 type JsonObject = Record<string, unknown>
+type OpenApiDocument = Parameters<typeof generateOpenApiDocument>[0]
+
+const generatedDocuments = new Map<OpenApiDocument, JsonObject>()
+
+function generatedDocument(document: OpenApiDocument): JsonObject {
+  const cached = generatedDocuments.get(document)
+  if (cached) return cached
+
+  const generated = generateOpenApiDocument(document)
+  generatedDocuments.set(document, generated)
+  return generated
+}
 
 const ERROR_SCHEMA = z
   .object({
@@ -45,12 +61,31 @@ function operation(
 ): OpenApiOperationMetadata {
   return {
     operationId,
+    applicationOperation: { id: operationId },
     summary: `Summary for ${operationId}`,
     description: `Description for ${operationId}.`,
     tags: ['Tests'],
     errors: ['Unauthorized', 'RateLimited'],
     success,
   }
+}
+
+/** A minimal route, for assertions about document-level output rather than the route itself. */
+function simpleRoute(): OpenApiRouteDefinition {
+  const response = z.object({ ok: z.boolean().describe('Whether the call succeeded.') }).meta({
+    id: 'SimpleResponse',
+    title: 'Simple response',
+    description: 'Response body.',
+  })
+  return defineOpenApiRoute(
+    defineRouteContract({
+      method: 'GET',
+      path: '/simple',
+      response: { mode: 'json', schema: response },
+    }),
+    operation('simple', { description: 'Simple.' }),
+    { response }
+  )
 }
 
 function document(routes: readonly OpenApiRouteDefinition[]) {
@@ -75,8 +110,22 @@ function document(routes: readonly OpenApiRouteDefinition[]) {
     headers: { Location: { schema: LOCATION_HEADER_SCHEMA } },
     errorSchema: ERROR_SCHEMA,
     errorResponses: {
-      Unauthorized: { status: 401, description: 'Unauthorized.' },
-      RateLimited: { status: 429, description: 'Rate limited.' },
+      Unauthorized: {
+        status: 401,
+        description: 'Unauthorized.',
+        example: { error: { code: 'UNAUTHORIZED', message: 'API key required' } },
+      },
+      RateLimited: {
+        status: 429,
+        description: 'Rate limited.',
+        example: { error: { code: 'RATE_LIMITED', message: 'API rate limit exceeded' } },
+      },
+      /** Declared but referenced by no operation below, so it must not be published. */
+      NotFound: {
+        status: 404,
+        description: 'Not found.',
+        example: { error: { code: 'NOT_FOUND', message: 'Not found' } },
+      },
     },
     routes,
   })
@@ -144,6 +193,35 @@ describe('OpenAPI generator', () => {
       deprecated: true,
       responses: { '201': expect.any(Object) },
     })
+  })
+
+  it('omits feature-flagged enum values from generated schemas', () => {
+    const columnType = z.enum(['string', 'ttl']).meta({ omitEnumValuesFromOpenApi: ['ttl'] })
+    const body = z
+      .object({ type: columnType.describe('Column data type.') })
+      .meta({ id: 'HiddenEnumRequest', title: 'Hidden enum request', description: 'Request body.' })
+    const response = z
+      .object({ ok: z.boolean().describe('Whether the request succeeded.') })
+      .meta({ id: 'HiddenEnumResponse', title: 'Hidden enum response', description: 'Response.' })
+    const contract = defineRouteContract({
+      method: 'POST',
+      path: '/hidden-enum',
+      body,
+      response: { mode: 'json', schema: response },
+    })
+    const route = defineOpenApiRoute(
+      contract,
+      operation('hiddenEnum', { description: 'Response.' }),
+      { body, response }
+    )
+    const spec = generateOpenApiDocument(document([route]))
+    const schemas = (spec.components as JsonObject).schemas as JsonObject
+    const requestProperties = (schemas.HiddenEnumRequest as JsonObject).properties as JsonObject
+    const documentedColumnType = requestProperties.type as JsonObject
+
+    expect(columnType.safeParse('ttl').success).toBe(true)
+    expect(documentedColumnType.enum).toEqual(['string'])
+    expect(documentedColumnType).not.toHaveProperty('omitEnumValuesFromOpenApi')
   })
 
   it('handles every route response mode and media type', () => {
@@ -398,6 +476,39 @@ describe('OpenAPI generator', () => {
     )
   })
 
+  it('rejects OAuth documentation without canonical scope policy', () => {
+    expect(() =>
+      generateOpenApiDocument({
+        ...document([simpleRoute()]),
+        security: [{ oauthBearer: [] }],
+        securitySchemes: { oauthBearer: { type: 'http', scheme: 'bearer' } },
+      })
+    ).toThrow("must declare its canonical application's OAuth scope")
+  })
+
+  it('documents API read consent for Search operations instead of MCP-only consent', () => {
+    const route = simpleRoute()
+    const generated = generateOpenApiDocument({
+      ...document([
+        {
+          ...route,
+          operation: {
+            ...route.operation,
+            applicationOperation: { id: 'knowledge.search', oauthScope: 'search:read' },
+          },
+        },
+      ]),
+      security: [{ oauthBearer: [] }],
+      securitySchemes: { oauthBearer: { type: 'http', scheme: 'bearer' } },
+    })
+    const paths = generated.paths as Record<string, Record<string, JsonObject>>
+    expect(paths['/simple'].get).toMatchObject({
+      'x-sim-operation': 'knowledge.search',
+      'x-oauth-scope': 'api:read',
+      description: 'Description for simple.\n\nOAuth scope: `api:read`.',
+    })
+  })
+
   it('fails fast for missing Zod documentation metadata', () => {
     const body = z.object({ value: z.string().describe('Value.') })
     const response = z
@@ -542,7 +653,7 @@ describe('OpenAPI generator', () => {
   })
 
   it('documents nullable file share metadata from the response schema', () => {
-    const spec = generateOpenApiDocument(filesAuditOpenApiDocument)
+    const spec = generatedDocument(filesAuditOpenApiDocument)
     const schemas = (spec.components as JsonObject).schemas as JsonObject
     const metadata = schemas.V2FileMetadata as JsonObject
     const properties = metadata.properties as JsonObject
@@ -552,7 +663,7 @@ describe('OpenAPI generator', () => {
   })
 
   it('documents v2 billing storage coverage from the response schema', () => {
-    const spec = generateOpenApiDocument(billingOpenApiDocument)
+    const spec = generatedDocument(billingOpenApiDocument)
     const paths = spec.paths as JsonObject
     const schemas = (spec.components as JsonObject).schemas as JsonObject
     const response = schemas.V2BillingStatusResponse as JsonObject
@@ -590,7 +701,7 @@ describe('OpenAPI generator', () => {
    * is why it stays and is pinned here instead.
    */
   it('uses string wire values for a stringbool query param', () => {
-    const spec = generateOpenApiDocument(filesAuditOpenApiDocument)
+    const spec = generatedDocument(filesAuditOpenApiDocument)
     const deleteFolder = getOperation(spec, '/api/v2/files/folders', 'delete')
     const deleteFolderParameters = deleteFolder.parameters as JsonObject[]
     const recursive = deleteFolderParameters.find((parameter) => parameter.name === 'recursive')
@@ -605,17 +716,17 @@ describe('OpenAPI generator', () => {
    * callers to send a string for what four sibling params took as a boolean.
    */
   it('documents boolean query flags as booleans', () => {
-    const auditSpec = generateOpenApiDocument(filesAuditOpenApiDocument)
+    const auditSpec = generatedDocument(filesAuditOpenApiDocument)
     const listAuditLogParameters = getOperation(auditSpec, '/api/v2/audit-logs', 'get')
       .parameters as JsonObject[]
     const includeDeparted = listAuditLogParameters.find(
       (parameter) => parameter.name === 'includeDeparted'
     )
 
-    const workflowSpec = generateOpenApiDocument(workflowsOpenApiDocument)
+    const workflowSpec = generatedDocument(workflowsOpenApiDocument)
     const getRunParameters = getOperation(
       workflowSpec,
-      '/api/v2/workflows/{id}/runs/{runId}',
+      '/api/v2/workflows/{workflowId}/runs/{runId}',
       'get'
     ).parameters as JsonObject[]
     const includeOutput = getRunParameters.find((parameter) => parameter.name === 'includeOutput')
@@ -625,7 +736,7 @@ describe('OpenAPI generator', () => {
   })
 
   it('documents binary download response headers', () => {
-    const spec = generateOpenApiDocument(filesAuditOpenApiDocument)
+    const spec = generatedDocument(filesAuditOpenApiDocument)
     const operation = getOperation(spec, '/api/v2/files/{fileId}', 'get')
     const response = (operation.responses as JsonObject)['200'] as JsonObject
 
@@ -634,5 +745,70 @@ describe('OpenAPI generator', () => {
       'Content-Disposition': { $ref: '#/components/headers/Content-Disposition' },
       'Content-Length': { $ref: '#/components/headers/Content-Length' },
     })
+  })
+
+  it('gives each error response its own example beside the shared schema ref', () => {
+    const spec = generateOpenApiDocument(document([simpleRoute()]))
+    const responses = (spec.components as JsonObject).responses as JsonObject
+    const contentFor = (id: string) =>
+      ((responses[id] as JsonObject).content as JsonObject)['application/json'] as JsonObject
+
+    expect(contentFor('Unauthorized').schema).toEqual({ $ref: '#/components/schemas/TestError' })
+    expect(contentFor('RateLimited').schema).toEqual({ $ref: '#/components/schemas/TestError' })
+    expect(contentFor('Unauthorized').example).toEqual({
+      error: { code: 'UNAUTHORIZED', message: 'API key required' },
+    })
+    expect(contentFor('RateLimited').example).toEqual({
+      error: { code: 'RATE_LIMITED', message: 'API rate limit exceeded' },
+    })
+  })
+
+  it('rejects an error example that does not fit the error schema', () => {
+    expect(() =>
+      generateOpenApiDocument({
+        ...document([simpleRoute()]),
+        errorResponses: {
+          Unauthorized: {
+            status: 401,
+            description: 'Unauthorized.',
+            example: { error: { code: 'UNAUTHORIZED' } },
+          },
+          RateLimited: {
+            status: 429,
+            description: 'Rate limited.',
+            example: { error: { code: 'RATE_LIMITED', message: 'API rate limit exceeded' } },
+          },
+        },
+      })
+    ).toThrow(/Unauthorized example/)
+  })
+
+  it('publishes only the error responses its operations reference', () => {
+    const spec = generateOpenApiDocument(document([simpleRoute()]))
+    const responses = (spec.components as JsonObject).responses as JsonObject
+
+    /** `NotFound` is defined on the document but no operation declares it. */
+    expect(Object.keys(responses).sort()).toEqual(['RateLimited', 'Unauthorized'])
+  })
+
+  it('publishes a distinct example under every documented error status', () => {
+    const spec = generatedDocument(workflowsOpenApiDocument)
+    const responses = (spec.components as JsonObject).responses as JsonObject
+    const byStatus = new Map<number, Set<string>>()
+
+    for (const response of Object.values(responses) as JsonObject[]) {
+      const content = (response.content as JsonObject)['application/json'] as JsonObject
+      const example = content.example as { error: { code: string } }
+      const status = V2_ERROR_STATUS_BY_CODE[example.error.code as V2ErrorCode]
+      expect(status, `${example.error.code} is not a v2 error code`).toBeDefined()
+      const codes = byStatus.get(status) ?? new Set<string>()
+      codes.add(example.error.code)
+      byStatus.set(status, codes)
+    }
+
+    /** Every status documents exactly one code — the property the derivation relies on. */
+    for (const [status, codes] of byStatus) {
+      expect([...codes], `status ${status}`).toHaveLength(1)
+    }
   })
 })

@@ -39,8 +39,9 @@ type InternalUploadContext =
   | { purpose: 'workspace_file'; workspaceId: string; folderId?: string | null }
   | { purpose: 'profile_picture' }
   | { purpose: 'workspace_logo'; workspaceId: string }
-  | { purpose: 'org_logo'; organizationId: string }
-  | { purpose: 'mothership_attachment'; workspaceId: string }
+  | { purpose: 'organization_logo'; organizationId: string }
+  | { purpose: 'mothership_attachment'; workspaceId: string; organizationId?: never }
+  | { purpose: 'mothership_attachment'; organizationId: string; workspaceId?: never }
   | {
       purpose: 'execution_attachment'
       workspaceId: string
@@ -168,7 +169,7 @@ function internalUploadBody(params: UploadInternalFileSessionParams): CreateInte
         workspaceId: params.workspaceId,
         ...fileFields,
       }
-    case 'org_logo':
+    case 'organization_logo':
       return {
         purpose: params.purpose,
         organizationId: params.organizationId,
@@ -177,7 +178,9 @@ function internalUploadBody(params: UploadInternalFileSessionParams): CreateInte
     case 'mothership_attachment':
       return {
         purpose: params.purpose,
-        workspaceId: params.workspaceId,
+        ...(params.organizationId
+          ? { organizationId: params.organizationId }
+          : { workspaceId: params.workspaceId }),
         ...fileFields,
       }
     case 'execution_attachment':

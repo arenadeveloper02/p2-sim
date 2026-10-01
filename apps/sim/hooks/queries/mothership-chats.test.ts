@@ -2,10 +2,12 @@
  * @vitest-environment node
  */
 
+import { sleep } from '@sim/utils/helpers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 
-const { queryClient, suspendBrowserScope, suspendTerminalScope } = vi.hoisted(() => ({
+const { queryClient, suspendBrowserScope, suspendTerminalScope, clearChat } = vi.hoisted(() => ({
+  clearChat: vi.fn(),
   queryClient: {
     cancelQueries: vi.fn().mockResolvedValue(undefined),
     invalidateQueries: vi.fn().mockResolvedValue(undefined),
@@ -17,8 +19,14 @@ const { queryClient, suspendBrowserScope, suspendTerminalScope } = vi.hoisted(()
   suspendTerminalScope: vi.fn(async () => true),
 }))
 
+vi.mock('@/stores/mothership-queue/store', () => ({
+  useMothershipQueueStore: { getState: () => ({ clearChat }) },
+}))
+
 vi.mock('@tanstack/react-query', () => ({
   keepPreviousData: {},
+  queryOptions: (options: unknown) => options,
+  skipToken: Symbol('skipToken'),
   useQuery: vi.fn(),
   useQueryClient: vi.fn(() => queryClient),
   useMutation: vi.fn((options) => options),
@@ -38,6 +46,7 @@ import {
   useAddChatResource,
   useDeleteMothershipChat,
   useDeleteMothershipChats,
+  useMarkMothershipChatRead,
 } from '@/hooks/queries/mothership-chats'
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -172,6 +181,32 @@ describe('tasks query boundary parsing', () => {
     )
   })
 
+  it('does not call the legacy alias when the primary history request fails outside 404', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ success: false, error: 'Unavailable' }, { status: 503 })
+    )
+
+    await expect(fetchMothershipChatHistory('chat-1')).rejects.toMatchObject({ status: 503 })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the conditional read endpoint when marking a chat as seen', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ success: true }))
+    const mutation = useMarkMothershipChatRead('ws-1') as unknown as {
+      mutationFn: (chatId: string) => Promise<void>
+    }
+
+    await mutation.mutationFn('chat-1')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/mothership/chats/read',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ chatId: 'chat-1' }),
+      })
+    )
+  })
+
   it('rejects invalid chat resource mutation responses', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({
@@ -203,10 +238,16 @@ describe('tasks query boundary parsing', () => {
     mutation.onSettled(undefined, new Error('delete failed'), 'chat-failed')
     expect(suspendBrowserScope).not.toHaveBeenCalled()
     expect(suspendTerminalScope).not.toHaveBeenCalled()
+    expect(clearChat).not.toHaveBeenCalled()
+    expect(queryClient.removeQueries).not.toHaveBeenCalled()
 
     await mutation.onSuccess(undefined, 'chat-deleted')
     expect(suspendBrowserScope).toHaveBeenCalledWith('chat-deleted')
     expect(suspendTerminalScope).toHaveBeenCalledWith('chat-deleted')
+    expect(clearChat).toHaveBeenCalledWith('chat-deleted')
+    expect(queryClient.removeQueries).toHaveBeenCalledWith({
+      queryKey: ['mothership-chats', 'detail', 'chat-deleted'],
+    })
   })
 
   it('suspends every native resource group after a successful bulk delete', async () => {
@@ -225,6 +266,44 @@ describe('tasks query boundary parsing', () => {
     expect(suspendTerminalScope).toHaveBeenCalledWith('chat-b')
   })
 
+  it('waits for slower successful deletions before reconciling a failed batch', async () => {
+    const pending = Promise.withResolvers<Response>()
+    const mutation = useDeleteMothershipChats({ organizationId: 'org-1' }) as unknown as {
+      mutationFn: (chatIds: string[]) => Promise<void>
+      onSettled: () => void
+    }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response('delete failed', { status: 500 }))
+      .mockReturnValueOnce(pending.promise)
+    const result = mutation.mutationFn(['chat-failed', 'chat-slow'])
+    const reconciled = vi.fn()
+    const observed = result.then(
+      () => {
+        mutation.onSettled()
+        reconciled()
+      },
+      () => {
+        mutation.onSettled()
+        reconciled()
+      }
+    )
+    await sleep(1)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(reconciled).not.toHaveBeenCalled()
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+    expect(clearChat).not.toHaveBeenCalled()
+    pending.resolve(jsonResponse({ success: true }))
+    await observed
+    await expect(result).rejects.toThrow()
+    expect(queryClient.invalidateQueries).toHaveBeenCalledExactlyOnceWith({
+      queryKey: ['mothership-chats', 'list', 'organization', 'org-1'],
+    })
+    expect(clearChat).toHaveBeenCalledExactlyOnceWith('chat-slow')
+    expect(queryClient.removeQueries).toHaveBeenCalledExactlyOnceWith({
+      queryKey: ['mothership-chats', 'detail', 'chat-slow'],
+    })
+  })
+
   it('suspends each successful bulk delete even when a sibling delete fails', async () => {
     const mutation = useDeleteMothershipChats('workspace-1') as unknown as {
       mutationFn: (chatIds: string[]) => Promise<void>
@@ -239,5 +318,13 @@ describe('tasks query boundary parsing', () => {
     expect(suspendTerminalScope).toHaveBeenCalledWith('chat-a')
     expect(suspendBrowserScope).not.toHaveBeenCalledWith('chat-b')
     expect(suspendTerminalScope).not.toHaveBeenCalledWith('chat-b')
+    expect(clearChat).toHaveBeenCalledWith('chat-a')
+    expect(clearChat).not.toHaveBeenCalledWith('chat-b')
+    expect(queryClient.removeQueries).toHaveBeenCalledWith({
+      queryKey: ['mothership-chats', 'detail', 'chat-a'],
+    })
+    expect(queryClient.removeQueries).not.toHaveBeenCalledWith({
+      queryKey: ['mothership-chats', 'detail', 'chat-b'],
+    })
   })
 })

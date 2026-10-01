@@ -2,6 +2,7 @@
 
 import type { ComponentType } from 'react'
 import { noop } from '@sim/utils/helpers'
+import { ResourceListLoading } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
 import type { BreadcrumbItem } from '@/app/workspace/[workspaceId]/components/resource/components/resource-header'
 import {
   Resource,
@@ -85,7 +86,11 @@ export function ResourceChromeFallback({
         sort={hasSort ? { options: [], active: null, onSort: noop } : undefined}
         filter={hasFilter ? { content: null } : undefined}
       />
-      {columns ? <Resource.Table columns={columns} rows={[]} /> : null}
+      {columns ? (
+        <Resource.Table columns={columns} rows={[]} emptyState={<ResourceListLoading />} />
+      ) : (
+        <ResourceListLoading />
+      )}
     </Resource>
   )
 }

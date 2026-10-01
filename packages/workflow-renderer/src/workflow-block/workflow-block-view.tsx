@@ -3,7 +3,6 @@
 import {
   type ComponentType,
   type CSSProperties,
-  type HTMLAttributes,
   type ReactNode,
   type Ref,
   useCallback,
@@ -13,7 +12,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Badge, ChipTag, cn, handleKeyboardActivation, Switch, Tooltip } from '@sim/emcn'
+import { Badge, cn, handleKeyboardActivation, Switch, Tooltip } from '@sim/emcn'
 import { Ban, Lock } from '@sim/emcn/icons'
 import {
   WORKFLOW_SOURCE_HANDLE_ID,
@@ -22,17 +21,15 @@ import {
 } from '@sim/workflow-types/workflow'
 import {
   Handle,
-  internalsSymbol,
   Position,
   useStoreApi as useReactFlowStoreApi,
   useUpdateNodeInternals,
-} from 'reactflow'
+} from '@xyflow/react'
 import { BLOCK_DIMENSIONS, HANDLE_POSITIONS } from '../dimensions'
 import { humanizeBlockName } from '../lib/humanize-block-name'
 import { OverflowSpan } from '../lib/overflow-span'
-import { isLightTileColor } from '../lib/tile-icon-color'
 import type { BlockRunStatus } from '../types'
-import { getWorkflowTypeAccent } from '../workflow-type-roles'
+import { WorkflowTypeTag } from '../workflow-type'
 import {
   getCursorBranchSourceHandleId,
   getCursorSourceHandleId,
@@ -101,169 +98,6 @@ export function getNearestBranchCursorHandleId(
   return getCursorBranchSourceHandleId(`${handlePrefix}-${rows[nearestIndex].id}`)
 }
 
-export interface WorkflowTypeIconProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
-  type: string
-  Icon: ComponentType<{ className?: string }>
-  /** Overrides the glyph size when the chip is rendered at a non-default slot. */
-  iconClassName?: string
-}
-
-/** Shared compact core-block icon used by workflow discovery surfaces. */
-export function WorkflowTypeIcon({
-  type,
-  Icon,
-  className,
-  iconClassName,
-  ...props
-}: WorkflowTypeIconProps) {
-  const typeAccent = getWorkflowTypeAccent(type)
-
-  return (
-    <ChipTag
-      variant={typeAccent.variant}
-      tone={typeAccent.tone}
-      className={cn('size-[16px] flex-shrink-0 justify-center p-0', className)}
-      data-workflow-type-icon={type}
-      {...props}
-    >
-      <Icon
-        className={cn(
-          'size-[10px] transition-transform duration-100 group-hover:scale-110',
-          iconClassName
-        )}
-      />
-    </ChipTag>
-  )
-}
-
-export interface WorkflowTypeTagProps {
-  type: string
-  typeLabel?: string
-  Icon: ComponentType<{ className?: string }>
-  iconBgColor: string
-  isIntegration?: boolean
-  isEnabled?: boolean
-}
-
-/** Shared provider/type tag used by editable and read-only workflow canvases. */
-export function WorkflowTypeTag({
-  type,
-  typeLabel,
-  Icon,
-  iconBgColor,
-  isIntegration = false,
-  isEnabled = true,
-}: WorkflowTypeTagProps) {
-  const typeAccent = getWorkflowTypeAccent(type)
-  const sharedClassName = cn(
-    'flex-shrink-0 justify-center transition-opacity duration-150 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]',
-    !isEnabled && 'opacity-50'
-  )
-  /*
-   * The tag names the block's kind, and it says so whether or not the title
-   * happens to repeat it. Dropping the label when the two matched meant a card
-   * changed shape the moment it was renamed — a freshly dropped Wait showed a
-   * bare icon, its second copy showed "Wait" — so the tag read as a badge that
-   * came and went rather than as one fixed part of the header.
-   */
-  const label = typeLabel || null
-
-  if (isIntegration) {
-    return (
-      <ChipTag
-        variant='brand'
-        brandColor={iconBgColor}
-        brandForeground={isLightTileColor(iconBgColor) ? 'dark' : 'light'}
-        className={sharedClassName}
-        data-workflow-type-accent={type}
-        data-workflow-brand-tag=''
-      >
-        <Icon className='size-[14px] flex-shrink-0' />
-        {label}
-      </ChipTag>
-    )
-  }
-
-  return (
-    <ChipTag
-      variant={typeAccent.variant}
-      tone={typeAccent.tone}
-      className={sharedClassName}
-      data-workflow-type-accent={type}
-    >
-      <Icon className='size-[14px] flex-shrink-0' />
-      {label}
-    </ChipTag>
-  )
-}
-
-interface BlockStateIndicatorProps {
-  label: string
-  Icon: ComponentType<{ className?: string }>
-}
-
-function BlockStateIndicator({ label, Icon }: BlockStateIndicatorProps) {
-  return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>
-        <ChipTag
-          variant='workflow'
-          tone='neutral'
-          className='size-5 flex-shrink-0 justify-center p-0'
-          aria-label={label}
-        >
-          <Icon className='size-[12px] flex-shrink-0' />
-        </ChipTag>
-      </Tooltip.Trigger>
-      <Tooltip.Content side='top'>
-        <span className='text-sm'>{label}</span>
-      </Tooltip.Content>
-    </Tooltip.Root>
-  )
-}
-
-const clampTabLength = (length: number) =>
-  Math.min(TAB_LENGTH_PX, Math.max(TAB_LENGTH_MIN_PX, Math.round(length)))
-
-/**
- * The outsets below are the anchor every edge terminates at, and they must
- * equal the height each knob is painted at — otherwise the line stops short of
- * the knob (or overshoots past it). Tailwind only scans literal class strings,
- * so the value is spelled out here and pinned to the renderer's constant by the
- * assertion above.
- */
-const getInvisibleHandleClasses = (side: 'left' | 'right' | 'top' | 'bottom') => {
-  const offsetClasses = {
-    right: '!right-[-7px]',
-    left: '!left-[-7px]',
-    top: '!top-[-7px]',
-    bottom: '!bottom-[-7px]',
-  } as const
-  return cn(
-    '!z-20 !cursor-crosshair !rounded-none !border-none !bg-transparent !opacity-0',
-    offsetClasses[side]
-  )
-}
-
-/**
- * Hit area for a connection port. It follows the painted knob instead of the
- * broader edge-hover swell, keeping nearby card content draggable. Main ports
- * use the primary knob footprint; branch ports can fill their row lane so
- * adjacent targets meet without overlapping while the painted knobs stay
- * visually compact.
- */
-const invisibleHandleSize = (
-  side: 'left' | 'right' | 'top' | 'bottom',
-  length: number,
-  minLength = 0
-) => {
-  const span = Math.max(length, minLength)
-  return side === 'top' || side === 'bottom'
-    ? { width: span, height: HANDLE_HIT_CROSS_PX }
-    : { width: HANDLE_HIT_CROSS_PX, height: span }
-}
-
-/** Error is the only persisted source that leaves from a vertical card edge. */
 export const ERROR_SOURCE_HANDLE_POSITION = Position.Bottom
 
 /** Keeps the Error hit target centered on the painted bottom-right knob. */
@@ -310,8 +144,6 @@ export interface WorkflowBlockViewProps {
   runPathStatus?: BlockRunStatus
   /** Whether execution controls are active for this block. */
   isRunning?: boolean
-  /** Whether the parent workflow is executing. Holds every block's action swell open. */
-  isWorkflowRunning?: boolean
   /** Whether this block participates in the current execution handoff. */
   isExecutionHighlighted?: boolean
   /** Block icon component and its background color. */
@@ -341,6 +173,8 @@ export interface WorkflowBlockViewProps {
   routerContextValue?: string
   /** Connection-cycle guard; reads fresh edge state on every call. */
   wouldCreateConnectionCycle: (source: string, target: string) => boolean
+  /** Whether edge hover mounts an interactive React Flow source handle. */
+  cursorConnectionsEnabled?: boolean
 
   /** Sunset badge — editor-only. `legacy` shows an amber "legacy" badge, `deprecated`
    * a red "deprecated" badge; clicking (gated on `canFixSunset`) invokes `onFixSunset`. */
@@ -374,7 +208,7 @@ export interface WorkflowBlockViewProps {
   onReactivateWebhook?: () => void
 
   /** Selects this block in the editor panel. */
-  onSelect: () => void
+  onSelect?: () => void
   /** Ref attached to the inner content container. */
   contentRef?: Ref<HTMLDivElement>
   /** Editor-only action bar; omit in read-only / preview contexts. */
@@ -438,7 +272,6 @@ export function WorkflowBlockView({
   ringStyles,
   runPathStatus,
   isRunning = false,
-  isWorkflowRunning = false,
   isExecutionHighlighted = false,
   Icon,
   iconBgColor,
@@ -450,6 +283,7 @@ export function WorkflowBlockView({
   routerRows,
   routerContextValue,
   wouldCreateConnectionCycle,
+  cursorConnectionsEnabled = true,
   sunsetStatus,
   sunsetTooltip,
   canFixSunset,
@@ -487,10 +321,11 @@ export function WorkflowBlockView({
   const updateNodeInternals = useUpdateNodeInternals()
   const reactFlowStore = useReactFlowStoreApi()
   const getConnectionNodeId = useCallback(
-    () => reactFlowStore.getState().connectionNodeId,
+    () => reactFlowStore.getState().connection.fromNode?.id ?? null,
     [reactFlowStore]
   )
-  const supportsCursorHandle = type !== 'response'
+  const supportsCursorSwell = type !== 'response'
+  const supportsCursorHandle = supportsCursorSwell && cursorConnectionsEnabled
   const cursorSourceHandleRef = useRef<HTMLDivElement>(null)
   const cursorSourceHandleKeyRef = useRef<string | null>(null)
   const [cursorSourceHandle, setCursorSourceHandle] = useState<WorkflowCursorSourceHandle | null>(
@@ -547,7 +382,7 @@ export function WorkflowBlockView({
     if (!handleElement || !nodeElement) return
 
     const state = reactFlowStore.getState()
-    const sourceBounds = state.nodeInternals.get(id)?.[internalsSymbol]?.handleBounds?.source
+    const sourceBounds = state.nodeLookup.get(id)?.internals.handleBounds?.source
     const handleId = handleElement.dataset.handleid
     const handlePosition = handleElement.dataset.handlepos as Position | undefined
     const zoom = state.transform[2]
@@ -558,6 +393,8 @@ export function WorkflowBlockView({
     const [originX, originY] = state.nodeOrigin
     const nextBounds = {
       id: handleId,
+      nodeId: id,
+      type: 'source' as const,
       position: handlePosition,
       x: (handleBounds.left - nodeBounds.left - nodeBounds.width * originX) / zoom,
       y: (handleBounds.top - nodeBounds.top - nodeBounds.height * originY) / zoom,
@@ -764,10 +601,10 @@ export function WorkflowBlockView({
       )}
       <div
         ref={contentRef}
-        role='button'
-        tabIndex={0}
+        role={onSelect ? 'button' : undefined}
+        tabIndex={onSelect ? 0 : undefined}
         onClick={onSelect}
-        onKeyDown={(event) => handleKeyboardActivation(event, onSelect)}
+        onKeyDown={onSelect ? (event) => handleKeyboardActivation(event, onSelect) : undefined}
         className={cn(
           'workflow-drag-handle relative z-[20] w-[250px] cursor-grab select-none rounded-2xl [&:active]:cursor-grabbing'
         )}
@@ -791,7 +628,7 @@ export function WorkflowBlockView({
           }
           isSelected={usesSelectedVisuals}
           height={blockHeight}
-          canStartConnection={supportsCursorHandle}
+          canStartConnection={supportsCursorSwell}
           canReceiveConnection={shouldShowDefaultHandles}
           onCursorHandleChange={supportsCursorHandle ? onCursorHandleChange : undefined}
           onActionMenuReadyChange={setActionMenuSwellReady}
@@ -802,7 +639,7 @@ export function WorkflowBlockView({
             type='source'
             position={getCursorSourceHandlePosition(cursorSourceHandle.edgeSide)}
             id={cursorSourceHandle.handleId}
-            className='!z-50 !cursor-crosshair !rounded-none !border-none !bg-transparent !opacity-0'
+            className='z-50! cursor-crosshair! rounded-none! border-none! bg-transparent! opacity-0!'
             style={{
               right: 'auto',
               bottom: 'auto',
@@ -823,7 +660,7 @@ export function WorkflowBlockView({
           />
         )}
         {isPending && (
-          <div className='-top-6 -translate-x-1/2 absolute left-1/2 z-10 transform rounded-t-md bg-amber-500 px-2 py-0.5 text-white text-xs'>
+          <div className='-top-6 -translate-x-1/2 absolute left-1/2 z-10 rounded-t-md bg-amber-500 px-2 py-0.5 text-white text-xs'>
             Next Step
           </div>
         )}
@@ -870,12 +707,12 @@ export function WorkflowBlockView({
             <OverflowSpan
               value={humanizeBlockName(name)}
               className={cn(
-                'truncate text-[17px]',
+                'text-[17px]',
                 !isEnabled && runPathStatus !== 'success' && 'text-[var(--text-muted)]'
               )}
             />
           </div>
-          <div className='relative z-10 flex flex-shrink-0 items-center gap-1'>
+          <div className='relative z-10 flex shrink-0 items-center gap-1'>
             {!isEnabled && <BlockStateIndicator label='Disabled' Icon={Ban} />}
             {isLocked && <BlockStateIndicator label='Locked' Icon={Lock} />}
             <WorkflowTypeTag
@@ -1061,7 +898,7 @@ export function WorkflowBlockView({
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               >
-                <span className='text-[var(--text-muted)] text-caption'>On error</span>
+                <span className='text-[var(--text-secondary)] text-caption'>On error</span>
                 <Switch
                   checked={errorOutputEnabled}
                   onCheckedChange={(next) => onToggleErrorOutput?.(next)}
@@ -1173,7 +1010,7 @@ export function WorkflowBlockView({
             type='source'
             position={ERROR_SOURCE_HANDLE_POSITION}
             id='error'
-            className='!z-20 !cursor-crosshair !rounded-none !border-none !bg-transparent !opacity-0'
+            className='z-20! cursor-crosshair! rounded-none! border-none! bg-transparent! opacity-0!'
             style={getErrorSourceHandleStyle()}
             data-nodeid={id}
             data-handleid='error'

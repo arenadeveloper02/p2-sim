@@ -3,10 +3,20 @@ export interface FileParseMetadata {
   pageCount?: number
   /** True when a parser limit stopped extraction before the input was exhausted. */
   truncated?: boolean
+  /**
+   * True when no real extraction happened and `content` is best-effort scraped
+   * bytes or a placeholder message rather than the document's text.
+   *
+   * Set by extractors that can only return best-effort output, such as a
+   * spreadsheet whose cells are all blank. Legacy `.doc` and `.ppt` inputs used
+   * to fall through to a byte scrape reported this way; they now raise typed
+   * errors instead. An automated caller must not index degraded content, and
+   * every automated consumer checks this flag and skips the file.
+   */
+  degraded?: boolean
   extractionMethod?: string
   warning?: string
   messages?: unknown[]
-  html?: string
   type?: string
   headers?: string[]
   totalRows?: number
@@ -21,9 +31,25 @@ export interface FileParseResult {
   metadata?: FileParseMetadata
 }
 
+export interface FileParseOptions {
+  signal?: AbortSignal
+  /** Indexing callers require complete extraction; preview row limits must not discard content. */
+  contentMode?: 'preview' | 'complete'
+  /**
+   * CSV/XLSX byte budget when contentMode is 'complete' (default 25 MiB).
+   * Exceeding it throws complexity_limit instead of returning a truncated prefix.
+   * Preview mode retains its own limits; other formats use their parser-specific budgets.
+   */
+  maxTextBytes?: number
+  /** Preserve textual markup in a canonical .txt artifact instead of interpreting it as HTML or RTF. */
+  textMode?: 'literal'
+  /** Complete PDF extraction rejects safety limits instead of returning preview text. */
+  pdfTextMode?: 'preview' | 'complete'
+}
+
 export interface FileParser {
-  parseFile(filePath: string): Promise<FileParseResult>
-  parseBuffer?(buffer: Buffer): Promise<FileParseResult>
+  parseFile(filePath: string, options?: FileParseOptions): Promise<FileParseResult>
+  parseBuffer?(buffer: Buffer, options?: FileParseOptions): Promise<FileParseResult>
 }
 
 export type SupportedFileType =
@@ -31,11 +57,20 @@ export type SupportedFileType =
   | 'csv'
   | 'doc'
   | 'docx'
+  | 'docm'
+  | 'dotx'
   | 'txt'
   | 'md'
   | 'xlsx'
   | 'xls'
+  | 'xlsm'
+  | 'xlsb'
+  | 'xltx'
   | 'html'
   | 'htm'
   | 'pptx'
-  | 'ppt'
+  | 'pptm'
+  | 'potx'
+  | 'odt'
+  | 'ods'
+  | 'odp'

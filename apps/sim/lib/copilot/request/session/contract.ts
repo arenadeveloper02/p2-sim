@@ -47,7 +47,7 @@ export interface SyntheticFilePreviewTarget {
 export interface SyntheticFilePreviewStartPayload {
   previewPhase: typeof FILE_PREVIEW_PHASE.start
   toolCallId: string
-  toolName: 'workspace_file'
+  toolName: 'prepare_file_edit'
 }
 
 export interface SyntheticFilePreviewTargetPayload {
@@ -56,14 +56,14 @@ export interface SyntheticFilePreviewTargetPayload {
   target: SyntheticFilePreviewTarget
   title?: string
   toolCallId: string
-  toolName: 'workspace_file'
+  toolName: 'prepare_file_edit'
 }
 
 export interface SyntheticFilePreviewEditMetaPayload {
   edit: JsonRecord
   previewPhase: typeof FILE_PREVIEW_PHASE.editMeta
   toolCallId: string
-  toolName: 'workspace_file'
+  toolName: 'prepare_file_edit'
 }
 
 export interface SyntheticFilePreviewContentPayload {
@@ -77,7 +77,7 @@ export interface SyntheticFilePreviewContentPayload {
   previewVersion: number
   targetKind?: string
   toolCallId: string
-  toolName: 'workspace_file'
+  toolName: 'prepare_file_edit'
 }
 
 export interface SyntheticFilePreviewCompletePayload {
@@ -86,7 +86,7 @@ export interface SyntheticFilePreviewCompletePayload {
   previewPhase: typeof FILE_PREVIEW_PHASE.complete
   previewVersion?: number
   toolCallId: string
-  toolName: 'workspace_file'
+  toolName: 'prepare_file_edit'
 }
 
 export type SyntheticFilePreviewPayload =
@@ -297,7 +297,12 @@ function isValidResourcePayload(payload: JsonRecord): boolean {
   // Dropping a blank id here is the only guard covering both branches
   // downstream: the handler adds a suppressed file resource to the tab strip
   // directly, bypassing the checks in `addResource`.
-  return hasAddressableId(resource.id) && typeof resource.type === 'string'
+  return (
+    hasAddressableId(resource.id) &&
+    typeof resource.type === 'string' &&
+    (resource.viewId === undefined || typeof resource.viewId === 'string') &&
+    (resource.clearViewId === undefined || typeof resource.clearViewId === 'boolean')
+  )
 }
 
 function isValidRunPayload(payload: JsonRecord): boolean {
@@ -378,7 +383,7 @@ function isSyntheticFilePreviewPayload(value: unknown): value is SyntheticFilePr
     return false
   }
 
-  if (typeof value.toolCallId !== 'string' || value.toolName !== 'workspace_file') {
+  if (typeof value.toolCallId !== 'string' || value.toolName !== 'prepare_file_edit') {
     return false
   }
 

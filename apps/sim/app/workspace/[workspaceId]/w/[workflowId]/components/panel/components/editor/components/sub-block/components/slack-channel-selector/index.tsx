@@ -1,8 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { cn } from '@sim/emcn'
-import { comboboxVariants } from '@sim/emcn/components/combobox/combobox'
+import { cn, comboboxVariants } from '@sim/emcn'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'

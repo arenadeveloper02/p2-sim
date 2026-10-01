@@ -5,6 +5,7 @@
 import {
   dbChainMock,
   dbChainMockFns,
+  hasMockCondition,
   queueTableRows,
   resetDbChainMock,
   schemaMock,
@@ -14,6 +15,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockBatchDeleteByWorkspaceAndTimestamp,
   mockChunkedBatchDelete,
+  mockScopedChunkedBatchDelete,
   mockDecrementStorageUsageForBillingContextInTx,
   mockDeleteFileMetadata,
   mockDeleteFiles,
@@ -33,6 +35,7 @@ const {
   mockAllocateUniqueWorkspaceFileName: vi.fn(async (_ws: string, name: string) => name),
   mockBatchDeleteByWorkspaceAndTimestamp: vi.fn(async () => ({ deleted: 0, failed: 0 })),
   mockChunkedBatchDelete: vi.fn(async () => ({ deleted: 0, failed: 0 })),
+  mockScopedChunkedBatchDelete: vi.fn(async () => ({ deleted: 0, failed: 0 })),
   mockDecrementStorageUsageForBillingContextInTx: vi.fn(async () => undefined),
   mockDeleteFileMetadata: vi.fn(async () => true),
   mockDeleteFiles: vi.fn(async () => ({ deleted: 0, failed: [] as Array<{ key: string }> })),
@@ -45,12 +48,20 @@ const {
   mockSelectRowsByIdChunks: vi.fn(async () => [] as unknown[]),
 }))
 
+vi.mock('@/lib/billing/cleanup-dispatcher', () => ({ runCleanupWithLimits: vi.fn() }))
+
 vi.mock('@/lib/cleanup/batch-delete', () => ({
+  consumeRowBudget: vi.fn(),
   batchDeleteByWorkspaceAndTimestamp: mockBatchDeleteByWorkspaceAndTimestamp,
   chunkedBatchDelete: mockChunkedBatchDelete,
+  chunkedBatchDeleteByScope: mockScopedChunkedBatchDelete,
   DEFAULT_DELETE_CHUNK_SIZE: 1000,
   deleteRowsById: mockDeleteRowsById,
   selectRowsByIdChunks: mockSelectRowsByIdChunks,
+}))
+
+vi.mock('@/lib/cleanup/queue', () => ({
+  retentionCleanupQueue: { name: 'retention-cleanup', concurrencyLimit: 1 },
 }))
 
 vi.mock('@/lib/cleanup/chat-cleanup', () => ({ prepareChatCleanup: mockPrepareChatCleanup }))
@@ -121,7 +132,7 @@ describe('cleanup soft deletes', () => {
           key: 'workspace/ws-1/file-failed',
           workspaceId: 'ws-1',
           context: 'workspace',
-          size: 11,
+          sizeBytes: 11,
         },
       ])
     mockDeleteFiles.mockResolvedValueOnce({
@@ -148,18 +159,18 @@ describe('cleanup soft deletes', () => {
           key: 'workspace/ws-1/file-deleted',
           workspaceId: 'ws-1',
           context: 'workspace',
-          size: 7,
+          sizeBytes: 7,
         },
         {
           id: 'file-restored',
           key: 'workspace/ws-1/file-restored',
           workspaceId: 'ws-1',
           context: 'workspace',
-          size: 13,
+          sizeBytes: 13,
         },
       ])
     mockDeleteFiles.mockResolvedValueOnce({ deleted: 2, failed: [] })
-    dbChainMockFns.returning.mockResolvedValueOnce([{ id: 'file-deleted', size: 7 }])
+    dbChainMockFns.returning.mockResolvedValueOnce([{ id: 'file-deleted', sizeBytes: 7 }])
 
     await runCleanupSoftDeletes(basePayload)
 
@@ -184,7 +195,7 @@ describe('cleanup soft deletes', () => {
           key: 'mothership/chat-file',
           workspaceId: 'ws-1',
           context: 'mothership',
-          size: 17,
+          sizeBytes: 17,
         },
       ])
     mockDeleteFiles.mockResolvedValueOnce({ deleted: 1, failed: [] })
@@ -196,6 +207,26 @@ describe('cleanup soft deletes', () => {
     expect(dbChainMockFns.delete).toHaveBeenCalled()
     expect(mockResolveStorageBillingContext).not.toHaveBeenCalled()
     expect(mockDecrementStorageUsageForBillingContextInTx).not.toHaveBeenCalled()
+  })
+
+  it('fails before deleting storage when canonical size metadata is missing', async () => {
+    mockSelectRowsByIdChunks
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'file-missing-size',
+          key: 'workspace/ws-1/file-missing-size',
+          workspaceId: 'ws-1',
+          context: 'workspace',
+          sizeBytes: null,
+        },
+      ])
+
+    await expect(runCleanupSoftDeletes(basePayload)).rejects.toThrow(
+      'Workspace file is missing canonical size_bytes metadata'
+    )
+    expect(mockDeleteFiles).not.toHaveBeenCalled()
   })
 
   it('hard-deletes retained documents before deleting an expired knowledge base', async () => {
@@ -519,5 +550,128 @@ describe('folder cleanup target', () => {
       expect(dbChainMockFns.select).not.toHaveBeenCalled()
       expect(dbChainMockFns.update).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('organization-owned Search retention cleanup', () => {
+  const organizationPayload = {
+    plan: 'enterprise' as const,
+    label: 'enterprise/organization/org-1',
+    workspaceIds: [],
+    organizationIds: ['org-1'],
+    retentionHours: 72,
+  }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+    mockIsUsingCloudStorage.mockReturnValue(true)
+    mockDeleteFiles.mockResolvedValue({ deleted: 0, failed: [] })
+    mockSelectRowsByIdChunks.mockImplementation(async (ids, query) =>
+      ids.length ? query(ids, 500) : []
+    )
+    mockScopedChunkedBatchDelete.mockResolvedValue({ deleted: 0, failed: 0 })
+  })
+
+  it('selects only organization-owned cache, private chats, and knowledge bases', async () => {
+    queueTableRows(schemaMock.workspaceFiles, [
+      {
+        id: 'org-file',
+        key: 'knowledge-base/org-key',
+        workspaceId: null,
+        context: 'knowledge-base',
+        sizeBytes: 10,
+      },
+    ])
+    queueTableRows(schemaMock.workspaceFiles, [])
+    queueTableRows(schemaMock.copilotChats, [{ id: 'org-chat' }])
+    await runCleanupSoftDeletes(organizationPayload)
+    expect(mockDeleteFiles).toHaveBeenCalledWith(['knowledge-base/org-key'], 'knowledge-base')
+    expect(mockPrepareChatCleanup).toHaveBeenCalledWith(['org-chat'], organizationPayload.label)
+    expect(mockResolveStorageBillingContext).not.toHaveBeenCalled()
+    expect(mockDecrementStorageUsageForBillingContextInTx).not.toHaveBeenCalled()
+    expect(mockBatchDeleteByWorkspaceAndTimestamp).not.toHaveBeenCalled()
+    expect(mockChunkedBatchDelete).not.toHaveBeenCalled()
+    expect(mockScopedChunkedBatchDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeIds: ['org-1'] })
+    )
+    for (const table of [schemaMock.workspaceFiles, schemaMock.copilotChats]) {
+      expect(
+        dbChainMockFns.where.mock.calls.some(
+          ([predicate]) =>
+            hasMockCondition(
+              predicate,
+              (item) =>
+                item.type === 'inArray' &&
+                item.column === table.organizationId &&
+                item.values.includes('org-1')
+            ) &&
+            hasMockCondition(
+              predicate,
+              (item) => item.type === 'isNull' && item.column === table.workspaceId
+            )
+        )
+      ).toBe(true)
+    }
+    const options = mockScopedChunkedBatchDelete.mock.calls[0][0] as {
+      selectChunk: (ids: string[], limit: number) => Promise<unknown>
+      deleteFilter: unknown
+    }
+    await options.selectChunk(['org-1'], 100)
+    for (const predicate of [dbChainMockFns.where.mock.calls.at(-1)?.[0], options.deleteFilter]) {
+      expect(
+        hasMockCondition(
+          predicate,
+          (item) =>
+            item.type === 'inArray' &&
+            item.column === schemaMock.knowledgeBase.organizationId &&
+            item.values.includes('org-1')
+        )
+      ).toBe(true)
+      expect(
+        hasMockCondition(
+          predicate,
+          (item) => item.type === 'isNull' && item.column === schemaMock.knowledgeBase.workspaceId
+        )
+      ).toBe(true)
+    }
+  })
+
+  it('keeps failed organization cache objects bound for the next cleanup attempt', async () => {
+    queueTableRows(schemaMock.workspaceFiles, [
+      {
+        id: 'org-file',
+        key: 'knowledge-base/org-key',
+        workspaceId: null,
+        context: 'knowledge-base',
+        sizeBytes: 10,
+      },
+    ])
+    queueTableRows(schemaMock.workspaceFiles, [])
+    mockDeleteFiles.mockResolvedValue({
+      deleted: 0,
+      failed: [{ key: 'knowledge-base/org-key', error: 'storage unavailable' }],
+    })
+    await runCleanupSoftDeletes(organizationPayload)
+    expect(
+      dbChainMockFns.delete.mock.calls.some(([table]) => table === schemaMock.workspaceFiles)
+    ).toBe(false)
+  })
+
+  it('sweeps orphaned organization cache bindings without a workspace payer', async () => {
+    queueTableRows(schemaMock.workspaceFiles, [])
+    queueTableRows(schemaMock.workspaceFiles, [{ key: 'knowledge-base/orphan' }])
+    queueTableRows(schemaMock.workspaceFiles, [])
+    await runCleanupSoftDeletes(organizationPayload)
+    expect(mockDeleteFiles).toHaveBeenCalledWith(['knowledge-base/orphan'], 'knowledge-base')
+    expect(mockDeleteFileMetadata).toHaveBeenCalledWith('knowledge-base/orphan')
+    expect(mockResolveStorageBillingContext).not.toHaveBeenCalled()
+  })
+
+  it('rejects an ambiguous batch before reading or deleting resources', async () => {
+    await expect(
+      runCleanupSoftDeletes({ ...organizationPayload, workspaceIds: ['ws-1'] })
+    ).rejects.toThrow('not both')
+    expect(dbChainMockFns.select).not.toHaveBeenCalled()
+    expect(mockDeleteFiles).not.toHaveBeenCalled()
   })
 })

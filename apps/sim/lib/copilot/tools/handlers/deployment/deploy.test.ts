@@ -64,7 +64,6 @@ vi.mock('@/app/api/chat/utils', () => ({
 }))
 
 vi.mock('@/ee/access-control/utils/permission-check', () => ({
-  ChatDeployAuthNotAllowedError: class ChatDeployAuthNotAllowedError extends Error {},
   validateChatDeployAuth: vi.fn(),
 }))
 
@@ -134,7 +133,7 @@ describe('deployment handlers', () => {
       expect.any(Object),
       expect.objectContaining({ operation: expect.objectContaining({ id: 'workflows.deploy' }) }),
       expect.objectContaining({
-        idempotencyKey: 'copilot:execution-1:operation:deploy_api',
+        idempotencyKey: 'copilot:execution-1:operation:deploy_as_api',
       })
     )
   })
@@ -170,7 +169,7 @@ describe('deployment handlers', () => {
       expect.any(Object),
       expect.objectContaining({ operation: expect.objectContaining({ id: 'workflows.deploy' }) }),
       expect.objectContaining({
-        idempotencyKey: 'copilot:execution-1:operation:deploy_api',
+        idempotencyKey: 'copilot:execution-1:operation:deploy_as_api',
       })
     )
   })
