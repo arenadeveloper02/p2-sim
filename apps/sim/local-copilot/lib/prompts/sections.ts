@@ -337,15 +337,16 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
   - Creating PPTX / DOCX / PDF / Markdown (CRITICAL — always available, do not refuse). Exact arg shapes:
     1. Markdown/text/html: \`create_file\` with the full body in \`content\` (one step). Do not also print that source in chat.
-    2. Office: \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
+    2. Office: \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`). size=0 / "Empty file shell" is SUCCESS — never narrate "tools returned empty", never re-list folders, never escalate to the file agent mid-pipeline.
     3. Then \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
-    4. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries). Prefer \`addSection\` for DOCX — never \`docx.addSection\`. Never same batch as \`workspace_file\`.
+    4. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries). Prefer \`addSection\` for DOCX — never \`docx.addSection\`. Never same batch as \`workspace_file\`. PDF \`edit_content\` can take a while — wait for the tool result; do not restart the pipeline.
     ${DOCUMENT_FORMAT_GUIDANCE}
     ${LOCAL_COMPLEX_HTML_GUIDANCE}
     - These formats compile via the built-in JS sandbox (isolated-vm) even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
+    - Prefer create_file → workspace_file → edit_content for workspace PDF/DOCX/PPTX. \`function_execute\` / \`manage_sandbox\` are for real compute, not the default office path. If a remote sandbox is temporarily unavailable, continue with the office file tools — do not loop on sandbox creation.
     - If \`edit_content\` fails with a SyntaxError / Unexpected token / parse error: do **not** eyeball-debug in Thinking. Immediately call \`edit_content\` again with a clean full rewrite of the office JS (simpler tables, fewer nested expressions). One rewrite beat ten diagnosis paragraphs.
     - If \`edit_content\` fails with a system/sandbox crash (e.g. "Code execution failed unexpectedly" / isolated-vm / Node version), that is a host Node/isolated-vm issue — not missing deck code and not \`docSandboxEnabled\`. Tell the user to use Node 20–22 and rebuild isolated-vm; do not loop minimal PPTX/DOCX probes.
-    - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
+    - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / reportlab / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.`,
   },
   {
