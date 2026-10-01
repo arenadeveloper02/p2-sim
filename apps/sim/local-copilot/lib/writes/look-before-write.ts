@@ -3,6 +3,27 @@ import { hasToolId } from '@/tools/tool-ids'
 
 const BOOTSTRAP_BLOCK_TYPES = new Set(['start_trigger', 'starter', 'start'])
 
+/**
+ * Types that belong on an Agent's `inputs.tools` array — not as separate canvas
+ * blocks — when the user asks to "add tools to the agent". Adding them via
+ * edit_workflow `add` is the failure mode that leaves Image/Chart/Exa off the
+ * agent and dumps orphan blocks on the canvas.
+ */
+export const AGENT_TOOLS_NOT_CANVAS_ADD_TYPES = new Set([
+  'image_generator',
+  'image_generator_v2',
+  'chart_generator',
+  'exa',
+])
+
+export const AGENT_TOOLS_NOT_CANVAS_ADD_ERROR =
+  'Do not add image_generator_v2 / chart_generator / exa as canvas blocks. ' +
+  'Edit the existing Agent block and set params.inputs.tools to an array that MERGES these entries with any existing tools, e.g. ' +
+  '{ type: "image_generator_v2", title: "Image Generator", toolId: "image_generate", usageControl: "auto", params: { inputImage: "<start.files>" } }, ' +
+  '{ type: "chart_generator", title: "Chart Generator", operation: "generate", toolId: "chart_generate", usageControl: "auto" }, ' +
+  '{ type: "exa", title: "Exa Search", operation: "exa_search", toolId: "exa_search", usageControl: "auto" }. ' +
+  'Also update the Agent messages/system prompt so the model knows when to call each tool based on the user question.'
+
 export interface LookBeforeWriteOk {
   ok: true
 }
@@ -33,12 +54,40 @@ function blockTypeFromOperation(operation: Record<string, unknown>): string | un
 }
 
 /**
+ * Rejects canvas `add` for types that must be attached on Agent.tools instead.
+ */
+export function assertAgentToolsNotAddedAsCanvasBlocks(params: {
+  operations: unknown
+}): LookBeforeWriteOk | LookBeforeWriteDenied {
+  if (!Array.isArray(params.operations)) return { ok: true }
+  const offenders = new Set<string>()
+  for (const item of params.operations) {
+    const operation = asRecord(item)
+    if (operationType(operation) !== 'add') continue
+    const blockType = blockTypeFromOperation(operation)?.toLowerCase()
+    if (!blockType) continue
+    if (AGENT_TOOLS_NOT_CANVAS_ADD_TYPES.has(blockType)) offenders.add(blockType)
+  }
+  if (offenders.size === 0) return { ok: true }
+  return {
+    ok: false,
+    error: `${AGENT_TOOLS_NOT_CANVAS_ADD_ERROR} Rejected canvas add for: ${[...offenders].join(', ')}.`,
+  }
+}
+
+/**
  * Requires get_blocks_metadata for block types being added (except bootstrap types).
+ * Also rejects Image/Chart/Exa canvas adds that belong on Agent.tools.
  */
 export function assertEditWorkflowLookBeforeWrite(params: {
   operations: unknown
   blocksMetadataByType?: Map<string, unknown>
 }): LookBeforeWriteOk | LookBeforeWriteDenied {
+  const agentToolsGuard = assertAgentToolsNotAddedAsCanvasBlocks({
+    operations: params.operations,
+  })
+  if (!agentToolsGuard.ok) return agentToolsGuard
+
   if (!Array.isArray(params.operations)) return { ok: true }
   const missing = new Set<string>()
   for (const item of params.operations) {

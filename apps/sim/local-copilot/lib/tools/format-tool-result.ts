@@ -672,7 +672,7 @@ export function formatToolResultForLlm(
       followUpHint:
         metadataKeys.length === 0
           ? 'No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent\'s tools array — do not add them as canvas blocks.'
-          : 'If you just created a workflow, call edit_workflow now to add blocks. To attach tools to an existing Agent, edit that Agent\'s tools array (type image_generator_v2 / chart_generator / exa, …) — do not add those as canvas blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+          : 'If you just created a workflow, call edit_workflow now to add blocks. To attach Image Generator / Chart Generator / Exa to an existing Agent, edit that Agent\'s tools array (type image_generator_v2 / chart_generator / exa) and update its messages/prompt so it chooses those tools from the user question — do not add those as canvas blocks and do not add a Function block as a substitute. Do not load_copilot_artifact unless a specific field id is missing from this result.',
     }
   } else if (toolName === 'edit_content') {
     const record = asRecord(result)
