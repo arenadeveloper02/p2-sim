@@ -6,6 +6,7 @@
  */
 
 import { account, user } from '@sim/db/schema'
+import { getIntegrationTypesForOAuthServiceId } from '@sim/deployment-config/integration-availability'
 import {
   dbChainMockFns,
   environmentUtilsMockFns,
@@ -25,6 +26,7 @@ const {
   getUserPermissionConfigMock,
   getAccessibleOAuthCredentialsMock,
   checkWorkspaceAccessMock,
+  verifyWorkflowAccessMock,
 } = vi.hoisted(() => ({
   getAllOAuthServicesMock: vi.fn(),
   decodeJwtMock: vi.fn(),
@@ -33,6 +35,7 @@ const {
   getUserPermissionConfigMock: vi.fn(),
   getAccessibleOAuthCredentialsMock: vi.fn(),
   checkWorkspaceAccessMock: vi.fn(),
+  verifyWorkflowAccessMock: vi.fn(),
 }))
 
 const getPersonalAndWorkspaceEnvMock = environmentUtilsMockFns.mockGetPersonalAndWorkspaceEnv
@@ -77,7 +80,7 @@ vi.mock('@/lib/core/config/env-flags', () => ({
   getAllowedIntegrationsFromEnv: vi.fn(() => null),
 }))
 
-vi.mock('@/ee/access-control/utils/permission-check', () => ({
+vi.mock('@/lib/permission-groups/resolve.server', () => ({
   getUserPermissionConfig: getUserPermissionConfigMock,
 }))
 
@@ -91,6 +94,11 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
 
 vi.mock('jose', () => ({
   decodeJwt: decodeJwtMock,
+}))
+
+vi.mock('@/lib/copilot/auth/permissions', () => ({
+  verifyWorkflowAccess: verifyWorkflowAccessMock,
+  createPermissionError: (action: string) => `Permission denied: ${action}`,
 }))
 
 import { getCredentialsServerTool } from './get-credentials'
@@ -179,8 +187,21 @@ describe('getCredentialsServerTool', () => {
     checkWorkspaceAccessMock.mockResolvedValue({ canAdmin: false })
     createIntegrationCredentialVisibilityMock.mockImplementation(
       ({ allowedIntegrationTypes, oauthServices }) => {
-        const isAllowed = (service: { serviceId: string }) =>
-          allowedIntegrationTypes === null || allowedIntegrationTypes.has(service.serviceId)
+        /**
+         * Mirrors `isOAuthServiceAllowedByIntegrationTypes`: the gate holds
+         * *block types*, so the service is mapped through the deployment
+         * catalog rather than compared to its own id. A service the catalog
+         * does not name maps to no block type and stays visible, as it does in
+         * production.
+         */
+        const isAllowed = (service: { serviceId: string }) => {
+          if (allowedIntegrationTypes === null) return true
+          const blockTypes = getIntegrationTypesForOAuthServiceId(service.serviceId)
+          return (
+            blockTypes.length === 0 ||
+            blockTypes.some((blockType) => allowedIntegrationTypes.has(blockType))
+          )
+        }
         const isOAuthServiceVisible = (service: { serviceId: string; providerId: string }) =>
           isAllowed(service) && isOAuthServiceDeploymentAvailableMock(service.providerId)
         return {
@@ -383,6 +404,30 @@ describe('getCredentialsServerTool', () => {
     )
 
     expect(result.oauth.connected.credentials).toEqual([])
+  })
+
+  it('resolves the workspace from a workflow in the execution workspace', async () => {
+    verifyWorkflowAccessMock.mockResolvedValue({ hasAccess: true, workspaceId: 'workspace-1' })
+    getUserPermissionConfigMock.mockResolvedValue({ allowedIntegrations: null })
+
+    await getCredentialsServerTool.execute(
+      { workflowId: 'wf-1' },
+      { userId: 'user-1', workspaceId: 'workspace-1' }
+    )
+
+    expect(verifyWorkflowAccessMock).toHaveBeenCalledWith('user-1', 'wf-1')
+    expect(getUserPermissionConfigMock).toHaveBeenCalledWith('user-1', 'workspace-1')
+  })
+
+  it('rejects a workflowId whose workspace differs from the execution workspace', async () => {
+    verifyWorkflowAccessMock.mockResolvedValue({ hasAccess: true, workspaceId: 'workspace-other' })
+
+    await expect(
+      getCredentialsServerTool.execute(
+        { workflowId: 'wf-other' },
+        { userId: 'user-1', workspaceId: 'workspace-1' }
+      )
+    ).rejects.toThrow('Workspace ID does not match the Copilot execution workspace')
   })
 
   it('rejects unauthenticated callers without touching the database', async () => {

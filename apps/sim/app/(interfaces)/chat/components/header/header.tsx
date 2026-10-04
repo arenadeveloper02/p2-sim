@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { GithubIcon } from '@/components/icons'
-import { SimWordmark } from '@/app/(landing)/components/navbar/components'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { useBrandConfig } from '@/ee/whitelabeling'
 
 interface ChatHeaderProps {
@@ -95,16 +95,10 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
             <GithubIcon className='size-[16px]' aria-hidden='true' />
             <span aria-live='polite'>{starCount}</span>
           </a>
-          {/* Only show Sim logo if no custom branding is set */}
+          {/* Only show Arena logo if no custom branding is set */}
 
-          <Link
-            href='https://sim.ai'
-            target='_blank'
-            rel='noopener noreferrer'
-            aria-label='Sim home'
-            className='flex items-center'
-          >
-            <SimWordmark />
+          <Link href='/' aria-label='Arena home' className='flex items-center'>
+            <Image src={arenaLogo} alt='Arena' width={30} height={30} />
           </Link>
         </div>
       )}

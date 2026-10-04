@@ -9,17 +9,13 @@ import {
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import {
-  applyModelChunkToThinkingStatus,
-  ThinkingDeltaBatcher,
-  ThinkingLiveStatusAccumulator,
-} from '@/local-copilot/lib/agent/thinking-live-status'
-import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
-import {
   MAX_DEBUG_EXPLANATION_CONTINUATION_ROUNDS,
   MAX_FILE_EDIT_CONTINUATION_ROUNDS,
   MAX_FORCED_FOLLOW_UP_ROUNDS,
+  MAX_INCOMPLETE_WORKFLOW_POPULATE_CONTINUATION_ROUNDS,
   MAX_INTENT_CONTINUATION_ROUNDS,
   MAX_POPULATE_EDITS,
+  MAX_POPULATE_EDITS_HARD_LOCK,
   MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS,
   MAX_WORKFLOW_BUILD_CONTINUATION_ROUNDS,
 } from '@/local-copilot/lib/agent/limits'
@@ -42,6 +38,12 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
+import {
+  applyModelChunkToThinkingStatus,
+  ThinkingDeltaBatcher,
+  ThinkingLiveStatusAccumulator,
+} from '@/local-copilot/lib/agent/thinking-live-status'
 import {
   buildStagnationSystemMessage,
   createToolStagnationTracker,
@@ -60,7 +62,6 @@ import {
   assertLocalCopilotEnabled,
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
-  resolveFileTurnThinkingLevel,
 } from '@/local-copilot/lib/config'
 import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
@@ -158,17 +159,18 @@ import {
   buildDebugInspectionChatAppendix,
   buildFileInspectionChatAppendix,
   buildToolFailureEvidenceLines,
+  buildWorkflowBuildChatAppendix,
   buildWorkflowRunChatAppendix,
   isWorkflowRunToolName,
   shouldAppendWorkflowRunChatResult,
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
   turnHasDebugInspectionTools,
   turnHasFileInspectionTools,
   turnHasFileMutationTools,
   turnHasWorkflowDiscoveryTools,
   turnHasWorkflowMutationTools,
-  type ToolTurnRecord,
 } from '@/local-copilot/lib/synthesize-assistant-summary'
 import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
 import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
@@ -177,6 +179,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
+  coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
@@ -193,10 +196,13 @@ import {
   buildBlocksMetadataReuseSystemMessage,
   buildDebugExplanationContinuationMessage,
   buildFileEditContinuationMessage,
+  buildIncompleteWorkflowPopulateContinuationMessage,
   buildResearchSearchContinuationMessage,
   buildUnfulfilledIntentContinuationMessage,
+  buildUnresolvedFollowUpClosingMessage,
   buildWorkflowBuildCompleteSystemMessage,
   buildWorkflowBuildContinuationMessage,
+  buildWorkflowBuildSoftCompleteSystemMessage,
   createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
   emptyAssistantTurnFallback,
@@ -208,8 +214,10 @@ import {
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
   shouldEmitEmptyAssistantFallback,
+  shouldEnsureWorkflowBuildClosingMessage,
   shouldForceDebugExplanationContinuation,
   shouldForceFileEditContinuation,
+  shouldForceIncompleteWorkflowPopulateContinuation,
   shouldForceResearchSearchContinuation,
   shouldForceWorkflowBuildContinuation,
   shouldSynthesizeAssistantSummary,
@@ -560,12 +568,9 @@ export async function* runLocalCopilotAgent(
     : null
 
   const intent = classifyLocalCopilotIntent(params.message)
-  // File/office turns: keep thinking on but cap medium/high → low so Claude
-  // does not spend minutes ruminating on syntax instead of rewriting edit_content.
-  const turnThinkingLevel =
-    intent.primary === 'file' || intent.secondary.includes('file')
-      ? resolveFileTurnThinkingLevel(config.thinkingLevel)
-      : config.thinkingLevel
+  // Full-catalog turns expose file tools every time; keep configured thinking
+  // (do not regex-classify "file turns" to cap thinking).
+  const turnThinkingLevel = config.thinkingLevel
   const specialistTools = getParentSpecialistToolDefinitions()
   const hybridTools = resolveHybridParentTools({
     allTools,
@@ -829,9 +834,34 @@ export async function* runLocalCopilotAgent(
 
     const { findings, results } = parallelNext.value
     if (findings.trim()) {
+      const wroteFiles = results.some((result) =>
+        (result.mutationOutcomes ?? []).some(
+          (outcome) =>
+            outcome.success &&
+            (outcome.toolName === 'create_file' ||
+              outcome.toolName === 'edit_content' ||
+              outcome.toolName === 'workspace_file')
+        )
+      )
+      const wroteWorkflows = results.some((result) =>
+        (result.mutationOutcomes ?? []).some(
+          (outcome) => outcome.success && outcome.toolName === 'create_workflow'
+        )
+      )
+      const writeGuard = [
+        wroteWorkflows
+          ? 'Do NOT call create_workflow again unless a specialist failed.'
+          : null,
+        wroteFiles
+          ? 'Do NOT call create_file again unless a specialist failed.'
+          : 'Research/lookup findings above do not create workspace files — if the user still needs documents or a seeded knowledge base, call create_file (then knowledge_base add_file as needed).',
+      ]
+        .filter(Boolean)
+        .join(' ')
+
       messages.splice(specialistHintInsertAt, 0, {
         role: 'system',
-        content: `Parallel specialist findings — these writes already happened. Do NOT call create_workflow or create_file again unless a specialist failed. Synthesize the outcome for the user using the ids below:\n${findings}`,
+        content: `Parallel specialist findings. ${writeGuard} Synthesize the outcome for the user using the ids below:\n${findings}`,
       })
     }
     logger.info('Arena Copilot parallel subagents injected', {
@@ -860,9 +890,7 @@ export async function* runLocalCopilotAgent(
         getToolExecutor,
         budget: specialistBudget,
         ...(params.runId ? { runId: params.runId } : {}),
-        ...(passDomain === 'file' && turnThinkingLevel
-          ? { thinkingLevel: turnThinkingLevel }
-          : {}),
+        ...(passDomain === 'file' && turnThinkingLevel ? { thinkingLevel: turnThinkingLevel } : {}),
       })
 
       let passNext = await pass.next()
@@ -897,6 +925,8 @@ export async function* runLocalCopilotAgent(
   let streamedCreateProgress = false
   let streamedEditProgress = false
   let workflowBuildCompleteNudgeSent = false
+  /** Soft post-build nudge fired; tools stay until settle or hard lock. */
+  let postBuildSoftNudgeSent = false
   /** Successful populate edits after create_workflow this turn. */
   let successfulPopulateEdits = 0
   /** Only gate tools after create→populate this turn — not after ordinary prompt edits. */
@@ -920,6 +950,7 @@ export async function* runLocalCopilotAgent(
   let forcedIntentContinuations = 0
   let forcedDebugExplanations = 0
   let forcedWorkflowBuildContinuations = 0
+  let forcedIncompletePopulateContinuations = 0
   let forcedFileEditContinuations = 0
   let forcedResearchSearchContinuations = 0
   let turnHasLiveWebSearch = false
@@ -928,8 +959,7 @@ export async function* runLocalCopilotAgent(
   const stagnationTracker = createToolStagnationTracker()
   let stagnationStopMessage: string | null = null
 
-  const needsLiveSearch =
-    intent.primary === 'research' || intent.secondary.includes('research')
+  const needsLiveSearch = intent.primary === 'research' || intent.secondary.includes('research')
 
   for (let round = 0; round < maxToolRounds; round++) {
     if (stagnationStopMessage) break
@@ -1397,6 +1427,37 @@ export async function* runLocalCopilotAgent(
         continue
       }
 
+      const canForceIncompletePopulate = shouldForceIncompleteWorkflowPopulateContinuation({
+        postBuildToolMode,
+        createdWorkflowThisTurn,
+        successfulPopulateEdits,
+        pendingFollowUpCount: pendingFollowUps.length,
+        forcedIncompletePopulateContinuations,
+        maxForcedIncompletePopulateContinuations:
+          MAX_INCOMPLETE_WORKFLOW_POPULATE_CONTINUATION_ROUNDS,
+        round,
+        maxToolRounds,
+      })
+
+      if (canForceIncompletePopulate) {
+        forcedIncompletePopulateContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildIncompleteWorkflowPopulateContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing incomplete-workflow-populate continuation', {
+          round,
+          forcedIncompletePopulateContinuations,
+          createdWorkflowThisTurn,
+          successfulPopulateEdits,
+        })
+        continue
+      }
+
       const canForceFileEdit = shouldForceFileEditContinuation({
         postBuildToolMode,
         forcedFileEditContinuations,
@@ -1434,6 +1495,9 @@ export async function* runLocalCopilotAgent(
       if (postBuildToolMode === 'final_only' || postBuildToolMode === 'oauth_only') {
         // Text-only (or oauth-only with no call) — finish the turn.
         postBuildToolMode = 'done'
+      } else if (postBuildSoftNudgeSent && postBuildToolMode === 'all') {
+        // Soft nudge already asked the model to wrap up; it settled with no tools.
+        postBuildToolMode = 'done'
       }
 
       if (pendingFollowUps.length > 0) {
@@ -1460,9 +1524,7 @@ export async function* runLocalCopilotAgent(
         ? pendingToolCalls.filter((call) => call.name === 'oauth_get_auth_link')
         : pendingToolCalls
     )
-    if (
-      orderedToolCalls.some((call) => isLiveWebSearchToolCall(call.name, call.arguments))
-    ) {
+    if (orderedToolCalls.some((call) => isLiveWebSearchToolCall(call.name, call.arguments))) {
       turnHasLiveWebSearch = true
     }
     if (orderedToolCalls.length === 0) {
@@ -1478,9 +1540,7 @@ export async function* runLocalCopilotAgent(
         ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
         : {}),
       ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
-      ...(roundReasoningContent.trim()
-        ? { reasoningContent: roundReasoningContent }
-        : {}),
+      ...(roundReasoningContent.trim() ? { reasoningContent: roundReasoningContent } : {}),
     })
     assistantText = ''
     const deferredSystemMessages: Array<{ role: 'system'; content: string }> = []
@@ -1831,7 +1891,12 @@ export async function* runLocalCopilotAgent(
 
             const formattedToolResult = formatToolResultForLlm(
               parallelCall.name,
-              toolResult.result,
+              coalesceToolExecutionPayloadForLlm({
+                success: toolResult.success,
+                result: toolResult.result,
+                error: toolResult.error,
+                toolName: parallelCall.name,
+              }),
               {
                 artifactStore: toolCtx.artifactStore,
               }
@@ -2216,9 +2281,18 @@ export async function* runLocalCopilotAgent(
         }
       }
 
-      const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result, {
-        artifactStore: toolCtx.artifactStore,
-      })
+      const formattedToolResult = formatToolResultForLlm(
+        call.name,
+        coalesceToolExecutionPayloadForLlm({
+          success: toolResult.success,
+          result: toolResult.result,
+          error: toolResult.error,
+          toolName: call.name,
+        }),
+        {
+          artifactStore: toolCtx.artifactStore,
+        }
+      )
       const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
         call.name,
         toolResult.success,
@@ -2264,7 +2338,7 @@ export async function* runLocalCopilotAgent(
         !workflowBuildCompleteNudgeSent
       ) {
         successfulPopulateEdits += 1
-        if (successfulPopulateEdits >= MAX_POPULATE_EDITS) {
+        if (successfulPopulateEdits >= MAX_POPULATE_EDITS_HARD_LOCK) {
           workflowBuildCompleteNudgeSent = true
           const needsOauth =
             pendingFollowUpsAreOauthOnly(pendingFollowUps) ||
@@ -2274,10 +2348,20 @@ export async function* runLocalCopilotAgent(
             role: 'system',
             content: buildWorkflowBuildCompleteSystemMessage(postBuildToolMode),
           })
-          logger.info('Arena Copilot post-build tool mode set', {
+          logger.info('Arena Copilot post-build hard lock set', {
             postBuildToolMode,
             needsOauth,
             successfulPopulateEdits,
+          })
+        } else if (successfulPopulateEdits >= MAX_POPULATE_EDITS && !postBuildSoftNudgeSent) {
+          postBuildSoftNudgeSent = true
+          deferredSystemMessages.push({
+            role: 'system',
+            content: buildWorkflowBuildSoftCompleteSystemMessage(),
+          })
+          logger.info('Arena Copilot post-build soft nudge sent', {
+            successfulPopulateEdits,
+            maxPopulateEdits: MAX_POPULATE_EDITS,
           })
         }
       }
@@ -2513,15 +2597,30 @@ export async function* runLocalCopilotAgent(
   // Arena Copilot headers and empty-looking settles. If the UI never got a real
   // answer — or only got a "let me retry…" bridge — synthesize from tools (prefer)
   // or flush non-bridging buffered prose so the turn never ends on a blank bubble.
+  // Incomplete workflow builds also re-synthesize even when mid-progress prose exists.
+  const createdWithoutPopulate = createdWorkflowThisTurn && successfulPopulateEdits === 0
   if (
     shouldSynthesizeAssistantSummary({
       streamedUserFacingText,
       toolRecordCount: turnToolRecords.length,
+      createdWithoutPopulate,
+      unresolvedFollowUpCount: pendingFollowUps.length,
     })
   ) {
     if (turnToolRecords.length > 0) {
+      const followUpClosing = buildUnresolvedFollowUpClosingMessage(pendingFollowUps)
       const synthesized =
+        (createdWithoutPopulate || pendingFollowUps.length > 0
+          ? buildWorkflowBuildChatAppendix(turnToolRecords, {
+              createdWorkflowThisTurn,
+              successfulPopulateEdits,
+              unresolvedFollowUpHint: followUpClosing
+                ? pendingFollowUps[0]?.hint ?? null
+                : null,
+            })
+          : null) ??
         synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        followUpClosing ??
         buildDebugInspectionChatAppendix(turnToolRecords) ??
         'I finished the requested steps, but had nothing further to add.'
       const safe = stripIdsFromUserFacingText(synthesized)
@@ -2580,10 +2679,7 @@ export async function* runLocalCopilotAgent(
   }
 
   // Hard guarantee: file inspection without a write must not settle on empty Thinking….
-  if (
-    turnHasFileInspectionTools(turnToolRecords) &&
-    !turnHasFileMutationTools(turnToolRecords)
-  ) {
+  if (turnHasFileInspectionTools(turnToolRecords) && !turnHasFileMutationTools(turnToolRecords)) {
     const visible = stripIdsFromUserFacingText(
       stripOptionsTagsForDisplay(streamedUserFacingText, false)
     ).trim()
@@ -2598,6 +2694,51 @@ export async function* runLocalCopilotAgent(
         assistantText = safe
         streamedUserFacingText = safe
         yield { type: 'text_delta', content: safe }
+      }
+    }
+  }
+
+  // Hard guarantee: complex workflow builds must leave a closing message even when
+  // mid-progress create/edit lines already streamed (those previously blocked synthesize).
+  if (
+    shouldEnsureWorkflowBuildClosingMessage({
+      hasDiscoveryTools: turnHasWorkflowDiscoveryTools(turnToolRecords),
+      hasMutationTools: turnHasWorkflowMutationTools(turnToolRecords),
+      createdWorkflowThisTurn,
+      successfulPopulateEdits,
+      pendingFollowUpCount: pendingFollowUps.length,
+      streamedUserFacingText,
+    })
+  ) {
+    const visible = stripIdsFromUserFacingText(
+      stripOptionsTagsForDisplay(streamedUserFacingText, false)
+    ).trim()
+    const followUpHint = pendingFollowUps[0]?.hint ?? null
+    const guaranteed =
+      buildWorkflowBuildChatAppendix(turnToolRecords, {
+        createdWorkflowThisTurn,
+        successfulPopulateEdits,
+        unresolvedFollowUpHint: followUpHint,
+      }) ??
+      buildUnresolvedFollowUpClosingMessage(pendingFollowUps) ??
+      synthesizeAssistantSummaryFromTools(turnToolRecords)
+    const safe = guaranteed ? stripIdsFromUserFacingText(guaranteed) : ''
+    if (safe && safe !== visible) {
+      // Incomplete builds replace mid-progress; empty/bridging also replace.
+      const shouldReplace =
+        createdWithoutPopulate ||
+        pendingFollowUps.length > 0 ||
+        !visible ||
+        isBridgingAssistantNarration(visible)
+      if (shouldReplace) {
+        assistantText = safe
+        streamedUserFacingText = safe
+        yield { type: 'text_delta', content: safe }
+      } else if (!visible.includes(safe.slice(0, Math.min(48, safe.length)))) {
+        const chunk = `\n\n${safe}`
+        assistantText += chunk
+        streamedUserFacingText += chunk
+        yield { type: 'text_delta', content: chunk }
       }
     }
   }

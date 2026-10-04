@@ -1,13 +1,15 @@
-import type { Principal } from '@sim/auth/principal'
+import { isUserCredentialPrincipal, type Principal } from '@sim/auth/principal'
 import {
   permissionSatisfies,
   resolveEffectiveWorkspacePermission,
 } from '@sim/platform-authz/workspace'
+import { SIM_CLI_CLIENT_ID } from '@/lib/auth/oauth-provider'
 import type {
   BillingReadOperation,
   BillingReadPrincipal,
 } from '@/lib/billing/application/operations'
-import type { OperationUseCase } from '@/lib/core/application'
+import { type OperationUseCase, requireUserCredentialCapabilities } from '@/lib/core/application'
+import { requireOAuthOperationScope } from '@/lib/core/application/oauth-authorization'
 import {
   InsufficientWorkspacePermissionsError,
   NoWorkspaceAccessError,
@@ -16,6 +18,8 @@ import {
   WorkspaceApiKeyScopeAuthorizationError,
 } from '@/lib/core/application/workspace-authorization'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
+import { refuseCapability } from '@/lib/permission-groups/capabilities'
+import { isCapabilityWithheldForUser } from '@/lib/permission-groups/user-scope.server'
 import {
   type ActiveWorkspaceApplicationContext,
   loadActiveWorkspaceApplicationContext,
@@ -64,6 +68,46 @@ async function resolveBillingReadScope(
       throw new WorkspaceApiKeyScopeAuthorizationError()
     }
   } else if (!requestedWorkspaceId) {
+    /**
+     * permission-group-enforced: personal_api_key.use — the account-scoped read
+     * names no workspace, so nothing above resolved a group for it and the
+     * workspace branch's check below never runs.
+     *
+     * `personal_api_key.use` refuses a *principal kind* rather than a capability
+     * of the resource, so it applies to every operation a personal key can
+     * reach — including the one that happens to carry no workspace. Left out,
+     * the narrower scope would be the guarded one: the same key an organization
+     * withholds from `GET /billing?workspaceId=…` would still read the account's
+     * plan, balance and usage by omitting the parameter.
+     *
+     * Resolved from the organization's default group, the fallback
+     * {@link isCapabilityWithheldForUser} defines for a user-global action —
+     * the same one the personal-API-key and CLI mint paths use. A no-op when the
+     * caller is in no organization or no group governs them.
+     */
+    if (isUserCredentialPrincipal(principal)) {
+      if (await isCapabilityWithheldForUser(principal.userId, 'personal_api_key.use')) {
+        throw new PersonalApiKeysDisabledError()
+      }
+      /**
+       * permission-group-enforced: cli.use, oauth_apps.use — an OAuth token reads the account's
+       * plan, balance and usage here without naming a workspace, so the
+       * workspace-scoped check in the funnel never sees it.
+       */
+      if (
+        principal.kind === 'oauth_access_token' &&
+        (await isCapabilityWithheldForUser(principal.userId, 'oauth_apps.use'))
+      ) {
+        refuseCapability('oauth_apps.use')
+      }
+      if (
+        principal.kind === 'oauth_access_token' &&
+        principal.clientId === SIM_CLI_CLIENT_ID &&
+        (await isCapabilityWithheldForUser(principal.userId, 'cli.use'))
+      ) {
+        refuseCapability('cli.use')
+      }
+    }
     return { kind: 'account', userId: principal.userId }
   }
 
@@ -74,7 +118,7 @@ async function resolveBillingReadScope(
   const workspace = await loadActiveWorkspaceApplicationContext(workspaceId)
   if (!workspace) throw new OrchestrationError('not_found', 'Workspace not found')
 
-  if (principal.kind === 'personal_api_key') {
+  if (isUserCredentialPrincipal(principal)) {
     if (!workspace.allowPersonalApiKeys) {
       throw new PersonalApiKeysDisabledError()
     }
@@ -87,6 +131,19 @@ async function resolveBillingReadScope(
     if (!permissionSatisfies(permission, operation.workspaceMinimumRole)) {
       throw new InsufficientWorkspacePermissionsError()
     }
+    /**
+     * permission-group-enforced: personal_api_key.use, cli.use — this path
+     * resolves its own workspace scope instead of running through
+     * `authorizeWorkspaceOperation`, so the funnel's capability refusals have
+     * to be repeated here or the same credential the funnel refuses still
+     * reads billing.
+     *
+     * After the role check, like the funnel: it answers with a 403 naming how an
+     * organization configured one cohort, and running it ahead of the concealed
+     * no-access refusal would hand that to a caller with no reach into the
+     * workspace at all.
+     */
+    await requireUserCredentialCapabilities(principal, workspace)
   }
 
   return { kind: 'workspace', workspace }
@@ -99,6 +156,7 @@ export function defineAuthorizedBillingReadUseCase<const O extends BillingReadOp
     operation: definition.operation,
     async execute({ principal, input }) {
       requireBillingReadPrincipal(principal, definition.operation)
+      requireOAuthOperationScope(principal, definition.operation)
       const scope = await resolveBillingReadScope(
         principal,
         definition.operation,

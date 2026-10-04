@@ -92,7 +92,7 @@ export const basetenProvider: ProviderConfig = {
       baseURL: 'https://inference.baseten.co/v1',
     })
 
-    const requestedModel = request.model.replace(/^baseten\//, '')
+    const requestedModel = request.model.replace(/^baseten\//i, '')
 
     logger.info('Preparing Baseten request', {
       model: requestedModel,
@@ -291,7 +291,12 @@ export const basetenProvider: ProviderConfig = {
               }
             }
 
-            const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+            const { toolParams, executionParams } = prepareToolExecution(
+              tool,
+              toolArgs,
+              request,
+              toolCall.id
+            )
             const { rawResponse, modelResponse } = await executeProviderTool(
               toolName,
               executionParams,

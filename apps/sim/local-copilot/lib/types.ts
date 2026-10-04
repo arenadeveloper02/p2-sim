@@ -2,13 +2,13 @@ import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/wo
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
+import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 import type { LocalToolConfirmationRequirement } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import type { LocalTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type {
   TurnCompletionStatus,
   VerificationRecord,
 } from '@/local-copilot/lib/verification/types'
-import type { GeminiHistoryPart } from '@/local-copilot/lib/providers/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean

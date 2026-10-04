@@ -78,6 +78,13 @@ export async function getWorkspaceById(
   return exists ? { id: workspaceId } : null
 }
 
+/**
+ * Reads one workspace row, optionally locking it. The lock is `FOR NO KEY
+ * UPDATE`: the workspace row is a foreign-key parent, and `FOR UPDATE` would
+ * both block every concurrent insert into its child tables and deadlock
+ * against callers that write a child row first. See the module header of
+ * `lib/billing/storage/tracking.ts`.
+ */
 async function selectWorkspaceWithOwner(
   workspaceId: string,
   includeArchived: boolean,
@@ -101,7 +108,7 @@ async function selectWorkspaceWithOwner(
         ? eq(workspace.id, workspaceId)
         : and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt))
     )
-  const [ws] = forUpdate ? await query.for('update').limit(1) : await query.limit(1)
+  const [ws] = forUpdate ? await query.for('no key update').limit(1) : await query.limit(1)
 
   return ws || null
 }
@@ -328,6 +335,13 @@ export interface WorkspaceMemberWithRole {
    */
   roleSource: MemberRoleSource
   /**
+   * Admin of the workspace's organization, and so a workspace admin everywhere
+   * in it. Reported separately from `roleSource` because that field ranks
+   * `owner` first, which would otherwise hide the org-admin standing on a
+   * workspace owner — and removal is refused for the org admin, not the owner.
+   */
+  isOrgAdmin: boolean
+  /**
    * The account the workspace bills to. Its role is pinned to `admin` by the
    * workspace-permissions route, so the member UI must not offer to change it.
    */
@@ -369,6 +383,7 @@ export async function getUsersWithPermissions(
       isExternal: !isOwner && row.userOrganizationId !== ws.organizationId,
       joinedAt: row.joinedAt.toISOString(),
       roleSource: isOwner ? 'owner' : 'explicit',
+      isOrgAdmin: false,
       isBilledAccount: row.userId === ws.billedAccountUserId,
     })
   }
@@ -397,6 +412,7 @@ export async function getUsersWithPermissions(
       if (existing) {
         existing.permissionType = 'admin'
         existing.isExternal = false
+        existing.isOrgAdmin = true
         if (existing.roleSource !== 'owner') {
           existing.roleSource = isOwner ? 'owner' : 'org-admin'
         }
@@ -410,6 +426,7 @@ export async function getUsersWithPermissions(
           isExternal: false,
           joinedAt: row.joinedAt.toISOString(),
           roleSource: isOwner ? 'owner' : 'org-admin',
+          isOrgAdmin: true,
           isBilledAccount: row.userId === ws.billedAccountUserId,
         })
       }

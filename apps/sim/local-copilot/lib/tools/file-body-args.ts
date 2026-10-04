@@ -21,9 +21,7 @@ export function firstFileBodyString(params: Record<string, unknown>): string | u
     if (value && typeof value === 'object') {
       try {
         return JSON.stringify(value, null, 2)
-      } catch {
-        continue
-      }
+      } catch {}
     }
   }
   return undefined

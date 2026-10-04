@@ -195,6 +195,18 @@ describe('Validation', () => {
       expect(result.errors).toContain('Duplicate column names found')
     })
 
+    it('rejects more than one TTL column', () => {
+      const result = validateTableSchema({
+        columns: [
+          { name: 'expires_at', type: 'ttl' },
+          { name: 'delete_at', type: 'ttl' },
+        ],
+      } as TableSchema)
+
+      expect(result.valid).toBe(false)
+      expect(result.errors).toContain('A table can have at most 1 Expiration column')
+    })
+
     it('should reject null schema', () => {
       const result = validateTableSchema(null as unknown as TableSchema)
       expect(result.valid).toBe(false)
@@ -641,6 +653,32 @@ describe('Validation', () => {
       const data = { email: 'new@example.com', name: 'New User' }
       const result = validateUniqueConstraints(data, schema, existingRows)
       expect(result.valid).toBe(true)
+    })
+
+    it('compares expiration uniqueness by instant while retaining microseconds', () => {
+      const expirationSchema: TableSchema = {
+        columns: [{ name: 'expires', type: 'ttl', unique: true }],
+      }
+      const rows = [{ id: 'existing', data: { expires: '2026-09-07T07:30:00.000001-07:00' } }]
+      for (const value of [
+        '2026-09-07T14:30:00.000001Z',
+        '2026-09-07T20:15:00.000001+05:45',
+        '2026-09-07T14:30:00.000001-00:00',
+      ]) {
+        expect(validateUniqueConstraints({ expires: value }, expirationSchema, rows).valid).toBe(
+          false
+        )
+        expect(
+          validateUniqueConstraints({ expires: value }, expirationSchema, rows, 'existing').valid
+        ).toBe(true)
+      }
+      expect(
+        validateUniqueConstraints(
+          { expires: '2026-09-07T14:30:00.000002-00:00' },
+          expirationSchema,
+          rows
+        ).valid
+      ).toBe(true)
     })
 
     it('should report multiple violations', () => {

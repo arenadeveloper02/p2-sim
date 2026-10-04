@@ -2,8 +2,8 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
-import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
+import { resolveSpecialistTimeoutMs } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   clearSpecialistCheckpoint,
   formatSpecialistCheckpointSystemMessage,
@@ -23,6 +23,7 @@ import {
   getParentSpecialistToolDefinitions,
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
+import { unresolvedThinkingBlockText } from '@/local-copilot/lib/agent/thinking-block-to-delta'
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { resolveLocalCopilotMaxOutputTokens } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
@@ -37,23 +38,24 @@ import {
   waitForLocalToolConfirmation,
 } from '@/local-copilot/lib/security/request-tool-confirmation'
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import {
+  buildDebugInspectionChatAppendix,
+  isDebugInspectionToolName,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
 import { toolRequiresWorkflowContextRefresh } from '@/local-copilot/lib/tools/context-refresh'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
+  coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
-import {
-  buildDebugInspectionChatAppendix,
-  isDebugInspectionToolName,
-  type ToolTurnRecord,
-} from '@/local-copilot/lib/synthesize-assistant-summary'
 import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 import { buildDebugExplanationContinuationMessage } from '@/local-copilot/lib/user-facing-text'
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
@@ -204,7 +206,10 @@ export async function executeSpecialistLoop(
     }
   }
 
-  const { signal, clear } = await withTimeoutSignal(params.signal, params.budget.timeoutMs)
+  const { signal, clear } = await withTimeoutSignal(
+    params.signal,
+    resolveSpecialistTimeoutMs(params.domain, params.budget.timeoutMs)
+  )
   const events: LocalCopilotStreamEvent[] = []
 
   try {
@@ -423,9 +428,7 @@ export async function executeSpecialistLoop(
           ? { anthropicThinkingBlocks: roundAnthropicThinkingBlocks }
           : {}),
         ...(roundGeminiModelParts.length > 0 ? { geminiModelParts: roundGeminiModelParts } : {}),
-        ...(roundReasoningContent.trim()
-          ? { reasoningContent: roundReasoningContent }
-          : {}),
+        ...(roundReasoningContent.trim() ? { reasoningContent: roundReasoningContent } : {}),
       })
 
       for (const call of ordered) {
@@ -605,7 +608,12 @@ export async function executeSpecialistLoop(
 
         const llmPayload = formatToolResultForLlm(
           call.name,
-          toolResult.result ?? toolResult.error,
+          coalesceToolExecutionPayloadForLlm({
+            success: toolResult.success,
+            result: toolResult.result,
+            error: toolResult.error,
+            toolName: call.name,
+          }),
           {
             artifactStore: params.toolCtx.artifactStore,
           }
@@ -719,6 +727,7 @@ export async function executeSpecialistLoop(
         success: false,
         error: 'Specialist aborted',
         depth: entered.depth,
+        ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
       }
     }
 

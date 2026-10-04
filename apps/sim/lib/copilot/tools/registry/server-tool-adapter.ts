@@ -49,9 +49,13 @@ export function createServerToolHandler(toolId: string): ToolHandler {
       const result = await routeExecution(toolId, enrichedParams, {
         userId: context.userId,
         workspaceId: context.workspaceId,
+        organizationId: context.organizationId,
         executionId: context.executionId,
         toolCallId: context.toolCallId,
         copilotToolExecution: context.copilotToolExecution,
+        requestMode: context.requestMode,
+        searchSurface: context.searchSurface,
+        assistantSearch: context.assistantSearch,
         billingAttribution: context.billingAttribution,
         userPermission: context.userPermission ?? undefined,
         chatId: context.chatId,
@@ -72,6 +76,8 @@ export function createServerToolHandler(toolId: string): ToolHandler {
       return { success: true, output: result }
     } catch (error) {
       const caughtError = toError(error)
+      // The generic projection below records the swallowed cause on the active
+      // span itself (messageForCopilotApplicationError) so Tempo carries it.
       logger.error(
         'Server tool execution failed',
         {
@@ -82,7 +88,8 @@ export function createServerToolHandler(toolId: string): ToolHandler {
       )
       const safeMessage = projectToolErrorMessageForCopilot(
         messageForCopilotApplicationError(error),
-        context.resolvedSecretTraceRegistry
+        context.resolvedSecretTraceRegistry,
+        toolId
       )
       return {
         success: false,

@@ -68,10 +68,7 @@ export function handleTextEvent(scope: ToolScope): StreamHandler {
         // Signature-only trailer: stamp the last subagent text block in this lane.
         for (let i = context.contentBlocks.length - 1; i >= 0; i--) {
           const block = context.contentBlocks[i]
-          if (
-            block.type === 'subagent_text' &&
-            block.parentToolCallId === parentToolCallId
-          ) {
+          if (block.type === 'subagent_text' && block.parentToolCallId === parentToolCallId) {
             block.thoughtSignature = thoughtSignature
             break
           }

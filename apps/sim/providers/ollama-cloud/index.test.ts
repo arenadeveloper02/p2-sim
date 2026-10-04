@@ -131,7 +131,6 @@ function completion(
 function makeTool(id: string, usageControl?: 'auto' | 'force' | 'none'): ProviderToolConfig {
   return {
     id,
-    name: id,
     description: `${id} tool`,
     params: {},
     parameters: { type: 'object', properties: {}, required: [] },
@@ -184,6 +183,18 @@ describe('ollamaCloudProvider.executeRequest', () => {
     expect(mockCreate.mock.calls[0][0].model).toBe('gpt-oss:120b')
     expect(result).toMatchObject({ content: 'hello', model: 'gpt-oss:120b' })
   })
+
+  it.each([
+    ['ollama-cloud/deepseek-v4.1-flash', 'deepseek-v4.1-flash'],
+    ['ollama-cloud/glm-5.3', 'glm-5.3'],
+    ['OLLAMA-CLOUD/Org/CustomModel', 'Org/CustomModel'],
+  ])(
+    'forwards new and custom cloud models without changing their IDs: %s',
+    async (model, wireModel) => {
+      await ollamaCloudProvider.executeRequest({ ...baseRequest, model })
+      expect(mockCreate.mock.calls[0][0].model).toBe(wireModel)
+    }
+  )
 
   it('assembles system, context, then history in order and forwards params', async () => {
     await ollamaCloudProvider.executeRequest({

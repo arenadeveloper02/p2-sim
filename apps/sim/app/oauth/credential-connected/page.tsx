@@ -1,6 +1,6 @@
 import { ChipLink } from '@sim/emcn'
 import type { Metadata } from 'next'
-import { LogoShell } from '@/app/(landing)/components'
+import { LogoShell } from '@/app/(landing)/components/logo-shell'
 
 export const metadata: Metadata = {
   title: 'Credential connected',

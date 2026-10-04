@@ -6,7 +6,9 @@ import { eq } from 'drizzle-orm'
 import { decodeJwt } from 'jose'
 import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
+import { requireCopilotWorkspace } from '@/lib/copilot/tools/server/workspace-scope'
 import { getAllowedIntegrationsFromEnv } from '@/lib/core/config/env-flags'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { createIntegrationCredentialVisibility } from '@/lib/integrations/credential-visibility.server'
@@ -15,10 +17,10 @@ import {
   credentialProviderMatchesService,
   getAllOAuthServices,
 } from '@/lib/oauth'
+import { resolvePermissionGroupConfig } from '@/lib/permission-groups/config-scope.server'
 import { intersectIntegrationAllowlists } from '@/lib/permission-groups/integration-allowlist'
 import { checkWorkspaceAccess, type WorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { overlayVisibility } from '@/blocks/visibility/context'
-import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 
 interface GetCredentialsParams {
   workflowId?: string
@@ -50,10 +52,10 @@ export const getCredentialsServerTool: BaseServerTool<GetCredentialsParams, any>
           workflowId: params.workflowId,
           authenticatedUserId,
         })
-        throw new Error(errorMessage)
+        throw new OrchestrationError('forbidden', errorMessage)
       }
 
-      workspaceId = wId
+      workspaceId = requireCopilotWorkspace(context, wId)
     }
 
     const userId = authenticatedUserId
@@ -78,7 +80,9 @@ export const getCredentialsServerTool: BaseServerTool<GetCredentialsParams, any>
       .limit(1)
     const userEmail = userRecord.length > 0 ? userRecord[0]?.email : null
 
-    const permissionConfig = workspaceId ? await getUserPermissionConfig(userId, workspaceId) : null
+    const permissionConfig = workspaceId
+      ? await resolvePermissionGroupConfig(userId, workspaceId, undefined)
+      : null
     const configuredAllowedIntegrations = intersectIntegrationAllowlists(
       permissionConfig?.allowedIntegrations ?? null,
       getAllowedIntegrationsFromEnv()

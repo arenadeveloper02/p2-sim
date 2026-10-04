@@ -1,8 +1,16 @@
 /**
  * @vitest-environment node
  */
-import { dbChainMockFns, resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  dbChainMockFns,
+  queueTableRows,
+  resetDbChainMock,
+  resetEnvFlagsMock,
+  schemaMock,
+  setEnvFlags,
+} from '@sim/testing'
+import { inArray } from 'drizzle-orm'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockGetHighestPrioritySubscription,
@@ -13,6 +21,8 @@ const {
   mockHasUsableSubscriptionAccess,
   mockGetEffectiveBillingStatus,
   mockIsBlockingOrgSubscription,
+  mockIsOrganizationBillingBlocked,
+  mockCheckOrgPlan,
 } = vi.hoisted(() => ({
   mockGetHighestPrioritySubscription: vi.fn(),
   mockGetHighestPriorityPersonalSubscription: vi.fn(),
@@ -22,11 +32,13 @@ const {
   mockHasUsableSubscriptionAccess: vi.fn(),
   mockGetEffectiveBillingStatus: vi.fn(),
   mockIsBlockingOrgSubscription: vi.fn(),
+  mockIsOrganizationBillingBlocked: vi.fn(),
+  mockCheckOrgPlan: vi.fn(),
 }))
 
 vi.mock('@/lib/billing/core/access', () => ({
   getEffectiveBillingStatus: mockGetEffectiveBillingStatus,
-  isOrganizationBillingBlocked: vi.fn(),
+  isOrganizationBillingBlocked: mockIsOrganizationBillingBlocked,
 }))
 
 vi.mock('@/lib/billing/core/plan', () => ({
@@ -53,6 +65,7 @@ vi.mock('@/lib/billing/arena/checkout-policy', () => ({
 /** Mirrors the production sets exactly — a mock that widens them would let a gate regress unnoticed. */
 vi.mock('@/lib/billing/subscriptions/utils', () => ({
   checkEnterprisePlan: mockCheckEnterprisePlan,
+  checkOrgPlan: mockCheckOrgPlan,
   checkProPlan: vi.fn(),
   checkTeamPlan: vi.fn(),
   ENTITLED_SUBSCRIPTION_STATUSES: ['active', 'past_due'],
@@ -72,8 +85,12 @@ import {
   hasPaidSubscription,
   hasWorkspaceLiveSyncAccess,
   hasWorkspaceSandboxAccess,
+  hasWorkspaceSandboxRetentionAccess,
+  isOrganizationGovernanceActive,
+  isOrganizationOnEnterprisePlan,
   isWorkspaceOnEnterprisePlan,
   resolveBillingInterval,
+  resolveOrganizationPlan,
   syncSubscriptionPlan,
 } from '@/lib/billing/core/subscription'
 
@@ -269,20 +286,39 @@ describe('getOrganizationCoverageForMember', () => {
 describe('getOrganizationIdForSubscriptionReference', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDbChainMock()
   })
 
-  it('returns an organization id directly when the reference already points to one', async () => {
-    dbChainMockFns.limit.mockResolvedValueOnce([{ id: 'org-1' }])
+  afterEach(resetDbChainMock)
 
-    await expect(getOrganizationIdForSubscriptionReference('org-1')).resolves.toBe('org-1')
-  })
+  it.each(['org-1', 'legacy-organization-id'])(
+    'returns the directly referenced organization %s',
+    async (organizationId) => {
+      queueTableRows(schemaMock.organization, [{ id: organizationId }])
 
-  it('falls back to the admin-owned organization when the reference is still user-scoped', async () => {
-    dbChainMockFns.limit
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ organizationId: 'org-1', role: 'owner' }])
+      await expect(getOrganizationIdForSubscriptionReference(organizationId)).resolves.toBe(
+        organizationId
+      )
+    }
+  )
 
-    await expect(getOrganizationIdForSubscriptionReference('user-1')).resolves.toBe('org-1')
+  it.each(['owner', 'admin', 'member'])(
+    'keeps a personal subscription personal when its user is an organization %s',
+    async (role) => {
+      queueTableRows(schemaMock.organization, [])
+      queueTableRows(schemaMock.member, [{ organizationId: 'org-1', role }])
+
+      await expect(getOrganizationIdForSubscriptionReference('user-1')).resolves.toBeNull()
+      expect(dbChainMockFns.from).not.toHaveBeenCalledWith(schemaMock.member)
+    }
+  )
+
+  it('propagates lookup errors instead of treating the subscription as personal', async () => {
+    dbChainMockFns.limit.mockRejectedValueOnce(new Error('db unavailable'))
+
+    await expect(getOrganizationIdForSubscriptionReference('org-1')).rejects.toThrow(
+      'db unavailable'
+    )
   })
 })
 
@@ -526,5 +562,266 @@ describe('resolveBillingInterval', () => {
 
   it('defaults to month when neither source is set', () => {
     expect(resolveBillingInterval({ billingInterval: null, metadata: null })).toBe('month')
+  })
+})
+
+describe('hasWorkspaceSandboxRetentionAccess', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setEnvFlags({
+      isBillingEnabled: true,
+      isHosted: true,
+      isSandboxDeploymentEntitled: false,
+      isSandboxesEnabled: true,
+    })
+    mockGetWorkspaceWithOwner.mockResolvedValue({
+      id: 'workspace-host',
+      billedAccountUserId: 'workspace-owner',
+      organizationId: null,
+    })
+  })
+
+  /**
+   * The point of the retention intent: a card that failed last night must not
+   * turn every deployed Function block into an outage this morning.
+   */
+  it('keeps a past_due Max payer running without consulting usability', async () => {
+    mockGetHighestPriorityPersonalSubscription.mockResolvedValue({
+      referenceId: 'workspace-owner',
+      plan: 'pro_25000',
+      status: 'past_due',
+    })
+    mockGetPlanTierCredits.mockReturnValue(25000)
+
+    await expect(hasWorkspaceSandboxRetentionAccess('workspace-host')).resolves.toBe(true)
+    expect(mockHasUsableSubscriptionAccess).not.toHaveBeenCalled()
+    expect(mockGetEffectiveBillingStatus).not.toHaveBeenCalled()
+  })
+
+  it('fails a payer that dropped below the Max tier', async () => {
+    mockGetHighestPriorityPersonalSubscription.mockResolvedValue({
+      referenceId: 'workspace-owner',
+      plan: 'pro_6000',
+      status: 'active',
+    })
+    mockGetPlanTierCredits.mockReturnValue(6000)
+
+    await expect(hasWorkspaceSandboxRetentionAccess('workspace-host')).resolves.toBe(false)
+  })
+
+  it('fails a payer with no entitled subscription left', async () => {
+    mockGetHighestPriorityPersonalSubscription.mockResolvedValue(null)
+
+    await expect(hasWorkspaceSandboxRetentionAccess('workspace-host')).resolves.toBe(false)
+  })
+
+  it('grants the deployment override without resolving a payer', async () => {
+    setEnvFlags({ isSandboxDeploymentEntitled: true })
+
+    await expect(hasWorkspaceSandboxRetentionAccess('workspace-host')).resolves.toBe(true)
+    expect(mockGetWorkspaceWithOwner).not.toHaveBeenCalled()
+  })
+
+  it('fails closed before resolving a payer when the remote feature is unavailable', async () => {
+    setEnvFlags({ isSandboxesEnabled: false })
+
+    await expect(hasWorkspaceSandboxRetentionAccess('workspace-host')).resolves.toBe(false)
+    expect(mockGetWorkspaceWithOwner).not.toHaveBeenCalled()
+  })
+
+  /**
+   * A one-shot gate may read an outage as a lapse; a cached gate must not, or
+   * it would hold every Function block shut for a whole TTL. The caller asks,
+   * and the ask is forwarded to the reader so the failure is not swallowed
+   * one level down.
+   */
+  it('reports a read failure as a lapse unless asked to throw', async () => {
+    mockGetHighestPriorityPersonalSubscription.mockRejectedValue(new Error('billing down'))
+
+    await expect(hasWorkspaceSandboxRetentionAccess('workspace-host')).resolves.toBe(false)
+    await expect(
+      hasWorkspaceSandboxRetentionAccess('workspace-host', { onError: 'throw' })
+    ).rejects.toThrow('billing down')
+    expect(mockGetHighestPriorityPersonalSubscription).toHaveBeenLastCalledWith('workspace-owner', {
+      onError: 'throw',
+    })
+  })
+})
+
+describe('resolveOrganizationPlan', () => {
+  const ORGANIZATION_ID = 'org-1'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    /** An earlier describe leaves billing disabled, which short-circuits this gate to true. */
+    setEnvFlags({ isBillingEnabled: true, isHosted: true })
+    mockIsOrganizationBillingBlocked.mockResolvedValue(false)
+    mockCheckOrgPlan.mockReturnValue(true)
+  })
+
+  it('accepts an organization holding a usable organization plan', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'team_6000', status: 'active' }])
+
+    await expect(resolveOrganizationPlan(ORGANIZATION_ID)).resolves.toBe(true)
+  })
+
+  it('rejects a billing-blocked organization without consulting the plan', async () => {
+    mockIsOrganizationBillingBlocked.mockResolvedValue(true)
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'active' }])
+
+    await expect(resolveOrganizationPlan(ORGANIZATION_ID)).resolves.toBe(false)
+    expect(mockCheckOrgPlan).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The subscription read soft-fails to `null` on its own, so without the
+   * option threaded through it an outage arrives as an ordinary "no usable
+   * subscription" and returns a successful `false`. A caller that caches the
+   * answer would then record the outage as a plan lapse for its whole TTL.
+   */
+  it('propagates a failed subscription read instead of reporting it as no plan', async () => {
+    dbChainMockFns.limit.mockRejectedValue(new Error('billing database unavailable'))
+
+    await expect(resolveOrganizationPlan(ORGANIZATION_ID)).resolves.toBe(false)
+    await expect(resolveOrganizationPlan(ORGANIZATION_ID, { onError: 'throw' })).rejects.toThrow(
+      'billing database unavailable'
+    )
+  })
+
+  it('propagates a failed block-state read the same way', async () => {
+    mockIsOrganizationBillingBlocked.mockRejectedValue(new Error('userStats unavailable'))
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'team_6000', status: 'active' }])
+
+    await expect(resolveOrganizationPlan(ORGANIZATION_ID)).resolves.toBe(false)
+    await expect(resolveOrganizationPlan(ORGANIZATION_ID, { onError: 'throw' })).rejects.toThrow(
+      'userStats unavailable'
+    )
+  })
+})
+
+describe('isOrganizationGovernanceActive', () => {
+  const ORGANIZATION_ID = 'org-governed'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setEnvFlags({ isBillingEnabled: true, isHosted: true })
+    mockIsOrganizationBillingBlocked.mockResolvedValue(false)
+    mockCheckEnterprisePlan.mockReturnValue(true)
+  })
+
+  it('governs an organization holding an active enterprise plan', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'active' }])
+
+    await expect(isOrganizationGovernanceActive(ORGANIZATION_ID)).resolves.toBe(true)
+  })
+
+  /**
+   * The bug this exists for: an unentitled organization resolves to `config: null`, which denies
+   * nothing, so treating a failing card as a lapsed plan lifted every restriction the organization
+   * had configured — silently, for the whole dunning window.
+   */
+  it('keeps governing through a past-due subscription', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'past_due' }])
+
+    await expect(isOrganizationGovernanceActive(ORGANIZATION_ID)).resolves.toBe(true)
+    /**
+     * Asserted on the filter, not the returned row: the chain mock answers whatever is queued
+     * regardless of the where clause, so only the status set proves a past-due subscription is
+     * actually read. The feature gate below deliberately narrows to `active`.
+     */
+    expect(vi.mocked(inArray)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining(['active', 'past_due'])
+    )
+  })
+
+  it('reads a narrower status set than the feature gate does', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'active' }])
+
+    await isOrganizationOnEnterprisePlan('org-feature-gate')
+    expect(vi.mocked(inArray)).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining(['past_due'])
+    )
+  })
+
+  /** A suspension is a billing state, not a decision to stop governing. */
+  it('keeps governing a billing-blocked organization', async () => {
+    mockIsOrganizationBillingBlocked.mockResolvedValue(true)
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'past_due' }])
+
+    await expect(isOrganizationGovernanceActive(ORGANIZATION_ID)).resolves.toBe(true)
+  })
+
+  it('stops governing an organization with no subscription at all', async () => {
+    dbChainMockFns.limit.mockResolvedValue([])
+
+    await expect(isOrganizationGovernanceActive(ORGANIZATION_ID)).resolves.toBe(false)
+  })
+
+  /** A read failure must never read as "no restrictions". */
+  it('propagates a failed subscription read rather than answering false', async () => {
+    dbChainMockFns.limit.mockRejectedValue(new Error('billing database unavailable'))
+
+    await expect(isOrganizationGovernanceActive(ORGANIZATION_ID)).rejects.toThrow(
+      'billing database unavailable'
+    )
+  })
+})
+
+describe('isOrganizationOnEnterprisePlan', () => {
+  const ORGANIZATION_ID = 'org-1'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    /** An earlier describe leaves billing disabled, which short-circuits this gate to true. */
+    setEnvFlags({ isBillingEnabled: true, isHosted: true })
+    mockIsOrganizationBillingBlocked.mockResolvedValue(false)
+    mockCheckEnterprisePlan.mockReturnValue(true)
+  })
+
+  it('accepts an organization holding a usable enterprise plan', async () => {
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'active' }])
+
+    await expect(isOrganizationOnEnterprisePlan(ORGANIZATION_ID)).resolves.toBe(true)
+  })
+
+  /**
+   * The lenient default is what every feature gate reads — a hidden button is
+   * the worst outcome there — so a read failure must keep resolving `false`
+   * rather than starting to reject through those callers.
+   */
+  it('keeps failing closed to false for the default policy', async () => {
+    dbChainMockFns.limit.mockRejectedValue(new Error('billing database unavailable'))
+
+    await expect(isOrganizationOnEnterprisePlan(ORGANIZATION_ID)).resolves.toBe(false)
+    await expect(isOrganizationOnEnterprisePlan(ORGANIZATION_ID, 'return-false')).resolves.toBe(
+      false
+    )
+  })
+
+  /**
+   * The subscription read soft-fails to `null` on its own, so without the
+   * policy threaded through it an outage arrives as an ordinary "no usable
+   * subscription" and returns a successful `false`. For Access Control that
+   * `false` means `config: null` — every capability allowed — so it has to
+   * propagate.
+   */
+  it('propagates a failed subscription read when the caller asked to throw', async () => {
+    dbChainMockFns.limit.mockRejectedValue(new Error('billing database unavailable'))
+
+    await expect(isOrganizationOnEnterprisePlan(ORGANIZATION_ID, 'throw')).rejects.toThrow(
+      'billing database unavailable'
+    )
+  })
+
+  it('propagates a failed block-state read the same way', async () => {
+    mockIsOrganizationBillingBlocked.mockRejectedValue(new Error('userStats unavailable'))
+    dbChainMockFns.limit.mockResolvedValue([{ plan: 'enterprise', status: 'active' }])
+
+    await expect(isOrganizationOnEnterprisePlan(ORGANIZATION_ID)).resolves.toBe(false)
+    await expect(isOrganizationOnEnterprisePlan(ORGANIZATION_ID, 'throw')).rejects.toThrow(
+      'userStats unavailable'
+    )
   })
 })

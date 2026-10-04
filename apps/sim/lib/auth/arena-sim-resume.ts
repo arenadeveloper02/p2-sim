@@ -39,3 +39,20 @@ export function buildArenaSimResumeUrl(returnTo: string | URL, hostname?: string
 
 /** Path used when Arena hub URL cannot be resolved (misconfigured env). */
 export const ARENA_SSO_SESSION_REQUIRED_PATH = '/session-required' as const
+
+/**
+ * Browser destination when Agent has no Better Auth session. Local/dev uses
+ * `/login` with a callback back to the current page; otherwise Arena
+ * `/sso/sim-resume` (or `/session-required` if the hub URL cannot be built).
+ */
+export function resolveBrowserSessionResumeHref(
+  returnTo: string,
+  options?: { isDev?: boolean; hostname?: string }
+): string {
+  if (options?.isDev) {
+    return `/login?callbackUrl=${encodeURIComponent(returnTo)}`
+  }
+
+  const resume = buildArenaSimResumeUrl(returnTo, options?.hostname)
+  return resume?.href ?? ARENA_SSO_SESSION_REQUIRED_PATH
+}

@@ -1,8 +1,7 @@
-/* Disabled direct provider integration
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 import type { VideoParams, VideoResponse } from '@/tools/video/types'
 
-export const lumaVideoTool: ToolConfig<VideoParams, VideoResponse> = {
+export const lumaVideoTool: InternalToolConfig<VideoParams, VideoResponse> = {
   id: 'video_luma',
   name: 'Luma Dream Machine Video',
   description: 'Generate videos using Luma Dream Machine with advanced camera controls',
@@ -60,21 +59,12 @@ export const lumaVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     },
   },
 
-  request: {
+  operation: {
     modelInput: {
       mode: 'project',
       select: (params) => ({ prompt: params.prompt }),
     },
-    url: '/api/tools/video',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (
-      params: VideoParams & {
-        _context?: { workspaceId?: string; workflowId?: string; executionId?: string }
-      }
-    ) => ({
+    input: (params) => ({
       provider: 'luma',
       apiKey: params.apiKey,
       model: params.model || 'ray-2',
@@ -83,9 +73,6 @@ export const lumaVideoTool: ToolConfig<VideoParams, VideoResponse> = {
       aspectRatio: params.aspectRatio || '16:9',
       resolution: params.resolution || '1080p',
       cameraControl: params.cameraControl,
-      workspaceId: params._context?.workspaceId,
-      workflowId: params._context?.workflowId,
-      executionId: params._context?.executionId,
     }),
   },
 
@@ -138,5 +125,3 @@ export const lumaVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     jobId: { type: 'string', description: 'Luma job ID' },
   },
 }
-
-*/

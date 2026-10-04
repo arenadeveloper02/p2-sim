@@ -43,17 +43,17 @@ describe('openai-compatible thinking_blocks live drain', () => {
 
 describe('Bedrock Claude thinking request', () => {
   it('enables budget thinking for Claude 4.6 on Bedrock', () => {
-    expect(
-      resolveBedrockThinkingAdditionalFields('anthropic.claude-sonnet-4-6', 'medium')
-    ).toEqual({
-      thinking: { type: 'enabled', budget_tokens: 8192 },
-    })
+    expect(resolveBedrockThinkingAdditionalFields('anthropic.claude-sonnet-4-6', 'medium')).toEqual(
+      {
+        thinking: { type: 'enabled', budget_tokens: 8192 },
+      }
+    )
   })
 
   it('skips thinking for non-Claude Bedrock models', () => {
-    expect(resolveBedrockThinkingAdditionalFields('meta.llama3-3-70b-instruct-v1:0', 'medium')).toBe(
-      undefined
-    )
+    expect(
+      resolveBedrockThinkingAdditionalFields('meta.llama3-3-70b-instruct-v1:0', 'medium')
+    ).toBe(undefined)
     expect(isBedrockClaudeModel('deepseek.v3.2')).toBe(false)
   })
 

@@ -29,6 +29,7 @@ describe('resolveImageProviderForModel', () => {
   })
 
   it('maps OpenAI aliases to openai', () => {
+    expect(normalizeImageModelId('chatgpt-image-latest')).toBe('gpt-image-2')
     expect(resolveImageProviderForModel('chatgpt-image-latest')).toBe('openai')
     expect(resolveImageProviderForModel('dall-e-3')).toBe('openai')
   })

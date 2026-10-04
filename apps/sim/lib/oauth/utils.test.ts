@@ -9,12 +9,14 @@ import {
   getMissingRequiredScopes,
   getProviderIdFromServiceId,
   getRequiredScopesForCredential,
+  getScopeDescription,
   getScopesForService,
   getServiceByProviderAndId,
   getServiceConfigByProviderId,
   getServiceConfigByServiceId,
   parseProvider,
   providerIdsForService,
+  usesCredentialConfiguredOAuthClient,
 } from './utils'
 
 describe('getAllOAuthServices', () => {
@@ -80,6 +82,11 @@ describe('getAllOAuthServices', () => {
     expect(slackService).toBeDefined()
     expect(slackService?.name).toBe('Slack')
     expect(slackService?.baseProvider).toBe('slack')
+
+    const quickbooksService = services.find((s) => s.providerId === 'quickbooks')
+    expect(quickbooksService).toBeDefined()
+    expect(quickbooksService?.name).toBe('QuickBooks')
+    expect(quickbooksService?.baseProvider).toBe('quickbooks')
   })
 
   it.concurrent('should not include duplicate services', () => {
@@ -172,6 +179,14 @@ describe('getServiceByProviderAndId', () => {
     expect(Array.isArray(service.scopes)).toBe(true)
     expect(service.scopes.length).toBeGreaterThan(0)
     expect(service.scopes).toContain('https://www.googleapis.com/auth/gmail.send')
+  })
+})
+
+describe('usesCredentialConfiguredOAuthClient', () => {
+  it.concurrent('distinguishes user-supplied OAuth apps from deployment OAuth clients', () => {
+    expect(usesCredentialConfiguredOAuthClient('quickbooks')).toBe(true)
+    expect(usesCredentialConfiguredOAuthClient('slack')).toBe(false)
+    expect(usesCredentialConfiguredOAuthClient('unknown-provider')).toBe(false)
   })
 })
 
@@ -274,6 +289,14 @@ describe('getServiceConfigByProviderId', () => {
     expect(service).toBeDefined()
     expect(service?.providerId).toBe('slack')
     expect(service?.name).toBe('Slack')
+  })
+
+  it.concurrent('should work for QuickBooks', () => {
+    const service = getServiceConfigByProviderId('quickbooks')
+
+    expect(service).toBeDefined()
+    expect(service?.providerId).toBe('quickbooks')
+    expect(service?.name).toBe('QuickBooks')
   })
 
   it.concurrent('should return service with scopes', () => {
@@ -385,6 +408,22 @@ describe('getCanonicalScopesForProvider', () => {
     expect(excelScopes).toContain('Files.Read')
   })
 
+  it.concurrent('should return the exact canonical QuickBooks scopes', () => {
+    const expected = ['openid', 'profile', 'email', 'com.intuit.quickbooks.accounting']
+
+    expect(getCanonicalScopesForProvider('quickbooks')).toEqual(expected)
+    expect(getScopesForService('quickbooks')).toEqual(expected)
+  })
+
+  it.concurrent('requests the group and user reads used by Confluence permission syncing', () => {
+    const scopes = getCanonicalScopesForProvider('confluence')
+
+    expect(scopes).toEqual(
+      expect.arrayContaining(['read:group:confluence', 'read:user:confluence'])
+    )
+    expect(getScopesForService('confluence')).toEqual(scopes)
+  })
+
   it.concurrent('should handle providers with empty scopes array', () => {
     const scopes = getCanonicalScopesForProvider('notion')
 
@@ -397,6 +436,48 @@ describe('getCanonicalScopesForProvider', () => {
 
     expect(Array.isArray(scopes)).toBe(true)
     expect(scopes.length).toBe(0)
+  })
+})
+
+describe('getScopeDescription', () => {
+  it('describes Confluence directory access', () => {
+    expect(getScopeDescription('read:group:confluence', 'confluence')).toBe(
+      'View Confluence groups and memberships'
+    )
+  })
+  it.concurrent('uses provider-specific labels for Bitbucket scope names', () => {
+    expect(getScopeDescription('account', 'bitbucket')).toBe(
+      'View your Bitbucket account and workspace memberships'
+    )
+    expect(getScopeDescription('pipeline:write', 'bitbucket')).toBe('Run and stop pipelines')
+    expect(getScopeDescription('webhook', 'bitbucket')).toBe('Manage repository webhooks')
+  })
+
+  it.concurrent('preserves the existing Reddit meaning of the account scope', () => {
+    expect(getScopeDescription('account', 'reddit')).toBe('Update account preferences and settings')
+    expect(getScopeDescription('account')).toBe('Update account preferences and settings')
+  })
+
+  /**
+   * The consent screen is where a user decides what to grant, so a write scope
+   * has to read as one. `w_member_social` previously said 'Access LinkedIn
+   * profile', describing a posting grant as a profile read.
+   *
+   * The wording tracks LinkedIn's own: "Post, comment, and like posts on behalf
+   * of an authenticated member." It names all three verbs even though Sim only
+   * posts -- the label describes the grant the token carries, not Sim's current
+   * use of it, and LinkedIn's scopes cannot be sub-selected.
+   */
+  it.concurrent('describes w_member_social as the write grant it is', () => {
+    const description = getScopeDescription('w_member_social', 'linkedin')
+
+    expect(description).toBe('Post, comment, and like posts on your behalf')
+    expect(description).not.toMatch(/access .*profile/i)
+  })
+
+  it.concurrent('leaves the read-only LinkedIn scopes read-only', () => {
+    expect(getScopeDescription('profile', 'linkedin')).toBe('Access profile information')
+    expect(getScopeDescription('email', 'linkedin')).toBe('Access email address')
   })
 })
 
@@ -672,6 +753,19 @@ describe('getScopesForService', () => {
     expect(scopes).not.toContain('Calendars.ReadWrite.Shared')
   })
 
+  it.concurrent('should include webhook management in Bitbucket consent scopes', () => {
+    expect(getScopesForService('bitbucket')).toEqual([
+      'account',
+      'repository',
+      'repository:write',
+      'pullrequest',
+      'pullrequest:write',
+      'pipeline',
+      'pipeline:write',
+      'webhook',
+    ])
+  })
+
   it.concurrent('should return empty array for empty string', () => {
     const scopes = getScopesForService('')
 
@@ -711,11 +805,31 @@ describe('getMissingRequiredScopes', () => {
     expect(missing).toEqual(['write'])
   })
 
+  it.concurrent('requires older Confluence OAuth grants to reconnect for group access', () => {
+    const scopes = getCanonicalScopesForProvider('confluence')
+    const previousGrant = scopes.filter((scope) => scope !== 'read:group:confluence')
+
+    expect(getMissingRequiredScopes({ scopes: previousGrant }, scopes)).toEqual([
+      'read:group:confluence',
+    ])
+    expect(getMissingRequiredScopes({ scopes }, scopes)).toEqual([])
+  })
+
   it.concurrent('should return all required scopes when credential is undefined', () => {
     const missing = getMissingRequiredScopes(undefined, ['read', 'write'])
 
     expect(missing).toEqual(['read', 'write'])
   })
+
+  it.concurrent(
+    'should report nothing missing for a service account, which grants no scopes',
+    () => {
+      const credential = { type: 'service_account', scopes: undefined }
+      const missing = getMissingRequiredScopes(credential, ['read', 'write'])
+
+      expect(missing).toEqual([])
+    }
+  )
 
   it.concurrent('should return all required scopes when credential has undefined scopes', () => {
     const missing = getMissingRequiredScopes({ scopes: undefined }, ['read', 'write'])

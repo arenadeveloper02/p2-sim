@@ -27,6 +27,28 @@ export async function resolveUnipileExternalAccountId(
     if (row?.externalAccountId) {
       return row.externalAccountId.trim()
     }
+
+    const [credentialRow] = await db
+      .select({ accountId: credential.accountId })
+      .from(credential)
+      .where(eq(credential.id, trimmed))
+      .limit(1)
+    const storedAccountId = credentialRow?.accountId?.trim()
+    if (storedAccountId && storedAccountId !== trimmed) {
+      const [linkedAccount] = await db
+        .select({ externalAccountId: account.accountId })
+        .from(account)
+        .where(
+          and(eq(account.id, storedAccountId), eq(account.providerId, UNIPILE_LINKEDIN_PROVIDER_ID))
+        )
+        .limit(1)
+      if (linkedAccount?.externalAccountId) {
+        return linkedAccount.externalAccountId.trim()
+      }
+      if (!isValidUuid(storedAccountId)) {
+        return storedAccountId
+      }
+    }
     return null
   }
 

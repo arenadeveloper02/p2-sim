@@ -9,10 +9,10 @@ import {
   BubbleChatClose,
   BubbleChatPreview,
   Button,
-  ButtonGroup,
-  ButtonGroupItem,
   Checkbox,
   ChevronDown,
+  ChipButtonGroup,
+  ChipButtonGroupItem,
   ChipDatePicker,
   Code,
   Combobox,
@@ -74,7 +74,6 @@ import {
   type TagItem,
   Textarea,
   TimePicker,
-  ToastProvider,
   Tooltip,
   Trash,
   toast,
@@ -163,7 +162,7 @@ export default function PlaygroundPage() {
   }
 
   return (
-    <ToastProvider>
+    <>
       <Tooltip.Provider>
         <div className='relative min-h-screen bg-[var(--bg)] p-8'>
           <div className='absolute top-8 left-8 flex items-center gap-2'>
@@ -327,37 +326,36 @@ export default function PlaygroundPage() {
               </VariantRow>
             </Section>
 
-            {/* ButtonGroup */}
-            <Section title='ButtonGroup'>
+            <Section title='ChipButtonGroup'>
               <VariantRow label='default'>
-                <ButtonGroup value={buttonGroupValue} onValueChange={setButtonGroupValue}>
-                  <ButtonGroupItem value='curl'>cURL</ButtonGroupItem>
-                  <ButtonGroupItem value='python'>Python</ButtonGroupItem>
-                  <ButtonGroupItem value='javascript'>JavaScript</ButtonGroupItem>
-                </ButtonGroup>
+                <ChipButtonGroup value={buttonGroupValue} onValueChange={setButtonGroupValue}>
+                  <ChipButtonGroupItem value='curl'>cURL</ChipButtonGroupItem>
+                  <ChipButtonGroupItem value='python'>Python</ChipButtonGroupItem>
+                  <ChipButtonGroupItem value='javascript'>JavaScript</ChipButtonGroupItem>
+                </ChipButtonGroup>
               </VariantRow>
               <VariantRow label='gap none'>
-                <ButtonGroup value='opt1' gap='none'>
-                  <ButtonGroupItem value='opt1'>Option 1</ButtonGroupItem>
-                  <ButtonGroupItem value='opt2'>Option 2</ButtonGroupItem>
-                </ButtonGroup>
+                <ChipButtonGroup value='opt1' gap='none'>
+                  <ChipButtonGroupItem value='opt1'>Option 1</ChipButtonGroupItem>
+                  <ChipButtonGroupItem value='opt2'>Option 2</ChipButtonGroupItem>
+                </ChipButtonGroup>
               </VariantRow>
               <VariantRow label='gap sm'>
-                <ButtonGroup value='opt1' gap='sm'>
-                  <ButtonGroupItem value='opt1'>Option 1</ButtonGroupItem>
-                  <ButtonGroupItem value='opt2'>Option 2</ButtonGroupItem>
-                </ButtonGroup>
+                <ChipButtonGroup value='opt1' gap='sm'>
+                  <ChipButtonGroupItem value='opt1'>Option 1</ChipButtonGroupItem>
+                  <ChipButtonGroupItem value='opt2'>Option 2</ChipButtonGroupItem>
+                </ChipButtonGroup>
               </VariantRow>
               <VariantRow label='disabled'>
-                <ButtonGroup value='opt1' disabled>
-                  <ButtonGroupItem value='opt1'>Option 1</ButtonGroupItem>
-                  <ButtonGroupItem value='opt2'>Option 2</ButtonGroupItem>
-                </ButtonGroup>
+                <ChipButtonGroup value='opt1' disabled>
+                  <ChipButtonGroupItem value='opt1'>Option 1</ChipButtonGroupItem>
+                  <ChipButtonGroupItem value='opt2'>Option 2</ChipButtonGroupItem>
+                </ChipButtonGroup>
               </VariantRow>
               <VariantRow label='single item'>
-                <ButtonGroup value='only'>
-                  <ButtonGroupItem value='only'>Only Option</ButtonGroupItem>
-                </ButtonGroup>
+                <ChipButtonGroup value='only'>
+                  <ChipButtonGroupItem value='only'>Only Option</ChipButtonGroupItem>
+                </ChipButtonGroup>
               </VariantRow>
             </Section>
 
@@ -1066,6 +1064,6 @@ export default function PlaygroundPage() {
           </div>
         </div>
       </Tooltip.Provider>
-    </ToastProvider>
+    </>
   )
 }

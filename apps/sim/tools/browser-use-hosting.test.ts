@@ -26,6 +26,7 @@ describe('Browser Use hosted key config', () => {
   it('prefers totalCostUsd / cost aliases', () => {
     expect(cost({ totalCostUsd: 0.05 }).cost).toBeCloseTo(0.05)
     expect(cost({ cost: 0.08 }).cost).toBeCloseTo(0.08)
+    expect(cost({ cost: '0.08' }).cost).toBeCloseTo(0.08)
   })
 
   it('falls back to V2 flat pricing placeholder', () => {

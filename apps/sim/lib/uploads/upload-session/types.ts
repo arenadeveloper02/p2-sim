@@ -4,7 +4,7 @@ export type UploadSessionPurpose =
   | 'knowledge_document'
   | 'profile_picture'
   | 'workspace_logo'
-  | 'org_logo'
+  | 'organization_logo'
   | 'mothership_attachment'
   | 'execution_attachment'
 

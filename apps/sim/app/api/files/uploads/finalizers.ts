@@ -1,7 +1,7 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { type Principal, resolvePrincipalAuditAttribution } from '@sim/auth/principal'
 import { db } from '@sim/db'
-import { workspaceFiles } from '@sim/db/schema'
+import { type WorkspaceFileRow, workspaceFiles } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
 import { eq, sql } from 'drizzle-orm'
 import type { V2File } from '@/lib/api/contracts/v2/files'
@@ -9,12 +9,17 @@ import type { OrchestrationRequestContext } from '@/lib/core/orchestration/types
 import { captureServerEvent } from '@/lib/posthog/server'
 import { notifyWorkspaceFilesChanged } from '@/lib/realtime/notify'
 import { getServeStoragePrefix } from '@/lib/uploads/config'
+import { finalizeOrganizationAssistantAttachment } from '@/lib/uploads/contexts/organization-assistant/application'
+import {
+  finalizeOrganizationLogoUpload,
+  organizationLogoUploadResult,
+} from '@/lib/uploads/contexts/organization-logo/application'
 import {
   getWorkspaceFile,
   registerUploadedWorkspaceFile,
   type WorkspaceFileRecord,
 } from '@/lib/uploads/contexts/workspace'
-import { type StorageContext, toLegacyWorkspaceFileSize } from '@/lib/uploads/shared/types'
+import { getWorkspaceFileSize, type StorageContext } from '@/lib/uploads/shared/types'
 import { UploadSessionError, type UploadSessionRecord } from '@/lib/uploads/upload-session/service'
 import { toV2File } from '@/app/api/v2/files/utils'
 
@@ -80,7 +85,7 @@ interface FinalizedMetadataInput {
   size: number
 }
 
-type FileMetadataRecord = typeof workspaceFiles.$inferSelect
+type FileMetadataRecord = WorkspaceFileRow
 
 /**
  * Finalizes the domain resource represented by a verified upload object.
@@ -104,11 +109,14 @@ export async function finalizeUploadPurpose({
       )
     case 'profile_picture':
       return { value: storedAssetResult(session, 'profile-pictures') }
+    case 'organization_logo':
+      return finalizeOrganizationLogoUpload(principal, session, request)
     case 'workspace_logo':
       return finalizeWorkspaceLogo(session, actor, request)
-    case 'org_logo':
-      return finalizeOrgLogo(session)
     case 'mothership_attachment':
+      if (session.workspaceId === null) {
+        return { value: await finalizeOrganizationAssistantAttachment(principal, session) }
+      }
       return finalizeMothershipAttachment(session)
     case 'execution_attachment':
       return finalizeExecutionAttachment(session)
@@ -134,8 +142,9 @@ export async function loadCompletedUploadPurpose(
   switch (session.purpose) {
     case 'workspace_file':
       return toV2File(await loadCompletedWorkspaceFileUpload(session))
+    case 'organization_logo':
+      return organizationLogoUploadResult(session)
     case 'profile_picture':
-    case 'org_logo':
     case 'workspace_logo':
     case 'mothership_attachment':
     case 'execution_attachment':
@@ -301,18 +310,6 @@ async function finalizeWorkspaceLogo(
   return { value: storedAssetResult(session, 'workspace-logos') }
 }
 
-async function finalizeOrgLogo(session: UploadSessionRecord): Promise<FinalizedUploadPurpose> {
-  await insertOrLoadFileMetadata({
-    key: session.storageKey,
-    userId: session.userId,
-    context: 'org-logos',
-    originalName: session.fileName,
-    contentType: session.contentType,
-    size: session.fileSize,
-  })
-  return { value: storedAssetResult(session, 'org-logos') }
-}
-
 async function finalizeMothershipAttachment(
   session: UploadSessionRecord
 ): Promise<FinalizedUploadPurpose> {
@@ -379,7 +376,6 @@ async function insertOrLoadFileMetadata(
       originalName: input.originalName,
       displayName: input.originalName,
       contentType: input.contentType,
-      size: toLegacyWorkspaceFileSize(input.size),
       sizeBytes: input.size,
       deletedAt: null,
       uploadedAt: now,
@@ -411,7 +407,7 @@ async function findFileMetadataByKey(key: string): Promise<FileMetadataRecord | 
 }
 
 function assertMatchingMetadata(existing: FileMetadataRecord, input: FinalizedMetadataInput): void {
-  const existingSize = existing.sizeBytes ?? existing.size
+  const existingSize = getWorkspaceFileSize(existing)
   if (
     existing.key !== input.key ||
     existing.userId !== input.userId ||
@@ -440,7 +436,7 @@ function servePath(key: string, context: StorageContext): string {
 
 function storedAssetResult(
   session: UploadSessionRecord,
-  context: 'profile-pictures' | 'workspace-logos' | 'org-logos' | 'mothership'
+  context: 'profile-pictures' | 'workspace-logos' | 'organization-logos' | 'mothership'
 ): StoredUploadResult {
   return {
     path: servePath(session.storageKey, context),

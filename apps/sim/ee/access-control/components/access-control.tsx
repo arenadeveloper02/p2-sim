@@ -9,6 +9,7 @@ import {
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
+  ChipSwitch,
   ChipTag,
   Label,
 } from '@sim/emcn'
@@ -16,10 +17,15 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Plus } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { useQueryState } from 'nuqs'
+import { useQueryState, useQueryStates } from 'nuqs'
+import { OrganizationAccessRequests } from '@/components/access-requests/organization-access-requests'
+import {
+  accessRequestUrlOptions,
+  accessReviewSearchParams,
+} from '@/components/access-requests/search-params'
 import { STARTER_PLAN } from '@/lib/billing/arena/constants'
 import { isEnterprise, isMaxTier } from '@/lib/billing/plan-helpers'
-import { isAccessControlEnabled } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import {
   groupIdParam,
   groupIdUrlKeys,
@@ -30,7 +36,10 @@ import {
   groupTabParam,
   groupTabUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/[section]/search-params'
-import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
+import {
+  SettingsEmptyState,
+  SettingsQueryErrorState,
+} from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import {
   RESOURCE_LIST_STACK,
@@ -55,8 +64,34 @@ interface AccessControlProps {
   organizationId: string
 }
 
-export function AccessControl({ isOrganizationAdmin, organizationId }: AccessControlProps) {
+export function AccessControl(props: AccessControlProps) {
+  const [params, setParams] = useQueryStates(accessReviewSearchParams, accessRequestUrlOptions)
+  if (!props.isOrganizationAdmin) return <PermissionGroups {...props} />
+  return (
+    <>
+      <ChipSwitch
+        aria-label='Access Control views'
+        options={[
+          { value: 'groups', label: 'Groups' },
+          { value: 'requests', label: 'Requests' },
+        ]}
+        value={params['access-view']}
+        onChange={(value) => void setParams({ 'access-view': value, 'request-id': null })}
+      />
+      {params['access-view'] === 'requests' ? (
+        <SettingsPanel>
+          <OrganizationAccessRequests organizationId={props.organizationId} />
+        </SettingsPanel>
+      ) : (
+        <PermissionGroups {...props} />
+      )}
+    </>
+  )
+}
+
+function PermissionGroups({ isOrganizationAdmin, organizationId }: AccessControlProps) {
   const params = useParams()
+  const { features } = useDeploymentShape()
   const workspaceId = typeof params?.workspaceId === 'string' ? params.workspaceId : undefined
 
   /**
@@ -65,16 +100,27 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
    * id and the caller's admin status server-side from the workspace so gating is
    * never keyed off the session's active org.
    */
-  const { data: userPermissionConfig, isPending: entitlementLoading } =
-    useUserPermissionConfig(workspaceId)
-  const { data: organizationBillingData, isPending: organizationBillingLoading } =
-    useOrganizationBilling(organizationId)
+  const {
+    data: userPermissionConfig,
+    isPending: entitlementLoading,
+    error: entitlementError,
+  } = useUserPermissionConfig(workspaceId)
+  const {
+    data: organizationBillingData,
+    isPending: organizationBillingLoading,
+    error: organizationBillingError,
+  } = useOrganizationBilling(organizationId, {
+    enabled: !features.accessControl && !userPermissionConfig?.entitled,
+  })
   const currentUserIsOrgAdmin = isOrganizationAdmin
 
-  const { data: permissionGroups = [], isPending: groupsLoading } = usePermissionGroups(
-    organizationId,
-    !!organizationId && currentUserIsOrgAdmin
-  )
+  const {
+    data: permissionGroups = [],
+    isPending: groupsLoading,
+    error: groupsError,
+    isFetching: groupsFetching,
+    refetch: refetchGroups,
+  } = usePermissionGroups(organizationId, !!organizationId && currentUserIsOrgAdmin)
   const { data: organizationWorkspaces = [], isPending: workspacesLoading } =
     useOrganizationWorkspaces(organizationId, !!organizationId && currentUserIsOrgAdmin)
 
@@ -92,11 +138,14 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
    * reading the bare var here let a deployment with only `ENTERPRISE_ENABLED`
    * set show the section and then refuse to manage it.
    */
-  const isEntitled = isAccessControlEnabled || !!userPermissionConfig?.entitled || hasEnterprisePlan
+  const isEntitled = features.accessControl || !!userPermissionConfig?.entitled || hasEnterprisePlan
   const canManage = isEntitled && currentUserIsOrgAdmin && !!organizationId
+  const organizationEntitlementLoading =
+    !features.accessControl && !userPermissionConfig?.entitled && organizationBillingLoading
 
   const isLoading =
-    (workspaceId ? entitlementLoading : organizationBillingLoading) ||
+    (workspaceId ? entitlementLoading : false) ||
+    organizationEntitlementLoading ||
     (!!organizationId && currentUserIsOrgAdmin && groupsLoading)
 
   const createPermissionGroup = useCreatePermissionGroup()
@@ -129,15 +178,12 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
    * leaves them in the URL and the next group opens on the previous group's tab
    * and filters. nuqs batches these same-tick writes into one URL update.
    */
-  const openGroupDetail = useCallback(
-    (groupId: string) => {
-      void setSelectedGroupId(groupId)
-      void setGroupTab(null)
-      void setGroupSearch(null)
-      void setGroupStatus(null)
-    },
-    [setSelectedGroupId, setGroupTab, setGroupSearch, setGroupStatus]
-  )
+  const openGroupDetail = (groupId: string) => {
+    void setSelectedGroupId(groupId)
+    void setGroupTab(null)
+    void setGroupSearch(null)
+    void setGroupStatus(null)
+  }
 
   const closeGroupDetail = useCallback(() => {
     void setSelectedGroupId(null, { history: 'replace' })
@@ -168,7 +214,7 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
     [permissionGroups, selectedGroupId]
   )
 
-  const handleCreatePermissionGroup = useCallback(async () => {
+  const handleCreatePermissionGroup = async () => {
     if (!newGroupName.trim() || !organizationId) return
     setCreateError(null)
     try {
@@ -188,26 +234,48 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
       logger.error('Failed to create permission group', error)
       setCreateError(getErrorMessage(error, 'Failed to create permission group'))
     }
-  }, [
-    newGroupName,
-    newGroupDescription,
-    newGroupIsDefault,
-    newGroupWorkspaceIds,
-    organizationId,
-    createPermissionGroup,
-  ])
+  }
 
-  const handleCloseCreateModal = useCallback(() => {
+  const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setNewGroupName('')
     setNewGroupDescription('')
     setNewGroupIsDefault(false)
     setNewGroupWorkspaceIds([])
     setCreateError(null)
-  }, [])
+  }
+
+  const listSearch = {
+    value: searchTerm,
+    onChange: setSearchTerm,
+    placeholder: 'Search permission groups...',
+    disabled: isLoading,
+  }
+  const listActions = [
+    {
+      id: 'create-group',
+      text: 'Create group',
+      icon: Plus,
+      variant: 'primary' as const,
+      onSelect: () => setShowCreateModal(true),
+      disabled: isLoading,
+    },
+  ]
 
   if (isLoading) {
-    return null
+    return <SettingsPanel search={listSearch} actions={listActions} />
+  }
+
+  const entitlementLoadError = isEntitled
+    ? null
+    : ((userPermissionConfig === undefined ? entitlementError : null) ??
+      (organizationBillingData === undefined ? organizationBillingError : null))
+  if (entitlementLoadError) {
+    return (
+      <SettingsEmptyState tone='error'>
+        {getErrorMessage(entitlementLoadError, 'Failed to load Access Control access')}
+      </SettingsEmptyState>
+    )
   }
 
   if (!canManage) {
@@ -220,9 +288,23 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
     )
   }
 
+  if (groupsError) {
+    return (
+      <SettingsPanel>
+        <SettingsQueryErrorState
+          error={groupsError}
+          fallback='Failed to load permission groups'
+          isRetrying={groupsFetching}
+          onRetry={() => void refetchGroups()}
+        />
+      </SettingsPanel>
+    )
+  }
+
   if (selectedGroup && organizationId) {
     return (
       <GroupDetail
+        key={selectedGroup.id}
         group={selectedGroup}
         organizationId={organizationId}
         workspaceId={workspaceId}
@@ -237,21 +319,7 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
 
   return (
     <>
-      <SettingsPanel
-        search={{
-          value: searchTerm,
-          onChange: setSearchTerm,
-          placeholder: 'Search permission groups...',
-        }}
-        actions={[
-          {
-            text: 'Create group',
-            icon: Plus,
-            variant: 'primary',
-            onSelect: () => setShowCreateModal(true),
-          },
-        ]}
-      >
+      <SettingsPanel search={listSearch} actions={listActions}>
         <SettingsSection label={`Permission groups (${permissionGroups.length})`}>
           {permissionGroups.length === 0 ? (
             <SettingsEmptyState variant='inline'>

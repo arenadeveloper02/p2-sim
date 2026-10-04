@@ -8,28 +8,46 @@ import {
   ChipInput,
   chipContentLabelClass,
   chipGeometryClass,
-  chipVariants,
   cn,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuItemAction,
+  DropdownMenuItemLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Plus,
-  Send,
+  OverflowText,
   Skeleton,
+  scrollFadeAttributes,
+  scrollFadeClass,
   Tooltip,
+  toast,
+  useScrollEdges,
 } from '@sim/emcn'
-import { ManageWorkspace, PanelLeft, Pin } from '@sim/emcn/icons'
+import {
+  ArrowLeft,
+  ListChecks,
+  MoreHorizontal,
+  PanelLeft,
+  Pin,
+  Plus,
+  Search,
+  Send,
+} from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal, Search } from 'lucide-react'
-import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
-// import { env } from '@/lib/core/config/env'
-import { isAdminOrOwner } from '@/lib/workspaces/organization'
+import { IdentityTile } from '@/components/identity-tile/identity-tile'
+import { SettingsGuardedLink } from '@/components/settings/settings-guarded-link'
+import { WorkspaceContextMenu } from '@/components/workspaces/workspace-context-menu'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { WORKSPACE_SEARCH_THRESHOLD } from '@/lib/workspaces/constants'
+import { getWorkspaceInitial } from '@/lib/workspaces/initials'
+import { getWorkspaceOrganizationHref } from '@/lib/workspaces/organization-navigation'
 import { InviteModal } from '@/app/workspace/[workspaceId]/components/invite-modal'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
+import { SidebarRenameRow } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-rename-row'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { ViewInvitationsMenuItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/pending-invitations/view-invitations-menu-item'
@@ -43,30 +61,8 @@ import {
 } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { SIDEBAR_WIDTH } from '@/stores/constants'
 
 const logger = createLogger('WorkspaceHeader')
-
-/**
- * Show the search input once the workspace list reaches this count, and size the
- * list viewport to exactly this many rows — so the sixth workspace is the one that
- * both fills the viewport and brings in search.
- *
- * The viewport's `max-h-[190px]` is derived from it: 6 rows at `chipGeometryClass`'s
- * 30px plus the 2px `gap-0.5` between them (6 * 30 + 5 * 2). Tailwind arbitrary
- * values must be statically analyzable, so the arithmetic cannot live in the class —
- * change the two together.
- */
-const WORKSPACE_SEARCH_THRESHOLD = 6
-
-/**
- * Derives the single-letter avatar initial for a workspace, ignoring the word
- * "workspace" in the name (e.g. "Acme Workspace" → "A").
- */
-function getWorkspaceInitial(name: string | undefined): string {
-  const stripped = (name ?? '').replace(/workspace/gi, '').trim()
-  return (stripped[0] || name?.[0] || 'W').toUpperCase()
-}
 
 interface DisabledReasonTooltipProps {
   reason: string | null
@@ -81,7 +77,9 @@ function DisabledReasonTooltip({ reason, children }: DisabledReasonTooltipProps)
   if (!reason) return children
   return (
     <Tooltip.Root>
-      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+      <Tooltip.Trigger asChild>
+        <div>{children}</div>
+      </Tooltip.Trigger>
       <Tooltip.Content>
         <p>{reason}</p>
       </Tooltip.Content>
@@ -161,6 +159,7 @@ function WorkspaceHeaderImpl({
   onExpandSidebar,
 }: WorkspaceHeaderProps) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const { billingEnabled } = useDeploymentShape()
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [isViewInvitationsOpen, setIsViewInvitationsOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -190,12 +189,19 @@ function WorkspaceHeaderImpl({
   const isContextMenuOpeningRef = useRef(false)
   const contextMenuClosedRef = useRef(true)
   const hasInputFocusedRef = useRef(false)
-  const { data: session } = useSession()
-  const { data: activeOrganization } = useActiveOrganization()
-  const isOrganizationAdmin = isAdminOrOwner(activeOrganization, session?.user?.email)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const preserveSearchFocus = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (searchInputRef.current === document.activeElement) event.preventDefault()
+  }
   const workspaceListRef = useRef<HTMLDivElement>(null)
+  /**
+   * Held in state as well as the ref: the list lives in the menu's portal, which
+   * Radix mounts a commit after the menu opens, so the edge hook has to be handed
+   * the element itself to pick it up.
+   */
+  const [workspaceListElement, setWorkspaceListElement] = useState<HTMLDivElement | null>(null)
+  const listEdges = useScrollEdges(workspaceListElement)
 
   const [workspaceSearch, setWorkspaceSearch] = useState('')
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
@@ -274,45 +280,10 @@ function WorkspaceHeaderImpl({
     setIsKeyboardNav(false)
   }, [isWorkspaceMenuOpen])
 
-  /**
-   * Check if current user is a platform admin
-   */
-  // const isPlatformAdmin = (() => {
-  //   if (!session?.user?.email) return false
-
-  //   const adminEmailsEnv = env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS
-  //   if (!adminEmailsEnv) return false
-
-  //   // Parse admin emails (can be array, JSON string array, or comma-separated string)
-  //   let adminEmails: string[] = []
-
-  //   if (Array.isArray(adminEmailsEnv)) {
-  //     adminEmails = adminEmailsEnv.map((email) => email.toLowerCase())
-  //   } else if (typeof adminEmailsEnv === 'string') {
-  //     const emailsStr = adminEmailsEnv as string
-  //     // Try to parse as JSON array first
-  //     try {
-  //       const parsed = JSON.parse(emailsStr)
-  //       if (Array.isArray(parsed)) {
-  //         adminEmails = parsed.map((email: string) => email.toLowerCase())
-  //       }
-  //     } catch {
-  //       // Fallback to comma-separated string
-  //       adminEmails = emailsStr.split(',').map((email: string) => email.trim().toLowerCase())
-  //     }
-  //   }
-
-  //   return adminEmails.includes(session.user.email.toLowerCase())
-  // })()
-
-  // Client-only rendering for Popover to prevent Radix ID hydration mismatch
-  const [isMounted, setIsMounted] = useState(false)
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
-
   const { navigateToSettings } = useSettingsNavigation()
   const queryClient = useQueryClient()
+  const hostContext = useWorkspaceHostContext()
+  const organizationHref = getWorkspaceOrganizationHref(hostContext)
 
   const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId) || null
   const isWorkspaceReady = !isWorkspacesLoading && activeWorkspaceFull !== null
@@ -458,6 +429,15 @@ function WorkspaceHeaderImpl({
       setLeaveTarget(null)
     } catch (error) {
       logger.error('Error leaving workspace:', error)
+      /**
+       * The endpoint refuses several standings it can explain — the billing
+       * account, the last admin, a derived organization admin. Logging alone
+       * left the confirm modal sitting open with no indication of why, so the
+       * server's reason is surfaced the way the teammates list surfaces it.
+       */
+      toast.error("Couldn't leave workspace", {
+        description: getErrorMessage(error, 'Please try again in a moment.'),
+      })
     }
   }
 
@@ -477,47 +457,34 @@ function WorkspaceHeaderImpl({
 
   return (
     <div className='min-w-0 flex-1'>
-      {isMounted && isCollapsed ? (
-        <button
-          type='button'
+      {isCollapsed ? (
+        <Chip
           aria-label='Expand sidebar'
           onClick={onExpandSidebar}
-          className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
-        >
-          <div className='relative flex size-[16px] flex-shrink-0 items-center justify-center'>
-            {activeWorkspaceFull?.logoUrl ? (
-              <>
-                <img
-                  src={activeWorkspaceFull.logoUrl}
-                  alt={activeWorkspaceFull.name || 'Workspace logo'}
-                  className='size-[16px] rounded-sm object-cover group-hover:invisible'
-                />
-                <PanelLeft
-                  aria-hidden
-                  className='pointer-events-none invisible absolute inset-0 m-auto size-[16px] rotate-180 text-[var(--text-icon)] group-hover:visible'
-                />
-              </>
-            ) : activeWorkspace ? (
-              <>
-                <div
-                  className='flex size-[16px] items-center justify-center rounded-sm text-[9px] text-white leading-none group-hover:invisible'
-                  style={{
-                    backgroundColor: activeWorkspaceFull?.color ?? 'var(--brand-accent)',
-                  }}
-                >
-                  {workspaceInitial}
-                </div>
-                <PanelLeft
-                  aria-hidden
-                  className='pointer-events-none invisible absolute inset-0 m-auto size-[16px] rotate-180 text-[var(--text-icon)] group-hover:visible'
-                />
-              </>
-            ) : (
-              <Skeleton className='size-[16px] rounded-sm' />
-            )}
-          </div>
-        </button>
-      ) : isMounted && isWorkspaceReady ? (
+          fullWidth
+          className={SIDEBAR_RAIL_CHIP_CLASS}
+          leftAdornment={
+            <div className='relative flex size-[16px] shrink-0 items-center justify-center'>
+              {activeWorkspace ? (
+                <>
+                  <IdentityTile
+                    initial={workspaceInitial}
+                    logoUrl={activeWorkspaceFull?.logoUrl}
+                    alt={activeWorkspaceFull?.name || 'Workspace logo'}
+                    className='group-hover:invisible'
+                  />
+                  <PanelLeft
+                    aria-hidden
+                    className='pointer-events-none invisible absolute inset-0 m-auto size-[16px] rotate-180 text-[var(--text-icon)] group-hover:visible'
+                  />
+                </>
+              ) : (
+                <Skeleton className='size-[16px] rounded-sm' />
+              )}
+            </div>
+          }
+        />
+      ) : isWorkspaceReady ? (
         <DropdownMenu
           open={isWorkspaceMenuOpen}
           onOpenChange={(open) => {
@@ -542,44 +509,25 @@ function WorkspaceHeaderImpl({
           }}
         >
           <DropdownMenuTrigger asChild>
-            <button
-              type='button'
+            <Chip
               aria-label='Switch workspace'
-              className={cn(chipVariants(), 'min-w-0 max-w-full')}
-              title={activeWorkspace?.name}
+              className='min-w-0 max-w-full'
               onContextMenu={(e) => {
                 if (activeWorkspaceFull) {
                   handleContextMenu(e, activeWorkspaceFull)
                 }
               }}
+              leftAdornment={
+                <IdentityTile
+                  initial={workspaceInitial}
+                  logoUrl={activeWorkspaceFull.logoUrl}
+                  alt={activeWorkspaceFull.name || 'Workspace logo'}
+                />
+              }
+              rightAdornment={activeWorkspace?.name ? <ChipChevronDown /> : undefined}
             >
-              {activeWorkspaceFull ? (
-                activeWorkspaceFull.logoUrl ? (
-                  <img
-                    src={activeWorkspaceFull.logoUrl}
-                    alt={activeWorkspaceFull.name || 'Workspace logo'}
-                    className='size-[16px] flex-shrink-0 rounded-sm object-cover'
-                  />
-                ) : (
-                  <div
-                    className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
-                    style={{
-                      backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)',
-                    }}
-                  >
-                    {workspaceInitial}
-                  </div>
-                )
-              ) : (
-                <Skeleton className='size-[16px] flex-shrink-0 rounded-sm' />
-              )}
-              {!isCollapsed && activeWorkspace?.name && (
-                <>
-                  <span className={chipContentLabelClass}>{activeWorkspace.name}</span>
-                  <ChipChevronDown />
-                </>
-              )}
-            </button>
+              {activeWorkspace?.name}
+            </Chip>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align='start'
@@ -589,13 +537,19 @@ function WorkspaceHeaderImpl({
                still bounded by the space Radix measured — at six rows the menu is tall
                enough that a short viewport would otherwise push the footer actions off
                screen with nothing able to scroll to them. */
-            className='flex max-h-[var(--radix-dropdown-menu-content-available-height,400px)] flex-col overflow-y-auto'
-            style={{
-              width: `${SIDEBAR_WIDTH.DEFAULT}px`,
-              maxWidth: 'calc(100vw - 24px)',
-            }}
-            onCloseAutoFocus={(e) => e.preventDefault()}
+            className='flex max-h-[var(--radix-dropdown-menu-content-available-height,400px)] w-64 max-w-[calc(100vw-24px)] flex-col overflow-y-auto'
           >
+            {organizationHref && (
+              <>
+                <DropdownMenuItem size='lg' className='shrink-0' asChild>
+                  <SettingsGuardedLink href={organizationHref}>
+                    <ArrowLeft className='size-[14px]' />
+                    Back to organization
+                  </SettingsGuardedLink>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className='shrink-0' />
+              </>
+            )}
             {isWorkspacesLoading ? (
               <div className='px-2 py-[5px] text-[var(--text-secondary)] text-caption'>
                 Loading workspaces...
@@ -605,6 +559,7 @@ function WorkspaceHeaderImpl({
                 {showSearch && (
                   <ChipInput
                     ref={searchInputRef}
+                    className='shrink-0'
                     icon={Search}
                     placeholder='Search workspaces...'
                     value={workspaceSearch}
@@ -640,12 +595,20 @@ function WorkspaceHeaderImpl({
                         if (target) onWorkspaceSwitch(target)
                       }
                     }}
-                    className='mb-1.5'
                   />
                 )}
+                {/** The list owns the gap below search, when shown, and above the separator. */}
                 <div
-                  ref={workspaceListRef}
-                  className='-mx-1.5 flex max-h-[190px] flex-col gap-0.5 overflow-y-auto px-1.5'
+                  ref={(node) => {
+                    workspaceListRef.current = node
+                    setWorkspaceListElement(node)
+                  }}
+                  className={cn(
+                    scrollFadeClass,
+                    '-mx-1.5 flex max-h-[200px] flex-col gap-0.5 overflow-y-auto px-1.5 pb-1',
+                    showSearch && 'pt-1.5'
+                  )}
+                  {...scrollFadeAttributes(listEdges)}
                 >
                   {filteredWorkspaces.length === 0 && workspaceSearch && (
                     <div className='px-2 py-[5px] text-[var(--text-muted)] text-caption'>
@@ -679,84 +642,87 @@ function WorkspaceHeaderImpl({
                         }
                       >
                         {editingWorkspaceId === workspace.id ? (
-                          <div className={chipVariants({ active: true, fullWidth: true })}>
-                            {workspace.logoUrl ? (
-                              <img
-                                src={workspace.logoUrl}
+                          <SidebarRenameRow
+                            aria-label={`Rename workspace ${workspace.name}`}
+                            leadingAdornment={
+                              <IdentityTile
+                                initial={initial}
+                                logoUrl={workspace.logoUrl}
                                 alt={workspace.name || 'Workspace logo'}
-                                className='size-[16px] flex-shrink-0 rounded-sm object-cover'
                               />
-                            ) : (
-                              <div
-                                className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
-                                style={{
-                                  backgroundColor: workspace.color ?? 'var(--brand-accent)',
+                            }
+                            ref={(el) => {
+                              renameInputRef.current = el
+                              if (el && !hasInputFocusedRef.current) {
+                                hasInputFocusedRef.current = true
+                                el.focus()
+                                el.select()
+                              }
+                            }}
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                setIsListRenaming(true)
+                                try {
+                                  await onRenameWorkspace(workspace.id, editingName.trim())
+                                  setEditingWorkspaceId(null)
+                                } finally {
+                                  setIsListRenaming(false)
+                                }
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault()
+                                setEditingWorkspaceId(null)
+                              }
+                            }}
+                            onBlur={async () => {
+                              if (!editingWorkspaceId) return
+                              const trimmedName = editingName.trim()
+                              if (trimmedName && trimmedName !== workspace.name) {
+                                setIsListRenaming(true)
+                                try {
+                                  await onRenameWorkspace(workspace.id, trimmedName)
+                                } finally {
+                                  setIsListRenaming(false)
+                                }
+                              }
+                              setEditingWorkspaceId(null)
+                            }}
+                            disabled={isListRenaming}
+                          />
+                        ) : (
+                          <DropdownMenuItem
+                            size='lg'
+                            actionOpen={isMenuOpen}
+                            active={isActive || isMenuOpen || isKeyboardHighlighted}
+                            onSelect={(event) => event.preventDefault()}
+                            onPointerMove={preserveSearchFocus}
+                            onPointerLeave={preserveSearchFocus}
+                            actionIndicator={
+                              pinnedWorkspaceIds.has(workspace.id) ? (
+                                <Pin
+                                  aria-hidden={false}
+                                  role='img'
+                                  aria-label='Pinned'
+                                  className='size-[12px] text-[var(--text-icon)]'
+                                />
+                              ) : undefined
+                            }
+                            action={
+                              <DropdownMenuItemAction
+                                aria-label='Workspace options'
+                                onPointerDown={() => {
+                                  isContextMenuOpeningRef.current = true
+                                }}
+                                onClick={(event) => {
+                                  const rect = event.currentTarget.getBoundingClientRect()
+                                  openContextMenuAt(workspace, rect.right, rect.top)
                                 }}
                               >
-                                {initial}
-                              </div>
-                            )}
-                            <input
-                              ref={(el) => {
-                                renameInputRef.current = el
-                                if (el && !hasInputFocusedRef.current) {
-                                  hasInputFocusedRef.current = true
-                                  el.focus()
-                                  el.select()
-                                }
-                              }}
-                              value={editingName}
-                              onChange={(e) => setEditingName(e.target.value)}
-                              onKeyDown={async (e) => {
-                                e.stopPropagation()
-                                if (e.key === 'Enter') {
-                                  e.preventDefault()
-                                  setIsListRenaming(true)
-                                  try {
-                                    await onRenameWorkspace(workspace.id, editingName.trim())
-                                    setEditingWorkspaceId(null)
-                                  } finally {
-                                    setIsListRenaming(false)
-                                  }
-                                } else if (e.key === 'Escape') {
-                                  e.preventDefault()
-                                  setEditingWorkspaceId(null)
-                                }
-                              }}
-                              onBlur={async () => {
-                                if (!editingWorkspaceId) return
-                                const trimmedName = editingName.trim()
-                                if (trimmedName && trimmedName !== workspace.name) {
-                                  setIsListRenaming(true)
-                                  try {
-                                    await onRenameWorkspace(workspace.id, trimmedName)
-                                  } finally {
-                                    setIsListRenaming(false)
-                                  }
-                                }
-                                setEditingWorkspaceId(null)
-                              }}
-                              className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
-                              maxLength={100}
-                              autoComplete='off'
-                              autoCorrect='off'
-                              autoCapitalize='off'
-                              spellCheck='false'
-                              disabled={isListRenaming}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <div
-                            className={cn(
-                              chipVariants({
-                                active: isActive || isMenuOpen || isKeyboardHighlighted,
-                                fullWidth: true,
-                              }),
-                              'select-none'
-                            )}
+                                <MoreHorizontal />
+                              </DropdownMenuItemAction>
+                            }
                             onClick={(e) => {
                               if (e.metaKey || e.ctrlKey) {
                                 window.open(`/workspace/${workspace.id}`, '_blank')
@@ -772,141 +738,82 @@ function WorkspaceHeaderImpl({
                             }}
                             onContextMenu={(e) => handleContextMenu(e, workspace)}
                           >
-                            {workspace.logoUrl ? (
-                              <img
-                                src={workspace.logoUrl}
-                                alt={workspace.name || 'Workspace logo'}
-                                className='size-[16px] flex-shrink-0 rounded-sm object-cover'
-                              />
-                            ) : (
-                              <div
-                                className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
-                                style={{
-                                  backgroundColor: workspace.color ?? 'var(--brand-accent)',
-                                }}
-                              >
-                                {initial}
-                              </div>
-                            )}
-                            <span className='min-w-0 flex-1 truncate text-[var(--text-body)] text-sm'>
-                              {workspace.name}
-                            </span>
-                            {/* Pin and options share one fixed slot, as the chat rows do:
-                                the trailing width never changes, so pinning cannot re-truncate
-                                the name under the user's cursor. */}
-                            <div className='relative flex size-[18px] flex-shrink-0 items-center justify-center'>
-                              {pinnedWorkspaceIds.has(workspace.id) && (
-                                <Pin
-                                  aria-hidden={false}
-                                  role='img'
-                                  aria-label='Pinned'
-                                  className={cn(
-                                    'absolute size-[12px] text-[var(--text-icon)] transition-opacity',
-                                    isMenuOpen ? 'opacity-0' : 'group-hover:opacity-0'
-                                  )}
-                                />
-                              )}
-                              <button
-                                type='button'
-                                aria-label='Workspace options'
-                                onMouseDown={() => {
-                                  isContextMenuOpeningRef.current = true
-                                }}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  const rect = e.currentTarget.getBoundingClientRect()
-                                  openContextMenuAt(workspace, rect.right, rect.top)
-                                }}
-                                className={cn(
-                                  'absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-opacity group-hover:opacity-100',
-                                  isMenuOpen && 'opacity-100'
-                                )}
-                              >
-                                <MoreHorizontal className='size-[14px] text-[var(--text-icon)]' />
-                              </button>
-                            </div>
-                          </div>
+                            <IdentityTile
+                              initial={initial}
+                              logoUrl={workspace.logoUrl}
+                              alt={workspace.name || 'Workspace logo'}
+                            />
+                            <DropdownMenuItemLabel label={workspace.name} />
+                          </DropdownMenuItem>
                         )}
                       </div>
                     )
                   })}
                 </div>
 
-                <DropdownMenuSeparator className='mx-0' />
+                <DropdownMenuSeparator className='mx-0 mt-0 shrink-0' />
 
-                {isOrganizationAdmin && (
-                  <div className='flex flex-col gap-0.5'>
-                    <DisabledReasonTooltip reason={createWorkspaceDisabledReason}>
-                      <Chip
-                        leftIcon={Plus}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (!canCreateWorkspace) {
-                            if (isBillingEnabled) navigateToSettings({ section: 'billing' })
+                <div className='flex shrink-0 flex-col gap-0.5'>
+                  <DisabledReasonTooltip reason={createWorkspaceDisabledReason}>
+                    <DropdownMenuItem
+                      size='lg'
+                      onSelect={(event) => {
+                        if (!canCreateWorkspace) {
+                          event.preventDefault()
+                          return
+                        }
+                        setIsWorkspaceMenuOpen(false)
+                        setIsCreateModalOpen(true)
+                      }}
+                      disabled={isCreatingWorkspace || !canCreateWorkspace}
+                    >
+                      <Plus className='size-[14px]' />
+                      New workspace
+                    </DropdownMenuItem>
+                  </DisabledReasonTooltip>
+                  {userPermissions.canAdmin && (
+                    <DisabledReasonTooltip reason={inviteDisabledReason}>
+                      <DropdownMenuItem
+                        size='lg'
+                        onSelect={() => {
+                          setIsWorkspaceMenuOpen(false)
+                          if (isInvitationsDisabled) {
+                            if (billingEnabled) navigateToSettings({ section: 'billing' })
                             return
                           }
-                          setIsWorkspaceMenuOpen(false)
-                          setIsCreateModalOpen(true)
+                          setIsInviteModalOpen(true)
                         }}
-                        disabled={isCreatingWorkspace}
-                        aria-disabled={!canCreateWorkspace || undefined}
-                        fullWidth
-                        flush
-                        className={cn(
-                          'select-none',
-                          !canCreateWorkspace &&
-                            'cursor-not-allowed opacity-60 hover-hover:bg-transparent'
-                        )}
                       >
-                        New workspace
-                      </Chip>
+                        <Send className='size-[14px]' />
+                        Invite teammates
+                      </DropdownMenuItem>
                     </DisabledReasonTooltip>
-                  </div>
-                )}
-                <DropdownMenuSeparator className='mx-0' />
-                <DisabledReasonTooltip reason={inviteDisabledReason}>
-                  <Chip
-                    leftIcon={Send}
-                    onClick={() => {
+                  )}
+                  {hostContext.hostOrganizationId && (
+                    <DropdownMenuItem size='lg' asChild>
+                      <SettingsGuardedLink href={`/workspace/${workspaceId}/access-requests`}>
+                        <ListChecks className='size-[14px]' />
+                        My access requests
+                      </SettingsGuardedLink>
+                    </DropdownMenuItem>
+                  )}
+                  {hostContext.hostOrganizationId && hostContext.viewer.isHostOrganizationAdmin && (
+                    <DropdownMenuItem size='lg' asChild>
+                      <SettingsGuardedLink
+                        href={`/access-requests?${new URLSearchParams({ organizationId: hostContext.hostOrganizationId, view: 'admin' })}`}
+                      >
+                        <ListChecks className='size-[14px]' />
+                        Review access requests
+                      </SettingsGuardedLink>
+                    </DropdownMenuItem>
+                  )}
+                  <ViewInvitationsMenuItem
+                    onOpen={() => {
                       setIsWorkspaceMenuOpen(false)
-                      if (isInvitationsDisabled) {
-                        if (isBillingEnabled) navigateToSettings({ section: 'billing' })
-                        return
-                      }
-                      setIsInviteModalOpen(true)
+                      setIsViewInvitationsOpen(true)
                     }}
-                    fullWidth
-                    flush
-                    className='select-none'
-                  >
-                    Invite teammates
-                  </Chip>
-                </DisabledReasonTooltip>
-                <ViewInvitationsMenuItem
-                  onOpen={() => {
-                    setIsWorkspaceMenuOpen(false)
-                    setIsViewInvitationsOpen(true)
-                  }}
-                />
-                <DisabledReasonTooltip reason={inviteDisabledReason}>
-                  <Chip
-                    leftIcon={ManageWorkspace}
-                    onClick={() => {
-                      setIsWorkspaceMenuOpen(false)
-                      if (isInvitationsDisabled) {
-                        if (isBillingEnabled) navigateToSettings({ section: 'billing' })
-                        return
-                      }
-                      navigateToSettings({ section: 'teammates' })
-                    }}
-                    fullWidth
-                    flush
-                    className='select-none'
-                  >
-                    Manage workspace
-                  </Chip>
-                </DisabledReasonTooltip>
+                  />
+                </div>
               </>
             )}
           </DropdownMenuContent>
@@ -919,63 +826,46 @@ function WorkspaceHeaderImpl({
              shifts when the workspace resolves. Chips carry no margin, so neither
              does this. */
           className={cn(chipGeometryClass, isCollapsed ? 'flex' : 'inline-flex min-w-0 max-w-full')}
-          title={activeWorkspace?.name}
           disabled
         >
-          {activeWorkspaceFull?.logoUrl ? (
-            <img
-              src={activeWorkspaceFull.logoUrl}
-              alt={activeWorkspaceFull.name || 'Workspace logo'}
-              className='size-[16px] flex-shrink-0 rounded-sm object-cover'
+          {activeWorkspace ? (
+            <IdentityTile
+              initial={workspaceInitial}
+              logoUrl={activeWorkspaceFull?.logoUrl}
+              alt={activeWorkspaceFull?.name || 'Workspace logo'}
             />
-          ) : activeWorkspace ? (
-            <div
-              className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
-              style={{ backgroundColor: activeWorkspaceFull?.color ?? 'var(--brand-accent)' }}
-            >
-              {workspaceInitial}
-            </div>
           ) : (
-            <Skeleton className='size-[16px] flex-shrink-0 rounded-sm' />
+            <Skeleton className='size-[16px] shrink-0 rounded-sm' />
           )}
           {!isCollapsed && activeWorkspace?.name && (
             <>
-              <span className={chipContentLabelClass}>{activeWorkspace.name}</span>
+              <OverflowText
+                label={activeWorkspace.name}
+                className={cn('flex-1', chipContentLabelClass)}
+                focusTarget='nearest-interactive'
+              />
               <ChipChevronDown />
             </>
           )}
         </button>
       )}
 
-      {(() => {
-        const capturedPermissions = capturedWorkspaceRef.current?.permissions
-        const contextCanAdmin = capturedPermissions === 'admin'
-        const capturedWorkspace = workspaces.find((w) => w.id === capturedWorkspaceRef.current?.id)
-        const isOwner = capturedWorkspace && sessionUserId === capturedWorkspace.ownerId
-
-        return (
-          <ContextMenu
-            isOpen={isContextMenuOpen}
-            position={contextMenuPosition}
-            menuRef={contextMenuRef}
-            onClose={closeContextMenu}
-            onRename={handleRenameAction}
-            renameInputRef={renameInputRef}
-            onDelete={handleDeleteAction}
-            onLeave={handleLeaveAction}
-            onTogglePin={handleTogglePinAction}
-            onUploadLogo={handleUploadLogoAction}
-            showPin={true}
-            isPinned={Boolean(menuOpenWorkspaceId && pinnedWorkspaceIds.has(menuOpenWorkspaceId))}
-            showRename={true}
-            showUploadLogo={!!onUploadLogo}
-            showLeave={!isOwner && !!onLeaveWorkspace}
-            disableRename={!contextCanAdmin}
-            disableDelete={!contextCanAdmin || workspaces.length <= 1}
-            disableUploadLogo={!contextCanAdmin}
-          />
-        )
-      })()}
+      <WorkspaceContextMenu
+        workspace={workspaces.find((workspace) => workspace.id === menuOpenWorkspaceId)}
+        workspaceCount={workspaces.length}
+        sessionUserId={sessionUserId}
+        isOpen={isContextMenuOpen}
+        position={contextMenuPosition}
+        menuRef={contextMenuRef}
+        onClose={closeContextMenu}
+        onRename={handleRenameAction}
+        renameInputRef={renameInputRef}
+        onDelete={handleDeleteAction}
+        onLeave={handleLeaveAction}
+        onTogglePin={handleTogglePinAction}
+        onUploadLogo={handleUploadLogoAction}
+        isPinned={Boolean(menuOpenWorkspaceId && pinnedWorkspaceIds.has(menuOpenWorkspaceId))}
+      />
 
       <CreateWorkspaceModal
         open={isCreateModalOpen}

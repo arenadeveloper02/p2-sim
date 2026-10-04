@@ -368,7 +368,6 @@ export function convertMessagesToBedrock(messages: ChatMessage[]): BedrockConver
       role,
       content: text ? [{ text }] : [{ text: '' }],
     })
-    continue
   }
 
   return {

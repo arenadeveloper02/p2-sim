@@ -8,13 +8,9 @@ import { generateId } from '@sim/utils/id'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
-import { SendChatIcon } from '@/app/(interfaces)/chat/[identifier]/send-icon'
 import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
-  DEPLOYED_CHAT_ICON_DEFAULT,
-  DEPLOYED_CHAT_INPUT_GLOW_SHADOW,
   DEPLOYED_CHAT_INPUT_HEIGHT_CLASS,
-  DEPLOYED_CHAT_INPUT_SHELL_BACKGROUND,
 } from '@/app/(interfaces)/chat/constants'
 
 const logger = createLogger('ChatInput')
@@ -246,10 +242,9 @@ export const ChatInput: React.FC<{
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming || attachedFiles.length >= 15}
               className={cn(
-                'flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-ds-blue-50,#F3F8FE)] disabled:cursor-not-allowed disabled:opacity-50',
+                'flex size-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-icon)] transition-colors hover-hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50',
                 pinnedControlClass
               )}
-              style={{ color: DEPLOYED_CHAT_ICON_DEFAULT }}
             >
               <Paperclip className='size-[16px]' strokeWidth={2} />
             </button>
@@ -280,7 +275,7 @@ export const ChatInput: React.FC<{
           placeholder={isDragOver ? 'Drop files here...' : placeholder}
           rows={1}
           className={cn(
-            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] text-[var(--color-ds-text-primary)] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[16px] placeholder:text-[var(--color-ds-text-placeholder)] focus-visible:ring-0 focus-visible:ring-offset-0',
+            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] font-normal text-[var(--text-primary)] text-base leading-[23px] tracking-[0] outline-none placeholder:font-[family-name:var(--font-inter)] placeholder:font-normal placeholder:text-[var(--text-muted)] placeholder:text-base focus-visible:ring-0 focus-visible:ring-offset-0',
             isMultiLineInput
               ? 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
               : 'min-h-[24px] overflow-hidden'
@@ -292,14 +287,13 @@ export const ChatInput: React.FC<{
             type='button'
             onClick={onStopStreaming}
             className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-[var(--color-ds-blue-200,#D1E3FA)] p-0 transition-colors hover:bg-[var(--color-ds-blue-300,#A3C7F6)]',
+              'deployed-send-button flex size-7 shrink-0 items-center justify-center rounded-full border-0 p-0 transition-colors',
               pinnedControlClass
             )}
             title='Stop generation'
           >
             <svg
-              className='block size-[14px]'
-              style={{ fill: DEPLOYED_CHAT_ICON_DEFAULT }}
+              className='block size-[14px] fill-current'
               viewBox='0 0 24 24'
               xmlns='http://www.w3.org/2000/svg'
             >
@@ -312,13 +306,12 @@ export const ChatInput: React.FC<{
             onClick={handleSubmit}
             disabled={!canSubmit}
             className={cn(
-              'flex size-8 shrink-0 items-center justify-center border-0 bg-transparent p-0 transition-opacity disabled:cursor-not-allowed disabled:opacity-50',
-              canSubmit && 'hover:opacity-80',
+              'deployed-send-button flex size-7 shrink-0 items-center justify-center rounded-full border-0 p-0 transition-colors disabled:cursor-not-allowed',
               pinnedControlClass
             )}
             aria-label='Send message'
           >
-            <SendChatIcon />
+            <ArrowUp className='block size-4' />
           </button>
         )}
       </div>
@@ -354,17 +347,9 @@ export const ChatInput: React.FC<{
           <div
             className={cn(
               'w-full',
-              useDeployedChrome && 'rounded-[29px] border border-transparent border-solid p-0',
+              useDeployedChrome && 'deployed-chat-input-shell',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
             )}
-            style={
-              useDeployedChrome
-                ? {
-                    background: DEPLOYED_CHAT_INPUT_SHELL_BACKGROUND,
-                    boxShadow: DEPLOYED_CHAT_INPUT_GLOW_SHADOW,
-                  }
-                : undefined
-            }
           >
             <div
               role='group'
@@ -378,7 +363,7 @@ export const ChatInput: React.FC<{
                 'relative z-10 w-full cursor-text',
                 useDeployedChrome
                   ? cn(
-                      'rounded-[29px] bg-transparent px-4',
+                      'rounded-2xl bg-transparent px-4',
                       hasDeployedExtras ? 'py-1' : 'flex h-full min-w-0 items-center py-1'
                     )
                   : 'rounded-2xl border border-[var(--border-1)] bg-white px-2.5 py-2',

@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { credential, credentialMember, user } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq, notInArray } from 'drizzle-orm'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { isSharedCredentialType, requireOrdinaryCredentialType } from '@/lib/credentials/access'
 import type { CredentialRow } from '@/lib/credentials/queries'
@@ -24,6 +24,7 @@ export interface CredentialMemberView {
 export async function listCredentialMembers(
   credential: CredentialRow
 ): Promise<CredentialMemberView[]> {
+  if (!credential.workspaceId) throw new OrchestrationError('not_found', 'Credential not found')
   const explicitMembers = await db
     .select({
       id: credentialMember.id,
@@ -84,8 +85,10 @@ export interface UpsertCredentialMemberResult {
 export async function upsertCredentialMember(
   params: UpsertCredentialMemberParams
 ): Promise<UpsertCredentialMemberResult> {
+  if (!params.credential.workspaceId)
+    throw new OrchestrationError('not_found', 'Credential not found')
   if (!isSharedCredentialType(params.credential.type)) {
-    throw new OrchestrationError('validation', 'Personal secrets cannot be shared')
+    throw new OrchestrationError('validation', 'Personal credentials cannot be shared')
   }
   const targetWorkspacePermission = await getUserEntityPermissions(
     params.targetUserId,
@@ -152,6 +155,10 @@ export async function removeCredentialMember(params: {
   credential: CredentialRow
   targetUserId: string
 }): Promise<void> {
+  if (!params.credential.workspaceId)
+    throw new OrchestrationError('not_found', 'Credential not found')
+  if (params.credential.type === 'personal_token')
+    throw new OrchestrationError('validation', 'Personal tokens do not have shared members')
   const [target] = await db
     .select({ id: credentialMember.id, role: credentialMember.role })
     .from(credentialMember)
@@ -218,8 +225,17 @@ export async function listCredentialMembershipsForUser(userId: string) {
     })
     .from(credentialMember)
     .innerJoin(credential, eq(credentialMember.credentialId, credential.id))
-    .where(and(eq(credentialMember.userId, userId), ne(credential.type, 'managed_oauth')))
-  return rows.map((row) => ({ ...row, type: requireOrdinaryCredentialType(row.type) }))
+    .where(
+      and(
+        eq(credentialMember.userId, userId),
+        notInArray(credential.type, ['managed_oauth', 'managed_mcp'])
+      )
+    )
+  return rows.flatMap((row) =>
+    row.workspaceId
+      ? [{ ...row, workspaceId: row.workspaceId, type: requireOrdinaryCredentialType(row.type) }]
+      : []
+  )
 }
 
 export async function leaveCredentialMembership(params: {

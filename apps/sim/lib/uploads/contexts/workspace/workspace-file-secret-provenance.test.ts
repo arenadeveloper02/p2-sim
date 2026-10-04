@@ -4,11 +4,28 @@
 import { workspaceFileSecretProvenance, workspaceFiles } from '@sim/db/schema'
 import { dbChainMock, dbChainMockFns, queueTableRows, resetDbChainMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockReportWrite, mockReportRefusal } = vi.hoisted(() => ({
+  mockReportWrite: vi.fn(),
+  mockReportRefusal: vi.fn(),
+}))
+
+vi.mock('@/lib/execution/durable-secret-provenance-telemetry', () => ({
+  reportDurableSecretProvenanceWrite: mockReportWrite,
+  reportDurableSecretProvenanceRefusal: mockReportRefusal,
+}))
+
 import type { DbTransaction } from '@/lib/db/types'
+import {
+  PROVENANCE_MAX_ENTRIES,
+  PROVENANCE_MAX_SERIALIZED_BYTES,
+} from '@/lib/execution/provenance-limits'
 import {
   areModelSafeWorkspaceFileKeys,
   copyWorkspaceFileSecretProvenanceInTx,
+  createWorkspaceFileSecretProvenanceFromRegistry,
   filterModelSafeWorkspaceFileAttachments,
+  getBoundWorkspaceFileSecretProvenance,
   importWorkspaceFileSecretProvenanceForModelView,
   importWorkspaceFileSecretProvenanceForRuntime,
   initializeWorkspaceFileSecretProvenanceInTx,
@@ -21,6 +38,62 @@ import {
 import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
 const CONTENT_UPDATED_AT = new Date('2026-08-04T00:00:00.000Z')
+
+describe('execution file sidecars at model boundaries', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+  })
+
+  it.each([
+    { status: 'exact', version: 1, stale: false, entries: [], safe: true },
+    { status: 'unknown', version: 1, stale: false, entries: [], safe: false },
+    { status: 'exact', version: 1, stale: true, entries: [], safe: false },
+    { status: null, version: 1, stale: false, entries: null, safe: false },
+    { status: 'unknown', version: null, stale: true, entries: [], safe: true },
+    {
+      status: 'exact',
+      version: 1,
+      stale: false,
+      entries: [{ name: 'KEY', encryptedValue: 'ciphertext', sourceUserId: 'writer' }],
+      safe: false,
+    },
+  ])(
+    'classifies execution bytes consistently: %j',
+    async ({ status, version, stale, entries, safe }) => {
+      const key = 'execution/workspace-1/workflow-1/execution-1/file.zip'
+      const row = {
+        key,
+        workspaceId: 'workspace-1',
+        context: 'execution',
+        fileContentUpdatedAt: CONTENT_UPDATED_AT,
+        secretProvenanceVersion: version,
+        provenanceContentUpdatedAt: stale ? new Date(0) : CONTENT_UPDATED_AT,
+        status,
+        entries,
+      }
+
+      queueTableRows(workspaceFiles, [row])
+      expect(await isModelSafeWorkspaceFileKey(key, { workspaceId: 'workspace-1' })).toBe(safe)
+      queueTableRows(workspaceFiles, [row])
+      expect(
+        await filterModelSafeWorkspaceFileAttachments([{ id: 'invented-id', key }], {
+          workspaceId: 'workspace-1',
+        })
+      ).toEqual(safe ? [{ id: 'invented-id', key }] : [])
+      queueTableRows(workspaceFiles, [row])
+      const bound = await getBoundWorkspaceFileSecretProvenance('workspace-1', {
+        fileId: 'canonical-id',
+        key,
+        context: 'execution',
+        contentUpdatedAt: CONTENT_UPDATED_AT,
+      })
+      expect(bound.status).toBe(
+        version === null || (status === 'exact' && !stale) ? 'exact' : 'unknown'
+      )
+    }
+  )
+})
 
 describe('workspace file secret provenance', () => {
   beforeEach(() => {
@@ -66,6 +139,7 @@ describe('workspace file secret provenance', () => {
     )
     expect(dbChainMockFns.update).toHaveBeenCalledWith(workspaceFiles)
     expect(dbChainMockFns.set).toHaveBeenCalledWith({ secretProvenanceVersion: 1 })
+    expect(mockReportWrite).not.toHaveBeenCalled()
   })
 
   it('keeps the legacy logical-byte budget when storing an anonymous entry', async () => {
@@ -139,6 +213,73 @@ describe('workspace file secret provenance', () => {
     expect(dbChainMockFns.set).toHaveBeenCalledWith({ secretProvenanceVersion: 1 })
   })
 
+  /**
+   * Absence and taint are different claims and must round-trip separately. Collapsing them is what
+   * made a file a writer deliberately refused indistinguishable from one nobody recorded, and so
+   * eligible for the same relaxation.
+   */
+  it('persists an unrecorded initialization as its own status', async () => {
+    await initializeWorkspaceFileSecretProvenanceInTx(
+      dbChainMock.db as unknown as DbTransaction,
+      'file-1',
+      CONTENT_UPDATED_AT,
+      { status: 'unrecorded' }
+    )
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'file-1', status: 'unrecorded', entries: [] })
+    )
+    expect(mockReportWrite).toHaveBeenCalledWith({
+      surface: 'workspace-file',
+      status: 'unrecorded',
+      cause: 'workspace-file-write-unrecorded',
+      resourceId: 'file-1',
+    })
+  })
+
+  it('persists a refused write as unknown, not as an absence', async () => {
+    await replaceWorkspaceFileSecretProvenanceInTx(
+      dbChainMock.db as unknown as DbTransaction,
+      'file-1',
+      CONTENT_UPDATED_AT,
+      { status: 'unknown' }
+    )
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'file-1', status: 'unknown', entries: [] })
+    )
+    expect(mockReportWrite).toHaveBeenCalledWith({
+      surface: 'workspace-file',
+      status: 'unknown',
+      cause: 'workspace-file-write-unknown',
+      resourceId: 'file-1',
+    })
+  })
+
+  it('does not report a non-exact initialization ignored for an existing sidecar', async () => {
+    dbChainMockFns.returning.mockResolvedValueOnce([])
+    await initializeWorkspaceFileSecretProvenanceInTx(
+      dbChainMock.db as unknown as DbTransaction,
+      'file-1',
+      CONTENT_UPDATED_AT,
+      { status: 'unknown' }
+    )
+    expect(mockReportWrite).not.toHaveBeenCalled()
+  })
+
+  it('persists an unrecorded replacement as its own status', async () => {
+    await replaceWorkspaceFileSecretProvenanceInTx(
+      dbChainMock.db as unknown as DbTransaction,
+      'file-1',
+      CONTENT_UPDATED_AT,
+      { status: 'unrecorded' }
+    )
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'file-1', status: 'unrecorded', entries: [] })
+    )
+  })
+
   it('rejects a marker write that cannot bind the exact tracked content version', async () => {
     dbChainMockFns.returning.mockResolvedValueOnce([])
 
@@ -163,19 +304,23 @@ describe('workspace file secret provenance', () => {
     expect(dbChainMockFns.where.mock.calls.at(-1)?.[0]).toEqual({
       type: 'and',
       conditions: [
-        { type: 'eq', left: 'id', right: 'file-1' },
-        { type: 'gte', left: 'contentUpdatedAt', right: CONTENT_UPDATED_AT },
+        { type: 'eq', left: 'workspaceFiles.id', right: 'file-1' },
+        { type: 'gte', left: 'workspaceFiles.contentUpdatedAt', right: CONTENT_UPDATED_AT },
         {
           type: 'lt',
-          left: 'contentUpdatedAt',
+          left: 'workspaceFiles.contentUpdatedAt',
           right: new Date(CONTENT_UPDATED_AT.getTime() + 1),
         },
-        { type: 'inArray', column: 'context', values: ['workspace', 'mothership'] },
+        {
+          type: 'inArray',
+          column: 'workspaceFiles.context',
+          values: ['workspace', 'mothership', 'execution'],
+        },
         {
           type: 'or',
           conditions: [
-            { type: 'isNull', column: 'secretProvenanceVersion' },
-            { type: 'eq', left: 'secretProvenanceVersion', right: 1 },
+            { type: 'isNull', column: 'workspaceFiles.secretProvenanceVersion' },
+            { type: 'eq', left: 'workspaceFiles.secretProvenanceVersion', right: 1 },
           ],
         },
       ],
@@ -275,6 +420,17 @@ describe('workspace file secret provenance', () => {
         entries: [],
       },
       {
+        id: 'unrecorded-id',
+        key: 'unrecorded-key',
+        workspaceId: 'workspace-1',
+        context: 'workspace',
+        fileContentUpdatedAt: CONTENT_UPDATED_AT,
+        secretProvenanceVersion: 1,
+        provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
+        status: 'unrecorded',
+        entries: [],
+      },
+      {
         id: 'other-workspace-id',
         key: 'other-workspace-key',
         workspaceId: 'workspace-2',
@@ -317,6 +473,7 @@ describe('workspace file secret provenance', () => {
       { id: 'wrong-id', key: 'safe-key' },
       { id: 'safe-id', key: 'tainted-key' },
       { id: 'unknown-id', key: 'unknown-key' },
+      { id: 'unrecorded-id', key: 'unrecorded-key' },
       { id: 'other-workspace-id', key: 'other-workspace-key' },
       { id: 'pre-marker-sidecar-id', key: 'pre-marker-sidecar-key' },
       { id: 'synthetic-execution-id', key: 'untracked-context-key' },
@@ -331,8 +488,12 @@ describe('workspace file secret provenance', () => {
       { key: 'safe-key' },
       { id: 'file-1700000000000', key: 'safe-key' },
       { id: 'wrong-id', key: 'safe-key' },
+      /**
+       * Unrecorded, so kept — the untracked keys below say the same thing and always were. The
+       * stored `unknown` above is dropped: a writer refused those bytes on purpose, which is a
+       * different claim from nobody having recorded them, and no policy relaxes it.
+       */
       { id: 'pre-marker-sidecar-id', key: 'pre-marker-sidecar-key' },
-      { id: 'synthetic-execution-id', key: 'untracked-context-key' },
       { id: 'legacy-id', key: 'legacy-key' },
       { id: 'inline-file' },
     ])
@@ -372,6 +533,7 @@ describe('workspace file secret provenance', () => {
     ])
 
     await expect(isModelSafeWorkspaceFileKey('legacy-key')).resolves.toBe(true)
+    expect(mockReportRefusal).not.toHaveBeenCalled()
   })
 
   it('allows opaque egress only for exact-empty or legacy file provenance', async () => {
@@ -673,7 +835,11 @@ describe('workspace file secret provenance', () => {
     )
   })
 
-  it('rejects unavailable mounted-file provenance without importing it', async () => {
+  /**
+   * Unrecorded says exactly what an untracked file says, and that one has always mounted. There is
+   * nothing to import either way, so the mount proceeds and the workspace is told.
+   */
+  it('refuses to mount an unrecorded tracked file', async () => {
     const registry = {
       importProvenance: vi.fn(),
       isPermanentlyIncomplete: vi.fn().mockReturnValue(false),
@@ -683,7 +849,7 @@ describe('workspace file secret provenance', () => {
         fileContentUpdatedAt: CONTENT_UPDATED_AT,
         secretProvenanceVersion: 1,
         provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
-        status: 'unknown',
+        status: 'unrecorded',
         entries: [],
       },
     ])
@@ -730,7 +896,7 @@ describe('workspace file secret provenance', () => {
     ).resolves.toBe(false)
   })
 
-  it('rejects a tainted, unknown, stale, or cross-workspace model egress key', async () => {
+  it('rejects a tainted, stale, or cross-workspace model egress key', async () => {
     const rejectedRows = [
       {
         id: 'tainted-id',
@@ -742,17 +908,6 @@ describe('workspace file secret provenance', () => {
         provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
         status: 'exact',
         entries: [{ name: 'API_KEY', encryptedValue: 'encrypted' }],
-      },
-      {
-        id: 'unknown-id',
-        key: 'unknown-key',
-        workspaceId: 'workspace-1',
-        context: 'workspace',
-        fileContentUpdatedAt: CONTENT_UPDATED_AT,
-        secretProvenanceVersion: 1,
-        provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
-        status: 'unknown',
-        entries: [],
       },
       {
         id: 'stale-id',
@@ -897,19 +1052,126 @@ describe('workspace file secret provenance', () => {
   it('merges exact byte contributors and propagates unknown classifications', () => {
     expect(
       mergeWorkspaceFileSecretProvenance(
-        { status: 'exact', entries: [{ name: 'A', encryptedValue: 'encrypted-a' }] },
-        { status: 'exact', entries: [{ name: 'B', encryptedValue: 'encrypted-b' }] }
+        {
+          status: 'exact',
+          entries: [{ name: 'A', encryptedValue: 'encrypted-a', sourceUserId: 'user-1' }],
+        },
+        {
+          status: 'exact',
+          entries: [{ name: 'B', encryptedValue: 'encrypted-b', sourceUserId: 'user-1' }],
+        }
       )
     ).toEqual({
       status: 'exact',
       entries: [
-        { name: 'A', encryptedValue: 'encrypted-a' },
-        { name: 'B', encryptedValue: 'encrypted-b' },
+        { name: 'A', encryptedValue: 'encrypted-a', sourceUserId: 'user-1' },
+        { name: 'B', encryptedValue: 'encrypted-b', sourceUserId: 'user-1' },
       ],
     })
     expect(
       mergeWorkspaceFileSecretProvenance({ status: 'exact', entries: [] }, { status: 'unknown' })
     ).toEqual({ status: 'unknown' })
+  })
+
+  it('deduplicates only identical scoped entries across repeated contributors', () => {
+    const base = {
+      sourceUserId: 'user-1',
+      sourceWorkspaceId: 'workspace-1',
+      name: 'TOKEN',
+      encryptedValue: 'ciphertext',
+    }
+    const entries = [
+      base,
+      { ...base, sourceUserId: 'user-2' },
+      { ...base, sourceWorkspaceId: 'workspace-2' },
+      { ...base, name: 'OTHER_TOKEN' },
+      { sourceUserId: base.sourceUserId, encryptedValue: base.encryptedValue },
+      { ...base, encryptedValue: 'different-ciphertext' },
+    ]
+    const contributors = Array.from({ length: 1_000 }, () => ({
+      status: 'exact' as const,
+      entries,
+    }))
+
+    expect(mergeWorkspaceFileSecretProvenance(...contributors)).toEqual({
+      status: 'exact',
+      entries,
+    })
+  })
+
+  it('counts distinct merged entries at the actual entry boundary and refuses overflow', () => {
+    const entries = Array.from({ length: PROVENANCE_MAX_ENTRIES }, (_, index) => ({
+      sourceUserId: 'user-1',
+      encryptedValue: `ciphertext-${index}`,
+    }))
+    const full = { status: 'exact' as const, entries }
+    expect(mergeWorkspaceFileSecretProvenance(full, full)).toEqual(full)
+    expect(
+      mergeWorkspaceFileSecretProvenance(full, {
+        status: 'exact',
+        entries: [{ sourceUserId: 'user-1', encryptedValue: 'one-more-secret' }],
+      })
+    ).toEqual({ status: 'unknown' })
+  })
+
+  it('deduplicates before charging the actual byte boundary and refuses a larger union', () => {
+    const sourceUserId = 'user-1'
+    const name = 'TOKEN'
+    const overhead = Buffer.byteLength(sourceUserId + name, 'utf8')
+    const entry = {
+      sourceUserId,
+      name,
+      encryptedValue: 'x'.repeat(PROVENANCE_MAX_SERIALIZED_BYTES - overhead),
+    }
+    const full = { status: 'exact' as const, entries: [entry] }
+    expect(mergeWorkspaceFileSecretProvenance(full, full)).toEqual(full)
+    expect(
+      mergeWorkspaceFileSecretProvenance(full, {
+        status: 'exact',
+        entries: [{ sourceUserId, encryptedValue: 'one-more-secret' }],
+      })
+    ).toEqual({ status: 'unknown' })
+    expect(
+      mergeWorkspaceFileSecretProvenance({
+        status: 'exact',
+        entries: [{ ...entry, encryptedValue: `${entry.encryptedValue}é` }],
+      })
+    ).toEqual({ status: 'unknown' })
+  })
+
+  it('stops reading entries once the merged envelope cannot be represented', () => {
+    const entries = [
+      { sourceUserId: 'user-1', encryptedValue: 'x'.repeat(PROVENANCE_MAX_SERIALIZED_BYTES) },
+    ]
+    Object.defineProperty(entries, 1, {
+      get: () => {
+        throw new Error('overflow must stop the merge')
+      },
+    })
+    expect(mergeWorkspaceFileSecretProvenance({ status: 'exact', entries })).toEqual({
+      status: 'unknown',
+    })
+  })
+
+  it('does not discard known secret entries when another contributor is unrecorded', () => {
+    const known = {
+      status: 'exact' as const,
+      entries: [{ name: 'TOKEN', encryptedValue: 'encrypted', sourceUserId: 'user-1' }],
+    }
+    const unrecorded = { status: 'unrecorded' as const }
+    expect(mergeWorkspaceFileSecretProvenance(known, unrecorded)).toEqual({ status: 'unknown' })
+    expect(mergeWorkspaceFileSecretProvenance(unrecorded, known)).toEqual({ status: 'unknown' })
+  })
+
+  it('preserves absences without known secrets and never relaxes an unknown contributor', () => {
+    const unrecorded = { status: 'unrecorded' as const }
+    const empty = { status: 'exact' as const, entries: [] }
+    expect(mergeWorkspaceFileSecretProvenance(unrecorded)).toEqual(unrecorded)
+    expect(mergeWorkspaceFileSecretProvenance(unrecorded, empty)).toEqual(unrecorded)
+    expect(mergeWorkspaceFileSecretProvenance(empty, unrecorded)).toEqual(unrecorded)
+    expect(mergeWorkspaceFileSecretProvenance(unrecorded, { status: 'unknown' })).toEqual({
+      status: 'unknown',
+    })
   })
 
   it('fails closed when persisted provenance is malformed', async () => {
@@ -1017,6 +1279,54 @@ describe('workspace file secret provenance', () => {
         contentUpdatedAt: targetContentUpdatedAt,
         status: 'exact',
         entries: [{ name: 'API_KEY', encryptedValue: 'encrypted', sourceUserId: 'user-1' }],
+      })
+    )
+  })
+
+  /**
+   * A fork or chat copy must not turn a readable absence into a permanent refusal. Folding
+   * `unrecorded` in with the refusals would hand the target a taint the source never carried, and
+   * nothing rewrites a file's provenance but another content write.
+   */
+  it('copies a recorded absence as an absence, not as a refusal', async () => {
+    const targetContentUpdatedAt = new Date('2026-08-04T00:00:01.000Z')
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          userId: 'user-1',
+          workspaceId: 'workspace-2',
+          contentUpdatedAt: targetContentUpdatedAt,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          key: 'source-key',
+          userId: 'user-1',
+          workspaceId: 'workspace-1',
+          secretProvenanceVersion: 1,
+          fileContentUpdatedAt: CONTENT_UPDATED_AT,
+          provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
+          status: 'unrecorded',
+          entries: [],
+        },
+      ])
+
+    await copyWorkspaceFileSecretProvenanceInTx(
+      dbChainMock.db as unknown as DbTransaction,
+      {
+        fileId: 'source-file',
+        key: 'source-key',
+        contentUpdatedAtMs: CONTENT_UPDATED_AT.getTime(),
+      },
+      'target-file'
+    )
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'target-file',
+        contentUpdatedAt: targetContentUpdatedAt,
+        status: 'unrecorded',
+        entries: [],
       })
     )
   })
@@ -1286,5 +1596,208 @@ describe('workspace file secret provenance', () => {
         entries: [],
       })
     )
+  })
+
+  it('refuses an unrecorded tracked file', async () => {
+    queueTableRows(workspaceFiles, [
+      {
+        id: 'unrecorded-id',
+        key: 'unrecorded-key',
+        workspaceId: 'workspace-1',
+        context: 'workspace',
+        fileContentUpdatedAt: CONTENT_UPDATED_AT,
+        secretProvenanceVersion: 1,
+        provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
+        status: 'unrecorded',
+        entries: [],
+      },
+    ])
+
+    await expect(isModelSafeWorkspaceFileKey('unrecorded-key')).resolves.toBe(false)
+    expect(mockReportRefusal).toHaveBeenCalledWith({
+      surface: 'workspace-file',
+      cause: 'workspace-file-unrecorded-enforced',
+      workspaceId: undefined,
+    })
+  })
+
+  /**
+   * Narrower than "not exact" on purpose. A stale binding describes content that has since changed
+   * and a malformed sidecar is a fault; neither is the absence the policy covers, and neither may
+   * ride in on it.
+   */
+  it('still refuses a stale binding and a malformed sidecar', async () => {
+    for (const row of [
+      {
+        id: 'stale-id',
+        key: 'stale-key',
+        workspaceId: 'workspace-1',
+        context: 'workspace',
+        fileContentUpdatedAt: CONTENT_UPDATED_AT,
+        secretProvenanceVersion: 1,
+        provenanceContentUpdatedAt: new Date('2026-08-03T00:00:00.000Z'),
+        status: 'unknown',
+        entries: [],
+      },
+      {
+        id: 'malformed-id',
+        key: 'malformed-key',
+        workspaceId: 'workspace-1',
+        context: 'workspace',
+        fileContentUpdatedAt: CONTENT_UPDATED_AT,
+        secretProvenanceVersion: 1,
+        provenanceContentUpdatedAt: CONTENT_UPDATED_AT,
+        status: 'unknown',
+        entries: 'not-an-array',
+      },
+    ]) {
+      queueTableRows(workspaceFiles, [row])
+      await expect(isModelSafeWorkspaceFileKey(row.key)).resolves.toBe(false)
+    }
+    expect(mockReportRefusal).toHaveBeenCalledTimes(2)
+    expect(mockReportRefusal).toHaveBeenCalledWith({
+      surface: 'workspace-file',
+      cause: 'workspace-file-provenance-unavailable',
+      workspaceId: 'workspace-1',
+      resourceId: undefined,
+    })
+  })
+
+  /**
+   * Bytes nobody vouched for do not become vouched-for by being combined with bytes that were.
+   * Falling through to the exact branch would have handed a later boundary a positive claim that
+   * neither input made — a stronger statement than either, produced by merging.
+   */
+  it('keeps an unrecorded contribution unrecorded when merged with an exact one', () => {
+    expect(
+      mergeWorkspaceFileSecretProvenance({ status: 'exact', entries: [] }, { status: 'unrecorded' })
+    ).toEqual({ status: 'unrecorded' })
+  })
+
+  it('still lets an unknown contribution dominate an unrecorded one', () => {
+    expect(
+      mergeWorkspaceFileSecretProvenance({ status: 'unrecorded' }, { status: 'unknown' })
+    ).toEqual({ status: 'unknown' })
+  })
+})
+
+describe('createWorkspaceFileSecretProvenanceFromRegistry write decision', () => {
+  const SCOPE = { userId: 'user-1', workspaceId: 'workspace-1' }
+
+  /**
+   * A registry latched with nothing resolved is an absence, not a taint: no plaintext exists in
+   * the context to be in the bytes, so the writer records an absence instead of known taint.
+   * Stamping taint here made one failed workflow run hard-refuse every file its chat later wrote.
+   */
+  it('classifies a latched registry holding no active entries as unrecorded', async () => {
+    const registry = {
+      exportCommittedProvenanceForValue: vi.fn(() => ({
+        version: 1,
+        complete: false,
+        entries: [],
+      })),
+      getIncompletenessDiagnostics: vi.fn(() => ({
+        reasons: ['value-provenance-absent'],
+        origins: [],
+        incompleteInputPathCount: 0,
+        activeEntryCount: 0,
+      })),
+    } as unknown as ResolvedSecretTraceRegistry
+
+    await expect(
+      createWorkspaceFileSecretProvenanceFromRegistry(registry, 'generated content', SCOPE)
+    ).resolves.toEqual({ safe: true, provenance: { status: 'unrecorded' } })
+  })
+
+  /**
+   * Zero active entries does not prove the context never held plaintext: a verification or
+   * decrypt fault trips while secret material is in flight, before anything activates. Only a
+   * latch whose recorded reasons all belong to the registry's absence set may relax.
+   */
+  it.each([
+    ['an originating fault', 'projection-mismatch'],
+    /**
+     * Warn-level, yet plaintext-bearing: it latches after a staged source registry decrypted
+     * real entries it could not narrow to the value — the report-level split must not be the
+     * absence split.
+     */
+    ['an unnarrowable crossing', 'value-provenance-filter-incomplete'],
+  ] as const)(
+    'keeps a latch caused by %s as a taint even with no active entries',
+    async (_, reason) => {
+      const registry = {
+        exportCommittedProvenanceForValue: vi.fn(() => ({
+          version: 1,
+          complete: false,
+          entries: [],
+        })),
+        getIncompletenessDiagnostics: vi.fn(() => ({
+          reasons: [reason],
+          origins: [],
+          incompleteInputPathCount: 0,
+          activeEntryCount: 0,
+        })),
+      } as unknown as ResolvedSecretTraceRegistry
+
+      await expect(
+        createWorkspaceFileSecretProvenanceFromRegistry(registry, 'generated content', SCOPE)
+      ).resolves.toEqual({ safe: false })
+    }
+  )
+
+  /** A latched registry that recorded no reason offers nothing to vouch with; keep the taint. */
+  it('keeps a latch with an empty reason list as a taint', async () => {
+    const registry = {
+      exportCommittedProvenanceForValue: vi.fn(() => ({
+        version: 1,
+        complete: false,
+        entries: [],
+      })),
+      getIncompletenessDiagnostics: vi.fn(() => ({
+        reasons: [],
+        origins: [],
+        incompleteInputPathCount: 0,
+        activeEntryCount: 0,
+      })),
+    } as unknown as ResolvedSecretTraceRegistry
+
+    await expect(
+      createWorkspaceFileSecretProvenanceFromRegistry(registry, 'generated content', SCOPE)
+    ).resolves.toEqual({ safe: false })
+  })
+
+  it('keeps a latched registry holding plaintext it cannot map as a taint', async () => {
+    const registry = {
+      exportCommittedProvenanceForValue: vi.fn(() => ({
+        version: 1,
+        complete: false,
+        entries: [],
+      })),
+      getIncompletenessDiagnostics: vi.fn(() => ({
+        reasons: ['source-provenance-incomplete'],
+        origins: [],
+        incompleteInputPathCount: 0,
+        activeEntryCount: 1,
+      })),
+    } as unknown as ResolvedSecretTraceRegistry
+
+    await expect(
+      createWorkspaceFileSecretProvenanceFromRegistry(registry, 'generated content', SCOPE)
+    ).resolves.toEqual({ safe: false })
+  })
+
+  it('stays a taint when the incomplete export carries no diagnostics to vouch with', async () => {
+    const registry = {
+      exportCommittedProvenanceForValue: vi.fn(() => ({
+        version: 1,
+        complete: false,
+        entries: [],
+      })),
+      getIncompletenessDiagnostics: vi.fn(() => undefined),
+    } as unknown as ResolvedSecretTraceRegistry
+
+    await expect(
+      createWorkspaceFileSecretProvenanceFromRegistry(registry, 'generated content', SCOPE)
+    ).resolves.toEqual({ safe: false })
   })
 })

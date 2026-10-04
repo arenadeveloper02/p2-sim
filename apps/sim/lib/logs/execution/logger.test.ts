@@ -36,6 +36,7 @@ vi.mock('@sim/logger', () => ({
   logger: mockLogger,
   runWithRequestContext: vi.fn(<T>(_ctx: unknown, fn: () => T): T => fn()),
   getRequestContext: vi.fn(() => undefined),
+  setRequestAuth: vi.fn(),
 }))
 
 // Mock billing modules
@@ -223,6 +224,86 @@ describe('ExecutionLogger', () => {
             secretProjectionVersion: SECRET_PROJECTION_VERSION,
           }),
         })
+      )
+    })
+
+    const startParams = {
+      workflowId: 'workflow-123',
+      workspaceId: 'workspace-123',
+      executionId: 'execution-123',
+      trigger: {
+        type: 'chat' as const,
+        source: 'chat' as const,
+        timestamp: '2026-08-04T00:00:00.000Z',
+      },
+      environment: {
+        variables: {},
+        workflowId: 'workflow-123',
+        executionId: 'execution-123',
+        userId: 'user-123',
+        workspaceId: 'workspace-123',
+      },
+      workflowState: { blocks: {}, edges: [], loops: {}, parallels: {} },
+    }
+
+    test('records the deployment version when an early log started without one', async () => {
+      const startedAt = new Date('2026-08-04T00:00:00.000Z')
+      queueTableRows(workflowExecutionLogs, [
+        {
+          id: 'log-1',
+          workflowId: 'workflow-123',
+          executionId: 'execution-123',
+          stateSnapshotId: 'snapshot-123',
+          deploymentVersionId: null,
+          level: 'info',
+          status: 'running',
+          trigger: 'chat',
+          startedAt,
+          endedAt: null,
+          totalDurationMs: null,
+          executionData: {},
+          createdAt: startedAt,
+        },
+      ])
+
+      await logger.startWorkflowExecution({
+        ...startParams,
+        deploymentVersionId: 'deployment-version-1',
+      })
+
+      expect(dbChainMockFns.set).toHaveBeenCalledWith({
+        deploymentVersionId: 'deployment-version-1',
+      })
+      expect(dbChainMockFns.values).not.toHaveBeenCalled()
+    })
+
+    test('leaves a deployment version already recorded on the run unchanged', async () => {
+      const startedAt = new Date('2026-08-04T00:00:00.000Z')
+      queueTableRows(workflowExecutionLogs, [
+        {
+          id: 'log-1',
+          workflowId: 'workflow-123',
+          executionId: 'execution-123',
+          stateSnapshotId: 'snapshot-123',
+          deploymentVersionId: 'deployment-version-old',
+          level: 'info',
+          status: 'running',
+          trigger: 'chat',
+          startedAt,
+          endedAt: null,
+          totalDurationMs: null,
+          executionData: {},
+          createdAt: startedAt,
+        },
+      ])
+
+      await logger.startWorkflowExecution({
+        ...startParams,
+        deploymentVersionId: 'deployment-version-new',
+      })
+
+      expect(dbChainMockFns.set).not.toHaveBeenCalledWith(
+        expect.objectContaining({ deploymentVersionId: expect.any(String) })
       )
     })
 
@@ -669,7 +750,9 @@ describe('ExecutionLogger', () => {
         activeExecutionPathLength: 0,
         pendingQueueLength: 0,
       })
-      expect(compacted.traceSpans?.[0]?.children?.[0]).not.toHaveProperty('input')
+      expect(compacted.traceSpans?.[0]?.children?.[0]?.input).toEqual(
+        expect.objectContaining({ _truncated: true, reason: 'trace_io_size_limit' })
+      )
     })
 
     test('retains the trusted Copilot binding in metadata-only compaction', () => {
@@ -1519,7 +1602,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
     expect(lastEntries()).toEqual([
       expect.objectContaining({
-        category: 'model',
+        category: 'model_unbilled',
         description: 'gpt-4o',
         cost: 0,
         metadata: { inputTokens: 120, outputTokens: 45 },

@@ -7,8 +7,8 @@ import {
 import { normalizeChartOutput } from '@/lib/chart-generation/normalize-chart-output'
 import { buildChartSkillsPromptSection } from '@/lib/chart-generation/resolve-chart-skills'
 import {
+  assertPermissionsAllowed,
   validateModelProvider,
-  validateSkillsAllowed,
 } from '@/ee/access-control/utils/permission-check'
 import { DEFAULTS } from '@/executor/constants'
 import type { SkillInput } from '@/executor/handlers/agent/types'
@@ -120,7 +120,12 @@ export async function runChartGenerate(
 
   const skillInputs = (inputs.skills as SkillInput[] | undefined) ?? []
   if (skillInputs.length > 0 && ctx.workspaceId) {
-    await validateSkillsAllowed(ctx.userId, ctx.workspaceId, ctx.executionContext)
+    await assertPermissionsAllowed({
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+      toolKind: 'skill',
+      ctx: ctx.executionContext,
+    })
     const skillsSection = await buildChartSkillsPromptSection(skillInputs, ctx.workspaceId)
     if (skillsSection) systemPrompt += skillsSection
   }

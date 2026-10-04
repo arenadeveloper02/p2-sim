@@ -6,11 +6,12 @@ import {
   createLoopBlock,
   createStarterBlock,
 } from '@sim/testing'
-import type { Edge } from 'reactflow'
+import type { Edge } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getBlock } from '@/blocks/registry'
 import { normalizeName } from '@/executor/constants'
-import { filterNewEdges, getUniqueBlockName, prepareBlockState, regenerateBlockIds } from './utils'
+import { prepareBlockState } from './prepare-block-state'
+import { filterNewEdges, getUniqueBlockName, regenerateBlockIds } from './utils'
 
 describe('normalizeName', () => {
   it.concurrent('should convert to lowercase', () => {
@@ -156,7 +157,14 @@ describe('getUniqueBlockName', () => {
     /* The first of a kind reads as itself; only the second needs telling apart. */
     expect(getUniqueBlockName('Agent', {})).toBe('Agent')
     expect(getUniqueBlockName('Function', {})).toBe('Function')
-    expect(getUniqueBlockName('Loop', {})).toBe('Loop')
+  })
+
+  it('should number the first block when the bare name is a reserved reference prefix', () => {
+    /* "Loop" normalizes to `loop`, which is `<loop.index>` — not a block. The
+       first loop is "Loop 1" so its results are `<loop1.results>`. */
+    expect(getUniqueBlockName('Loop', {})).toBe('Loop 1')
+    expect(getUniqueBlockName('Parallel', {})).toBe('Parallel 1')
+    expect(getUniqueBlockName('Variable', {})).toBe('Variable 1')
   })
 
   it('should increment number when existing blocks have same base name', () => {

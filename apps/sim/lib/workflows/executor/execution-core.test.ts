@@ -1,3 +1,4 @@
+import type { WorkflowExecutionPrincipal } from '@sim/auth/principal'
 import {
   environmentUtilsMockFns,
   loggerMock,
@@ -7,7 +8,14 @@ import {
   workflowsUtilsMock,
   workflowsUtilsMockFns,
 } from '@sim/testing'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as retention from '@/lib/billing/retention'
+import { clearLargeValueCacheForTests } from '@/lib/execution/payloads/cache'
+import type { LargeArrayManifest } from '@/lib/execution/payloads/large-array-manifest'
+import type { LargeValueRef } from '@/lib/execution/payloads/large-value-ref'
+import type { LoggingSession } from '@/lib/logs/execution/logging-session'
+import { ExecutionSnapshot } from '@/executor/execution/snapshot'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 
 const {
   mergeSubblockStateWithValuesMock,
@@ -31,6 +39,9 @@ const {
   projectDisplayContentMock,
   projectDiagnosticErrorMock,
   decryptSecretMock,
+  downloadFileMock,
+  uploadFileMock,
+  maskBatchMock,
 } = vi.hoisted(() => ({
   mergeSubblockStateWithValuesMock: vi.fn(),
   safeStartMock: vi.fn(),
@@ -53,6 +64,9 @@ const {
   projectDisplayContentMock: vi.fn(),
   projectDiagnosticErrorMock: vi.fn(),
   decryptSecretMock: vi.fn(),
+  downloadFileMock: vi.fn(),
+  uploadFileMock: vi.fn(),
+  maskBatchMock: vi.fn(),
 }))
 
 const getPersonalAndWorkspaceEnvMock = environmentUtilsMockFns.mockGetPersonalAndWorkspaceEnv
@@ -62,10 +76,33 @@ afterAll(resetEnvironmentUtilsMock)
 const loadWorkflowFromNormalizedTablesMock =
   workflowsPersistenceUtilsMockFns.mockLoadWorkflowFromNormalizedTables
 const loadDeployedWorkflowStateMock = workflowsPersistenceUtilsMockFns.mockLoadDeployedWorkflowState
+const loadWorkflowDeploymentVersionStateMock =
+  workflowsPersistenceUtilsMockFns.mockLoadWorkflowDeploymentVersionState
 const updateWorkflowRunCountsMock = workflowsUtilsMockFns.mockUpdateWorkflowRunCounts
+
+vi.mock('@/lib/uploads', () => ({
+  StorageService: { downloadFile: downloadFileMock, uploadFile: uploadFileMock },
+}))
+
+vi.mock('@/lib/guardrails/mask-client', () => ({
+  maskPIIBatchViaHttp: maskBatchMock,
+}))
+
+vi.mock('@/lib/execution/payloads/large-value-metadata', () => ({
+  registerLargeValueOwner: vi.fn().mockResolvedValue(true),
+  addLargeValueReference: vi.fn().mockResolvedValue(undefined),
+}))
 
 vi.mock('@/lib/execution/cancellation', () => ({
   clearExecutionCancellation: clearExecutionCancellationMock,
+}))
+
+const { connectExecutionSignalHubMock } = vi.hoisted(() => ({
+  connectExecutionSignalHubMock: vi.fn(),
+}))
+
+vi.mock('@/lib/execution/execution-signal', () => ({
+  connectExecutionSignalHub: connectExecutionSignalHubMock,
 }))
 
 vi.mock('@/lib/core/security/encryption', () => ({
@@ -117,7 +154,7 @@ import {
   executeWorkflowCore,
   FINALIZED_EXECUTION_ID_TTL_MS,
   wasExecutionFinalizedByCore,
-} from './execution-core'
+} from '@/lib/workflows/executor/execution-core'
 
 const executionCoreLoggerCallIndex = loggerMock.createLogger.mock.calls.findIndex(
   ([name]) => name === 'ExecutionCore'
@@ -153,6 +190,11 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       userId: 'user-1',
       workflowUserId: 'workflow-owner',
       workspaceId: 'workspace-1',
+      principal: {
+        kind: 'session' as const,
+        userId: 'user-1',
+        sessionId: 'session-1',
+      },
       triggerType: 'api',
       executionId: 'execution-1',
       triggerBlockId: undefined,
@@ -196,6 +238,13 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       loops: {},
       parallels: {},
       deploymentVersionId: 'dep-1',
+    })
+    loadWorkflowDeploymentVersionStateMock.mockResolvedValue({
+      blocks: {},
+      edges: [],
+      loops: {},
+      parallels: {},
+      deploymentVersionId: 'dep-historical',
     })
 
     getPersonalAndWorkspaceEnvMock.mockResolvedValue({
@@ -303,7 +352,8 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       loggingSession: loggingSession as any,
     })
 
-    await Promise.resolve()
+    // setImmediate, not a fixed hop count: the assertion is about ordering, not how many microtasks precede the loads
+    await new Promise((resolve) => setImmediate(resolve))
 
     expect(callOrder).toContain('load-workflow:start')
     expect(callOrder).toContain('load-env:start')
@@ -332,6 +382,21 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     ])
     expect(safeStartMock).toHaveBeenCalledTimes(1)
     expect(executorConstructorMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('begins connecting the signal subscriber synchronously, before the first await', async () => {
+    const executionPromise = executeWorkflowCore({
+      snapshot: createSnapshot() as unknown as ExecutionSnapshot,
+      callbacks: {},
+      loggingSession: loggingSession as unknown as LoggingSession,
+    })
+
+    // Asserted with no await in between: the handshake has to start ahead of
+    // the custom-block read, or it stops overlapping the work that precedes the
+    // cancellation subscribe and is paid inside that subscribe's budget instead.
+    expect(connectExecutionSignalHubMock).toHaveBeenCalledOnce()
+
+    await executionPromise
   })
 
   it('routes onBlockStart through logging session persistence path', async () => {
@@ -363,6 +428,164 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       expect.any(String)
     )
   })
+
+  it.each([
+    {
+      name: 'personal API key manual draft execution',
+      principal: {
+        kind: 'personal_api_key' as const,
+        userId: 'user-1',
+        keyId: 'personal-key-1',
+      },
+      triggerType: 'manual',
+      useDraftState: true,
+      expectedIsDeployedContext: false,
+    },
+    {
+      name: 'deployed schedule background execution',
+      principal: {
+        kind: 'system' as const,
+        serviceId: 'schedule' as const,
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+      },
+      triggerType: 'schedule',
+      useDraftState: false,
+      expectedIsDeployedContext: true,
+    },
+  ])(
+    'derives deployed context from canonical state for $name',
+    async ({ principal, triggerType, useDraftState, expectedIsDeployedContext }) => {
+      executorExecuteMock.mockResolvedValue({
+        success: true,
+        status: 'completed',
+        output: { done: true },
+        logs: [],
+        metadata: { duration: 123, startTime: 'start', endTime: 'end' },
+      })
+
+      const snapshot = createSnapshot()
+      await executeWorkflowCore({
+        snapshot: {
+          ...snapshot,
+          metadata: {
+            ...snapshot.metadata,
+            principal,
+            triggerType,
+            useDraftState,
+            isClientSession: false,
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+
+      expect(executorConstructorMock.mock.calls[0]?.[0]?.contextExtensions?.isDeployedContext).toBe(
+        expectedIsDeployedContext
+      )
+    }
+  )
+
+  it.each([
+    {
+      name: 'schedule',
+      principal: {
+        kind: 'system' as const,
+        serviceId: 'schedule' as const,
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+      },
+      triggerType: 'schedule',
+      isPublicApiAccess: false,
+    },
+    {
+      name: 'webhook with a verified external subject',
+      principal: {
+        kind: 'system' as const,
+        serviceId: 'webhook' as const,
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+        webhookId: 'webhook-1',
+        provider: 'slack',
+        subject: {
+          kind: 'external_user' as const,
+          provider: 'slack',
+          tenantId: 'team-1',
+          subjectId: 'slack-user-1',
+        },
+      },
+      triggerType: 'webhook',
+      isPublicApiAccess: false,
+    },
+    {
+      name: 'workspace API key',
+      principal: {
+        kind: 'workspace_api_key' as const,
+        workspaceId: 'workspace-1',
+        keyId: 'workspace-key-1',
+      },
+      triggerType: 'api',
+      isPublicApiAccess: false,
+    },
+    {
+      name: 'anonymous public API',
+      principal: {
+        kind: 'system' as const,
+        serviceId: 'public_api' as const,
+        workspaceId: 'workspace-1',
+        workflowId: 'workflow-1',
+      },
+      triggerType: 'api',
+      isPublicApiAccess: true,
+    },
+  ] satisfies Array<{
+    name: string
+    principal: WorkflowExecutionPrincipal
+    triggerType: 'api' | 'schedule' | 'webhook'
+    isPublicApiAccess: boolean
+  }>)(
+    'preserves the exact $name principal and deployed workflow authority in executor delegation',
+    async ({ principal, triggerType, isPublicApiAccess }) => {
+      executorExecuteMock.mockResolvedValue({
+        success: true,
+        status: 'completed',
+        output: { done: true },
+        logs: [],
+        metadata: { duration: 123, startTime: 'start', endTime: 'end' },
+      })
+
+      const snapshot = createSnapshot()
+      await executeWorkflowCore({
+        snapshot: {
+          ...snapshot,
+          metadata: {
+            ...snapshot.metadata,
+            userId: 'billing-actor',
+            principal,
+            triggerType,
+            useDraftState: false,
+            isPublicApiAccess,
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+
+      const contextExtensions = executorConstructorMock.mock.calls[0]?.[0]?.contextExtensions
+      expect(contextExtensions.principal).toBe(principal)
+      expect(contextExtensions.executorDelegationOrigin.principal).toBe(principal)
+      expect(contextExtensions.executorDelegationOrigin).toEqual({
+        workflowId: 'workflow-1',
+        executionId: 'execution-1',
+        principal,
+        currentWorkflow: {
+          workflowId: 'workflow-1',
+          mode: 'deployment',
+          deploymentVersionId: 'dep-1',
+        },
+      })
+    }
+  )
 
   it('starts logging with the workflow state that will be executed', async () => {
     const executedWorkflowState = {
@@ -717,6 +940,272 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     const registry = setResolvedSecretTraceRegistryMock.mock.calls[0]?.[0]
     expect(registry.isComplete()).toBe(true)
     expect(registry.getActiveMatches()).toEqual([])
+  })
+
+  it('resumes a deployed run from its admitted historical version after deployment changes', async () => {
+    executorExecuteMock.mockResolvedValue({
+      success: true,
+      status: 'completed',
+      output: { done: true },
+      logs: [],
+      metadata: { duration: 1, startTime: 'start', endTime: 'end' },
+    })
+    const resumedSnapshot = createSnapshot()
+    resumedSnapshot.metadata = {
+      ...resumedSnapshot.metadata,
+      executionId: 'execution-resumed',
+      useDraftState: false,
+      resumeFromSnapshot: true,
+      resumeTerminalNoop: true,
+      workflowStateOverride: {
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        deploymentVersionId: 'dep-active-now',
+      },
+    } as any
+    ;(resumedSnapshot as any).state = {
+      blockStates: {},
+      executedBlocks: [],
+      blockLogs: [],
+      decisions: { router: {}, condition: {} },
+      completedLoops: [],
+      activeExecutionPath: [],
+    }
+
+    await executeWorkflowCore({
+      snapshot: resumedSnapshot as any,
+      callbacks: {},
+      loggingSession: loggingSession as any,
+      skipLogCreation: true,
+      resumeDeploymentVersionId: 'dep-historical',
+    })
+
+    expect(loadWorkflowDeploymentVersionStateMock).toHaveBeenCalledWith(
+      'workflow-1',
+      'dep-historical',
+      'workspace-1'
+    )
+    expect(loadDeployedWorkflowStateMock).not.toHaveBeenCalled()
+    expect(safeStartMock).toHaveBeenCalledWith(
+      expect.objectContaining({ deploymentVersionId: 'dep-historical' })
+    )
+    expect(executorConstructorMock.mock.calls[0]?.[0]?.contextExtensions).toMatchObject({
+      executorDelegationOrigin: {
+        currentWorkflow: {
+          workflowId: 'workflow-1',
+          mode: 'deployment',
+          deploymentVersionId: 'dep-historical',
+        },
+      },
+    })
+  })
+
+  it('fails instead of loading the latest deployment for a deployed resume without authority', async () => {
+    const resumedSnapshot = createSnapshot()
+    resumedSnapshot.metadata = {
+      ...resumedSnapshot.metadata,
+      useDraftState: false,
+      resumeFromSnapshot: true,
+    } as any
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: resumedSnapshot as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+        skipLogCreation: true,
+      })
+    ).rejects.toThrow('Deployed resume requires its admitted deployment version')
+    expect(loadDeployedWorkflowStateMock).not.toHaveBeenCalled()
+    expect(loadWorkflowDeploymentVersionStateMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects deployment authority on a draft resume', async () => {
+    const resumedSnapshot = createSnapshot()
+    resumedSnapshot.metadata = {
+      ...resumedSnapshot.metadata,
+      resumeFromSnapshot: true,
+    } as any
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: resumedSnapshot as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+        skipLogCreation: true,
+        resumeDeploymentVersionId: 'dep-historical',
+      })
+    ).rejects.toThrow('Draft resume cannot carry deployment version authority')
+    expect(loadWorkflowFromNormalizedTablesMock).not.toHaveBeenCalled()
+    expect(loadWorkflowDeploymentVersionStateMock).not.toHaveBeenCalled()
+  })
+
+  describe('PII redaction of restored large values', () => {
+    const sourceItems = [{ email: 'alice@example.com', count: 7 }]
+    const maskedItems = [{ email: '<EMAIL_ADDRESS>', count: 7 }]
+    const sourceBytes = Buffer.from(JSON.stringify(sourceItems))
+
+    function createManifest(
+      workspaceId = 'workspace-1',
+      workflowId = 'workflow-1',
+      executionId = 'source-execution'
+    ): LargeArrayManifest {
+      const ref: LargeValueRef = {
+        __simLargeValueRef: true,
+        version: 1,
+        id: 'lv_123456789012',
+        kind: 'array',
+        size: sourceBytes.length,
+        executionId,
+        key: `execution/${workspaceId}/${workflowId}/${executionId}/large-value-lv_123456789012.json`,
+      }
+      return {
+        __simLargeArrayManifest: true,
+        version: 2,
+        kind: 'array',
+        totalCount: 1,
+        chunkCount: 1,
+        byteSize: sourceBytes.length,
+        chunks: [{ ref, count: 1, byteSize: sourceBytes.length }],
+        preview: sourceItems,
+      }
+    }
+
+    function createRestoredState(manifest: LargeArrayManifest): SerializableExecutionState {
+      return {
+        blockStates: { previous: { output: { result: manifest } } },
+        executedBlocks: ['previous'],
+        blockLogs: [],
+        decisions: { router: {}, condition: {} },
+        completedLoops: [],
+        activeExecutionPath: [],
+        trustedLargeValueAccess: { executionIds: [], largeValueKeys: [], fileKeys: [] },
+      }
+    }
+
+    function createPiiSnapshot(state?: SerializableExecutionState, input: unknown = {}) {
+      const base = createSnapshot()
+      return new ExecutionSnapshot(
+        { ...base.metadata, resumeFromSnapshot: state !== undefined },
+        base.workflow,
+        input,
+        {},
+        [],
+        state
+      )
+    }
+
+    beforeEach(() => {
+      clearLargeValueCacheForTests()
+      vi.spyOn(retention, 'resolveEffectivePiiRedaction').mockReturnValue({
+        ...retention.DEFAULT_PII_REDACTION,
+        input: {
+          enabled: true,
+          entityTypes: ['EMAIL_ADDRESS'],
+          language: 'en',
+          customPatterns: [],
+        },
+        blockOutputs: {
+          enabled: true,
+          entityTypes: ['EMAIL_ADDRESS'],
+          language: 'en',
+          customPatterns: [],
+        },
+      })
+      downloadFileMock.mockResolvedValue(sourceBytes)
+      uploadFileMock.mockImplementation(async ({ customKey }: { customKey: string }) => ({
+        key: customKey,
+      }))
+      maskBatchMock.mockImplementation(async (texts: string[]) =>
+        texts.map((text) => text.replaceAll('alice@example.com', '<EMAIL_ADDRESS>'))
+      )
+      executorExecuteMock.mockResolvedValue({
+        success: true,
+        status: 'completed',
+        output: { done: true },
+        logs: [],
+        metadata: { duration: 1, startTime: 'start', endTime: 'end' },
+      })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      clearLargeValueCacheForTests()
+    })
+
+    it.each(['source execution', 'trusted key', 'resume', 'input'] as const)(
+      'masks cached manifest content with %s access and stores it under the new execution',
+      async (mode) => {
+        const manifest = createManifest()
+        const state = createRestoredState(manifest)
+        if (mode === 'trusted key')
+          state.trustedLargeValueAccess!.largeValueKeys = [manifest.chunks[0].ref.key!]
+        const snapshot = createPiiSnapshot(
+          mode === 'resume' ? state : undefined,
+          mode === 'input' ? { result: manifest } : {}
+        )
+        if (mode === 'input') snapshot.metadata.largeValueExecutionIds = ['source-execution']
+        const result = await executeWorkflowCore({
+          snapshot,
+          callbacks: {},
+          loggingSession: loggingSession as unknown as LoggingSession,
+          ...(mode === 'resume' || mode === 'input'
+            ? {}
+            : {
+                runFromBlock: {
+                  startBlockId: 'start-block',
+                  sourceSnapshot: state,
+                  sourceExecutionId:
+                    mode === 'trusted key' ? 'intermediate-execution' : 'source-execution',
+                },
+              }),
+        })
+        await loggingSession.setPostExecutionPromise.mock.calls[0][0]
+        expect(result.success).toBe(true)
+        expect(executorExecuteMock).toHaveBeenCalledOnce()
+        expect(downloadFileMock).toHaveBeenCalledWith(
+          expect.objectContaining({ key: manifest.chunks[0].ref.key, maxBytes: 64 * 1024 * 1024 })
+        )
+        expect(uploadFileMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            customKey: expect.stringContaining('execution/workspace-1/workflow-1/execution-1/'),
+            file: Buffer.from(JSON.stringify(maskedItems)),
+          })
+        )
+        if (mode !== 'input')
+          expect(state.blockStates.previous.output).toMatchObject({
+            result: { preview: maskedItems },
+          })
+      }
+    )
+
+    it.each([
+      ['another workspace', 'workspace-2', 'workflow-1', 'source-execution'],
+      ['another workflow', 'workspace-1', 'workflow-2', 'source-execution'],
+      ['an unauthorized execution', 'workspace-1', 'workflow-1', 'unrelated-execution'],
+    ])(
+      'refuses cached manifest content from %s before reading storage',
+      async (_, workspaceId, workflowId, executionId) => {
+        const state = createRestoredState(createManifest(workspaceId, workflowId, executionId))
+        await expect(
+          executeWorkflowCore({
+            snapshot: createPiiSnapshot(),
+            callbacks: {},
+            loggingSession: loggingSession as unknown as LoggingSession,
+            runFromBlock: {
+              startBlockId: 'start-block',
+              sourceExecutionId: 'source-execution',
+              sourceSnapshot: state,
+            },
+          })
+        ).rejects.toThrow('Large execution value is not available in this execution.')
+        expect(downloadFileMock).not.toHaveBeenCalled()
+        expect(uploadFileMock).not.toHaveBeenCalled()
+        expect(executorExecuteMock).not.toHaveBeenCalled()
+      }
+    )
   })
 
   it('marks inherited client run-from-block provenance incomplete', async () => {

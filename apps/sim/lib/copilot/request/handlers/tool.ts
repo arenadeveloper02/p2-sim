@@ -1,10 +1,14 @@
-import { isBrowserToolName } from '@sim/browser-protocol'
+import { isCurrentBrowserToolName } from '@sim/browser-protocol'
 import { createLogger } from '@sim/logger'
 import { isTerminalToolName } from '@sim/terminal-protocol'
 import { getErrorMessage, toError } from '@sim/utils/errors'
-import type { AsyncCompletionSignal } from '@/lib/copilot/async-runs/lifecycle'
+import { AsyncToolCallOwnershipError } from '@/lib/copilot/async-runs/errors'
+import type {
+  AsyncCompletionSignal,
+  AsyncTerminalCompletionSnapshot,
+} from '@/lib/copilot/async-runs/lifecycle'
 import { upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
-import { STREAM_TIMEOUT_MS } from '@/lib/copilot/constants'
+import { COPILOT_WORKFLOW_TOOL_CLIENT_GRACE_MS, STREAM_TIMEOUT_MS } from '@/lib/copilot/constants'
 import {
   MothershipStreamV1AsyncToolRecordStatus,
   type MothershipStreamV1ToolCallDescriptor,
@@ -12,7 +16,6 @@ import {
   MothershipStreamV1ToolOutcome,
   type MothershipStreamV1ToolResultPayload,
 } from '@/lib/copilot/generated/mothership-stream-v1'
-import { BrowserRequestTakeover } from '@/lib/copilot/generated/tool-catalog-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
 import { withCopilotSpan } from '@/lib/copilot/request/otel'
@@ -24,10 +27,7 @@ import {
 } from '@/lib/copilot/request/session'
 import { markToolResultSeen, wasToolResultSeen } from '@/lib/copilot/request/sse-utils'
 import { setTerminalToolCallState } from '@/lib/copilot/request/tool-call-state'
-import {
-  waitForClientToolCompletion,
-  waitForWorkflowToolCompletion,
-} from '@/lib/copilot/request/tools/client'
+import { waitForClientToolCompletion } from '@/lib/copilot/request/tools/client'
 import { sealClientToolContext } from '@/lib/copilot/request/tools/client-completion-seal.server'
 import { executeToolAndReport } from '@/lib/copilot/request/tools/executor'
 import {
@@ -35,6 +35,7 @@ import {
   TOOL_AWAITING_APPROVAL_STATUS,
   toolCallNeedsApproval,
 } from '@/lib/copilot/request/tools/permission'
+import { raceWorkflowToolClientPickup } from '@/lib/copilot/request/tools/workflow-client-fallback'
 import type {
   ExecutionContext,
   OrchestratorOptions,
@@ -46,7 +47,10 @@ import { getToolEntry, isSimExecuted } from '@/lib/copilot/tool-executor'
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { isUserLocalVfsToolCall } from '@/lib/copilot/tools/local-filesystem'
 import { extractStreamingStringArgument } from '@/lib/copilot/tools/streaming-args'
-import { getToolDisplayTitle } from '@/lib/copilot/tools/tool-display'
+import {
+  getToolDisplayTitle,
+  normalizeToolActivityDescription,
+} from '@/lib/copilot/tools/tool-display'
 import { isWorkflowToolName, resolveWorkflowToolTargetId } from '@/lib/copilot/tools/workflow-tools'
 import { getBlockByToolName } from '@/blocks/registry'
 import type { ToolScope } from './types'
@@ -70,6 +74,10 @@ const logger = createLogger('CopilotToolHandler')
 
 function applyToolDisplay(toolCall: ToolCallState | undefined): void {
   if (!toolCall?.name) return
+  if (toolCall.activityDescription) {
+    toolCall.displayTitle = toolCall.activityDescription
+    return
+  }
   // Integration rows show only the model-authored activity phrase; the trusted
   // integration branding is the icon, derived client-side from the operation
   // name (or streamed toolId) via the block registry. With no description yet,
@@ -225,6 +233,22 @@ export async function prePersistClientExecutableToolCall(
 
   if (!context.runId) return
 
+  // Pin the workflow target into the arguments before they are sealed, persisted,
+  // and forwarded, so the row, the browser, and the completion waiter all read one
+  // explicit field.
+  //
+  // They used to disagree: the server resolved `args.workflowId ?? run.workflowId`
+  // while the browser resolved `args.workflowId ?? activeWorkflowId`. In a
+  // workspace chat `copilot_runs.workflow_id` is NULL, so every call that omitted
+  // the (optional) argument resolved to nothing server-side and to the open tab
+  // client-side — a guaranteed rejection at the execute endpoint.
+  if (isWorkflowToolName(data.toolName)) {
+    const targetWorkflowId = resolveWorkflowToolTargetId(data.arguments, execContext?.workflowId)
+    if (targetWorkflowId) {
+      data.arguments = { ...(data.arguments ?? {}), workflowId: targetWorkflowId }
+    }
+  }
+
   let sealedContext: Awaited<ReturnType<typeof sealClientToolContext>> | undefined
   if (execContext?.resolvedSecretTraceRegistry) {
     try {
@@ -257,10 +281,11 @@ export async function prePersistClientExecutableToolCall(
     // client tools retain the established "already dispatched" running state.
     // A gated tool is likewise pending: nothing has been dispatched yet.
     status:
-      gated || isBrowserToolName(data.toolName) || isTerminalToolName(data.toolName)
+      gated || isCurrentBrowserToolName(data.toolName) || isTerminalToolName(data.toolName)
         ? MothershipStreamV1AsyncToolRecordStatus.pending
         : MothershipStreamV1AsyncToolRecordStatus.running,
   }).catch((err) => {
+    if (err instanceof AsyncToolCallOwnershipError) throw err
     logger.warn('Failed to pre-persist async tool row before forwarding call frame', {
       toolCallId: data.toolCallId,
       toolName: data.toolName,
@@ -421,7 +446,11 @@ async function handleCallPhase(
   const isGenerating = data.status === TOOL_CALL_STATUS.generating
   const isPartial = data.partial === true || isGenerating
   const existing = context.toolCalls.get(toolCallId)
-  if (existing) existing.agentId ??= agentId
+  const activityDescription = normalizeToolActivityDescription(data.activityDescription)
+  if (existing) {
+    existing.agentId ??= agentId
+    existing.activityDescription ??= activityDescription
+  }
   const isSubagent = scope === 'subagent'
   const ui = getToolCallUI(data)
 
@@ -468,10 +497,21 @@ async function handleCallPhase(
       agentId,
       ui,
       spanIdentity,
-      !isPartial
+      !isPartial,
+      activityDescription
     )
   } else {
-    registerMainToolCall(context, toolCallId, toolName, args, existing, agentId, ui, !isPartial)
+    registerMainToolCall(
+      context,
+      toolCallId,
+      toolName,
+      args,
+      existing,
+      agentId,
+      ui,
+      !isPartial,
+      activityDescription
+    )
   }
 
   const thoughtSignature =
@@ -493,18 +533,23 @@ async function handleCallPhase(
   if (!toolCall) return
 
   // Capture the invoking subagent's channel id so the executor can thread it
-  // into the server tool context — this is what scopes the workspace_file ->
-  // edit_content intent handoff to one file subagent under concurrency.
+  // into the server tool context — this is what scopes the prepare_file_edit ->
+  // apply_file_edit intent handoff to one file subagent under concurrency.
   if (parentToolCallId) toolCall.parentToolCallId = parentToolCallId
 
   const readPath = typeof args?.path === 'string' ? args.path : undefined
   if (toolName === 'read' && readPath?.startsWith('internal/')) return
 
-  const { clientExecutable, simExecutable, internal } = ui
+  const { clientExecutable, simExecutable, internal, inbandOwned } = ui
   const catalogEntry = getToolEntry(toolName)
   const isInternal = internal || catalogEntry?.internal === true
   const staticSimExecuted = isSimExecuted(toolName)
-  const willDispatch = !isInternal && (staticSimExecuted || simExecutable || clientExecutable)
+  // Go executes inband-owned calls itself via /api/copilot/tools/execute
+  // (background lanes, and the main lane while background agents run); the
+  // event exists only to draw the row. Dispatching it here would run the
+  // tool a second time, racing the in-band execution on mutations.
+  const willDispatch =
+    !isInternal && !inbandOwned && (staticSimExecuted || simExecutable || clientExecutable)
   logger.info('Tool call routing decision', {
     toolCallId,
     toolName,
@@ -516,6 +561,7 @@ async function handleCallPhase(
     simExecutable,
     staticSimExecuted,
     internal: isInternal,
+    inbandOwned,
     hasPendingPromise: context.pendingToolPromises.has(toolCallId),
     existingStatus: existing?.status,
     willDispatch,
@@ -573,7 +619,8 @@ function registerSubagentToolCall(
   agentId: string,
   ui: { title?: string; phaseLabel?: string; hidden?: boolean },
   spanIdentity: { spanId?: string; parentSpanId?: string },
-  finalized: boolean
+  finalized: boolean,
+  activityDescription?: string
 ): void {
   if (!context.subAgentToolCalls[parentToolCallId]) {
     context.subAgentToolCalls[parentToolCallId] = []
@@ -592,6 +639,7 @@ function registerSubagentToolCall(
       name: toolName,
       status: 'pending',
       agentId,
+      ...(activityDescription ? { activityDescription } : {}),
       params: args,
       startTime: Date.now(),
     }
@@ -613,6 +661,7 @@ function registerSubagentToolCall(
   const existingSubagentToolCall = subagentToolCalls.find((tc) => tc.id === toolCallId)
   if (existingSubagentToolCall) {
     existingSubagentToolCall.agentId ??= agentId
+    existingSubagentToolCall.activityDescription ??= activityDescription
     if (!rebindResolvedIntegrationCall(existingSubagentToolCall, toolName, args)) {
       updateToolCallFromFrame(existingSubagentToolCall, toolName, args, finalized)
     }
@@ -630,7 +679,8 @@ function registerMainToolCall(
   existing: ToolCallState | undefined,
   agentId: string,
   ui: { title?: string; phaseLabel?: string; hidden?: boolean },
-  finalized: boolean
+  finalized: boolean,
+  activityDescription?: string
 ): void {
   const hideFromUi = isToolHiddenInUi(toolName) || ui.hidden === true
   const calledBy = toolName === 'invoke_integration_tool' ? 'SuperAgent' : undefined
@@ -659,6 +709,7 @@ function registerMainToolCall(
       name: toolName,
       status: 'pending',
       agentId,
+      ...(activityDescription ? { activityDescription } : {}),
       params: args,
       startTime: Date.now(),
     }
@@ -689,9 +740,11 @@ async function dispatchToolExecution(
 ): Promise<void> {
   const scopeLabel = scope === 'subagent' ? 'subagent ' : ''
 
-  const fireToolExecution = (): Promise<AsyncCompletionSignal> => {
+  const fireToolExecution = (
+    execContextOverride?: ExecutionContext
+  ): Promise<AsyncCompletionSignal> => {
     return (async () => {
-      return executeToolAndReport(toolCallId, context, execContext, options)
+      return executeToolAndReport(toolCallId, context, execContextOverride ?? execContext, options)
     })().catch((err) => {
       logger.error(`Parallel ${scopeLabel}tool execution failed`, {
         toolCallId,
@@ -704,6 +757,39 @@ async function dispatchToolExecution(
         data: { error: 'Tool execution failed' },
       }
     })
+  }
+
+  /**
+   * Refuse a workflow tool call whose target this side cannot name.
+   *
+   * The execute endpoint validates the run against the tool call's bound
+   * workflow, so dispatching an unbound call only buys a rejection the model
+   * cannot interpret. Failing here instead tells it exactly what to send back,
+   * and never guesses a workflow on the user's behalf.
+   */
+  const refuseUnboundWorkflowTool = async (): Promise<AsyncCompletionSignal> => {
+    const error = `${toolName} requires an explicit workflowId. This chat is not scoped to a workflow, so there is no current workflow to fall back to — pass the id of the workflow to run.`
+    logger.warn('Refusing workflow tool call with no resolvable workflow target', {
+      toolCallId,
+      toolName,
+    })
+    setTerminalToolCallState(toolCall, {
+      status: MothershipStreamV1ToolOutcome.error,
+      output: { error },
+      error,
+    })
+    markToolResultSeen(toolCallId)
+    await emitSyntheticToolResult(
+      toolCallId,
+      toolCall.name,
+      {
+        status: MothershipStreamV1ToolOutcome.error,
+        message: error,
+        data: { error },
+      },
+      options
+    )
+    return { status: MothershipStreamV1ToolOutcome.error, message: error, data: { error } }
   }
 
   // Returns the promise instead of registering it, so the permission gate can
@@ -722,6 +808,12 @@ async function dispatchToolExecution(
       if (isSimExecuted(toolName) && !delegateWorkflowRunToClient && !userLocalVfsCall) {
         if (abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) return null
         return fireToolExecution()
+      }
+      if (
+        delegateWorkflowRunToClient &&
+        !resolveWorkflowToolTargetId(args, execContext.workflowId)
+      ) {
+        return refuseUnboundWorkflowTool()
       }
       return waitForClientExecution()
     }
@@ -761,34 +853,68 @@ async function dispatchToolExecution(
    */
   function waitForClientExecution(): Promise<AsyncCompletionSignal> {
     toolCall.status = 'executing'
-    const waitsForHuman = toolName === BrowserRequestTakeover.id
-    const timeoutMs = waitsForHuman ? null : options.timeout || STREAM_TIMEOUT_MS
+    const timeoutMs = options.timeout || STREAM_TIMEOUT_MS
     return withCopilotSpan(
       TraceSpan.CopilotToolWaitForClientResult,
       {
         [TraceAttr.ToolName]: toolName,
         [TraceAttr.ToolCallId]: toolCallId,
-        ...(timeoutMs !== null ? { [TraceAttr.ToolTimeoutMs]: timeoutMs } : {}),
+        [TraceAttr.ToolTimeoutMs]: timeoutMs,
         ...(context.runId ? { [TraceAttr.RunId]: context.runId } : {}),
       },
       async (span) => {
-        const completion = isWorkflowToolName(toolName)
-          ? await waitForWorkflowToolCompletion({
-              toolCallId,
-              workflowId: resolveWorkflowToolTargetId(args, execContext.workflowId),
-              timeoutMs: timeoutMs ?? STREAM_TIMEOUT_MS,
-              abortSignal: options.abortSignal,
-              registry: execContext.resolvedSecretTraceRegistry,
-            })
-          : await waitForClientToolCompletion({
-              toolCallId,
-              runId: context.runId,
-              userId: execContext.userId,
-              timeoutMs,
-              abortSignal: options.abortSignal,
-              registry: execContext.resolvedSecretTraceRegistry,
-            })
-        span.setAttribute(TraceAttr.ToolCompletionReceived, completion !== undefined)
+        let completion: AsyncTerminalCompletionSnapshot | null
+        if (isWorkflowToolName(toolName)) {
+          const race = await raceWorkflowToolClientPickup({
+            toolCallId,
+            workflowId: resolveWorkflowToolTargetId(args, execContext.workflowId),
+            timeoutMs,
+            graceMs: COPILOT_WORKFLOW_TOOL_CLIENT_GRACE_MS,
+            abortSignal: options.abortSignal,
+            registry: execContext.resolvedSecretTraceRegistry,
+            runOnServer: (boundExecutionId) => {
+              // `executeToolAndReportInner` short-circuits a call that is
+              // already 'executing' — which is exactly what this wait set it to
+              // before parking. Hand it back the state it dispatches from.
+              toolCall.status = 'pending'
+              return fireToolExecution({
+                ...execContext,
+                boundWorkflowExecutionId: boundExecutionId,
+              })
+            },
+          })
+
+          if (race.winner === 'sim') {
+            // `executeToolAndReport` already emitted its own `executor: sim`
+            // result and marked it seen, so the client-completion bookkeeping
+            // below must not run again on top of it.
+            span.setAttribute(TraceAttr.ToolExecutor, MothershipStreamV1ToolExecutor.sim)
+            if (race.signal) {
+              span.setAttribute(TraceAttr.ToolOutcome, race.signal.status)
+            }
+            return (
+              race.signal ?? {
+                status: MothershipStreamV1ToolOutcome.error,
+                message: 'Tool completion missing',
+                data: { error: 'Tool completion missing' },
+              }
+            )
+          }
+          completion = race.completion ?? null
+        } else {
+          completion = await waitForClientToolCompletion({
+            toolCallId,
+            runId: context.runId,
+            userId: execContext.userId,
+            timeoutMs,
+            abortSignal: options.abortSignal,
+            registry: execContext.resolvedSecretTraceRegistry,
+          })
+        }
+        span.setAttribute(TraceAttr.ToolExecutor, MothershipStreamV1ToolExecutor.client)
+        // Both waiters resolve `T | null`, never undefined — comparing against
+        // undefined made this a constant `true` and hid every timeout.
+        span.setAttribute(TraceAttr.ToolCompletionReceived, completion !== null)
         if (completion) {
           span.setAttribute(TraceAttr.ToolOutcome, completion.status)
         }

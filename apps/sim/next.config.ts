@@ -5,43 +5,14 @@ import { env, isTruthy } from './lib/core/config/env'
 /** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
 const monorepoRoot = path.resolve(__dirname, '../..')
 
+import { DEFAULT_PRIVACY_URL, DEFAULT_TERMS_URL } from './lib/branding/defaults'
 import { isDev } from './lib/core/config/env-flags'
 import {
   getChatEmbedCSPPolicy,
   getMainCSPPolicy,
   getWorkflowExecutionCSPPolicy,
 } from './lib/core/security/csp'
-
-/**
- * Marketing routes (`app/(landing)/**`, plus the root) exempted from COEP.
- *
- * COEP is a *document* header and is inherited across client-side `<Link>`
- * navigations, so `/demo`'s own exemption only applies on a direct load. Any
- * landing page left isolated soft-navigates into `/demo` still credentialless,
- * where the Cal.com booker iframe loads uncredentialed and hangs forever.
- * Every route under `app/(landing)` must be listed here.
- */
-const LANDING_ROUTES = [
-  'blog',
-  'careers',
-  'changelog',
-  'comparisons',
-  'contact',
-  'demo',
-  'enterprise',
-  'files',
-  'integrations',
-  'knowledge',
-  'library',
-  'logs',
-  'models',
-  'pricing',
-  'privacy',
-  'solutions',
-  'tables',
-  'terms',
-  'workflows',
-] as const
+import { LANDING_ROUTES } from './lib/landing/routes'
 
 /**
  * Dev-only escape hatch: when `SIM_DEV_MINIMAL_REGISTRY=1` (`bun run dev:minimal`),
@@ -184,6 +155,12 @@ const nextConfig: NextConfig = {
     '@json-render/core',
     '@json-render/react',
     '@json-render/react-email',
+    /**
+     * Keep PDF.js and its native canvas implementation intact. The shared server
+     * loader initializes canvas primitives before PDF.js evaluates its module.
+     */
+    'pdfjs-dist',
+    '@napi-rs/canvas',
     // The collab-doc seed converter lazily `require`s jsdom for a headless TipTap editor. Keep it
     // external so webpack doesn't try to bundle jsdom's dynamic internal requires.
     'jsdom',
@@ -225,16 +202,11 @@ const nextConfig: NextConfig = {
     '/api/internal/file-doc/seed': ['./node_modules/jsdom/**/*'],
     '/api/internal/file-doc/merge': ['./node_modules/jsdom/**/*'],
     '/api/internal/file-doc/persist': ['./node_modules/jsdom/**/*'],
-    // sharp@0.35+ needs both `@img/sharp-<platform>` and sibling
-    // `@img/sharp-libvips-<platform>` (the `.so` the addon dlopens). These
-    // globs help non-monorepo / Vercel traces; Docker still has to COPY the
-    // hoisted `/app/node_modules/{sharp,@img}` trees in `docker/app.Dockerfile`
-    // because these paths resolve against `apps/sim` and miss the root hoist.
-    '/*': [
-      './node_modules/sharp/**/*',
-      './node_modules/@img/**/*',
-      './lib/execution/sandbox/bundles/*.cjs',
-    ],
+    /**
+     * No `sharp`/`@img` entries: these globs resolve against apps/sim while both hoist to the
+     * monorepo root, so they matched nothing. docker/app.Dockerfile copies them instead.
+     */
+    '/*': ['./lib/execution/sandbox/bundles/*.cjs', './node_modules/ws/**/*'],
   },
   experimental: {
     /**
@@ -280,21 +252,15 @@ const nextConfig: NextConfig = {
      * it lives. Restoring across commits is separately undocumented-as-supported
      * (vercel/next.js#87283 reports stale HTML from a cache built elsewhere).
      *
-     * Pinned explicitly rather than left to the Next default: upstream already
-     * flips this default to true in canary/preview builds (vercel/next.js#94616),
-     * so relying on the default would let a version bump silently re-enable a
-     * config we measured as harmful. Always off for Docker/CI too — the cache
-     * itself adds RSS under BuildKit's tight cgroup.
-     * Keep the explicit pin even while we sit on 16.2.12: 16.3.0 flips this
-     * default to true for stable (vercel/next.js#94616), so dropping it would
-     * silently re-enable the slower cache the next time we take that bump.
+     * The explicit pin is load-bearing: 16.3.0 flipped this default to true for
+     * stable (vercel/next.js#94616), so dropping it re-enables the slower cache.
      */
     turbopackFileSystemCacheForBuild: false,
     /**
      * TypeScript 7 ships no JavaScript compiler API until 7.1, so Next's default
      * checker cannot load it — this shells out to the project-local `tsc` instead.
      * Pinned because the failure mode is not slower type checking but none at all:
-     * without it 16.2.12 skips the stage silently in 138ms.
+     * 16.2.12 skipped the stage silently in 138ms.
      */
     useTypeScriptCli: true,
     preloadEntriesOnStart: false,
@@ -323,7 +289,7 @@ const nextConfig: NextConfig = {
      */
     optimizePackageImports: [
       'framer-motion',
-      'reactflow',
+      '@xyflow/react',
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',
       '@radix-ui/react-popover',
@@ -379,6 +345,16 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        /** Generated footer artwork uses content hashes, so URLs are immutable. */
+        source: '/landing/footer-artwork/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        /** Generated hero artwork uses content hashes, so URLs are immutable. */
+        source: '/landing/hero-artwork/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
         source: '/.well-known/:path*',
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
@@ -399,7 +375,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/api/v2/workflows/:id/execute',
+        source: '/api/v2/workflows/:workflowId/execute',
         headers: [
           { key: 'Cross-Origin-Embedder-Policy', value: 'unsafe-none' },
           { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
@@ -546,7 +522,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/linkedin',
-        destination: 'https://www.linkedin.com/company/simstudioai/',
+        destination: 'https://www.linkedin.com/company/simdotai/',
         permanent: false,
       },
       {
@@ -595,6 +571,28 @@ const nextConfig: NextConfig = {
       destination: 'https://docs.sim.ai/academy',
       permanent: true,
     })
+
+    /**
+     * In-app Terms, Privacy, and Cookie Policy pages are disabled until Arena
+     * legal copy is finalized. Send visitors to the Arena legal URLs instead.
+     */
+    redirects.push(
+      {
+        source: '/terms',
+        destination: env.NEXT_PUBLIC_TERMS_URL || DEFAULT_TERMS_URL,
+        permanent: false,
+      },
+      {
+        source: '/privacy',
+        destination: env.NEXT_PUBLIC_PRIVACY_URL || DEFAULT_PRIVACY_URL,
+        permanent: false,
+      },
+      {
+        source: '/cookie-policy',
+        destination: env.NEXT_PUBLIC_PRIVACY_URL || DEFAULT_PRIVACY_URL,
+        permanent: false,
+      }
+    )
 
     // Move root feeds to blog namespace
     redirects.push(

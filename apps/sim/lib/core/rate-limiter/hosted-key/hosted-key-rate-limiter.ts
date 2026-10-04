@@ -96,6 +96,9 @@ function pushLegacyEnvKeys(names: string[], prefix: string): void {
  * For backward compatibility with older self-hosted env files, when `_COUNT`
  * is unset or zero we also fall back to singular and `_1..3` names.
  * Google-hosted image tools additionally accept the Gemini key namespace.
+ * Resolves env var names for a hosted-key prefix. Numbered pools use a
+ * `{PREFIX}_COUNT` env var. Deployments that still provide one legacy singular
+ * `{PREFIX}` key remain supported when no count is configured.
  */
 function resolveEnvKeys(prefix: string): string[] {
   const count = Number.parseInt(process.env[`${prefix}_COUNT`] || '0', 10)
@@ -105,6 +108,7 @@ function resolveEnvKeys(prefix: string): string[] {
     // Arena ships `GEMINI_API_KEY*` for Generative Language. Include that
     // namespace even when a GOOGLE_API_KEY_COUNT pool is declared.
     if (prefix === 'GOOGLE_API_KEY') {
+      pushUniqueEnvVar(names, 'NEXT_PUBLIC_GOOGLE_API_KEY')
       pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
     }
     for (let i = 1; i <= count; i++) {
@@ -113,8 +117,8 @@ function resolveEnvKeys(prefix: string): string[] {
     return names
   }
 
-  // Prefer GEMINI_* ahead of GOOGLE_* so Arena's GEMINI_API_KEY wins when both exist.
   if (prefix === 'GOOGLE_API_KEY') {
+    pushUniqueEnvVar(names, 'NEXT_PUBLIC_GOOGLE_API_KEY')
     pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
   }
   pushLegacyEnvKeys(names, prefix)
@@ -123,9 +127,10 @@ function resolveEnvKeys(prefix: string): string[] {
 }
 
 /**
- * When acquiring keys for Google tools, prefer the GEMINI_API_KEY namespace if any
- * of those env vars are set. Agents already rotate via GEMINI_*; image tools must
- * not pick a leftover invalid GOOGLE_API_KEY / NEXT_PUBLIC Maps key ahead of Gemini.
+ * Google image/LLM tools accept several env names. Prefer `GEMINI_API_KEY*`,
+ * then leftover `GOOGLE_API_KEY*`. `NEXT_PUBLIC_GOOGLE_API_KEY` is only used when
+ * no server Gemini key is configured, because that public key is rejected once
+ * Google reports it as leaked.
  */
 function preferGeminiKeysForGoogle(
   envKeyPrefix: string,
@@ -136,7 +141,15 @@ function preferGeminiKeysForGoogle(
   }
 
   const geminiKeys = availableKeys.filter((entry) => entry.envVarName.startsWith('GEMINI_API_KEY'))
-  return geminiKeys.length > 0 ? geminiKeys : availableKeys
+  if (geminiKeys.length > 0) return geminiKeys
+
+  const serverGoogleKeys = availableKeys.filter(
+    (entry) =>
+      entry.envVarName === 'GOOGLE_API_KEY' || entry.envVarName.startsWith('GOOGLE_API_KEY_')
+  )
+  if (serverGoogleKeys.length > 0) return serverGoogleKeys
+
+  return availableKeys
 }
 
 /** Dimension name for per-billing-actor request rate limiting */

@@ -121,7 +121,7 @@ async function walkDirectory(
       break
     }
 
-    const absolutePath = join(currentDir, entry.name)
+    const absolutePath = join(/* turbopackIgnore: true */ currentDir, entry.name)
     const relativePath = absolutePath.slice(rootDir.length + 1)
 
     if (entry.isDirectory()) {
@@ -161,7 +161,7 @@ export async function readGeneratedAppFiles(outputDir: string): Promise<Generate
   const seenPaths = new Set<string>()
 
   for (const relativePath of PINNED_SOURCE_PATHS) {
-    const absolutePath = join(outputDir, relativePath)
+    const absolutePath = join(/* turbopackIgnore: true */ outputDir, relativePath)
     if (!existsSync(absolutePath)) {
       continue
     }

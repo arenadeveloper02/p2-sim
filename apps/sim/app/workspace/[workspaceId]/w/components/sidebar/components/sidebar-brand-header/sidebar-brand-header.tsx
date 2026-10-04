@@ -3,7 +3,7 @@
 import { chipVariants, cn } from '@sim/emcn'
 import { ArrowLeft } from '@sim/emcn/icons'
 import Link from 'next/link'
-import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
+import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip'
 
 interface SidebarBrandHeaderProps {
   workspaceId: string

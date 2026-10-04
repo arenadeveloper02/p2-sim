@@ -39,6 +39,12 @@ vi.mock('@/lib/credentials/queries', () => ({
 }))
 vi.mock('@/lib/credentials/access', () => ({
   getCredentialActorContext: mocks.getActor,
+  requireOrdinaryCredentialType: (type: string) => {
+    if (type === 'managed_oauth' || type === 'managed_mcp') {
+      throw new Error('Managed credential reached an ordinary credential surface')
+    }
+    return type
+  },
 }))
 vi.mock('@/lib/posthog/server', () => ({ captureServerEvent: mocks.capture }))
 
@@ -233,7 +239,9 @@ describe('credential service-account application operations', () => {
       input: { workspaceId: WORKSPACE_ID, credentialId: credential.id },
     })
 
-    expect(mocks.getActor).toHaveBeenCalledWith(credential.id, principal.userId)
+    expect(mocks.getActor).toHaveBeenCalledWith(credential.id, principal.userId, {
+      workspaceId: WORKSPACE_ID,
+    })
     expect(mocks.deleteRecord).not.toHaveBeenCalled()
   })
 

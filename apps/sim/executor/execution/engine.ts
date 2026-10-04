@@ -1,11 +1,7 @@
 import { createLogger, type Logger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { combineExecutionAbortSignals } from '@/lib/core/execution-limits'
-import {
-  getCancellationChannel,
-  isExecutionCancelled,
-  isRedisCancellationEnabled,
-} from '@/lib/execution/cancellation'
+import { subscribeToExecutionCancellation } from '@/lib/execution/cancellation'
 import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
@@ -25,9 +21,6 @@ import { projectResolvedSecretDiagnosticError } from '@/executor/utils/resolved-
 import { buildSentinelEndId } from '@/executor/utils/subflow-utils'
 
 const logger = createLogger('ExecutionEngine')
-
-/** Cadence of the Redis fallback poll that covers a lost pub/sub cancellation. */
-const CANCELLATION_POLL_INTERVAL_MS = 500
 
 export class ExecutionEngine {
   private readyQueue: string[] = []
@@ -71,15 +64,13 @@ export class ExecutionEngine {
         : [this.cancellationController.signal]
     )
     this.initializeAbortHandler()
-    this.subscribeToCancellationChannel()
   }
 
-  private subscribeToCancellationChannel(): void {
+  private async subscribeToCancellationSignal(): Promise<void> {
     if (!this.context.executionId) return
     const executionId = this.context.executionId
-    this.cancellationUnsubscribe = getCancellationChannel().subscribe((event) => {
-      if (event.executionId !== executionId) return
-      this.execLogger.info('Execution cancelled via pub/sub', { executionId })
+    this.cancellationUnsubscribe = await subscribeToExecutionCancellation(executionId, () => {
+      this.execLogger.info('Execution cancelled via Redis signal', { executionId })
       this.signalCancelled()
     })
   }
@@ -104,7 +95,6 @@ export class ExecutionEngine {
   private signalCancelled(reason: unknown = new DOMException('user', 'AbortError')): void {
     if (this.cancelledFlag) return
     this.cancelledFlag = true
-    this.stopCancellationPolling()
     if (!this.cancellationController.signal.aborted) {
       this.cancellationController.abort(reason)
     }
@@ -115,77 +105,11 @@ export class ExecutionEngine {
     return this.cancelledFlag
   }
 
-  /** Reads the durable cancellation flag; false when Redis is not the cancellation store. */
-  private async readDurableCancellation(): Promise<boolean> {
-    const executionId = this.context.executionId
-    if (!executionId || !isRedisCancellationEnabled()) return false
-    return isExecutionCancelled(executionId)
-  }
-
-  /** Catches cancellations published before this engine subscribed (e.g. resume from snapshot). */
-  private async checkCancellationBackstop(): Promise<void> {
-    if (!(await this.readDurableCancellation())) return
-    this.execLogger.info('Execution already cancelled at engine start (Redis backstop)', {
-      executionId: this.context.executionId,
-    })
-    this.signalCancelled()
-  }
-
-  /**
-   * Polls the durable flag for the life of the run.
-   *
-   * Pub/sub delivery is the fast path but is at-most-once: a dropped subscriber connection, or a
-   * publish that races this engine reaching its own last block, would otherwise let a cancelled
-   * run finish as successful. `markExecutionCancelled` writes the durable key before publishing
-   * precisely so a reader that misses the event can still observe the cancellation.
-   *
-   * This and {@link checkCancellationBackstop} are the only places a durable cancellation becomes
-   * run status. A block handler or orchestrator that reads the flag itself and then returns
-   * normally leaves `cancelledFlag` false, which reports a cancelled run as successful. Handlers
-   * that abort their own I/O off `ctx.abortSignal` are fine: that surfaces as a throw, which the
-   * cancelled branch of `run` classifies.
-   */
-  private startCancellationPolling(): void {
-    if (this.cancelledFlag || !this.context.executionId || !isRedisCancellationEnabled()) return
-    this.cancellationPollTimer = setInterval(() => {
-      if (this.cancellationPollInFlight) return
-      this.cancellationPollInFlight = true
-      void this.pollDurableCancellation()
-        .catch((error) => {
-          this.execLogger.warn('Durable cancellation poll failed', {
-            executionId: this.context.executionId,
-            error: toError(error).message,
-          })
-        })
-        .finally(() => {
-          this.cancellationPollInFlight = false
-        })
-    }, CANCELLATION_POLL_INTERVAL_MS)
-  }
-
-  private async pollDurableCancellation(): Promise<void> {
-    const cancelled = await this.readDurableCancellation()
-    // `signalCancelled` and `cleanup` both null the timer, so it doubles as "polling is still
-    // live" — a run that settled while this read was in flight must not be cancelled after.
-    if (!cancelled || !this.cancellationPollTimer) return
-    this.execLogger.info('Execution cancelled via Redis poll', {
-      executionId: this.context.executionId,
-    })
-    this.signalCancelled()
-  }
-
-  private stopCancellationPolling(): void {
-    if (!this.cancellationPollTimer) return
-    clearInterval(this.cancellationPollTimer)
-    this.cancellationPollTimer = null
-  }
-
   async run(triggerBlockId?: string): Promise<ExecutionResult> {
     const startTime = performance.now()
     try {
       this.initializeQueue(triggerBlockId)
-      await this.checkCancellationBackstop()
-      this.startCancellationPolling()
+      await this.subscribeToCancellationSignal()
 
       while (this.hasWork()) {
         if (this.checkCancellation() || this.errorFlag || this.stoppedEarlyFlag) {
@@ -271,17 +195,23 @@ export class ExecutionEngine {
         metadata: this.context.metadata,
       }
 
-      if (error instanceof Error) {
-        attachExecutionResult(error, executionResult)
-      }
-      throw error
+      /**
+       * Normalized first so the attach is total rather than conditional on the throw already
+       * being an `Error`. A block failure is normalized on the way in, so the old guard held in
+       * practice; what it did not give was a guarantee. The copilot crossing reads a missing
+       * result as proof that no block ran, and that inference has to hold for every throw out of
+       * here, including a non-`Error` raised by this file's own synchronous work. `toError`
+       * returns an `Error` unchanged, so ordinary failures keep their identity and their type.
+       */
+      const thrown = toError(error)
+      attachExecutionResult(thrown, executionResult)
+      throw thrown
     } finally {
       this.cleanup()
     }
   }
 
   private cleanup(): void {
-    this.stopCancellationPolling()
     if (this.abortSignalListener && this.context.abortSignal) {
       this.context.abortSignal.removeEventListener('abort', this.abortSignalListener)
       this.abortSignalListener = null
@@ -641,13 +571,21 @@ export class ExecutionEngine {
     await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
 
     const isResponseBlock = node.block.metadata?.id === BlockType.RESPONSE
-    if (isResponseBlock) {
+    const isInsideLoop = !!loopId
+
+    // Response outside a loop is a workflow exit. Response inside a loop only
+    // ends that iteration — fall through so the sentinel-end can continue.
+    if (isResponseBlock && !isInsideLoop) {
       if (!this.responseOutputLocked) {
         this.setFinalOutput(nodeId, output)
         this.responseOutputLocked = true
       }
       this.stoppedEarlyFlag = true
       return
+    }
+
+    if (isResponseBlock && isInsideLoop) {
+      this.setFinalOutput(nodeId, output)
     }
 
     if (isFinalOutput && !this.responseOutputLocked) {
@@ -657,24 +595,7 @@ export class ExecutionEngine {
     // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
     // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
-    const isInsideLoop = !!loopId
     const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
-
-    if (isResponseBlock && !isInsideLoop) {
-      // Response block outside of loops - stop entire workflow execution
-      // Verify this is actually a Response block output (has 'status' and 'data')
-      if (output && 'status' in output && 'data' in output) {
-        logger.info('Response block executed outside loop - stopping workflow execution', {
-          nodeId,
-          blockId: node.block.id,
-        })
-        // Clear the ready queue to prevent further nodes from executing
-        this.readyQueue = []
-        // Set final output to the Response block output
-        this.finalOutput = output
-        return
-      }
-    }
     if (this.context.stopAfterBlockId === nodeId) {
       // For loop/parallel sentinels, only stop if the subflow has fully exited (all iterations done)
       // shouldContinue: true means more iterations, shouldExit: true means loop is done
@@ -800,25 +721,31 @@ export class ExecutionEngine {
       this.context.finalOutputResolvedSecretTraceProvenance = state.resolvedSecretTraceProvenance
       return
     }
+    /**
+     * A block state without provenance is an absence of a shortcut, not a verdict. Several state
+     * writers legitimately store an output without one — a subflow sentinel aggregating iteration
+     * results is the common case, and a loop that ran no iterations has nothing to merge — so
+     * stamping an incomplete envelope here declared the run unvouchable whenever the last block
+     * was one of them. Every other consumer of a provenance-less block state falls back to the run
+     * registry; deriving does the same, against the value actually being described.
+     */
+    this.deriveFinalOutputProvenance()
+  }
 
-    if (this.context.resolvedSecretTraceRegistry) {
-      this.context.finalOutputResolvedSecretTraceProvenance = {
-        version: 1,
-        complete: false,
-        entries: [],
-      }
-    }
+  /**
+   * Derives the final-output envelope from the run registry. Fails closed on its own terms: a
+   * latched registry exports an incomplete envelope, which is the genuinely unvouchable case.
+   */
+  private deriveFinalOutputProvenance(): void {
+    const registry = this.context.resolvedSecretTraceRegistry
+    if (!registry) return
+    this.context.finalOutputResolvedSecretTraceProvenance =
+      registry.exportCommittedProvenanceForValue(this.finalOutput)
   }
 
   private ensureFinalOutputProvenance(): void {
-    if (
-      Object.hasOwn(this.context, 'finalOutputResolvedSecretTraceProvenance') ||
-      !this.context.resolvedSecretTraceRegistry
-    ) {
-      return
-    }
-    this.context.finalOutputResolvedSecretTraceProvenance =
-      this.context.resolvedSecretTraceRegistry.exportCommittedProvenanceForValue(this.finalOutput)
+    if (Object.hasOwn(this.context, 'finalOutputResolvedSecretTraceProvenance')) return
+    this.deriveFinalOutputProvenance()
   }
 
   private buildPausedResult(startTime: number): ExecutionResult {

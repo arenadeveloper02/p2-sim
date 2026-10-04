@@ -9,7 +9,25 @@ const mocks = vi.hoisted(() => ({
   completeSession: vi.fn(),
   finalizePurpose: vi.fn(),
   getOwnedSession: vi.fn(),
+  getPrincipalSession: vi.fn(),
   reauthorizeWorkspacePurpose: vi.fn(),
+  getWorkspaceFile: vi.fn(),
+  authorizeOrganizationAttachment: vi.fn(),
+  authorizeOrganizationLogo: vi.fn(),
+}))
+
+vi.mock('@/lib/uploads/contexts/organization-assistant/application', () => ({
+  authorizeOrganizationAttachmentControl: mocks.authorizeOrganizationAttachment,
+  createOrganizationAssistantAttachment: vi.fn(),
+}))
+
+vi.mock('@/lib/uploads/contexts/organization-logo/application', () => ({
+  authorizeOrganizationLogoControl: mocks.authorizeOrganizationLogo,
+  createOrganizationLogoUpload: vi.fn(),
+}))
+
+vi.mock('@/lib/uploads/contexts/workspace', () => ({
+  getWorkspaceFile: mocks.getWorkspaceFile,
 }))
 
 vi.mock('@/lib/uploads/upload-session/service', () => ({
@@ -19,7 +37,7 @@ vi.mock('@/lib/uploads/upload-session/service', () => ({
   createUploadPartUrls: vi.fn(),
   createUploadSession: vi.fn(),
   getOwnedUploadSession: mocks.getOwnedSession,
-  getPrincipalUploadSession: vi.fn(),
+  getPrincipalUploadSession: mocks.getPrincipalSession,
 }))
 
 vi.mock('@/app/api/files/uploads/finalizers', () => ({
@@ -36,7 +54,12 @@ vi.mock('@/app/api/files/uploads/purposes', () => ({
   resolveUploadAttributionUserId: vi.fn(),
 }))
 
-import { completeInternalUploadSession } from '@/lib/uploads/upload-session/application'
+import {
+  abortInternalUploadSession,
+  completeInternalUploadSession,
+  issueInternalUploadPartUrls,
+  readWorkspaceUploadSession,
+} from '@/lib/uploads/upload-session/application'
 import type { UploadSessionRecord } from '@/lib/uploads/upload-session/service'
 
 const principal = {
@@ -49,12 +72,15 @@ const actor = { id: 'user-1', name: 'Ada', email: 'ada@example.com' }
 describe('upload session application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.authorizeOrganizationAttachment.mockResolvedValue(undefined)
+    mocks.authorizeOrganizationLogo.mockResolvedValue(undefined)
     const session = workspaceUploadSession()
     mocks.getOwnedSession.mockResolvedValue(session)
     mocks.finalizePurpose.mockResolvedValue({
       value: { id: 'file-1' },
       completedFileId: 'file-1',
     })
+    mocks.getPrincipalSession.mockResolvedValue(session)
     mocks.completeSession.mockImplementation(async ({ session: claimed, finalize }) => {
       const finalized = await finalize(claimed)
       return {
@@ -63,6 +89,52 @@ describe('upload session application', () => {
         alreadyCompleted: false,
       }
     })
+  })
+
+  it.each(['complete', 'abort', 'parts'] as const)(
+    'rechecks organization administrator membership before the logo %s control leg',
+    async (control) => {
+      const session = {
+        ...workspaceUploadSession(),
+        purpose: 'organization_logo' as const,
+        workspaceId: null,
+      }
+      mocks.getOwnedSession.mockResolvedValue(session)
+      mocks.authorizeOrganizationLogo.mockRejectedValue(
+        new Error('Organization administrator access is required')
+      )
+      const request = new NextRequest('http://localhost/api/files/uploads/upload-1/complete')
+      const input = { uploadId: 'upload-1', uploadToken: 'upload-token', partNumbers: [1] }
+      const result =
+        control === 'complete'
+          ? completeInternalUploadSession(principal, input, request)
+          : control === 'abort'
+            ? abortInternalUploadSession(principal, input)
+            : issueInternalUploadPartUrls(principal, input, request)
+      await expect(result).rejects.toThrow('Organization administrator access is required')
+      expect(mocks.assertAuthBinding).toHaveBeenCalledWith(session, principal)
+      expect(mocks.authorizeOrganizationLogo).toHaveBeenCalledWith(principal, session)
+      expect(mocks.finalizePurpose).not.toHaveBeenCalled()
+    }
+  )
+
+  it('does not finalize a logo when organization access is revoked after claim', async () => {
+    mocks.getOwnedSession.mockResolvedValue({
+      ...workspaceUploadSession(),
+      purpose: 'organization_logo',
+      workspaceId: null,
+    })
+    mocks.authorizeOrganizationLogo
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Organization not found'))
+    await expect(
+      completeInternalUploadSession(
+        principal,
+        { uploadId: 'upload-1', uploadToken: 'upload-token' },
+        new NextRequest('http://localhost/api/files/uploads/upload-1/complete')
+      )
+    ).rejects.toThrow('Organization not found')
+    expect(mocks.finalizePurpose).not.toHaveBeenCalled()
   })
 
   it('preserves the authenticated actor metadata through internal finalization', async () => {
@@ -79,6 +151,186 @@ describe('upload session application', () => {
     expect(mocks.finalizePurpose).toHaveBeenCalledWith(
       expect.objectContaining({ actor, principal, request })
     )
+  })
+
+  it.each(['complete', 'abort', 'parts'] as const)(
+    'rechecks organization membership before the %s control leg',
+    async (control) => {
+      const session = {
+        ...workspaceUploadSession(),
+        purpose: 'mothership_attachment' as const,
+        workspaceId: null,
+      }
+      mocks.getOwnedSession.mockResolvedValue(session)
+      const request = new NextRequest('http://localhost/api/files/uploads/upload-1/complete', {
+        headers: { host: 'localhost' },
+      })
+      const input = { uploadId: 'upload-1', uploadToken: 'upload-token', partNumbers: [1] }
+      if (control === 'complete') await completeInternalUploadSession(principal, input, request)
+      else if (control === 'abort') await abortInternalUploadSession(principal, input)
+      else await issueInternalUploadPartUrls(principal, input, request)
+      expect(mocks.assertAuthBinding).toHaveBeenCalledWith(session, principal)
+      expect(mocks.authorizeOrganizationAttachment).toHaveBeenCalledWith(principal, session)
+      expect(mocks.reauthorizeWorkspacePurpose).not.toHaveBeenCalled()
+    }
+  )
+
+  it('does not finalize when organization access is revoked after the session is claimed', async () => {
+    const session = {
+      ...workspaceUploadSession(),
+      purpose: 'mothership_attachment' as const,
+      workspaceId: null,
+    }
+    mocks.getOwnedSession.mockResolvedValue(session)
+    mocks.authorizeOrganizationAttachment
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Organization not found'))
+    await expect(
+      completeInternalUploadSession(
+        principal,
+        { uploadId: 'upload-1', uploadToken: 'upload-token' },
+        new NextRequest('http://localhost/api/files/uploads/upload-1/complete')
+      )
+    ).rejects.toThrow('Organization not found')
+    expect(mocks.finalizePurpose).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The read is a control leg, so it re-authorizes the caller's present
+   * workspace permission rather than trusting the session lookup alone.
+   */
+  it('re-authorizes a session read against the read operation', async () => {
+    const { session } = await readWorkspaceUploadSession(principal, {
+      uploadId: 'upload-1',
+      workspaceId: 'workspace-1',
+      uploadToken: 'upload-token',
+    })
+
+    expect(session.id).toBe('upload-1')
+    expect(mocks.reauthorizeWorkspacePurpose).toHaveBeenCalledWith(
+      principal,
+      expect.objectContaining({ id: 'upload-1' }),
+      expect.objectContaining({ id: 'files.upload.read', minimumRole: 'read' })
+    )
+  })
+
+  /**
+   * The resource documents `file` as the registered file after finalization,
+   * and a caller polling a transfer it lost track of is exactly who needs it —
+   * it is the only way to learn the id the upload produced without having held
+   * the `complete` response. The read answered `null` unconditionally, so that
+   * caller could see a session reach `completed` and still never learn what it
+   * had created.
+   */
+  it('returns the registered file once the session has completed', async () => {
+    const completed = {
+      ...workspaceUploadSession(),
+      status: 'completed' as const,
+      completedFileId: 'file-1',
+    }
+    mocks.getOwnedSession.mockResolvedValue(completed)
+    mocks.getPrincipalSession.mockResolvedValue(completed)
+    mocks.getWorkspaceFile.mockResolvedValue({ id: 'file-1', name: 'file.txt' })
+
+    const { file } = await readWorkspaceUploadSession(principal, {
+      uploadId: 'upload-1',
+      workspaceId: 'workspace-1',
+      uploadToken: 'upload-token',
+    })
+
+    expect(file).toEqual({ id: 'file-1', name: 'file.txt' })
+    expect(mocks.getWorkspaceFile).toHaveBeenCalledWith('workspace-1', 'file-1', {
+      throwOnError: true,
+    })
+  })
+
+  it('does not look for a file before finalization completes', async () => {
+    const { file } = await readWorkspaceUploadSession(principal, {
+      uploadId: 'upload-1',
+      workspaceId: 'workspace-1',
+      uploadToken: 'upload-token',
+    })
+
+    expect(file).toBeNull()
+    expect(mocks.getWorkspaceFile).not.toHaveBeenCalled()
+  })
+
+  /**
+   * `getWorkspaceFile` logs and returns null on a read failure unless told
+   * otherwise, which would report a finalized upload as fileless to the one
+   * caller polling to learn what it created — and they would stop, believing
+   * there was nothing. A failed read is not the same answer as no file.
+   */
+  it('surfaces a failed file read instead of reporting the upload fileless', async () => {
+    const completed = {
+      ...workspaceUploadSession(),
+      status: 'completed' as const,
+      completedFileId: 'file-1',
+    }
+    mocks.getOwnedSession.mockResolvedValue(completed)
+    mocks.getPrincipalSession.mockResolvedValue(completed)
+    mocks.getWorkspaceFile.mockRejectedValue(new Error('connection terminated'))
+
+    await expect(
+      readWorkspaceUploadSession(principal, {
+        uploadId: 'upload-1',
+        workspaceId: 'workspace-1',
+        uploadToken: 'upload-token',
+      })
+    ).rejects.toThrow('connection terminated')
+  })
+
+  it('reads the completed file with throwOnError so a fault cannot read as absence', async () => {
+    const completed = {
+      ...workspaceUploadSession(),
+      status: 'completed' as const,
+      completedFileId: 'file-1',
+    }
+    mocks.getOwnedSession.mockResolvedValue(completed)
+    mocks.getPrincipalSession.mockResolvedValue(completed)
+    mocks.getWorkspaceFile.mockResolvedValue({ id: 'file-1', name: 'file.txt' })
+
+    await readWorkspaceUploadSession(principal, {
+      uploadId: 'upload-1',
+      workspaceId: 'workspace-1',
+      uploadToken: 'upload-token',
+    })
+
+    expect(mocks.getWorkspaceFile).toHaveBeenCalledWith('workspace-1', 'file-1', {
+      throwOnError: true,
+    })
+  })
+
+  /** A completed session whose file was since deleted has nothing to address. */
+  it('answers null when the completed file is gone', async () => {
+    const gone = {
+      ...workspaceUploadSession(),
+      status: 'completed' as const,
+      completedFileId: 'file-1',
+    }
+    mocks.getOwnedSession.mockResolvedValue(gone)
+    mocks.getPrincipalSession.mockResolvedValue(gone)
+    mocks.getWorkspaceFile.mockResolvedValue(null)
+
+    const { file } = await readWorkspaceUploadSession(principal, {
+      uploadId: 'upload-1',
+      workspaceId: 'workspace-1',
+      uploadToken: 'upload-token',
+    })
+
+    expect(file).toBeNull()
+  })
+
+  it('does not return a session whose re-authorization fails', async () => {
+    mocks.reauthorizeWorkspacePurpose.mockRejectedValueOnce(new Error('Upload session not found'))
+
+    await expect(
+      readWorkspaceUploadSession(principal, {
+        uploadId: 'upload-1',
+        workspaceId: 'workspace-1',
+        uploadToken: 'upload-token',
+      })
+    ).rejects.toThrow('Upload session not found')
   })
 })
 

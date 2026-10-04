@@ -5,6 +5,11 @@ import { and, desc, eq, isNull } from 'drizzle-orm'
 import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
+import {
+  clampSuccessfulReadResult,
+  isOversizedVfsReadError,
+  recoverOversizedVfsReadForLocal,
+} from '@/local-copilot/lib/tools/clamped-vfs-read'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import {
   enrichCreateFileArgs,
@@ -14,11 +19,6 @@ import {
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
-  clampSuccessfulReadResult,
-  isOversizedVfsReadError,
-  recoverOversizedVfsReadForLocal,
-} from '@/local-copilot/lib/tools/clamped-vfs-read'
-import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,
   isWorkflowScopedDelegatedTool,
@@ -26,6 +26,13 @@ import {
   type MothershipDelegatedToolName,
   WORKFLOW_SCOPED_DELEGATED_TOOLS,
 } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import { rejectOfficeFileViaSandbox } from '@/local-copilot/lib/tools/reject-office-via-sandbox'
+import {
+  ARENA_ALIASED_SERVER_TOOL_NAMES,
+  ARENA_FILE_PIPELINE_TOOL_NAMES,
+  isArenaFilePipelineTool,
+  toServerRegistryToolName,
+} from '@/local-copilot/lib/tools/resolve-tool-name-alias'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 import { assertWorkspaceFileLookBeforeWrite } from '@/local-copilot/lib/writes/look-before-write'
 
@@ -79,6 +86,7 @@ function enforceLocalCopilotSandboxLanguages(
 
 let copilotServerToolNames: Set<string> | null = null
 let handlersRegistered = false
+let arenaFileAliasesRegistered = false
 
 async function ensureCopilotToolRuntime(): Promise<Set<string>> {
   if (!handlersRegistered) {
@@ -97,12 +105,35 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
     })
   }
 
-  if (!copilotServerToolNames) {
-    const { getRegisteredServerToolNames } = await import('@/lib/copilot/tools/server/router')
-    copilotServerToolNames = new Set(getRegisteredServerToolNames())
-    logger.info('Arena Copilot server tool name set cached', {
-      count: copilotServerToolNames.size,
-      memory: getLocalCopilotMemorySnapshot(),
+  // Rebuild from the live registry so Arena aliases (create_file) appear after
+  // hot reload without requiring a full process restart.
+  const { getRegisteredServerToolNames } = await import('@/lib/copilot/tools/server/router')
+  copilotServerToolNames = new Set(getRegisteredServerToolNames())
+
+  // Hot-reload safety: older handler snapshots may lack Arena leaf names even
+  // when create_empty_file / manage_knowledge_base / web_search are present.
+  if (!arenaFileAliasesRegistered) {
+    const { registerHandler, hasHandler } = await import('@/lib/copilot/tool-executor/executor')
+    const { createServerToolHandler } = await import(
+      '@/lib/copilot/tools/registry/server-tool-adapter'
+    )
+    for (const arenaName of ARENA_ALIASED_SERVER_TOOL_NAMES) {
+      // function_execute is handled via executeTool('run_function') on fallthrough —
+      // it is not a ServerToolAdapter route.
+      if (arenaName === 'function_execute') continue
+      if (hasHandler(arenaName)) continue
+      const serverName = toServerRegistryToolName(arenaName)
+      if (
+        copilotServerToolNames.has(arenaName) ||
+        copilotServerToolNames.has(serverName) ||
+        hasHandler(serverName)
+      ) {
+        registerHandler(arenaName, createServerToolHandler(arenaName))
+      }
+    }
+    arenaFileAliasesRegistered = true
+    logger.info('Arena Copilot aliased server tools registered', {
+      tools: [...ARENA_ALIASED_SERVER_TOOL_NAMES],
     })
   }
 
@@ -140,7 +171,7 @@ function matchWorkflowByName(
   return undefined
 }
 
-async function resolveWorkflowIdFromDatabase(
+export async function resolveWorkflowIdFromDatabase(
   workspaceId: string,
   args: Record<string, unknown>
 ): Promise<string | undefined> {
@@ -238,7 +269,7 @@ function buildMissingWorkflowIdError(
 }
 
 async function executeCopilotServerTool(
-  toolName: string,
+  arenaToolName: string,
   args: Record<string, unknown>,
   ctx: ToolExecutionContext,
   workflowId?: string
@@ -246,18 +277,25 @@ async function executeCopilotServerTool(
   const { createServerToolHandler } = await import(
     '@/lib/copilot/tools/registry/server-tool-adapter'
   )
-  const handler = createServerToolHandler(toolName)
+  const serverToolName = toServerRegistryToolName(arenaToolName)
+  const handler = createServerToolHandler(serverToolName)
   const result = await handler(args, toCopilotServerToolContext(ctx, workflowId))
-  const output = result.output ?? (result.error ? { error: result.error } : {})
+  const output =
+    result.output ??
+    (result.error
+      ? { error: result.error }
+      : result.success
+        ? { success: true, message: `${arenaToolName} completed`, toolName: arenaToolName }
+        : {})
   const resources =
     result.resources && result.resources.length > 0
       ? result.resources
       : result.success
-        ? extractResourcesFromToolResult(toolName, args, output)
+        ? extractResourcesFromToolResult(serverToolName, args, output)
         : []
 
   return {
-    toolName,
+    toolName: arenaToolName,
     success: result.success,
     result: output,
     error: result.error,
@@ -342,6 +380,9 @@ export async function executeMothershipDelegatedTool(
   const languageError = enforceLocalCopilotSandboxLanguages(toolName, enrichedArgs)
   if (languageError) return languageError
 
+  const officeSandboxError = rejectOfficeFileViaSandbox(toolName, enrichedArgs)
+  if (officeSandboxError) return officeSandboxError
+
   if (!workflowId && ctx.workspaceId) {
     workflowId = await resolveWorkflowIdFromDatabase(ctx.workspaceId, enrichedArgs)
   }
@@ -404,11 +445,26 @@ export async function executeMothershipDelegatedTool(
   // Arena always runs server-registry tools in-process via ServerToolAdapter.
   // Never send go-catalogued tools (e.g. search_online) through shared
   // executeTool — that path treats route:'go' as an app-tool lookup and
-  // throws "Built-in tool not found".
-  if (serverToolNames.has(toolName)) {
+  // throws "Built-in tool not found". Map Arena leaf names (create_file, …)
+  // onto Cloud registry ids (create_empty_file, …) before the membership check.
+  //
+  // File pipeline tools ALWAYS take this path — falling through to executeTool
+  // with the Arena name yields "Tool not found: create_file" and the model
+  // invents "office tools unavailable" → python-pptx sandbox loops.
+  const serverToolName = toServerRegistryToolName(toolName)
+  if (isArenaFilePipelineTool(toolName) || serverToolNames.has(serverToolName)) {
+    if (isArenaFilePipelineTool(toolName) && !serverToolNames.has(serverToolName)) {
+      const message = `${toolName} is unavailable in this process (server handler "${serverToolName}" is not registered). Restart the Arena app — do not use manage_sandbox or python-pptx.`
+      return {
+        toolName,
+        success: false,
+        error: message,
+        result: { success: false, message },
+      }
+    }
     const result = await executeCopilotServerTool(toolName, enrichedArgs, ctx, workflowId)
     if (!result.success) {
-      logger.warn('Copilot server tool failed', { toolName, error: result.error })
+      logger.warn('Copilot server tool failed', { toolName, serverToolName, error: result.error })
     }
     if (toolName === 'list_integration_tools' && result.success) {
       const { adaptListIntegrationToolsForLocal } = await import(
@@ -435,8 +491,10 @@ export async function executeMothershipDelegatedTool(
     workspaceId: ctx.workspaceId,
   })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
+  // Always execute under the Cloud/handler id (run_function, …) while keeping
+  // the Arena leaf name on the tool result for the model.
   let result = await executeTool(
-    toolName,
+    serverToolName,
     enrichedArgs,
     toCopilotServerToolContext(ctx, workflowId)
   )
@@ -498,7 +556,13 @@ export async function executeMothershipDelegatedTool(
   const delegatedResult: ToolExecutionResult = {
     toolName,
     success: result.success,
-    result: result.output ?? (result.error ? { error: result.error } : {}),
+    result:
+      result.output ??
+      (result.error
+        ? { error: result.error }
+        : result.success
+          ? { success: true, message: `${toolName} completed`, toolName }
+          : {}),
     error: result.error,
     resources: result.resources,
   }

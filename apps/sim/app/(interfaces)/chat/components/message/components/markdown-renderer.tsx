@@ -194,7 +194,7 @@ const COMPONENTS = {
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a
       href={href || '#'}
-      className='text-[var(--color-ds-text-primary,#2C2D33)] underline decoration-dashed underline-offset-4 transition-colors hover:text-[var(--color-ds-text-link-hover,#155CBA)] hover:decoration-[var(--color-ds-text-link-hover,#155CBA)]'
+      className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4 transition-colors hover:text-[var(--text-primary)]'
       target='_blank'
       rel='noopener noreferrer'
       {...props}

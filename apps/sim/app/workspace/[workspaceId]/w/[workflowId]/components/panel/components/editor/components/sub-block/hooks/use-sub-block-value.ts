@@ -7,6 +7,7 @@ import {
   normalizeImageModelId,
   resolveImageProviderForModel,
 } from '@/lib/image-generation/block-model-config'
+import { isMcpRuntimeReference } from '@/lib/mcp/operation-policy'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { getProviderFromModel } from '@/providers/utils'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -40,7 +41,8 @@ export function useSubBlockValue<T = any>(
 ): readonly [T | null, (value: T) => void] {
   const { isStreaming = false, onStreamingEnd } = options || {}
 
-  const { collaborativeSetSubblockValue } = useCollaborativeWorkflow()
+  const { collaborativeSetSubblockValue, collaborativeSetBlockCanonicalMode } =
+    useCollaborativeWorkflow()
 
   // Subscribe to active workflow id to avoid races where the workflow id is set after mount.
   // This ensures our selector recomputes when the active workflow changes.
@@ -115,10 +117,30 @@ export function useSubBlockValue<T = any>(
   // Emit the value to socket/DB and update local store
   const emitValue = useCallback(
     (value: T) => {
+      if (
+        blockType === 'mcp' &&
+        (subBlockId === 'serverSelector' || subBlockId === 'serverReference')
+      ) {
+        collaborativeSetSubblockValue(blockId, '_toolSchema', null)
+        if (isMcpRuntimeReference(value)) {
+          const toolMode = useWorkflowStore.getState().blocks[blockId]?.data?.canonicalModes?.tool
+          if (toolMode !== 'advanced') {
+            const selectedName = useSubBlockStore.getState().getValue(blockId, 'toolSelector')
+            collaborativeSetSubblockValue(blockId, 'toolReference', selectedName ?? '')
+            collaborativeSetBlockCanonicalMode(blockId, 'tool', 'advanced')
+          }
+        }
+      }
       collaborativeSetSubblockValue(blockId, subBlockId, value)
       lastEmittedValueRef.current = value
     },
-    [blockId, subBlockId, collaborativeSetSubblockValue]
+    [
+      blockId,
+      subBlockId,
+      blockType,
+      collaborativeSetSubblockValue,
+      collaborativeSetBlockCanonicalMode,
+    ]
   )
 
   // Handle streaming mode changes

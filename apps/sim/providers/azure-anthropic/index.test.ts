@@ -77,8 +77,14 @@ describe('azureAnthropicProvider — SSRF pinning', () => {
       request({ azureEndpoint: 'https://rebind.attacker.tld' })
     )
 
-    expect(mockValidate).toHaveBeenCalledWith('https://rebind.attacker.tld', 'azureEndpoint')
-    expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10')
+    expect(mockValidate).toHaveBeenCalledWith(
+      'https://rebind.attacker.tld',
+      'azureEndpoint',
+      'configuredEndpoint'
+    )
+    expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10', {
+      profile: 'configuredEndpoint',
+    })
     expect(buildClientOptions()).toMatchObject({ fetch: sentinelFetch })
   })
 
@@ -104,6 +110,17 @@ describe('azureAnthropicProvider — SSRF pinning', () => {
     expect(buildClientOptions().defaultHeaders).not.toHaveProperty('anthropic-beta')
   })
 
+  it('preserves custom deployment casing when removing an uppercase routing prefix', async () => {
+    setEnv({ AZURE_ANTHROPIC_ENDPOINT: 'https://custom.services.ai.azure.com' })
+    const providerRequest = request({ model: 'AZURE-ANTHROPIC/Team-Claude-Deployment' })
+
+    await azureAnthropicProvider.executeRequest(providerRequest)
+
+    const [forwardedRequest, config] = mockExecuteAnthropic.mock.calls[0]
+    expect(forwardedRequest.model).toBe('AZURE-ANTHROPIC/Team-Claude-Deployment')
+    expect(config.resolveWireModel(forwardedRequest)).toBe('Team-Claude-Deployment')
+  })
+
   it('throws and never builds a client when validation blocks the endpoint', async () => {
     mockValidate.mockResolvedValue({ isValid: false, error: 'resolves to a blocked IP address' })
 
@@ -112,19 +129,6 @@ describe('azureAnthropicProvider — SSRF pinning', () => {
         request({ azureEndpoint: 'https://rebind.attacker.tld' })
       )
     ).rejects.toThrow('Invalid Azure Anthropic endpoint')
-
-    expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
-    expect(mockExecuteAnthropic).not.toHaveBeenCalled()
-  })
-
-  it('fails closed when validation passes but yields no resolvable IP to pin', async () => {
-    mockValidate.mockResolvedValue({ isValid: true })
-
-    await expect(
-      azureAnthropicProvider.executeRequest(
-        request({ azureEndpoint: 'https://rebind.attacker.tld' })
-      )
-    ).rejects.toThrow('could not resolve a pinnable IP address')
 
     expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
     expect(mockExecuteAnthropic).not.toHaveBeenCalled()

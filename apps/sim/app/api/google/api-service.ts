@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import sharp from 'sharp'
-import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { resolveGoogleGenerativeLanguageApiKey } from '@/lib/core/config/api-keys'
 import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { assertGeminiImageModel } from '@/lib/image-generation/block-model-config'
@@ -936,7 +936,7 @@ export async function generateNanoBananaImage(
   }
 
   try {
-    const apiKey = params.apiKey?.trim() || getRotatingApiKey('google')
+    const apiKey = resolveGoogleGenerativeLanguageApiKey(params.apiKey)
     const url = buildGenerateContentUrl(model)
     const requestBody = await buildNanoBananaRequestBody({
       prompt,

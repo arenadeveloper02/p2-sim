@@ -86,8 +86,10 @@ describe('desktop title-bar surface audit', () => {
   // Regression: a px clearance shrinks under page zoom while the OS-drawn lights
   // do not, so they end up drawn over the sidebar toggle.
   it('reserves the traffic-light lane from the platform, not hardcoded pixels', () => {
-    expect(globalStyles).toContain('--desktop-title-bar-height: env(titlebar-area-height,')
-    expect(globalStyles).toContain('--desktop-title-bar-inset-x: env(titlebar-area-x,')
+    // The env() term is the platform-derived part; the max() floor keeps the
+    // lane from collapsing below the OS-drawn lights under page zoom.
+    expect(globalStyles).toContain('--desktop-title-bar-height: max(env(titlebar-area-height,')
+    expect(globalStyles).toContain('--desktop-title-bar-inset-x: max(env(titlebar-area-x,')
 
     // Scoped to the desktop block: the `:root` zeros are the deliberate
     // no-lane case, so only the overrides must stay derived.
@@ -95,13 +97,17 @@ describe('desktop title-bar surface audit', () => {
       /html\[data-sim-desktop-title-bar="inset"\]\s*\{([^}]*)\}/
     )?.[1]
     expect(insetBlock).toBeTypeOf('string')
+    // The zoom rework split the lane from the control: the lane stays
+    // platform-derived (clamped env() above), while the control is a fixed
+    // square — CSS px already scale under page zoom, so only the centering
+    // offset must remain computed from the lane height.
+    expect(insetBlock).toMatch(/--desktop-title-bar-control-offset: calc\(/)
+    expect(insetBlock).not.toMatch(/--desktop-title-bar-control-offset:\s*[\d.]+px/)
     for (const name of [
       '--desktop-title-bar-control-size',
       '--desktop-title-bar-control-icon-size',
-      '--desktop-title-bar-control-offset',
     ]) {
-      expect(insetBlock).toMatch(new RegExp(`${name}: calc\\(`))
-      expect(insetBlock).not.toMatch(new RegExp(`${name}:\\s*[\\d.]+px`))
+      expect(insetBlock).toMatch(new RegExp(`${name}:\\s*[\\d.]+px`))
     }
 
     // Both lane consumers read those vars; a literal in either is the bug.
@@ -145,12 +151,14 @@ describe('desktop title-bar surface audit', () => {
     expect(rule).not.toContain('margin-top')
   })
 
-  it('drops the content pane border where the pane meets the window edge', () => {
-    // Collapsing the sidebar in the desktop shell takes the pane's padding to 0, so a
-    // retained border and radius drew a hairline outline inset from the square window.
+  it('drops the pane divider where the pane meets the window edge', () => {
+    // The pane meets the rail on a single left hairline. Collapsing the sidebar in the
+    // desktop shell leaves no rail beside it, so a retained divider would draw a stray
+    // line down the window's left edge. The pane carries no radius or full border to
+    // drop anymore; the divider is the only chrome between them.
     const flush = '[[data-sim-desktop-title-bar=inset]_[data-sidebar-collapsed]_&]:'
-    expect(workspaceChrome).toContain(`${flush}rounded-none`)
-    expect(workspaceChrome).toContain(`${flush}border-0`)
+    expect(workspaceChrome).toContain(`${flush}border-l-0`)
+    expect(workspaceChrome).not.toContain('rounded-[8px]')
   })
 
   it('clears the lane for panels that embed pages away from the lights', () => {
@@ -283,6 +291,9 @@ const SELF_RESERVE_REQUIRED = new Set([
   // `WorkspaceHostProvider` — an ancestor of the chrome, not a descendant — returns it
   // instead of its children on a client-side 403. Neither is a double reservation.
   'app/workspace/[workspaceId]/components/workspace-access-denied.tsx',
+  // Same shape on the organization surface: `o/[organizationId]/layout.tsx` returns it
+  // for a non-member before reaching `<WorkspaceChrome>`.
+  'app/o/[organizationId]/components/organization-access-denied.tsx',
 ])
 
 /** Every file under `app/`, so ancestor layouts can be resolved without extra fs calls. */

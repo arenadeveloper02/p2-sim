@@ -14,17 +14,12 @@ import { Button, cn } from '@sim/emcn'
 import { ArrowDown } from '@sim/emcn/icons'
 import { MessageCircle } from 'lucide-react'
 import {
-  ConversationTimeline,
   CONVERSATION_TIMELINE_GUTTER_CLASS,
+  ConversationTimeline,
   shouldShowConversationTimeline,
 } from '@/components/conversation-timeline/conversation-timeline'
 import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
-import {
-  DEPLOYED_CHAT_CANVAS_GRADIENT,
-  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
-  DEPLOYED_CHAT_TEXT_BODY,
-  DEPLOYED_CHAT_TEXT_MUTED,
-} from '@/app/(interfaces)/chat/constants'
+import { DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS } from '@/app/(interfaces)/chat/constants'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
 interface ChatMessageContainerProps {
@@ -227,10 +222,7 @@ export function ChatMessageContainer({
   const showTimeline = Boolean(scrollToMessage) && shouldShowConversationTimeline(messages)
 
   return (
-    <div
-      className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'
-      style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
-    >
+    <div className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
       {selectionTip && onAskInChat && (
         <button
           ref={tipRef}
@@ -260,13 +252,10 @@ export function ChatMessageContainer({
             {messages.length === 0 ? (
               <div className='flex min-h-full flex-col items-center justify-center py-10'>
                 <div className='space-y-2 text-center'>
-                  <h3
-                    className='font-medium text-[17px]'
-                    style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
-                  >
+                  <h3 className='font-medium text-[var(--text-primary)] text-base'>
                     How can I help you today?
                   </h3>
-                  <p className='text-[14px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
+                  <p className='text-[var(--text-muted)] text-sm'>
                     {chatConfig?.description || 'Ask me anything.'}
                   </p>
                 </div>
@@ -304,7 +293,8 @@ export function ChatMessageContainer({
                   m.type === 'assistant' &&
                   m.isStreaming &&
                   ((typeof m.thinking === 'string' && m.thinking.length > 0) ||
-                    (Array.isArray(m.toolCalls) && m.toolCalls.length > 0))
+                    (Array.isArray(m.toolCalls) && m.toolCalls.length > 0) ||
+                    (Array.isArray(m.outputSegments) && m.outputSegments.length > 0))
               ) && <DeployedResponseLoader isStreaming={isStreaming} />}
 
             <div ref={messagesEndRef} />
@@ -322,7 +312,7 @@ export function ChatMessageContainer({
       ) : null}
 
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-4 left-1/2 z-20 transform'>
+        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20'>
           <Button
             onClick={scrollToBottom}
             size='sm'

@@ -1,18 +1,21 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { ToolConfig } from '@/tools/types'
+import { filterUndefined } from '@sim/utils/object'
+import type { InternalToolConfig } from '@/tools/types'
 
 const logger = createLogger('GoogleAdsV1Query')
 
 interface GoogleAdsV1QueryParams {
   accounts?: string
   prompt: string
-  _context?: {
-    workspaceId?: string
-  }
+  accessToken?: string
+  accountId?: string
+  customerId?: string
+  developerToken?: string
+  managerCustomerId?: string
 }
 
-export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> = {
+export const googleAdsV1QueryTool: InternalToolConfig<GoogleAdsV1QueryParams, unknown> = {
   id: 'google_ads_v1_query',
   name: 'Google Ads V1 Query',
   description:
@@ -82,17 +85,21 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
     },
   },
 
-  request: {
-    url: () => '/api/google-ads-v1/query',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: GoogleAdsV1QueryParams) => ({
-      query: params.prompt,
-      accounts: params.accounts,
-      workspaceId: params._context?.workspaceId,
-    }),
+  operation: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ prompt: params.prompt }),
+    },
+    input: (params) =>
+      filterUndefined({
+        query: params.prompt ?? undefined,
+        accounts: params.accounts ?? undefined,
+        accessToken: params.accessToken ?? undefined,
+        accountId: params.accountId ?? undefined,
+        customerId: params.customerId ?? undefined,
+        developerToken: params.developerToken ?? undefined,
+        managerCustomerId: params.managerCustomerId ?? undefined,
+      }),
   },
 
   transformResponse: async (response: Response) => {

@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
-import { downloadFile, headObject, uploadFile } from '@/lib/uploads/core/storage-service'
+import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
+import { isObjectNotFoundError } from '@/lib/uploads/core/errors'
+import { downloadFile, uploadFile } from '@/lib/uploads/core/storage-service'
+import { MAX_BUFFERED_TRANSFER_BYTES } from '@/lib/uploads/shared/types'
 
 const logger = createLogger('CopilotDocCompiledStore')
 
@@ -35,15 +38,37 @@ function publishedArtifactPointerKey(workspaceId: string, source: string, ext: s
   return `copilot-doc-compiled/${workspaceId}/${sourceHash}.${ext}.published.json`
 }
 
+export interface CompiledDocReadOptions {
+  maxBytes?: number
+  signal?: AbortSignal
+}
+
 interface PublishedArtifactPointer {
   version: 1
   referencedInputIdentity: string
 }
 
-async function loadPublishedArtifactPointer(key: string): Promise<PublishedArtifactPointer | null> {
-  const stored = await headObject(key, 'copilot')
-  if (!stored) return null
-  const encoded = await downloadFile({ key, context: 'copilot' })
+async function loadPublishedArtifactPointer(
+  key: string,
+  options: CompiledDocReadOptions = {}
+): Promise<PublishedArtifactPointer | null> {
+  options.signal?.throwIfAborted()
+  let encoded: Buffer
+  try {
+    encoded = await downloadFile({
+      key,
+      context: 'copilot',
+      maxBytes: Math.min(
+        options.maxBytes ?? MAX_BUFFERED_TRANSFER_BYTES,
+        MAX_BUFFERED_TRANSFER_BYTES
+      ),
+      signal: options.signal,
+    })
+  } catch (error) {
+    options.signal?.throwIfAborted()
+    if (isObjectNotFoundError(error)) return null
+    throw error
+  }
 
   let decoded: unknown
   try {
@@ -65,17 +90,42 @@ async function loadPublishedArtifactPointer(key: string): Promise<PublishedArtif
   return { version: 1, referencedInputIdentity: decoded.referencedInputIdentity }
 }
 
-/** Loads the compiled binary for the current source, or null if not yet built. */
+/**
+ * Loads the compiled binary for the current source, or null if not yet built.
+ *
+ * The artifact is what a download or a public share actually serves, and it is read
+ * separately from the source — so a source that cleared its own ceiling says nothing
+ * about the size of this. Bounding it here rather than on the finished response is
+ * what keeps an oversized artifact from being materialized before it is refused.
+ *
+ * The default is the widest ceiling consumers allow. Callers can tighten it before
+ * downloading, so indexing does not materialize an artifact it will immediately reject.
+ *
+ * A size breach is rethrown rather than folded into `null`: null means "not built
+ * yet", which callers answer with "still being prepared, try again", and an artifact
+ * that is too large would retry forever behind that.
+ */
 export async function loadCompiledDoc(
   workspaceId: string,
   source: string,
   ext: string,
-  referencedInputIdentity?: string
+  referencedInputIdentity?: string,
+  options: CompiledDocReadOptions = {}
 ): Promise<Buffer | null> {
   const key = compiledArtifactKey(workspaceId, source, ext, referencedInputIdentity)
   try {
-    return await downloadFile({ key, context: 'copilot' })
-  } catch {
+    return await downloadFile({
+      key,
+      context: 'copilot',
+      maxBytes: Math.min(
+        options.maxBytes ?? MAX_BUFFERED_TRANSFER_BYTES,
+        MAX_BUFFERED_TRANSFER_BYTES
+      ),
+      signal: options.signal,
+    })
+  } catch (error) {
+    options.signal?.throwIfAborted()
+    if (isPayloadSizeLimitError(error)) throw error
     return null
   }
 }
@@ -120,12 +170,19 @@ export async function publishCompiledDocArtifact(
 export async function loadPublishedCompiledDoc(
   workspaceId: string,
   source: string,
-  ext: string
+  ext: string,
+  options: CompiledDocReadOptions = {}
 ): Promise<Buffer | null> {
   const key = publishedArtifactPointerKey(workspaceId, source, ext)
-  const pointer = await loadPublishedArtifactPointer(key)
+  const pointer = await loadPublishedArtifactPointer(key, options)
   if (!pointer) return null
-  const artifact = await loadCompiledDoc(workspaceId, source, ext, pointer.referencedInputIdentity)
+  const artifact = await loadCompiledDoc(
+    workspaceId,
+    source,
+    ext,
+    pointer.referencedInputIdentity,
+    options
+  )
   if (!artifact) throw new Error(`Published compiled document artifact is missing: ${key}`)
   return artifact
 }

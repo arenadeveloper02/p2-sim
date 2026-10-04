@@ -2,15 +2,17 @@ import { resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const workflowMetadataMocks = vi.hoisted(() => ({
-  buildAPIUrl: vi.fn((path: string) => new URL(path, 'https://sim.local')),
-  buildExecutorDelegationHeaders: vi.fn(),
+  readWorkflowInputFieldsForTool: vi.fn(),
+  readWorkflowMetadataForTool: vi.fn(),
 }))
 
-vi.mock('@/executor/utils/http', () => ({
-  buildAPIUrl: workflowMetadataMocks.buildAPIUrl,
-  buildExecutorDelegationHeaders: workflowMetadataMocks.buildExecutorDelegationHeaders,
+vi.mock('@/lib/internal/workflows/read-tool-enrichment', () => ({
+  readWorkflowInputFieldsForTool: workflowMetadataMocks.readWorkflowInputFieldsForTool,
+  readWorkflowMetadataForTool: workflowMetadataMocks.readWorkflowMetadataForTool,
 }))
 
+import { assignProviderToolIdentities } from '@/providers/tool-identity'
+import type { ProviderToolConfig } from '@/providers/types'
 import {
   calculateCost,
   describeModelLevel,
@@ -35,6 +37,7 @@ import {
   getReasoningEffortValuesForModel,
   getThinkingLevelsForModel,
   getVerbosityValuesForModel,
+  isGemini3Model,
   isProviderBlacklisted,
   MODELS_TEMP_RANGE_0_1,
   MODELS_TEMP_RANGE_0_2,
@@ -57,6 +60,7 @@ import {
   transformBlockTool,
   updateOllamaProviderModels,
 } from '@/providers/utils'
+import { useProvidersStore } from '@/stores/providers/store'
 
 const mockGetRotatingApiKey = vi.fn().mockReturnValue('rotating-server-key')
 const originalRequire = module.require
@@ -162,6 +166,25 @@ describe('getApiKey', () => {
     const key2 = getApiKey('ollama', 'codellama', 'user-key')
     expect(key2).toBe('empty')
   })
+
+  it.each(['ollama', 'vllm', 'litellm'] as const)(
+    'uses the routed cloud provider credentials despite a name collision in %s discovery',
+    (localProvider) => {
+      const originalProviders = useProvidersStore.getState().providers
+      useProvidersStore.setState({
+        providers: {
+          ...originalProviders,
+          [localProvider]: { ...originalProviders[localProvider], models: ['azure/MyDeployment'] },
+        },
+      })
+      try {
+        expect(getApiKey('azure-openai', 'azure/MyDeployment', 'azure-key')).toBe('azure-key')
+        expect(() => getApiKey('azure-openai', 'azure/MyDeployment')).toThrow('API key is required')
+      } finally {
+        useProvidersStore.setState({ providers: originalProviders })
+      }
+    }
+  )
 
   it('should return empty or user-provided key for vllm provider without requiring API key', () => {
     setEnvFlags({ isHosted: false })
@@ -546,10 +569,11 @@ describe('Model Capabilities', () => {
         (m) =>
           m.includes('gpt-5') &&
           !m.includes('chat-latest') &&
-          !m.includes('gpt-5.5-pro') &&
-          !m.includes('gpt-5.4-pro') &&
-          !m.includes('gpt-5.2-pro') &&
-          !m.includes('gpt-5-pro')
+          m !== 'gpt-5.5-pro' &&
+          m !== 'gpt-5.4-pro' &&
+          m !== 'gpt-5.3-codex' &&
+          m !== 'gpt-5.2-pro' &&
+          m !== 'gpt-5-pro'
       )
       const gpt5ModelsWithVerbosity = MODELS_WITH_VERBOSITY.filter(
         (m) => m.includes('gpt-5') && !m.includes('chat-latest')
@@ -561,6 +585,9 @@ describe('Model Capabilities', () => {
 
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5.4-pro')
       expect(MODELS_WITH_VERBOSITY).not.toContain('gpt-5.4-pro')
+
+      expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5.3-codex')
+      expect(MODELS_WITH_VERBOSITY).not.toContain('gpt-5.3-codex')
 
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5.2-pro')
       expect(MODELS_WITH_VERBOSITY).not.toContain('gpt-5.2-pro')
@@ -820,6 +847,35 @@ describe('Cost Calculation', () => {
       expect(cachedCost.output).toBe(regularCost.output)
     })
 
+    it('should select pricing tiers from the full request input size', () => {
+      const shortContext = calculateCost('gpt-5.6-terra', 272_000, 100_000)
+      const longContext = calculateCost('gpt-5.6-terra', 272_001, 100_000)
+
+      expect(shortContext).toMatchObject({ input: 0.544, output: 1.2, total: 1.744 })
+      expect(longContext).toMatchObject({ input: 1.088004, output: 1.8, total: 2.888004 })
+    })
+
+    it.each([
+      ['gemini-3.1-pro-preview', 2, 0.2, 12, 4, 0.4, 18],
+      ['gemini-2.5-pro', 1.25, 0.125, 10, 2.5, 0.25, 15],
+      ['grok-4.6', 2, 0.5, 6, 4, 1, 12],
+    ])(
+      'applies %s long-context rates only above 200k prompt tokens, including cached input',
+      (model, input, cached, output, longInput, longCached, longOutput) => {
+        const shortContext = calculateCost(model, 200_000, 100_000)
+        const longContext = calculateCost(model, 200_001, 100_000)
+        const shortCached = calculateCost(model, 200_000, 100_000, true)
+        const longCachedCost = calculateCost(model, 200_001, 100_000, true)
+
+        expect(shortContext.input).toBeCloseTo(input * 0.2, 10)
+        expect(shortContext.output).toBeCloseTo(output * 0.1, 10)
+        expect(longContext.input).toBeCloseTo((longInput * 200_001) / 1e6, 10)
+        expect(longContext.output).toBeCloseTo(longOutput * 0.1, 10)
+        expect(shortCached.input).toBeCloseTo(cached * 0.2, 10)
+        expect(longCachedCost.input).toBeCloseTo((longCached * 200_001) / 1e6, 10)
+      }
+    )
+
     it('should return default pricing for unknown models', () => {
       const result = calculateCost('unknown-model', 1000, 500, false)
 
@@ -869,6 +925,7 @@ describe('getHostedModels', () => {
   it('should return OpenAI, Anthropic, Google, and xAI models as hosted', () => {
     const hostedModels = getHostedModels()
 
+    expect(hostedModels).toContain('gpt-6-astra')
     expect(hostedModels).toContain('gpt-4o')
     expect(hostedModels).toContain('o1')
 
@@ -896,6 +953,7 @@ describe('getHostedModels', () => {
 
 describe('shouldBillModelUsage', () => {
   it('should return true for exact matches of hosted models', () => {
+    expect(shouldBillModelUsage('gpt-6-astra')).toBe(true)
     expect(shouldBillModelUsage('gpt-4o')).toBe(true)
     expect(shouldBillModelUsage('gpt-4o-mini')).toBe(true)
     expect(shouldBillModelUsage('o1')).toBe(true)
@@ -1310,6 +1368,38 @@ describe('Tool Management', () => {
 
       expect(result.toolChoice).toBe('auto')
     })
+
+    it('keeps usage control independent for duplicate configured tools', () => {
+      const providerTools: ProviderToolConfig[] = [
+        {
+          id: 'gmail_send',
+          name: 'Gmail Send',
+          description: 'Send an email',
+          params: { oauthCredential: 'credential-a' },
+          parameters: { type: 'object', properties: {}, required: [] },
+          usageControl: 'none',
+        },
+        {
+          id: 'gmail_send',
+          name: 'Gmail Send',
+          description: 'Send an email',
+          params: { oauthCredential: 'credential-b' },
+          parameters: { type: 'object', properties: {}, required: [] },
+          usageControl: 'force',
+        },
+      ]
+      assignProviderToolIdentities(providerTools)
+      const tools = providerTools.map((tool) => ({ function: { name: tool.id } }))
+
+      const result = prepareToolsWithUsageControl(tools, providerTools, mockLogger)
+
+      expect(result.tools).toEqual([{ function: { name: 'gmail_send__sim_2' } }])
+      expect(result.forcedTools).toEqual(['gmail_send__sim_2'])
+      expect(result.toolChoice).toEqual({
+        type: 'function',
+        function: { name: 'gmail_send__sim_2' },
+      })
+    })
   })
 })
 
@@ -1661,7 +1751,7 @@ describe('Provider/Model Blacklist', () => {
   })
 })
 
-describe('transformBlockTool multi-instance unique IDs', () => {
+describe('transformBlockTool table identities', () => {
   const tableBlockDef = {
     type: 'table',
     inputs: {},
@@ -1699,9 +1789,9 @@ describe('transformBlockTool multi-instance unique IDs', () => {
       { selectedOperation: 'query_rows', getAllBlocks, getTool, canonicalModes, toolIndex }
     )
 
-  it('appends the table id when stored under the basic selector subblock key', async () => {
+  it('keeps the canonical id when the table is stored under the basic selector key', async () => {
     const result = await transformTable({ tableSelector: 'tbl_abc' })
-    expect(result?.id).toBe('table_query_rows_tbl_abc')
+    expect(result?.id).toBe('table_query_rows')
   })
 
   it('resolves the active table selector before enriching the LLM tool schema', async () => {
@@ -1765,7 +1855,7 @@ describe('transformBlockTool multi-instance unique IDs', () => {
       }
     )
     expect(result).toMatchObject({
-      id: 'table_query_rows_tbl_active',
+      id: 'table_query_rows',
       description: 'Query rows from tbl_active',
       params: { tableId: 'tbl_stale', tableSelector: 'tbl_active' },
       parameters: {
@@ -1777,25 +1867,25 @@ describe('transformBlockTool multi-instance unique IDs', () => {
     expect(result?.paramsTransform?.(result.params)).toEqual({ tableId: 'tbl_active' })
   })
 
-  it('appends the table id resolved from the advanced manual input', async () => {
+  it('keeps the canonical id for a table resolved from the advanced manual input', async () => {
     const result = await transformTable(
       { manualTableId: 'tbl_xyz' },
       { '0:tableId': 'advanced' },
       0
     )
-    expect(result?.id).toBe('table_query_rows_tbl_xyz')
+    expect(result?.id).toBe('table_query_rows')
   })
 
   it('resolves an advanced-only manual id via the heuristic when basic is empty and no mode is set', async () => {
     // No canonicalModes entry: routing through resolveCanonicalMode picks advanced (empty basic),
     // where the old `?? 'basic'` fallback dropped the advanced-only value.
     const result = await transformTable({ manualTableId: 'tbl_only' })
-    expect(result?.id).toBe('table_query_rows_tbl_only')
+    expect(result?.id).toBe('table_query_rows')
   })
 
-  it('appends the canonical table id when already present in params', async () => {
+  it('keeps the canonical tool id when the table id is already present in params', async () => {
     const result = await transformTable({ tableId: 'tbl_direct' })
-    expect(result?.id).toBe('table_query_rows_tbl_direct')
+    expect(result?.id).toBe('table_query_rows')
   })
 
   it('preserves the canonical table id when advanced mode is active', async () => {
@@ -1804,7 +1894,7 @@ describe('transformBlockTool multi-instance unique IDs', () => {
       { '0:tableId': 'advanced' },
       0
     )
-    expect(result?.id).toBe('table_query_rows_tbl_advanced')
+    expect(result?.id).toBe('table_query_rows')
     expect(result?.paramsTransform?.(result.params)).toEqual({ tableId: 'tbl_advanced' })
   })
 
@@ -1824,8 +1914,8 @@ describe('transformBlockTool multi-instance unique IDs', () => {
     const first = await transformTable(sharedParams, canonicalModes, 0)
     const second = await transformTable(sharedParams, canonicalModes, 1)
 
-    expect(first?.id).toBe('table_query_rows_tbl_advanced')
-    expect(second?.id).toBe('table_query_rows_tbl_basic')
+    expect(first?.id).toBe('table_query_rows')
+    expect(second?.id).toBe('table_query_rows')
   })
 })
 
@@ -2027,23 +2117,23 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
       { selectedOperation: 'search', getAllBlocks, getTool, canonicalModes, toolIndex }
     )
 
-  it('appends the knowledge base id when stored under the basic selector subblock key', async () => {
+  it('keeps the canonical id for the basic knowledge base selector', async () => {
     const result = await transformKb({ knowledgeBaseSelector: 'kb_abc' })
-    expect(result?.id).toBe('knowledge_search_kb_abc')
+    expect(result?.id).toBe('knowledge_search')
   })
 
-  it('appends the knowledge base id resolved from the advanced manual input', async () => {
+  it('keeps the canonical id for an advanced knowledge base input', async () => {
     const result = await transformKb(
       { manualKnowledgeBaseId: 'kb_xyz' },
       { '0:knowledgeBaseId': 'advanced' },
       0
     )
-    expect(result?.id).toBe('knowledge_search_kb_xyz')
+    expect(result?.id).toBe('knowledge_search')
   })
 
-  it('appends the canonical knowledge base id when already present in params', async () => {
+  it('keeps the canonical tool id when the knowledge base id is already present', async () => {
     const result = await transformKb({ knowledgeBaseId: 'kb_direct' })
-    expect(result?.id).toBe('knowledge_search_kb_direct')
+    expect(result?.id).toBe('knowledge_search')
   })
 
   it('falls back to the base tool id when no knowledge base is selected', async () => {
@@ -2201,9 +2291,9 @@ describe('workflow executor metadata delegation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    workflowMetadataMocks.buildExecutorDelegationHeaders.mockResolvedValue({
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer delegated-token',
+    workflowMetadataMocks.readWorkflowMetadataForTool.mockResolvedValue({
+      name: 'Child Workflow',
+      description: 'Child description',
     })
   })
 
@@ -2212,16 +2302,6 @@ describe('workflow executor metadata delegation', () => {
   })
 
   it('binds cross-workflow metadata reads to the target without attaching the parent run', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({ data: { name: 'Child Workflow', description: 'Child description' } }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        )
-      )
-    vi.stubGlobal('fetch', fetchMock)
-
     const result = await transformBlockTool(
       { type: 'workflow', params: { workflowId: 'child-workflow' } },
       {
@@ -2232,37 +2312,45 @@ describe('workflow executor metadata delegation', () => {
           workspaceId: 'workspace-1',
           executionId: 'execution-1',
           userId: 'user-1',
+          executorDelegationOrigin: {
+            subjectUserId: 'user-1',
+            workflowId: 'parent-workflow',
+            executionId: 'execution-1',
+            principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+            currentWorkflow: { workflowId: 'parent-workflow', mode: 'draft' },
+          },
         },
+        readWorkflowMetadata: workflowMetadataMocks.readWorkflowMetadataForTool,
       }
     )
 
-    expect(workflowMetadataMocks.buildExecutorDelegationHeaders).toHaveBeenCalledWith({
-      subjectUserId: 'user-1',
-      workflowId: 'child-workflow',
-    })
-    expect(fetchMock).toHaveBeenCalledWith('https://sim.local/api/workflows/child-workflow', {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer delegated-token',
-      },
-    })
+    expect(workflowMetadataMocks.readWorkflowMetadataForTool).toHaveBeenCalledWith(
+      'child-workflow',
+      {
+        userId: 'user-1',
+        workflowId: 'parent-workflow',
+        workspaceId: 'workspace-1',
+        executionId: 'execution-1',
+        executorDelegationOrigin: {
+          subjectUserId: 'user-1',
+          workflowId: 'parent-workflow',
+          executionId: 'execution-1',
+          principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+          currentWorkflow: { workflowId: 'parent-workflow', mode: 'draft' },
+        },
+      }
+    )
     expect(result).toMatchObject({
-      id: 'workflow_executor_child-workflow',
-      name: 'Child Workflow',
+      id: 'workflow_executor',
       description: 'Child description',
     })
   })
 
   it('includes the run binding when the metadata target is the executing workflow', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ data: { name: 'Current Workflow', description: null } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    )
+    workflowMetadataMocks.readWorkflowMetadataForTool.mockResolvedValue({
+      name: 'Current Workflow',
+      description: null,
+    })
 
     await transformBlockTool(
       { type: 'workflow', params: { workflowId: 'current-workflow' } },
@@ -2274,34 +2362,49 @@ describe('workflow executor metadata delegation', () => {
           workspaceId: 'workspace-1',
           executionId: 'execution-1',
           userId: 'user-1',
+          executorDelegationOrigin: {
+            subjectUserId: 'user-1',
+            workflowId: 'current-workflow',
+            executionId: 'execution-1',
+            principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+            currentWorkflow: { workflowId: 'current-workflow', mode: 'draft' },
+          },
         },
+        readWorkflowMetadata: workflowMetadataMocks.readWorkflowMetadataForTool,
       }
     )
 
-    expect(workflowMetadataMocks.buildExecutorDelegationHeaders).toHaveBeenCalledWith({
-      subjectUserId: 'user-1',
-      workflowId: 'current-workflow',
-      executionId: 'execution-1',
-    })
+    expect(workflowMetadataMocks.readWorkflowMetadataForTool).toHaveBeenCalledWith(
+      'current-workflow',
+      {
+        userId: 'user-1',
+        workflowId: 'current-workflow',
+        workspaceId: 'workspace-1',
+        executionId: 'execution-1',
+        executorDelegationOrigin: {
+          subjectUserId: 'user-1',
+          workflowId: 'current-workflow',
+          executionId: 'execution-1',
+          principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+          currentWorkflow: { workflowId: 'current-workflow', mode: 'draft' },
+        },
+      }
+    )
   })
 
   it('does not issue an actorless fallback token without a trusted execution subject', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-
     const result = await transformBlockTool(
       { type: 'workflow', params: { workflowId: 'child-workflow' } },
       {
         getAllBlocks: () => [workflowBlock],
         getTool: () => workflowTool,
+        readWorkflowMetadata: workflowMetadataMocks.readWorkflowMetadataForTool,
       }
     )
 
-    expect(workflowMetadataMocks.buildExecutorDelegationHeaders).not.toHaveBeenCalled()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(workflowMetadataMocks.readWorkflowMetadataForTool).not.toHaveBeenCalled()
     expect(result).toMatchObject({
-      id: 'workflow_executor_child-workflow',
-      name: 'Workflow Executor',
+      id: 'workflow_executor',
       description: 'Execute another workflow',
     })
   })
@@ -2337,6 +2440,18 @@ describe('describeModelLevel', () => {
 })
 
 describe('findProviderFromModel', () => {
+  it.each([
+    ['azure/MyDeployment', 'azure-openai'],
+    ['AZURE/MyDeployment', 'azure-openai'],
+    ['azure-anthropic/MyDeployment', 'azure-anthropic'],
+    ['bedrock/custom-inference-profile', 'bedrock'],
+    ['vertex/publishers/google/models/custom-gemini', 'vertex'],
+  ])('uses the declared provider namespace for %s', (model, provider) => {
+    expect(findProviderFromModel(model)).toBe(provider)
+    expect(getProviderFromModel(model)).toBe(provider)
+    expect(shouldBillModelUsage(model)).toBe(false)
+  })
+
   it('resolves a chat model to its declaring provider', () => {
     expect(findProviderFromModel('claude-sonnet-5')).toBe('anthropic')
     expect(findProviderFromModel('gpt-5.2')).toBe('openai')
@@ -2357,5 +2472,217 @@ describe('findProviderFromModel', () => {
 
   it('still lets getProviderFromModel fall back to ollama for those ids', () => {
     expect(getProviderFromModel('whisper-1')).toBe('ollama')
+  })
+})
+
+describe('isGemini3Model', () => {
+  it.each([
+    'gemini-3.8-flash',
+    'VERTEX/gemini-3.8-flash',
+    'vertex/google/gemini-3.8-flash',
+    'vertex/publishers/google/models/gemini-3.8-flash',
+    'vertex/projects/test-project/locations/global/publishers/google/models/gemini-3.8-flash',
+  ])('recognizes the Gemini family in %s', (model) => {
+    expect(isGemini3Model(model)).toBe(true)
+  })
+
+  it.each([
+    'vertex/gemini-2.5-pro',
+    'vertex/custom-gemini-3-deployment',
+    'vertex/publishers/another-provider/models/gemini-3.8-flash',
+  ])('does not infer Gemini 3 behavior from %s', (model) => {
+    expect(isGemini3Model(model)).toBe(false)
+  })
+})
+
+describe('transformBlockTool param decoding', () => {
+  /**
+   * `StoredTool.params` stringifies every value, so a tool row hands a block the same
+   * shapes the canvas does only if `paramsTransform` decodes them back. These pin the
+   * two halves of that: which declaration decides a param's shape, and where in the
+   * transform the decode happens.
+   */
+  const buildHarness = (
+    subBlocks: Array<Record<string, unknown>>,
+    toolParams: Record<string, { type: string }>,
+    paramsFn?: (params: Record<string, any>) => Record<string, any>,
+    inputs: Record<string, unknown> = {}
+  ) => {
+    const blockDef = {
+      type: 'fixture',
+      inputs,
+      subBlocks,
+      tools: {
+        access: ['fixture_tool'],
+        ...(paramsFn ? { config: { params: paramsFn } } : {}),
+      },
+    }
+    return {
+      getAllBlocks: () => [blockDef],
+      getTool: (id: string) => ({
+        id,
+        name: 'Fixture',
+        description: 'Fixture tool',
+        params: toolParams,
+      }),
+    }
+  }
+
+  const transformFixture = async (
+    harness: ReturnType<typeof buildHarness>,
+    params: Record<string, unknown>
+  ) => {
+    const result = await transformBlockTool(
+      { type: 'fixture', params },
+      { getAllBlocks: harness.getAllBlocks, getTool: harness.getTool }
+    )
+    return result?.paramsTransform?.(params as Record<string, any>)
+  }
+
+  it('decodes a boolean param the block does not surface as a sub-block', async () => {
+    // The reported Jira bug: `includeAttachments` is declared boolean on the tool and
+    // has no sub-block, so it used to arrive as the truthy string 'false'.
+    const harness = buildHarness([], { includeAttachments: { type: 'boolean' } })
+
+    expect(await transformFixture(harness, { includeAttachments: 'false' })).toEqual({
+      includeAttachments: false,
+    })
+    expect(await transformFixture(harness, { includeAttachments: 'true' })).toEqual({
+      includeAttachments: true,
+    })
+  })
+
+  it('decodes before the block params function reads the value', async () => {
+    // Mirrors microsoft_teams, which consumes the flag inside `params` — a decode
+    // placed after it would see an already-emitted `true` and be a no-op.
+    const harness = buildHarness(
+      [{ id: 'includeAttachments', type: 'switch' }],
+      { includeAttachments: { type: 'boolean' } },
+      (params) => (params.includeAttachments ? { includeAttachments: true } : {})
+    )
+
+    expect(await transformFixture(harness, { includeAttachments: 'false' })).toEqual({
+      includeAttachments: false,
+    })
+    expect(await transformFixture(harness, { includeAttachments: 'true' })).toEqual({
+      includeAttachments: true,
+    })
+  })
+
+  it('leaves a dropdown-backed boolean as the string its params function compares', async () => {
+    // Jira's `deleteSubtasks`. A dropdown stores a string on the canvas too, so
+    // re-keying the decode off the tool's declared type would invert this flag.
+    const harness = buildHarness(
+      [
+        {
+          id: 'deleteSubtasks',
+          type: 'dropdown',
+          options: [
+            { label: 'No', id: 'false' },
+            { label: 'Yes', id: 'true' },
+          ],
+        },
+      ],
+      { deleteSubtasks: { type: 'boolean' } },
+      (params) => ({ deleteSubtasks: params.deleteSubtasks === 'true' })
+    )
+
+    expect(await transformFixture(harness, { deleteSubtasks: 'true' })).toMatchObject({
+      deleteSubtasks: true,
+    })
+    expect(await transformFixture(harness, { deleteSubtasks: 'false' })).toMatchObject({
+      deleteSubtasks: false,
+    })
+  })
+
+  it('decodes a canonical pair once, under its canonical id', async () => {
+    const harness = buildHarness(
+      [
+        { id: 'flagBasic', type: 'switch', canonicalParamId: 'flag', mode: 'basic' },
+        { id: 'flagAdvanced', type: 'switch', canonicalParamId: 'flag', mode: 'advanced' },
+      ],
+      { flag: { type: 'boolean' } }
+    )
+
+    expect(await transformFixture(harness, { flagBasic: 'false' })).toEqual({ flag: false })
+  })
+
+  it('leaves a model-supplied typed value untouched', async () => {
+    const harness = buildHarness([], { includeAttachments: { type: 'boolean' } })
+    expect(await transformFixture(harness, { includeAttachments: true })).toEqual({
+      includeAttachments: true,
+    })
+  })
+
+  it("leaves '' alone so the model's value still wins", async () => {
+    const harness = buildHarness([], { flag: { type: 'boolean' }, count: { type: 'number' } })
+    expect(await transformFixture(harness, { flag: '', count: '' })).toEqual({
+      flag: '',
+      count: '',
+    })
+  })
+
+  it('parses a json param the block inputs never declared', async () => {
+    const harness = buildHarness([], { body: { type: 'json' } })
+    expect(await transformFixture(harness, { body: '{"a":1}' })).toEqual({ body: { a: 1 } })
+  })
+
+  it('keeps parsing a json block input that names no tool param', async () => {
+    // The `inputs` loop stays: it is the same one the canvas runs, and it covers keys
+    // the tool does not declare.
+    const harness = buildHarness([], {}, undefined, { extra: { type: 'json' } })
+    expect(await transformFixture(harness, { extra: '{"a":1}' })).toEqual({ extra: { a: 1 } })
+  })
+
+  it('does not double-parse a value the decode already handled', async () => {
+    const harness = buildHarness(
+      [{ id: 'files', type: 'file-upload' }],
+      { files: { type: 'file[]' } },
+      undefined,
+      {
+        files: { type: 'array' },
+      }
+    )
+    expect(await transformFixture(harness, { files: '[{"name":"a.txt"}]' })).toEqual({
+      files: [{ name: 'a.txt' }],
+    })
+  })
+
+  it('never throws on a malformed value', async () => {
+    const harness = buildHarness([], { body: { type: 'json' }, count: { type: 'number' } })
+    expect(await transformFixture(harness, { body: '{bad', count: '<start.count>' })).toEqual({
+      body: '{bad',
+      count: '<start.count>',
+    })
+  })
+
+  it('expands a checkbox-list onto its option params in a tool row', async () => {
+    const harness = buildHarness(
+      [
+        {
+          id: 'scanOptions',
+          type: 'checkbox-list',
+          options: [
+            { label: 'Gather Links', id: 'gatherLinks' },
+            { label: 'No Cache', id: 'noCache' },
+          ],
+        },
+      ],
+      { gatherLinks: { type: 'boolean' }, noCache: { type: 'boolean' } }
+    )
+
+    const result = await transformFixture(harness, {
+      scanOptions: '{"gatherLinks":true,"noCache":false}',
+    })
+
+    expect(result).toEqual({ gatherLinks: true, noCache: false })
+  })
+
+  it('reports the json-shaped keys so the secret projection keeps the same shape', async () => {
+    const result = await transformBlockTool(
+      { type: 'fixture', params: {} },
+      buildHarness([], { body: { type: 'json' }, name: { type: 'string' } })
+    )
+    expect(result?.jsonShapedParamKeys).toEqual(['body'])
   })
 })

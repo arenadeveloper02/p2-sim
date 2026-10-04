@@ -9,7 +9,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 import { Tooltip } from '@sim/emcn'
@@ -17,12 +16,11 @@ import { Tooltip } from '@sim/emcn'
 // import { toastError, toastSuccess } from '@/components/ui'
 import { createLogger } from '@sim/logger'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import { Check, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import {
   AgentStreamThinkingChrome,
   AgentStreamToolCallsChrome,
 } from '@/components/agent-stream/agent-stream-chrome'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   resolveEChartsOptionsFromContent,
   stripEChartsJsonFromContent,
@@ -35,6 +33,7 @@ import { DeployedInlineLoader } from '@/app/(interfaces)/chat/components/message
 import { FeedbackBox } from '@/app/(interfaces)/chat/components/message/components/feedback-box'
 import { KnowledgeResultsModal } from '@/app/(interfaces)/chat/components/message/components/knowledge-results-modal'
 import {
+  CopiedMessageIcon,
   CopyMessageIcon,
   DislikeMessageIcon,
   LikeMessageIcon,
@@ -70,10 +69,9 @@ import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workf
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 const DEPLOYED_MARKDOWN_PROPS = {
-  fontClassName: 'font-poppins font-normal',
-  bodyTextClassName: 'text-[14px] leading-[1.6] text-[var(--color-ds-text-primary)]',
-  headingTextClassName:
-    'font-poppins font-normal text-[14px] leading-[1.6] text-[var(--color-ds-text-primary)]',
+  fontClassName: 'font-[family-name:var(--font-inter)] font-normal antialiased tracking-[0]',
+  bodyTextClassName: 'text-base leading-[25px] text-[var(--text-primary)]',
+  headingTextClassName: 'font-semibold tracking-[0] text-[var(--text-primary)]',
 } as const
 
 export interface ChatMessage {
@@ -143,6 +141,19 @@ function hasFencedCodeBlock(str: string): boolean {
  */
 function isPipeSegmentCopyable(partsLen: number, index: number, part: string): boolean {
   return partsLen >= 3 && index >= 1 && index <= partsLen - 2 && part.trim().length > 0
+}
+
+/**
+ * True for a `| cell | cell |` row. A single pipe, as in `iPhone | 128GB`, stays prose
+ * so the rest of the message is not parsed one line at a time.
+ */
+function isPipeDataRow(line: string): boolean {
+  if (!line.includes('|')) return false
+  const parts = line.split('|')
+  for (let index = 0; index < parts.length; index++) {
+    if (isPipeSegmentCopyable(parts.length, index, parts[index])) return true
+  }
+  return false
 }
 
 interface LineWithPipeHoverProps {
@@ -244,10 +255,7 @@ export const ArenaClientChatMessage = memo(
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
     const [isLikeFeedbackOpen, setIsLikeFeedbackOpen] = useState(false)
-    const [popoverSide, setPopoverSide] = useState<'top' | 'bottom'>('top')
     const [isFeedbackPending, setIsFeedbackPending] = useState(false)
-    const dislikeButtonRef = useRef<HTMLButtonElement>(null)
-    const likeButtonRef = useRef<HTMLButtonElement>(null)
 
     const isJsonObject = useMemo(() => {
       return typeof message.content === 'object' && message.content !== null
@@ -336,62 +344,88 @@ export const ArenaClientChatMessage = memo(
       [getGeneratedImageSelectionProps]
     )
 
-    /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: each pipe splits the line; columns strictly between two other columns are click-to-copy (trimmed). Markdown in every column still renders (e.g. **bold**). */
+    const renderDeployedMarkdown = useCallback(
+      (content: string) => (
+        <ArenaCopilotMarkdownRenderer
+          content={content}
+          renderImage={renderMarkdownImage}
+          fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+          bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+          headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
+        />
+      ),
+      [renderMarkdownImage]
+    )
+
+    /**
+     * Renders string content. Fenced code and markdown tables stay one document.
+     * Pipe-copy applies only to `| cell | cell |` rows; surrounding lines stay together
+     * so indented code is not turned into a code block per line.
+     */
     const renderStringContent = useCallback(
       (str: string) => {
         if (message.isInitialMessage) {
           return renderWelcomeMessage(str)
         }
 
-        if (!onCopySegmentToInput || !str.includes('|')) {
-          return (
-            <ArenaCopilotMarkdownRenderer
-              content={str}
-              renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
-              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
-              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
-            />
-          )
+        if (
+          !onCopySegmentToInput ||
+          !str.includes('|') ||
+          isLikelyMarkdownTable(str) ||
+          hasFencedCodeBlock(str)
+        ) {
+          return renderDeployedMarkdown(str)
         }
-        if (isLikelyMarkdownTable(str) || hasFencedCodeBlock(str)) {
-          return (
-            <ArenaCopilotMarkdownRenderer
-              content={str}
-              renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
-              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
-              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
-            />
-          )
-        }
+
         const lines = str.split(/\r?\n/)
+        const chunks: Array<{ type: 'markdown'; text: string } | { type: 'pipe'; line: string }> =
+          []
+        let markdownLines: string[] = []
+        const flushMarkdown = () => {
+          if (markdownLines.length === 0) return
+          chunks.push({ type: 'markdown', text: markdownLines.join('\n') })
+          markdownLines = []
+        }
+        for (const line of lines) {
+          if (isPipeDataRow(line)) {
+            flushMarkdown()
+            chunks.push({ type: 'pipe', line })
+            continue
+          }
+          markdownLines.push(line)
+        }
+        flushMarkdown()
+
+        if (chunks.every((chunk) => chunk.type === 'markdown')) {
+          return renderDeployedMarkdown(str)
+        }
+
         return (
           <span className='whitespace-normal'>
-            {lines.map((line, i) => (
+            {chunks.map((chunk, i) => (
               <span key={i}>
                 {i > 0 && '\n'}
-                {line.includes('|') ? (
+                {chunk.type === 'pipe' ? (
                   <LineWithPipeHover
-                    line={line}
+                    line={chunk.line}
                     onCopySegment={onCopySegmentToInput}
                     renderImage={renderMarkdownImage}
                   />
                 ) : (
-                  <ArenaCopilotMarkdownRenderer
-                    content={line}
-                    renderImage={renderMarkdownImage}
-                    fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
-                    bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
-                    headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
-                  />
+                  renderDeployedMarkdown(chunk.text)
                 )}
               </span>
             ))}
           </span>
         )
       },
-      [message.isInitialMessage, onCopySegmentToInput, renderMarkdownImage, renderWelcomeMessage]
+      [
+        message.isInitialMessage,
+        onCopySegmentToInput,
+        renderDeployedMarkdown,
+        renderMarkdownImage,
+        renderWelcomeMessage,
+      ]
     )
 
     const handleUserAttachmentDownload = useCallback((attachment: { dataUrl: string }) => {
@@ -970,9 +1004,9 @@ export const ArenaClientChatMessage = memo(
             )}
             {hasUserText && (
               <div className='flex justify-end'>
-                <div className='max-w-[min(80%,560px)]'>
-                  <div className='rounded-[var(--radius-ds-md,8px)] bg-[var(--color-ds-indication)] px-4 py-3'>
-                    <div className='whitespace-pre-wrap break-words font-normal font-poppins text-[14px] text-[var(--color-ds-text-primary)] leading-[1.6]'>
+                <div className='max-w-[70%]'>
+                  <div className='overflow-hidden rounded-[16px] bg-[var(--surface-5)] px-3.5 py-2'>
+                    <div className='whitespace-pre-wrap break-words font-[family-name:var(--font-inter)] text-[var(--text-primary)] text-base leading-[23px] tracking-[0] antialiased'>
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
                       ) : (
@@ -1012,7 +1046,7 @@ export const ArenaClientChatMessage = memo(
             )}
             {(hasRenderableText || isJsonObject || containsBase64Images || hasImageUrl) && (
               <div className='py-1'>
-                <div className='break-words font-normal font-poppins text-[14px] text-[var(--color-ds-text-primary)] leading-[1.6]'>
+                <div className='break-words font-[family-name:var(--font-inter)] text-[var(--text-primary)] text-base leading-[25px] tracking-[0] antialiased'>
                   {renderContent(cleanTextContent)}
                 </div>
               </div>
@@ -1035,7 +1069,7 @@ export const ArenaClientChatMessage = memo(
                       {hasModalChunks ? (
                         <button
                           type='button'
-                          className='cursor-pointer rounded px-1 py-0.5 text-[var(--color-ds-text-link)] underline decoration-[var(--color-ds-text-link)]/50 underline-offset-2 transition-colors hover:bg-[var(--color-ds-brand-surface)] hover:text-[var(--color-ds-text-link-hover)] hover:decoration-[var(--color-ds-text-link-hover)]'
+                          className='cursor-pointer rounded px-1 py-0.5 text-[var(--color-ds-text-link)] underline decoration-[var(--color-ds-text-link)]/50 underline-offset-2 transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                           onClick={() =>
                             openKnowledgeModal(
                               group.documentName,
@@ -1058,7 +1092,7 @@ export const ArenaClientChatMessage = memo(
                             href={ref.linkUrl}
                             target='_blank'
                             rel='noopener noreferrer'
-                            className='cursor-pointer rounded px-1 py-0.5 text-[var(--color-ds-text-link)] underline decoration-[var(--color-ds-text-link)]/50 underline-offset-2 transition-colors hover:bg-[var(--color-ds-brand-surface)] hover:text-[var(--color-ds-text-link-hover)] hover:decoration-[var(--color-ds-text-link-hover)]'
+                            className='cursor-pointer rounded px-1 py-0.5 text-[var(--color-ds-text-link)] underline decoration-[var(--color-ds-text-link)]/50 underline-offset-2 transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                             aria-label={`Open chunk ${ref.chunkIndex} of ${group.documentName} in Knowledge Base`}
                           >
                             #{ref.chunkIndex}
@@ -1093,7 +1127,7 @@ export const ArenaClientChatMessage = memo(
                   {isErrorResponse && onRegenerateMessage && (
                     <button
                       type='button'
-                      className='flex w-fit items-center gap-1 rounded-md border border-[var(--color-ds-border-default)] px-2 py-1 text-[var(--color-ds-text-primary)] text-sm hover:bg-[var(--color-ds-brand-surface)]'
+                      className='flex w-fit items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-primary)] text-sm hover:bg-[var(--surface-hover)]'
                       onClick={onRegenerateMessage}
                     >
                       <RefreshCw className='size-3.5' />
@@ -1111,18 +1145,14 @@ export const ArenaClientChatMessage = memo(
                               onClick={() => {
                                 handleCopy()
                               }}
-                              aria-label={isCopied ? 'Copied' : 'Copy to clipboard'}
+                              aria-label={isCopied ? 'Copied message' : 'Copy message'}
                             >
-                              {isCopied ? (
-                                <Check className='size-4' strokeWidth={2} />
-                              ) : (
-                                <CopyMessageIcon />
-                              )}
+                              {isCopied ? <CopiedMessageIcon /> : <CopyMessageIcon />}
                             </button>
                           </Tooltip.Trigger>
 
-                          <Tooltip.Content>
-                            {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                          <Tooltip.Content side='top'>
+                            {isCopied ? 'Copied message' : 'Copy message'}
                           </Tooltip.Content>
                         </Tooltip.Root>
                       </Tooltip.Provider>
@@ -1137,7 +1167,7 @@ export const ArenaClientChatMessage = memo(
                               onClick={onRegenerateMessage}
                               aria-label='Regenerate response'
                             >
-                              <RefreshCw className='size-4' strokeWidth={2} />
+                              <RefreshCw className='size-[14px]' strokeWidth={2} />
                             </button>
                           </Tooltip.Trigger>
                           <Tooltip.Content>Regenerate</Tooltip.Content>
@@ -1153,99 +1183,61 @@ export const ArenaClientChatMessage = memo(
                             {message?.liked !== false && (
                               <Tooltip.Provider>
                                 <Tooltip.Root>
-                                  <Popover
-                                    open={isLikeFeedbackOpen && message?.liked == null}
-                                    onOpenChange={setIsLikeFeedbackOpen}
-                                  >
-                                    <PopoverTrigger asChild>
-                                      <Tooltip.Trigger asChild>
-                                        <button
-                                          type='button'
-                                          ref={likeButtonRef}
-                                          className={messageActionIconButtonClass(
-                                            message?.liked === true
-                                          )}
-                                          onClick={() => {
-                                            handleLike(message?.executionId || '')
-                                          }}
-                                          aria-label={message?.liked === true ? 'Unlike' : 'Like'}
-                                        >
-                                          <LikeMessageIcon />
-                                        </button>
-                                      </Tooltip.Trigger>
-                                    </PopoverTrigger>
-                                    <PopoverContent
-                                      className='deployed-chat z-[9999] w-[400px] border-0 bg-transparent p-0 shadow-none'
-                                      align='start'
-                                      side={popoverSide}
-                                      sideOffset={-15}
-                                      avoidCollisions={true}
-                                      collisionPadding={16}
+                                  <Tooltip.Trigger asChild>
+                                    <button
+                                      type='button'
+                                      className={messageActionIconButtonClass(
+                                        message?.liked === true
+                                      )}
+                                      onClick={() => {
+                                        handleLike(message?.executionId || '')
+                                      }}
+                                      aria-label={message?.liked === true ? 'Unlike' : 'Like'}
                                     >
-                                      <FeedbackBox
-                                        isOpen={true}
-                                        onClose={() => setIsLikeFeedbackOpen(false)}
-                                        onSubmit={handleSubmitLikeFeedback}
-                                        currentExecutionId={message?.executionId || ''}
-                                        isLikeFeedback={true}
-                                      />
-                                    </PopoverContent>
-                                  </Popover>
-                                  <Tooltip.Content>
-                                    {message?.liked === true ? 'Unlike' : 'Like'}
-                                  </Tooltip.Content>
+                                      <LikeMessageIcon />
+                                    </button>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content side='top'>Good response</Tooltip.Content>
                                 </Tooltip.Root>
                               </Tooltip.Provider>
                             )}
+                            <FeedbackBox
+                              isOpen={isLikeFeedbackOpen && message?.liked == null}
+                              onClose={() => setIsLikeFeedbackOpen(false)}
+                              onSubmit={handleSubmitLikeFeedback}
+                              currentExecutionId={message?.executionId || ''}
+                              isLikeFeedback={true}
+                            />
 
                             {message?.liked !== true && (
                               <Tooltip.Provider>
                                 <Tooltip.Root>
-                                  <Popover
-                                    open={isFeedbackOpen && message?.liked !== false}
-                                    onOpenChange={setIsFeedbackOpen}
-                                  >
-                                    <PopoverTrigger asChild>
-                                      <Tooltip.Trigger asChild>
-                                        <button
-                                          type='button'
-                                          ref={dislikeButtonRef}
-                                          className={messageActionIconButtonClass(
-                                            message?.liked === false
-                                          )}
-                                          onClick={() => {
-                                            handleDislike(message?.executionId || '')
-                                          }}
-                                          aria-label={
-                                            message?.liked === false ? 'Remove dislike' : 'Dislike'
-                                          }
-                                        >
-                                          <DislikeMessageIcon />
-                                        </button>
-                                      </Tooltip.Trigger>
-                                    </PopoverTrigger>
-                                    <PopoverContent
-                                      className='deployed-chat z-[9999] w-[400px] border-0 bg-transparent p-0 shadow-none'
-                                      align='start'
-                                      side={popoverSide}
-                                      sideOffset={-15}
-                                      avoidCollisions={true}
-                                      collisionPadding={16}
+                                  <Tooltip.Trigger asChild>
+                                    <button
+                                      type='button'
+                                      className={messageActionIconButtonClass(
+                                        message?.liked === false
+                                      )}
+                                      onClick={() => {
+                                        handleDislike(message?.executionId || '')
+                                      }}
+                                      aria-label={
+                                        message?.liked === false ? 'Remove dislike' : 'Dislike'
+                                      }
                                     >
-                                      <FeedbackBox
-                                        isOpen={true}
-                                        onClose={() => setIsFeedbackOpen(false)}
-                                        onSubmit={handleSubmitFeedback}
-                                        currentExecutionId={message?.executionId || ''}
-                                      />
-                                    </PopoverContent>
-                                  </Popover>
-                                  <Tooltip.Content side='top' align='center' sideOffset={5}>
-                                    {message?.liked === false ? 'Remove dislike' : 'Dislike'}
-                                  </Tooltip.Content>
+                                      <DislikeMessageIcon />
+                                    </button>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content side='top'>Bad response</Tooltip.Content>
                                 </Tooltip.Root>
                               </Tooltip.Provider>
                             )}
+                            <FeedbackBox
+                              isOpen={isFeedbackOpen && message?.liked !== false}
+                              onClose={() => setIsFeedbackOpen(false)}
+                              onSubmit={handleSubmitFeedback}
+                              currentExecutionId={message?.executionId || ''}
+                            />
                           </>
                         )}
                       </>

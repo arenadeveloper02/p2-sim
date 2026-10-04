@@ -55,7 +55,7 @@ interface HelpModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   workflowId?: string
-  workspaceId: string
+  workspaceId?: string
 }
 
 interface SubmitHelpVariables {
@@ -102,7 +102,7 @@ async function submitHelpRequest({
   formData.append('subject', data.subject)
   formData.append('message', data.message)
   formData.append('type', data.type)
-  formData.append('workspaceId', workspaceId)
+  if (workspaceId) formData.append('workspaceId', workspaceId)
   formData.append('userAgent', navigator.userAgent)
   if (workflowId) {
     formData.append('workflowId', workflowId)

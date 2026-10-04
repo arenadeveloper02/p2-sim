@@ -137,7 +137,10 @@ function normalizeArgsForStagnation(
       return `edit_content:fail:${outcomeSignature(result)}`
     }
     if (toolName === 'edit_workflow' && shouldCoarseEditWorkflowArgs(success, result)) {
-      return JSON.stringify(editWorkflowStagnationShape(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
+      return JSON.stringify(editWorkflowStagnationShape(parsed, result)).slice(
+        0,
+        FINGERPRINT_ARGS_MAX
+      )
     }
     return JSON.stringify(sortJson(parsed)).slice(0, FINGERPRINT_ARGS_MAX)
   } catch {
@@ -150,7 +153,7 @@ function shouldCoarseEditWorkflowArgs(success: boolean, result: unknown): boolea
   return editWorkflowNeedsFollowUp(result) || isOAuthOnlyEditResult(result)
 }
 
-function editWorkflowStagnationShape(value: unknown): unknown {
+function editWorkflowStagnationShape(value: unknown, result: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return sortJson(value)
   const record = value as Record<string, unknown>
   const operations = coerceOps(record.operations ?? record.ops ?? record.edits ?? record.operation)
@@ -168,9 +171,15 @@ function editWorkflowStagnationShape(value: unknown): unknown {
         '?'
       const params =
         row.params && typeof row.params === 'object' && !Array.isArray(row.params)
-          ? Object.keys(row.params as Record<string, unknown>).sort()
-          : []
-      return `${blockId}:${opType}:${params.join(',')}`
+          ? (row.params as Record<string, unknown>)
+          : {}
+      const paramKeys = Object.keys(params).sort()
+      // Include a short value digest so prompt/model/body repairs don't share one fingerprint.
+      const valueDigest = paramKeys
+        .map((key) => `${key}=${stableValueDigest(params[key])}`)
+        .join(';')
+        .slice(0, 160)
+      return `${blockId}:${opType}:${paramKeys.join(',')}:${valueDigest}`
     })
     .sort()
   return {
@@ -179,6 +188,18 @@ function editWorkflowStagnationShape(value: unknown): unknown {
       (typeof record.workflow_id === 'string' && record.workflow_id) ||
       '',
     ops: blockKeys,
+    outcome: outcomeSignature(result),
+  }
+}
+
+function stableValueDigest(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.trim().slice(0, 48)
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value).slice(0, 48)
+  } catch {
+    return '?'
   }
 }
 
@@ -270,6 +291,8 @@ function outcomeSignature(result: unknown): string {
 function successOutcomeSignature(toolName: string, result: unknown): string {
   if (toolName !== 'edit_workflow') return 'ok'
   if (isOAuthOnlyEditResult(result)) return 'needs_oauth'
-  if (editWorkflowNeedsFollowUp(result)) return 'needs_follow_up'
+  if (editWorkflowNeedsFollowUp(result)) {
+    return `needs_follow_up:${outcomeSignature(result)}`
+  }
   return 'ok'
 }

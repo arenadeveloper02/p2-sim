@@ -3,14 +3,15 @@
  * This is the SINGLE source of truth for workflow execution
  */
 
+import { resolvePrincipalSubject } from '@sim/auth/principal'
 import { db } from '@sim/db'
 import { organization, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
+import { getErrorMessage, redactBoundParameters } from '@sim/utils/errors'
 import { filterUndefined, isPlainRecord, isRecordLike } from '@sim/utils/object'
 import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
+import type { Edge } from '@xyflow/react'
 import { eq } from 'drizzle-orm'
-import type { Edge } from 'reactflow'
 import { z } from 'zod'
 import { type EffectivePiiRedaction, resolveEffectivePiiRedaction } from '@/lib/billing/retention'
 import {
@@ -18,19 +19,25 @@ import {
   getTimeoutErrorMessage,
   isTimeoutAbortReason,
 } from '@/lib/core/execution-limits'
+import { isOutboundRoutingEnabled } from '@/lib/core/network/config.server'
+import { runWithOutboundOrganization } from '@/lib/core/network/context.server'
+import { withDatabaseReadRetry } from '@/lib/db/read-retry'
 import { getExecutionEnvironment } from '@/lib/environment/utils'
 import { clearExecutionCancellation } from '@/lib/execution/cancellation'
+import { connectExecutionSignalHub } from '@/lib/execution/execution-signal'
 import { warmLargeValueRefs } from '@/lib/execution/payloads/hydration'
 import { parseLargeExecutionValue } from '@/lib/execution/payloads/large-execution-value'
 import type { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { redactLargeValueRefsInValue } from '@/lib/logs/execution/pii-large-values'
 import { redactObjectStrings } from '@/lib/logs/execution/pii-redaction'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { getUserEmailById } from '@/lib/users/queries'
+import { resolveActiveWorkflowApplicationContext } from '@/lib/workflows/application/context'
 import { waitForChildRuns } from '@/lib/workflows/custom-blocks/child-execution'
 import { getCustomBlockRowsForWorkspace } from '@/lib/workflows/custom-blocks/operations'
+import { resolveStartBlockRunIdentity } from '@/lib/workflows/executor/start-run-identity'
 import {
   loadDeployedWorkflowState,
+  loadWorkflowDeploymentVersionState,
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
@@ -93,7 +100,7 @@ function describeErrorCause(error: unknown): Record<string, unknown> | undefined
     if (!driver) return undefined
     return filterUndefined({
       name: driver.name,
-      message: driver.message,
+      message: redactBoundParameters(driver.message),
       code: driver.code,
       severity: driver.severity,
       detail: driver.detail,
@@ -117,6 +124,8 @@ export interface ExecuteWorkflowCoreOptions {
   stopAfterBlockId?: string
   /** Trusted encrypted provenance captured by a server-only pre-execution boundary. */
   trustedInitialResolvedSecretTraceProvenance?: ResolvedSecretTraceProvenanceV1
+  /** Immutable deployment admitted by the durable parent log for a resumed execution. */
+  resumeDeploymentVersionId?: string
   /** Run-from-block mode: execute starting from a specific block using cached upstream outputs */
   runFromBlock?: {
     startBlockId: string
@@ -400,13 +409,32 @@ async function finalizeExecutionError(params: {
  * the background job — puts `custom_block_*` types in scope for serialization,
  * execution, and any nested child-workflow serialization (ALS propagates to the
  * whole async subtree).
+ *
+ * Also begins the execution-signal subscriber's connection first: every
+ * execution subscribes to cancellation signals once its engine starts, so
+ * starting that handshake here — the one path all of them share — lets it
+ * overlap the reads and preprocessing ahead of the subscribe instead of being
+ * paid inside its readiness budget. Connecting on intent rather than at worker
+ * start keeps the tasks that never execute a workflow, most of the fleet by
+ * volume, from opening a connection they would never use.
  */
 export async function executeWorkflowCore(
   options: ExecuteWorkflowCoreOptions
 ): Promise<ExecutionResult> {
+  connectExecutionSignalHub()
   const workspaceId = options.snapshot.metadata.workspaceId
-  const rows = workspaceId ? await getCustomBlockRowsForWorkspace(workspaceId) : []
-  return withCustomBlockOverlay(rows, () => executeWorkflowCoreImpl(options))
+  const rows = workspaceId
+    ? await withDatabaseReadRetry(() => getCustomBlockRowsForWorkspace(workspaceId), {
+        label: 'getCustomBlockRowsForWorkspace',
+      })
+    : []
+  const execute = () => withCustomBlockOverlay(rows, () => executeWorkflowCoreImpl(options))
+  if (!isOutboundRoutingEnabled()) return execute()
+  const context = await resolveActiveWorkflowApplicationContext({
+    workflowId: options.snapshot.metadata.workflowId,
+    assertedWorkspaceId: workspaceId,
+  })
+  return runWithOutboundOrganization(context.workspaceOrganizationId, execute)
 }
 
 async function executeWorkflowCoreImpl(
@@ -422,9 +450,10 @@ async function executeWorkflowCoreImpl(
     base64MaxBytes,
     stopAfterBlockId,
     runFromBlock,
+    resumeDeploymentVersionId,
   } = options
   loggingSession.setExecutionDeadlineAt(getExecutionDeadlineAt(abortSignal))
-  const { metadata, workflow, input, workflowVariables, selectedOutputs } = snapshot
+  const { metadata, input, workflowVariables, selectedOutputs } = snapshot
   const { requestId, workflowId, userId, triggerType, executionId, triggerBlockId, useDraftState } =
     metadata
   const { onBlockStart, onBlockComplete, onStream, onChildWorkflowInstanceReady } = callbacks
@@ -432,6 +461,16 @@ async function executeWorkflowCoreImpl(
   const providedWorkspaceId = metadata.workspaceId
   if (!providedWorkspaceId) {
     throw new Error(`Execution metadata missing workspaceId for workflow ${workflowId}`)
+  }
+  const resumeFromSnapshot = metadata.resumeFromSnapshot === true
+  if (!resumeFromSnapshot && resumeDeploymentVersionId !== undefined) {
+    throw new Error('Deployment version authority can only be supplied for a resumed execution')
+  }
+  if (resumeFromSnapshot && useDraftState && resumeDeploymentVersionId !== undefined) {
+    throw new Error('Draft resume cannot carry deployment version authority')
+  }
+  if (resumeFromSnapshot && !useDraftState && !resumeDeploymentVersionId) {
+    throw new Error('Deployed resume requires its admitted deployment version')
   }
 
   let processedInput = input || {}
@@ -514,6 +553,25 @@ async function executeWorkflowCoreImpl(
      * on the environment load, so the two are awaited concurrently below.
      */
     const loadWorkflowState = async () => {
+      if (resumeFromSnapshot && !useDraftState) {
+        if (!resumeDeploymentVersionId) {
+          throw new Error('Deployed resume requires its admitted deployment version')
+        }
+        const deployedData = await loadWorkflowDeploymentVersionState(
+          workflowId,
+          resumeDeploymentVersionId,
+          providedWorkspaceId
+        )
+        logger.info(`[${requestId}] Using admitted historical deployment state (resumed execution)`)
+        return {
+          blocks: deployedData.blocks,
+          edges: deployedData.edges,
+          loops: deployedData.loops,
+          parallels: deployedData.parallels,
+          deploymentVersionId: deployedData.deploymentVersionId,
+        }
+      }
+
       if (metadata.workflowStateOverride) {
         const override = metadata.workflowStateOverride
         logger.info(`[${requestId}] Using workflow state override (diff workflow execution)`, {
@@ -548,7 +606,7 @@ async function executeWorkflowCoreImpl(
         }
       }
 
-      const deployedData = await loadDeployedWorkflowState(workflowId)
+      const deployedData = await loadDeployedWorkflowState(workflowId, providedWorkspaceId)
       logger.info(`[${requestId}] Using deployed workflow state (deployed execution)`)
       return {
         blocks: deployedData.blocks,
@@ -560,8 +618,11 @@ async function executeWorkflowCoreImpl(
     }
 
     const [workflowState, env] = await Promise.all([
-      loadWorkflowState(),
-      getExecutionEnvironment(personalEnvUserId, workspaceEnvUserId, providedWorkspaceId),
+      withDatabaseReadRetry(loadWorkflowState, { label: 'loadWorkflowState' }),
+      withDatabaseReadRetry(
+        () => getExecutionEnvironment(personalEnvUserId, workspaceEnvUserId, providedWorkspaceId),
+        { label: 'getExecutionEnvironment' }
+      ),
     ])
 
     const { blocks, loops, parallels } = workflowState
@@ -576,6 +637,8 @@ async function executeWorkflowCoreImpl(
       personalDecrypted,
       workspaceDecrypted,
       decryptionFailures,
+      personalOwners,
+      workspaceUnredactedKeys,
     } = env
 
     // For scheduler/webhook executions, prioritize server environment variables
@@ -705,7 +768,6 @@ async function executeWorkflowCoreImpl(
       }
     }
 
-    const resumeFromSnapshot = metadata.resumeFromSnapshot === true
     const restoredState =
       runFromBlock?.sourceSnapshot ?? (resumeFromSnapshot ? snapshot.state : undefined)
     const restoreTrusted = resumeFromSnapshot || Boolean(runFromBlock?.sourceExecutionId)
@@ -719,6 +781,8 @@ async function executeWorkflowCoreImpl(
       personalDecrypted,
       workspaceDecrypted,
       decryptionFailures,
+      personalOwners,
+      workspaceUnredactedKeys,
       restoredProvenance: restoreTrusted ? restoredState?.resolvedSecretTraceProvenance : undefined,
       restoredCheckpointVersion: restoredState?.resolvedSecretTraceCheckpointVersion,
       restoreTrusted,
@@ -973,18 +1037,18 @@ async function executeWorkflowCoreImpl(
 
     // Resolve the org/workspace PII redaction policy once; serves both the input
     // stage (below) and the block-outputs stage (threaded into the executor).
-    // Resolved from stored rules UNCONDITIONALLY — deliberately NOT gated on the
-    // `pii-redaction` feature flag. The flag gates configuration (the settings
-    // route); a transient/false flag read at execution time would skip masking
-    // and leak PII (fail-open). Stored rules are only writable by entitled orgs,
-    // so their presence is the source of truth; absence yields the disabled
-    // default (one indexed lookup, no masking cost for non-PII orgs).
-    const [row] = await db
-      .select({ orgSettings: organization.dataRetentionSettings })
-      .from(workspace)
-      .leftJoin(organization, eq(organization.id, workspace.organizationId))
-      .where(eq(workspace.id, providedWorkspaceId))
-      .limit(1)
+    // Stored rules are the source of truth; absence yields the disabled default
+    // with one indexed lookup and no masking cost for non-PII organizations.
+    const [row] = await withDatabaseReadRetry(
+      () =>
+        db
+          .select({ orgSettings: organization.dataRetentionSettings })
+          .from(workspace)
+          .leftJoin(organization, eq(organization.id, workspace.organizationId))
+          .where(eq(workspace.id, providedWorkspaceId))
+          .limit(1),
+      { label: 'resolvePiiRedactionPolicy' }
+    )
     const piiRedaction: EffectivePiiRedaction = resolveEffectivePiiRedaction({
       orgSettings: row?.orgSettings,
       workspaceId: providedWorkspaceId,
@@ -1008,6 +1072,9 @@ async function executeWorkflowCoreImpl(
           workspaceId: providedWorkspaceId,
           workflowId,
           executionId,
+          largeValueExecutionIds,
+          largeValueKeys,
+          allowLargeValueWorkflowScope,
           userId: userId ?? undefined,
         },
       })
@@ -1038,6 +1105,9 @@ async function executeWorkflowCoreImpl(
           workspaceId: providedWorkspaceId,
           workflowId,
           executionId,
+          largeValueExecutionIds,
+          largeValueKeys,
+          allowLargeValueWorkflowScope,
           userId: userId ?? undefined,
         },
       }
@@ -1065,8 +1135,12 @@ async function executeWorkflowCoreImpl(
         (block) => block.id === resolvedTriggerBlockId
       )
       if (entryBlock && isRunMetadataEnabled(entryBlock)) {
+        const runIdentity = await withDatabaseReadRetry(
+          () => resolveStartBlockRunIdentity(metadata.principal),
+          { label: 'resolveStartBlockRunIdentity' }
+        )
         startRunMetadata = {
-          userEmail: await getUserEmailById(userId),
+          ...runIdentity,
           workspaceId: providedWorkspaceId,
           workflowId,
           executionId,
@@ -1090,6 +1164,7 @@ async function executeWorkflowCoreImpl(
       ? restoredWorkflowInputProvenance
       : resolvedSecretTraceRegistry.exportCommittedProvenanceForValue(processedInput)
 
+    const principalSubject = resolvePrincipalSubject(metadata.principal)
     const contextExtensions: ContextExtensions = {
       stream: !!onStream,
       selectedOutputs,
@@ -1100,7 +1175,19 @@ async function executeWorkflowCoreImpl(
       allowLargeValueWorkflowScope,
       workspaceId: providedWorkspaceId,
       userId,
-      isDeployedContext: !metadata.isClientSession,
+      principal: metadata.principal,
+      executorDelegationOrigin: {
+        ...(principalSubject?.kind === 'sim_user'
+          ? { subjectUserId: principalSubject.userId }
+          : {}),
+        workflowId,
+        ...(executionId ? { executionId } : {}),
+        principal: metadata.principal,
+        currentWorkflow: deploymentVersionId
+          ? { workflowId, mode: 'deployment', deploymentVersionId }
+          : { workflowId, mode: 'draft' },
+      },
+      isDeployedContext: metadata.useDraftState !== true,
       enforceCredentialAccess: metadata.enforceCredentialAccess ?? false,
       piiBlockOutputRedaction: piiRedaction.blockOutputs,
       onBlockStart: wrappedOnBlockStart,
@@ -1128,6 +1215,16 @@ async function executeWorkflowCoreImpl(
       stopAfterBlockId: resolvedStopAfterBlockId,
       onChildWorkflowInstanceReady,
       callChain: metadata.callChain,
+      // The live block stream has a single known, authenticated Sim viewer only on
+      // a client session — the execute route rejects `isClientSession` for API-key
+      // and public-API callers, so it implies an authenticated session. Every other
+      // surface (chat deployments, webhooks, schedules, background jobs) leaves this
+      // unset, which is what keeps a custom block from streaming its SOURCE
+      // workspace's block events to a consumer who may be an anonymous visitor.
+      ...(metadata.isClientSession ? { liveTraceViewerUserId: userId } : {}),
+      // The RAW callbacks, not the `wrapped*` composites above: these emit to the stream
+      // without writing this run's progress markers. Only a custom block's child uses them.
+      liveStreamCallbacks: { onBlockStart, onBlockComplete },
     }
 
     if (snapshot.state) {

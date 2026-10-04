@@ -5,9 +5,11 @@
  */
 import {
   authMockFns,
+  createMockRequest,
   encryptionMock,
   encryptionMockFns,
   loggingSessionMock,
+  requestUtilsMockFns,
   workflowsUtilsMock,
 } from '@sim/testing'
 import type { NextResponse } from 'next/server'
@@ -16,14 +18,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockMergeSubblockStateWithValues,
   mockMergeSubBlockValues,
-  mockValidateAuthToken,
+  mockReadDeploymentAuthToken,
   mockSetDeploymentAuthCookie,
   mockIsEmailAllowed,
   mockCheckRateLimitDirect,
 } = vi.hoisted(() => ({
   mockMergeSubblockStateWithValues: vi.fn().mockReturnValue({}),
   mockMergeSubBlockValues: vi.fn().mockReturnValue({}),
-  mockValidateAuthToken: vi.fn().mockReturnValue(false),
+  mockReadDeploymentAuthToken: vi.fn().mockResolvedValue(null),
   mockSetDeploymentAuthCookie: vi.fn(),
   mockIsEmailAllowed: vi.fn(),
   mockCheckRateLimitDirect: vi.fn().mockResolvedValue({ allowed: true }),
@@ -55,7 +57,7 @@ vi.mock('@sim/workflow-persistence/subblocks', () => ({
 vi.mock('@/lib/core/security/encryption', () => encryptionMock)
 
 vi.mock('@/lib/core/security/deployment', () => ({
-  validateAuthToken: mockValidateAuthToken,
+  readDeploymentAuthToken: mockReadDeploymentAuthToken,
   setDeploymentAuthCookie: mockSetDeploymentAuthCookie,
   isEmailAllowed: mockIsEmailAllowed,
   deploymentAuthCookieName: (prefix: string, id: string) => `${prefix}_auth_${id}`,
@@ -82,7 +84,7 @@ describe('Chat API Utils', () => {
 
   describe('Auth token utils', () => {
     it('should accept valid auth cookie via validateChatAuth', async () => {
-      mockValidateAuthToken.mockReturnValue(true)
+      mockReadDeploymentAuthToken.mockResolvedValue({})
 
       const deployment = {
         id: 'chat-id',
@@ -90,25 +92,20 @@ describe('Chat API Utils', () => {
         password: 'encrypted-password',
       }
 
-      const mockRequest = {
-        method: 'POST',
-        cookies: {
-          get: vi.fn().mockReturnValue({ value: 'valid-token' }),
-        },
-      } as any
+      const mockRequest = createMockRequest('POST', undefined, {
+        cookie: 'chat_auth_chat-id=valid-token',
+      })
 
       const result = await validateChatAuth('request-id', deployment, mockRequest)
-      expect(mockValidateAuthToken).toHaveBeenCalledWith(
-        'valid-token',
-        'chat-id',
-        'password',
-        'encrypted-password'
-      )
+      expect(mockReadDeploymentAuthToken).toHaveBeenCalledWith({
+        token: 'valid-token',
+        resource: deployment,
+      })
       expect(result.authorized).toBe(true)
     })
 
     it('should reject invalid auth cookie via validateChatAuth', async () => {
-      mockValidateAuthToken.mockReturnValue(false)
+      mockReadDeploymentAuthToken.mockResolvedValue(null)
 
       const deployment = {
         id: 'chat-id',
@@ -116,33 +113,73 @@ describe('Chat API Utils', () => {
         password: 'encrypted-password',
       }
 
-      const mockRequest = {
-        method: 'GET',
-        cookies: {
-          get: vi.fn().mockReturnValue({ value: 'invalid-token' }),
-        },
-      } as any
+      const mockRequest = createMockRequest('GET', undefined, {
+        cookie: 'chat_auth_chat-id=invalid-token',
+      })
 
       const result = await validateChatAuth('request-id', deployment, mockRequest)
       expect(result.authorized).toBe(false)
     })
+
+    it('returns the authenticated email carried by a valid email-auth cookie', async () => {
+      mockReadDeploymentAuthToken.mockResolvedValue({
+        authenticatedEmail: 'person@example.com',
+      })
+
+      const deployment = {
+        id: 'chat-id',
+        authType: 'email',
+      }
+      const mockRequest = createMockRequest('POST', undefined, {
+        cookie: 'chat_auth_chat-id=valid-token',
+      })
+
+      await expect(validateChatAuth('request-id', deployment, mockRequest)).resolves.toEqual({
+        authorized: true,
+        authenticatedEmail: 'person@example.com',
+      })
+    })
   })
 
   describe('Cookie handling', () => {
-    it('should delegate to setDeploymentAuthCookie', () => {
+    it('should delegate to setDeploymentAuthCookie', async () => {
       const mockResponse = {
         cookies: { set: vi.fn() },
       } as unknown as NextResponse
 
-      setChatAuthCookie(mockResponse, 'test-chat-id', 'password')
+      const deployment = {
+        id: 'test-chat-id',
+        authType: 'password',
+        password: 'encrypted-password',
+      }
+      await setChatAuthCookie(mockResponse, deployment)
 
-      expect(mockSetDeploymentAuthCookie).toHaveBeenCalledWith(
-        mockResponse,
-        'chat',
-        'test-chat-id',
-        'password',
-        undefined
-      )
+      expect(mockSetDeploymentAuthCookie).toHaveBeenCalledWith({
+        response: mockResponse,
+        cookiePrefix: 'chat',
+        resource: deployment,
+        verifiedEmail: undefined,
+      })
+    })
+
+    it('forwards an authenticated email into the signed deployment cookie', async () => {
+      const mockResponse = {
+        cookies: { set: vi.fn() },
+      } as unknown as NextResponse
+
+      const deployment = {
+        id: 'test-chat-id',
+        authType: 'email',
+        allowedEmails: ['person@example.com'],
+      }
+      await setChatAuthCookie(mockResponse, deployment, 'person@example.com')
+
+      expect(mockSetDeploymentAuthCookie).toHaveBeenCalledWith({
+        response: mockResponse,
+        cookiePrefix: 'chat',
+        resource: deployment,
+        verifiedEmail: 'person@example.com',
+      })
     })
   })
 
@@ -208,6 +245,18 @@ describe('Chat API Utils', () => {
 
       const result = await validateChatAuth('request-id', deployment, mockRequest, parsedBody)
 
+      expect(mockCheckRateLimitDirect).toHaveBeenNthCalledWith(
+        1,
+        'chat-password:ip:chat-id:127.0.0.1',
+        expect.objectContaining({ maxTokens: 10 }),
+        { failClosed: true }
+      )
+      expect(mockCheckRateLimitDirect).toHaveBeenNthCalledWith(
+        2,
+        'chat-password:resource:chat-id',
+        expect.objectContaining({ maxTokens: 100 }),
+        { failClosed: true }
+      )
       expect(decryptSecret).toHaveBeenCalledWith('encrypted-password')
       expect(result.authorized).toBe(true)
     })
@@ -236,7 +285,7 @@ describe('Chat API Utils', () => {
       expect(result.error).toBe('Invalid password')
     })
 
-    it('should return 429 when the password attempt rate limit is exceeded', async () => {
+    it('should return 429 when the password IP rate limit is exceeded', async () => {
       mockCheckRateLimitDirect.mockResolvedValueOnce({ allowed: false, retryAfterMs: 60_000 })
 
       const deployment = {
@@ -260,6 +309,63 @@ describe('Chat API Utils', () => {
       expect(result.status).toBe(429)
       expect(result.retryAfterMs).toBe(60_000)
       expect(decryptSecret).not.toHaveBeenCalled()
+      expect(mockCheckRateLimitDirect).toHaveBeenCalledWith(
+        'chat-password:ip:chat-id:127.0.0.1',
+        expect.objectContaining({ maxTokens: 10 }),
+        { failClosed: true }
+      )
+    })
+
+    it('should return 429 when the password resource rate limit is exceeded', async () => {
+      mockCheckRateLimitDirect
+        .mockResolvedValueOnce({ allowed: true })
+        .mockResolvedValueOnce({ allowed: false, retryAfterMs: 30_000 })
+
+      const deployment = {
+        id: 'chat-id',
+        authType: 'password',
+        password: 'encrypted-password',
+      }
+      const mockRequest = createMockRequest('POST')
+      const candidate = 'password-attempt-fixture'
+
+      const result = await validateChatAuth('request-id', deployment, mockRequest, {
+        password: candidate,
+      })
+
+      expect(result).toEqual(
+        expect.objectContaining({ authorized: false, status: 429, retryAfterMs: 30_000 })
+      )
+      expect(mockCheckRateLimitDirect).toHaveBeenNthCalledWith(
+        2,
+        'chat-password:resource:chat-id',
+        expect.objectContaining({ maxTokens: 100 }),
+        { failClosed: true }
+      )
+      expect(decryptSecret).not.toHaveBeenCalled()
+    })
+
+    it('should retain the password resource limit when the client IP cannot be resolved', async () => {
+      requestUtilsMockFns.mockGetClientIp.mockReturnValueOnce(null)
+      const deployment = {
+        id: 'chat-id',
+        authType: 'password',
+        password: 'encrypted-password',
+      }
+      const mockRequest = createMockRequest('POST')
+      const candidate = 'correct-password'
+
+      const result = await validateChatAuth('request-id', deployment, mockRequest, {
+        password: candidate,
+      })
+
+      expect(result.authorized).toBe(true)
+      expect(mockCheckRateLimitDirect).toHaveBeenCalledTimes(1)
+      expect(mockCheckRateLimitDirect).toHaveBeenCalledWith(
+        'chat-password:resource:chat-id',
+        expect.objectContaining({ maxTokens: 100 }),
+        { failClosed: true }
+      )
     })
 
     it('should request email auth for email-protected chats', async () => {
@@ -356,14 +462,17 @@ describe('Chat API Utils', () => {
       })
 
       it('authorizes execution when session email is allowlisted', async () => {
-        mockGetSession.mockResolvedValue({ user: { email: 'user@example.com' } })
+        mockGetSession.mockResolvedValue({ user: { email: 'User@Example.com' } })
         mockIsEmailAllowed.mockReturnValue(true)
 
         const result = await validateChatAuth('request-id', ssoDeployment, postRequest, {
           input: 'hello',
         })
 
-        expect(result.authorized).toBe(true)
+        expect(result).toEqual({
+          authorized: true,
+          authenticatedEmail: 'user@example.com',
+        })
       })
 
       it('rejects execution when session email is not allowlisted', async () => {

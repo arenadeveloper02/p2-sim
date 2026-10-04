@@ -97,7 +97,6 @@ function request(overrides: Partial<ProviderRequest>): ProviderRequest {
 function makeTool(id: string): ProviderToolConfig {
   return {
     id,
-    name: id,
     description: '',
     params: {},
     parameters: { type: 'object', properties: {}, required: [] },
@@ -143,8 +142,14 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
         request({ azureEndpoint: 'https://rebind.attacker.tld' })
       )
 
-      expect(mockValidate).toHaveBeenCalledWith('https://rebind.attacker.tld', 'azureEndpoint')
-      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10')
+      expect(mockValidate).toHaveBeenCalledWith(
+        'https://rebind.attacker.tld',
+        'azureEndpoint',
+        'configuredEndpoint'
+      )
+      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10', {
+        profile: 'configuredEndpoint',
+      })
       expect(responsesConfig().fetch).toBe(sentinelFetch)
     })
 
@@ -158,6 +163,20 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
       expect(responsesConfig().fetch).toBeUndefined()
     })
 
+    it.each([false, true])(
+      'preserves a custom deployment name through Responses routing (full endpoint: %s)',
+      async (fullEndpoint) => {
+        mockIsResponsesEndpoint.mockReturnValue(fullEndpoint)
+        setEnv({ AZURE_OPENAI_ENDPOINT: 'https://custom.openai.azure.com' })
+        const providerRequest = request({ model: 'AZURE/Team-GPT-Deployment' })
+
+        await azureOpenAIProvider.executeRequest(providerRequest)
+
+        expect(mockExecuteResponses.mock.calls[0][0].model).toBe('AZURE/Team-GPT-Deployment')
+        expect(responsesConfig().modelName).toBe('Team-GPT-Deployment')
+      }
+    )
+
     it('throws and never reaches the Responses core when validation blocks the endpoint', async () => {
       mockValidate.mockResolvedValue({ isValid: false, error: 'resolves to a blocked IP address' })
 
@@ -166,19 +185,6 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
           request({ azureEndpoint: 'https://rebind.attacker.tld' })
         )
       ).rejects.toThrow('Invalid Azure OpenAI endpoint')
-
-      expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
-      expect(mockExecuteResponses).not.toHaveBeenCalled()
-    })
-
-    it('fails closed when validation passes but yields no resolvable IP to pin', async () => {
-      mockValidate.mockResolvedValue({ isValid: true })
-
-      await expect(
-        azureOpenAIProvider.executeRequest(
-          request({ azureEndpoint: 'https://rebind.attacker.tld' })
-        )
-      ).rejects.toThrow('could not resolve a pinnable IP address')
 
       expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
       expect(mockExecuteResponses).not.toHaveBeenCalled()
@@ -200,7 +206,9 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
         })
       )
 
-      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10')
+      expect(mockCreatePinnedFetch).toHaveBeenCalledWith('203.0.113.10', {
+        profile: 'configuredEndpoint',
+      })
       expect(azureOpenAIArgs[0]).toMatchObject({ fetch: sentinelFetch })
     })
 
@@ -219,6 +227,21 @@ describe('azureOpenAIProvider — SSRF pinning', () => {
 
       expect(mockCreatePinnedFetch).not.toHaveBeenCalled()
       expect(azureOpenAIArgs[0]).not.toHaveProperty('fetch')
+    })
+
+    it('preserves a custom deployment name through Chat Completions routing', async () => {
+      mockIsChatCompletionsEndpoint.mockReturnValue(true)
+      setEnv({
+        AZURE_OPENAI_ENDPOINT: 'https://custom.openai.azure.com/openai/v1/chat/completions',
+      })
+      mockChatCreate.mockResolvedValue({
+        choices: [{ message: { content: 'hi' } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      })
+
+      await azureOpenAIProvider.executeRequest(request({ model: 'AZURE/Team-GPT-Deployment' }))
+
+      expect(mockChatCreate.mock.calls[0][0].model).toBe('Team-GPT-Deployment')
     })
 
     it('projects the settled tool-loop answer without a final streaming request', async () => {

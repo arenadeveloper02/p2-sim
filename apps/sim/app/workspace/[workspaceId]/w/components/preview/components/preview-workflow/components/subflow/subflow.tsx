@@ -2,16 +2,17 @@
 
 import { memo } from 'react'
 import { SubflowNodeView } from '@sim/workflow-renderer'
-import type { NodeProps } from 'reactflow'
+import type { Node, NodeProps } from '@xyflow/react'
 
 /** Execution status for subflows in preview mode */
 type ExecutionStatus = 'success' | 'error' | 'not-executed'
 
-interface WorkflowPreviewSubflowData {
+interface WorkflowPreviewSubflowData extends Record<string, unknown> {
   name: string
   width?: number
   height?: number
   kind: 'loop' | 'parallel'
+  parentId?: string
   /** Whether this subflow is enabled */
   enabled?: boolean
   /** Whether this subflow is selected in preview mode */
@@ -27,7 +28,9 @@ interface WorkflowPreviewSubflowData {
  * Renders loop/parallel containers without hooks, store subscriptions,
  * or interactive features.
  */
-function WorkflowPreviewSubflowInner({ data, id }: NodeProps<WorkflowPreviewSubflowData>) {
+type WorkflowPreviewSubflowNode = Node<WorkflowPreviewSubflowData, 'subflowNode'>
+
+function WorkflowPreviewSubflowInner({ data, id }: NodeProps<WorkflowPreviewSubflowNode>) {
   return (
     <SubflowNodeView
       id={id}

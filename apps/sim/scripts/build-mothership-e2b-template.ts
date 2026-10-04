@@ -31,7 +31,6 @@ import {
   writeMothershipTemplateEnv,
 } from '@/scripts/mothership-e2b-release'
 import {
-  mergeMothershipPipPackages,
   MOTHERSHIP_APT_PACKAGES,
   MOTHERSHIP_COMMANDS_ASSERT,
   MOTHERSHIP_MERMAID_SETUP,
@@ -40,6 +39,7 @@ import {
   MOTHERSHIP_PYTHON_IMPORTS_ASSERT,
   MOTHERSHIP_SANDBOX_CPU_COUNT,
   MOTHERSHIP_SANDBOX_MEMORY_MB,
+  mergeMothershipPipPackages,
 } from '@/scripts/mothership-sandbox-packages'
 
 const logger = createLogger('BuildMothershipE2BTemplate')

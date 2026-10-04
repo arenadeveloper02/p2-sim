@@ -250,7 +250,9 @@ export function assistantMessageToChatHistory(message: PersistedMessage): ChatMe
   // Blocks are authoritative when present — seeding `message.content` on top of
   // prose blocks doubles the assistant turn and confuses Gemini follow-ups.
   const hasProseBlocks = blocks.some(isAssistantProseBlock)
-  let seededMessageContent = Boolean(message.content?.trim() && blocks.length > 0 && !hasProseBlocks)
+  let seededMessageContent = Boolean(
+    message.content?.trim() && blocks.length > 0 && !hasProseBlocks
+  )
 
   while (index < blocks.length) {
     const startIndex = index

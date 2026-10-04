@@ -1,3 +1,4 @@
+import { MICROSOFT_DATAVERSE_PROVIDER_ID } from './microsoft-dataverse'
 import { OAUTH_PROVIDERS } from './oauth'
 import type {
   OAuthProvider,
@@ -20,6 +21,27 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'Desk.webhooks.CREATE': 'Create webhooks',
   'Desk.webhooks.DELETE': 'Delete webhooks',
   'aaaserver.profile.READ': 'View your Zoho profile',
+  // ManageEngine ServiceDesk Plus Cloud scopes
+  'SDPOnDemand.requests.CREATE': 'Create requests',
+  'SDPOnDemand.requests.READ': 'View requests and their notes',
+  'SDPOnDemand.requests.UPDATE': 'Update requests and add notes',
+  'SDPOnDemand.requests.DELETE': 'Delete requests',
+  'SDPOnDemand.problems.CREATE': 'Create problems',
+  'SDPOnDemand.problems.READ': 'View problems and their notes',
+  'SDPOnDemand.problems.UPDATE': 'Update problems and add notes',
+  'SDPOnDemand.problems.DELETE': 'Delete problems',
+  'SDPOnDemand.changes.CREATE': 'Create changes',
+  'SDPOnDemand.changes.READ': 'View changes and their notes',
+  'SDPOnDemand.changes.UPDATE': 'Update changes and add notes',
+  'SDPOnDemand.changes.DELETE': 'Delete changes',
+  'SDPOnDemand.assets.CREATE': 'Create assets',
+  'SDPOnDemand.assets.READ': 'View assets',
+  'SDPOnDemand.assets.UPDATE': 'Update assets',
+  'SDPOnDemand.assets.DELETE': 'Delete assets',
+  'SDPOnDemand.solutions.CREATE': 'Create knowledge base solutions',
+  'SDPOnDemand.solutions.READ': 'View knowledge base solutions',
+  'SDPOnDemand.solutions.UPDATE': 'Update knowledge base solutions',
+  'SDPOnDemand.solutions.DELETE': 'Delete knowledge base solutions',
   // Google scopes
   'https://www.googleapis.com/auth/gmail.send': 'Send emails',
   'https://www.googleapis.com/auth/gmail.labels': 'View and manage email labels',
@@ -47,6 +69,10 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'https://www.googleapis.com/auth/admin.directory.group.readonly': 'View Google Workspace groups',
   'https://www.googleapis.com/auth/admin.directory.group.member.readonly':
     'View Google Workspace group memberships',
+  'https://www.googleapis.com/auth/chat.spaces.readonly':
+    'View Google Chat spaces you are a member of',
+  'https://www.googleapis.com/auth/chat.messages.readonly':
+    'View messages in Google Chat spaces you are a member of',
   'https://www.googleapis.com/auth/meetings.space.created':
     'Create and manage Google Meet meeting spaces',
   'https://www.googleapis.com/auth/meetings.space.readonly':
@@ -83,6 +109,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'read:hierarchical-content:confluence': 'View page hierarchy (children and ancestors)',
   'read:content.metadata:confluence': 'View content metadata (required for ancestors)',
   'read:user:confluence': 'View Confluence user profiles',
+  'read:group:confluence': 'View Confluence groups and memberships',
   'read:confluence-user': 'View Confluence user profiles (v1 API)',
   'read:task:confluence': 'View Confluence inline tasks',
   'write:task:confluence': 'Update Confluence inline tasks',
@@ -99,6 +126,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   openid: 'Standard authentication',
   profile: 'Access profile information',
   email: 'Access email address',
+  'com.intuit.quickbooks.accounting':
+    'Access and manage accounting data in the connected QuickBooks Online company',
 
   // Notion scopes
   'database.read': 'Read database',
@@ -253,6 +282,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'Calendars.ReadWrite': 'Read and manage Outlook calendar events',
   'Files.Read': 'Read OneDrive files',
   'Files.ReadWrite': 'Read and write OneDrive files',
+  'Files.Read.All': 'Read files shared with you, including SharePoint libraries',
+  'Files.ReadWrite.All': 'Read and write files you have access to, including SharePoint libraries',
   'Tasks.ReadWrite': 'Read and manage Planner tasks',
   'Sites.Read.All': 'Read Sharepoint sites',
   'Sites.ReadWrite.All': 'Read and write Sharepoint sites',
@@ -307,7 +338,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'groups:write': 'Create, archive, and manage private channels',
   'chat:write': 'Send messages',
   'chat:write.public': 'Post to public channels',
-  'assistant:write': 'Set assistant thread status, title, and suggested prompts',
+  'chat:write.customize': 'Customize message username and icon',
+  'assistant:write': 'Manage assistant status, titles, and suggested prompts',
   'im:write': 'Send direct messages',
   'im:history': 'Read direct message history',
   'im:read': 'View direct message channels',
@@ -381,7 +413,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'webhooks:full': 'Full access to manage Pipedrive webhooks',
 
   // LinkedIn scopes
-  w_member_social: 'Access LinkedIn profile',
+  w_member_social: 'Post, comment, and like posts on your behalf',
 
   // Facebook / Meta Ads scopes
   ads_read: 'Read Facebook Ads account and campaign data',
@@ -476,12 +508,41 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'me:read': 'Read your user profile',
 }
 
+/** Scope labels that cannot be keyed by scope alone because providers reuse names. */
+const PROVIDER_SCOPE_DESCRIPTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  /**
+   * Word documents are ordinary drive items, so the integration asks for the
+   * generic Files permissions. The shared labels name OneDrive specifically,
+   * which reads as the wrong product on the Word consent screen and omits the
+   * SharePoint libraries the same scopes cover.
+   */
+  'microsoft-word': {
+    'Files.Read': 'Read your Word documents in OneDrive',
+    'Files.ReadWrite': 'Read, create, and edit your Word documents in OneDrive',
+    'Files.Read.All': 'Read Word documents shared with you, including SharePoint libraries',
+    'Files.ReadWrite.All':
+      'Read, create, and edit Word documents you have access to, including SharePoint libraries',
+  },
+  bitbucket: {
+    account: 'View your Bitbucket account and workspace memberships',
+    repository: 'View repositories and source code',
+    'repository:write': 'Create and modify repositories, branches, and source code',
+    pullrequest: 'View pull requests, comments, approvals, and statuses',
+    'pullrequest:write': 'Create, update, approve, decline, and merge pull requests',
+    pipeline: 'View pipelines, steps, and logs',
+    'pipeline:write': 'Run and stop pipelines',
+    webhook: 'Manage repository webhooks',
+  },
+}
+
 /**
  * Get a human-readable description for a scope.
  * Falls back to the raw scope string if no description is found.
  */
-export function getScopeDescription(scope: string): string {
-  return SCOPE_DESCRIPTIONS[scope] || scope
+export function getScopeDescription(scope: string, providerId?: string): string {
+  return (
+    PROVIDER_SCOPE_DESCRIPTIONS[providerId ?? '']?.[scope] || SCOPE_DESCRIPTIONS[scope] || scope
+  )
 }
 
 /**
@@ -501,6 +562,7 @@ export function getAllOAuthServices(): OAuthServiceMetadata[] {
         name: service.name,
         description: service.description,
         baseProvider: baseProviderId,
+        clientConfiguration: service.clientConfiguration,
         authType: service.authType ?? 'oauth',
       })
     }
@@ -580,6 +642,10 @@ export function getServiceConfigByProviderId(providerId: string): OAuthServiceCo
   }
 
   return null
+}
+
+export function usesCredentialConfiguredOAuthClient(providerId: string): boolean {
+  return Boolean(getServiceConfigByProviderId(providerId)?.clientConfiguration)
 }
 
 export function getServiceAccountProviderForProviderId(providerId: string): string | undefined {
@@ -690,6 +756,17 @@ export function getRequiredScopesForCredential(
 }
 
 /**
+ * Returns scopes that must be supplied on the link request instead of inherited from the static
+ * Better Auth connector. Dataverse has both a legacy grant and an environment-specific grant;
+ * leaving either on the connector makes Better Auth append it to the other resource audience.
+ */
+export function getPerRequestOAuthLinkScopes(providerId: string): string[] | undefined {
+  return providerId === MICROSOFT_DATAVERSE_PROVIDER_ID
+    ? getCanonicalScopesForProvider(providerId)
+    : undefined
+}
+
+/**
  * Get canonical scopes for a service by its serviceId key in OAUTH_PROVIDERS.
  * Useful for block definitions to reference scopes from the single source of truth.
  */
@@ -719,12 +796,20 @@ const IGNORED_SCOPES = new Set([
  * as they are not returned in the token response's scope list even when granted.
  */
 export function getMissingRequiredScopes(
-  credential: { scopes?: string[] } | undefined,
+  credential: { scopes?: string[]; type?: string } | undefined,
   requiredScopes: string[] = []
 ): string[] {
   if (!credential) {
     return requiredScopes.filter((s) => !IGNORED_SCOPES.has(s))
   }
+
+  /**
+   * A service account names its scopes in the JWT it signs for each request, so
+   * it has no granted-scope list to compare against — `scopes` is always null.
+   * Measuring it against `requiredScopes` reports every scope missing and
+   * prompts a reconnect that would grant nothing.
+   */
+  if (credential.type === 'service_account') return []
 
   const granted = new Set(credential.scopes || [])
   const missing: string[] = []
@@ -747,11 +832,10 @@ export function getMissingRequiredScopes(
  * least-privileged scope would report every already-connected credential as
  * missing it and prompt a re-consent that grants nothing new.
  *
- * This only derives a scope Sim actually requests. A consumer must never
- * require a scope absent from its provider's `scopes` array — no credential can
- * carry it, since that array is what the authorize request asks for.
+ * Only the direct scope sibling is accepted: `drive.file` does not grant
+ * `drive.readonly`, and a read-only grant never satisfies a write scope.
  */
-function isScopeSatisfiedBy(required: string, granted: ReadonlySet<string>): boolean {
+export function isScopeSatisfiedBy(required: string, granted: ReadonlySet<string>): boolean {
   const readonlySuffix = '.readonly'
   if (!required.endsWith(readonlySuffix)) return false
   return granted.has(required.slice(0, -readonlySuffix.length))

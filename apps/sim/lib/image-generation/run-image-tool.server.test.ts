@@ -184,6 +184,49 @@ describe('runImageToolGeneration storage', () => {
     )
     expect(result.imageUrl).toContain('/api/files/serve/agent-generated-images/')
     expect(result.imageUrl).not.toContain('X-Amz-Signature')
+    expect(result.image).toMatchObject({
+      name: expect.stringMatching(/^openai-/),
+      url: result.imageUrl,
+      type: expect.stringMatching(/^image\//),
+      key: 'agent-generated-images/workflow-123/user-123/image.png',
+    })
+    expect(result.images).toEqual([result.image])
+
+    fetchMock.mockRestore()
+  })
+
+  it('stores via agent-generated-images when workflowId comes from operation context', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ b64_json: Buffer.from('generated-image').toString('base64') }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    )
+
+    await runImageToolGeneration(
+      buildImageToolBodyFromExecutionParams({
+        provider: 'openai',
+        model: 'gpt-image-2',
+        prompt: 'A kangaroo on the beach',
+      }),
+      {
+        userId: 'user-123',
+        requestId: 'req-context-workflow',
+        workflowId: 'workflow-123',
+      }
+    )
+
+    expect(mockSaveGeneratedImage).toHaveBeenCalledWith(
+      expect.any(String),
+      'workflow-123',
+      'user-123',
+      expect.stringMatching(/^image\//)
+    )
 
     fetchMock.mockRestore()
   })

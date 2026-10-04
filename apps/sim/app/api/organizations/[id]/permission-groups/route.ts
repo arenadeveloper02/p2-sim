@@ -16,16 +16,18 @@ import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
+  type AllMembersConflict,
+  findAllMembersWorkspaceConflict,
+} from '@/lib/permission-groups/application/group-membership'
+import { PERMISSION_GROUP_CONSTRAINTS } from '@/lib/permission-groups/constraints'
+import {
   DEFAULT_PERMISSION_GROUP_CONFIG,
-  PERMISSION_GROUP_CONSTRAINTS,
   type PermissionGroupConfig,
   parsePermissionGroupConfig,
-} from '@/lib/permission-groups/types'
+} from '@/lib/permission-groups/fields'
+import { acquirePermissionGroupOrgLock } from '@/lib/permission-groups/locks'
 import {
-  type AllMembersConflict,
-  acquirePermissionGroupOrgLock,
   authorizeOrgAccessControl,
-  findAllMembersWorkspaceConflict,
   findWorkspacesNotInOrganization,
   formatAllMembersConflictError,
   getWorkspacesForGroups,

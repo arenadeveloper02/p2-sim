@@ -3,12 +3,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockExecuteFileUseCase } = vi.hoisted(() => ({
-  mockExecuteFileUseCase: vi.fn(),
+const { mockExecuteCopilotFileUseCase } = vi.hoisted(() => ({
+  mockExecuteCopilotFileUseCase: vi.fn(),
 }))
 
 vi.mock('@/lib/copilot/application/execute-file-use-case', () => ({
-  executeCopilotFileUseCase: mockExecuteFileUseCase,
+  executeCopilotFileUseCase: mockExecuteCopilotFileUseCase,
 }))
 
 vi.mock('@/lib/workspace-files/application/write-workspace-file-by-path', () => ({
@@ -16,12 +16,20 @@ vi.mock('@/lib/workspace-files/application/write-workspace-file-by-path', () => 
   updateWorkspaceFileContentByPath: vi.fn(),
 }))
 
+vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () => ({
+  EXACT_EMPTY_WORKSPACE_FILE_SECRET_PROVENANCE: { status: 'exact', entries: [] },
+  createWorkspaceFileSecretProvenanceFromRegistry: vi.fn(async () => ({
+    safe: true,
+    provenance: { status: 'exact', entries: [] },
+  })),
+}))
+
 import { createFileServerTool } from '@/lib/copilot/tools/server/files/create-file'
 
 describe('createFileServerTool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockExecuteFileUseCase.mockImplementation(
+    mockExecuteCopilotFileUseCase.mockImplementation(
       async (_ctx: unknown, _useCase: unknown, input: { path: string; content: string }) => ({
         id: 'file-1',
         name: input.path.split('/').pop() ?? input.path,
@@ -42,7 +50,7 @@ describe('createFileServerTool', () => {
 
     expect(result.success).toBe(true)
     expect(result.data?.size).toBeGreaterThan(0)
-    expect(mockExecuteFileUseCase).toHaveBeenCalledWith(
+    expect(mockExecuteCopilotFileUseCase).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       expect.objectContaining({
@@ -60,7 +68,7 @@ describe('createFileServerTool', () => {
 
     expect(result.success).toBe(false)
     expect(result.message).toContain('requires non-empty')
-    expect(mockExecuteFileUseCase).not.toHaveBeenCalled()
+    expect(mockExecuteCopilotFileUseCase).not.toHaveBeenCalled()
   })
 
   it('creates an empty office shell when content is omitted', async () => {
@@ -72,7 +80,7 @@ describe('createFileServerTool', () => {
     expect(result.success).toBe(true)
     expect(result.data?.size).toBe(0)
     expect(result.message).toContain('Empty file shell')
-    expect(mockExecuteFileUseCase).toHaveBeenCalledWith(
+    expect(mockExecuteCopilotFileUseCase).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       expect.objectContaining({
@@ -92,7 +100,7 @@ describe('createFileServerTool', () => {
     )
 
     expect(result.success).toBe(true)
-    expect(mockExecuteFileUseCase).toHaveBeenCalledWith(
+    expect(mockExecuteCopilotFileUseCase).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       expect.objectContaining({

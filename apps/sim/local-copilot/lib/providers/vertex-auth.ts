@@ -135,10 +135,7 @@ export function listLocalCopilotVertexSlots(): LocalCopilotVertexSlot[] {
       (def.index === 0 ? primaryCredentials?.project_id?.trim() : undefined)
     if (!project) continue
 
-    const location = validateLocation(
-      readEnv(def.locationEnv) || primaryLocation,
-      def.locationEnv
-    )
+    const location = validateLocation(readEnv(def.locationEnv) || primaryLocation, def.locationEnv)
 
     const slotCredentials =
       parseServiceAccountJson(readEnv(def.serviceAccountEnv)) ?? primaryCredentials

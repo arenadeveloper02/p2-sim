@@ -1,15 +1,15 @@
 /**
  * @vitest-environment node
  *
- * Import via the registry to avoid the pre-existing query → utils → registry
- * circular dependency that surfaces when loading `semrush/query` directly.
+ * Import the tools from their modules rather than the registry mock so the
+ * hosted-key config is the real one. `semrush/query` still cannot import
+ * `@/tools/utils` through the registry (circular), so this file does not load
+ * that path — hosting lives on the tool objects themselves.
  */
 import { describe, expect, it } from 'vitest'
-import { tools } from '@/tools/registry'
 import { semrushHosting } from '@/tools/semrush/hosting'
-
-const semrushQueryTool = tools.semrush_query
-const semrushOrganicPositionsTool = tools.semrush_organic_positions
+import { semrushOrganicPositionsTool } from '@/tools/semrush/organic-positions'
+import { semrushQueryTool } from '@/tools/semrush/query'
 
 function cost(tool: typeof semrushQueryTool, output: Record<string, unknown> = {}) {
   const pricing = tool.hosting?.pricing

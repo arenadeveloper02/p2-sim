@@ -144,6 +144,7 @@ export interface MothershipStreamV1ToolCallEventEnvelope {
   v: 1
 }
 export interface MothershipStreamV1ToolCallDescriptor {
+  activityDescription?: string
   arguments?: MothershipStreamV1AdditionalPropertiesMap
   executor: MothershipStreamV1ToolExecutor
   mode: MothershipStreamV1ToolMode
@@ -160,6 +161,7 @@ export interface MothershipStreamV1AdditionalPropertiesMap {
 export interface MothershipStreamV1ToolUI {
   clientExecutable?: boolean
   hidden?: boolean
+  inbandOwned?: boolean
   internal?: boolean
 }
 export interface MothershipStreamV1ToolArgsDeltaEventEnvelope {
@@ -278,9 +280,11 @@ export interface MothershipStreamV1ResourceUpsertPayload {
   resource: MothershipStreamV1ResourceDescriptor
 }
 export interface MothershipStreamV1ResourceDescriptor {
+  clearViewId?: boolean
   id: string
   title?: string
   type: string
+  viewId?: string
 }
 export interface MothershipStreamV1ResourceRemoveEventEnvelope {
   payload: MothershipStreamV1ResourceRemovePayload
@@ -468,12 +472,14 @@ export type MothershipStreamV1RunKind =
   | 'resumed'
   | 'compaction_start'
   | 'compaction_done'
+  | 'steering_applied'
 
 export const MothershipStreamV1RunKind = {
   checkpoint_pause: 'checkpoint_pause',
   resumed: 'resumed',
   compaction_start: 'compaction_start',
   compaction_done: 'compaction_done',
+  steering_applied: 'steering_applied',
 } as const
 
 export type MothershipStreamV1SessionKind = 'trace' | 'chat' | 'title' | 'start'

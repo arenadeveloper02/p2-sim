@@ -14,5 +14,4 @@ export {
 } from './mothership-resources-context'
 export { MothershipView } from './mothership-view'
 export { QueuedMessages } from './queued-messages'
-export { SuggestedActions } from './suggested-actions'
 export { UserInput, type UserInputHandle } from './user-input'

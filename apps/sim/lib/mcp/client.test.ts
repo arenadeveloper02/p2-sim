@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockLogger, mockSdkConnect, mockSdkListTools, mockPinnedClose } = vi.hoisted(() => ({
   mockLogger: {
@@ -22,6 +22,7 @@ vi.mock('@sim/logger', () => ({
 
 vi.mock('@/lib/mcp/pinned-fetch', () => ({
   createGuardedMcpFetch: vi.fn(() => ({ fetch: vi.fn(), close: mockPinnedClose })),
+  createPinnedPrivateMcpFetch: vi.fn(() => ({ fetch: vi.fn(), close: mockPinnedClose })),
 }))
 
 /**
@@ -71,8 +72,13 @@ vi.mock('@/lib/core/execution-limits', () => ({
 
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
-import { McpClient } from './client'
-import type { McpClientOptions, McpServerConfig } from './types'
+import { McpClient } from '@/lib/mcp/client'
+import { createGuardedMcpFetch, createPinnedPrivateMcpFetch } from '@/lib/mcp/pinned-fetch'
+import {
+  type McpClientOptions,
+  McpOauthAuthorizationRequiredError,
+  type McpServerConfig,
+} from '@/lib/mcp/types'
 
 function createConfig(): McpServerConfig {
   return {
@@ -92,6 +98,18 @@ describe('McpClient notification handler', () => {
     // clearAllMocks resets call history but not implementations; re-establish the
     // default so a per-test override can't bleed into later tests.
     vi.mocked(getMaxExecutionTimeout).mockReturnValue(30_000)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('preserves authorization-required errors raised by a locked credential reload', async () => {
+    const error = new McpOauthAuthorizationRequiredError('server-1', 'Test Server')
+    mockSdkConnect.mockRejectedValueOnce(error)
+    const client = new McpClient({ config: createConfig() })
+    await expect(client.connect()).rejects.toBe(error)
+    expect(client.getStatus().lastError).toBeUndefined()
   })
 
   it('fires onToolsChanged when a notification arrives while connected', async () => {
@@ -185,6 +203,7 @@ describe('McpClient notification handler', () => {
   })
 
   it('clamps a configured tools/list timeout to the absolute discovery ceiling', async () => {
+    vi.useFakeTimers()
     vi.mocked(getMaxExecutionTimeout).mockReturnValue(120_000)
     const client = new McpClient({
       config: { ...createConfig(), timeout: 300_000 },
@@ -196,7 +215,7 @@ describe('McpClient notification handler', () => {
 
     expect(mockSdkListTools).toHaveBeenCalledWith(
       undefined,
-      expect.objectContaining({ timeout: 60_000, maxTotalTimeout: expect.any(Number) })
+      expect.objectContaining({ timeout: 60_000, maxTotalTimeout: 60_000 })
     )
   })
 
@@ -246,6 +265,21 @@ describe('McpClient notification handler', () => {
     const tools = await client.listTools()
 
     expect(tools.map((t) => t.name)).toEqual(['a'])
+  })
+
+  it('fails instead of returning partial tools when complete discovery is required', async () => {
+    mockSdkListTools
+      .mockResolvedValueOnce({ tools: [{ name: 'a' }], nextCursor: 'c1' })
+      .mockRejectedValueOnce(new Error('page 2 blew up'))
+    const client = new McpClient({
+      config: createConfig(),
+      securityPolicy: { requireConsent: false, auditLevel: 'basic' },
+    })
+
+    await client.connect()
+    await expect(client.listTools(undefined, { requireComplete: true })).rejects.toThrow(
+      'page 2 blew up'
+    )
   })
 
   it('keeps an empty partial (does not throw) when page one succeeds but a later page fails', async () => {
@@ -345,6 +379,38 @@ describe('McpClient notification handler', () => {
     expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(secret)
   })
 
+  it('keeps the transport on the SSRF guard when no validated address is supplied', () => {
+    new McpClient({
+      config: createConfig(),
+      securityPolicy: { requireConsent: false, auditLevel: 'basic' },
+    })
+
+    const guarded = vi.mocked(createGuardedMcpFetch).mock.results.at(-1)?.value
+    expect(createGuardedMcpFetch).toHaveBeenCalledWith('https://test.example.com/mcp')
+    expect(createPinnedPrivateMcpFetch).not.toHaveBeenCalled()
+    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)?.[1]?.fetch).toBe(
+      guarded.fetch
+    )
+  })
+
+  it('pins the transport to a validated private address', () => {
+    new McpClient({
+      config: createConfig(),
+      securityPolicy: { requireConsent: false, auditLevel: 'basic' },
+      resolvedIP: '10.0.0.5',
+    })
+
+    const pinned = vi.mocked(createPinnedPrivateMcpFetch).mock.results.at(-1)?.value
+    expect(createPinnedPrivateMcpFetch).toHaveBeenCalledWith(
+      '10.0.0.5',
+      'https://test.example.com/mcp'
+    )
+    expect(createGuardedMcpFetch).not.toHaveBeenCalled()
+    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)?.[1]?.fetch).toBe(
+      pinned.fetch
+    )
+  })
+
   it('closes the pinned transport Agent when connect fails', async () => {
     mockSdkConnect.mockRejectedValueOnce(new Error('connect boom'))
     const client = new McpClient({
@@ -438,7 +504,7 @@ describe('McpClient notification handler', () => {
     expect(logged).not.toContain('test-session')
   })
 
-  it('passes configured headers for OAuth transports as well as header auth transports', () => {
+  it('scopes configured headers to the MCP endpoint for OAuth transports', () => {
     const authProvider = {} as unknown as NonNullable<McpClientOptions['authProvider']>
     new McpClient({
       config: {
@@ -452,10 +518,13 @@ describe('McpClient notification handler', () => {
 
     expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
       new URL('https://test.example.com/mcp'),
-      {
+      expect.objectContaining({
         authProvider,
-        requestInit: { headers: { 'X-Sim-Via': 'workflow' } },
-      }
+        fetch: expect.any(Function),
+      })
+    )
+    expect(vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)?.[1]).not.toHaveProperty(
+      'requestInit'
     )
   })
 })

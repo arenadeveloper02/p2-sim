@@ -1,7 +1,7 @@
 import type { GmailLabelParams, GmailToolResponse } from '@/tools/gmail/types'
-import type { ToolConfig } from '@/tools/types'
+import type { InternalToolConfig } from '@/tools/types'
 
-export const gmailAddLabelTool: ToolConfig<GmailLabelParams, GmailToolResponse> = {
+export const gmailAddLabelTool: InternalToolConfig<GmailLabelParams, GmailToolResponse> = {
   id: 'gmail_add_label',
   name: 'Gmail Add Label',
   description: 'Add label(s) to a Gmail message',
@@ -33,13 +33,8 @@ export const gmailAddLabelTool: ToolConfig<GmailLabelParams, GmailToolResponse> 
     },
   },
 
-  request: {
-    url: '/api/tools/gmail/add-label',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-    }),
-    body: (params: GmailLabelParams) => ({
+  operation: {
+    input: (params: GmailLabelParams) => ({
       accessToken: params.accessToken,
       messageId: params.messageId,
       labelIds: params.labelIds,
@@ -83,14 +78,23 @@ export const gmailAddLabelTool: ToolConfig<GmailLabelParams, GmailToolResponse> 
   },
 }
 
-export const gmailAddLabelV2Tool: ToolConfig<GmailLabelParams, GmailToolResponse> = {
+interface GmailModifyV2Response {
+  success: boolean
+  output: {
+    id?: string
+    threadId?: string
+    labelIds?: string[]
+  }
+}
+
+export const gmailAddLabelV2Tool: InternalToolConfig<GmailLabelParams, GmailModifyV2Response> = {
   id: 'gmail_add_label_v2',
   name: 'Gmail Add Label',
   description: 'Add label(s) to a Gmail message',
   version: '2.0.0',
   oauth: gmailAddLabelTool.oauth,
   params: gmailAddLabelTool.params,
-  request: gmailAddLabelTool.request,
+  operation: gmailAddLabelTool.operation,
   transformResponse: async (response) => {
     return await gmailAddLabelTool.transformResponse!(response)
   },

@@ -4,6 +4,7 @@ import { documentLayoutFollowUpHint } from '@/lib/copilot/chat/document-format-g
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getBlock } from '@/blocks/registry'
+import { MAX_POPULATE_EDITS } from '@/local-copilot/lib/agent/limits'
 import type { ArtifactStore } from '@/local-copilot/lib/context/artifacts'
 import {
   LOAD_COPILOT_ARTIFACT_TOOL_NAME,
@@ -143,6 +144,78 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+/**
+ * Builds the value passed into {@link formatToolResultForLlm} so failures with
+ * an empty `result` still surface `error`, and bare success does not become `{}`.
+ */
+export function coalesceToolExecutionPayloadForLlm(params: {
+  success: boolean
+  result: unknown
+  error?: string
+  toolName?: string
+}): unknown {
+  const record = asRecord(params.result)
+  const hasFields = Object.keys(record).length > 0
+  if (hasFields) {
+    if (
+      !params.success &&
+      params.error &&
+      typeof record.error !== 'string' &&
+      typeof record.message !== 'string'
+    ) {
+      return { ...record, success: false, error: params.error }
+    }
+    return params.result
+  }
+
+  if (params.error) {
+    return { success: false, error: params.error }
+  }
+
+  return {
+    success: params.success !== false,
+    message: params.toolName
+      ? `${params.toolName} completed`
+      : 'Tool completed with no detail payload.',
+    ...(params.toolName ? { toolName: params.toolName } : {}),
+  }
+}
+
+const FILE_TOOLS_NEEDING_EMPTY_GUARD = new Set([
+  'create_file',
+  'create_file_folder',
+  'workspace_file',
+  'edit_content',
+  'list_file_folders',
+])
+
+/**
+ * When a file tool succeeds with a near-empty body, add an explicit hint so the
+ * model does not invent "tools returned empty results."
+ */
+function guardEmptyFileToolPayload(
+  toolName: string,
+  formatted: unknown
+): unknown {
+  if (!FILE_TOOLS_NEEDING_EMPTY_GUARD.has(toolName)) return formatted
+  const record = asRecord(formatted)
+  const keys = Object.keys(record).filter(
+    (key) => key !== 'success' && key !== 'toolName' && record[key] !== undefined
+  )
+  if (keys.length > 0) return formatted
+  if (record.success === false) return formatted
+  return {
+    ...record,
+    success: true,
+    message:
+      typeof record.message === 'string' && record.message.trim()
+        ? record.message
+        : `${toolName} completed`,
+    followUpHint:
+      'Tool succeeded but returned no detail fields. Continue the file pipeline (workspace_file / edit_content) or check files/ — do not narrate empty tool results or restart.',
+  }
+}
+
 const FOLLOW_UP_FIELD_KEYS = [
   'needsFollowUpPopulate',
   'needsFollowUpEdit',
@@ -152,6 +225,7 @@ const FOLLOW_UP_FIELD_KEYS = [
   'needsFollowUpRun',
   'needsOAuthConnect',
   'followUpHint',
+  'editPrecondition',
 ] as const
 
 /**
@@ -292,9 +366,13 @@ export function isOAuthOnlyEditResult(output: unknown): boolean {
 /**
  * Returns true when edit_workflow applied partially and the agent should retry with fixes.
  * OAuth/credential-only lint is excluded — that requires user authorization, not another edit.
+ * Precondition failures (missing metadata / workflowId / stale revision) are excluded — those
+ * need a different tool first; forcing bare edit_workflow loops forever.
  */
 export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   const record = asRecord(output)
+  if (classifyEditWorkflowPrecondition(record)) return false
+
   if (record.success === false) return true
 
   if (record.partialApply === true) return true
@@ -311,6 +389,31 @@ export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   }
 
   return false
+}
+
+export type EditWorkflowPreconditionKind =
+  | 'metadata'
+  | 'workflow_id'
+  | 'stale_revision'
+  | 'tool_call_id'
+
+/**
+ * Classifies hard gate failures that must not become mandatory bare edit_workflow retries.
+ */
+export function classifyEditWorkflowPrecondition(
+  output: unknown
+): EditWorkflowPreconditionKind | null {
+  const record = asRecord(output)
+  const error =
+    (typeof record.error === 'string' && record.error) ||
+    (typeof record.message === 'string' && record.message) ||
+    ''
+  if (!error) return null
+  if (/get_blocks_metadata/i.test(error)) return 'metadata'
+  if (/stale revision|changed since this turn loaded/i.test(error)) return 'stale_revision'
+  if (/workflowId is required|create a workflow first/i.test(error)) return 'workflow_id'
+  if (/tool call ID/i.test(error)) return 'tool_call_id'
+  return null
 }
 
 function stringifyCapturedValue(value: unknown): string {
@@ -429,27 +532,55 @@ export function formatToolResultForLlm(
     const record = asRecord(result)
     const data = asRecord(record.data)
     const size = typeof data.size === 'number' ? data.size : 0
-    if (size === 0 && record.success !== false) {
+    if (record.success === false) {
+      formatted = {
+        ...record,
+        followUpHint:
+          'create_file failed — fix the args and call create_file again (fileName for office shells; fileName + content for html/md/txt/json/csv). Do NOT switch to manage_sandbox, function_execute, or python-pptx, and do not tell the user office tools are unavailable.',
+      }
+    } else if (size === 0) {
       const filePath =
         (typeof data.vfsPath === 'string' && data.vfsPath) ||
         (typeof data.name === 'string' && data.name) ||
         ''
-      const isOfficeShell = /\.(pptx|docx|pdf)$/i.test(filePath)
+      const message =
+        (typeof record.message === 'string' && record.message) ||
+        (typeof record.error === 'string' && record.error) ||
+        ''
+      const isOfficeShell =
+        /\.(pptx|docx|pdf)$/i.test(filePath) || /empty file shell/i.test(message)
       if (isOfficeShell) {
-        // edit_content alone fails without a prior workspace_file intent — force that step.
+        // size=0 is the intended first step for office docs — models often
+        // misread it as "tools returned empty" and waste minutes retrying /
+        // escalating to the file agent.
         formatted = {
           ...record,
+          success: true,
+          expectedEmptyShell: true,
           needsFollowUpWorkspaceFile: true,
           followUpHint:
-            'Office file shell is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath (plus title), then edit_content in a later round.',
+            'SUCCESS — empty PDF/DOCX/PPTX shell is expected (size 0). Do NOT retry create_file, list folders, or call the file agent. Next: workspace_file operation=update with target.kind=path and data.vfsPath (plus title), then edit_content in a later round.',
         }
       } else {
         formatted = {
           ...record,
           needsFollowUpWrite: true,
           followUpHint:
-            'File is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath, then edit_content with the full body.',
+            'Text/markdown file is empty — call create_file again on the same path with the full body in `content` (do not use the office workspace_file → edit_content pipeline for .md/.txt/.html/.json/.csv).',
         }
+      }
+    } else {
+      formatted = record
+    }
+  } else if (toolName === 'list_file_folders') {
+    const record = asRecord(result)
+    const data = asRecord(record.data)
+    const folders = Array.isArray(data.folders) ? data.folders : []
+    if (record.success !== false && folders.length === 0) {
+      formatted = {
+        ...record,
+        followUpHint:
+          'No folders yet — that is normal. Call create_file_folder if you need a subfolder, or create_file directly under files/. An empty folder list is not a tool failure.',
       }
     } else {
       formatted = record
@@ -499,6 +630,18 @@ export function formatToolResultForLlm(
       next.needsFollowUpEdit = true
       next.followUpHint =
         'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
+    } else if (classifyEditWorkflowPrecondition(record)) {
+      const kind = classifyEditWorkflowPrecondition(record)!
+      next.needsFollowUpEdit = true
+      next.editPrecondition = kind
+      next.followUpHint =
+        kind === 'metadata'
+          ? 'Call get_blocks_metadata for the missing block types, then edit_workflow again.'
+          : kind === 'stale_revision'
+            ? 'Call get_workflow_context to refresh the graph, then edit_workflow again.'
+            : kind === 'workflow_id'
+              ? 'Pass workflowId (or create_workflow first), then edit_workflow.'
+              : 'Retry edit_workflow with a trusted tool call.'
     } else if (isOAuthOnlyEditResult(record)) {
       next.needsOAuthConnect = true
       next.followUpHint =
@@ -516,16 +659,20 @@ export function formatToolResultForLlm(
       next.copilotSanitizedWorkflowState = undefined
       next.needsFollowUpPopulate = true
       next.followUpHint =
-        'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
+        `New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.`
     }
 
     formatted = next
   } else if (toolName === 'get_blocks_metadata') {
     const record = asRecord(result)
+    const metadata = asRecord(record.metadata)
+    const metadataKeys = Object.keys(metadata)
     formatted = {
       ...record,
       followUpHint:
-        'If you just created a workflow, call edit_workflow now to add blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+        metadataKeys.length === 0
+          ? 'No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent\'s tools array — do not add them as canvas blocks.'
+          : 'If you just created a workflow, call edit_workflow now to add blocks. To attach Image Generator / Chart Generator / Exa to an existing Agent, edit that Agent\'s tools array (type image_generator_v2 / chart_generator / exa) and update its messages/prompt so it chooses those tools from the user question — do not add those as canvas blocks and do not add a Function block as a substitute. Do not load_copilot_artifact unless a specific field id is missing from this result.',
     }
   } else if (toolName === 'edit_content') {
     const record = asRecord(result)
@@ -556,6 +703,8 @@ export function formatToolResultForLlm(
       }
     }
   }
+
+  formatted = guardEmptyFileToolPayload(toolName, formatted)
 
   const sanitized = sanitizeForLlm(formatted)
   if (options?.artifactStore && toolName !== LOAD_COPILOT_ARTIFACT_TOOL_NAME) {
@@ -619,8 +768,8 @@ function detectMandatoryFollowUpFromRecord(
       id: 'create_file:write',
       hint:
         hint ??
-        'File shell is empty. Write content via create_file with content or workspace_file then edit_content.',
-      resolveWith: ['workspace_file', 'edit_content'],
+        'Text/markdown file is empty. Call create_file again with the full body in content.',
+      resolveWith: ['create_file'],
     }
   }
 
@@ -629,7 +778,7 @@ function detectMandatoryFollowUpFromRecord(
       id: 'create_file:workspace-file',
       hint:
         hint ??
-        'Office file shell is empty. Call workspace_file operation=update on the file path, then edit_content in a later round.',
+        'SUCCESS — empty office shell is expected. Call workspace_file operation=update on the file path, then edit_content in a later round. Do not retry create_file or call the file agent.',
       resolveWith: ['workspace_file'],
     }
   }
@@ -643,6 +792,37 @@ function detectMandatoryFollowUpFromRecord(
   }
 
   if (parsed.needsFollowUpEdit === true) {
+    const precondition =
+      parsed.editPrecondition === 'metadata' ||
+      parsed.editPrecondition === 'workflow_id' ||
+      parsed.editPrecondition === 'stale_revision' ||
+      parsed.editPrecondition === 'tool_call_id'
+        ? parsed.editPrecondition
+        : classifyEditWorkflowPrecondition(parsed)
+
+    if (precondition === 'metadata') {
+      return {
+        id: 'edit_workflow:metadata',
+        hint:
+          hint ?? 'Call get_blocks_metadata for the missing block types, then edit_workflow again.',
+        resolveWith: ['get_blocks_metadata', 'edit_workflow'],
+      }
+    }
+    if (precondition === 'stale_revision') {
+      return {
+        id: 'edit_workflow:reread',
+        hint: hint ?? 'Call get_workflow_context to refresh, then edit_workflow again.',
+        resolveWith: ['get_workflow_context', 'edit_workflow'],
+      }
+    }
+    if (precondition === 'workflow_id') {
+      return {
+        id: 'edit_workflow:workflow-id',
+        hint: hint ?? 'Pass workflowId or create_workflow first, then edit_workflow.',
+        resolveWith: ['create_workflow', 'edit_workflow'],
+      }
+    }
+
     return {
       id: `${toolName}:edit-repair`,
       hint:
@@ -731,8 +911,25 @@ export function resolveMandatoryFollowUps(
 
   if (toolName === 'edit_workflow' && !editWorkflowNeedsFollowUp(result)) {
     next = next.filter(
-      (item) => item.id !== 'create_workflow:populate' && !item.id.endsWith(':edit-repair')
+      (item) =>
+        item.id !== 'create_workflow:populate' &&
+        !item.id.endsWith(':edit-repair') &&
+        item.id !== 'edit_workflow:metadata' &&
+        item.id !== 'edit_workflow:reread' &&
+        item.id !== 'edit_workflow:workflow-id'
     )
+  }
+
+  if (toolName === 'get_blocks_metadata') {
+    next = next.filter((item) => item.id !== 'edit_workflow:metadata')
+  }
+
+  if (toolName === 'get_workflow_context') {
+    next = next.filter((item) => item.id !== 'edit_workflow:reread')
+  }
+
+  if (toolName === 'create_workflow') {
+    next = next.filter((item) => item.id !== 'edit_workflow:workflow-id')
   }
 
   if (toolName === 'oauth_get_auth_link') {

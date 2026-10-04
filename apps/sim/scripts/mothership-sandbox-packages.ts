@@ -151,7 +151,10 @@ export function mergeMothershipPipPackages(
   for (const spec of [...contract, ...extras]) {
     const trimmed = spec.trim()
     if (!trimmed) continue
-    const name = trimmed.split(/[=<>!~]/, 1)[0]?.trim().toLowerCase()
+    const name = trimmed
+      .split(/[=<>!~]/, 1)[0]
+      ?.trim()
+      .toLowerCase()
     if (!name) continue
     byName.set(name, trimmed)
   }

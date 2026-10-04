@@ -3,21 +3,21 @@ import { isRecordLike } from '@sim/utils/object'
 import { z } from 'zod'
 import { getBlockVisibilityForCopilot } from '@/lib/copilot/block-visibility'
 import {
-  CreateFile,
-  DownloadToWorkspaceFile,
+  CreateEmptyFile,
+  DownloadFile,
   Ffmpeg,
   GenerateAudio,
   GenerateImage,
   GenerateVideo,
-  KnowledgeBase,
   ManageCredential,
   ManageCustomTool,
-  ManageMcpTool,
+  ManageKnowledgeBase,
+  ManageMcpConnection,
   ManageSkill,
-  // UserMemory,
+  PrepareFileEdit,
   UserTable,
-  WorkspaceFile,
 } from '@/lib/copilot/generated/tool-catalog-v1'
+import { ARENA_SERVER_TOOL_SCHEMA_ALIASES } from '@/lib/copilot/tools/arena-server-tool-aliases'
 import { copilotToolCanWrite } from '@/lib/copilot/tools/permissions'
 import {
   assertServerToolNotAborted,
@@ -26,11 +26,12 @@ import {
 } from '@/lib/copilot/tools/server/base-tool'
 import { getBlocksMetadataServerTool } from '@/lib/copilot/tools/server/blocks/get-blocks-metadata-tool'
 import { getTriggerBlocksServerTool } from '@/lib/copilot/tools/server/blocks/get-trigger-blocks'
-import { searchDocumentationServerTool } from '@/lib/copilot/tools/server/docs/search-documentation'
+import { searchDocsServerTool } from '@/lib/copilot/tools/server/docs/search-docs'
 import { enrichmentRunServerTool } from '@/lib/copilot/tools/server/enrichment/enrichment-run'
 import { createFileServerTool } from '@/lib/copilot/tools/server/files/create-file'
 import { downloadToWorkspaceFileServerTool } from '@/lib/copilot/tools/server/files/download-to-workspace-file'
 import { editContentServerTool } from '@/lib/copilot/tools/server/files/edit-content'
+import { extractDocAssetsServerTool } from '@/lib/copilot/tools/server/files/extract-doc-assets'
 import {
   createFileFolderServerTool,
   listFileFoldersServerTool,
@@ -46,17 +47,28 @@ import { generateImageServerTool } from '@/lib/copilot/tools/server/image/genera
 import { normalizeGenerateImageArgs } from '@/lib/copilot/tools/server/image/normalize-args'
 import { knowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/knowledge-base'
 import { searchKnowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/search-knowledge-base'
+import {
+  readDocumentServerTool,
+  searchWorkspaceServerTool,
+} from '@/lib/copilot/tools/server/knowledge/workspace-search'
 import { ffmpegServerTool } from '@/lib/copilot/tools/server/media/ffmpeg'
 import { generateAudioServerTool } from '@/lib/copilot/tools/server/media/generate-audio'
 import { generateVideoServerTool } from '@/lib/copilot/tools/server/media/generate-video'
 import { searchOnlineServerTool } from '@/lib/copilot/tools/server/other/search-online'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { queryUserTableServerTool } from '@/lib/copilot/tools/server/table/query-user-table'
+import { tableAutomationsServerTool } from '@/lib/copilot/tools/server/table/table-automations'
+import { tableColumnsServerTool } from '@/lib/copilot/tools/server/table/table-columns'
+import { tableEnrichmentsServerTool } from '@/lib/copilot/tools/server/table/table-enrichments'
+import { tableManageServerTool } from '@/lib/copilot/tools/server/table/table-manage'
+import { tableRowsServerTool } from '@/lib/copilot/tools/server/table/table-rows'
+import { tableViewsServerTool } from '@/lib/copilot/tools/server/table/table-views'
 import { userTableServerTool } from '@/lib/copilot/tools/server/table/user-table'
 import { getCredentialsServerTool } from '@/lib/copilot/tools/server/user/get-credentials'
 import { setEnvironmentVariablesServerTool } from '@/lib/copilot/tools/server/user/set-environment-variables'
 import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
 import { queryLogsServerTool } from '@/lib/copilot/tools/server/workflow/query-logs'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { listCustomBlocksWithInputsForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { withCustomBlockOverlay } from '@/blocks/custom/server-overlay'
 import { withBlockVisibility } from '@/blocks/visibility/server-context'
@@ -89,7 +101,23 @@ const VISIBILITY_GATED_TOOLS = new Set([
 ])
 
 const WRITE_ACTIONS: Record<string, string[]> = {
-  [KnowledgeBase.id]: [
+  [ManageKnowledgeBase.id]: [
+    'create',
+    'add_file',
+    'update',
+    'delete',
+    'delete_document',
+    'update_document',
+    'create_tag',
+    'update_tag',
+    'delete_tag',
+    'add_connector',
+    'update_connector',
+    'delete_connector',
+    'sync_connector',
+  ],
+  // Arena Copilot leaf name (same write ops as manage_knowledge_base).
+  knowledge_base: [
     'create',
     'add_file',
     'update',
@@ -132,19 +160,23 @@ const WRITE_ACTIONS: Record<string, string[]> = {
     'add_enrichment',
   ],
   [ManageCustomTool.id]: ['add', 'edit', 'delete'],
-  [ManageMcpTool.id]: ['add', 'edit', 'delete'],
+  [ManageMcpConnection.id]: ['add', 'edit', 'delete'],
   [ManageSkill.id]: ['add', 'edit', 'delete'],
   [ManageCredential.id]: ['rename', 'delete'],
-  [WorkspaceFile.id]: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
+  [PrepareFileEdit.id]: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
+  // Arena Copilot leaf names (same handlers as the Cloud catalog ids above).
+  workspace_file: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
   [editContentServerTool.name]: ['*'],
-  [CreateFile.id]: ['*'],
+  edit_content: ['*'],
+  [CreateEmptyFile.id]: ['*'],
+  create_file: ['*'],
   rename_file: ['*'],
   [shareFileServerTool.name]: ['*'],
   move_file: ['*'],
   create_file_folder: ['*'],
   rename_file_folder: ['*'],
   move_file_folder: ['*'],
-  [DownloadToWorkspaceFile.id]: ['*'],
+  [DownloadFile.id]: ['*'],
   [GenerateImage.id]: ['generate'],
   [GenerateVideo.id]: ['generate'],
   [GenerateAudio.id]: ['generate'],
@@ -169,19 +201,37 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [getTriggerBlocksServerTool.name]: getTriggerBlocksServerTool,
   [editWorkflowServerTool.name]: editWorkflowServerTool,
   [queryLogsServerTool.name]: queryLogsServerTool,
-  [searchDocumentationServerTool.name]: searchDocumentationServerTool,
+  [searchDocsServerTool.name]: searchDocsServerTool,
   [searchOnlineServerTool.name]: searchOnlineServerTool,
+  // Arena leaf name — model calls search_online; Cloud catalog id is web_search.
+  search_online: searchOnlineServerTool,
   [userMemoryServerTool.name]: userMemoryServerTool,
   [setEnvironmentVariablesServerTool.name]: setEnvironmentVariablesServerTool,
   [getCredentialsServerTool.name]: getCredentialsServerTool,
   [knowledgeBaseServerTool.name]: knowledgeBaseServerTool,
+  // Arena leaf name — model calls knowledge_base; Cloud catalog id is manage_knowledge_base.
+  knowledge_base: knowledgeBaseServerTool,
   [searchKnowledgeBaseServerTool.name]: searchKnowledgeBaseServerTool,
+  [searchWorkspaceServerTool.name]: searchWorkspaceServerTool,
+  [readDocumentServerTool.name]: readDocumentServerTool,
   [enrichmentRunServerTool.name]: enrichmentRunServerTool,
   [userTableServerTool.name]: userTableServerTool,
   [queryUserTableServerTool.name]: queryUserTableServerTool,
+  [tableManageServerTool.name]: tableManageServerTool,
+  [tableRowsServerTool.name]: tableRowsServerTool,
+  [tableColumnsServerTool.name]: tableColumnsServerTool,
+  [tableAutomationsServerTool.name]: tableAutomationsServerTool,
+  [tableEnrichmentsServerTool.name]: tableEnrichmentsServerTool,
+  [tableViewsServerTool.name]: tableViewsServerTool,
   [workspaceFileServerTool.name]: workspaceFileServerTool,
+  // Arena Copilot leaf names — same handlers as Cloud catalog ids so Local
+  // Copilot `create_file` / `workspace_file` / `edit_content` never fall through
+  // to executeAppTool ("Tool not found: create_file").
+  workspace_file: workspaceFileServerTool,
   [editContentServerTool.name]: editContentServerTool,
+  edit_content: editContentServerTool,
   [createFileServerTool.name]: createFileServerTool,
+  create_file: createFileServerTool,
   [renameFileServerTool.name]: renameFileServerTool,
   [shareFileServerTool.name]: shareFileServerTool,
   [moveFileServerTool.name]: moveFileServerTool,
@@ -190,6 +240,7 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [renameFileFolderServerTool.name]: renameFileFolderServerTool,
   [moveFileFolderServerTool.name]: moveFileFolderServerTool,
   [downloadToWorkspaceFileServerTool.name]: downloadToWorkspaceFileServerTool,
+  [extractDocAssetsServerTool.name]: extractDocAssetsServerTool,
   [generateImageServerTool.name]: generateImageServerTool,
   [generateVideoServerTool.name]: generateVideoServerTool,
   [generateAudioServerTool.name]: generateAudioServerTool,
@@ -198,6 +249,17 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
 
 function getServerToolRegistry(): Record<string, BaseServerTool> {
   return baseServerToolRegistry
+}
+
+/**
+ * Arena Copilot leaf names → Cloud schema ids. Single source:
+ * `@/lib/copilot/tools/arena-server-tool-aliases`.
+ */
+const SERVER_TOOL_SCHEMA_ALIASES: Readonly<Record<string, string>> =
+  ARENA_SERVER_TOOL_SCHEMA_ALIASES
+
+function resolveServerToolSchemaName(toolName: string): string {
+  return SERVER_TOOL_SCHEMA_ALIASES[toolName] ?? toolName
 }
 
 export function getRegisteredServerToolNames(): string[] {
@@ -211,7 +273,7 @@ export async function routeExecution(
 ): Promise<unknown> {
   const tool = getServerToolRegistry()[toolName]
   if (!tool) {
-    throw new Error(`Unknown server tool: ${toolName}`)
+    throw new OrchestrationError('validation', `Unknown server tool: ${toolName}`)
   }
 
   logger.debug(
@@ -225,7 +287,10 @@ export async function routeExecution(
     const action = (p?.operation ?? p?.action) as string | undefined
     if (isWriteAction(toolName, action) && !copilotToolCanWrite(context?.userPermission)) {
       const actionLabel = action ? `'${action}' on ` : ''
-      throw new Error(
+      // Classified so the projection surfaces it: a permission denial is
+      // caller-actionable (stop retrying, tell the user), not a system error.
+      throw new OrchestrationError(
+        'forbidden',
         `Permission denied: ${actionLabel}${toolName} requires write access. You have '${context?.userPermission ?? 'none'}' permission.`
       )
     }
@@ -257,9 +322,10 @@ export async function routeExecution(
     normalizedPayload = normalizeGenerateImageArgs(normalizedPayload as Record<string, unknown>)
   }
 
+  const schemaToolName = resolveServerToolSchemaName(toolName)
   const args = tool.inputSchema
     ? tool.inputSchema.parse(normalizedPayload)
-    : validateGeneratedToolPayload(toolName, 'parameters', normalizedPayload)
+    : validateGeneratedToolPayload(schemaToolName, 'parameters', normalizedPayload)
 
   assertServerToolNotAborted(context, `User stop signal aborted ${toolName} after validation`)
 
@@ -287,5 +353,5 @@ export async function routeExecution(
   // generated JSON schema contract emitted from Go.
   return tool.outputSchema
     ? tool.outputSchema.parse(result)
-    : validateGeneratedToolPayload(toolName, 'resultSchema', result)
+    : validateGeneratedToolPayload(schemaToolName, 'resultSchema', result)
 }

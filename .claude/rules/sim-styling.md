@@ -1,4 +1,5 @@
 ---
+description: Tailwind CSS and styling conventions
 paths:
   - "apps/sim/**/*.tsx"
   - "apps/sim/**/*.css"
@@ -46,9 +47,23 @@ setWidth: (width) => {
 
 ## Text Scale
 
-Custom font sizes (`apps/sim/tailwind.config.ts`): `text-micro`=10px, `text-xs`=11px, `text-caption`=12px, `text-small`=13px, `text-base`=15px. `text-sm` is Tailwind default 14px. Field titles use `text-small` (13px); hints/errors use `text-caption` (12px).
+Custom font sizes (the `@theme` block in `apps/sim/app/_styles/globals.css`): `text-micro`=10px, `text-xs`=11px, `text-caption`=12px, `text-small`=13px, `text-base`=15px. `text-sm` is Tailwind default 14px. Field titles use `text-small` (13px); hints/errors use `text-caption` (12px).
 
 Icons default `size-[14px]`. Equal h/w → `size-*` (`size-[14px]`, `size-4`), never `h-N w-N`.
+
+## Text Overflow
+
+Use `OverflowText` from `@sim/emcn` for a constrained, single-line, read-only human label or title. It owns `min-w-0`, fade-only clipping, the conditional edge mask, and the full-value floating tooltip; pass only layout and typography through `className`. Never combine a fade or hand-written `mask-image` with `truncate`/`text-ellipsis`, and never remove the mask on hover to reveal an ellipsis. Pass the full label instead of shortening it in JavaScript first. Components that must measure a label externally use the complete `overflowTextClipClass` + conditional `overflowTextFadeClass` pair.
+
+For a non-editable `Combobox` visual overlay, pass the same full plain value as `overlayLabel`. The combobox owns the visible overlay's fade and keeps the one reachable full-value tooltip on its interactive layer; consumers provide only the overlay's decorated content.
+
+Use `DropdownMenuItemLabel` for a human label beside menu icons, checks, shortcuts, or actions. Bare string children are wrapped automatically; a direct rich `<span>` is only a hard-clipped escape hatch and must not be used for an ordinary text label.
+
+Do not apply the fade universally to editable or mirrored input values, code, logs, paths, filenames that use intentional middle truncation, dense or virtualized grids, or a composite container that also holds icons/actions. Those keep their purpose-built overflow behavior. Multiline copy uses an intentional `line-clamp-*` treatment.
+
+## Scroll Edges
+
+A scroll region that can hide rows past an edge uses `useScrollEdges` with `scrollFadeClass` + `scrollFadeAttributes` from `@sim/emcn`: a 12px fade at an edge only while content is hidden beyond it, never at rest. The region's baseline padding lives on the scroll box itself (so rows pass through it under the fade), and the divider at that edge is drawn by the neighboring block, conditional on the same edge. Never hand-roll a `mask-image` gradient or a `scrollTop > 0` effect for this.
 
 ## Font Weight
 
@@ -60,7 +75,7 @@ Headings inherit their weight. Tailwind preflight resets `h1`–`h6` to `font-we
 
 ## Color Tokens
 
-Value text `--text-body`; muted/placeholder/labels `--text-muted`; icons `--text-icon`; neutral borders and dividers `--border` (`--border-1` and `--border-muted` are legacy aliases resolving to it; `--divider` is retired); surfaces `--surface-5` (light) / `--surface-4` (dark); active row `--surface-active`; error `--text-error`. No focus rings on chip surfaces.
+Value text `--text-body`; muted/placeholder/labels `--text-muted`; icons `--text-icon`; progress and completion (a checked step, a done state) `--brand-blue` — `--selection` stays the interactive highlight; neutral borders and dividers `--border` (`--border-1` and `--border-muted` are legacy aliases resolving to it; `--divider` is retired); surfaces `--surface-5` (light) / `--surface-4` (dark); active row `--surface-active`; error `--text-error`. No focus rings on chip surfaces.
 
 ### Line weight
 
@@ -84,7 +99,7 @@ Draw a line with a real `border-*` utility. Never hand-roll one as `shadow-[inse
 
 ### What className MAY carry
 
-Layout/sizing ONLY: `flex-1`, `w-full`, `w-[Npx]`, `min-w-0`, `max-w-*`, margins, `truncate`. Example: `<ChipInput icon={Search} className='min-w-0 flex-1' .../>` (`app/workspace/[workspaceId]/integrations/integrations.tsx:257`). NEVER re-specify canonical chrome — the component already applies it.
+Layout/sizing ONLY: `flex-1`, `w-full`, `w-[Npx]`, `min-w-0`, `max-w-*`, margins. `truncate` is allowed only for the explicit overflow exceptions above, never as a general layout class. Example: `<ChipInput icon={Search} className='min-w-0 flex-1' .../>` (`app/workspace/[workspaceId]/integrations/integrations.tsx:257`). NEVER re-specify canonical chrome — the component already applies it.
 
 ### Form / chip-modal layout rhythm
 

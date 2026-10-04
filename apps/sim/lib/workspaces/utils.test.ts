@@ -278,7 +278,13 @@ describe('listAccessibleWorkspaceRowsForUser', () => {
   })
 
   it('elevates an org admin to admin on an org workspace where they hold a lower explicit grant', async () => {
-    const orgWorkspace = { id: 'ws-1', name: 'Shared', ownerId: 'owner-x', organizationId: 'org-1' }
+    const orgWorkspace = {
+      id: 'ws-1',
+      name: 'Shared',
+      ownerId: 'owner-x',
+      organizationId: 'org-1',
+      createdAt: new Date('2026-01-01'),
+    }
 
     dbChainMockFns.select
       .mockReturnValueOnce(createMockChain([{ workspace: orgWorkspace, permissionType: 'write' }]))
@@ -287,17 +293,24 @@ describe('listAccessibleWorkspaceRowsForUser', () => {
 
     const rows = await listAccessibleWorkspaceRowsForUser('user-1', 'active')
 
-    expect(rows).toEqual([{ workspace: orgWorkspace, permissionType: 'admin' }])
+    expect(rows).toEqual([{ workspace: orgWorkspace, permissionType: 'admin', viaOrgAdmin: true }])
   })
 
   it('keeps a lower explicit grant on a workspace owned by a different organization', async () => {
     const externalWorkspace = {
+      createdAt: new Date('2026-02-01'),
       id: 'ws-ext',
       name: 'External',
       ownerId: 'owner-y',
       organizationId: 'org-2',
     }
-    const orgWorkspace = { id: 'ws-1', name: 'Shared', ownerId: 'owner-x', organizationId: 'org-1' }
+    const orgWorkspace = {
+      id: 'ws-1',
+      name: 'Shared',
+      ownerId: 'owner-x',
+      organizationId: 'org-1',
+      createdAt: new Date('2026-01-01'),
+    }
 
     dbChainMockFns.select
       .mockReturnValueOnce(
@@ -309,8 +322,35 @@ describe('listAccessibleWorkspaceRowsForUser', () => {
     const rows = await listAccessibleWorkspaceRowsForUser('user-1', 'active')
 
     expect(rows).toEqual([
-      { workspace: externalWorkspace, permissionType: 'write' },
-      { workspace: orgWorkspace, permissionType: 'admin' },
+      { workspace: externalWorkspace, permissionType: 'write', viaOrgAdmin: false },
+      { workspace: orgWorkspace, permissionType: 'admin', viaOrgAdmin: true },
+    ])
+  })
+
+  it('reports viaOrgAdmin false for every row when the viewer administers no organization', async () => {
+    const ownWorkspace = { id: 'ws-own', name: 'Own', ownerId: 'user-1', organizationId: null }
+
+    dbChainMockFns.select
+      .mockReturnValueOnce(createMockChain([{ workspace: ownWorkspace, permissionType: 'admin' }]))
+      .mockReturnValueOnce(createMockChain([]))
+
+    const rows = await listAccessibleWorkspaceRowsForUser('user-1', 'active')
+
+    expect(rows).toEqual([{ workspace: ownWorkspace, permissionType: 'admin', viaOrgAdmin: false }])
+  })
+  it('globally orders combined explicit and derived access by newest creation date', async () => {
+    const explicit = { id: 'ws-explicit', createdAt: new Date('2026-01-01') }
+    const derived = { id: 'ws-derived', createdAt: new Date('2026-02-01') }
+    dbChainMockFns.select
+      .mockReturnValueOnce(createMockChain([{ workspace: explicit, permissionType: 'write' }]))
+      .mockReturnValueOnce(createMockChain([{ organizationId: 'org-1', role: 'admin' }]))
+      .mockReturnValueOnce(createMockChain([explicit, derived]))
+
+    const rows = await listAccessibleWorkspaceRowsForUser('user-1', 'active')
+    expect(rows.map(({ workspace }) => workspace.id)).toEqual(['ws-derived', 'ws-explicit'])
+    expect(rows).toEqual([
+      { workspace: derived, permissionType: 'admin', viaOrgAdmin: true },
+      { workspace: explicit, permissionType: 'admin', viaOrgAdmin: true },
     ])
   })
 })

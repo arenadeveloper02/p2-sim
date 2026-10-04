@@ -6,13 +6,13 @@ import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navig
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
-import { isHosted } from '@/lib/core/config/env-flags'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   allNavigationItems,
-  isBillingEnabled,
   type NavigationItem,
   type SettingsSection,
   sectionConfig,
@@ -60,6 +60,7 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
   const { config: permissionConfig } = usePermissionConfig()
   const forkingAvailable = useForkingAvailable(workspaceId)
   const { canAdmin: canAdminWorkspace } = useUserPermissionsContext()
+  const { hosted } = useDeploymentShape()
 
   const userId = session?.user?.id
   const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
@@ -93,6 +94,21 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
 
+      // Arena billing is the workspace Subscription entry. Upstream `billing`
+      // stays routable for account-plane links and is omitted from this sidebar
+      // so managers see one Billing row, matching version-6-main.
+      if (item.id === 'billing') {
+        return false
+      }
+
+      if (item.requiresSelfHosted && (isHosted || hosted)) {
+        return false
+      }
+
+      if (ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) && !isOrgAdminOrOwner) {
+        return false
+      }
+
       if (
         (item.id === 'billing' || item.id === 'arena-billing') &&
         !canManageWorkspaceBilling(hostContext, userId)
@@ -123,7 +139,7 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
       if (
-        item.id === 'credential-groups' &&
+        item.id === 'connected-accounts' &&
         (!hostContext.features?.credentialGroups || !canAdminWorkspace)
       ) {
         return false
@@ -195,5 +211,6 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
     forkingAvailable,
     canAdminWorkspace,
     desktopSurfaces,
+    hosted,
   ])
 }

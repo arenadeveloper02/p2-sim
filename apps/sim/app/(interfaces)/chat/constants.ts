@@ -71,7 +71,7 @@ export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = 'var(--color-ds-text-link-hover
  * Active thread / soft icon wash.
  * Figma: `color/brand/surface`
  */
-export const DEPLOYED_CHAT_ACTIVE_THREAD_BG = 'var(--color-ds-brand-surface)'
+export const DEPLOYED_CHAT_ACTIVE_THREAD_BG = 'var(--surface-5)'
 
 /**
  * Input outline start (left).

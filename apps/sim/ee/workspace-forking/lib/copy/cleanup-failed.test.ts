@@ -24,7 +24,6 @@ vi.mock('@/lib/workflows/persistence/utils', () => ({
 // remap module never pulls the full registry (this file only exercises top-level selectors).
 vi.mock('@/tools/params', () => ({
   getToolIdForOperation: () => undefined,
-  getToolParametersConfig: () => null,
   getSubBlocksForToolInput: (
     _toolId: string,
     _type: string,
@@ -35,6 +34,7 @@ vi.mock('@/tools/params', () => ({
   formatParameterLabel: (label: string) => label,
 }))
 
+import type { ForkRemapKind } from '@/lib/workflows/references/remap-references'
 import { getBlock } from '@/blocks/registry'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
 import {
@@ -44,7 +44,6 @@ import {
   rewriteDeploymentVersionState,
 } from '@/ee/workspace-forking/lib/copy/cleanup-failed'
 import type { ForkCopyResolver } from '@/ee/workspace-forking/lib/remap/fork-bootstrap'
-import type { ForkRemapKind } from '@/ee/workspace-forking/lib/remap/remap-references'
 
 const blockWith = (subBlocks: SubBlockConfig[]): BlockConfig =>
   ({ name: 'Knowledge', description: '', subBlocks, outputs: {} }) as unknown as BlockConfig

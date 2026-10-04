@@ -33,7 +33,6 @@ describe('browser session store', () => {
           url: 'https://docs.sim.ai',
           loading: false,
           active: false,
-          pinned: false,
         },
         {
           tabId: '2',
@@ -41,7 +40,6 @@ describe('browser session store', () => {
           url: 'https://sim.ai/workspace',
           loading: true,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -76,36 +74,121 @@ describe('browser session store', () => {
     expect(getBrowserSession('chat-test').sessionAlive).toBe(false)
   })
 
-  it('reorders tabs optimistically without changing the active page', () => {
-    const store = useBrowserSessionStore.getState()
-    store.setTabsState({
+  it('retains a main-frame load failure in the active page state', () => {
+    useBrowserSessionStore.getState().setPageState({
+      tabId: '1',
       scopeId: 'chat-test',
-      activeTabId: '2',
-      tabs: [
-        {
-          tabId: '1',
-          title: 'One',
-          url: 'https://one.example',
-          loading: false,
-          active: false,
-          pinned: false,
-        },
-        {
-          tabId: '2',
-          title: 'Two',
-          url: 'https://two.example',
-          loading: false,
-          active: true,
-          pinned: false,
-        },
-      ],
+      title: '',
+      url: 'http://localhost:3004/login',
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      issue: {
+        kind: 'load-error',
+        code: -102,
+        description: 'ERR_CONNECTION_REFUSED',
+        url: 'http://localhost:3004/login',
+      },
     })
 
-    store.reorderTab('chat-test', '2', 0)
+    expect(getBrowserSession('chat-test').pageState?.issue).toEqual({
+      kind: 'load-error',
+      code: -102,
+      description: 'ERR_CONNECTION_REFUSED',
+      url: 'http://localhost:3004/login',
+    })
+  })
 
-    expect(getBrowserSession('chat-test').tabs.map((tab) => tab.tabId)).toEqual(['2', '1'])
-    expect(getBrowserSession('chat-test').activeTabId).toBe('2')
-    expect(getBrowserSession('chat-test').pageState?.tabId).toBe('2')
+  it('retains and clears the exact pending media request from native page state', () => {
+    const store = useBrowserSessionStore.getState()
+    const page = {
+      tabId: '1',
+      scopeId: 'chat-test',
+      title: 'Meeting',
+      url: 'https://meet.example.com',
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+    }
+    store.setPageState({
+      ...page,
+      mediaPermissionRequest: {
+        requestId: 'request-1',
+        origin: 'https://meet.example.com',
+        devices: ['microphone', 'camera'],
+      },
+    })
+
+    expect(getBrowserSession('chat-test').pageState?.mediaPermissionRequest).toEqual({
+      requestId: 'request-1',
+      origin: 'https://meet.example.com',
+      devices: ['microphone', 'camera'],
+    })
+
+    store.setPageState(page)
+    expect(getBrowserSession('chat-test').pageState?.mediaPermissionRequest).toBeUndefined()
+  })
+
+  it('retains pending media request identity across unrelated page-state updates', () => {
+    const store = useBrowserSessionStore.getState()
+    const request = {
+      requestId: 'request-1',
+      origin: 'https://meet.example.com',
+      devices: ['microphone', 'camera'] as const,
+    }
+    const page = {
+      tabId: '1',
+      scopeId: 'chat-test',
+      title: 'Meeting',
+      url: 'https://meet.example.com',
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      mediaPermissionRequest: request,
+    }
+    store.setPageState(page)
+    const retained = getBrowserSession('chat-test').pageState?.mediaPermissionRequest
+
+    store.setPageState({
+      ...page,
+      title: 'Meeting in progress',
+      canGoBack: true,
+      mediaPermissionRequest: { ...request, devices: [...request.devices] },
+    })
+
+    expect(getBrowserSession('chat-test').pageState?.mediaPermissionRequest).toBe(retained)
+  })
+
+  it('retains and clears the exact pending site request from native page state', () => {
+    const store = useBrowserSessionStore.getState()
+    const request = {
+      requestId: 'site-request-1',
+      tabId: '2',
+      origin: 'https://outside.example',
+    }
+    const page = {
+      tabId: '1',
+      scopeId: 'chat-test',
+      title: 'Current page',
+      url: 'https://inside.example',
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      sitePermissionRequest: request,
+    }
+    store.setPageState(page)
+    const retained = getBrowserSession('chat-test').pageState?.sitePermissionRequest
+
+    store.setPageState({
+      ...page,
+      title: 'Updated title',
+      sitePermissionRequest: { ...request },
+    })
+    expect(getBrowserSession('chat-test').pageState?.sitePermissionRequest).toBe(retained)
+
+    const { sitePermissionRequest: _sitePermissionRequest, ...withoutRequest } = page
+    store.setPageState(withoutRequest)
+    expect(getBrowserSession('chat-test').pageState?.sitePermissionRequest).toBeUndefined()
   })
 
   it('retains a settled tab title when opening a new tab pushes a temporary blank title', () => {
@@ -120,7 +203,6 @@ describe('browser session store', () => {
           url: 'https://example.com/docs',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -147,7 +229,6 @@ describe('browser session store', () => {
           url: 'https://example.com/docs',
           loading: false,
           active: false,
-          pinned: false,
         },
         {
           tabId: '2',
@@ -155,7 +236,6 @@ describe('browser session store', () => {
           url: '',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -179,7 +259,6 @@ describe('browser session store', () => {
           url: 'https://a.example',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -195,7 +274,6 @@ describe('browser session store', () => {
           url: 'https://b.example',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -254,7 +332,6 @@ describe('browser session store', () => {
           url: 'https://example.com',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -303,7 +380,6 @@ describe('browser session store', () => {
           url: 'https://example.com',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -366,7 +442,6 @@ describe('browser session store', () => {
           url: 'https://a.example',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -382,7 +457,6 @@ describe('browser session store', () => {
           url: 'https://stale.example',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })
@@ -412,7 +486,6 @@ describe('browser session store', () => {
           url: 'https://fresh.example',
           loading: false,
           active: true,
-          pinned: false,
         },
       ],
     })

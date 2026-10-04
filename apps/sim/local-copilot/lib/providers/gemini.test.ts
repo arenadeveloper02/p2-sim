@@ -101,7 +101,11 @@ describe('appendGeminiStreamParts', () => {
       [{ text: '', thought: true, thoughtSignature: 'sig-empty' }],
       () => 'id-2'
     )
-    appendGeminiStreamParts(history, [{ text: 'Answer', thoughtSignature: 'sig-final' }], () => 'id-3')
+    appendGeminiStreamParts(
+      history,
+      [{ text: 'Answer', thoughtSignature: 'sig-final' }],
+      () => 'id-3'
+    )
 
     // Empty trailers must not stamp onto thought text (breaks tool-loop echo).
     // Answer keeps its own signature.
@@ -119,11 +123,7 @@ describe('appendGeminiStreamParts', () => {
       [{ functionCall: { name: 'grep', args: { query: 'x' } } }],
       () => 'c1'
     )
-    appendGeminiStreamParts(
-      history,
-      [{ text: '', thoughtSignature: 'fc-sig' }],
-      () => 'id-3'
-    )
+    appendGeminiStreamParts(history, [{ text: '', thoughtSignature: 'fc-sig' }], () => 'id-3')
 
     expect(history).toEqual([
       { text: 'Plan A', thought: true },
@@ -236,10 +236,7 @@ describe('convertMessagesToGemini', () => {
 
     expect(contents[1]).toEqual({
       role: 'model',
-      parts: [
-        { text: 'Greeting.', thought: true },
-        { text: 'Hello' },
-      ],
+      parts: [{ text: 'Greeting.', thought: true }, { text: 'Hello' }],
     })
     expect(contents[2]).toEqual({ role: 'user', parts: [{ text: 'follow up' }] })
   })

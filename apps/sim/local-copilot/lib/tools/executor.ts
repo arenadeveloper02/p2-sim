@@ -3,8 +3,8 @@ import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
-import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
+import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import {
@@ -29,6 +29,8 @@ import { injectWorkspaceEnvApiKeyIfNeeded } from '@/local-copilot/lib/tools/inje
 import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
+  resolveWorkflowIdForDelegatedTool,
+  resolveWorkflowIdFromDatabase,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
 import { normalizeLocalEditConnections } from '@/local-copilot/lib/tools/normalize-edit-connections'
 import {
@@ -470,7 +472,7 @@ async function executeLocalCopilotToolInner(
     }
 
     case 'edit_workflow': {
-      const enrichedArgs = normalizeEditWorkflowArgs(enrichEditWorkflowArgs(args, ctx))
+      const enrichedArgs = normalizeEditWorkflowArgs(await enrichEditWorkflowArgs(args, ctx))
       const operations = Array.isArray(enrichedArgs.operations) ? enrichedArgs.operations : []
       if (operations.length === 0) {
         return {
@@ -509,11 +511,25 @@ async function executeLocalCopilotToolInner(
         (typeof enrichedArgs.workflowId === 'string' && enrichedArgs.workflowId.trim()) ||
         ctx.workflowId
       if (!targetWorkflowId) {
+        const workflows = ctx.structuredContext.workspaceWorkflows ?? []
+        const error =
+          workflows.length === 0
+            ? 'workflowId is required — create a workflow first with create_workflow'
+            : `workflowId is required on home chat. Pass workflowId from workspaceWorkflows. Available: ${workflows
+                .map((workflow) => `"${workflow.name}" (${workflow.id})`)
+                .join(', ')}`
         return {
           toolName,
           success: false,
-          error: 'workflowId is required — create a workflow first with create_workflow',
-          result: {},
+          error,
+          result: {
+            success: false,
+            error,
+            availableWorkflows: workflows.map((workflow) => ({
+              id: workflow.id,
+              name: workflow.name,
+            })),
+          },
         }
       }
 
@@ -553,6 +569,19 @@ async function executeLocalCopilotToolInner(
         currentRevision: access.revision || undefined,
       })
       if (!revisionCheck.ok) {
+        // Sync turn state to the live revision so a follow-up get_workflow_context /
+        // edit_workflow can succeed. Without this, CAS stays stuck on the turn-start token.
+        if (access.revision) {
+          ctx.workflowRevision = access.revision
+        }
+        const refreshed = await reloadLocalCopilotWorkflowContext({
+          previous: ctx.structuredContext,
+          workflowId: targetWorkflowId,
+        })
+        if (refreshed.workflow) {
+          ctx.structuredContext = refreshed
+          ctx.workflowId = refreshed.workflow.id
+        }
         return {
           toolName,
           success: false,
@@ -561,6 +590,7 @@ async function executeLocalCopilotToolInner(
             success: false,
             error: revisionCheck.error,
             currentRevision: access.revision || ctx.workflowRevision,
+            hint: 'Workflow was reloaded into this turn. Call get_workflow_context (or get_blocks_metadata for new types), then edit_workflow again.',
           },
         }
       }
@@ -612,7 +642,10 @@ async function executeLocalCopilotToolInner(
           )
         : []
 
-      const resolved = await resolveWorkflowStateForLocalTool(ctx, args)
+      // Always reload — this tool is the recovery path after stale-revision
+      // edit_workflow failures. Returning the turn cache would leave workflowRevision
+      // stuck and make every retry fail the same CAS check.
+      const resolved = await resolveWorkflowStateForLocalTool(ctx, args, { forceReload: true })
       if (!resolved.ok) {
         return {
           toolName,
@@ -625,7 +658,10 @@ async function executeLocalCopilotToolInner(
       return {
         toolName,
         success: true,
-        result: buildGetWorkflowContextResult(ctx.structuredContext, { blockIds, blockNames }),
+        result: {
+          ...buildGetWorkflowContextResult(ctx.structuredContext, { blockIds, blockNames }),
+          ...(ctx.workflowRevision ? { revision: ctx.workflowRevision } : {}),
+        },
       }
     }
 
@@ -759,6 +795,7 @@ async function executeLocalCopilotToolInner(
         if (cached !== undefined) metadata[id] = cached
       }
 
+      const unresolvedIds = normalizedIds.filter((id) => !(id in metadata))
       return {
         toolName,
         success: metadataResult.success,
@@ -766,7 +803,14 @@ async function executeLocalCopilotToolInner(
           ? {
               metadata,
               ...(missingIds.length < normalizedIds.length ? { partiallyCached: true } : {}),
-              hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types.',
+              ...(unresolvedIds.length > 0
+                ? {
+                    unresolvedBlockIds: unresolvedIds,
+                    hint: `No metadata for [${unresolvedIds.join(', ')}]. Those may be sunset/legacy ids — retry with current successors (e.g. image_generator → image_generator_v2). To attach Image/Chart/Exa to an Agent, edit that Agent's tools array — do not add them as canvas blocks.`,
+                  }
+                : {
+                    hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types. To attach tools to an Agent, edit Agent.tools — do not add tool types as canvas blocks.',
+                  }),
             }
           : (metadataResult.output ??
             (metadataResult.error ? { error: metadataResult.error } : {})),
@@ -1036,7 +1080,7 @@ async function executeLocalCopilotToolInner(
       })
 
       const { formatWorkflowLintMessage, hasWorkflowLintIssues, lintEditedWorkflowState } =
-        await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
+        await import('@/lib/workflows/editing/lint')
       const workflowLint = lintEditedWorkflowState({
         blocks: state.blocks ?? {},
         edges: state.edges ?? [],
@@ -1285,39 +1329,19 @@ function rememberReadVfsPath(ctx: ToolExecutionContext, args: Record<string, unk
 
 /**
  * Fills workflowId for home-chat edits when the model omits it but the workspace
- * has an obvious target (open workflow, single workflow, or name match).
+ * has an obvious target (open workflow, name match, single workflow, or DB lookup).
  */
-function enrichEditWorkflowArgs(
+async function enrichEditWorkflowArgs(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const next = { ...args }
-  const existing =
-    (typeof next.workflowId === 'string' && next.workflowId.trim()) ||
-    (typeof ctx.workflowId === 'string' && ctx.workflowId.trim()) ||
-    ''
-  if (existing) {
-    next.workflowId = existing
-    return next
+  let workflowId = resolveWorkflowIdForDelegatedTool(next, ctx)
+  if (!workflowId && ctx.workspaceId) {
+    workflowId = await resolveWorkflowIdFromDatabase(ctx.workspaceId, next)
   }
-
-  const workflows = ctx.structuredContext.workspaceWorkflows ?? []
-  const requestedName =
-    (typeof next.workflowName === 'string' && next.workflowName.trim()) ||
-    (typeof next.name === 'string' && next.name.trim()) ||
-    ''
-  if (requestedName) {
-    const match = workflows.find(
-      (workflow) => workflow.name.trim().toLowerCase() === requestedName.toLowerCase()
-    )
-    if (match?.id) {
-      next.workflowId = match.id
-      return next
-    }
-  }
-
-  if (workflows.length === 1 && workflows[0]?.id) {
-    next.workflowId = workflows[0].id
+  if (workflowId) {
+    next.workflowId = workflowId
   }
   return next
 }

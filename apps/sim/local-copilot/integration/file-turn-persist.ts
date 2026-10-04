@@ -53,17 +53,19 @@ export function localFileBodyContent(
 }
 
 /**
- * File ids from Arena Copilot file tools, including `edit_content` which the
- * shared extractor does not treat as a resource tool.
+ * File ids from Arena Copilot file tools. Shared extraction only knows
+ * Cloud's `create_empty_file` id — map Arena `create_file` onto that shape,
+ * and still pick up `edit_content` which is not a shared resource tool.
  */
 export function extractLocalFileChatResources(
   toolName: string,
   params: Record<string, unknown> | undefined,
   output: unknown
 ): MothershipResource[] {
-  const extracted = extractResourcesFromToolResult(toolName, params, output)
+  const extractionName = toolName === 'create_file' ? 'create_empty_file' : toolName
+  const extracted = extractResourcesFromToolResult(extractionName, params, output)
   if (extracted.length > 0) return extracted
-  if (toolName !== 'edit_content') return []
+  if (toolName !== 'edit_content' && toolName !== 'create_file') return []
 
   const result = toRecord(output)
   const data = toRecord(result.data)

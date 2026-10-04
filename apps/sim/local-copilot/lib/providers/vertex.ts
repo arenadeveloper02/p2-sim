@@ -49,7 +49,12 @@ export function createVertexProvider(config: LocalCopilotConfig): LocalCopilotPr
   const slotCount = listLocalCopilotVertexSlots().length
   /** Standard + Priority once per unique slot → attempts `0..slotCount*2-1`. */
   const maxOpenRetries = Math.max(1, slotCount * 2 - 1)
-  logger.info('Vertex Local Copilot provider ready', { project, location, slotCount, maxOpenRetries })
+  logger.info('Vertex Local Copilot provider ready', {
+    project,
+    location,
+    slotCount,
+    maxOpenRetries,
+  })
 
   const refreshVertexClient = (options?: { priorityPayGo?: boolean; sameSlot?: boolean }) => {
     if (options?.sameSlot) {

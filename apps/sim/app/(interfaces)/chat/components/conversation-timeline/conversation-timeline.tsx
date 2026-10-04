@@ -8,9 +8,9 @@
  * pulls that touch `(interfaces)/chat`.
  */
 export {
-  ConversationTimeline,
   CONVERSATION_TIMELINE_GUTTER_CLASS,
   CONVERSATION_TIMELINE_MIN_TURNS,
-  shouldShowConversationTimeline,
+  ConversationTimeline,
   type ConversationTimelineMessage,
+  shouldShowConversationTimeline,
 } from '@/components/conversation-timeline/conversation-timeline'

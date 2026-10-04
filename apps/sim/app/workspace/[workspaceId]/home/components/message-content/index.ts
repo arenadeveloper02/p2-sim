@@ -1,6 +1,7 @@
 export {
   assistantMessageHasRenderableContent,
   collectMainThinkingText,
+  getOrchestratorMessageText,
   hasOpenMainThinking,
   MessageContent,
 } from './message-content'

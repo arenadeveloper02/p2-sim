@@ -151,7 +151,7 @@ const REPLAY_ROUTE: Record<InternalUploadPurpose, 'loader' | 'idempotent-finaliz
   workspace_file: 'loader',
   profile_picture: 'idempotent-finalizer',
   workspace_logo: 'idempotent-finalizer',
-  org_logo: 'idempotent-finalizer',
+  organization_logo: 'loader',
   mothership_attachment: 'idempotent-finalizer',
   execution_attachment: 'idempotent-finalizer',
 }

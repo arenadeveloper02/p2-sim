@@ -4,15 +4,18 @@ import {
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { FilePreviewSession } from '@/lib/copilot/request/session'
 import type { PersistedStreamEventEnvelope } from '@/lib/copilot/request/session/contract'
-import { canonicalizeDesktopSessionResource } from '@/lib/copilot/resources/types'
 import { invalidateResourceQueries } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
 import {
   hasRenderableFilePreviewContent,
   shouldReplaceSession,
 } from '@/app/workspace/[workspaceId]/home/hooks/preview'
 import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
-import type { MothershipResourceType } from '@/app/workspace/[workspaceId]/home/types'
+import type {
+  MothershipResource,
+  MothershipResourceType,
+} from '@/app/workspace/[workspaceId]/home/types'
 import { removeWorkflowFromActiveCache } from '@/hooks/queries/utils/workflow-cache'
+import { useTableViewPinStore } from '@/stores/table/view-pin/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 type ResourceEvent = Extract<
@@ -42,14 +45,31 @@ export function handleResourceEvent(ctx: StreamLoopContext, parsed: ResourceEven
     ensureWorkflowInRegistry,
     onResourceEventRef,
   } = ctx.deps
+  if (!workspaceId) return
   const onResourceEvent = onResourceEventRef.current
   const payload = parsed.payload
-  const resource = canonicalizeDesktopSessionResource({
+  // Browser and terminal tabs are projected from the desktop app's live
+  // lists, never from the stream; older servers announced them as resources.
+  if (payload.resource.type === 'browser' || payload.resource.type === 'terminal') return
+  const shouldClearViewId =
+    payload.resource.type === 'table' && payload.resource.clearViewId === true
+  // A saved view the agent just created or edited: the table opens on it, and
+  // an already-open table switches to it.
+  const pinnedViewId =
+    !shouldClearViewId &&
+    payload.resource.type === 'table' &&
+    typeof payload.resource.viewId === 'string' &&
+    payload.resource.viewId.trim()
+      ? payload.resource.viewId
+      : undefined
+  const resource: MothershipResource = {
     type: payload.resource.type as MothershipResourceType,
     id: payload.resource.id,
     title:
       typeof payload.resource.title === 'string' ? payload.resource.title : payload.resource.id,
-  })
+    ...(pinnedViewId ? { viewId: pinnedViewId } : {}),
+  }
+  const resourceUpdate = shouldClearViewId ? { ...resource, clearViewId: true as const } : resource
 
   if (payload.op === MothershipStreamV1ResourceOp.remove) {
     const resourceType = resource.type
@@ -99,7 +119,7 @@ export function handleResourceEvent(ctx: StreamLoopContext, parsed: ResourceEven
         !shouldAutoActivatePreviewSession(previewForResource)))
   const wasAdded = shouldSuppressFileResourceActivation
     ? !resourcesRef.current.some((r) => r.type === resource.type && r.id === resource.id)
-    : addResource(resource)
+    : addResource(resourceUpdate)
   if (shouldSuppressFileResourceActivation && wasAdded) {
     setResources((current) =>
       current.some((r) => r.type === resource.type && r.id === resource.id)
@@ -110,6 +130,33 @@ export function handleResourceEvent(ctx: StreamLoopContext, parsed: ResourceEven
   if (completedPreviewHandoff && isCompletedPreviewHandoffCurrent) {
     completedPreviewResourceHandoffRef.current.delete(resource.id)
     previewActivationOwnerRef.current.delete(completedPreviewHandoff.sessionId)
+  }
+  if (pinnedViewId) {
+    // Carry the newest pin on an existing tab so a remount adopts it. Not gated
+    // on `wasAdded`: two upserts in one render both read the stale ref and both
+    // report "added", while only the first updater actually inserted — the
+    // updater is idempotent, so it simply runs every time.
+    setResources((current) =>
+      current.some((r) => r.type === 'table' && r.id === resource.id && r.viewId !== pinnedViewId)
+        ? current.map((r) =>
+            r.type === 'table' && r.id === resource.id ? { ...r, viewId: pinnedViewId } : r
+          )
+        : current
+    )
+    // Consumed by the embedded table once its views list carries the view —
+    // which may be after the refetch below lands, or after the tab first opens.
+    useTableViewPinStore.getState().pin(resource.id, pinnedViewId)
+  } else if (shouldClearViewId) {
+    setResources((current) =>
+      current.some((r) => r.type === 'table' && r.id === resource.id && r.viewId !== undefined)
+        ? current.map((r) => {
+            if (r.type !== 'table' || r.id !== resource.id) return r
+            const { viewId: _viewId, ...unpinned } = r
+            return unpinned
+          })
+        : current
+    )
+    useTableViewPinStore.getState().clear(resource.id)
   }
   invalidateResourceQueries(queryClient, workspaceId, resource.type, resource.id)
 

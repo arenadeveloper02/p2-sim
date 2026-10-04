@@ -8,6 +8,8 @@ import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,
 } from '@/lib/image-generation/nano-banana-inputs'
+import type { InternalToolOperationContext } from '@/lib/internal/tool-operations/types'
+import type { ExecutionContext } from '@/executor/types'
 
 const logger = createLogger('ImageGenerationWrapper')
 const GPT_IMAGE_2_MODEL = 'gpt-image-2'
@@ -41,6 +43,13 @@ export type ImageGenerationWrapperResult =
   | ImageGenerationWrapperSuccess
   | ImageGenerationWrapperFailure
 
+/** Trusted executeTool options forwarded to each base-model generation. */
+export interface ImageGenerationWrapperExecuteOptions {
+  executionContext?: ExecutionContext
+  operationContext?: InternalToolOperationContext
+  signal?: AbortSignal
+}
+
 type ToolResult = {
   success: boolean
   output?: Record<string, unknown>
@@ -49,6 +58,12 @@ type ToolResult = {
 
 interface ResolvedContext {
   workflowId?: string
+}
+
+function hasExecuteOptions(
+  options?: ImageGenerationWrapperExecuteOptions
+): options is ImageGenerationWrapperExecuteOptions {
+  return Boolean(options?.executionContext || options?.operationContext || options?.signal)
 }
 
 async function runWithConcurrency<T>(
@@ -250,7 +265,8 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
  * Avoids nested internal HTTP calls that can deadlock single-worker dev servers.
  */
 export async function runImageGenerationWrapper(
-  input: ImageGenerationWrapperInput
+  input: ImageGenerationWrapperInput,
+  executeOptions?: ImageGenerationWrapperExecuteOptions
 ): Promise<ImageGenerationWrapperResult> {
   const validated = ImageGenerationWrapperSchema.parse(input)
   const imageCount = 1
@@ -344,7 +360,9 @@ export async function runImageGenerationWrapper(
               typeof executionParams.prompt === 'string' ? executionParams.prompt.length : null,
           })
         }
-        const result = await executeTool(executionToolId, executionParams)
+        const result = hasExecuteOptions(executeOptions)
+          ? await executeTool(executionToolId, executionParams, executeOptions)
+          : await executeTool(executionToolId, executionParams)
         if (isGptImage2) {
           const output = isRecord((result as ToolResult).output)
             ? (result as ToolResult).output
