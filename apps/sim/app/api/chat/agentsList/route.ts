@@ -188,16 +188,27 @@ const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
 /**
  * Fetches active chats with their workflow and author metadata.
  *
- * Shared across tabs: joins workflow + author email. Chat deployments remain
- * listable even when the same workflow also has an active schedule or webhook,
- * since chat runs use triggerType=chat independently of those automations.
+ * Shared across tabs: joins workflow + author email. Only returns agents whose
+ * workflow is deployed (`workflow.isDeployed`) and whose chat deployment is
+ * active (`chat.isActive` — deployed as chat). Chat deployments remain listable
+ * even when the same workflow also has an active schedule or webhook, since
+ * chat runs use triggerType=chat independently of those automations.
  */
 async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promise<AgentChatRow[]> {
   /**
    * `whereConditions` is a Drizzle SQL expression assembled by the caller.
    * Keeping this typed as `SQL<unknown>` avoids leaking complex query generics throughout the file,
    * while still retaining type-safety (no `any`) at the boundary.
+   *
+   * Always require an active chat deployment on a deployed workflow, then AND
+   * any tab-specific filters from the caller.
    */
+  const deployedAsChatConditions = and(eq(chat.isActive, true), eq(workflow.isDeployed, true))
+  const combinedWhere =
+    whereConditions !== undefined
+      ? and(deployedAsChatConditions, whereConditions)
+      : deployedAsChatConditions
+
   return await db
     .select({
       chatId: chat.id,
@@ -217,7 +228,7 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
     .innerJoin(user, eq(workflow.userId, user.id))
-    .where(whereConditions)
+    .where(combinedWhere)
     .orderBy(desc(chat.updatedAt))
 }
 
@@ -239,9 +250,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
 
   const creatorUserId = userRecord[0].id
 
-  const chats = await fetchAgentChats(
-    and(eq(chat.isActive, true), eq(workflow.userId, creatorUserId))
-  )
+  const chats = await fetchAgentChats(eq(workflow.userId, creatorUserId))
 
   /**
    * Core logic: for the "myagents" tab we keep the current behavior:
@@ -274,12 +283,8 @@ async function fetchSharedWithMeChats(
 ): Promise<AgentChatRow[]> {
   const sharedWhereConditions =
     departmentValue !== undefined
-      ? and(
-          eq(chat.isActive, true),
-          eq(chat.department, departmentValue),
-          ne(workflow.userId, userId)
-        )
-      : and(eq(chat.isActive, true), ne(workflow.userId, userId))
+      ? and(eq(chat.department, departmentValue), ne(workflow.userId, userId))
+      : ne(workflow.userId, userId)
 
   const chats = await fetchAgentChats(sharedWhereConditions)
 
@@ -335,9 +340,7 @@ async function getGlobalAgentsList(
   const userId = userRecord[0].id
 
   const globalWhereConditions =
-    departmentValue !== undefined
-      ? and(eq(chat.isActive, true), eq(chat.department, departmentValue))
-      : eq(chat.isActive, true)
+    departmentValue !== undefined ? eq(chat.department, departmentValue) : undefined
   const userEmailDomain = `@${emailId.split('@')[1]}`
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
