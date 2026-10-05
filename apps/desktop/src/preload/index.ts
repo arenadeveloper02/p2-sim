@@ -28,6 +28,8 @@ import type {
   BrowserToolbarCommand,
   DesktopAppearanceTheme,
   DesktopCommand,
+  DesktopLocalFileRequest,
+  DesktopLocalFileResponse,
   DesktopNotificationPayload,
   DesktopOAuthConnectResult,
   DesktopOAuthConnectScope,
@@ -125,6 +127,12 @@ const api: SimDesktopApi = {
     : {}),
   beginOAuthConnect: (providerId: string, scope?: DesktopOAuthConnectScope): Promise<boolean> =>
     ipcRenderer.invoke('desktop:oauth-connect', providerId, scope),
+  prepareSourceConnect: (): Promise<string | null> =>
+    ipcRenderer.invoke('desktop:source-connect-prepare'),
+  beginSourceConnect: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke('desktop:source-connect', requestId),
+  cancelSourceConnect: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke('desktop:source-connect-cancel', requestId),
   onOAuthConnectComplete: (callback: (result: DesktopOAuthConnectResult) => void): (() => void) => {
     const listener = (_event: unknown, result: DesktopOAuthConnectResult) => callback(result)
     ipcRenderer.on('desktop:oauth-connect-complete', listener)
@@ -146,6 +154,8 @@ const api: SimDesktopApi = {
   },
   localFilesystem: (request: LocalFilesystemRequest): Promise<LocalFilesystemResponse> =>
     ipcRenderer.invoke('desktop:local-filesystem', request),
+  localFiles: (request: DesktopLocalFileRequest): Promise<DesktopLocalFileResponse> =>
+    ipcRenderer.invoke('desktop:local-files', request),
   onCommand: (callback: (command: DesktopCommand) => void): (() => void) => {
     const listener = (_event: unknown, command: DesktopCommand) => callback(command)
     ipcRenderer.on('desktop:command', listener)

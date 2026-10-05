@@ -493,27 +493,6 @@ export function onBrowserFillAvailability(
   )
 }
 
-/** Saved accounts that the active scoped page can accept right now. */
-export function loadBrowserFillOptions(
-  scopeId = currentBrowserScopeId()
-): Promise<BrowserCredentialMetadata[]> {
-  return (
-    getDesktopBridge()
-      ?.browserCredentials.listFillOptions(scopeId)
-      .catch(() => []) ?? Promise.resolve([])
-  )
-}
-
-/** Fills one user-selected saved account into the active scoped page. */
-export function fillBrowserCredential(
-  credentialId: string,
-  scopeId = currentBrowserScopeId()
-): Promise<boolean> {
-  return (
-    getDesktopBridge()?.browserCredentials.fill(credentialId, scopeId) ?? Promise.resolve(false)
-  )
-}
-
 /**
  * Asks the shell to open its native account chooser at a point in the window.
  * Must be called straight from a click: the shell requires a live user gesture,
@@ -680,6 +659,7 @@ export function setBrowserPanelOccluded(
  * with its left edge shifted by the divider's travel. Call at drag start with
  * the divider position (the panel's left edge in viewport CSS pixels); the
  * returned predictor reports a rect per pointer move, before layout runs.
+ * Pass the current scope with each prediction if a pending chat adopts its durable ID mid-drag.
  * Measured reports remain authoritative and correct any drift.
  *
  * Both `startDividerX` and every `dividerX` must be the panel's REAL viewport
@@ -694,10 +674,10 @@ export function setBrowserPanelOccluded(
 export function beginBrowserPanelDividerDrag(
   startDividerX: number,
   scopeId = currentBrowserScopeId()
-): ((dividerX: number) => void) | null {
+): ((dividerX: number, reportScopeId?: string) => void) | null {
   const base = latestPanelBoundsByScope.get(scopeId)
   if (!bridge() || !base) return null
-  return (dividerX: number) => {
+  return (dividerX: number, reportScopeId = scopeId) => {
     const dx = Math.round(dividerX - startDividerX)
     const width = base.width - dx
     if (width <= 0) return
@@ -707,7 +687,7 @@ export function beginBrowserPanelDividerDrag(
     reportBrowserPanelBounds(
       { x: base.x + dx, y: base.y, width, height: base.height },
       { viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, widthRatio: 0 },
-      scopeId
+      reportScopeId
     )
   }
 }

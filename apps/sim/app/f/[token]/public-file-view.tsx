@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { Chip, OverflowText, SimWordmark } from '@sim/emcn'
 import { Download } from '@sim/emcn/icons'
 import Link from 'next/link'
+import { SITE_URL } from '@/lib/core/utils/urls'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { buildProvenance } from '@/app/f/[token]/utils'
@@ -72,7 +73,7 @@ export function PublicFileView({
           {!brand.logoUrl && (
             <>
               <Link
-                href='https://sim.ai'
+                href={SITE_URL}
                 target='_blank'
                 rel='noopener noreferrer'
                 aria-label='Sim home'
@@ -86,7 +87,7 @@ export function PublicFileView({
           <div className='flex min-w-0 flex-col'>
             <OverflowText label={name} className='text-[var(--text-body)] text-sm' />
             {provenance ? (
-              <span className='truncate text-[12px] text-[var(--text-muted)]'>{provenance}</span>
+              <span className='truncate text-[var(--text-muted)] text-caption'>{provenance}</span>
             ) : null}
           </div>
         </div>

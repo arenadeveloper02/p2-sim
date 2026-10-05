@@ -12,7 +12,6 @@ import {
 import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { canOpenOrganizationSettingsSection } from '@/lib/organizations/settings-access'
-import { isAccessRequestEnabled } from '@/lib/permission-access-requests/settings'
 import type { BooleanPermissionGroupConfigKey } from '@/lib/permission-groups/features'
 import { isOrganizationPermissionRegimeActive } from '@/lib/permission-groups/resolve.server'
 import { isPlatformAdmin } from '@/lib/permissions/super-user'
@@ -20,6 +19,7 @@ import { authorizeOrganizationSettingsSection } from '@/lib/settings/application
 import { isCustomBlocksEligibleForOrganization } from '@/lib/workflows/custom-blocks/operations'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { resolveVerifiedUserAccessControlContext } from '@/ee/access-control/utils/permission-check'
+import { isAccessRequestEnabled } from '@/ee/access-requests/lib/settings'
 import { isForkingAvailableForWorkspace } from '@/ee/workspace-forking/lib/lineage/authz'
 
 export type WorkspaceSettingsSectionAccess =
@@ -41,6 +41,9 @@ async function authorizeWorkspaceSection(
   },
   permission: NonNullable<Awaited<ReturnType<typeof checkWorkspaceAccess>>['permission']>
 ): Promise<WorkspaceSettingsSectionAccess> {
+  if (section === 'requests' && !workspace.organizationId) {
+    return { allowed: false, disposition: 'redirect-general' }
+  }
   const [accessControl, forksAvailable, customBlocksAvailable] = await Promise.all([
     workspaceSectionUsesPermissionConfig(section)
       ? resolveVerifiedUserAccessControlContext(
@@ -49,9 +52,7 @@ async function authorizeWorkspaceSection(
           workspace.organizationId
         )
       : null,
-    section === 'forks'
-      ? isForkingAvailableForWorkspace(workspace.organizationId, input.userId)
-      : false,
+    section === 'forks' ? isForkingAvailableForWorkspace(workspace.organizationId) : false,
     section === 'custom-blocks' && workspace.organizationId
       ? isCustomBlocksEligibleForOrganization(workspace.organizationId)
       : false,
@@ -114,8 +115,10 @@ async function canOpenOrganizationSection(
     })
   }
 
-  const needsEnterprisePlan = organizationSection !== 'members' && organizationSection !== 'billing'
-  /** Same split as the organization surface: Access Control follows the regime, everything else the plan. */
+  const needsEnterprisePlan =
+    organizationSection !== 'members' &&
+    organizationSection !== 'billing' &&
+    organizationSection !== 'requests'
   const readsRegime = needsEnterprisePlan && organizationSection === 'access-control'
   const [canOpenSection, isEnterpriseOrganization, governanceActive] = await Promise.all([
     canOpenOrganizationSettingsSection(workspace.organizationId, input.userId, organizationSection),

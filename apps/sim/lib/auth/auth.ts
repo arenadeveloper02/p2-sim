@@ -35,6 +35,8 @@ import {
   renderPasswordResetEmail,
   renderWelcomeEmail,
 } from '@/components/emails'
+import { FREEBUFF_CLICK_ID_COOKIE } from '@/lib/analytics/freebuff'
+import { reportFreebuffConversion } from '@/lib/analytics/freebuff.server'
 import { getAccessControlConfig, isEmailBlockedByAccessControl } from '@/lib/auth/access-control'
 import { createAnonymousSession, ensureAnonymousUserExists } from '@/lib/auth/anonymous'
 import { buildConnectorProviders } from '@/lib/auth/connectors/providers'
@@ -50,10 +52,10 @@ import {
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAUTH_ACCESS_TOKEN_TTL_SECONDS,
   OAUTH_CODE_TTL_SECONDS,
+  OAUTH_PUBLIC_REGISTRATION_SCOPES,
   OAUTH_REFRESH_TOKEN_PREFIX,
   OAUTH_REFRESH_TOKEN_TTL_SECONDS,
   OAUTH_SCOPES,
-  OAUTH_SEARCH_SCOPES,
   SIM_CLI_CLIENT_ID,
 } from '@/lib/auth/oauth-provider'
 import { bindOAuthIssuedResource, oauthResourcePlugin } from '@/lib/auth/oauth-resource'
@@ -310,10 +312,27 @@ export const auth = betterAuth({
           }
           return { data: user }
         },
-        after: async (user) => {
+        after: async (user, context) => {
           logger.info('[databaseHooks.user.create.after] User created, initializing stats', {
             userId: user.id,
           })
+
+          /**
+           * Only the marketing-consent-gated Freebuff tag writes the `bfcid`
+           * cookie, and `FreebuffClickIdGuard` deletes it once marketing consent
+           * is withdrawn or expires. Not awaited: the postback
+           * retries on its own and must never delay signup. The browser tag
+           * reports the same `eventId` on email signup and Freebuff dedupes.
+           */
+          const freebuffClickId = context?.getCookie(FREEBUFF_CLICK_ID_COOKIE)
+          if (freebuffClickId) {
+            void reportFreebuffConversion({
+              clickId: freebuffClickId,
+              eventType: 'signup_completed',
+              eventId: user.id,
+              occurredAt: user.createdAt,
+            })
+          }
 
           try {
             PlatformEvents.userSignedUp({
@@ -864,7 +883,7 @@ export const auth = betterAuth({
       ...additionalFields,
       id,
     }),
-    sendResetPassword: async ({ user, url, token }, request) => {
+    sendResetPassword: async ({ user, url }) => {
       const username = user.name || ''
 
       const html = await renderPasswordResetEmail(username, url)
@@ -1231,7 +1250,7 @@ export const auth = betterAuth({
             )
           }
 
-          const html = await renderOTPEmail(data.otp, data.email, data.type)
+          const html = await renderOTPEmail(data.otp, data.type)
 
           const result = await sendEmail({
             to: data.email,
@@ -1288,7 +1307,10 @@ export const auth = betterAuth({
      * earlier rotation. This is an OAuth API-authorization surface, not an
      * OpenID Connect identity provider; `disableJwtPlugin` keeps JWT/JWKS and
      * ID-token semantics out of the advertised protocol. Public registration
-     * is limited to read-only Search clients; other clients are operator-created.
+     * serves MCP clients: a registered client may request the Sim API and
+     * Search families, every grant is consented to, and a grant bound to an MCP
+     * resource is narrowed to the family that resource allows (see
+     * `oauth-resource.ts`). First-party clients are operator-created.
      */
     ...(!isAuthDisabled
       ? [
@@ -1306,8 +1328,8 @@ export const auth = betterAuth({
             allowPublicClientPrelogin: true,
             allowDynamicClientRegistration: true,
             allowUnauthenticatedClientRegistration: true,
-            clientRegistrationAllowedScopes: [...OAUTH_SEARCH_SCOPES],
-            clientRegistrationDefaultScopes: [...OAUTH_SEARCH_SCOPES],
+            clientRegistrationAllowedScopes: [...OAUTH_PUBLIC_REGISTRATION_SCOPES],
+            clientRegistrationDefaultScopes: [...OAUTH_PUBLIC_REGISTRATION_SCOPES],
             customTokenResponseFields: bindOAuthIssuedResource,
             /**
              * Client-management endpoints remain operator-only. Public registration

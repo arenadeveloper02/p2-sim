@@ -10,7 +10,7 @@ import { createLogger, type RequestContext, runWithRequestContext } from '@sim/l
 import { toError } from '@sim/utils/errors'
 import { interruptibleSleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
-import { isRecordLike } from '@sim/utils/object'
+import { isRecordLike, toRecord } from '@sim/utils/object'
 import { backoffWithJitter } from '@sim/utils/retry'
 import { task, timeout } from '@trigger.dev/sdk'
 import { eq } from 'drizzle-orm'
@@ -72,6 +72,7 @@ import { SlackExecutionStreamController } from '@/lib/webhooks/slack-execution-s
 import { readSlackStreamResponseConfig } from '@/lib/webhooks/slack-stream-config'
 import {
   executeWorkflowCore,
+  type PreloadedExecutionEnvironment,
   wasExecutionFinalizedByCore,
 } from '@/lib/workflows/executor/execution-core'
 import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
@@ -237,7 +238,7 @@ async function processTriggerFileOutputs(
           normalizeWebhookAttachments(value),
           context
         )
-      } catch (error) {
+      } catch {
         processed[key] = []
       }
     } else if (outputDef?.type === 'file' && value) {
@@ -665,6 +666,8 @@ export async function resolveWebhookExecutionProviderConfig<
   options?: WebhookEnvResolutionOptions & {
     onEnvironmentSnapshot?: (snapshot: EnvironmentResolutionSnapshot) => void | Promise<void>
     actorUserId?: string
+    /** The same environment load, already started by a caller that had its identities early. */
+    environment?: Promise<EnvironmentResolutionSnapshot>
   }
 ): Promise<T & { providerConfig: Record<string, unknown> }> {
   try {
@@ -672,12 +675,12 @@ export async function resolveWebhookExecutionProviderConfig<
       return await resolveWebhookRecordProviderConfig(webhookRecord, userId, workspaceId)
     }
 
-    const { onEnvironmentSnapshot, actorUserId, ...resolutionOptions } = options
+    const { onEnvironmentSnapshot, actorUserId, environment, ...resolutionOptions } = options
     if (onEnvironmentSnapshot && resolutionOptions.envVars === undefined) {
-      const snapshot =
-        actorUserId && workspaceId
-          ? await getExecutionEnvironment(userId, actorUserId, workspaceId)
-          : await getEffectiveEnvironmentSnapshot(userId, workspaceId)
+      const snapshot = await (environment ??
+        (actorUserId && workspaceId
+          ? getExecutionEnvironment(userId, actorUserId, workspaceId)
+          : getEffectiveEnvironmentSnapshot(userId, workspaceId)))
       await onEnvironmentSnapshot(snapshot)
       resolutionOptions.envVars = {
         ...snapshot.personalDecrypted,
@@ -732,7 +735,7 @@ async function handleExecutionResult(
     ctx.timeoutController.isTimedOut() &&
     ctx.timeoutController.timeoutMs
   ) {
-    const timeoutErrorMessage = getTimeoutErrorMessage(null, ctx.timeoutController.timeoutMs)
+    const timeoutErrorMessage = getTimeoutErrorMessage(ctx.timeoutController.timeoutMs)
     logger.info(`[${ctx.requestId}] Webhook execution timed out`, {
       timeoutMs: ctx.timeoutController.timeoutMs,
     })
@@ -838,6 +841,12 @@ async function executeWebhookJobInternal(
 
   try {
     return await withResourceOutboundScope({ workspaceId }, async () => {
+      /**
+       * The run's environment depends only on identities preprocessing already
+       * settled, so it loads alongside the workflow state rather than after it.
+       */
+      const environment = getExecutionEnvironment(workflowRecord.userId, actorUserId, workspaceId)
+      environment.catch(() => {})
       const workflowStatePromise = payload.deploymentVersionId
         ? loadWorkflowDeploymentVersionState(
             payload.workflowId,
@@ -883,6 +892,7 @@ async function executeWebhookJobInternal(
 
       const secretScope = { userId: workflowRecord.userId, workspaceId }
       let resolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry(secretScope)
+      let preloadedEnvironment: PreloadedExecutionEnvironment | undefined
       const resolvedWebhookRecord = await resolveWebhookExecutionProviderConfig(
         webhookRecord,
         payload.provider,
@@ -896,7 +906,14 @@ async function executeWebhookJobInternal(
            * selection derived from the workflow owner.
            */
           actorUserId,
+          environment,
           onEnvironmentSnapshot: async (secretEnvironment) => {
+            preloadedEnvironment = {
+              personalUserId: workflowRecord.userId,
+              workspaceUserId: actorUserId,
+              workspaceId,
+              snapshot: secretEnvironment,
+            }
             try {
               resolvedSecretTraceRegistry = await createResolvedSecretTraceRegistry({
                 personalEncrypted: secretEnvironment.personalEncrypted,
@@ -1091,9 +1108,7 @@ async function executeWebhookJobInternal(
         })
       }
 
-      const persistedProviderConfig = isRecordLike(resolvedWebhookRecord.providerConfig)
-        ? resolvedWebhookRecord.providerConfig
-        : {}
+      const persistedProviderConfig = toRecord(resolvedWebhookRecord.providerConfig)
       const slackStreamConfig =
         payload.provider === 'slack' || payload.provider === 'slack_app'
           ? readSlackStreamResponseConfig(persistedProviderConfig)
@@ -1122,6 +1137,12 @@ async function executeWebhookJobInternal(
           })
         : null
 
+      if (slackStreamConfig) {
+        metadata.agentEvents = true
+        metadata.includeThinking = slackStreamConfig.includeThinking
+        metadata.includeToolCalls = slackStreamConfig.includeToolCalls
+      }
+
       const snapshot = new ExecutionSnapshot(
         metadata,
         workflowRecord,
@@ -1136,9 +1157,18 @@ async function executeWebhookJobInternal(
         executionResult = await executeWorkflowCore({
           snapshot,
           callbacks: slackStreamController?.callbacks ?? {},
+          ...(slackStreamController
+            ? {
+                finalizeDelivery: async (result: ExecutionResult) => {
+                  await slackStreamController.finalize(result)
+                  slackStreamController.assertSucceeded()
+                },
+              }
+            : {}),
           loggingSession,
           trustedInitialResolvedSecretTraceProvenance:
             resolvedSecretTraceRegistry.exportProvenanceForValue(triggerInput),
+          preloadedEnvironment,
           includeFileBase64: false,
           base64MaxBytes: undefined,
           abortSignal: timeoutController.signal,
@@ -1153,11 +1183,6 @@ async function executeWebhookJobInternal(
         }
         throw error
       }
-      if (slackStreamController) {
-        await slackStreamController.finalize(executionResult)
-        slackStreamController.assertSucceeded()
-      }
-
       await handleExecutionResult(executionResult, {
         loggingSession,
         timeoutController,

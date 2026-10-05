@@ -32,12 +32,14 @@ import { GITHUB_INSTALLATION_PROVIDER_ID } from '@/lib/oauth/github-installation
 import { getSearchConnectionLabels } from '@/lib/sim-search/connection-labels'
 import { getConnectorAccessAvailability } from '@/lib/sim-search/connectors'
 import { SIM_SEARCH_SYNC_INTERVAL_MINUTES } from '@/lib/sim-search/constants'
+import { liveSearchSourceMeta } from '@/lib/sim-search/live/source-settings'
 import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
 import {
   ConnectServiceAccountModal,
   useServiceAccountConnectTarget,
 } from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
 import { IntegrationTile } from '@/app/workspace/[workspaceId]/integrations/components/integrations-showcase'
+import { ConnectorApiKeyInput } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/add-connector-modal/connector-api-key-input'
 import {
   derivedAclCapFieldIds,
   isConnectorFieldRequired,
@@ -80,8 +82,6 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useConnectorSetupStore } from '@/stores/connector-setup/store'
 
 const CONNECTOR_ENTRIES = Object.entries(CONNECTOR_META_REGISTRY)
-
-const WORKSPACE_ACCESS: ConnectorAccessSelection = { accessMode: 'workspace' }
 
 interface AddConnectorModalProps {
   scope?: ResourceScope
@@ -167,7 +167,6 @@ export function AddConnectorModal({
   const gitlabPermissions = useGitLabPermissionForm()
   const [apiKeyValue, setApiKeyValue] = useState('')
   const [useApiKey, setUseApiKey] = useState(!isSearchIndex)
-  const [apiKeyFocused, setApiKeyFocused] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
   useOAuthReturnForKBConnectors(
@@ -178,9 +177,14 @@ export function AddConnectorModal({
   )
   const { mutate: createConnector, isPending: isCreating } = useCreateConnector()
 
-  const connectorConfig = selectedType ? CONNECTOR_META_REGISTRY[selectedType] : null
+  const liveSearch = isSearchIndex
   const canSetUpGitHubInstallation =
     canAdmin && isSearchIndex && selectedType === 'github' && scope.kind === 'organization'
+  const connectorConfig = liveSearchSourceMeta(
+    selectedType ? (CONNECTOR_META_REGISTRY[selectedType] ?? null) : null,
+    Boolean(liveSearch),
+    { githubInstallation: canSetUpGitHubInstallation }
+  )
   const docsUrl = isSearchIndex ? connectorConfig?.searchDocsUrl : undefined
   const setupGuideActions = docsUrl
     ? [
@@ -394,21 +398,7 @@ export function AddConnectorModal({
       ? {
           scope,
           accessMode: access.accessMode,
-          connectorConfig: canSetUpGitHubInstallation
-            ? {
-                ...connectorConfig,
-                configFields: connectorConfig.configFields.map((field) =>
-                  field.id === 'repository'
-                    ? {
-                        ...field,
-                        type: 'selector',
-                        selectorKey: 'github.installationRepositories',
-                        placeholder: 'Select a repository',
-                      }
-                    : field
-                ),
-              }
-            : connectorConfig,
+          connectorConfig,
           sourceConfig,
           selectionLabels,
           credentialId: canSetUpGitHubInstallation
@@ -502,7 +492,6 @@ export function AddConnectorModal({
     })
     setApiKeyValue('')
     setUseApiKey(!isSearchIndex)
-    setApiKeyFocused(false)
     setDisabledTagIds(new Set())
     setShowMetadata(false)
     setCanonicalModes({})
@@ -734,13 +723,10 @@ export function AddConnectorModal({
                   )}
                   {isApiKeyMode ? (
                     <ChipModalField type='custom' title={apiKeyConfig?.label || 'API Key'}>
-                      <ChipInput
-                        type={apiKeyFocused ? 'text' : 'password'}
-                        autoComplete='new-password'
+                      <ConnectorApiKeyInput
                         value={apiKeyValue}
-                        onChange={(e) => setApiKeyValue(e.target.value)}
-                        onFocus={() => setApiKeyFocused(true)}
-                        onBlur={() => setApiKeyFocused(false)}
+                        onChange={setApiKeyValue}
+                        workspaceId={owner.workspaceId}
                         placeholder={apiKeyConfig?.placeholder || 'Enter API key'}
                       />
                     </ChipModalField>
@@ -828,6 +814,8 @@ export function AddConnectorModal({
                       connecting={githubSetup.pending}
                       connectionError={githubSetup.error}
                       onCancel={githubSetup.cancel}
+                      onCheckConnection={() => void githubSetup.checkConnection()}
+                      isChecking={githubSetup.isChecking}
                       onChange={(credentialId) => {
                         if (credentialId !== installationCredentialId)
                           handleFieldChange('repository', '')
@@ -987,7 +975,9 @@ export function AddConnectorModal({
                     ? scope.kind === 'organization'
                       ? (searchLabels?.add ?? 'Add connection')
                       : 'Create & Invite'
-                    : 'Connect & Sync',
+                    : liveSearch
+                      ? 'Save connection'
+                      : 'Connect & Sync',
                 onClick: handleSubmit,
                 disabled: !canSubmit || isCreating || githubSetup.pending,
               }}

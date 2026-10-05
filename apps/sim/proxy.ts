@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
-import { APP_ENTRY_PATH, isAppSurfacePath } from '@/lib/navigation/paths'
+import { resolveSimMcpHostPath } from '@/lib/api/mcp/host-routing'
+import { SIM_MCP_ROUTE_PATH } from '@/lib/api/mcp/urls'
+import { APP_ENTRY_PATH, isAppSurfacePath, isNoindexPath } from '@/lib/navigation/paths'
 import { isOAuthAuthorizationCallback, resolveAuthRedirect } from '@/app/(auth)/auth-redirect'
 import { getEnv } from './lib/core/config/env'
 import { isAuthDisabled, isDev, isHosted } from './lib/core/config/env-flags'
@@ -336,6 +338,18 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
 export function proxy(request: NextRequest) {
   const url = request.nextUrl
 
+  const mcpPath = resolveSimMcpHostPath(request.headers.get('host'), url.pathname)
+  if (mcpPath === 'not_found') return new NextResponse(null, { status: 404 })
+  if (mcpPath && mcpPath !== url.pathname) {
+    const rewrite = NextResponse.rewrite(new URL(`${mcpPath}${url.search}`, request.url))
+    if (mcpPath !== SIM_MCP_ROUTE_PATH) return rewrite
+    /** The endpoint keeps the `/api` CORS policy it has on the app host; its metadata sets its own. */
+    const policy = resolveApiCorsPolicy(request)
+    if (request.method === 'OPTIONS') return buildPreflightResponse(policy)
+    applyCorsHeaders(rewrite, policy)
+    return rewrite
+  }
+
   if (url.pathname.startsWith('/api/')) {
     const policy = resolveApiCorsPolicy(request)
     if (request.method === 'OPTIONS') {
@@ -406,7 +420,9 @@ export function proxy(request: NextRequest) {
 }
 
 /**
- * Keeps non-production sim.ai deployments out of search results.
+ * Keeps non-production sim.ai deployments, and app and utility surfaces on every
+ * deployment, out of search results. Applies to redirects too, so a signed-out
+ * crawler bounced from `/workspace/*` to `/login` sees the directive.
  *
  * `noindex` rather than a robots.txt `Disallow` is deliberate: a disallowed URL
  * can still be indexed when linked externally, and blocking the crawl stops
@@ -420,7 +436,7 @@ function applyIndexingPolicy(request: NextRequest, response: NextResponse): Next
     request.headers.get('host') ||
     request.nextUrl.host
 
-  if (isNonCanonicalSimHost(host)) {
+  if (isNonCanonicalSimHost(host) || isNoindexPath(request.nextUrl.pathname)) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
 

@@ -27,7 +27,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
-import { RequestAccessModal } from '@/components/access-requests/request-access-action'
 import { VariableIcon } from '@/components/icons'
 import { ThinkingLoader } from '@/components/ui'
 import { requestJson } from '@/lib/api/client/request'
@@ -45,8 +44,8 @@ import {
 } from '@/lib/mothership/events'
 import { captureEvent } from '@/lib/posthog/client'
 import { generateWorkflowJson } from '@/lib/workflows/operations/import-export'
-import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
-import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
+import { ConversationListItem } from '@/app/workspace/[workspaceId]/components/conversation-list-item'
+import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components/mothership-chat'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -67,7 +66,9 @@ import { useAutoLayout } from '@/app/workspace/[workspaceId]/w/[workflowId]/hook
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
-import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useDeleteWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { RequestAccessModal } from '@/ee/access-requests/components/request-access-action'
+import { getMyAccessRequestHref } from '@/ee/access-requests/lib/navigation'
 import { useDiscoverAccessRequests } from '@/hooks/queries/access-requests'
 import { useCopilotChatSelection } from '@/hooks/queries/copilot-chat-selection'
 import {
@@ -140,7 +141,6 @@ export const Panel = memo(function Panel() {
   const posthogRef = useRef(posthog)
 
   const panelRef = useRef<HTMLElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const {
     activeTab: storedActiveTab,
     setActiveTab,
@@ -180,7 +180,6 @@ export const Panel = memo(function Panel() {
   const isCopilotTabAvailable = chatEnabled && !permissionConfig.hideCopilot
   const activeTab: PanelTab =
     storedActiveTab === 'copilot' && !isCopilotTabAvailable ? 'toolbar' : storedActiveTab
-  const { isImporting, handleFileChange } = useImportWorkflow({ workspaceId })
   const duplicateWorkflowMutation = useDuplicateWorkflowMutation()
   const { data: workflows = {} } = useWorkflowMap(workspaceId)
   const { data: folders = {} } = useFolderMap(workspaceId)
@@ -261,8 +260,12 @@ export const Panel = memo(function Panel() {
     if (usageExceeded) {
       if (usageLimitScope === 'member' && memberLimitTarget) {
         if (memberLimitTarget.pendingRequestId) {
-          const params = new URLSearchParams({ requestId: memberLimitTarget.pendingRequestId })
-          router.push(`/workspace/${encodeURIComponent(workspaceId)}/access-requests?${params}`)
+          router.push(
+            getMyAccessRequestHref(
+              { kind: 'workspace', workspaceId },
+              memberLimitTarget.pendingRequestId
+            )
+          )
         } else {
           setShowLimitRequest(true)
         }
@@ -328,7 +331,8 @@ export const Panel = memo(function Panel() {
   // Auto-select most recent on first list arrival per workflow, and drop a
   // selection that no longer matches anything in the current list (e.g. the
   // chat was deleted in another tab).
-  const autoSelectAttemptedForRef = useRef<Set<string>>(new Set())
+  const autoSelectAttemptedForRef = useRef<Set<string> | null>(null)
+  const autoSelectAttemptedFor = (autoSelectAttemptedForRef.current ??= new Set())
   useEffect(() => {
     // The list query is skipped when the tab is unavailable, so an empty list
     // there means "not fetched", not "deleted elsewhere" — clearing on it would
@@ -341,9 +345,9 @@ export const Panel = memo(function Panel() {
     }
 
     if (copilotChatId) return
-    if (autoSelectAttemptedForRef.current.has(activeWorkflowId)) return
+    if (autoSelectAttemptedFor.has(activeWorkflowId)) return
     if (copilotChatList.length === 0) return
-    autoSelectAttemptedForRef.current.add(activeWorkflowId)
+    autoSelectAttemptedFor.add(activeWorkflowId)
     setCopilotChatId(copilotChatList[0].id)
   }, [copilotChatList, copilotChatId, activeWorkflowId, isCopilotTabAvailable, setCopilotChatId])
 
@@ -741,7 +745,7 @@ export const Panel = memo(function Panel() {
             <div className='flex gap-1.5'>
               <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
                 <DropdownMenuTrigger asChild>
-                  <Button className='size-[30px] rounded-[5px]'>
+                  <Button aria-label='Workflow actions' className='size-[30px]'>
                     <MoreHorizontal className='size-[14px]' />
                   </Button>
                 </DropdownMenuTrigger>
@@ -801,7 +805,8 @@ export const Panel = memo(function Panel() {
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button
-                className='size-[30px] rounded-[5px]'
+                aria-label={isChatOpen ? 'Close chat' : 'Open chat'}
+                className='size-[30px]'
                 variant={isChatOpen ? 'active' : 'default'}
                 onClick={() => setIsChatOpen(!isChatOpen)}
               >
@@ -853,10 +858,10 @@ export const Panel = memo(function Panel() {
             <div className='flex gap-1'>
               {isCopilotTabAvailable && (
                 <Button
-                  className={`h-[28px] truncate rounded-md border px-2 py-[5px] text-[12.5px] ${
+                  className={`h-[28px] truncate rounded-md border py-[5px] text-[12.5px] ${
                     _hasHydrated && activeTab === 'copilot'
                       ? 'border-[var(--border-1)]'
-                      : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
+                      : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)]'
                   }`}
                   variant={_hasHydrated && activeTab === 'copilot' ? 'active' : 'ghost'}
                   onClick={() => handleTabClick('copilot')}
@@ -866,10 +871,10 @@ export const Panel = memo(function Panel() {
                 </Button>
               )}
               <Button
-                className={`h-[28px] rounded-md border px-2 py-[5px] text-[12.5px] ${
+                className={`h-[28px] rounded-md border py-[5px] text-[12.5px] ${
                   _hasHydrated && activeTab === 'toolbar'
                     ? 'border-[var(--border-1)]'
-                    : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
+                    : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)]'
                 }`}
                 variant={_hasHydrated && activeTab === 'toolbar' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('toolbar')}
@@ -878,10 +883,10 @@ export const Panel = memo(function Panel() {
                 Toolbar
               </Button>
               <Button
-                className={`h-[28px] rounded-md border px-2 py-[5px] text-[12.5px] ${
+                className={`h-[28px] rounded-md border py-[5px] text-[12.5px] ${
                   _hasHydrated && activeTab === 'editor'
                     ? 'border-[var(--border-1)]'
-                    : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
+                    : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)]'
                 }`}
                 variant={_hasHydrated && activeTab === 'editor' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('editor')}
@@ -911,7 +916,12 @@ export const Panel = memo(function Panel() {
                     {copilotChatTitle || 'New Chat'}
                   </h2>
                   <div className='flex items-center gap-2'>
-                    <Button variant='ghost' className='p-0' onClick={handleCopilotNewChat}>
+                    <Button
+                      aria-label='New Chat'
+                      variant='ghost'
+                      className='p-0'
+                      onClick={handleCopilotNewChat}
+                    >
                       <Plus className='size-[14px]' />
                     </Button>
                     <DropdownMenu
