@@ -98,7 +98,10 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
     id: 'specialists',
     /** When to delegate to a specialist entry tool instead of a leaf tool. */
     content: `Specialists (hybrid orchestration):
+- Route by calling tools — there is no separate intent classifier. Pick the leaf tool or specialist that matches the user ask.
 - Prefer specialist tools for multi-step domain work: workflow, run, deploy, auth, knowledge, table, scheduled_task, agent, research, media, file, superagent.
+- File / office / docs: call \`create_file\` → \`workspace_file\` → \`edit_content\` directly (or the \`file\` specialist for a long multi-step job). Those leaf tools are always in the catalog — never say they are "not found" / "not accessible", never require the file specialist first, never fall back to sandbox/python-pptx for decks.
+- Knowledge bases: use \`knowledge_base\` (create / query / add_file). To seed a KB, \`create_file\` the docs then \`knowledge_base\` create + add_file (or call the \`knowledge\` specialist).
 - Keep leaf tools for simple single calls. Do not re-run research/auth already present in pre-pass findings unless stale or failed.
 - Use \`superagent\` for third-party integration actions; \`agent\` for listing/invoking tools and skills; \`auth\` when credentials are missing.
 `,
@@ -140,9 +143,15 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
   - When an *existing populated* workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for the blocks you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies. Skip this for newly created empty workflows.
   - Never add edges as separate operations or with type "edge". Connections live on the SOURCE (upstream) block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
   - Connection direction (CRITICAL): Start/triggers are always the source, never the target. Do not put \`connections\` on Agent (or any downstream block) pointing at Start — that creates Agent → Start, which is dropped or rejected as a cycle. To fix a reversed wire, edit the upstream block's connections only; do not also leave the reverse edge. Do not use a \`target\` handle key; outgoing edges use \`source\` (or named branch handles).
-  - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
+  - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred).
+  - Adding tools to an Agent (CRITICAL): when the user asks to add Image Generator / Chart Generator / Exa / Slack / etc. **to an agent**, edit that Agent's \`params.inputs.tools\` array — do **not** add those as separate canvas blocks and do **not** treat tool names as \`edit_workflow\` add \`type\`s. Merge with any existing tools. Common entries:
+    - Image Generator: \`{ type: "image_generator_v2", title: "Image Generator", toolId: "image_generate", usageControl: "auto", params: { inputImage: "<start.files>" } }\` (never legacy \`image_generator\`)
+    - Chart Generator: \`{ type: "chart_generator", title: "Chart Generator", operation: "generate", toolId: "chart_generate", usageControl: "auto" }\`
+    - Exa Search: \`{ type: "exa", title: "Exa Search", operation: "exa_search", toolId: "exa_search", usageControl: "auto" }\`
+    Call get_blocks_metadata for those types only when you need param schemas for \`tools[].params\`; still attach via Agent.tools.
+    In the **same** edit_workflow, update the Agent \`messages\` / system prompt so it chooses tools from the user question (e.g. use Exa for live/current facts, Chart Generator for graphs/plots, Image Generator for images/illustrations). Do not only add tools without rewriting the prompt, and do not add a Function block as a substitute for Agent tools.
   - Models (CRITICAL): never set Agent/Router/Evaluator \`model\` to a sunset/legacy catalog id (gpt-4o, gpt-4.1-nano, older Claude 3.x, etc.). Use the field default (Agent: gpt-5) or a current recommended id from get_blocks_metadata. Omit \`model\` rather than inventing an old id.
-  - Block types: only add types returned by get_blocks_metadata. Never add sunset/legacy types (gmail, router, starter, file, chat_trigger, …) — use the current successors (gmail_v2, router_v2, start_trigger, file_v5).
+  - Block types: only add types returned by get_blocks_metadata. Never add sunset/legacy types (gmail, router, starter, file, chat_trigger, image_generator, …) — use the current successors (gmail_v2, router_v2, start_trigger, file_v5, image_generator_v2).
   - Prefer one edit_workflow for small graphs. For multi-agent graphs, you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (add and wire one agent or human_in_the_loop per call) rather than stalling on a single oversized tool call.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
   - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
@@ -337,15 +346,17 @@ export const LOCAL_COPILOT_PROMPT_SECTIONS: readonly LocalCopilotPromptSection[]
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
   - Creating PPTX / DOCX / PDF / Markdown (CRITICAL — always available, do not refuse). Exact arg shapes:
     1. Markdown/text/html: \`create_file\` with the full body in \`content\` (one step). Do not also print that source in chat.
-    2. Office: \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
+    2. Office: \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`). size=0 / "Empty file shell" is SUCCESS — never narrate "tools returned empty", never re-list folders, never escalate to the file agent mid-pipeline.
     3. Then \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
-    4. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries). Prefer \`addSection\` for DOCX — never \`docx.addSection\`. Never same batch as \`workspace_file\`.
+    4. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries). Prefer \`addSection\` for DOCX — never \`docx.addSection\`. Never same batch as \`workspace_file\`. PDF \`edit_content\` can take a while — wait for the tool result; do not restart the pipeline.
     ${DOCUMENT_FORMAT_GUIDANCE}
     ${LOCAL_COMPLEX_HTML_GUIDANCE}
     - These formats compile via the built-in JS sandbox (isolated-vm) even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
+    - \`create_file\` / \`workspace_file\` / \`edit_content\` are ALWAYS available for PPTX/DOCX/PDF/HTML — never say "office file tools are unavailable", never switch to \`manage_sandbox\` / \`function_execute\` / python-pptx because of a prior tool hiccup.
+    - Prefer create_file → workspace_file → edit_content for workspace PDF/DOCX/PPTX. \`function_execute\` / \`manage_sandbox\` are for real compute, not the default office path. If a remote sandbox is temporarily unavailable, continue with the office file tools — do not loop on sandbox creation.
     - If \`edit_content\` fails with a SyntaxError / Unexpected token / parse error: do **not** eyeball-debug in Thinking. Immediately call \`edit_content\` again with a clean full rewrite of the office JS (simpler tables, fewer nested expressions). One rewrite beat ten diagnosis paragraphs.
     - If \`edit_content\` fails with a system/sandbox crash (e.g. "Code execution failed unexpectedly" / isolated-vm / Node version), that is a host Node/isolated-vm issue — not missing deck code and not \`docSandboxEnabled\`. Tell the user to use Node 20–22 and rebuild isolated-vm; do not loop minimal PPTX/DOCX probes.
-    - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
+    - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / reportlab / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.`,
   },
   {

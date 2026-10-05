@@ -223,4 +223,56 @@ describe('get blocks metadata', () => {
     expect(result.metadata).toHaveProperty('slack')
     expect(result.metadata).not.toHaveProperty('notion')
   })
+
+  it('redirects sunset/legacy hideFromToolbar ids to their successor', async () => {
+    const legacy = {
+      type: 'image_generator',
+      name: 'Image Generator (Legacy)',
+      description: 'Legacy image block.',
+      category: 'blocks',
+      bgColor: '#000000',
+      icon: () => null,
+      hideFromToolbar: true,
+      sunset: { status: 'legacy', replacedBy: 'image_generator_v2' },
+      subBlocks: [],
+      tools: { access: ['openai_image_v2'] },
+      inputs: {},
+      outputs: {},
+    } as unknown as BlockConfig
+    const successor = {
+      type: 'image_generator_v2',
+      name: 'Image Generator',
+      description: 'Generate images.',
+      category: 'blocks',
+      bgColor: '#000000',
+      icon: () => null,
+      subBlocks: [],
+      tools: { access: ['image_generate'] },
+      inputs: {},
+      outputs: {},
+    } as unknown as BlockConfig
+
+    mockGetUserPermissionConfig.mockResolvedValue({ allowedIntegrations: null })
+    vi.mocked(getBlock).mockImplementation((type: string) => {
+      if (type === 'image_generator') return legacy
+      if (type === 'image_generator_v2') return successor
+      return undefined
+    })
+
+    const result = await getBlocksMetadataServerTool.execute(
+      { blockIds: ['image_generator'] },
+      { userId: 'user-1', workspaceId: 'workspace-1' }
+    )
+
+    expect(result.metadata).toHaveProperty('image_generator')
+    expect(result.metadata).toHaveProperty('image_generator_v2')
+    const legacyEntry = result.metadata.image_generator as {
+      blockType: string
+      legacyBlockType?: string
+      hint?: string
+    }
+    expect(legacyEntry.blockType).toBe('image_generator_v2')
+    expect(legacyEntry.legacyBlockType).toBe('image_generator')
+    expect(legacyEntry.hint).toContain('image_generator_v2')
+  })
 })

@@ -727,6 +727,11 @@ Return ONLY the search query - no explanations, no extra text.`,
         // Normalize attachments for send/draft operations - use canonical 'attachments' param
         const normalizedAttachments = normalizeFileInput(attachments)
 
+        // Accept `content` as an alias for `body` (same value)
+        if (rest.content != null && (rest.body == null || rest.body === '')) {
+          rest.body = rest.content
+        }
+
         return {
           ...rest,
           oauthCredential,
@@ -743,6 +748,7 @@ Return ONLY the search query - no explanations, no extra text.`,
     to: { type: 'string', description: 'Recipient email address' },
     subject: { type: 'string', description: 'Email subject' },
     body: { type: 'string', description: 'Email content' },
+    content: { type: 'string', description: 'Email content' },
     contentType: { type: 'string', description: 'Content type (text or html)' },
     threadId: { type: 'string', description: 'Thread ID to reply to (for threading)' },
     replyToMessageId: {
@@ -858,6 +864,7 @@ export const GmailV2Block: BlockConfig<GmailToolResponse> = {
     to: { type: 'string', description: 'To' },
     subject: { type: 'string', description: 'Subject' },
     date: { type: 'string', description: 'Date' },
+    body: { type: 'string', description: 'Email body text (best-effort)' },
     content: { type: 'string', description: 'Email body text (best-effort)' },
     metadata: { type: 'json', description: 'Metadata including search/read summary results' },
     attachments: { type: 'file[]', description: 'Downloaded attachments (if enabled)' },

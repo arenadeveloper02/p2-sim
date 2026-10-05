@@ -335,6 +335,7 @@ export const gmailReadV2Tool: ToolConfig<GmailReadParams, GmailToolResponse> = {
         subject: metadata.subject,
         date: metadata.date,
         body: legacy.output.content,
+        content: legacy.output.content,
         hasAttachments: metadata.hasAttachments,
         attachmentCount: metadata.attachmentCount,
         attachments: legacy.output.attachments || [],
@@ -343,6 +344,7 @@ export const gmailReadV2Tool: ToolConfig<GmailReadParams, GmailToolResponse> = {
     }
   },
   outputs: {
+    body: { type: 'string', description: 'Text content of the email' },
     content: { type: 'string', description: 'Text content of the email' },
     metadata: { type: 'json', description: 'Metadata of the email' },
     attachments: { type: 'file[]', description: 'Attachments of the email' },

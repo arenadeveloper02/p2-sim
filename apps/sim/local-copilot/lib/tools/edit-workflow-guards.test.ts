@@ -28,6 +28,7 @@ vi.mock('@/triggers/constants', () => ({
 import { fingerprintToolCall } from '@/local-copilot/lib/agent/tool-stagnation'
 import {
   classifyEditWorkflowPrecondition,
+  coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUp,
   editWorkflowNeedsFollowUp,
   formatToolResultForLlm,
@@ -63,6 +64,79 @@ describe('editWorkflowNeedsFollowUp precondition gates', () => {
     })
     const followUp = detectMandatoryFollowUp('edit_workflow', formatted)
     expect(followUp?.resolveWith).toEqual(['get_workflow_context', 'edit_workflow'])
+  })
+})
+
+describe('office empty-shell create_file results', () => {
+  it('marks PDF size=0 shells as expected success and requires workspace_file', () => {
+    const formatted = formatToolResultForLlm('create_file', {
+      success: true,
+      message: 'Empty file shell "files/Report.pdf" created.',
+      data: { vfsPath: 'files/Report.pdf', name: 'Report.pdf', size: 0 },
+    })
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(parsed.expectedEmptyShell).toBe(true)
+    expect(parsed.needsFollowUpWorkspaceFile).toBe(true)
+    expect(String(parsed.followUpHint)).toMatch(/SUCCESS/i)
+    expect(String(parsed.followUpHint)).not.toMatch(/tools returned empty/i)
+
+    const followUp = detectMandatoryFollowUp('create_file', formatted)
+    expect(followUp?.resolveWith).toEqual(['workspace_file'])
+  })
+
+  it('clarifies empty folder lists are not failures', () => {
+    const formatted = formatToolResultForLlm('list_file_folders', {
+      success: true,
+      data: { folders: [] },
+    })
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(String(parsed.followUpHint)).toMatch(/not a tool failure/i)
+  })
+
+  it('redirects create_file failures away from sandbox fallback', () => {
+    const formatted = formatToolResultForLlm('create_file', {
+      success: false,
+      message: 'Failed to create file',
+    })
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(String(parsed.followUpHint)).toMatch(/Do NOT switch to manage_sandbox/i)
+    expect(String(parsed.followUpHint)).toMatch(/create_file again/i)
+  })
+})
+
+describe('coalesceToolExecutionPayloadForLlm', () => {
+  it('surfaces top-level error when result is empty', () => {
+    const payload = coalesceToolExecutionPayloadForLlm({
+      success: false,
+      result: {},
+      error: 'name is required',
+      toolName: 'create_file_folder',
+    })
+    expect(payload).toEqual({ success: false, error: 'name is required' })
+  })
+
+  it('avoids bare {} on successful empty result', () => {
+    const payload = coalesceToolExecutionPayloadForLlm({
+      success: true,
+      result: {},
+      toolName: 'create_file_folder',
+    }) as Record<string, unknown>
+    expect(payload.success).toBe(true)
+    expect(String(payload.message)).toContain('create_file_folder')
+  })
+
+  it('guards empty create_file_folder success through formatToolResultForLlm', () => {
+    const formatted = formatToolResultForLlm(
+      'create_file_folder',
+      coalesceToolExecutionPayloadForLlm({
+        success: true,
+        result: {},
+        toolName: 'create_file_folder',
+      })
+    )
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(parsed).not.toEqual({})
+    expect(String(parsed.message ?? '')).toMatch(/create_file_folder|completed/i)
   })
 })
 

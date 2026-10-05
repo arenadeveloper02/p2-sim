@@ -36,5 +36,22 @@ export const MAX_FILE_EDIT_CONTINUATION_ROUNDS = 1
  */
 export const MAX_RESEARCH_SEARCH_CONTINUATION_ROUNDS = 1
 
-/** Successful create-then-edit_workflow calls before the post-build lock. */
-export const MAX_POPULATE_EDITS = 5
+/**
+ * Successful create-then-edit_workflow calls before the soft post-build nudge.
+ * Complex agents (multi-capability graphs) often need more than a handful of
+ * sequential edits — the soft nudge asks the model to wrap up without stripping
+ * tools yet.
+ */
+export const MAX_POPULATE_EDITS = 8
+
+/**
+ * Absolute ceiling on successful populate edits this turn. Past this, tools are
+ * restricted to final_only / oauth_only so the turn cannot thrash forever.
+ */
+export const MAX_POPULATE_EDITS_HARD_LOCK = 12
+
+/**
+ * Extra model rounds after create_workflow when populate somehow never queued —
+ * keeps the turn from settling on an empty shell.
+ */
+export const MAX_INCOMPLETE_WORKFLOW_POPULATE_CONTINUATION_ROUNDS = 2

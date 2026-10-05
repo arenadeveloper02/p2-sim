@@ -141,7 +141,17 @@ const AUTH_TOOLS = [
   'list_integration_tools',
 ] as const
 
-const KNOWLEDGE_TOOLS = ['knowledge_base', 'materialize_file'] as const
+const KNOWLEDGE_TOOLS = [
+  'knowledge_base',
+  'materialize_file',
+  // KB create/ingest needs workspace docs first — without these, "create a KB with
+  // this content" can only call knowledge_base and never write the source files.
+  'create_file',
+  'create_file_folder',
+  'glob',
+  'read',
+  'list_file_folders',
+] as const
 const TABLE_TOOLS = ['user_table', 'enrichment_run', 'materialize_file'] as const
 
 const SCHEDULED_TASK_TOOLS = [
@@ -328,7 +338,7 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Build, edit, and run workflows. Use get_workflow_data / get_workflow_context or get_workflow_run_options when inspecting an existing workflow; create_workflow when the user wants a new one. When adding blocks, use current types from get_blocks_metadata (never sunset/legacy types like gmail or router). For Agent/Router model, use a current recommended id or omit to keep the default (gpt-5) — never gpt-4o or other sunset/legacy models.'
+      return 'Build, edit, and run workflows. Use get_workflow_data / get_workflow_context or get_workflow_run_options when inspecting an existing workflow; create_workflow when the user wants a new one. When adding blocks, use current types from get_blocks_metadata (never sunset/legacy types like gmail, router, or image_generator — use gmail_v2, router_v2, image_generator_v2). When the user asks to add tools TO an Agent (Image Generator, Chart Generator, Exa, etc.), edit that Agent\'s tools array — do not add those as canvas blocks. For Agent/Router model, use a current recommended id or omit to keep the default (gpt-5) — never gpt-4o or other sunset/legacy models.'
     case 'run':
       return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
@@ -336,7 +346,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Query, create, and ingest knowledge bases (knowledge_base get / list / query / create / add_file).'
+      return 'Query, create, and ingest knowledge bases (knowledge_base get / list / query / create / add_file). To seed a new KB with content: create_file markdown/text under files/ (full body in content), then knowledge_base operation=create, then add_file with those VFS paths. Do not finish after research alone — write the files and ingest them.'
     case 'table':
       return 'Create and manage tables, rows, schemas, and enrichments (user_table).'
     case 'scheduled_task':
@@ -348,7 +358,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg. For PNG/JPEG/GIF/WebP (even when the user says "PNG format"), call generate_image with outputs.files — never create_file with base64.'
     case 'file':
-      return `Read, create, and update workspace files. Create NEW lean html/md/txt/json/csv with create_file once (full body in content) — HTML must stay modular (no mega inline SVG dumps; split CSS/JS; Arena/Figma-scale pages cannot be one-shot). Edit EXISTING text/html: MUST read files/<path>/content first (mega lines may truncate); targeted changes use workspace_file operation=patch with search_replace then edit_content with ONLY the replacement — never regenerate complex HTML. Use operation=update only for empty shells or an explicit full rewrite of a lean file. After create_file, workspace_file target.kind=path (never kind=new_file / operation=create — that duplicates the file). There is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never dump HTML/CSS/JS in the user-facing reply or findings (no \`\`\`html fences). You MUST still read existing files via the read tool. Put write bodies only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}\n\n${LOCAL_COMPLEX_HTML_GUIDANCE}`
+      return `Read, create, and update workspace files. Create NEW lean html/md/txt/json/csv with create_file once (full body in content) — HTML must stay modular (no mega inline SVG dumps; split CSS/JS; Arena/Figma-scale pages cannot be one-shot). Edit EXISTING text/html: MUST read files/<path>/content first (mega lines may truncate); targeted changes use workspace_file operation=patch with search_replace then edit_content with ONLY the replacement — never regenerate complex HTML. Use operation=update only for empty shells or an explicit full rewrite of a lean file. After create_file, workspace_file target.kind=path (never kind=new_file / operation=create — that duplicates the file). Office PDF/DOCX/PPTX: create_file empty shell (size=0) is SUCCESS — immediately workspace_file update, then edit_content; never claim tools returned empty or restart. There is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never dump HTML/CSS/JS in the user-facing reply or findings (no \`\`\`html fences). You MUST still read existing files via the read tool. Put write bodies only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}\n\n${LOCAL_COMPLEX_HTML_GUIDANCE}`
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
