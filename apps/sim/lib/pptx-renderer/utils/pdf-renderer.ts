@@ -15,19 +15,18 @@
  * fallback, no global state pollution.
  */
 
-// Resolved pdfjs URL — computed once from main thread's module resolution
-
-let _pdfjsUrl: string | null = null
+/**
+ * Asset URL for the worker's own pdfjs instance.
+ *
+ * `new URL('pdfjs-dist/...', import.meta.url)` fails `next build --webpack`
+ * with `import-esm-externals` because `pdfjs-dist` is in `serverExternalPackages`.
+ * A `?url` import emits the file without evaluating it, so main-thread pdfjs
+ * state stays untouched.
+ */
+import pdfjsBuildUrl from 'pdfjs-dist/build/pdf.min.mjs?url'
 
 function getPdfjsUrl(): string | null {
-  if (_pdfjsUrl !== null) return _pdfjsUrl
-  try {
-    // Resolve via the bundler/dev server so the URL is usable from a Worker
-    _pdfjsUrl = new URL('pdfjs-dist/build/pdf.min.mjs', import.meta.url).toString()
-  } catch {
-    _pdfjsUrl = ''
-  }
-  return _pdfjsUrl || null
+  return pdfjsBuildUrl || null
 }
 
 // Worker-based renderer (fully isolated from main thread pdfjs)

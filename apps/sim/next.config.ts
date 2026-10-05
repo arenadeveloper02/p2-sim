@@ -148,6 +148,20 @@ const nextConfig: NextConfig = {
     },
   },
   webpack: (config, { isServer }) => {
+    /**
+     * Emit pdfjs ESM files imported with `?url` as static assets.
+     * `serverExternalPackages` includes `pdfjs-dist`, so
+     * `new URL('pdfjs-dist/...', import.meta.url)` fails the server compile
+     * (`import-esm-externals`). A `?url` import must not be parsed as JavaScript
+     * either — evaluating pdfjs on the main thread clobbers its process-level state.
+     */
+    config.module ??= { rules: [] }
+    config.module.rules ??= []
+    config.module.rules.unshift({
+      test: /[/\\]pdfjs-dist[/\\]build[/\\]pdf\.min\.mjs$/,
+      resourceQuery: /^\?url$/,
+      type: 'asset/resource',
+    })
     const monacoEditorApi = path.join(
       packageRootFromEntry(require.resolve('monaco-editor'), 'monaco-editor'),
       'esm/vs/editor/editor.api.js'

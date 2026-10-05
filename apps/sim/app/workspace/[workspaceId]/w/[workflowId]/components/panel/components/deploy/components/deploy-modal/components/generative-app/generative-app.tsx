@@ -1,11 +1,19 @@
 'use client'
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ChipEmailsInput, ChipInput, Label, Loader, Switch, Textarea } from '@sim/emcn'
+import {
+  Button,
+  ChipEmailsInput,
+  ChipInput,
+  ChipSelect,
+  Label,
+  Loader,
+  Switch,
+  Textarea,
+} from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Check } from 'lucide-react'
 import { GeneratedPasswordInput } from '@/components/ui'
-import { CustomSelect } from '@/components/ui/native-select'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
@@ -220,7 +228,12 @@ export function GenerativeAppDeploy({
             Preview draft
           </Button>
         </div>
-        <CustomSelect
+        <ChipSelect
+          aria-label='Draft'
+          align='start'
+          fullWidth
+          dropdownWidth='trigger'
+          stayBelow
           value={draftId}
           onChange={setDraftId}
           options={drafts.map((draft) => ({
@@ -274,7 +287,12 @@ export function GenerativeAppDeploy({
         <Label className='mb-[6.5px] block font-medium text-[var(--text-primary)] text-small'>
           Category
         </Label>
-        <CustomSelect
+        <ChipSelect
+          aria-label='Category'
+          align='start'
+          fullWidth
+          dropdownWidth='trigger'
+          stayBelow
           value={department}
           onChange={setDepartment}
           placeholder='Select category'
@@ -310,7 +328,12 @@ export function GenerativeAppDeploy({
         <Label className='mb-[6.5px] block font-medium text-[var(--text-primary)] text-small'>
           Access control
         </Label>
-        <CustomSelect
+        <ChipSelect
+          aria-label='Access control'
+          align='start'
+          fullWidth
+          dropdownWidth='trigger'
+          stayBelow
           value={authType}
           onChange={(value) => setAuthType(value as AuthType)}
           options={authOptions.map((type) => ({ value: type, label: type }))}
