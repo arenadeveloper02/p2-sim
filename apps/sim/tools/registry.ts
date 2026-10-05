@@ -6114,7 +6114,7 @@ import {
 import {
   zoomCreateMeetingTool,
   zoomDeleteMeetingTool,
-  zoomDeleteRecordingTool,
+  // zoomDeleteRecordingTool is hidden: Zoom returns "No permission." for this operation.
   zoomDownloadTranscriptTool,
   zoomGetAccountRecordingsWithTranscriptTool,
   zoomGetMeetingInvitationTool,
@@ -11675,7 +11675,7 @@ export const tools: Record<string, ExecutableToolConfig> = {
   zoom_get_account_recordings_with_transcript: zoomGetAccountRecordingsWithTranscriptTool,
   zoom_download_transcript: zoomDownloadTranscriptTool,
   zoom_get_meeting_recordings: zoomGetMeetingRecordingsTool,
-  zoom_delete_recording: zoomDeleteRecordingTool,
+  // zoom_delete_recording is hidden: Zoom returns "No permission." for this operation.
   zoom_list_past_participants: zoomListPastParticipantsTool,
   zoominfo_search_companies: zoominfoSearchCompaniesTool,
   zoominfo_search_contacts: zoominfoSearchContactsTool,
