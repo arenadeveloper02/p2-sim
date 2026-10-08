@@ -11,16 +11,27 @@ import { executeSimControl } from '@/lib/mothership/transport/control'
 
 const logger = createLogger('MothershipTransportReceiver')
 const receivers = new Map<string, AbortController>()
+/** Resolves once this base URL's first poll request is in flight (or was already). */
+const receiverReady = new Map<string, Promise<void>>()
 let stopHandlersInstalled = false
+
+/**
+ * Idle channels long-poll for up to 30s, so readiness cannot wait for the first
+ * poll body. Waiting this long after starting the poll fetch is enough for the
+ * request to be registered on the worker before chat stamps `simConnection`.
+ */
+const POLL_REGISTER_GRACE_MS = 750
 
 export async function receiveSimControls(
   baseURL: string,
   channelId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options?: { onFirstPollStarted?: () => void }
 ): Promise<void> {
+  let announcedFirstPoll = false
   while (!signal.aborted) {
     try {
-      const response = await fetchGo(`${baseURL}/api/sim-transport/poll`, {
+      const responsePromise = fetchGo(`${baseURL}/api/sim-transport/poll`, {
         method: 'POST',
         headers: mothershipRequestHeaders(),
         body: JSON.stringify({ channelId }),
@@ -29,6 +40,11 @@ export async function receiveSimControls(
         spanName: 'sim → worker transport poll',
         operation: 'sim_transport_poll',
       })
+      if (!announcedFirstPoll) {
+        announcedFirstPoll = true
+        options?.onFirstPollStarted?.()
+      }
+      const response = await responsePromise
       if (!response.ok) {
         await response.body?.cancel()
         throw new Error(`Transport poll refused (HTTP ${response.status})`)
@@ -62,31 +78,66 @@ export async function receiveSimControls(
   }
 }
 
-/** One outbound receiver per configured worker; independent of browser/chat lifetimes. */
-function ensureSimReceiver(baseURL: string): void {
-  const connection = getSimConnection()
-  if (connection.mode !== 'checkpoint' || !env.COPILOT_API_KEY || receivers.has(baseURL)) return
-  const controller = new AbortController()
-  receivers.set(baseURL, controller)
-  logger.info('Starting outbound Sim transport receiver', { baseURL })
-  void receiveSimControls(baseURL, connection.channelId, controller.signal)
-  if (!stopHandlersInstalled) {
-    stopHandlersInstalled = true
-    const stop = () => {
-      for (const active of receivers.values()) active.abort()
-    }
-    process.once('SIGTERM', stop)
-    process.once('SIGINT', stop)
+function installStopHandlers(): void {
+  if (stopHandlersInstalled) return
+  stopHandlersInstalled = true
+  const stop = () => {
+    for (const active of receivers.values()) active.abort()
   }
+  process.once('SIGTERM', stop)
+  process.once('SIGINT', stop)
 }
 
 /**
- * Idempotent warm-up for the worker this chat will call. Boot may have skipped
- * the poller when transport was still `direct` (or before `COPILOT_API_KEY` was
- * readable); Cloud chat must not dispatch checkpoint work without a live channel.
+ * Starts the outbound poller for this worker if needed, then waits until the
+ * first poll is in flight long enough for the worker to register the channel.
+ * Chat must not stamp `checkpoint` before that — otherwise Go 500s, Sim retries
+ * as a reattach/resume, and the user sees "Run not found".
  */
-export function ensureSimReceiverForBaseURL(baseURL: string): void {
-  ensureSimReceiver(baseURL)
+export async function ensureSimReceiverForBaseURL(baseURL: string): Promise<void> {
+  const connection = getSimConnection()
+  if (connection.mode !== 'checkpoint' || !env.COPILOT_API_KEY) return
+
+  const existingReady = receiverReady.get(baseURL)
+  if (existingReady) {
+    await existingReady
+    return
+  }
+
+  let resolveReady!: () => void
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve
+  })
+  receiverReady.set(baseURL, ready)
+
+  const controller = new AbortController()
+  receivers.set(baseURL, controller)
+  logger.info('Starting outbound Sim transport receiver', { baseURL })
+  installStopHandlers()
+
+  let firstPollStarted = false
+  void receiveSimControls(baseURL, connection.channelId, controller.signal, {
+    onFirstPollStarted: () => {
+      firstPollStarted = true
+      void sleep(POLL_REGISTER_GRACE_MS).then(resolveReady)
+    },
+  }).finally(() => {
+    // A permanent exit (abort) drops readiness so a later chat can restart.
+    if (controller.signal.aborted) {
+      receivers.delete(baseURL)
+      receiverReady.delete(baseURL)
+    }
+  })
+
+  // If the loop errors before the first poll is scheduled, do not block chat forever.
+  void sleep(5_000).then(() => {
+    if (!firstPollStarted) {
+      logger.warn('Outbound Sim transport poll did not start in time; continuing', { baseURL })
+      resolveReady()
+    }
+  })
+
+  await ready
 }
 
 export async function startSimReceivers(): Promise<void> {
@@ -97,5 +148,9 @@ export async function startSimReceivers(): Promise<void> {
     env.COPILOT_STAGING_URL,
     env.COPILOT_PROD_URL,
   ]
-  for (const endpoint of endpoints) if (endpoint) ensureSimReceiver(endpoint)
+  await Promise.all(
+    endpoints.filter((endpoint): endpoint is string => Boolean(endpoint)).map((endpoint) =>
+      ensureSimReceiverForBaseURL(endpoint)
+    )
+  )
 }

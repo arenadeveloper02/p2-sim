@@ -1164,7 +1164,11 @@ async function runCheckpointLoop(
     payload = { ...payload, simConnection }
   }
   // Boot may have no-op'd the poller while transport still defaulted to `direct`.
-  if (getSimConnection().mode === 'checkpoint') ensureSimReceiverForBaseURL(mothershipBaseURL)
+  // Await readiness: chat before a registered channel makes Go 500, then a retry
+  // or tool resume surfaces as "Run not found".
+  if (getSimConnection().mode === 'checkpoint') {
+    await ensureSimReceiverForBaseURL(mothershipBaseURL)
+  }
   if (initialRoute !== '/api/tools/resume') {
     payload = { ...payload, isHosted: isSimCloudHosted }
   }
@@ -1592,6 +1596,11 @@ async function runCheckpointLoop(
       streamId: context.messageId,
       results,
     } satisfies ResumeRequest
+    // Keep the outbound channel registered across the tool pause; a dead poller
+    // lets the worker drop the parked run and resume answers "Run not found".
+    if (getSimConnection().mode === 'checkpoint') {
+      await ensureSimReceiverForBaseURL(mothershipBaseURL)
+    }
 
     if (isAborted(options, context)) {
       cancelPendingTools(context)

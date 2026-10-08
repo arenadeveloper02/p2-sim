@@ -156,6 +156,11 @@ vi.mock('@/lib/mothership/request/go/stream', () => {
 
 vi.mock('@/lib/mothership/server/agent-url', () => mothershipAgentUrlMock)
 
+vi.mock('@/lib/mothership/transport/receiver', () => ({
+  ensureSimReceiverForBaseURL: vi.fn(async () => undefined),
+  startSimReceivers: vi.fn(async () => undefined),
+}))
+
 vi.mock('@/lib/core/config/env', async (original) => ({
   ...(await original<typeof import('@/lib/core/config/env')>()),
   env: mockEnv,

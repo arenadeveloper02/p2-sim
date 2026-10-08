@@ -10,19 +10,28 @@ import { utilsHelpersMock, utilsHelpersMockFns } from '@sim/testing/mocks/utils-
 import { generateId } from '@sim/utils/id'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }))
+const { execute, connection } = vi.hoisted(() => ({
+  execute: vi.fn(),
+  connection: vi.fn(() => ({ mode: 'checkpoint' as const, channelId: 'a'.repeat(64) })),
+}))
 vi.mock('@/lib/mothership/request/go/fetch', () => mothershipGoFetchMock)
 vi.mock('@/lib/mothership/request/headers', () => ({
   mothershipRequestHeaders: () => ({ 'x-api-key': 'worker-key' }),
 }))
 vi.mock('@/lib/mothership/transport/control', () => ({ executeSimControl: execute }))
 vi.mock('@/lib/mothership/transport/connection', () => ({
-  getSimConnection: () => ({ mode: 'checkpoint', channelId: 'a'.repeat(64) }),
+  getSimConnection: () => connection(),
 }))
 vi.mock('@/lib/mothership/server/agent-url', () => mothershipAgentUrlMock)
 vi.mock('@sim/utils/helpers', () => utilsHelpersMock)
+vi.mock('@/lib/core/config/env', () => ({
+  env: { COPILOT_API_KEY: 'worker-key' },
+}))
 
-import { receiveSimControls } from '@/lib/mothership/transport/receiver'
+import {
+  ensureSimReceiverForBaseURL,
+  receiveSimControls,
+} from '@/lib/mothership/transport/receiver'
 
 const mocks = {
   fetch: mothershipGoFetchMockFns.mockFetchGo,
@@ -112,5 +121,26 @@ describe('outbound receiver lifecycle', () => {
       })
     await receiveSimControls('https://worker.test', 'a'.repeat(64), controller.signal)
     expect(mocks.execute).toHaveBeenCalledOnce()
+  })
+
+  it('waits until the first poll is in flight before resolving readiness', async () => {
+    const baseURL = `https://worker-${generateId()}.test`
+    let pollStarted = false
+    mocks.sleep.mockImplementation(async (ms: number) => {
+      if (ms === 750) expect(pollStarted).toBe(true)
+    })
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (url.endsWith('/poll')) {
+        pollStarted = true
+        await new Promise<void>(() => {})
+      }
+      return Response.json({ accepted: true })
+    })
+    await ensureSimReceiverForBaseURL(baseURL)
+    expect(pollStarted).toBe(true)
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      `${baseURL}/api/sim-transport/poll`,
+      expect.objectContaining({ method: 'POST' })
+    )
   })
 })
