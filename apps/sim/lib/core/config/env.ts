@@ -564,6 +564,12 @@ export const env = createEnv({
     //Presentation API URL
     PRESENTATION_API_BASE_URL:             z.string().url().optional(),            // Presentation API base URL
 
+    // Agent access-request listing (platform-admin settings → workflow execute)
+    SIM_WORKFLOW_API_KEY:                  z.string().min(1).optional(),           // X-API-Key for Sim workflow execute calls
+    SIM_AGENT_BASE_URL:                    z.string().url().optional(),            // Base URL for Sim agent APIs (e.g. https://test-agent.thearena.ai)
+    SIM_GET_REQUEST_AGENTS_APPROVAL_WORKFLOW_ID: z.string().min(1).optional(),     // Workflow ID that lists agent access-request rows
+    SIM_APPROVE_REQUEST_AGENTS_WORKFLOW_ID: z.string().min(1).optional(),          // Workflow ID that applies done/cancelled status to selected requests
+
     // Real-time Communication
     SOCKET_SERVER_URL:                     z.string().url().optional(),            // WebSocket server URL for real-time features
     PORT:                                  z.number().optional(),                  // Main application port

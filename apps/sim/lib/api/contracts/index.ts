@@ -7,6 +7,7 @@
  * Import from the specific contract file instead.
  */
 export * from './admin'
+export * from './agent-access-requests'
 export * from './api-keys'
 export * from './audit-logs'
 export * from './byok-keys'
