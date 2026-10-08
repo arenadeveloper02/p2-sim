@@ -172,7 +172,7 @@ export {
   toolsUtilsMock,
   toolsUtilsMockFns,
 } from './blocks.mock'
-// Copilot HTTP mocks (for @/lib/copilot/request/http)
+// Copilot HTTP mocks (for @/lib/mothership/request/http)
 export {
   copilotHttpMock,
   copilotHttpMockFns,

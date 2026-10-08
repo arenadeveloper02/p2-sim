@@ -557,3 +557,19 @@ export async function isOrganizationAdminOrOwner(
     .limit(1)
   return isOrgAdminRole(row?.role)
 }
+
+/** Workspace ids the user owns or holds any permission on. */
+export async function getWorkspaceIdsForUser(userId: string): Promise<string[]> {
+  const [owned, fromPermissions] = await Promise.all([
+    db.select({ id: workspace.id }).from(workspace).where(eq(workspace.ownerId, userId)),
+    db
+      .selectDistinct({ entityId: permissions.entityId })
+      .from(permissions)
+      .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace'))),
+  ])
+  const ids = new Set(owned.map((row) => row.id))
+  for (const row of fromPermissions) {
+    if (row.entityId) ids.add(row.entityId)
+  }
+  return [...ids]
+}

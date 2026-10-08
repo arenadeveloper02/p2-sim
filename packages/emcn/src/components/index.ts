@@ -115,6 +115,7 @@ export { Input } from './input/input'
 export { InputOTP, InputOTPGroup, InputOTPSlot } from './input-otp/input-otp'
 export { Label } from './label/label'
 export { Lightbox } from './lightbox/lightbox'
+export { focusFirstTextInputIn } from './modal/auto-focus'
 export {
   Modal,
   ModalBody,

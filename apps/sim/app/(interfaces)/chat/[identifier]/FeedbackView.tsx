@@ -1,12 +1,8 @@
 'use client'
 
-import { Tooltip } from '@sim/emcn'
-import { createLogger } from '@sim/logger'
+import { Button, Tooltip } from '@sim/emcn'
 import { ArrowLeft, ThumbsDown, ThumbsUp } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import MarkdownRenderer from '@/app/(interfaces)/chat/components/message/components/markdown-renderer'
-
-const logger = createLogger('FeedbackView')
 
 interface FeedbackItem {
   executionId?: string
@@ -81,7 +77,6 @@ const getFeedbackTags = (item: FeedbackItem) => {
   const outOfDate = item.feedback?.outOfDate ?? item.outOfDate
   const tooLong = item.feedback?.tooLong ?? item.tooLong
   const tooShort = item.feedback?.tooShort ?? item.tooShort
-  const liked = item.feedback?.liked ?? item.liked
   const comment = item.feedback?.comment ?? item.comment
 
   if (inAccurate) tags.push({ label: 'Inaccurate', color: 'bg-red-100 text-red-800' })
@@ -89,7 +84,6 @@ const getFeedbackTags = (item: FeedbackItem) => {
   if (outOfDate) tags.push({ label: 'Out of Date', color: 'bg-yellow-100 text-yellow-800' })
   if (tooLong) tags.push({ label: 'Too Long', color: 'bg-purple-100 text-purple-800' })
   if (tooShort) tags.push({ label: 'Too Short', color: 'bg-blue-100 text-blue-800' })
-  // if (liked === true) tags.push({ label: 'Liked', color: 'bg-green-100 text-green-800' })
 
   return { tags, comment }
 }
@@ -98,9 +92,7 @@ export function FeedbackView({
   feedbackData,
   isLoading,
   error,
-  workflowTitle,
   page,
-  pageSize,
   totalPages,
   totalCount,
   onPageChange,

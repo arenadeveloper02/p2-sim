@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
-import type { MothershipResource } from '@/lib/copilot/resources/types'
+import type { MothershipResource } from '@/lib/mothership/resources/types'
 import { normalizeEditWorkflowArgs } from '@/lib/mothership/tools/server/workflow/edit-workflow/normalize-args'
 import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
@@ -89,7 +89,9 @@ async function ensureHandlersReady() {
   logger.info('Arena Copilot ensuring handlers registered', {
     memory: getLocalCopilotMemorySnapshot(),
   })
-  const { ensureHandlersRegistered } = await import('@/lib/copilot/tool-executor/register-handlers')
+  const { ensureHandlersRegistered } = await import(
+    '@/lib/mothership/tool-executor/register-handlers'
+  )
   ensureHandlersRegistered()
   handlersRegistered = true
   logger.info('Arena Copilot handlers ready', {
@@ -766,7 +768,7 @@ async function executeLocalCopilotToolInner(
 
       await ensureHandlersReady()
       const { createServerToolHandler } = await import(
-        '@/lib/copilot/tools/registry/server-tool-adapter'
+        '@/lib/mothership/tools/registry/server-tool-adapter'
       )
       const handler = createServerToolHandler('get_blocks_metadata')
       const metadataResult = await handler(
@@ -921,10 +923,10 @@ async function executeLocalCopilotToolInner(
       }
 
       await ensureHandlersReady()
-      const { hasHandler } = await import('@/lib/copilot/tool-executor/executor')
+      const { hasHandler } = await import('@/lib/mothership/tool-executor/executor')
       if (hasHandler(toolId)) {
         const { createServerToolHandler } = await import(
-          '@/lib/copilot/tools/registry/server-tool-adapter'
+          '@/lib/mothership/tools/registry/server-tool-adapter'
         )
         const handler = createServerToolHandler(toolId)
         const normalizedParams =
@@ -968,7 +970,7 @@ async function executeLocalCopilotToolInner(
 
       await ensureHandlersReady()
       const { executeTool: executeCopilotRegistryTool } = await import(
-        '@/lib/copilot/tool-executor/executor'
+        '@/lib/mothership/tool-executor/executor'
       )
 
       const executionContext = {

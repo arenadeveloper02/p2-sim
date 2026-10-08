@@ -193,6 +193,16 @@ export async function listAccessibleWorkspaceRowsForUser(
   )
 }
 
+/** Membership workspaces for usage analytics: owned rows stay `owner`, other grants keep their permission. */
+export async function listUserWorkspaces(userId: string, scope: WorkspaceScope = 'active') {
+  const rows = await listAccessibleWorkspaceRowsForUser(userId, scope)
+  return rows.map(({ workspace: ws, permissionType }) => ({
+    workspaceId: ws.id,
+    workspaceName: ws.name,
+    role: ws.ownerId === userId ? 'owner' : permissionType,
+  }))
+}
+
 export interface ReassignBilledAccountResult {
   reassigned: Array<{ workspaceId: string; newBilledAccountUserId: string }>
   unresolved: string[]

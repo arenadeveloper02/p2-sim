@@ -1,11 +1,11 @@
 import { isRecordLike } from '@sim/utils/object'
-import { MothershipStreamV1EventType } from '@/lib/copilot/generated/mothership-stream-v1'
+import { MothershipStreamV1EventType } from '@/lib/mothership/generated/mothership-stream-v1'
 import {
   isToolCallStreamEvent,
   isToolResultStreamEvent,
   type SyntheticFilePreviewPayload,
-} from '@/lib/copilot/request/session'
-import type { OrchestratorOptions, StreamEvent } from '@/lib/copilot/request/types'
+} from '@/lib/mothership/request/session'
+import type { OrchestratorOptions, StreamEvent } from '@/lib/mothership/request/types'
 import {
   extractLocalFileChatResources,
   localFileBodyContent,

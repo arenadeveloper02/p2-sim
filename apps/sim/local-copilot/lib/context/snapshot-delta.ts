@@ -2,7 +2,7 @@
  * Incremental VFS inventory prompting: fingerprint baselines, id-keyed diffs,
  * and full / delta / unchanged system-message formatting for Local Copilot.
  */
-import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
+import type { VfsSnapshotV1 } from '@/lib/mothership/generated/vfs-snapshot-v1'
 import {
   computeSnapshotContentRevision,
   isSnapshotBundleFresh,

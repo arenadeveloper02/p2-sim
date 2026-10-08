@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
-import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
+import { extractResourcesFromToolResult } from '@/lib/mothership/resources/extraction'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
@@ -29,7 +29,6 @@ import {
 import { rejectOfficeFileViaSandbox } from '@/local-copilot/lib/tools/reject-office-via-sandbox'
 import {
   ARENA_ALIASED_SERVER_TOOL_NAMES,
-  ARENA_FILE_PIPELINE_TOOL_NAMES,
   isArenaFilePipelineTool,
   toServerRegistryToolName,
 } from '@/local-copilot/lib/tools/resolve-tool-name-alias'
@@ -115,7 +114,7 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
   if (!arenaFileAliasesRegistered) {
     const { registerHandler, hasHandler } = await import('@/lib/mothership/tool-executor/executor')
     const { createServerToolHandler } = await import(
-      '@/lib/copilot/tools/registry/server-tool-adapter'
+      '@/lib/mothership/tools/registry/server-tool-adapter'
     )
     for (const arenaName of ARENA_ALIASED_SERVER_TOOL_NAMES) {
       // function_execute is handled via executeTool('run_function') on fallthrough —
@@ -275,7 +274,7 @@ async function executeCopilotServerTool(
   workflowId?: string
 ): Promise<ToolExecutionResult> {
   const { createServerToolHandler } = await import(
-    '@/lib/copilot/tools/registry/server-tool-adapter'
+    '@/lib/mothership/tools/registry/server-tool-adapter'
   )
   const serverToolName = toServerRegistryToolName(arenaToolName)
   const handler = createServerToolHandler(serverToolName)
@@ -503,7 +502,7 @@ export async function executeMothershipDelegatedTool(
   // so path-only `outputs.files` land in the workspace VFS. Arena must do the
   // same — otherwise Claude sees a sandbox "success" while files/ never updates.
   if (toolName === 'function_execute' && result.success) {
-    const { maybeWriteOutputToFile } = await import('@/lib/copilot/request/tools/files')
+    const { maybeWriteOutputToFile } = await import('@/lib/mothership/request/tools/files')
     const written = await maybeWriteOutputToFile(
       toolName,
       enrichedArgs,

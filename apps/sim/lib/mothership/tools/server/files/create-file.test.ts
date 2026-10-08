@@ -7,13 +7,13 @@ const { mockExecuteCopilotFileUseCase } = vi.hoisted(() => ({
   mockExecuteCopilotFileUseCase: vi.fn(),
 }))
 
-vi.mock('@/lib/copilot/application/execute-file-use-case', () => ({
+vi.mock('@/lib/mothership/application/execute-file-use-case', () => ({
   executeCopilotFileUseCase: mockExecuteCopilotFileUseCase,
 }))
 
 vi.mock('@/lib/workspace-files/application/write-workspace-file-by-path', () => ({
-  createWorkspaceFileByPath: vi.fn(),
-  updateWorkspaceFileContentByPath: vi.fn(),
+  createWorkspaceFileBufferByPath: vi.fn(),
+  updateWorkspaceFileContentBufferByPath: vi.fn(),
 }))
 
 vi.mock('@/lib/uploads/contexts/workspace/workspace-file-secret-provenance', () => ({
@@ -30,11 +30,11 @@ describe('createFileServerTool', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockExecuteCopilotFileUseCase.mockImplementation(
-      async (_ctx: unknown, _useCase: unknown, input: { path: string; content: string }) => ({
+      async (_ctx: unknown, _useCase: unknown, input: { path: string; content: Buffer }) => ({
         id: 'file-1',
         name: input.path.split('/').pop() ?? input.path,
         vfsPath: input.path,
-        size: Buffer.byteLength(input.content, 'utf-8'),
+        size: input.content.byteLength,
       })
     )
   })
@@ -55,7 +55,7 @@ describe('createFileServerTool', () => {
       expect.anything(),
       expect.objectContaining({
         path: 'files/notes.md',
-        content: '# Hello\n\nBody text',
+        content: Buffer.from('# Hello\n\nBody text', 'utf-8'),
       })
     )
   })
@@ -85,7 +85,7 @@ describe('createFileServerTool', () => {
       expect.anything(),
       expect.objectContaining({
         path: 'files/Deck.pptx',
-        content: '',
+        content: Buffer.from('', 'utf-8'),
       })
     )
   })
@@ -105,7 +105,7 @@ describe('createFileServerTool', () => {
       expect.anything(),
       expect.objectContaining({
         path: 'files/samples.json',
-        content: JSON.stringify({ samples: [{ id: 1 }] }, null, 2),
+        content: Buffer.from(JSON.stringify({ samples: [{ id: 1 }] }, null, 2), 'utf-8'),
       })
     )
   })

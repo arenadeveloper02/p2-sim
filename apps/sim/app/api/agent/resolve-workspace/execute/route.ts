@@ -5,12 +5,12 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
-import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
-import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
-import { chatPubSub } from '@/lib/copilot/chat-status'
-import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { fetchStreamingPost } from '@/lib/core/utils/streaming-fetch'
+import { appendCopilotChatMessages } from '@/lib/mothership/chat/messages-store'
+import { normalizeMessage, type PersistedMessage } from '@/lib/mothership/chat/persisted-message'
+import { chatPubSub } from '@/lib/mothership/chat-status'
+import { requestChatTitle } from '@/lib/mothership/request/lifecycle/start'
 
 const logger = createLogger('AgentResolveWorkspaceExecute')
 

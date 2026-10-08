@@ -17,8 +17,8 @@ import {
   type WorkspaceFileSecretProvenance,
 } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import {
-  createWorkspaceFileByPath,
-  updateWorkspaceFileContentByPath,
+  createWorkspaceFileBufferByPath,
+  updateWorkspaceFileContentBufferByPath,
   type WriteWorkspaceFileByPathResult,
 } from '@/lib/workspace-files/application/write-workspace-file-by-path'
 import { SIM_PAGE_CONTENT_TYPE } from '@/lib/workspace-files/page-compile'
@@ -127,13 +127,13 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
         : { status: 'unknown' }
     }
 
+    const contentBuffer = Buffer.from(fileContent, 'utf-8')
     const createShell = () =>
-      executeCopilotFileUseCase(context, createWorkspaceFileByPath, {
+      executeCopilotFileUseCase(context, createWorkspaceFileBufferByPath, {
         workspaceId,
         path: storedPath,
         mode: 'create',
-        content: fileContent,
-        encoding: 'utf-8',
+        content: contentBuffer,
         contentType,
         exactName: true,
         secretProvenance,
@@ -159,16 +159,19 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
       let result: WriteWorkspaceFileByPathResult
       if (mode === 'overwrite') {
         try {
-          result = await executeCopilotFileUseCase(context, updateWorkspaceFileContentByPath, {
-            workspaceId,
-            path: storedPath,
-            mode,
-            content: fileContent,
-            encoding: 'utf-8',
-            contentType,
-            syncLiveDoc: false,
-            secretProvenance,
-          })
+          result = await executeCopilotFileUseCase(
+            context,
+            updateWorkspaceFileContentBufferByPath,
+            {
+              workspaceId,
+              path: storedPath,
+              mode,
+              content: contentBuffer,
+              contentType,
+              syncLiveDoc: false,
+              secretProvenance,
+            }
+          )
         } catch (overwriteError) {
           // Upsert: overwrite of a missing path falls through to create.
           if (asOrchestrationError(overwriteError)?.code !== 'not_found') throw overwriteError

@@ -1,4 +1,4 @@
-import type { ToolExecutionContext } from '@/lib/copilot/tool-executor/types'
+import type { ToolExecutionContext } from '@/lib/mothership/tool-executor/types'
 import type { ExecuteWorkflowOptions } from '@/lib/workflows/executor/execute-workflow'
 
 /**

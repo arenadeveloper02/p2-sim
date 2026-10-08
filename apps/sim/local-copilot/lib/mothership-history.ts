@@ -5,11 +5,11 @@ import {
   type PersistedContentBlock,
   type PersistedMessage,
   stripToolResultOutput,
-} from '@/lib/copilot/chat/persisted-message'
+} from '@/lib/mothership/chat/persisted-message'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
-} from '@/lib/copilot/generated/mothership-stream-v1'
+} from '@/lib/mothership/generated/mothership-stream-v1'
 import { LOCAL_COPILOT_MAX_HISTORY_MESSAGES } from '@/local-copilot/lib/context/context-budget'
 import type { SessionMemoryTurn } from '@/local-copilot/lib/context/session-memory'
 import type { ChatMessage, GeminiHistoryPart } from '@/local-copilot/lib/providers/types'

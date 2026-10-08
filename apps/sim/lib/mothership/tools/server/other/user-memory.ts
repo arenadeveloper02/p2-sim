@@ -3,7 +3,7 @@ import { localCopilotUserMemory } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { truncate } from '@sim/utils/string'
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
-// import { UserMemory } from '@/lib/copilot/generated/tool-catalog-v1'
+// import { UserMemory } from '@/lib/mothership/generated/tool-catalog-v1'
 import type { BaseServerTool, ServerToolContext } from '@/lib/mothership/tools/server/base-tool'
 
 const logger = createLogger('UserMemoryServerTool')

@@ -111,3 +111,11 @@ export async function checkKnowledgeBaseAccess(
 ): Promise<KnowledgeBaseAccessCheck> {
   return resolveKnowledgeBaseAccess(knowledgeBaseId, userId, false)
 }
+
+/** Write access: workspace write/admin, or ownership of a legacy knowledge base with no workspace. */
+export async function checkKnowledgeBaseWriteAccess(
+  knowledgeBaseId: string,
+  userId: string
+): Promise<KnowledgeBaseAccessCheck> {
+  return resolveKnowledgeBaseAccess(knowledgeBaseId, userId, true)
+}

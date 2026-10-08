@@ -2,8 +2,13 @@ import { db } from '@sim/db'
 import { organization, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
+import { getEffectiveBillingStatus } from '@/lib/billing/core/access'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
-import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
+import { isPro, isTeam } from '@/lib/billing/plan-helpers'
+import {
+  hasUsableSubscriptionAccess,
+  isOrgScopedSubscription,
+} from '@/lib/billing/subscriptions/utils'
 import { toDecimal, toNumber } from '@/lib/billing/utils/decimal'
 import type { DbClient } from '@/lib/db/types'
 
@@ -85,4 +90,15 @@ export async function addCredits(
 
     logger.info('Added credits to user', { userId: entityId, amount })
   }
+}
+
+/** Pro and Team subscribers with an unblocked subscription may buy credit packs. */
+export async function canPurchaseCredits(userId: string): Promise<boolean> {
+  const subscription = await getHighestPrioritySubscription(userId)
+  if (!subscription) return false
+  const billingStatus = await getEffectiveBillingStatus(userId)
+  if (!hasUsableSubscriptionAccess(subscription.status, billingStatus.billingBlocked)) {
+    return false
+  }
+  return isPro(subscription.plan) || isTeam(subscription.plan)
 }

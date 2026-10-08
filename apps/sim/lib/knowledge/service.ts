@@ -983,6 +983,38 @@ export async function getActiveKnowledgeBaseReference(
   return row ? toActiveKnowledgeBaseReference(row) : null
 }
 
+/** Active knowledge base plus a live document count, for copy and other callers that return the full record. */
+export async function getKnowledgeBaseById(
+  knowledgeBaseId: string
+): Promise<KnowledgeBaseWithCounts | null> {
+  const reference = await getActiveKnowledgeBaseReference(knowledgeBaseId)
+  if (!reference) return null
+
+  const [stored] = await db
+    .select({ tokenCount: knowledgeBase.tokenCount })
+    .from(knowledgeBase)
+    .where(eq(knowledgeBase.id, knowledgeBaseId))
+    .limit(1)
+  const [docCountRow] = await db
+    .select({ docCount: count() })
+    .from(document)
+    .where(
+      and(
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        isNull(document.deletedAt),
+        isNull(document.archivedAt)
+      )
+    )
+
+  return {
+    ...reference,
+    tokenCount: stored?.tokenCount ?? 0,
+    docCount: Number(docCountRow?.docCount ?? 0),
+    connectorTypes: [],
+    hasPermissionScopedConnector: false,
+  }
+}
+
 /** Loads active references in one statement while preserving requested order and missing entries. */
 export async function getActiveKnowledgeBaseReferences(
   knowledgeBaseIds: readonly string[]

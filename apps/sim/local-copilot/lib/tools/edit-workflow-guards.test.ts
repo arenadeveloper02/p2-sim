@@ -7,7 +7,7 @@ vi.mock('@/lib/workflows/sanitization/json-sanitizer', () => ({
   sanitizeForCopilot: (value: unknown) => value,
 }))
 
-vi.mock('@/lib/copilot/chat/document-format-guidance', () => ({
+vi.mock('@/lib/mothership/chat/document-format-guidance', () => ({
   documentLayoutFollowUpHint: (_fileName: string, hint: string) => hint,
 }))
 

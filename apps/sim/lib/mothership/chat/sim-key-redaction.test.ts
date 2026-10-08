@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
-} from '@/lib/copilot/generated/mothership-stream-v1'
+} from '@/lib/mothership/generated/mothership-stream-v1'
 import type { ChatMessage } from '@/app/workspace/[workspaceId]/home/types'
 import {
   captureRevealedSimKeys,

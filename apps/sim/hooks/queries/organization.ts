@@ -52,6 +52,7 @@ import { workspaceKeys } from '@/hooks/queries/workspace'
 
 const invitationListsKey = ['invitations', 'list'] as const
 
+export const ORGANIZATION_LIST_STALE_TIME = 30 * 1000
 export const ORGANIZATION_ROSTER_STALE_TIME = 30 * 1000
 export const ORGANIZATION_DETAIL_STALE_TIME = 30 * 1000
 export const ORGANIZATION_BILLING_STALE_TIME = 30 * 1000

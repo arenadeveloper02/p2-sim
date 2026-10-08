@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { buildCopilotWorkflowLineageOptions } from '@/lib/copilot/tools/handlers/workflow/lineage'
+import { buildCopilotWorkflowLineageOptions } from '@/lib/mothership/tools/handlers/workflow/lineage'
 
 describe('buildCopilotWorkflowLineageOptions', () => {
   it('passes triggering ids for standalone copilot chat runs', () => {

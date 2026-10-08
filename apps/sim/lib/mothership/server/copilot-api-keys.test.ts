@@ -19,7 +19,7 @@ import {
   listCopilotApiKeys,
   requestUsesCopilotApiKey,
   stripCopilotApiKeyHeader,
-} from '@/lib/copilot/server/copilot-api-keys'
+} from '@/lib/mothership/server/copilot-api-keys'
 
 describe('copilot-api-keys', () => {
   beforeEach(() => {

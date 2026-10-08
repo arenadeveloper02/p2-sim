@@ -5,6 +5,9 @@ import type {
   PersistedToolCall,
   PersistedToolState,
 } from '@/lib/api/contracts/copilot-messages'
+
+export type { PersistedContentBlock } from '@/lib/api/contracts/copilot-messages'
+
 import { buildMothershipErrorTag } from '@/lib/mothership/chat/error-tag'
 import { compactRetrievalCitations } from '@/lib/mothership/chat/retrieval-citations'
 import {
