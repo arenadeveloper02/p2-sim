@@ -21,7 +21,6 @@ import {
   UPGRADE_REASON_PARAM,
 } from '@/lib/billing/upgrade-reasons'
 import { isLocalLoginEnabled } from '@/lib/core/config/env-flags'
-import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
 import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
@@ -142,12 +141,7 @@ export default function WorkspacePage() {
 
     hasRedirectedRef.current = true
 
-    const localRecentId = WorkspaceRecencyStorage.getMostRecent()
-    const findWorkspace = (id: string | null) =>
-      id ? workspaces.find((w) => w.id === id) : undefined
-
-    const targetWorkspace =
-      findWorkspace(localRecentId) ?? findWorkspace(lastActiveWorkspaceId) ?? workspaces[0]
+    const targetWorkspace = workspaces.find((w) => w.id === lastActiveWorkspaceId) ?? workspaces[0]
 
     if (redirectWorkflowId) {
       handleWorkflowRedirect(redirectWorkflowId, targetWorkspace.id, router)

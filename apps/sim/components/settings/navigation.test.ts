@@ -1,6 +1,3 @@
-/**
- * @vitest-environment node
- */
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -56,11 +53,6 @@ const SELF_HOSTED_ALL_FEATURES: DeploymentShape = {
   features: { ...SELF_HOSTED.features, customBlocks: true },
 }
 
-/** Every workspace-plane section a self-hosted deployment offers; BYOK is Sim Cloud only. */
-const SELF_HOSTED_WORKSPACE_SECTIONS = WORKSPACE_SETTINGS_ITEMS.map(({ id }) => id).filter(
-  (id) => id !== 'byok'
-)
-
 const ALL_ENTITLEMENTS = {
   customBlocks: true,
   forks: true,
@@ -88,6 +80,7 @@ describe('settings navigation boundaries', () => {
       'desktop',
       'browser',
       'terminal',
+      'requests',
       'access-control',
       'audit-logs',
       'billing',
@@ -131,6 +124,7 @@ describe('settings navigation boundaries', () => {
       'workflow-mcp-servers',
       'api-keys',
       'recently-deleted',
+      'requests',
       'self-host',
     ])
   })
@@ -324,6 +318,7 @@ describe('settings navigation boundaries', () => {
       mcp: 'mcp',
       'workflow-mcp-servers': 'workflow-mcp-servers',
       apikeys: 'api-keys',
+      requests: 'requests',
       'recently-deleted': 'recently-deleted',
       'self-host': 'self-host',
     })
@@ -409,11 +404,6 @@ describe('settings navigation boundaries', () => {
     expect(parseWorkspacePath('/workspace/workspace-a/settings/not-a-section')).toBeNull()
   })
 
-  it('keeps API keys split between account and workspace settings', () => {
-    expect(ACCOUNT_SETTINGS_ITEMS.some(({ id }) => id === 'api-keys')).toBe(true)
-    expect(WORKSPACE_SETTINGS_ITEMS.some(({ id }) => id === 'api-keys')).toBe(true)
-  })
-
   it('requires target-organization membership and admin authority', () => {
     expect(
       resolveOrganizationSectionAccess({
@@ -428,7 +418,7 @@ describe('settings navigation boundaries', () => {
         isTargetOrganizationMember: true,
         isTargetOrganizationAdmin: false,
       })
-    ).toBe('unavailable')
+    ).toBe('view')
     expect(
       resolveOrganizationSectionAccess({
         section: 'sso',
@@ -445,41 +435,42 @@ describe('settings navigation boundaries', () => {
     ).toBe('manage')
   })
 
-  it('allows members to recover their own organization chats without changing workspace settings ownership', () => {
+  it('allows member requests while reserving management for organization admins', () => {
     expect(
       resolveOrganizationSectionAccess({
-        section: 'recently-deleted',
+        section: 'requests',
         isTargetOrganizationMember: true,
         isTargetOrganizationAdmin: false,
       })
     ).toBe('view')
     expect(
       resolveOrganizationSectionAccess({
-        section: 'recently-deleted',
+        section: 'requests',
         isTargetOrganizationMember: false,
-        isTargetOrganizationAdmin: false,
+        isTargetOrganizationAdmin: true,
       })
     ).toBe('unavailable')
-    expect(ORGANIZATION_PLANE_UNIFIED_SECTIONS.has('recently-deleted')).toBe(false)
-  })
-
-  it('gates organization control-plane sections by the target organization plan', () => {
-    const hostedFree = {
-      billingEnabled: true,
-      hasEnterprisePlan: false,
-      governanceActive: false,
-      hosted: true,
-      selfHosted: {},
-    }
-    expect(isOrganizationSettingsSectionAvailable('members', hostedFree)).toBe(true)
-    expect(isOrganizationSettingsSectionAvailable('recently-deleted', hostedFree)).toBe(true)
-    expect(isOrganizationSettingsSectionAvailable('billing', hostedFree)).toBe(true)
-    expect(isOrganizationSettingsSectionAvailable('sso', hostedFree)).toBe(false)
     expect(
-      isOrganizationSettingsSectionAvailable('sso', {
-        ...hostedFree,
-        hasEnterprisePlan: true,
+      resolveOrganizationSectionAccess({
+        section: 'requests',
+        isTargetOrganizationMember: true,
+        isTargetOrganizationAdmin: true,
       })
+    ).toBe('manage')
+    expect(
+      isOrganizationSettingsSectionAvailable(
+        'requests',
+        getOrganizationSettingsFeatures(false, SELF_HOSTED)
+      )
+    ).toBe(true)
+    expect(
+      isOrganizationSettingsSectionAvailable(
+        'requests',
+        getOrganizationSettingsFeatures(false, {
+          ...SELF_HOSTED,
+          features: { ...SELF_HOSTED.features, accessControl: true },
+        })
+      )
     ).toBe(true)
   })
 
@@ -495,9 +486,10 @@ describe('settings navigation boundaries', () => {
         'workflow-mcp-servers',
         'api-keys',
         'recently-deleted',
+        'requests',
         'self-host',
       ],
-      mutable: [],
+      mutable: ['requests'],
     },
     {
       permission: 'write' as const,
@@ -510,14 +502,44 @@ describe('settings navigation boundaries', () => {
         'workflow-mcp-servers',
         'api-keys',
         'recently-deleted',
+        'requests',
         'self-host',
       ],
-      mutable: ['secrets', 'custom-tools', 'mcp', 'workflow-mcp-servers', 'recently-deleted'],
+      mutable: [
+        'secrets',
+        'custom-tools',
+        'mcp',
+        'workflow-mcp-servers',
+        'recently-deleted',
+        'requests',
+      ],
     },
     {
       permission: 'admin' as const,
-      visible: SELF_HOSTED_WORKSPACE_SECTIONS,
-      mutable: SELF_HOSTED_WORKSPACE_SECTIONS,
+      visible: [
+        'teammates',
+        'secrets',
+        'sandboxes',
+        'custom-tools',
+        'mcp',
+        'workflow-mcp-servers',
+        'api-keys',
+        'recently-deleted',
+        'requests',
+        'self-host',
+      ],
+      mutable: [
+        'teammates',
+        'secrets',
+        'sandboxes',
+        'custom-tools',
+        'mcp',
+        'workflow-mcp-servers',
+        'api-keys',
+        'recently-deleted',
+        'requests',
+        'self-host',
+      ],
     },
   ])(
     'makes workspace $permission navigation and mutation chrome explicit',
@@ -553,6 +575,7 @@ describe('settings navigation boundaries', () => {
       'teammates',
       'workflow-mcp-servers',
       'recently-deleted',
+      'requests',
       'self-host',
     ])
   })

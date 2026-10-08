@@ -95,7 +95,7 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
       memory: getLocalCopilotMemorySnapshot(),
     })
     const { ensureHandlersRegistered } = await import(
-      '@/lib/copilot/tool-executor/register-handlers'
+      '@/lib/mothership/tool-executor/register-handlers'
     )
     ensureHandlersRegistered()
     handlersRegistered = true
@@ -107,13 +107,13 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
 
   // Rebuild from the live registry so Arena aliases (create_file) appear after
   // hot reload without requiring a full process restart.
-  const { getRegisteredServerToolNames } = await import('@/lib/copilot/tools/server/router')
+  const { getRegisteredServerToolNames } = await import('@/lib/mothership/tools/server/router')
   copilotServerToolNames = new Set(getRegisteredServerToolNames())
 
   // Hot-reload safety: older handler snapshots may lack Arena leaf names even
   // when create_empty_file / manage_knowledge_base / web_search are present.
   if (!arenaFileAliasesRegistered) {
-    const { registerHandler, hasHandler } = await import('@/lib/copilot/tool-executor/executor')
+    const { registerHandler, hasHandler } = await import('@/lib/mothership/tool-executor/executor')
     const { createServerToolHandler } = await import(
       '@/lib/copilot/tools/registry/server-tool-adapter'
     )
@@ -490,7 +490,7 @@ export async function executeMothershipDelegatedTool(
     billingEntityType: ctx.billingAttribution?.billingEntity.type ?? null,
     workspaceId: ctx.workspaceId,
   })
-  const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
+  const { executeTool } = await import('@/lib/mothership/tool-executor/executor')
   // Always execute under the Cloud/handler id (run_function, …) while keeping
   // the Arena leaf name on the tool result for the model.
   let result = await executeTool(

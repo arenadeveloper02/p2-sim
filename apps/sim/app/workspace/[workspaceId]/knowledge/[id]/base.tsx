@@ -58,34 +58,36 @@ import type { DocumentData } from '@/lib/knowledge/types'
 import { captureEvent } from '@/lib/posthog/client'
 import { formatFileSize } from '@/lib/uploads/utils/file-utils'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
-import type {
-  BreadcrumbItem,
-  FilterTag,
-  ResourceAction,
-  ResourceCell,
-  ResourceRow,
-  SelectableConfig,
-  SortConfig,
-} from '@/app/workspace/[workspaceId]/components'
-import {
-  FILTER_SECTION_LABEL_CLASS,
-  FloatingOverflowText,
-  Resource,
-  ResourceNotFound,
-  resourceListState,
-  SearchHighlight,
-} from '@/app/workspace/[workspaceId]/components'
 import {
   FOLDERED_RESOURCE_HEADERS,
   folderBreadcrumbItems,
   folderedResourceListHref,
   useFolderAncestors,
 } from '@/app/workspace/[workspaceId]/components/folders'
+import { FloatingOverflowText } from '@/app/workspace/[workspaceId]/components/resource/components/floating-overflow-text'
 import {
   DocumentsEmptyState,
   ResourceListLoading,
   ResourceNoResults,
 } from '@/app/workspace/[workspaceId]/components/resource/components/resource-empty-state'
+import type {
+  BreadcrumbItem,
+  ResourceAction,
+} from '@/app/workspace/[workspaceId]/components/resource/components/resource-header'
+import type {
+  FilterTag,
+  SortConfig,
+} from '@/app/workspace/[workspaceId]/components/resource/components/resource-options'
+import { FILTER_SECTION_LABEL_CLASS } from '@/app/workspace/[workspaceId]/components/resource/components/resource-options'
+import { resourceListState } from '@/app/workspace/[workspaceId]/components/resource/is-resource-list-empty'
+import type {
+  ResourceCell,
+  ResourceRow,
+  SelectableConfig,
+} from '@/app/workspace/[workspaceId]/components/resource/resource'
+import { Resource } from '@/app/workspace/[workspaceId]/components/resource/resource'
+import { ResourceNotFound } from '@/app/workspace/[workspaceId]/components/resource/resource-not-found'
+import { SearchHighlight } from '@/app/workspace/[workspaceId]/components/search-highlight/search-highlight'
 /**
  * Deep import on purpose: the `[documentId]/components` barrel also exports `ChunkEditor`,
  * which needs exact token counts and therefore `js-tiktoken` (~2.5 MB gzip of BPE rank
@@ -440,7 +442,6 @@ export function KnowledgeBase({
   const {
     isOpen: isContextMenuOpen,
     position: contextMenuPosition,
-    menuRef,
     handleContextMenu: baseHandleContextMenu,
     closeMenu: closeContextMenu,
   } = useContextMenu()
@@ -1505,7 +1506,6 @@ export function KnowledgeBase({
         onOpenChange={setShowAddDocumentsModal}
         knowledgeBaseId={id}
         knowledgeBaseName={knowledgeBaseName}
-        chunkingConfig={knowledgeBase?.chunkingConfig}
       />
 
       {showAddConnectorModal && knowledgeBase && (

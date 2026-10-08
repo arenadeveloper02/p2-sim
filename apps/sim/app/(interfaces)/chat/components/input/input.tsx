@@ -2,12 +2,13 @@
 
 import type React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Badge, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
+import { Badge, Button, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
+import { ArrowUp, Paperclip, StopFilled, X } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { PublicChatActionButton } from '@/app/(interfaces)/chat/components/input/public-chat-action-button'
 import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_HEIGHT_CLASS,
@@ -111,7 +112,6 @@ export const ChatInput: React.FC<{
   const handleFileSelect = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
 
-    const newFiles: AttachedFile[] = []
     const maxSize = 10 * 1024 * 1024
     const maxFiles = 15
     const preparedFiles: AttachedFile[] = []
@@ -332,7 +332,6 @@ export const ChatInput: React.FC<{
         )}
       >
         <div ref={wrapperRef} className={`w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
-          {/* Error Messages */}
           {uploadErrors.length > 0 && (
             <div className='mb-3 flex flex-col gap-2'>
               {uploadErrors.map((error, idx) => (
@@ -430,31 +429,32 @@ export const ChatInput: React.FC<{
                   {attachedFiles.map((file) => (
                     <Tooltip.Root key={file.id}>
                       <Tooltip.Trigger asChild>
-                        <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-subtle)]'>
+                        <div className='group relative size-[56px] shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-3)]'>
                           {file.dataUrl ? (
                             <img
                               src={file.dataUrl}
                               alt={file.name}
-                              className='h-full w-full object-cover'
+                              className='size-full object-cover'
                             />
                           ) : (
-                            <div className='flex h-full w-full flex-col items-center justify-center gap-0.5 text-[var(--color-ds-text-tertiary)]'>
+                            <div className='flex size-full flex-col items-center justify-center gap-0.5 text-[var(--text-muted)]'>
                               <Paperclip className='size-[18px]' />
                               <span className='max-w-[48px] truncate px-[2px] text-[9px]'>
                                 {file.name.split('.').pop()}
                               </span>
                             </div>
                           )}
-                          <button
-                            type='button'
+                          <Button
+                            variant='ghost'
+                            aria-label={`Remove ${file.name}`}
                             onClick={(e) => {
                               e.stopPropagation()
                               handleRemoveFile(file.id)
                             }}
-                            className='absolute top-[2px] right-[2px] flex size-[16px] items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100'
+                            className='absolute top-[2px] right-[2px] size-[16px] rounded-full bg-black/60 p-0 text-white opacity-0 hover-hover:text-white group-hover:opacity-100'
                           >
-                            <X className='size-[10px] text-white' />
-                          </button>
+                            <X className='size-[10px]' />
+                          </Button>
                         </div>
                       </Tooltip.Trigger>
                       <Tooltip.Content side='top'>
@@ -465,7 +465,6 @@ export const ChatInput: React.FC<{
                 </div>
               )}
 
-              {/* Textarea + controls */}
               {useDeployedChrome ? (
                 renderDeployedControls()
               ) : (
@@ -477,21 +476,21 @@ export const ChatInput: React.FC<{
                     onKeyDown={handleKeyDown}
                     placeholder={isDragOver ? 'Drop files here...' : placeholder}
                     rows={1}
-                    className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] leading-[24px] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
+                    className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] leading-[24px] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
                   />
 
                   <div className='flex items-center justify-between'>
                     <div>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
-                          <button
-                            type='button'
+                          <PublicChatActionButton
+                            aria-label='Attach files'
+                            variant='quiet'
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isStreaming || attachedFiles.length >= 15}
-                            className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
                           >
-                            <Paperclip className='size-[16px]' strokeWidth={2} />
-                          </button>
+                            <Paperclip className='size-[16px]' />
+                          </PublicChatActionButton>
                         </Tooltip.Trigger>
                         <Tooltip.Content side='top'>
                           <p>Attach files</p>
@@ -514,37 +513,22 @@ export const ChatInput: React.FC<{
 
                     <div className='flex items-center gap-1.5'>
                       {isStreaming ? (
-                        <button
-                          type='button'
+                        <PublicChatActionButton
+                          variant='primary'
                           onClick={onStopStreaming}
-                          className='flex size-[28px] items-center justify-center rounded-full border-0 bg-[#383838] p-0 transition-colors hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
-                          title='Stop generation'
+                          aria-label='Stop generation'
                         >
-                          <svg
-                            className='block size-[14px] fill-white dark:fill-black'
-                            viewBox='0 0 24 24'
-                            xmlns='http://www.w3.org/2000/svg'
-                          >
-                            <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
-                          </svg>
-                        </button>
+                          <StopFilled className='block size-[14px] fill-current' />
+                        </PublicChatActionButton>
                       ) : (
-                        <button
-                          type='button'
+                        <PublicChatActionButton
+                          variant='primary'
                           onClick={handleSubmit}
                           disabled={!canSubmit}
-                          className={cn(
-                            'flex h-[28px] w-[28px] items-center justify-center rounded-full border-0 p-0 transition-colors',
-                            canSubmit
-                              ? 'bg-[#383838] hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
-                              : 'bg-[#808080] dark:bg-[#808080]'
-                          )}
+                          aria-label='Send message'
                         >
-                          <ArrowUp
-                            className='block size-[16px] text-white dark:text-black'
-                            strokeWidth={2.25}
-                          />
-                        </button>
+                          <ArrowUp className='block size-[16px]' />
+                        </PublicChatActionButton>
                       )}
                     </div>
                   </div>

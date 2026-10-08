@@ -46,7 +46,7 @@ export async function prefetchWorkspaceAccess(
     queryKey: accessRequestKeys.discovery(query),
     queryFn: async () => {
       const { discoverAccessRequests } = await import(
-        '@/lib/permission-access-requests/application/requests'
+        '@/ee/access-requests/lib/application/requests'
       )
       return discoverAccessRequestsContract.response.schema.parse(
         await discoverAccessRequests.execute({ principal, input: query })

@@ -7,7 +7,7 @@ import {
   GridOffset,
   Integration,
   Key,
-  // KeySquare,
+  ListChecks,
   Lock,
   LogIn,
   Palette,
@@ -65,6 +65,7 @@ export type OrganizationSettingsSection =
   | 'billing'
   | 'usage'
   | 'access-control'
+  | 'requests'
   | 'audit-logs'
   | 'sso'
   | 'security'
@@ -73,6 +74,7 @@ export type OrganizationSettingsSection =
   | 'whitelabeling'
 
 export type WorkspaceSettingsSection =
+  | 'requests'
   | 'teammates'
   | 'secrets'
   | 'byok'
@@ -110,6 +112,7 @@ export type UnifiedSettingsSection =
   | 'terminal'
   | 'secrets'
   | 'access-control'
+  | 'requests'
   | 'custom-blocks'
   | 'audit-logs'
   | 'apikeys'
@@ -185,7 +188,7 @@ export interface UnifiedSettingsNavigationItem {
   docsLink?: string
   /**
    * The organization-scoped counterpart of this section. Declaring it marks the
-   * section as acting on the host organization rather than the workspace, which
+   * section without a workspace projection as acting on the host organization, which
    * routes it through the organization gate (host organization present, org-admin
    * viewer, plan entitlement) in both the sidebar and the section page.
    *
@@ -248,7 +251,7 @@ export function isSelfHostedOverrideEnabled(
   deployment: DeploymentShape
 ): boolean {
   if (override === undefined || deployment.hosted) return false
-  return override === 'always' || deployment.features[override]
+  return override === 'always' || deployment.features[override] === true
 }
 
 type SettingsHrefSearchParams = Pick<URLSearchParams, 'toString'>
@@ -452,6 +455,20 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'account',
       order: 5,
       requiresDesktopSurface: 'terminal',
+    },
+  },
+  {
+    label: 'Requests',
+    icon: ListChecks,
+    unified: {
+      id: 'requests',
+      description: 'Track your requests and browse available access.',
+      group: 'workspace',
+      order: 12,
+      organizationSection: 'requests',
+    },
+    planes: {
+      workspace: { id: 'requests', group: 'workspace', order: 12 },
     },
   },
   {
@@ -990,7 +1007,7 @@ export const WORKSPACE_SETTINGS_ITEMS: SettingsNavigationItem<WorkspaceSettingsS
  */
 export const ORGANIZATION_PLANE_UNIFIED_SECTIONS: ReadonlySet<UnifiedSettingsSection> = new Set(
   SETTINGS_SECTION_REGISTRY.flatMap((entry) =>
-    entry.unified?.organizationSection ? [entry.unified.id] : []
+    entry.unified?.organizationSection && !entry.planes?.workspace ? [entry.unified.id] : []
   )
 )
 
@@ -1017,6 +1034,7 @@ const ORGANIZATION_SECTION_GROUPS: Record<OrganizationSettingsSection, Organizat
     usage: 'organization',
     whitelabeling: 'organization',
     'recently-deleted': 'organization',
+    requests: 'organization',
     'audit-logs': 'governance',
     'access-control': 'governance',
     sso: 'governance',
@@ -1054,7 +1072,7 @@ export const ORGANIZATION_SETTINGS_ITEMS: SettingsNavigationItem<OrganizationSet
     return {
       id,
       label: 'Sources',
-      description: 'Set up the sources your organization searches.',
+      description: '',
       icon: Integration,
       group,
     }
@@ -1117,7 +1135,7 @@ export const UNIFIED_TO_ORGANIZATION_SECTION: Readonly<
   Partial<Record<UnifiedSettingsSection, OrganizationSettingsSection>>
 > = Object.fromEntries(
   SETTINGS_SECTION_REGISTRY.flatMap((entry) =>
-    entry.unified?.organizationSection
+    entry.unified?.organizationSection && !entry.planes?.workspace
       ? [[entry.unified.id, entry.unified.organizationSection] as const]
       : []
   )
@@ -1148,6 +1166,8 @@ export function resolveOrganizationSectionAccess({
 }: ResolveOrganizationSectionAccessOptions): OrganizationSectionAccess {
   if (!isTargetOrganizationMember) return 'unavailable'
   if (section === 'search-mcp' || section === 'recently-deleted') return 'view'
+  if (section === 'members' || section === 'requests')
+    return isTargetOrganizationAdmin ? 'manage' : 'view'
   return isTargetOrganizationAdmin ? 'manage' : 'unavailable'
 }
 
@@ -1198,7 +1218,12 @@ export function isOrganizationSettingsSectionAvailable(
   section: OrganizationSettingsSection,
   features: OrganizationSettingsFeatures
 ): boolean {
-  if (section === 'members' || section === 'search-mcp' || section === 'recently-deleted')
+  if (
+    section === 'members' ||
+    section === 'search-mcp' ||
+    section === 'recently-deleted' ||
+    section === 'requests'
+  )
     return true
   if (section === 'billing') return features.billingEnabled
   /* Sim Search itself is enterprise on the hosted product; self-hosted gates it by flag, not by section. */
@@ -1310,6 +1335,7 @@ export interface ResolvedWorkspaceNavigationItem
 }
 
 const WORKSPACE_MUTATION_PERMISSION: Record<WorkspaceSettingsSection, PermissionType> = {
+  requests: 'read',
   teammates: 'admin',
   secrets: 'write',
   byok: 'admin',
@@ -1334,9 +1360,9 @@ export function canMutateWorkspaceSettingsSection(
   section: WorkspaceSettingsSection,
   capabilities: WorkspaceMutationCapabilities
 ): boolean {
-  return WORKSPACE_MUTATION_PERMISSION[section] === 'admin'
-    ? capabilities.canAdmin
-    : capabilities.canEdit
+  const permission = WORKSPACE_MUTATION_PERMISSION[section]
+  if (permission === 'read') return true
+  return permission === 'admin' ? capabilities.canAdmin : capabilities.canEdit
 }
 
 export function resolveWorkspaceNavigation({

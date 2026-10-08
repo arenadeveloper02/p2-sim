@@ -2,7 +2,6 @@ import { HubspotIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
-import type { HubSpotResponse } from '@/tools/hubspot/types'
 import { getTrigger } from '@/triggers'
 
 // Cache to prevent multiple API calls for the same credential
@@ -76,7 +75,7 @@ const fetchCampaignOptions = async (
         campaignCache.set(credentialId, { data: options, timestamp: now })
 
         return options
-      } catch (error) {
+      } catch {
         // Try to return cached data on error
         if (cached) {
           return cached.data
@@ -92,7 +91,7 @@ const fetchCampaignOptions = async (
     campaignInFlightRequests.set(credentialId, requestPromise)
 
     return requestPromise
-  } catch (error) {
+  } catch {
     // Try to return cached data on error
     try {
       const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
@@ -120,12 +119,11 @@ const fetchCampaignOptions = async (
   }
 }
 
-const validateCampaignValue = (params: Record<string, any>, isMulti: boolean): string => {
-  // No validation logic - just return undefined to let the system handle the value
+const validateCampaignValue = (_params: Record<string, unknown>, _isMulti: boolean): string => {
   return undefined as unknown as string
 }
 
-export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
+export const HubSpotBlock: BlockConfig = {
   type: 'hubspot',
   name: 'HubSpot',
   description: 'Interact with HubSpot CRM or trigger workflows from HubSpot events',

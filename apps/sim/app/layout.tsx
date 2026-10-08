@@ -19,6 +19,7 @@ import {
 import { ArenaSessionShell } from '@/app/_shell/arena-session-shell'
 import { ConsentProvider } from '@/app/_shell/consent/consent-provider'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
+import { DesktopUpdateNotification } from '@/app/_shell/desktop-update-notification'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { PasteAdmissionGuard } from '@/app/_shell/paste-admission-guard'
 import { BrowserTelemetry } from '@/app/_shell/providers/browser-telemetry'
@@ -51,6 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const themeCSS = generateThemeCSS()
   const application = (
     <ToastProvider>
+      <DesktopUpdateNotification />
       <PasteAdmissionGuard />
       <PostHogProvider consentRequired={isHosted}>
         <ThemeProvider>
@@ -133,7 +135,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 // needs the same variables set before first paint.
                 try {
                   var path = window.location.pathname;
-                  if (path.indexOf('/workspace/') === -1 && path.indexOf('/o/') !== 0) {
+                  if (path.indexOf('/workspace/') === -1 && path.indexOf('/o/') !== 0 && path.indexOf('/account/settings') !== 0 && path.indexOf('/selfhost/settings') !== 0) {
                     return;
                   }
                 } catch (e) {

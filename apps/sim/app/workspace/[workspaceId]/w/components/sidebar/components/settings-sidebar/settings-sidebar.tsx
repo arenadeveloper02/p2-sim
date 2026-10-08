@@ -1,30 +1,38 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import {
+  Chip,
   ChipConfirmModal,
+  ChipTag,
   chipContentIconClass,
-  chipIconSlotClass,
   chipVariants,
   cn,
+  OverflowText,
+  scrollFadeAttributes,
+  scrollFadeClass,
+  useScrollEdges,
 } from '@sim/emcn'
-import { ChevronLeft } from '@sim/emcn/icons'
+import { ArrowUpRight, Building, ChevronLeft, Lock } from '@sim/emcn/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
-// import type { DesktopSettingsSurface } from '@/components/settings/navigation'
-// import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
-// import { useSession } from '@/lib/auth/auth-client'
+import {
+  getOrganizationSettingsHref,
+  getSettingsPermissionConfigKey,
+  isSelfHostedOverrideEnabled,
+  ORGANIZATION_PLANE_UNIFIED_SECTIONS,
+} from '@/components/settings/navigation'
+import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
+import { useSettingsNavigationState } from '@/components/settings/settings-navigation-provider'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
-// import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
-import { isHosted } from '@/lib/core/config/env-flags'
-// import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
+import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
-// import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
-// import { allNavigationItems, isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { sectionConfig } from '@/app/workspace/[workspaceId]/settings/navigation'
+import { warmSettingsSection } from '@/app/workspace/[workspaceId]/settings/section-warmers'
 import { useVisibleSettingsNavigation } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/use-visible-settings-navigation'
 import { SidebarSection } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-section'
+import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip'
 import {
   SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
   SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
@@ -32,15 +40,8 @@ import {
   SIDEBAR_RAIL_CHIP_CLASS,
   SIDEBAR_SECTION_GAP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
-import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
-// import { useSSOProviders } from '@/ee/sso/hooks/sso'
-// import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-available'
-import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
-// import { useGeneralSettings } from '@/hooks/queries/general-settings'
-import { prefetchGeneralSettings } from '@/hooks/queries/general-settings'
 import { useInboxConfig } from '@/hooks/queries/inbox'
-// import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
-// import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
@@ -52,6 +53,20 @@ interface SettingsSidebarProps {
    * Used when More opens the list before any settings route is selected.
    */
   onClose?: () => void
+}
+
+function warmArenaSettingsSection(section: SettingsSection) {
+  if (section === 'general') {
+    void import('@/app/workspace/[workspaceId]/settings/components/general/general')
+    return
+  }
+  if (section === 'arena-billing') {
+    void import('@/app/workspace/[workspaceId]/settings/components/billing-usage')
+    return
+  }
+  if (section === 'usage') {
+    void import('@/app/workspace/[workspaceId]/settings/components/usage/usage')
+  }
 }
 
 export function SettingsSidebar({
@@ -66,7 +81,6 @@ export function SettingsSidebar({
   const workspaceId = params.workspaceId as string
   const pathname = usePathname()
   const router = useRouter()
-
   const queryClient = useQueryClient()
 
   const requestLeave = useSettingsDirtyStore((s) => s.requestLeave)
@@ -75,219 +89,40 @@ export function SettingsSidebar({
   const pendingLeave = useSettingsDirtyStore((s) => s.pendingLeave)
   const showDiscardDialog = pendingLeave !== null
 
-  const [hasOverflowTop, setHasOverflowTop] = useState(false)
+  const scrollEdges = useScrollEdges(scrollContainerRef, {
+    contentRef: scrollContentRef,
+    enabled: !isCollapsed,
+  })
 
   const hostContext = useWorkspaceHostContext()
+  const deployment = useDeploymentShape()
   const { data: inboxConfig } = useInboxConfig(workspaceId)
   const navigationItems = useVisibleSettingsNavigation(workspaceId)
-
+  const { config: permissionConfig } = usePermissionConfig()
   const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
   const inboxEntitled = inboxConfig?.entitled ?? false
+  const organizationSettingsId =
+    hostContext.features?.organizationSearch && hostContext.viewer.isHostOrganizationMember
+      ? hostContext.hostOrganizationId
+      : null
 
-  /*
-  const [desktopSurfaces, setDesktopSurfaces] = useState<Record<DesktopSettingsSurface, boolean>>({
-    settings: false,
-    browser: false,
-    terminal: false,
-  })
+  const sidebarItems = useMemo(() => {
+    if (!organizationSettingsId) return navigationItems
+    return navigationItems.filter((item) => !ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id))
+  }, [navigationItems, organizationSettingsId])
 
-  const { data: session } = useSession()
-  const { data: generalSettings } = useGeneralSettings()
-  const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId)
-  const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
-    enabled: !isHosted,
-  })
-
-  const { config: permissionConfig } = usePermissionConfig()
-  const forkingAvailable = useForkingAvailable(workspaceId)
-  const { canAdmin: canAdminWorkspace } = useUserPermissionsContext()
-
-  const userId = session?.user?.id
-
-  const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
-  const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
-  const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
-  const isEnterprisePlan = subscriptionAccess.isEnterprise
-
-  const isSuperUser = session?.user?.role === 'admin'
-
-  const isSSOProviderOwner = useMemo(() => {
-    if (isHosted) return null
-    if (!userId || isLoadingSSO) return null
-    return ssoProvidersData?.providers?.some((p) => p.userId === userId) || false
-  }, [userId, ssoProvidersData?.providers, isLoadingSSO])
-
-  const navigationItems = useMemo(() => {
-    return allNavigationItems.filter((item) => {
-      if (item.requiresDesktopSurface && !desktopSurfaces[item.requiresDesktopSurface]) {
-        return false
-      }
-
-      if (item.hideWhenBillingDisabled && !isBillingEnabled) {
-        return false
-      }
-
-      if (
-        (item.id === 'billing' || item.id === 'arena-billing') &&
-        !canManageWorkspaceBilling(hostContext, userId)
-      ) {
-        return false
-      }
-
-      if (item.hideForEnterprise && isEnterprisePlan) {
-        return false
-      }
-
-      if (item.id === 'secrets' && permissionConfig.hideSecretsTab) {
-        return false
-      }
-      if (item.id === 'apikeys' && permissionConfig.hideApiKeysTab) {
-        return false
-      }
-      if (item.id === 'inbox' && permissionConfig.hideInboxTab) {
-        return false
-      }
-      if (item.id === 'mcp' && permissionConfig.disableMcpTools) {
-        return false
-      }
-      if (item.id === 'custom-tools' && permissionConfig.disableCustomTools) {
-        return false
-      }
-      if (item.id === 'forks' && !(forkingAvailable && canAdminWorkspace)) {
-        return false
-      }
-      if (
-        item.id === 'credential-groups' &&
-        (!hostContext.features?.credentialGroups || !canAdminWorkspace)
-      ) {
-        return false
-      }
-
-      if (item.selfHostedOverride && !isHosted) {
-        if (ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) && !isOrgAdminOrOwner) {
-          return false
-        }
-        if (item.id === 'sso') {
-          const hasProviders = (ssoProvidersData?.providers?.length ?? 0) > 0
-          return !hasProviders || isSSOProviderOwner === true
-        }
-        return true
-      }
-
-      const orgAdminSatisfied = isOrgAdminOrOwner || item.allowNonOrgAdmin
-
-      if (item.requiresTeam && (!hasTeamPlan || !orgAdminSatisfied)) {
-        return false
-      }
-
-      if (
-        item.requiresEnterprise &&
-        (!hasEnterprisePlan || !orgAdminSatisfied) &&
-        !item.showWhenLocked
-      ) {
-        return false
-      }
-
-      if (item.requiresMax && !subscriptionAccess.hasUsableMaxAccess && !item.showWhenLocked) {
-        return false
-      }
-
-      if (item.requiresHosted && !isHosted) {
-        return false
-      }
-
-      const superUserModeEnabled = generalSettings?.superUserModeEnabled ?? false
-      const effectiveSuperUser = isSuperUser && superUserModeEnabled
-      if (item.requiresSuperUser && !effectiveSuperUser) {
-        return false
-      }
-
-      if (item.requiresAdminRole && !isSuperUser) {
-        return false
-      }
-
-      if (item.requiresWorkspaceAdmin && !workspacePermissions?.viewer?.isAdmin) {
-        return false
-      }
-
-      return true
-    })
-  }, [
-    hasTeamPlan,
-    hasEnterprisePlan,
-    isEnterprisePlan,
-    subscriptionAccess.hasUsableMaxAccess,
-    hostContext,
-    userId,
-    isOrgAdminOrOwner,
-    isSSOProviderOwner,
-    ssoProvidersData?.providers?.length,
-    permissionConfig,
-    isSuperUser,
-    generalSettings?.superUserModeEnabled,
-    workspacePermissions?.viewer?.isAdmin,
-    forkingAvailable,
-    canAdminWorkspace,
-    desktopSurfaces,
-  ])
-  */
-
-  // useEffect(() => {
-  //   setDesktopSurfaces({
-  //     settings: hasDesktopSettings(),
-  //     browser: hasBrowserAgent(),
-  //     terminal: hasTerminal(),
-  //   })
-  // }, [])
-
-  const activeSection = useMemo(() => {
-    const segments = pathname?.split('/') ?? []
-    const settingsIdx = segments.indexOf('settings')
-    // Null while More is only previewing the list, so no row looks selected yet.
-    if (settingsIdx !== -1 && segments[settingsIdx + 1]) {
-      return segments[settingsIdx + 1] as SettingsSection
-    }
-    return null
-  }, [pathname])
-
-  const handlePrefetch = useCallback(
-    (itemId: string) => {
-      switch (itemId) {
-        case 'general':
-          prefetchGeneralSettings(queryClient)
-          void import('@/app/workspace/[workspaceId]/settings/components/general/general')
-          break
-        case 'secrets':
-          prefetchWorkspaceCredentials(queryClient, workspaceId)
-          void import('@/app/workspace/[workspaceId]/settings/components/secrets/secrets')
-          break
-        case 'billing':
-          void import('@/app/workspace/[workspaceId]/settings/components/billing/billing')
-          break
-        case 'arena-billing':
-          void import('@/app/workspace/[workspaceId]/settings/components/billing-usage')
-          break
-        case 'usage':
-          void import('@/app/workspace/[workspaceId]/settings/components/usage/usage')
-          break
-        case 'desktop':
-          void import('@/app/workspace/[workspaceId]/settings/components/desktop/desktop')
-          break
-        case 'browser':
-          void import('@/app/workspace/[workspaceId]/settings/components/browser/browser')
-          break
-        case 'terminal':
-          void import('@/app/workspace/[workspaceId]/settings/components/terminal/terminal')
-          break
-      }
-    },
-    [queryClient, workspaceId]
-  )
+  const segments = pathname?.split('/') ?? []
+  const settingsIndex = segments.indexOf('settings')
+  const routeSection: SettingsSection | null =
+    settingsIndex !== -1 && segments[settingsIndex + 1]
+      ? (segments[settingsIndex + 1] as SettingsSection)
+      : null
+  const { pendingSection, navigateToSection, signalIntent } = useSettingsNavigationState()
+  const activeSection = (pendingSection as SettingsSection | null) ?? routeSection
 
   const { popSettingsReturnUrl, getSettingsHref } = useSettingsNavigation()
 
   const handleBack = useCallback(() => {
-    // Preview mode: close the list and stay on the current page.
     if (onClose) {
       onClose()
       return
@@ -305,85 +140,115 @@ export function SettingsSidebar({
     cancelLeave()
   }, [cancelLeave])
 
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    const updateScrollState = () => {
-      setHasOverflowTop(container.scrollTop > 1)
-    }
-
-    updateScrollState()
-    container.addEventListener('scroll', updateScrollState, { passive: true })
-    const observer = new ResizeObserver(updateScrollState)
-    observer.observe(container)
-    if (scrollContentRef.current) {
-      observer.observe(scrollContentRef.current)
-    }
-
-    return () => {
-      container.removeEventListener('scroll', updateScrollState)
-      observer.disconnect()
-    }
-  }, [isCollapsed])
+  const warmSection = useCallback(
+    (section: SettingsSection) => {
+      signalIntent(section)
+      warmSettingsSection(
+        queryClient,
+        { workspaceId, billingOrganizationId: hostContext.hostOrganizationId },
+        section
+      )
+      warmArenaSettingsSection(section)
+    },
+    [hostContext.hostOrganizationId, queryClient, signalIntent, workspaceId]
+  )
 
   return (
     <>
-      {/* Back button */}
+      {/* The divider is the pinned block's bottom rule, not the scroll region's top one:
+          the region's edge fade masks its own first pixels, which would erase a rule
+          drawn there exactly when it should show. Same construction as the footer. */}
       <div
         className={cn(
           SIDEBAR_SECTION_GAP_CLASS,
           SIDEBAR_ITEM_GAP_CLASS,
           SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
-          'flex flex-shrink-0 flex-col px-2'
+          'flex shrink-0 flex-col border-b px-2 transition-colors duration-150',
+          !scrollEdges.top && 'border-transparent'
         )}
       >
         <SidebarTooltip label='Back' enabled={showCollapsedTooltips}>
-          <button
-            type='button'
+          <Chip
+            fullWidth
+            leftIcon={ChevronLeft}
             onClick={handleBack}
-            className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
+            className={SIDEBAR_RAIL_CHIP_CLASS}
           >
-            {/* The 16px slot every settings row gives its icon, so Back's label starts on their baseline. */}
-            <span aria-hidden className={cn(chipIconSlotClass, 'text-[var(--text-icon)]')}>
-              <ChevronLeft className='size-[14px]' />
-            </span>
-            <span className='sidebar-collapse-hide truncate text-[var(--text-body)]'>Back</span>
-          </button>
+            <span className='sidebar-collapse-hide'>Back</span>
+          </Chip>
         </SidebarTooltip>
       </div>
 
-      {/* Settings sections */}
       <div
         ref={isCollapsed ? undefined : scrollContainerRef}
         className={cn(
           SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
-          'flex flex-1 flex-col overflow-y-auto overflow-x-hidden border-t pb-2 transition-colors duration-150',
-          !hasOverflowTop && 'border-transparent'
+          SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
+          scrollFadeClass,
+          'flex flex-1 flex-col overflow-y-auto overflow-x-hidden'
         )}
+        {...scrollFadeAttributes(scrollEdges)}
       >
         <div ref={scrollContentRef} className='flex flex-col'>
           {sectionConfig
             .map(({ key, title }) => ({
               key,
               title,
-              items: navigationItems
+              items: sidebarItems
                 .filter((item) => item.section === key)
                 .sort((left, right) => left.order - right.order),
             }))
-            .filter(({ items }) => items.length > 0)
+            .filter(
+              ({ key, items }) =>
+                items.length > 0 || (key === 'organization' && organizationSettingsId)
+            )
             .map(({ key, title, items: sectionItems }, index) => (
               <SidebarSection
                 key={key}
                 title={title}
                 railCollapsed={isCollapsed}
-                className={cn(index > 0 && SIDEBAR_SECTION_GAP_CLASS, 'flex-shrink-0')}
+                className={cn(index > 0 && SIDEBAR_SECTION_GAP_CLASS, 'shrink-0')}
               >
                 <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
+                  {key === 'organization' && organizationSettingsId && (
+                    <SidebarTooltip label='Organization' enabled={showCollapsedTooltips}>
+                      <SettingsIntentLink
+                        href={getOrganizationSettingsHref(organizationSettingsId, 'members')}
+                        className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
+                        onNavigate={(event) => {
+                          if (!useSettingsDirtyStore.getState().isDirty) return
+                          event.preventDefault()
+                          requestLeave(() =>
+                            router.push(
+                              getOrganizationSettingsHref(organizationSettingsId, 'members')
+                            )
+                          )
+                        }}
+                      >
+                        <Building className={chipContentIconClass} />
+                        <OverflowText
+                          label='Organization'
+                          className='sidebar-collapse-hide text-[var(--text-body)]'
+                        />
+                        <ArrowUpRight
+                          className={cn('sidebar-collapse-hide ml-auto', chipContentIconClass)}
+                        />
+                      </SettingsIntentLink>
+                    </SidebarTooltip>
+                  )}
                   {sectionItems.map((item) => {
                     const Icon = item.icon
                     const active = activeSection === item.id
-                    const selfHostedUnlocked = Boolean(item.selfHostedOverride && !isHosted)
+                    const accessFeature = getSettingsPermissionConfigKey(item.id)
+                    const permissionRestricted = accessFeature
+                      ? Boolean(permissionConfig[accessFeature])
+                      : false
+                    const section = item.id
+                    const href = getSettingsHref({ section })
+                    const selfHostedUnlocked = isSelfHostedOverrideEnabled(
+                      item.selfHostedOverride,
+                      deployment
+                    )
                     const isLocked =
                       !selfHostedUnlocked &&
                       item.requiresMax &&
@@ -397,13 +262,24 @@ export function SettingsSidebar({
                     const content = (
                       <>
                         <Icon className={chipContentIconClass} />
-                        <span className='sidebar-collapse-hide min-w-0 truncate text-[var(--text-body)]'>
-                          {item.label}
-                        </span>
+                        <OverflowText
+                          label={item.label}
+                          className='sidebar-collapse-hide text-[var(--text-body)]'
+                          tooltipEnabled={!showCollapsedTooltips}
+                        />
+                        {permissionRestricted && (
+                          <Lock
+                            className={cn('sidebar-collapse-hide ml-auto', chipContentIconClass)}
+                            aria-hidden
+                          />
+                        )}
                         {isLocked && (
-                          <span className='sidebar-collapse-hide ml-auto shrink-0 rounded-[3px] bg-[var(--surface-5)] px-1 py-[1px] text-[9px] text-[var(--text-icon)] uppercase tracking-wide'>
+                          <ChipTag
+                            variant='mono'
+                            className='sidebar-collapse-hide ml-auto shrink-0'
+                          >
                             Max
-                          </span>
+                          </ChipTag>
                         )}
                       </>
                     )
@@ -418,21 +294,35 @@ export function SettingsSidebar({
                         {content}
                       </a>
                     ) : (
-                      <button
-                        type='button'
+                      <SettingsIntentLink
+                        href={href}
+                        replace
+                        scroll={false}
+                        aria-current={active ? 'page' : undefined}
+                        aria-label={
+                          permissionRestricted ? `${item.label}: access required` : undefined
+                        }
                         className={itemClassName}
-                        onMouseEnter={() => handlePrefetch(item.id)}
-                        onFocus={() => handlePrefetch(item.id)}
-                        onClick={() => {
-                          const section = item.id as SettingsSection
-                          if (section === activeSection) return
-                          requestLeave(() => {
-                            router.replace(getSettingsHref({ section }), { scroll: false })
-                          })
+                        onIntent={() => {
+                          if (permissionRestricted) return
+                          warmSection(section)
+                        }}
+                        onNavigate={(event) => {
+                          if (active) {
+                            event.preventDefault()
+                            return
+                          }
+                          event.preventDefault()
+                          const preview = section === routeSection ? null : section
+                          if (!useSettingsDirtyStore.getState().isDirty) {
+                            navigateToSection(preview, href)
+                            return
+                          }
+                          requestLeave(() => navigateToSection(preview, href))
                         }}
                       >
                         {content}
-                      </button>
+                      </SettingsIntentLink>
                     )
 
                     return (

@@ -473,11 +473,9 @@ export class WorkflowBlockHandler implements BlockHandler {
         }
       }
 
-      const childSnapshotResult = await snapshotService.createSnapshotWithDeduplication(
-        workflowId,
-        childWorkflow.workflowState
-      )
-      childWorkflowSnapshotId = childSnapshotResult.snapshot.id
+      childWorkflowSnapshotId = (
+        await snapshotService.resolveSnapshot(workflowId, childWorkflow.workflowState)
+      ).id
 
       const childDepth = (ctx.childWorkflowContext?.depth ?? 0) + 1
       const withinSseChildDepth = childDepth <= DEFAULTS.MAX_SSE_CHILD_DEPTH
@@ -952,10 +950,10 @@ export class WorkflowBlockHandler implements BlockHandler {
       // unmasked in the consumer's stream.
       let childTraceSpans: WorkflowTraceSpan[] = []
       if (!isCustomBlock) {
-        childTraceSpans = this.captureChildWorkflowLogs(executionResult, childWorkflowName, ctx)
+        childTraceSpans = this.captureChildWorkflowLogs(executionResult, childWorkflowName)
       } else if (shouldPropagateCallbacks && childSession) {
         childTraceSpans = await childSession.projectTraceSpansForLiveDisplay(
-          this.captureChildWorkflowLogs(executionResult, childWorkflowName, ctx)
+          this.captureChildWorkflowLogs(executionResult, childWorkflowName)
         )
       }
 
@@ -963,7 +961,6 @@ export class WorkflowBlockHandler implements BlockHandler {
         executionResult,
         workflowId,
         childWorkflowName,
-        duration,
         instanceId,
         childTraceSpans,
         childWorkflowSnapshotId
@@ -1051,7 +1048,7 @@ export class WorkflowBlockHandler implements BlockHandler {
           logCount: executionResult.logs?.length ?? 0,
         })
 
-        childTraceSpans = this.captureChildWorkflowLogs(executionResult, childWorkflowName, ctx)
+        childTraceSpans = this.captureChildWorkflowLogs(executionResult, childWorkflowName)
 
         logger.info(`Captured ${childTraceSpans.length} child trace spans from failed execution`)
       } else if (ChildWorkflowError.isChildWorkflowError(error)) {
@@ -1424,8 +1421,7 @@ export class WorkflowBlockHandler implements BlockHandler {
    */
   private captureChildWorkflowLogs(
     childResult: ExecutionResult,
-    childWorkflowName: string,
-    parentContext: ExecutionContext
+    childWorkflowName: string
   ): WorkflowTraceSpan[] {
     try {
       if (!childResult.logs || !Array.isArray(childResult.logs)) {
@@ -1546,7 +1542,6 @@ export class WorkflowBlockHandler implements BlockHandler {
     childResult: ExecutionResult,
     childWorkflowId: string,
     childWorkflowName: string,
-    duration: number,
     instanceId: string,
     childTraceSpans?: WorkflowTraceSpan[],
     childWorkflowSnapshotId?: string

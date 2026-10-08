@@ -112,7 +112,7 @@ export async function resolveFileInputToUrl(
     // point at a different object than the verified key.
     if (userFile.key) {
       const context = resolveTrustedFileContext(userFile.key, userFile.context)
-      const hasAccess = await verifyFileAccess(userFile.key, userId, undefined, context, false)
+      const hasAccess = await verifyFileAccess(userFile.key, userId, undefined, context)
 
       if (!hasAccess) {
         logger.warn(`[${requestId}] Unauthorized presigned URL generation attempt`, {
@@ -279,7 +279,7 @@ export async function downloadFileFromUrl(
 
     const context = inferContextFromKey(key)
 
-    const hasAccess = await verifyFileAccess(key, userId, undefined, context, false, {
+    const hasAccess = await verifyFileAccess(key, userId, undefined, context, {
       knowledgeAccess,
     })
     if (!hasAccess) {
@@ -328,7 +328,7 @@ export async function resolveInternalFileUrl(
   try {
     const storageKey = extractStorageKey(filePath)
     const context = inferContextFromKey(storageKey)
-    const hasAccess = await verifyFileAccess(storageKey, userId, undefined, context, false)
+    const hasAccess = await verifyFileAccess(storageKey, userId, undefined, context)
 
     if (!hasAccess) {
       logger.warn(`[${requestId}] Unauthorized presigned URL generation attempt`, {
@@ -523,7 +523,9 @@ export async function downloadServableFileFromStorage(
       undefined)
     : undefined
 
-  const { resolveServableDocBytes } = await import('@/lib/copilot/tools/server/files/doc-compile')
+  const { resolveServableDocBytes } = await import(
+    '@/lib/mothership/tools/server/files/doc-compile'
+  )
   const resolved = await resolveServableDocBytes({
     rawBuffer: buffer,
     fileName: userFile.name,

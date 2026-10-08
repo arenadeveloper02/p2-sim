@@ -25,7 +25,12 @@ vi.mock('@trigger.dev/sdk', () => ({ tasks: { batchTrigger: mocks.batchTrigger }
 vi.mock('@/lib/core/config/env-flags', () => ({ isTriggerDevEnabled: true }))
 vi.mock('@/lib/core/async-jobs/region', () => ({ resolveTriggerRegion: async () => 'us-east-1' }))
 
-import { FILE_SEARCH_BACKFILL_PAGE_SIZE } from '@/lib/workspace-files/search/constants'
+import { readTestDatabaseUrl } from '@sim/db/testing/test-infrastructure'
+import {
+  FILE_SEARCH_BACKFILL_PAGE_SIZE,
+  FILE_SEARCH_DISPATCH_HANDOFF_MS,
+  FILE_SEARCH_INDEX_STALE_DISPATCH_MS,
+} from '@/lib/workspace-files/search/constants'
 import {
   dispatchWorkspaceFileSearchIndexJobs,
   prepareWorkspaceFileSearchDispatch,
@@ -33,16 +38,7 @@ import {
 
 describe('workspace file search dispatch PostgreSQL deadlines', () => {
   const schemaName = `dispatch_test_${generateId().replaceAll('-', '')}`
-  const databaseUrl = process.env.KNOWLEDGE_ACL_TEST_DATABASE_URL
-  if (!databaseUrl) throw new Error('Dispatcher tests require a disposable local database')
-  const target = new URL(databaseUrl)
-  if (
-    !['postgres:', 'postgresql:'].includes(target.protocol) ||
-    !['localhost', '127.0.0.1'].includes(target.hostname) ||
-    (!target.pathname.startsWith('/sim_acl_test') && target.pathname !== '/sim_auth_scim')
-  ) {
-    throw new Error('File search tests require a disposable local integration database')
-  }
+  const databaseUrl = readTestDatabaseUrl()
   /** Every statement the dispatcher issues, so a test can EXPLAIN the exact SQL it ran. */
   const statements: { query: string; params: readonly unknown[] }[] = []
   const connection = postgres(
@@ -80,7 +76,8 @@ describe('workspace file search dispatch PostgreSQL deadlines', () => {
       source_content_updated_at timestamp NOT NULL, status text NOT NULL DEFAULT 'pending',
       build_id text, failure_reason text, line_count integer NOT NULL DEFAULT 0,
       indexed_bytes integer NOT NULL DEFAULT 0, chunk_count integer NOT NULL DEFAULT 0,
-      dispatched_at timestamp, updated_at timestamp NOT NULL DEFAULT now()
+      dispatched_at timestamp, handoff_expires_at timestamp,
+      updated_at timestamp NOT NULL DEFAULT now()
     )`
     await connection`CREATE TABLE workspace_file_search_dispatch_queue (
       workspace_id text PRIMARY KEY, enqueued_at timestamp NOT NULL,
@@ -89,7 +86,8 @@ describe('workspace file search dispatch PostgreSQL deadlines', () => {
     await connection`CREATE INDEX workspace_files_workspace_active_keyset_idx
       ON workspace_files (workspace_id, id)
       WHERE deleted_at IS NULL AND context = 'workspace' AND workspace_id IS NOT NULL`
-    await connection`CREATE INDEX ON workspace_file_search_revision
+    await connection`CREATE INDEX workspace_file_search_revision_pending_idx
+      ON workspace_file_search_revision
       (workspace_id, updated_at, file_id, source_content_updated_at)
       WHERE status = 'pending' AND dispatched_at IS NULL`
     await connection`CREATE INDEX ON workspace_file_search_revision (workspace_id, dispatched_at)
@@ -263,6 +261,188 @@ describe('workspace file search dispatch PostgreSQL deadlines', () => {
     expect(plan).toMatch(/Index Cond:.*ROW\(/)
   }, 30_000)
 
+  it('claims from the ordered pending index rather than a hash join over the backlog', async () => {
+    await seedQueue('workspace-1', 10_000)
+    await connection`ANALYZE workspace_files`
+    await connection`ANALYZE workspace_file_search_revision`
+
+    statements.length = 0
+    await prepareWorkspaceFileSearchDispatch()
+
+    const claim = statements.find((statement) =>
+      statement.query.includes('FOR UPDATE OF search_index SKIP LOCKED')
+    )
+    expect(claim).toBeDefined()
+
+    const plan = await connection.begin(async (tx) => {
+      /**
+       * At fixture scale the planner already nests the join, so it is pinned to the choice
+       * production makes when it misestimates the timestamp equi-join under `FOR UPDATE`. A join
+       * spelling then hashes every file and every pending revision of the workspace and sorts the
+       * whole backlog before the top-N cut; the correlated LATERAL cannot be flattened into that
+       * join, so the claim stays an ordered walk of the pending index.
+       */
+      await tx`SET LOCAL enable_nestloop = off`
+      const rows = await tx.unsafe(`EXPLAIN ${claim?.query}`, claim?.params as never[])
+      return rows.map((row: Record<string, unknown>) => row['QUERY PLAN']).join('\n')
+    })
+
+    /** The locked candidate scan must be fed by the ordered index walk, not a sorted hash join. */
+    expect(plan).toMatch(
+      /LockRows[^\n]*\n\s*-> {2}Nested Loop[^\n]*\n\s*-> {2}Index Scan using workspace_file_search_revision_pending_idx/
+    )
+    expect(plan).not.toMatch(/Sort Key: search_index(_\d+)?\.updated_at/)
+  }, 30_000)
+
+  it('releases a claim abandoned before its enqueue once its handoff expires', async () => {
+    await seedQueue('workspace-1', 3)
+    /** Preparing without enqueueing is a dispatcher stopped between its commit and its enqueue. */
+    const abandoned = await prepareWorkspaceFileSearchDispatch()
+    expect(abandoned.payloads).toHaveLength(2)
+    const deadlines = await connection`SELECT
+      extract(epoch FROM handoff_expires_at - clock_timestamp()) * 1000 AS remaining_ms
+      FROM workspace_file_search_revision WHERE dispatched_at IS NOT NULL`
+    expect(deadlines).toHaveLength(2)
+    for (const { remaining_ms } of deadlines) {
+      expect(Number(remaining_ms)).toBeGreaterThan(FILE_SEARCH_DISPATCH_HANDOFF_MS - 10_000)
+      expect(Number(remaining_ms)).toBeLessThanOrEqual(FILE_SEARCH_DISPATCH_HANDOFF_MS)
+    }
+    /** Until the deadline passes, the claims keep holding their workspace's slots. */
+    expect(await prepareWorkspaceFileSearchDispatch()).toMatchObject({
+      payloads: [],
+      reapedClaims: 0,
+      abandonedClaims: 0,
+    })
+
+    await connection`UPDATE workspace_file_search_revision
+      SET handoff_expires_at = clock_timestamp() - interval '1 millisecond'
+      WHERE dispatched_at IS NOT NULL`
+    const recovered = await prepareWorkspaceFileSearchDispatch()
+    expect(recovered.reapedClaims).toBe(2)
+    expect(recovered.abandonedClaims).toBe(2)
+    expect(recovered.payloads).toHaveLength(2)
+    const abandonedToken = abandoned.payloads[0].dispatchToken
+    if (!abandonedToken) throw new Error('Every claim carries its dispatch token')
+    expect(recovered.payloads.map((payload) => payload.dispatchToken)).not.toContain(abandonedToken)
+    const [left] = await connection`SELECT count(*)::int AS claims
+      FROM workspace_file_search_revision WHERE dispatched_at = ${abandonedToken}::timestamp`
+    expect(left.claims).toBe(0)
+    const [unclaimed] = await connection`SELECT count(*)::int AS deadlines
+      FROM workspace_file_search_revision
+      WHERE dispatched_at IS NULL AND handoff_expires_at IS NOT NULL`
+    expect(unclaimed.deadlines).toBe(0)
+  })
+
+  it('leaves an enqueued claim to its run until the stale-dispatch window', async () => {
+    await seedQueue('workspace-1', 1)
+    /** A millisecond revision, as file writes store, so the handoff must match it exactly. */
+    await connection`UPDATE workspace_files SET content_updated_at = '2026-09-16 12:34:56.789'`
+    await connection`UPDATE workspace_file_search_revision
+      SET source_content_updated_at = '2026-09-16 12:34:56.789'`
+    mocks.batchTrigger.mockResolvedValueOnce({ batchId: 'batch-1' })
+    await expect(dispatchWorkspaceFileSearchIndexJobs()).resolves.toMatchObject({
+      dispatchedFiles: 1,
+    })
+    const [claim] = await connection`SELECT handoff_expires_at FROM workspace_file_search_revision
+      WHERE dispatched_at IS NOT NULL`
+    expect(claim.handoff_expires_at).toBeNull()
+
+    /** A run can wait in its queue or back off for an hour without being taken for abandoned. */
+    await connection`UPDATE workspace_file_search_revision
+      SET dispatched_at = dispatched_at - interval '1 hour' WHERE dispatched_at IS NOT NULL`
+    expect((await prepareWorkspaceFileSearchDispatch()).reapedClaims).toBe(0)
+    await connection`UPDATE workspace_file_search_revision
+      SET dispatched_at = dispatched_at - ${FILE_SEARCH_INDEX_STALE_DISPATCH_MS} * interval '1 millisecond'
+      WHERE dispatched_at IS NOT NULL`
+    expect(await prepareWorkspaceFileSearchDispatch()).toMatchObject({
+      reapedClaims: 1,
+      abandonedClaims: 0,
+    })
+  })
+
+  it('does not complete the handoff of a claim released and claimed again meanwhile', async () => {
+    await seedQueue('workspace-1', 1)
+    mocks.batchTrigger.mockImplementationOnce(async () => {
+      /** Another dispatch releases this claim and claims the revision again under its own token. */
+      await connection`UPDATE workspace_file_search_revision
+        SET dispatched_at = '2099-01-01', handoff_expires_at = '2099-01-01'
+        WHERE dispatched_at IS NOT NULL`
+      return { batchId: 'batch-1' }
+    })
+
+    await dispatchWorkspaceFileSearchIndexJobs()
+
+    const [claim] = await connection`SELECT handoff_expires_at::text AS handoff
+      FROM workspace_file_search_revision WHERE dispatched_at IS NOT NULL`
+    expect(claim.handoff).toBe('2099-01-01 00:00:00')
+  })
+
+  it('records the handoff around a claim another transaction holds instead of waiting', async () => {
+    await seedQueue('workspace-1', 2)
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let holder: Promise<unknown> | undefined
+    mocks.batchTrigger.mockImplementationOnce(async () => {
+      /** A run beginning its build holds its claim while the handoff is being recorded. */
+      let locked = () => {}
+      const lockReady = new Promise<void>((resolve) => {
+        locked = resolve
+      })
+      holder = connection.begin(async (tx) => {
+        await tx`SELECT file_id FROM workspace_file_search_revision
+          WHERE file_id = 'workspace-1-000001' FOR UPDATE`
+        locked()
+        await held
+      })
+      await lockReady
+      return { batchId: 'batch-1' }
+    })
+    try {
+      await expect(dispatchWorkspaceFileSearchIndexJobs()).resolves.toMatchObject({
+        dispatchedFiles: 2,
+      })
+      const claims = await connection`SELECT file_id,
+        handoff_expires_at IS NOT NULL AS pending_handoff
+        FROM workspace_file_search_revision ORDER BY file_id`
+      expect([...claims]).toEqual([
+        { file_id: 'workspace-1-000001', pending_handoff: true },
+        { file_id: 'workspace-1-000002', pending_handoff: false },
+      ])
+    } finally {
+      release()
+      await holder
+    }
+  })
+
+  it('keeps enqueued claims when recording their handoff fails', async () => {
+    await seedQueue('workspace-1', 1)
+    await connection`CREATE FUNCTION reject_handoff() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'handoff unavailable';
+      END
+    $$`
+    await connection`CREATE TRIGGER reject_handoff BEFORE UPDATE OF handoff_expires_at
+      ON workspace_file_search_revision FOR EACH ROW
+      WHEN (OLD.handoff_expires_at IS NOT NULL AND NEW.handoff_expires_at IS NULL
+        AND NEW.dispatched_at IS NOT NULL)
+      EXECUTE FUNCTION reject_handoff()`
+    try {
+      mocks.batchTrigger.mockResolvedValueOnce({ batchId: 'batch-1' })
+      await expect(dispatchWorkspaceFileSearchIndexJobs()).resolves.toMatchObject({
+        dispatchedFiles: 1,
+      })
+      const [claim] = await connection`SELECT dispatched_at, handoff_expires_at
+        FROM workspace_file_search_revision`
+      expect(claim.dispatched_at).not.toBeNull()
+      expect(claim.handoff_expires_at).not.toBeNull()
+    } finally {
+      await connection`DROP TRIGGER reject_handoff ON workspace_file_search_revision`
+      await connection`DROP FUNCTION reject_handoff()`
+    }
+  })
+
   it('fails on a locked backfill row and releases the dispatcher lock', async () => {
     let release = () => {}
     let locked = () => {}
@@ -351,9 +531,11 @@ describe('workspace file search dispatch PostgreSQL deadlines', () => {
         },
       }),
     ])
-    const [index] = await connection`SELECT dispatched_at FROM workspace_file_search_revision
+    const [index] =
+      await connection`SELECT dispatched_at, handoff_expires_at FROM workspace_file_search_revision
       WHERE file_id = ${fileId}`
     expect(index.dispatched_at).toBeNull()
+    expect(index.handoff_expires_at).toBeNull()
     const [queued] = await connection`SELECT workspace_id FROM workspace_file_search_dispatch_queue
       WHERE workspace_id = ${workspaceId}`
     expect(queued.workspace_id).toBe(workspaceId)

@@ -62,9 +62,11 @@ interface ChipDatePickerRangeProps extends ChipDatePickerBaseProps {
   showTime?: boolean
   /** Called on Apply with the ordered range bounds. */
   onRangeChange: (start: string, end: string) => void
+  /** Called on Clear, so a committed range can be dropped by whoever owns it. */
+  onClear?: () => void
 }
 
-export type ChipDatePickerProps = ChipDatePickerSingleProps | ChipDatePickerRangeProps
+type ChipDatePickerProps = ChipDatePickerSingleProps | ChipDatePickerRangeProps
 
 /**
  * Date counterpart to {@link ChipDropdown} — a chip-styled trigger that opens a
@@ -161,6 +163,7 @@ const ChipDatePicker = forwardRef<HTMLButtonElement, ChipDatePickerProps>(
                   setOpen(false)
                 }}
                 onCancel={() => setOpen(false)}
+                onClear={props.onClear}
               />
             ) : (
               <Calendar

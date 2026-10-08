@@ -28,7 +28,7 @@ export interface ReadWorkspaceFileRecordByKeyResult {
 
 const SERVABLE_BY_WORKSPACE_KEY = new Set(['workspace', 'mothership'])
 
-const INCLUDE_MOTHERSHIP = { includeMothership: true } as const
+const INCLUDE_CHAT_UPLOADS = { includeChatUploads: true } as const
 
 async function loadCurrentWorkspaceFileByKey(
   input: ReadWorkspaceFileByKeyInput,
@@ -36,7 +36,7 @@ async function loadCurrentWorkspaceFileByKey(
 ): Promise<WorkspaceFileRecord> {
   const file = await getWorkspaceFile(context.workspaceId, context.fileId, {
     throwOnError: true,
-    ...INCLUDE_MOTHERSHIP,
+    ...INCLUDE_CHAT_UPLOADS,
   })
   if (!file || file.key !== input.key) throw new OrchestrationError('not_found', 'File not found')
   return file
@@ -55,7 +55,7 @@ async function resolveWorkspaceFileByKeyContext({
   ) {
     throw new OrchestrationError('not_found', 'File not found')
   }
-  const canonical = await loadActiveWorkspaceFileContext(metadata.id, INCLUDE_MOTHERSHIP)
+  const canonical = await loadActiveWorkspaceFileContext(metadata.id, INCLUDE_CHAT_UPLOADS)
   if (!canonical || canonical.workspaceId !== metadata.workspaceId) {
     throw new OrchestrationError('not_found', 'File not found')
   }

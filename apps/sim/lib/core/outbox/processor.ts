@@ -11,6 +11,7 @@ import {
   OUTBOX_PROCESSOR_MAX_RUNTIME_MS,
   OUTBOX_PROCESSOR_RECOVERY_CUTOFF_MS,
 } from '@/lib/core/outbox/constants'
+import { pruneCompletedOutboxEvents } from '@/lib/core/outbox/retention'
 import { type ProcessOutboxResult, processOutboxEvents } from '@/lib/core/outbox/service'
 import { DeadlineExceededError } from '@/lib/core/utils/deadline'
 import { directGrantOutboxHandlers } from '@/lib/invitations/direct-grant'
@@ -20,12 +21,12 @@ import { knowledgeDocumentProcessingOutboxHandlers } from '@/lib/knowledge/docum
 import { recoverKnowledgeDocumentProcessing } from '@/lib/knowledge/documents/processing-recovery'
 import { inboxCleanupOutboxHandlers } from '@/lib/mothership/inbox/cleanup-outbox'
 import { organizationResourceCleanupOutboxHandlers } from '@/lib/organizations/resource-cleanup'
-import { permissionAccessRequestOutboxHandlers } from '@/lib/permission-access-requests/notifications'
 import { workspaceFileLiveDocOutboxHandlers } from '@/lib/uploads/contexts/workspace/workspace-file-live-doc-outbox'
 import { workspaceFileStorageCleanupOutboxHandlers } from '@/lib/uploads/contexts/workspace/workspace-file-storage-cleanup-outbox'
 import { workflowDeploymentOutboxHandlers } from '@/lib/workflows/deployment-outbox'
 import { invitationMigrationOutboxHandlers } from '@/lib/workspaces/admin-move'
 import { workspaceOperationOutboxHandlers } from '@/lib/workspaces/operations/outbox'
+import { permissionAccessRequestOutboxHandlers } from '@/ee/access-requests/lib/notifications'
 import { forkContentOutboxHandlers } from '@/ee/workspace-forking/application/content-outbox'
 import { reapStaleBackgroundWork } from '@/ee/workspace-forking/lib/background-work/store'
 
@@ -56,6 +57,7 @@ export interface OutboxProcessorResult {
   result: ProcessOutboxResult
   recoveredDocuments: number
   reapedBackgroundWork: number
+  prunedEvents: number
 }
 
 /** Processes one bounded batch and its recovery work in either the worker or self-hosted cron. */
@@ -92,11 +94,19 @@ export async function runOutboxProcessor(): Promise<OutboxProcessorResult> {
     logger.error('Background-work reap failed', { error: toError(error).message })
   }
 
-  const output = { result, reapedBackgroundWork, recoveredDocuments }
+  let prunedEvents = 0
+  try {
+    prunedEvents = await pruneCompletedOutboxEvents()
+  } catch (error) {
+    logger.error('Completed outbox pruning failed', { error: toError(error).message })
+  }
+
+  const output = { result, reapedBackgroundWork, recoveredDocuments, prunedEvents }
   logger.info('Outbox processing completed', {
     ...result,
     reapedBackgroundWork,
     recoveredDocuments,
+    prunedEvents,
     durationMs: Date.now() - startedAt,
   })
   return output

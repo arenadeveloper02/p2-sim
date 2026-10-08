@@ -1,29 +1,17 @@
 import { ArenaIcon } from '@/components/icons'
+import { MOTHERSHIP_EFFORT_OPTIONS, MOTHERSHIP_MODEL_OPTIONS } from '@/lib/mothership/model-options'
 import type { BlockConfig } from '@/blocks/types'
-import type { ToolResponse } from '@/tools/types'
 
-interface MothershipResponse extends ToolResponse {
-  output: {
-    content: string
-    model: string
-    conversationId?: string
-    tokens?: {
-      prompt?: number
-      completion?: number
-      total?: number
-    }
-  }
-}
-
-export const MothershipBlock: BlockConfig<MothershipResponse> = {
+export const MothershipBlock: BlockConfig = {
   type: 'mothership',
   name: 'Arena Chat',
   description: 'Talk to Arena AI',
   longDescription:
-    'The Arena Chat block sends messages to Arena AI, which has access to subagents, integration tools, and workspace context. Use it to perform complex multi-step reasoning, cross-service queries, or any task that benefits from the full Arena AI intelligence within a workflow.',
+    'The Arena Chat block sends messages to Arena AI, which has access to subagents, integration tools, and workspace context. A stable conversation ID continues the conversation. The content output supports live response streaming, including Slack native agent sessions when selected by a supported custom-bot trigger.',
   bestPractices: `
   - Use for tasks that require multi-step reasoning, tool use, or cross-service coordination.
-  - Arena AI picks its own model and tools internally — you only provide a prompt.
+  - Choose Astra or Opus and a reasoning effort. Astra supports Fast mode.
+  - For Slack streaming, select this block’s content output in the trigger’s agent session. Keep interactive button and modal callbacks on their own authorized paths; do not duplicate the streamed reply with another send.
   `,
   category: 'blocks',
   bgColor: '#802FDE',
@@ -44,6 +32,27 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
       title: 'Prompt',
       type: 'long-input',
       placeholder: 'Enter your prompt for Arena AI...',
+    },
+    {
+      id: 'model',
+      title: 'Model',
+      type: 'dropdown',
+      options: MOTHERSHIP_MODEL_OPTIONS.map(({ value, label }) => ({ id: value, label })),
+      value: () => 'gpt-6-astra',
+    },
+    {
+      id: 'effort',
+      title: 'Reasoning Effort',
+      type: 'dropdown',
+      options: MOTHERSHIP_EFFORT_OPTIONS.map(({ value, label }) => ({ id: value, label })),
+      value: () => 'high',
+    },
+    {
+      id: 'fastMode',
+      title: 'Fast',
+      type: 'switch',
+      defaultValue: false,
+      condition: { field: 'model', value: 'gpt-6-astra' },
     },
     {
       id: 'conversationId',
@@ -111,6 +120,9 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
     access: [],
   },
   inputs: {
+    model: { type: 'string', description: 'Astra or Opus from the supported model catalog' },
+    effort: { type: 'string', description: 'Reasoning effort: low, medium, high, xhigh, or max' },
+    fastMode: { type: 'boolean', description: 'Enable Fast mode for Astra' },
     prompt: {
       type: 'string',
       description: 'The prompt to send to Arena AI',

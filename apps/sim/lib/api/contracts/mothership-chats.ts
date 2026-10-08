@@ -1,11 +1,21 @@
 import { z } from 'zod'
 import { addCopilotChatResourceBodySchema } from '@/lib/api/contracts/copilot'
+import { mothershipResourceSchema } from '@/lib/api/contracts/mothership-resources'
+import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { scheduleContextSchema } from '@/lib/api/contracts/schedules'
 import {
   mountedSecretNamesSchema,
   secretMountScopeSchema,
 } from '@/lib/api/contracts/secret-mount-policy'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import type { RESOLVED_SECRET_PROVENANCE_FIELD } from '@/lib/execution/private-tool-metadata'
+import {
+  MAX_CHAT_CONTEXT_LABEL_LENGTH,
+  MAX_CHAT_CONTEXTS,
+  MAX_CHAT_MESSAGE_LENGTH,
+} from '@/lib/mothership/chat/context-limits'
+import { ChatPayloadSchema } from '@/lib/mothership/generated/protocol'
+import type { AgentStreamEvent, TextDeltaClassification } from '@/providers/stream-events'
 
 const dateStringSchema = z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
   message: 'Expected a valid date string',
@@ -48,7 +58,9 @@ export const updateMothershipChatBodySchema = z
     }
   )
 
-export const createMothershipChatBodySchema = mothershipChatOwnerSchema
+export const createMothershipChatBodySchema = mothershipChatOwnerSchema.and(
+  z.object({ mode: z.enum(['agent', 'assistant', 'plan']).optional() })
+)
 export type CreateMothershipChatBody = z.input<typeof createMothershipChatBodySchema>
 
 export const markMothershipChatReadBodySchema = z.object({
@@ -70,7 +82,11 @@ export const markMothershipChatReadContract = defineRouteContract({
 
 const mothershipExecuteMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']),
-  content: z.string(),
+  content: z.string().max(MAX_CHAT_MESSAGE_LENGTH),
+})
+
+const mothershipContextInputSchema = scheduleContextSchema.extend({
+  label: z.string().max(MAX_CHAT_CONTEXT_LABEL_LENGTH),
 })
 
 const mothershipExecuteFileAttachmentSchema = z
@@ -117,6 +133,9 @@ const mothershipExecuteMcpToolSchema = z
   .passthrough()
 
 export const mothershipExecuteBodySchema = z.object({
+  useConversationHistory: z.boolean().optional(),
+  effort: ChatPayloadSchema.shape.effort,
+  modelSelection: ChatPayloadSchema.shape.modelSelection,
   messages: z.array(mothershipExecuteMessageSchema).min(1, 'At least one message is required'),
   responseFormat: z.any().optional(),
   workspaceId: z.string().min(1, 'workspaceId is required'),
@@ -130,7 +149,7 @@ export const mothershipExecuteBodySchema = z.object({
    * mirroring the interactive chat path. Headless executions use this to pass
    * captured contexts into the run without a live client.
    */
-  contexts: z.array(scheduleContextSchema).optional(),
+  contexts: z.array(mothershipContextInputSchema).max(MAX_CHAT_CONTEXTS).optional(),
   mcpTools: z.array(mothershipExecuteMcpToolSchema).optional(),
   workflowId: z.string().optional(),
   executionId: z.string().optional(),
@@ -165,7 +184,8 @@ export const mothershipChatGetQuerySchema = z
 
 export const mothershipChatPostEnvelopeSchema = z
   .object({
-    message: z.string().optional(),
+    message: z.string().max(MAX_CHAT_MESSAGE_LENGTH).optional(),
+    contexts: z.array(mothershipContextInputSchema).max(MAX_CHAT_CONTEXTS).optional(),
     chatId: z.string().optional(),
     workflowId: z.string().optional(),
     workspaceId: z.string().optional(),
@@ -187,6 +207,7 @@ export const mothershipChatAbortEnvelopeSchema = z
   .object({
     streamId: z.string().optional(),
     chatId: z.string().optional(),
+    workspaceId: z.string().min(1).optional(),
   })
   .passthrough()
 
@@ -195,6 +216,7 @@ export const mothershipChatStreamQuerySchema = z
     streamId: z.string().optional(),
     after: z.string().optional(),
     batch: z.string().optional(),
+    source: z.enum(['ring', 'log']).optional(),
   })
   .passthrough()
 
@@ -213,17 +235,9 @@ export const adminMothershipQuerySchema = z
   .passthrough()
 export type AdminMothershipQuery = z.output<typeof adminMothershipQuerySchema>
 
-const mothershipChatResourceItemSchema = z.object({
-  type: z.string(),
-  id: z.string(),
-  title: z.string(),
-  /** Saved view a table tab is pinned to (type "table" only); dropped here, it would be lost on reorder. */
-  viewId: z.string().min(1).optional(),
-})
-
 const mothershipChatResourcesResponseSchema = z.object({
   success: z.literal(true),
-  resources: z.array(mothershipChatResourceItemSchema),
+  resources: z.array(mothershipResourceSchema),
 })
 
 export const addMothershipChatResourceBodySchema = addCopilotChatResourceBodySchema
@@ -231,12 +245,13 @@ export type AddMothershipChatResourceBody = z.input<typeof addMothershipChatReso
 
 const reorderMothershipChatResourcesBodySchema = z.object({
   chatId: z.string().min(1),
-  resources: z.array(mothershipChatResourceItemSchema),
+  resources: z.array(mothershipResourceSchema),
 })
 
 const removeMothershipChatResourceBodySchema = z.object({
+  workspaceId: workspaceIdSchema.optional(),
   chatId: z.string().min(1),
-  resourceType: z.string().min(1),
+  resourceType: mothershipResourceSchema.shape.type,
   resourceId: z.string().min(1),
 })
 
@@ -271,6 +286,7 @@ export const removeMothershipChatResourceContract = defineRouteContract({
 })
 
 export const mothershipChatSchema = z.object({
+  mode: z.enum(['agent', 'assistant', 'plan']),
   id: z.string(),
   title: z.string().nullable(),
   updatedAt: dateStringSchema,
@@ -393,6 +409,7 @@ export const getMothershipChatResponseSchema = z.object({
       id: z.string(),
       title: z.string().nullable(),
       model: z.string().optional(),
+      mode: z.enum(['agent', 'assistant', 'plan']),
       messages: z.array(z.unknown()),
       activeStreamId: z.string().nullable(),
       resources: z.array(z.unknown()),
@@ -443,3 +460,31 @@ export const getMothershipChatContract = defineRouteContract({
 })
 
 export type MothershipChat = z.infer<typeof mothershipChatSchema>
+
+export type MothershipExecuteResult = {
+  content?: string
+  model?: string
+  conversationId?: string
+  tokens?: Record<string, unknown>
+  toolCalls?: Array<{
+    name?: string
+    status?: string
+    arguments?: Record<string, unknown>
+    params?: Record<string, unknown>
+    input?: Record<string, unknown>
+    result?: unknown
+    output?: unknown
+    error?: string
+    durationMs?: number
+  }>
+  cost?: unknown
+} & Partial<Record<typeof RESOLVED_SECRET_PROVENANCE_FIELD, unknown>>
+
+export type MothershipExecuteStreamEvent =
+  | { type: 'heartbeat'; timestamp?: string }
+  | { type: 'chunk'; v?: 1; content?: string; turn?: TextDeltaClassification }
+  | { type: 'agent_event'; v?: 1; event: AgentStreamEvent }
+  | { type: 'final'; data: MothershipExecuteResult }
+  | ({ type: 'error'; error?: string } & Partial<
+      Record<typeof RESOLVED_SECRET_PROVENANCE_FIELD, unknown>
+    >)

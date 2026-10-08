@@ -40,10 +40,12 @@ import {
   resolveCleanupOwnerScope,
 } from '@/lib/cleanup/resource-scope'
 import { deduplicateFolderName } from '@/lib/folders/naming'
+import { settleDetachedConnectorReservations } from '@/lib/knowledge/connectors/detachment'
 import { hardDeleteDocuments } from '@/lib/knowledge/documents/service'
 import type { StorageContext } from '@/lib/uploads'
 import { isUsingCloudStorage, StorageService } from '@/lib/uploads'
 import { allocateUniqueWorkspaceFileName } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { releaseWorkspaceFileVersionsForPurgeInTx } from '@/lib/uploads/contexts/workspace/workspace-file-versions'
 import { deleteFileMetadata } from '@/lib/uploads/server/metadata'
 import { getWorkspaceFileSize } from '@/lib/uploads/shared/types'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
@@ -332,6 +334,11 @@ async function deleteExpiredBillableWorkspaceFileRows(
     for (const batch of chunkArray(workspaceRows, DEFAULT_DELETE_CHUNK_SIZE)) {
       try {
         const deletedCount = await db.transaction(async (tx) => {
+          await releaseWorkspaceFileVersionsForPurgeInTx(
+            tx,
+            batch.map(({ id }) => id),
+            retentionDate
+          )
           const deletedRows = await tx
             .delete(workspaceFiles)
             .where(
@@ -439,11 +446,17 @@ async function cleanupExpiredKnowledgeBases(
       isNotNull(knowledgeBase.deletedAt),
       lt(knowledgeBase.deletedAt, retentionDate)
     ),
-    onBatch: (rows: { id: string }[]) =>
-      hardDeleteKnowledgeBaseDocuments(
-        rows.map(({ id }) => id),
-        label
-      ),
+    /**
+     * The bases' DELETE cascades their connectors away, so a detached connector's reservation is
+     * settled here: an overdrawn one before the documents (their deletion floors usage at zero),
+     * the rest after them, so a deletion that fails partway leaves every step's ledger consistent.
+     */
+    onBatch: async (rows: { id: string }[]) => {
+      const knowledgeBaseIds = rows.map(({ id }) => id)
+      await settleDetachedConnectorReservations(knowledgeBaseIds, 'overdrawn')
+      await hardDeleteKnowledgeBaseDocuments(knowledgeBaseIds, label)
+      await settleDetachedConnectorReservations(knowledgeBaseIds, 'remaining')
+    },
   }
   return scope.kind === 'workspace'
     ? chunkedBatchDelete({ ...options, workspaceIds: scope.ids })

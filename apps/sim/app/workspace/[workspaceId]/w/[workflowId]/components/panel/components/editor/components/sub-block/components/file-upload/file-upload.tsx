@@ -164,13 +164,11 @@ interface SingleFileSelectorProps {
   file: UploadedFile
   options: Array<{ label: string; value: string; disabled?: boolean }>
   selectedValue: string
-  inputValue: string
   onInputChange: (value: string) => void
   onClear: (e: React.MouseEvent) => void
   onOpenChange: (open: boolean) => void
   disabled: boolean
   isLoading: boolean
-  formatFileSize: (bytes: number) => string
   truncateMiddle: (text: string, start?: number, end?: number) => string
   isDeleting: boolean
   workflowSearchHighlight?: ReturnType<typeof getWorkflowSearchLabelHighlight>
@@ -185,13 +183,11 @@ function SingleFileSelector({
   file,
   options,
   selectedValue,
-  inputValue,
   onInputChange,
   onClear,
   onOpenChange,
   disabled,
   isLoading,
-  formatFileSize,
   truncateMiddle,
   isDeleting,
   workflowSearchHighlight,
@@ -245,6 +241,7 @@ function SingleFileSelector({
         }
       />
       <Button
+        aria-label='Remove file'
         type='button'
         variant='ghost'
         className='-translate-y-1/2 absolute top-1/2 right-[28px] z-10 size-6 p-0'
@@ -273,7 +270,6 @@ export function FileUpload({
   maxSize = 10, // Default 10MB
   acceptedTypes = '*',
   multiple = false, // Default to single file for backward compatibility
-  uploadContext,
   allowStartFilesReference = false,
   conversationFileMode = 'images',
   defaultValue,
@@ -977,6 +973,7 @@ export function FileUpload({
           </span>
         </div>
         <Button
+          aria-label='Remove file'
           type='button'
           variant='ghost'
           className='-translate-y-1/2 absolute top-1/2 right-[4px] size-6 p-0'
@@ -1349,7 +1346,6 @@ export function FileUpload({
           file={selectedWorkspaceFile}
           options={singleFileOptions}
           selectedValue={selectedFileId}
-          inputValue={inputValue}
           onInputChange={handleComboboxChange}
           onClear={(e) => handleRemoveFile(selectedWorkspaceFile, e)}
           onOpenChange={(open) => {
@@ -1357,7 +1353,6 @@ export function FileUpload({
           }}
           disabled={disabled}
           isLoading={loadingWorkspaceFiles}
-          formatFileSize={formatFileSize}
           truncateMiddle={truncateMiddle}
           isDeleting={deletingFiles[selectedWorkspaceFile.path || '']}
           workflowSearchHighlight={getWorkflowSearchLabelHighlight({

@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { GithubIcon } from '@/components/icons'
+import { SITE_URL } from '@/lib/core/utils/urls'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { useBrandConfig } from '@/ee/whitelabeling'
 
@@ -20,45 +21,9 @@ interface ChatHeaderProps {
   workflowId?: string
 }
 
-export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProps) {
+export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
   const brand = useBrandConfig()
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
-
-  const params = new URLSearchParams(window.location.search)
-  const workspaceId = params.get('workspaceId')
-  const isFromControlBar = params.get('fromControlBar') === 'true'
-
-  // Determine environment and construct exit URL
-  const getExitUrl = () => {
-    // If opened from control bar, redirect to workspace
-    if (isFromControlBar && workspaceId && workflowId) {
-      return `/workspace/${workspaceId}/w/${workflowId}`
-    }
-
-    // Otherwise redirect based on environment
-    if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname
-
-      if (hostname.includes('localhost')) {
-        return 'http://localhost:3001/agents'
-      }
-      if (hostname.includes('dev-agent')) {
-        return 'https://dev.thearena.ai/agents'
-      }
-      if (hostname.includes('test-agent')) {
-        return 'https://test.thearena.ai/agents'
-      }
-      if (hostname.includes('sandbox-agent')) {
-        return 'https://sandbox.thearena.ai/agents'
-      }
-      // prod - agent.thearena.ai
-      return 'https://app.thearena.ai/agents'
-    }
-
-    return '/'
-  }
-
-  const exitUrl = getExitUrl()
 
   return (
     <nav
@@ -97,7 +62,13 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
           </a>
           {/* Only show Arena logo if no custom branding is set */}
 
-          <Link href='/' aria-label='Arena home' className='flex items-center'>
+          <Link
+            href={SITE_URL}
+            target='_blank'
+            rel='noopener noreferrer'
+            aria-label='Arena home'
+            className='flex items-center'
+          >
             <Image src={arenaLogo} alt='Arena' width={30} height={30} />
           </Link>
         </div>

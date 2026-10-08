@@ -157,58 +157,6 @@ interface SelectedOutputDescriptor {
   key: string
 }
 
-function isRenderableImageUrl(value: unknown): value is string {
-  if (typeof value !== 'string') {
-    return false
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return false
-  }
-
-  if (trimmed.startsWith('data:image/')) {
-    return true
-  }
-
-  if (trimmed.startsWith('/api/files/serve/')) {
-    return (
-      /\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(trimmed) ||
-      trimmed.includes('agent-generated-images')
-    )
-  }
-
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-    return false
-  }
-
-  return (
-    /\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(trimmed) ||
-    trimmed.includes('agent-generated-images') ||
-    trimmed.includes('/api/files/serve/')
-  )
-}
-
-function containsRenderableImageOutput(value: unknown): boolean {
-  if (!value) {
-    return false
-  }
-
-  if (isRenderableImageUrl(value)) {
-    return true
-  }
-
-  if (Array.isArray(value)) {
-    return value.some((item) => containsRenderableImageOutput(item))
-  }
-
-  if (typeof value === 'object') {
-    return Object.values(value).some((item) => containsRenderableImageOutput(item))
-  }
-
-  return false
-}
-
 function resolveStreamedContent(state: StreamingState): Map<string, string> {
   const result = new Map<string, string>()
   for (const [blockId, chunks] of state.streamedChunks) {
@@ -1210,7 +1158,7 @@ export async function createStreamingResponse(
           timeoutController.timeoutMs &&
           !requestAborted
         ) {
-          const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController.timeoutMs)
+          const timeoutErrorMessage = getTimeoutErrorMessage(timeoutController.timeoutMs)
           logger.info(`[${requestId}] Streaming execution timed out`, {
             timeoutMs: timeoutController.timeoutMs,
           })

@@ -1,9 +1,9 @@
-/**
- * @vitest-environment node
- */
-
 import type { ReactNode } from 'react'
 import { authMockFns } from '@sim/testing'
+import { createSessionPrincipal } from '@sim/testing/factories/principal.factory'
+import { emcnMock } from '@sim/testing/mocks/emcn.mock'
+import { nextNavigationMock } from '@sim/testing/mocks/next-navigation.mock'
+import { reactQueryMock } from '@sim/testing/mocks/react-query.mock'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,30 +13,25 @@ const {
   mockPrefetchWorkspaceHostContext,
   mockPrefetchWorkspaceSidebar,
   mockPrefetchWorkspaceAccess,
+  mockPrefetchWorkspaceForkAvailability,
 } = vi.hoisted(() => ({
   mockBrandingProvider: vi.fn(({ children }: { children: ReactNode }) => children),
   mockGetOrgWhitelabelSettings: vi.fn(),
   mockPrefetchWorkspaceHostContext: vi.fn(),
   mockPrefetchWorkspaceSidebar: vi.fn(),
   mockPrefetchWorkspaceAccess: vi.fn(),
+  mockPrefetchWorkspaceForkAvailability: vi.fn(),
 }))
 
-vi.mock('@sim/emcn', () => ({
-  ToastProvider: ({ children }: { children: ReactNode }) => children,
-}))
+vi.mock('@sim/emcn', () => emcnMock)
 
-vi.mock('@tanstack/react-query', () => ({
-  dehydrate: vi.fn(() => ({})),
-  HydrationBoundary: ({ children }: { children: ReactNode }) => children,
-}))
+vi.mock('@tanstack/react-query', () => reactQueryMock)
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({ get: vi.fn(() => undefined) })),
 }))
 
-vi.mock('next/navigation', () => ({
-  redirect: vi.fn(),
-}))
+vi.mock('next/navigation', () => nextNavigationMock)
 
 vi.mock('@/app/_shell/providers/get-query-client', () => ({
   getQueryClient: () => ({ setQueryData: vi.fn() }),
@@ -45,6 +40,7 @@ vi.mock('@/app/_shell/providers/get-query-client', () => ({
 vi.mock('@/app/workspace/[workspaceId]/prefetch', () => ({
   prefetchWorkspaceHostContext: mockPrefetchWorkspaceHostContext,
   prefetchWorkspaceSidebar: mockPrefetchWorkspaceSidebar,
+  prefetchWorkspaceForkAvailability: mockPrefetchWorkspaceForkAvailability,
 }))
 
 vi.mock('@/app/workspace/[workspaceId]/prefetch-access', () => ({
@@ -153,7 +149,6 @@ const HOST_CONTEXT = {
 
 describe('WorkspaceLayout host context', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
     mockGetSession.mockResolvedValue({
       user: { id: 'viewer-1' },
       session: { id: 'session-1', activeOrganizationId: 'org-a' },
@@ -161,6 +156,7 @@ describe('WorkspaceLayout host context', () => {
     mockPrefetchWorkspaceHostContext.mockResolvedValue(HOST_CONTEXT)
     mockPrefetchWorkspaceSidebar.mockResolvedValue(undefined)
     mockPrefetchWorkspaceAccess.mockResolvedValue(undefined)
+    mockPrefetchWorkspaceForkAvailability.mockResolvedValue(undefined)
     mockGetOrgWhitelabelSettings.mockResolvedValue({ brandName: 'Host B' })
   })
 
@@ -180,11 +176,11 @@ describe('WorkspaceLayout host context', () => {
       HOST_CONTEXT,
       'org-a'
     )
-    expect(mockPrefetchWorkspaceAccess).toHaveBeenCalledWith(expect.anything(), 'workspace-b', {
-      kind: 'session',
-      userId: 'viewer-1',
-      sessionId: 'session-1',
-    })
+    expect(mockPrefetchWorkspaceAccess).toHaveBeenCalledWith(
+      expect.anything(),
+      'workspace-b',
+      createSessionPrincipal({ userId: 'viewer-1' })
+    )
     expect(mockBrandingProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         hostOrganizationId: 'org-b',

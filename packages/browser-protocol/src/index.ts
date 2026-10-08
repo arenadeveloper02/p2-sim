@@ -32,6 +32,7 @@ export const CURRENT_BROWSER_TOOL_NAMES = [
   'browser_list_tabs',
   'browser_list_sessions',
   'browser_list_downloads',
+  'browser_save_download',
   'browser_wait_for',
   'browser_snapshot',
   'browser_find',
@@ -42,11 +43,13 @@ export const CURRENT_BROWSER_TOOL_NAMES = [
   'browser_click_at',
   'browser_type',
   'browser_fill_form',
+  'browser_batch',
   'browser_insert_text',
   'browser_press_key',
   'browser_scroll',
   'browser_select_option',
   'browser_set_checked',
+  'browser_upload_file',
   'browser_hover',
   'browser_drag',
   'browser_zoom',
@@ -54,27 +57,34 @@ export const CURRENT_BROWSER_TOOL_NAMES = [
 
 export type CurrentBrowserToolName = (typeof CURRENT_BROWSER_TOOL_NAMES)[number]
 
-export const RETIRED_BROWSER_TOOL_NAMES = ['browser_request_takeover'] as const
+const RETIRED_BROWSER_TOOL_NAMES = ['browser_request_takeover'] as const
 
-export const BROWSER_TOOL_NAMES = [
-  ...CURRENT_BROWSER_TOOL_NAMES,
-  ...RETIRED_BROWSER_TOOL_NAMES,
-] as const
+const BROWSER_TOOL_NAMES = [...CURRENT_BROWSER_TOOL_NAMES, ...RETIRED_BROWSER_TOOL_NAMES] as const
 
 export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number]
 
-export const BROWSER_WAIT_FOR_DEFAULT_TIMEOUT_MS = 10_000
-export const BROWSER_WAIT_FOR_MAX_TIMEOUT_MS = 120_000
-export const BROWSER_WAIT_FOR_RENDERER_GRACE_MS = 15_000
+const BROWSER_WAIT_FOR_DEFAULT_TIMEOUT_MS = 10_000
+const BROWSER_WAIT_FOR_MAX_TIMEOUT_MS = 120_000
+const BROWSER_WAIT_FOR_RENDERER_GRACE_MS = 15_000
 export const BROWSER_TOOL_AUTHORIZATION_TIMEOUT_MS = 8_000
 export const BROWSER_NAVIGATION_NATIVE_WATCHDOG_MS = 60_000
 export const BROWSER_TOOL_QUEUE_WAIT_TIMEOUT_MS = BROWSER_NAVIGATION_NATIVE_WATCHDOG_MS
 const BROWSER_RENDERER_TRANSPORT_GRACE_MS = 2_000
-export const BROWSER_NAVIGATION_RENDERER_TIMEOUT_MS =
+const BROWSER_NAVIGATION_RENDERER_TIMEOUT_MS =
   BROWSER_TOOL_AUTHORIZATION_TIMEOUT_MS +
   BROWSER_TOOL_QUEUE_WAIT_TIMEOUT_MS +
   BROWSER_NAVIGATION_NATIVE_WATCHDOG_MS +
   BROWSER_RENDERER_TRANSPORT_GRACE_MS
+
+/**
+ * The desktop exchanges browser-agent file bytes with the app here: POST streams a file named by
+ * a claimed `browser_upload_file` call, PUT stores a completed download for `browser_save_download`.
+ */
+export const BROWSER_FILE_TRANSFER_PATH = '/api/desktop/tool/file'
+/** Per-file byte ceiling for browser uploads and saved downloads, enforced on both sides. */
+export const BROWSER_FILE_TRANSFER_MAX_BYTES = 100 * 1024 * 1024
+/** Files one `browser_upload_file` call may attach. */
+export const BROWSER_UPLOAD_MAX_FILES = 10
 
 /**
  * Normalizes the model-visible `browser_wait_for.timeoutMs` consistently in
@@ -104,6 +114,9 @@ export function browserToolRendererTimeoutMs(
     case 'browser_reload':
     case 'browser_open_tab':
     case 'browser_switch_tab':
+    case 'browser_upload_file':
+    case 'browser_save_download':
+    case 'browser_batch':
       return BROWSER_NAVIGATION_RENDERER_TIMEOUT_MS
     case 'browser_wait_for':
       return (
@@ -116,7 +129,7 @@ export function browserToolRendererTimeoutMs(
   }
 }
 
-export const BROWSER_THEMES = ['system', 'light', 'dark'] as const
+const BROWSER_THEMES = ['system', 'light', 'dark'] as const
 
 /** Sim appearance preference mirrored into browser-tab media queries. */
 export type BrowserTheme = (typeof BROWSER_THEMES)[number]

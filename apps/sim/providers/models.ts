@@ -18,6 +18,7 @@ import {
   FireworksIcon,
   GeminiIcon,
   GroqIcon,
+  KieIcon,
   KimiIcon,
   LitellmIcon,
   MetaIcon,
@@ -29,6 +30,7 @@ import {
   SakanaIcon,
   SambaNovaIcon,
   TogetherIcon,
+  TypeSafeIcon,
   VertexIcon,
   VllmIcon,
   xAIIcon,
@@ -83,7 +85,15 @@ export interface ModelCapabilities {
      * to the per-provider defaults in {@link getThinkingStreamVisibility}.
      */
     streamed?: ThinkingStreamVisibility
+    /**
+     * How the pickers' `none` level reaches the API when the model rejects
+     * `thinking.type: "disabled"`. `between_tools` (Claude Sonnet 5.5) turns off
+     * up-front thinking; omitted, `none` sends no thinking config.
+     */
+    noneMode?: 'between_tools'
   }
+  /** Uses native state and questions instead of a conversational prompt. */
+  evaluation?: boolean
   deepResearch?: boolean
   /** Whether this model supports conversation memory. Defaults to true if omitted. */
   memory?: boolean
@@ -168,6 +178,34 @@ export function getProviderFileAttachment(providerId: string): ProviderFileAttac
 }
 
 export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
+  typesafe: {
+    id: 'typesafe',
+    name: 'TypeSafe',
+    description: 'Jev evaluation models for classification, scoring, and agent decisions',
+    icon: TypeSafeIcon,
+    color: '#F386A1',
+    models: [
+      {
+        id: 'jev-latest',
+        pricing: { input: 0.042, output: 0, updatedAt: '2026-09-22' },
+        capabilities: { evaluation: true, memory: false },
+        contextWindow: 64000,
+      },
+      {
+        id: 'jev-1.13.0',
+        pricing: { input: 0.042, output: 0, updatedAt: '2026-09-22' },
+        capabilities: { evaluation: true, memory: false },
+        contextWindow: 64000,
+      },
+      {
+        id: 'jev-preview',
+        pricing: { input: 0.042, output: 0, updatedAt: '2026-09-22' },
+        capabilities: { evaluation: true, memory: false },
+        contextWindow: 64000,
+      },
+    ],
+    defaultModel: 'jev-latest',
+  },
   fireworks: {
     id: 'fireworks',
     name: 'Fireworks',
@@ -357,6 +395,63 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2026-09-03',
         featured: true,
         recommended: true,
+      },
+      {
+        id: 'gpt-6-sol',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.2,
+          output: 10.0,
+          tiers: [
+            {
+              aboveInputTokens: 272000,
+              input: 4.0,
+              cachedInput: 0.4,
+              output: 15.0,
+            },
+          ],
+          updatedAt: '2026-09-22',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-09-22',
+      },
+      {
+        id: 'gpt-6-luna',
+        pricing: {
+          input: 0.1,
+          cachedInput: 0.01,
+          output: 0.5,
+          tiers: [
+            {
+              aboveInputTokens: 272000,
+              input: 0.2,
+              cachedInput: 0.02,
+              output: 0.75,
+            },
+          ],
+          updatedAt: '2026-09-22',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-09-22',
+        speedOptimized: true,
       },
       // GPT-4.1 family
       {
@@ -956,7 +1051,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'remote-url' },
     name: 'Anthropic',
     description: "Anthropic's Claude models",
-    defaultModel: 'claude-sonnet-5',
+    defaultModel: 'claude-sonnet-5-5',
     modelPatterns: [/^claude/],
     icon: AnthropicIcon,
     color: '#D97757',
@@ -1013,6 +1108,30 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         sunset: { status: 'legacy' },
       },
       {
+        id: 'claude-sonnet-5-5',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.2,
+          output: 10.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          forcedToolUse: false,
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+            noneMode: 'between_tools',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-09-28',
+        recommended: true,
+      },
+      {
         id: 'claude-sonnet-5',
         pricing: {
           input: 2.0,
@@ -1031,6 +1150,29 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-06-30',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'claude-opus-5-5',
+        pricing: {
+          input: 4.0,
+          cachedInput: 0.2,
+          output: 20.0,
+          updatedAt: '2026-09-22',
+        },
+        capabilities: {
+          forcedToolUse: false,
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 512 },
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'medium',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-09-22',
         recommended: true,
       },
       {
@@ -1053,7 +1195,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-07-24',
-        recommended: true,
+        sunset: { status: 'legacy' },
       },
       {
         id: 'claude-opus-4-8',
@@ -3437,6 +3579,435 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       },
     ],
   },
+  kie: {
+    id: 'kie',
+    name: 'Kie',
+    description: 'Claude, GPT, Grok, and Kimi models through the Kie.ai API',
+    defaultModel: 'kie/claude-opus-5-5',
+    modelPatterns: [/^kie\//],
+    icon: KieIcon,
+    color: '#1D4ED8',
+    isReseller: true,
+    capabilities: {
+      toolUsageControl: true,
+    },
+    models: [
+      {
+        id: 'kie/claude-opus-5-5',
+        pricing: {
+          input: 1.6,
+          output: 8.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          forcedToolUse: false,
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'medium',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-09-22',
+        recommended: true,
+      },
+      {
+        id: 'kie/claude-opus-5',
+        pricing: {
+          input: 2.0,
+          output: 10.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-07-24',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-fable-5',
+        pricing: {
+          input: 4.0,
+          output: 20.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-09',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-sonnet-5',
+        pricing: {
+          input: 0.85,
+          output: 4.275,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-30',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-opus-4-8',
+        pricing: {
+          input: 2.0,
+          output: 10.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-05-28',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-opus-4-7',
+        pricing: {
+          input: 1.425,
+          output: 7.15,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-04-16',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-opus-4-6',
+        pricing: {
+          input: 1.425,
+          output: 7.15,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          temperature: {
+            min: 0,
+            max: 1,
+          },
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-05',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-sonnet-4-6',
+        pricing: {
+          input: 0.85,
+          output: 4.275,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          temperature: {
+            min: 0,
+            max: 1,
+          },
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'max'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-17',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-opus-4-5',
+        pricing: {
+          input: 1.425,
+          output: 7.15,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          temperature: {
+            min: 0,
+            max: 1,
+          },
+          maxOutputTokens: 64000,
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 200000,
+        releaseDate: '2025-11-24',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-sonnet-4-5',
+        pricing: {
+          input: 0.85,
+          output: 4.275,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          temperature: {
+            min: 0,
+            max: 1,
+          },
+          maxOutputTokens: 64000,
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 200000,
+        releaseDate: '2025-09-29',
+        sunset: { status: 'legacy' },
+      },
+      {
+        id: 'kie/claude-haiku-4-5',
+        pricing: {
+          input: 0.275,
+          output: 1.425,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          temperature: {
+            min: 0,
+            max: 1,
+          },
+          maxOutputTokens: 64000,
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+            streamed: 'summary',
+          },
+        },
+        contextWindow: 200000,
+        releaseDate: '2025-10-15',
+      },
+      {
+        id: 'kie/gpt-6-astra',
+        pricing: {
+          input: 2.8,
+          cachedInput: 0.28,
+          output: 14.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-09-03',
+        recommended: true,
+      },
+      {
+        id: 'kie/gpt-6-sol',
+        pricing: {
+          input: 0.6,
+          cachedInput: 0.06,
+          output: 3.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-09-22',
+      },
+      {
+        id: 'kie/gpt-6-luna',
+        pricing: {
+          input: 0.03,
+          cachedInput: 0.003,
+          output: 0.15,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-09-22',
+      },
+      {
+        id: 'kie/gpt-5-6-sol',
+        pricing: {
+          input: 1.4,
+          cachedInput: 0.14,
+          output: 8.4,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-07-09',
+      },
+      {
+        id: 'kie/gpt-5-6-terra',
+        pricing: {
+          input: 0.56,
+          cachedInput: 0.056,
+          output: 3.36,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-07-09',
+      },
+      {
+        id: 'kie/gpt-5-6-luna',
+        pricing: {
+          input: 0.056,
+          cachedInput: 0.0056,
+          output: 0.336,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-07-09',
+      },
+      {
+        id: 'kie/gpt-5-5',
+        pricing: {
+          input: 1.4,
+          cachedInput: 0.14,
+          output: 8.4,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-04-23',
+      },
+      {
+        id: 'kie/grok-4-6',
+        pricing: {
+          input: 0.8,
+          cachedInput: 0.2,
+          output: 2.4,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+        },
+        contextWindow: 500000,
+        releaseDate: '2026-08-12',
+      },
+      {
+        id: 'kie/grok-4-5',
+        pricing: {
+          input: 0.8,
+          cachedInput: 0.12,
+          output: 2.4,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+        },
+        contextWindow: 500000,
+        releaseDate: '2026-07-08',
+      },
+      {
+        id: 'kie/grok-4-3',
+        pricing: {
+          input: 0.5,
+          cachedInput: 0.08,
+          output: 1.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-04-30',
+      },
+      {
+        id: 'kie/kimi-k3',
+        pricing: {
+          input: 2.4,
+          cachedInput: 0.24,
+          output: 12.0,
+          updatedAt: '2026-09-28',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['low', 'medium', 'high'],
+          },
+          maxOutputTokens: 1048576,
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-07-16',
+      },
+    ],
+  },
   zai: {
     id: 'zai',
     name: 'Z.ai',
@@ -5168,7 +5739,15 @@ export function getBaseModelProviders(): Record<string, ProviderId> {
     )
 }
 
-/** Resolves catalog entries and provider patterns without guessing a fallback provider. */
+/**
+ * The provider that declares `model`, or `null` when none does. Resolves catalog entries and
+ * provider patterns without guessing a fallback provider.
+ *
+ * The non-guessing half of `getProviderFromModel` in `@/providers/utils`. A caller that *gates*
+ * on the answer needs "unknown" to stay distinct from "ollama": this registry holds chat models
+ * only, so every embedding, speech, image and video model id would otherwise read as an Ollama
+ * model and be judged against an allowlist that was never about it.
+ */
 export function findProviderFromModel(model: string): ProviderId | null {
   const normalizedModel = model.toLowerCase()
 
@@ -5247,30 +5826,6 @@ export function getModelCapabilities(modelId: string): ModelCapabilities | null 
   return null
 }
 
-export function getModelsWithTemperatureSupport(): string[] {
-  const models: string[] = []
-  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
-    for (const model of provider.models) {
-      if (model.capabilities.temperature) {
-        models.push(model.id)
-      }
-    }
-  }
-  return models
-}
-
-export function getModelsWithTemperatureRange(max: number): string[] {
-  const models: string[] = []
-  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
-    for (const model of provider.models) {
-      if (model.capabilities.temperature?.max === max) {
-        models.push(model.id)
-      }
-    }
-  }
-  return models
-}
-
 export function getProvidersWithToolUsageControl(): string[] {
   const providers: string[] = []
   for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
@@ -5282,8 +5837,8 @@ export function getProvidersWithToolUsageControl(): string[] {
 }
 
 export function getHostedModels(): string[] {
-  // Currently, OpenAI and Anthropic models are hosted
   const hosted = [
+    ...getProviderModels('typesafe'),
     ...getProviderModels('openai'),
     ...getProviderModels('anthropic'),
     ...getProviderModels('sambanova'),
@@ -5626,14 +6181,6 @@ export function getModelsWithPromptCaching(): string[] {
 }
 
 /**
- * Minimum prefix length the model will cache, or `null` when the model does
- * not support caller-placed breakpoints.
- */
-export function getPromptCachingMinimumTokens(modelId: string): number | null {
-  return getModelCapabilities(modelId)?.promptCaching?.minimumCacheableTokens ?? null
-}
-
-/**
  * Get all models that support thinking capability
  */
 export function getModelsWithThinking(): string[] {
@@ -5696,6 +6243,8 @@ const PROVIDER_THINKING_STREAM_DEFAULTS: Record<string, ThinkingStreamVisibility
   vertex: 'summary',
   openai: 'summary',
   'azure-openai': 'summary',
+  // Kie proxies the Responses and Messages APIs, which return reasoning summaries only.
+  kie: 'summary',
   bedrock: 'none',
   meta: 'none',
 }
@@ -5727,6 +6276,17 @@ export function getThinkingStreamVisibility(modelId: string): ThinkingStreamVisi
     }
   }
   return null
+}
+
+/** Models that consume native evaluation inputs in the Agent block. */
+export function getEvaluationModels(): string[] {
+  return Object.values(PROVIDER_DEFINITIONS).flatMap((provider) =>
+    provider.models.filter((model) => model.capabilities.evaluation).map((model) => model.id)
+  )
+}
+
+export function isEvaluationModel(modelId: string): boolean {
+  return getModelCapabilities(modelId)?.evaluation === true
 }
 
 /**

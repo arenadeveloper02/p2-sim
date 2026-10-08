@@ -389,7 +389,7 @@ function isVisiblyRendered(element: HTMLElement): boolean {
 }
 
 /** Clamps `value` to the inclusive `[min, max]` range. */
-export function clamp(value: number, min: number, max: number): number {
+function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
@@ -406,7 +406,7 @@ function quantize(value: number): number {
  * mouse click). Used to keep the tooltip from re-appearing/repositioning when the trigger is
  * clicked. Falls back to `true` where the selector can't be queried.
  */
-export function isFocusVisible(element: Element): boolean {
+function isFocusVisible(element: Element): boolean {
   try {
     return element.matches(':focus-visible')
   } catch {
@@ -508,7 +508,12 @@ function getTooltipTranslate(state: FloatingTooltipState, offset: number): strin
   const y =
     state.alignY === 'below' ? `${state.y + offset}px` : `calc(${state.y - offset}px - 100%)`
 
-  return `${x} ${y}`
+  return `${containTooltipAxis(x, '100vw')} ${containTooltipAxis(y, '100vh')}`
+}
+
+/** Self-relative percentages contain the whole bubble, shrinking its gutter in small windows. */
+function containTooltipAxis(position: string, viewport: string): string {
+  return `clamp(0px, clamp(${EDGE_GUTTER}px, ${position}, calc(${viewport} - 100% - ${EDGE_GUTTER}px)), max(0px, calc(${viewport} - 100%)))`
 }
 
 /**

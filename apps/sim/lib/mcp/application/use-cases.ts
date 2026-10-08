@@ -14,6 +14,7 @@ import {
   type McpWorkspaceContext,
   resolveMcpServerContext,
   resolveMcpWorkspaceContext,
+  resolveOrganizationMcpServerContext,
 } from '@/lib/mcp/application/context'
 import {
   loadMcpOperationAccess,
@@ -208,15 +209,17 @@ export const discoverMcpServerToolsUseCase = defineAuthorizedWorkspaceUseCase({
   },
 })
 
-export interface GetMcpServerInput {
-  workspaceId: string
-  serverId: string
-}
+export type GetMcpServerInput = { serverId: string } & (
+  | { workspaceId: string; organizationId?: never }
+  | { workspaceId?: never; organizationId: string }
+)
 
 export const getMcpServerUseCase = defineAuthorizedWorkspaceUseCase({
   operation: mcpServerOperations.read,
   resolveContext: ({ input }: { input: GetMcpServerInput }) =>
-    resolveMcpServerContext(input.workspaceId, input.serverId),
+    input.organizationId
+      ? resolveOrganizationMcpServerContext(input.organizationId, input.serverId)
+      : resolveMcpServerContext(input.workspaceId!, input.serverId),
   authorizationOptions,
   async execute({ context }) {
     return { server: context.server }
@@ -468,7 +471,7 @@ export const deleteMcpServerUseCase = defineAuthorizedWorkspaceUseCase({
   resolveContext: ({ input }: { input: DeleteMcpServerInput }) =>
     resolveMcpServerContext(input.workspaceId, input.serverId),
   authorizationOptions,
-  async execute({ principal, input, context }) {
+  async execute({ principal, context }) {
     if (context.server.managedConnectorId) {
       throw new OrchestrationError(
         'conflict',

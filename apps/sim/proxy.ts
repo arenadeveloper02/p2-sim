@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
-import { APP_ENTRY_PATH } from '@/lib/navigation/paths'
+import { resolveSimMcpHostPath } from '@/lib/api/mcp/host-routing'
+import { SIM_MCP_ROUTE_PATH } from '@/lib/api/mcp/urls'
+import { APP_ENTRY_PATH, isNoindexPath } from '@/lib/navigation/paths'
 import { isOAuthAuthorizationCallback, resolveAuthRedirect } from '@/app/(auth)/auth-redirect'
 import { sendToProfound } from './lib/analytics/profound'
 import {
@@ -413,6 +415,18 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
 export function proxy(request: NextRequest) {
   const url = request.nextUrl
 
+  const mcpPath = resolveSimMcpHostPath(request.headers.get('host'), url.pathname)
+  if (mcpPath === 'not_found') return new NextResponse(null, { status: 404 })
+  if (mcpPath && mcpPath !== url.pathname) {
+    const rewrite = NextResponse.rewrite(new URL(`${mcpPath}${url.search}`, request.url))
+    if (mcpPath !== SIM_MCP_ROUTE_PATH) return rewrite
+    /** The endpoint keeps the `/api` CORS policy it has on the app host; its metadata sets its own. */
+    const policy = resolveApiCorsPolicy(request)
+    if (request.method === 'OPTIONS') return buildPreflightResponse(policy)
+    applyCorsHeaders(rewrite, policy)
+    return rewrite
+  }
+
   if (url.pathname.startsWith('/api/')) {
     const policy = resolveApiCorsPolicy(request)
     if (request.method === 'OPTIONS') {
@@ -492,14 +506,15 @@ export function proxy(request: NextRequest) {
 
   response.headers.set('Content-Security-Policy', generateRuntimeCSP())
   response.headers.set('X-Content-Type-Options', 'nosniff')
-  // response.headers.set('X-Frame-Options', 'SAMEORIGIN')
 
   return applyIndexingPolicy(request, response)
 }
 
 /**
- * Keeps non-production Arena agent hosts (dev/test/sandbox) out of search results.
- * Only `agent.thearena.ai` is indexable.
+ * Keeps non-production Arena agent hosts out of search results. Only
+ * `agent.thearena.ai` is indexable. App and utility paths are noindex on every
+ * host, including redirects, so a signed-out crawler bounced from
+ * `/workspace/*` still sees the directive.
  *
  * `noindex` rather than a robots.txt `Disallow` is deliberate: a disallowed URL
  * can still be indexed when linked externally, and blocking the crawl stops
@@ -513,7 +528,7 @@ function applyIndexingPolicy(request: NextRequest, response: NextResponse): Next
     request.headers.get('host') ||
     request.nextUrl.host
 
-  if (!isSearchIndexableHost(host)) {
+  if (!isSearchIndexableHost(host) || isNoindexPath(request.nextUrl.pathname)) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
 

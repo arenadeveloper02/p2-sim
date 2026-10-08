@@ -316,8 +316,7 @@ export function ChatMessageContainer({
           <Button
             onClick={scrollToBottom}
             size='sm'
-            variant='outline'
-            className='flex items-center gap-1 rounded-full border border-[var(--color-ds-border-default)] bg-[var(--color-ds-surface-raised)] px-3 py-1 shadow-lg transition-all hover:opacity-80'
+            className='gap-1 rounded-full px-3 shadow-medium'
           >
             <ArrowDown className='size-3.5' />
             <span className='sr-only'>Scroll to bottom</span>

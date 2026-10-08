@@ -1,3 +1,4 @@
+import { toError } from '@sim/utils/errors'
 import { isRecordLike } from '@sim/utils/object'
 import {
   keepPreviousData,
@@ -10,31 +11,31 @@ import {
 import { isApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import {
-  addMothershipChatResourceContract,
   deleteMothershipChatContract,
   forkMothershipChatContract,
   getMothershipChatContract,
+  getMothershipChatResponseSchema,
   listMothershipChatsContract,
   type MothershipChat,
   type MothershipChatScope,
   markMothershipChatReadContract,
-  removeMothershipChatResourceContract,
-  reorderMothershipChatResourcesContract,
   restoreMothershipChatContract,
   updateMothershipChatContract,
 } from '@/lib/api/contracts/mothership-chats'
-import type { PersistedMessage } from '@/lib/copilot/chat/persisted-message'
-import { normalizeMessage } from '@/lib/copilot/chat/persisted-message'
+import { mothershipResourceSchema } from '@/lib/api/contracts/mothership-resources'
+import { suspendDesktopChatScopes } from '@/lib/desktop/chat-scope'
+import type { PersistedMessage } from '@/lib/mothership/chat/persisted-message'
+import { normalizeMessage } from '@/lib/mothership/chat/persisted-message'
 import {
   type FilePreviewSession,
   isFilePreviewSession,
-} from '@/lib/copilot/request/session/file-preview-session-contract'
-import { isStreamBatchEvent, type StreamBatchEvent } from '@/lib/copilot/request/session/types'
-import { type MothershipResource, MothershipResourceType } from '@/lib/copilot/resources/types'
-import { suspendDesktopChatScopes } from '@/lib/desktop/chat-scope'
+} from '@/lib/mothership/request/session/file-preview-session-contract'
+import { isStreamBatchEvent, type StreamBatchEvent } from '@/lib/mothership/request/session/types'
+import type { MothershipResource } from '@/lib/mothership/resources/types'
 import { useMothershipQueueStore } from '@/stores/mothership-queue/store'
 
 export interface MothershipChatMetadata {
+  mode?: MothershipChat['mode']
   id: string
   name: string
   updatedAt: Date
@@ -45,6 +46,8 @@ export interface MothershipChatMetadata {
 }
 
 export interface MothershipChatHistory {
+  /** Absent only in locally optimistic cache entries before the server responds. */
+  mode?: MothershipChat['mode']
   id: string
   title: string | null
   /** Persisted model string — Local Copilot catalog id when on Local. */
@@ -60,6 +63,17 @@ export interface MothershipChatHistory {
 }
 
 export type MothershipChatOwner = string | { organizationId: string }
+
+/** Reports which chats were deleted when another request in the batch failed. */
+export class MothershipChatDeleteError extends Error {
+  constructor(
+    readonly deletedChatIds: string[],
+    cause: Error
+  ) {
+    super(cause.message, { cause })
+    this.name = 'MothershipChatDeleteError'
+  }
+}
 
 export const mothershipChatKeys = {
   all: ['mothership-chats'] as const,
@@ -97,13 +111,6 @@ function assertValid(condition: unknown, message: string): asserts condition {
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
-}
-
-function isResourceType(value: unknown): value is MothershipResource['type'] {
-  return (
-    typeof value === 'string' &&
-    Object.values(MothershipResourceType).some((type) => type === value)
-  )
 }
 
 function parseStreamSnapshot(value: unknown): MothershipChatHistory['streamSnapshot'] {
@@ -145,17 +152,9 @@ function normalizeMessages(value: unknown): PersistedMessage[] {
 }
 
 function parseResource(value: unknown, context: string): MothershipResource {
-  assertValid(isRecordLike(value), `${context} must be an object`)
-  assertValid(isResourceType(value.type), `${context}.type is invalid`)
-  assertValid(typeof value.id === 'string', `${context}.id must be a string`)
-  assertValid(typeof value.title === 'string', `${context}.title must be a string`)
-
-  return {
-    type: value.type,
-    id: value.id,
-    title: value.title,
-    ...(typeof value.viewId === 'string' && value.viewId ? { viewId: value.viewId } : {}),
-  }
+  const parsed = mothershipResourceSchema.safeParse(value)
+  assertValid(parsed.success, `${context} is invalid`)
+  return parsed.data
 }
 
 function parseResources(value: unknown, context: string): MothershipResource[] {
@@ -194,8 +193,11 @@ function parseChatHistory(value: unknown): MothershipChatHistory {
     `${chatContext}.activeStreamId must be a string or null`
   )
 
+  const mode = getMothershipChatResponseSchema.shape.chat.shape.mode.parse(chat.mode)
+
   return {
     id: chat.id,
+    mode,
     title: chat.title,
     model: typeof chat.model === 'string' ? chat.model : undefined,
     messages: normalizeMessages(chat.messages),
@@ -205,19 +207,12 @@ function parseChatHistory(value: unknown): MothershipChatHistory {
   }
 }
 
-function parseChatResourcesResponse(value: unknown): { resources: MothershipResource[] } {
-  assertValid(isRecordLike(value), 'Invalid chat resources response: body must be an object')
-
-  return {
-    resources: parseResources(value.resources, 'Invalid chat resources response: resources'),
-  }
-}
-
 export function mapChat(chat: MothershipChat): MothershipChatMetadata {
   const updatedAt = new Date(chat.updatedAt)
   return {
     id: chat.id,
     name: chat.title ?? 'New chat',
+    mode: chat.mode,
     updatedAt,
     isActive: chat.activeStreamId !== null,
     isUnread:
@@ -386,7 +381,10 @@ export function useDeleteMothershipChats(owner?: MothershipChatOwner) {
         })
       )
       const failed = results.find((result) => result.status === 'rejected')
-      if (failed) throw failed.reason
+      if (failed) {
+        const deletedChatIds = chatIds.filter((_, index) => results[index].status === 'fulfilled')
+        throw new MothershipChatDeleteError(deletedChatIds, toError(failed.reason))
+      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: mothershipChatKeys.ownerLists(owner) })
@@ -475,137 +473,6 @@ export function useRenameMothershipChat(owner?: MothershipChatOwner) {
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: mothershipChatKeys.ownerList(owner) })
       queryClient.invalidateQueries({ queryKey: mothershipChatKeys.detail(variables.chatId) })
-    },
-  })
-}
-
-async function addChatResource(params: {
-  chatId: string
-  resource: MothershipResource
-}): Promise<{ resources: MothershipResource[] }> {
-  const data = await requestJson(addMothershipChatResourceContract, {
-    body: { chatId: params.chatId, resource: params.resource },
-  })
-  return parseChatResourcesResponse(data)
-}
-
-export function useAddChatResource(chatId?: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: addChatResource,
-    onMutate: async ({ resource }) => {
-      if (!chatId) return
-      await queryClient.cancelQueries({ queryKey: mothershipChatKeys.detail(chatId) })
-      const previous = queryClient.getQueryData<MothershipChatHistory>(
-        mothershipChatKeys.detail(chatId)
-      )
-      if (previous) {
-        const exists = previous.resources.some(
-          (r) => r.type === resource.type && r.id === resource.id
-        )
-        if (!exists) {
-          queryClient.setQueryData<MothershipChatHistory>(mothershipChatKeys.detail(chatId), {
-            ...previous,
-            resources: [...previous.resources, resource],
-          })
-        }
-      }
-      return { previous }
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previous && chatId) {
-        queryClient.setQueryData(mothershipChatKeys.detail(chatId), context.previous)
-      }
-    },
-    onSettled: () => {
-      if (chatId) {
-        queryClient.invalidateQueries({ queryKey: mothershipChatKeys.detail(chatId) })
-      }
-    },
-  })
-}
-
-async function reorderChatResources(params: {
-  chatId: string
-  resources: MothershipResource[]
-}): Promise<{ resources: MothershipResource[] }> {
-  const data = await requestJson(reorderMothershipChatResourcesContract, {
-    body: { chatId: params.chatId, resources: params.resources },
-  })
-  return parseChatResourcesResponse(data)
-}
-
-export function useReorderChatResources(chatId?: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: reorderChatResources,
-    onMutate: async ({ resources }) => {
-      if (!chatId) return
-      await queryClient.cancelQueries({ queryKey: mothershipChatKeys.detail(chatId) })
-      const previous = queryClient.getQueryData<MothershipChatHistory>(
-        mothershipChatKeys.detail(chatId)
-      )
-      if (previous) {
-        queryClient.setQueryData<MothershipChatHistory>(mothershipChatKeys.detail(chatId), {
-          ...previous,
-          resources,
-        })
-      }
-      return { previous }
-    },
-    onError: (_err, _variables, context) => {
-      if (context?.previous && chatId) {
-        queryClient.setQueryData(mothershipChatKeys.detail(chatId), context.previous)
-      }
-    },
-    onSettled: () => {
-      if (chatId) {
-        queryClient.invalidateQueries({ queryKey: mothershipChatKeys.detail(chatId) })
-      }
-    },
-  })
-}
-
-async function removeChatResource(params: {
-  chatId: string
-  resourceType: string
-  resourceId: string
-}): Promise<{ resources: MothershipResource[] }> {
-  const data = await requestJson(removeMothershipChatResourceContract, {
-    body: params,
-  })
-  return parseChatResourcesResponse(data)
-}
-
-export function useRemoveChatResource(chatId?: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: removeChatResource,
-    onMutate: async ({ resourceType, resourceId }) => {
-      if (!chatId) return
-      await queryClient.cancelQueries({ queryKey: mothershipChatKeys.detail(chatId) })
-      const removed: MothershipChatHistory['resources'] = []
-      queryClient.setQueryData<MothershipChatHistory>(mothershipChatKeys.detail(chatId), (prev) => {
-        if (!prev) return prev
-        const next: MothershipChatHistory['resources'] = []
-        for (const r of prev.resources) {
-          if (r.type === resourceType && r.id === resourceId) removed.push(r)
-          else next.push(r)
-        }
-        return removed.length > 0 ? { ...prev, resources: next } : prev
-      })
-      return { removed }
-    },
-    onError: (_err, _variables, context) => {
-      if (!chatId || !context?.removed.length) return
-      queryClient.setQueryData<MothershipChatHistory>(mothershipChatKeys.detail(chatId), (prev) =>
-        prev ? { ...prev, resources: [...prev.resources, ...context.removed] } : prev
-      )
-    },
-    onSettled: () => {
-      if (chatId) {
-        queryClient.invalidateQueries({ queryKey: mothershipChatKeys.detail(chatId) })
-      }
     },
   })
 }

@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { workspace } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
+import { readForkSyncNewWorkflowsExcluded } from '@/lib/workflows/persistence/new-workflow-row'
 import { getEffectiveWorkspacePermission } from '@/lib/workspaces/permissions/utils'
 import { getForkChildren, getForkParent } from '@/ee/workspace-forking/lib/lineage/lineage'
 import { getUndoableRunForTarget } from '@/ee/workspace-forking/lib/promote/promote-run-store'
@@ -28,21 +29,23 @@ export const getWorkspaceForkLineageDetails = defineForkUseCase({
   availability: true,
   async execute({
     input,
-    principal,
+    context,
   }: {
     input: { workspaceId: string }
-    principal: { userId: string }
+    context: { userId: string }
   }) {
     const { workspaceId } = input
-    const [rawParent, rawChildren, run] = await Promise.all([
+    const [rawParent, rawChildren, run, forkSyncNewWorkflowsExcluded] = await Promise.all([
       getForkParent(workspaceId),
       getForkChildren(workspaceId),
       getUndoableRunForTarget(db, workspaceId),
+      // Lineage-uniform, so this workspace's own value is the lineage's value.
+      readForkSyncNewWorkflowsExcluded(db, workspaceId),
     ])
 
     const [parent, children] = await Promise.all([
-      rawParent ? withViewerAccess(rawParent, principal.userId) : null,
-      Promise.all(rawChildren.map((child) => withViewerAccess(child, principal.userId))),
+      rawParent ? withViewerAccess(rawParent, context.userId) : null,
+      Promise.all(rawChildren.map((child) => withViewerAccess(child, context.userId))),
     ])
 
     let undoableRun: {
@@ -71,6 +74,7 @@ export const getWorkspaceForkLineageDetails = defineForkUseCase({
         createdAt: child.createdAt.toISOString(),
       })),
       undoableRun,
+      forkSyncNewWorkflowsExcluded,
     }
   },
 })
