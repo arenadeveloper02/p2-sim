@@ -81,6 +81,7 @@ import { getMothershipBaseURL } from '@/lib/mothership/server/agent-url'
 import { hasCopilotApiKey } from '@/lib/mothership/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/mothership/tools/handlers/context'
 import { getSimConnection } from '@/lib/mothership/transport/connection'
+import { ensureSimReceiverForBaseURL } from '@/lib/mothership/transport/receiver'
 import { isWorkspaceCapabilityWithheld } from '@/lib/permission-groups/capability-assertions'
 import { filterModelSafeWorkspaceFileAttachments } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { appendUnavailableAttachmentNotice } from '@/lib/uploads/utils/model-input'
@@ -1162,6 +1163,8 @@ async function runCheckpointLoop(
     const simConnection = getSimConnection()
     payload = { ...payload, simConnection }
   }
+  // Boot may have no-op'd the poller while transport still defaulted to `direct`.
+  if (getSimConnection().mode === 'checkpoint') ensureSimReceiverForBaseURL(mothershipBaseURL)
   if (initialRoute !== '/api/tools/resume') {
     payload = { ...payload, isHosted: isSimCloudHosted }
   }

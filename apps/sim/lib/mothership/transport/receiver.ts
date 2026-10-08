@@ -11,6 +11,7 @@ import { executeSimControl } from '@/lib/mothership/transport/control'
 
 const logger = createLogger('MothershipTransportReceiver')
 const receivers = new Map<string, AbortController>()
+let stopHandlersInstalled = false
 
 export async function receiveSimControls(
   baseURL: string,
@@ -64,10 +65,28 @@ export async function receiveSimControls(
 /** One outbound receiver per configured worker; independent of browser/chat lifetimes. */
 function ensureSimReceiver(baseURL: string): void {
   const connection = getSimConnection()
-  if (connection.mode !== 'checkpoint' || receivers.has(baseURL)) return
+  if (connection.mode !== 'checkpoint' || !env.COPILOT_API_KEY || receivers.has(baseURL)) return
   const controller = new AbortController()
   receivers.set(baseURL, controller)
+  logger.info('Starting outbound Sim transport receiver', { baseURL })
   void receiveSimControls(baseURL, connection.channelId, controller.signal)
+  if (!stopHandlersInstalled) {
+    stopHandlersInstalled = true
+    const stop = () => {
+      for (const active of receivers.values()) active.abort()
+    }
+    process.once('SIGTERM', stop)
+    process.once('SIGINT', stop)
+  }
+}
+
+/**
+ * Idempotent warm-up for the worker this chat will call. Boot may have skipped
+ * the poller when transport was still `direct` (or before `COPILOT_API_KEY` was
+ * readable); Cloud chat must not dispatch checkpoint work without a live channel.
+ */
+export function ensureSimReceiverForBaseURL(baseURL: string): void {
+  ensureSimReceiver(baseURL)
 }
 
 export async function startSimReceivers(): Promise<void> {
@@ -79,9 +98,4 @@ export async function startSimReceivers(): Promise<void> {
     env.COPILOT_PROD_URL,
   ]
   for (const endpoint of endpoints) if (endpoint) ensureSimReceiver(endpoint)
-  const stop = () => {
-    for (const controller of receivers.values()) controller.abort()
-  }
-  process.once('SIGTERM', stop)
-  process.once('SIGINT', stop)
 }
