@@ -1640,7 +1640,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'meeting:read:list_past_participants',
           'cloud_recording:read:list_user_recordings',
           'cloud_recording:read:list_recording_files',
-          'cloud_recording:delete:recording_file',
+          // zoom_delete_recording is hidden: Zoom returns "No permission." for this operation.
+          // 'cloud_recording:delete:recording_file',
+          // 'cloud_recording:delete:meeting_recording',
         ],
         serviceAccountProviderId: 'zoom-service-account',
       },

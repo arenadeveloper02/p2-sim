@@ -351,24 +351,6 @@ Get all recordings for a specific Zoom meeting
 |     ↳ `recording_type` | string | Type of recording \(shared_screen, audio_only, etc.\) |
 | `files` | file[] | Downloaded recording files |
 
-### Zoom Delete Recording
-
-Delete cloud recordings for a Zoom meeting
-
-#### Input
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| `meetingId` | string | Yes | The meeting ID or meeting UUID \(e.g., "1234567890" or "4444AAABBBccccc12345=="\) |
-| `recordingId` | string | No | Specific recording file ID to delete. If not provided, deletes all recordings. |
-| `action` | string | No | Delete action: "trash" \(move to trash\) or "delete" \(permanently delete\) |
-
-#### Output
-
-| Parameter | Type | Description |
-| --------- | ---- | ----------- |
-| `success` | boolean | Whether the recording was deleted successfully |
-
 ### Zoom List Past Participants
 
 List participants from a past Zoom meeting

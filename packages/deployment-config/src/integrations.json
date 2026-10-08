@@ -28703,15 +28703,11 @@
           "description": "Get all recordings for a specific Zoom meeting"
         },
         {
-          "name": "Delete Recording",
-          "description": "Delete cloud recordings for a Zoom meeting"
-        },
-        {
           "name": "List Past Participants",
           "description": "List participants from a past Zoom meeting"
         }
       ],
-      "operationCount": 10,
+      "operationCount": 9,
       "triggers": [
         {
           "id": "zoom_meeting_started",

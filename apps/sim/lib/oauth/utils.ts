@@ -450,7 +450,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'meeting:read:list_past_participants': 'View past meeting participants',
   'cloud_recording:read:list_user_recordings': 'List Zoom cloud recordings',
   'cloud_recording:read:list_recording_files': 'View recording files',
-  'cloud_recording:delete:recording_file': 'Delete cloud recordings',
+  'cloud_recording:delete:recording_file': 'Delete a Zoom cloud recording file',
+  'cloud_recording:delete:meeting_recording': 'Delete all cloud recordings for a Zoom meeting',
 
   // Dropbox scopes
   'account_info.read': 'View Dropbox account information',
