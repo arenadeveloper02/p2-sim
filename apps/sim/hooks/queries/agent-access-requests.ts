@@ -12,25 +12,29 @@ export const AGENT_ACCESS_REQUEST_LIST_STALE_TIME = 30 * 1000
 export const agentAccessRequestKeys = {
   all: ['agentAccessRequests'] as const,
   lists: () => [...agentAccessRequestKeys.all, 'list'] as const,
-  list: (workspaceId: string) => [...agentAccessRequestKeys.lists(), workspaceId] as const,
+  list: (workspaceId?: string) =>
+    [...agentAccessRequestKeys.lists(), workspaceId ?? 'all'] as const,
 }
 
 async function fetchAgentAccessRequests(
-  workspaceId: string,
+  workspaceId: string | undefined,
   signal?: AbortSignal
 ): Promise<AgentAccessRequestRow[]> {
   const data = await requestJson(listAgentAccessRequestsContract, {
-    query: { workspaceId },
+    query: workspaceId ? { workspaceId } : {},
     signal,
   })
   return data.rows
 }
 
+/**
+ * Lists agent access requests. Pass a workspace id to scope the list; omit it for
+ * the platform-admin global inbox at `/agent-access-request`.
+ */
 export function useAgentAccessRequests(workspaceId?: string) {
   return useQuery({
-    queryKey: agentAccessRequestKeys.list(workspaceId ?? ''),
-    queryFn: ({ signal }) => fetchAgentAccessRequests(workspaceId as string, signal),
-    enabled: Boolean(workspaceId),
+    queryKey: agentAccessRequestKeys.list(workspaceId),
+    queryFn: ({ signal }) => fetchAgentAccessRequests(workspaceId, signal),
     staleTime: AGENT_ACCESS_REQUEST_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
@@ -54,11 +58,11 @@ export function useApproveAgentAccessRequests(workspaceId?: string) {
       })
     },
     onSettled: async () => {
-      if (!workspaceId) {
-        await queryClient.invalidateQueries({ queryKey: agentAccessRequestKeys.lists() })
-        return
-      }
-      await queryClient.invalidateQueries({ queryKey: agentAccessRequestKeys.list(workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: workspaceId
+          ? agentAccessRequestKeys.list(workspaceId)
+          : agentAccessRequestKeys.lists(),
+      })
     },
   })
 }

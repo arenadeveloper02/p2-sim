@@ -3,11 +3,11 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { executeSimAgentWorkflow } from '@/lib/agent-access-requests/execute-workflow'
 import {
+  type ApproveAgentAccessRequestsResponse,
   agentAccessRequestRowSchema,
   approveAgentAccessRequestsContract,
-  type ApproveAgentAccessRequestsResponse,
-  listAgentAccessRequestsContract,
   type ListAgentAccessRequestsResponse,
+  listAgentAccessRequestsContract,
 } from '@/lib/api/contracts/agent-access-requests'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
@@ -62,9 +62,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   }
 
   try {
+    const workspaceId = parsed.data.query.workspaceId
     const result = await executeSimAgentWorkflow({
       workflowId,
-      input: { workspace_id: parsed.data.query.workspaceId },
+      input: workspaceId ? { workspace_id: workspaceId } : {},
       signal: request.signal,
     })
     if (!result.ok) {

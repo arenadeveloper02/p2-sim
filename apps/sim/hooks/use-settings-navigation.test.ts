@@ -58,6 +58,15 @@ describe('resolveSettingsHref unified settings navigation', () => {
     mockIsArenaBilling.mockReturnValue(true)
   })
 
+  it('routes agent access requests through workspace settings', () => {
+    expect(
+      resolveSettingsHref({
+        options: { section: 'agent-access-request' },
+        workspaceId: 'workspace-b',
+      })
+    ).toBe('/workspace/workspace-b/settings/agent-access-request')
+  })
+
   it('preserves MCP server query parameters for workspace settings', () => {
     expect(
       resolveSettingsHref({

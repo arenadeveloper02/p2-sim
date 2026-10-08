@@ -405,8 +405,10 @@ async function getGlobalAgentsList(
   const sharedAgentList = await toAgentListItems(sharedChats, departmentLabelMap)
 
   const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
-  let agentList: AgentListItem[] | AgentListItemWithDisabled[] =
-    await sortAgentListByRecentUsage(mergedAgentList, userId)
+  let agentList: AgentListItem[] | AgentListItemWithDisabled[] = await sortAgentListByRecentUsage(
+    mergedAgentList,
+    userId
+  )
 
   if (shouldMergeGenericAgents) {
     const accessibleGlobalRows = globalChats.filter((row) =>

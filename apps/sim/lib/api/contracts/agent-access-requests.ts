@@ -19,7 +19,8 @@ export const agentAccessRequestRowSchema = z
 
 export const listAgentAccessRequestsQuerySchema = z
   .object({
-    workspaceId: workspaceIdSchema,
+    /** When omitted, the platform-admin inbox lists requests across workspaces. */
+    workspaceId: workspaceIdSchema.optional(),
   })
   .strict()
 
@@ -56,7 +57,10 @@ export const approveAgentAccessRequestsBodySchema = z
       )
       .min(1, 'Select at least one access request')
       .max(200),
-    approvedBy: z.string().email('approvedBy must be a valid email').min(1, 'approvedBy is required'),
+    approvedBy: z
+      .string()
+      .email('approvedBy must be a valid email')
+      .min(1, 'approvedBy is required'),
   })
   .strict()
 
@@ -79,7 +83,9 @@ export const approveAgentAccessRequestsContract = defineRouteContract({
 export type AgentAccessRequestRow = z.output<typeof agentAccessRequestRowSchema>
 export type ListAgentAccessRequestsQuery = z.input<typeof listAgentAccessRequestsQuerySchema>
 export type ListAgentAccessRequestsResponse = z.output<typeof listAgentAccessRequestsResponseSchema>
-export type AgentAccessRequestDecisionStatus = z.output<typeof agentAccessRequestDecisionStatusSchema>
+export type AgentAccessRequestDecisionStatus = z.output<
+  typeof agentAccessRequestDecisionStatusSchema
+>
 export type ApproveAgentAccessRequestsBody = z.input<typeof approveAgentAccessRequestsBodySchema>
 export type ApproveAgentAccessRequestsResponse = z.output<
   typeof approveAgentAccessRequestsResponseSchema

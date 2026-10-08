@@ -849,9 +849,7 @@ export async function* runLocalCopilotAgent(
         )
       )
       const writeGuard = [
-        wroteWorkflows
-          ? 'Do NOT call create_workflow again unless a specialist failed.'
-          : null,
+        wroteWorkflows ? 'Do NOT call create_workflow again unless a specialist failed.' : null,
         wroteFiles
           ? 'Do NOT call create_file again unless a specialist failed.'
           : 'Research/lookup findings above do not create workspace files — if the user still needs documents or a seeded knowledge base, call create_file (then knowledge_base add_file as needed).',
@@ -2614,9 +2612,7 @@ export async function* runLocalCopilotAgent(
           ? buildWorkflowBuildChatAppendix(turnToolRecords, {
               createdWorkflowThisTurn,
               successfulPopulateEdits,
-              unresolvedFollowUpHint: followUpClosing
-                ? pendingFollowUps[0]?.hint ?? null
-                : null,
+              unresolvedFollowUpHint: followUpClosing ? (pendingFollowUps[0]?.hint ?? null) : null,
             })
           : null) ??
         synthesizeAssistantSummaryFromTools(turnToolRecords) ??

@@ -29,7 +29,6 @@ import {
 import { rejectOfficeFileViaSandbox } from '@/local-copilot/lib/tools/reject-office-via-sandbox'
 import {
   ARENA_ALIASED_SERVER_TOOL_NAMES,
-  ARENA_FILE_PIPELINE_TOOL_NAMES,
   isArenaFilePipelineTool,
   toServerRegistryToolName,
 } from '@/local-copilot/lib/tools/resolve-tool-name-alias'

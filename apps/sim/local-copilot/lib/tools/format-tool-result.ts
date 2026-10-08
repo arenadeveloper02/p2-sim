@@ -193,10 +193,7 @@ const FILE_TOOLS_NEEDING_EMPTY_GUARD = new Set([
  * When a file tool succeeds with a near-empty body, add an explicit hint so the
  * model does not invent "tools returned empty results."
  */
-function guardEmptyFileToolPayload(
-  toolName: string,
-  formatted: unknown
-): unknown {
+function guardEmptyFileToolPayload(toolName: string, formatted: unknown): unknown {
   if (!FILE_TOOLS_NEEDING_EMPTY_GUARD.has(toolName)) return formatted
   const record = asRecord(formatted)
   const keys = Object.keys(record).filter(
@@ -658,8 +655,7 @@ export function formatToolResultForLlm(
       // offload. The model already has workflowId + startBlockId.
       next.copilotSanitizedWorkflowState = undefined
       next.needsFollowUpPopulate = true
-      next.followUpHint =
-        `New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.`
+      next.followUpHint = `New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.`
     }
 
     formatted = next
@@ -671,8 +667,8 @@ export function formatToolResultForLlm(
       ...record,
       followUpHint:
         metadataKeys.length === 0
-          ? 'No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent\'s tools array — do not add them as canvas blocks.'
-          : 'If you just created a workflow, call edit_workflow now to add blocks. To attach Image Generator / Chart Generator / Exa to an existing Agent, edit that Agent\'s tools array (type image_generator_v2 / chart_generator / exa) and update its messages/prompt so it chooses those tools from the user question — do not add those as canvas blocks and do not add a Function block as a substitute. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+          ? "No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent's tools array — do not add them as canvas blocks."
+          : "If you just created a workflow, call edit_workflow now to add blocks. To attach Image Generator / Chart Generator / Exa to an existing Agent, edit that Agent's tools array (type image_generator_v2 / chart_generator / exa) and update its messages/prompt so it chooses those tools from the user question — do not add those as canvas blocks and do not add a Function block as a substitute. Do not load_copilot_artifact unless a specific field id is missing from this result.",
     }
   } else if (toolName === 'edit_content') {
     const record = asRecord(result)
