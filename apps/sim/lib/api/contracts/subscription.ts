@@ -311,6 +311,10 @@ export const updateUsageLimitContract = defineRouteContract({
   },
 })
 
+const successResponseSchema = z.object({
+  success: z.boolean(),
+})
+
 export const purchaseCreditsContract = defineRouteContract({
   method: 'POST',
   path: '/api/billing/credits',
