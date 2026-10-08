@@ -1651,6 +1651,8 @@ export const chat = pgTable(
     // Deployment surface: 'chat' renders the built-in chat page; 'app' redirects to an external URL
     deploymentType: text('deployment_type').notNull().default('chat'), // 'chat', 'app'
     redirectUrl: text('redirect_url'), // External URL opened from the listing when deploymentType is 'app'
+    /** Arena v3 route, such as `/keyword-research`. The client joins it to its own origin. */
+    arenaPath: text('arena_path'),
     /**
      * When true, public chat SSE exposes provider thinking events. Independent
      * of the `X-Sim-Stream-Protocol` header, which governs answer-text cadence

@@ -45,6 +45,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         identifier: chat.identifier,
         deploymentType: chat.deploymentType,
         redirectUrl: chat.redirectUrl,
+        arenaPath: chat.arenaPath,
       })
       .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       redirect_url:
         appRedirectUrl ??
         `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
+      arena_path: row.arenaPath?.trim() || null,
       block_names: blockNamesByWorkflowId.get(row.workflowId) ?? [],
     }
 
