@@ -2681,10 +2681,15 @@ describe('runCopilotLifecycle', () => {
 
     const call = mockRunStreamLoop.mock.calls[0]
     const headers = call?.[1].headers as Record<string, string>
+    const body = JSON.parse(String(call?.[1].body))
     expect(headers['x-sim-billing-protocol']).toBeUndefined()
     expect(headers['x-sim-billing-request-id']).toBeUndefined()
     expect(headers['x-sim-billing-attribution']).toBeUndefined()
-    expect(JSON.parse(String(call?.[1].body)).isHosted).toBe(false)
+    expect(body.isHosted).toBe(false)
+    expect(body.simConnection).toEqual({
+      mode: 'checkpoint',
+      channelId: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
   })
 
   it('normalizes the initial request body with workspaceId from lifecycle options', async () => {
