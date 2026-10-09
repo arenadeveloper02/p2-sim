@@ -913,10 +913,10 @@ describe('runCopilotLifecycle', () => {
     const sent = JSON.parse(capturedRequestBody)
     /** Receipt metadata leaves ordinary caller content unchanged. */
     expect(sent).not.toHaveProperty('byokApiKey')
+    expect(sent).not.toHaveProperty('isHosted')
     expect(sent).toEqual({
       ...payload,
       receivedTextChars: 0,
-      isHosted: false,
       simConnection: {
         mode: 'checkpoint',
         channelId: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -1451,10 +1451,10 @@ describe('runCopilotLifecycle', () => {
 
       const sent = JSON.parse(capturedRequestBody)
       expect(sent).not.toHaveProperty('byokApiKey')
+      expect(sent).not.toHaveProperty('isHosted')
       expect(sent).toEqual({
         ...payload,
         receivedTextChars: 0,
-        isHosted: false,
         simConnection: {
           mode: 'checkpoint',
           channelId: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -2690,7 +2690,7 @@ describe('runCopilotLifecycle', () => {
     expect(headers['x-sim-billing-protocol']).toBeUndefined()
     expect(headers['x-sim-billing-request-id']).toBeUndefined()
     expect(headers['x-sim-billing-attribution']).toBeUndefined()
-    expect(body.isHosted).toBe(false)
+    expect(body).not.toHaveProperty('isHosted')
     expect(body.simConnection).toEqual({
       mode: 'checkpoint',
       channelId: expect.stringMatching(/^[a-f0-9]{64}$/),

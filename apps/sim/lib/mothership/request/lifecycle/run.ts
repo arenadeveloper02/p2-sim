@@ -1169,9 +1169,9 @@ async function runCheckpointLoop(
   if (getSimConnection().mode === 'checkpoint') {
     await ensureSimReceiverForBaseURL(mothershipBaseURL)
   }
-  if (initialRoute !== '/api/tools/resume') {
-    payload = { ...payload, isHosted: isSimCloudHosted }
-  }
+  // Hosted topology is `simConnection` + billing headers. Go's ChatRequest
+  // schema rejects unknown keys — `isHosted` on the JSON body is a hard 400.
+  payload = omit(payload, ['isHosted'])
   const lifecycleWorkspaceId = nonBlankString(options.workspaceId)
   const lifecycleOrganizationId = nonBlankString(execContext.organizationId)
   const mothershipRequestId = nonBlankString(options.simRequestId) ?? generateId()
