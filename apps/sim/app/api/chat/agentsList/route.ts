@@ -29,6 +29,7 @@ interface AgentChatRow {
   identifier?: string | null
   deploymentType?: string | null
   redirectUrl?: string | null
+  arenaPath?: string | null
 }
 
 /**
@@ -73,6 +74,7 @@ function toAgentListItem(
     redirect_url:
       appRedirectUrl ??
       `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
+    arena_path: row.arenaPath?.trim() || null,
     block_names: blockNames,
     // allowedEmails: row.allowedEmails,
   }
@@ -259,6 +261,7 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
       identifier: chat.identifier,
       deploymentType: chat.deploymentType,
       redirectUrl: chat.redirectUrl,
+      arenaPath: chat.arenaPath,
     })
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
