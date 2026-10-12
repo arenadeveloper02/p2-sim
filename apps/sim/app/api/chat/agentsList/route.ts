@@ -6,6 +6,10 @@ import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import {
+  hasAgentEmailAccess,
+  hasAllowedEmailStartingWithAtSymbol,
+} from '@/lib/chat/agent-email-access'
+import {
   getAgentDepartmentLabelMap,
   labelFromDepartmentMap,
   resolveAgentDepartmentValue,
@@ -30,25 +34,6 @@ interface AgentChatRow {
   deploymentType?: string | null
   redirectUrl?: string | null
   arenaPath?: string | null
-}
-
-/**
- * Returns true when allowedEmails has at least one string whose first character is '@'
- * (e.g. '@position2.com', '@northstar'). Ignores email-style entries (e.g. saiteja.s@position2.com).
- */
-function hasAllowedEmailStartingWithAtSymbol(
-  allowedEmails: unknown,
-  userEmailDomain: string
-): boolean {
-  const list = Array.isArray(allowedEmails) ? allowedEmails : []
-  const commonEmailDomains = ['@gmail.com', '@yahoo.com', '@hotmail.com', '@outlook.com']
-  return list.some(
-    (entry) =>
-      typeof entry === 'string' &&
-      entry.length > 0 &&
-      entry.startsWith(userEmailDomain) &&
-      !commonEmailDomains.includes(userEmailDomain)
-  )
 }
 
 /** Maps a DB row to the response agent list item shape. */
@@ -83,23 +68,6 @@ function toAgentListItem(
 type AgentListItem = ReturnType<typeof toAgentListItem>
 
 type AgentListItemWithDisabled = AgentListItem & { disabled: boolean }
-
-/**
- * True when the user can access the agent via allowedEmails:
- * exact email match, or domain pattern match (e.g. `@position2.com`).
- */
-function hasAgentEmailAccess(allowedEmails: unknown, emailId: string): boolean {
-  if (isExactEmailInAllowedEmails(allowedEmails, emailId)) return true
-  const domain = emailId.includes('@') ? `@${emailId.split('@')[1]}` : ''
-  if (!domain || domain === '@') return false
-  return hasAllowedEmailStartingWithAtSymbol(allowedEmails, domain)
-}
-
-/** True when emailId appears exactly in the chat's allowedEmails array. */
-function isExactEmailInAllowedEmails(allowedEmails: unknown, emailId: string): boolean {
-  const list = Array.isArray(allowedEmails) ? allowedEmails : []
-  return list.includes(emailId)
-}
 
 /**
  * Parses GENERIC_AGENTS_WORKSPACE_ID query param (JSON string array of workspace IDs).
