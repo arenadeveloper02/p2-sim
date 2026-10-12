@@ -9,6 +9,7 @@ import {
   GenerateAudio,
   GenerateImage,
   GenerateVideo,
+  ManageKnowledgeBase,
 } from '@/lib/mothership/generated/tool-catalog-v1'
 import { ARENA_SERVER_TOOL_SCHEMA_ALIASES } from '@/lib/mothership/tools/arena-server-tool-aliases'
 import { copilotToolCanWrite } from '@/lib/mothership/tools/permissions'
@@ -26,6 +27,7 @@ import { workspaceFileServerTool } from '@/lib/mothership/tools/server/files/wor
 import { validateGeneratedToolPayload } from '@/lib/mothership/tools/server/generated-schema'
 import { generateImageServerTool } from '@/lib/mothership/tools/server/image/generate-image'
 import { normalizeGenerateImageArgs } from '@/lib/mothership/tools/server/image/normalize-args'
+import { knowledgeBaseServerTool } from '@/lib/mothership/tools/server/knowledge/knowledge-base'
 import {
   readDocumentServerTool,
   searchWorkspaceServerTool,
@@ -59,11 +61,30 @@ const CUSTOM_BLOCK_OVERLAY_TOOLS = new Set(['edit_workflow', 'get_blocks_metadat
 
 const VISIBILITY_GATED_TOOLS = new Set(['get_blocks_metadata', 'get_credentials'])
 
+const KNOWLEDGE_BASE_WRITE_ACTIONS = [
+  'create',
+  'add_file',
+  'update',
+  'delete',
+  'delete_document',
+  'update_document',
+  'create_tag',
+  'update_tag',
+  'delete_tag',
+  'add_connector',
+  'update_connector',
+  'delete_connector',
+  'sync_connector',
+] as const
+
 const WRITE_ACTIONS: Record<string, string[]> = {
   [GenerateImage.id]: ['generate'],
   [GenerateVideo.id]: ['generate'],
   [GenerateAudio.id]: ['generate'],
   [Ffmpeg.id]: ['*'],
+  [ManageKnowledgeBase.id]: [...KNOWLEDGE_BASE_WRITE_ACTIONS],
+  // Arena Copilot leaf name (same write ops as manage_knowledge_base).
+  knowledge_base: [...KNOWLEDGE_BASE_WRITE_ACTIONS],
   [createFileServerTool.name]: ['*'],
   create_file: ['*'],
   [workspaceFileServerTool.name]: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
@@ -87,6 +108,9 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [editWorkflowServerTool.name]: editWorkflowServerTool,
   [searchOnlineServerTool.name]: searchOnlineServerTool,
   search_online: searchOnlineServerTool,
+  [knowledgeBaseServerTool.name]: knowledgeBaseServerTool,
+  // Arena leaf name — model calls knowledge_base; Cloud catalog id is manage_knowledge_base.
+  knowledge_base: knowledgeBaseServerTool,
   [userMemoryServerTool.name]: userMemoryServerTool,
   [createFileServerTool.name]: createFileServerTool,
   create_file: createFileServerTool,

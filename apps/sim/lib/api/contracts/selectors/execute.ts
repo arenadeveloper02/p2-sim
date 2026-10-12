@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { defineRouteContract } from '@/lib/api/contracts'
+import { defineRouteContract } from '@/lib/api/contracts/types'
 import {
   MAX_ID_LENGTH,
   organizationIdSchema,

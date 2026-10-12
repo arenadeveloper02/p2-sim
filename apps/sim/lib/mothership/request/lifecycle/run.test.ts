@@ -284,7 +284,7 @@ describe('runCopilotLifecycle', () => {
     mockCreateRunSegment.mockResolvedValue({ status: 'active' })
     mockCheckAttributedUsageLimits.mockResolvedValue({ isExceeded: false })
     continuationAuth.mockResolvedValue(undefined)
-    mockEnv.COPILOT_API_KEY = undefined
+    mockEnv.COPILOT_API_KEY = 'test-copilot-key'
     mockEnv.MSHIP_SYSPROMPT_OVERRIDE = undefined
     mockShouldRouteToLocalCopilot.mockResolvedValue(false)
     setEnvFlags({

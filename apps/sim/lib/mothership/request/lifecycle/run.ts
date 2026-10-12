@@ -15,7 +15,6 @@ import {
 } from '@/lib/billing/core/billing-attribution'
 import { env } from '@/lib/core/config/env'
 import { isCopilotToolPermissionsEnabled, isSimCloudHosted } from '@/lib/core/config/env-flags'
-import { loadCopilotSearchIntegrations } from '@/lib/mothership/application/load-search-integrations'
 import type { AsyncCompletionSignal } from '@/lib/mothership/async-runs/lifecycle'
 import { createRunSegment, updateRunStatus } from '@/lib/mothership/async-runs/repository'
 import { TOOL_WATCHDOG_RESUME_GRACE_MS } from '@/lib/mothership/constants'
@@ -562,25 +561,14 @@ export async function runCopilotLifecycle(
             { status: 401, body: 'Missing COPILOT_API_KEY' }
           )
         }
-        let dispatchPayload = requestPayload
-        if (organizationId && goRoute !== '/api/tools/resume') {
-          if (!chatId) throw new Error('Search integration context requires a private chat ID')
-          dispatchPayload = {
-            ...dispatchPayload,
-            workspaceContext: await loadCopilotSearchIntegrations({
-              userId,
-              organizationId,
-              chatId,
-              messageId: payloadMsgId,
-              signal: lifecycleOptions.abortSignal,
-            }),
-          }
-        }
+        // Search inventory is admitted before dispatch (`chat/post`, Slack/MCP
+        // assistants) and arrives on `context`. Do not reload it here — that
+        // would overwrite the admitted inventory and break resume/recovery.
         if (!isContinuation && hostedBillingRequest)
           await lifecycleOptions.onBillingAdmission?.(hostedBillingRequest)
         await ensureModelEgressRegistry(execContext, lifecycleOptions)
         const modelSafeRequestPayload = await prepareInitialCopilotAttachmentsForModel(
-          dispatchPayload,
+          requestPayload,
           lifecycleOptions.workspaceId
         )
         try {
