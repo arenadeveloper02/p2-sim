@@ -39,6 +39,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/utils'
 import { type McpServer, useMcpToolServers } from '@/hooks/queries/mcp'
 import { type SkillDefinition, useSkills } from '@/hooks/queries/skills'
+import { isTouchMobileViewport } from '@/hooks/use-is-mobile'
 import type { ChatContext } from '@/stores/panel'
 
 /**
@@ -100,9 +101,9 @@ function getCaretAnchor(
  */
 export interface PromptEditorKeyPolicy {
   /**
-   * Enter without Shift (and not composing): the newline is suppressed and
-   * this fires instead — after the open mention/skills menu has had its chance
-   * to confirm a selection. Omit to keep native newline insertion.
+   * Desktop Enter without Shift (and not composing) submits after any open
+   * mention/skills menu has had its chance to confirm a selection. Mobile
+   * Enter inserts a newline. Omit to keep native newline insertion everywhere.
    */
   onSubmit?: () => void
   /**
@@ -334,9 +335,12 @@ export function usePromptEditor({
    * Programmatically replaces the editor text. Chipifies by default so any
    * seeded prose (template, transcript, queued message) registers its
    * integration / skill chips; pass `{ chipify: false }` for verbatim text.
+   * `{ seed: true }` treats the text like `initialValue`, re-chipified once
+   * the skill list loads while it stays untouched.
    */
-  const setValue = useCallback((text: string, options?: { chipify?: boolean }) => {
+  const setValue = useCallback((text: string, options?: { chipify?: boolean; seed?: boolean }) => {
     const next = options?.chipify === false ? text : applyAutoMentionsRef.current(text)
+    if (options?.seed) seedRef.current = next
     atInsertPosRef.current = null
     pendingCursorRef.current = null
     mentionRangeRef.current = null
@@ -956,7 +960,13 @@ export function usePromptEditor({
         }
       }
 
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && policy?.onSubmit) {
+      if (
+        e.key === 'Enter' &&
+        !e.shiftKey &&
+        !e.nativeEvent.isComposing &&
+        !isTouchMobileViewport() &&
+        policy?.onSubmit
+      ) {
         e.preventDefault()
         policy.onSubmit()
         return
@@ -1048,6 +1058,15 @@ export function usePromptEditor({
     valueRef.current = textarea.value
     setValueState(textarea.value)
   }, [])
+
+  // Keystrokes typed into the server-rendered textarea before hydration never
+  // reach React. Compared with the mounted value: `valueRef` leads the DOM
+  // while an edit made during mount is still uncommitted.
+  const mountedValueRef = useRef(initialValue)
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    if (textarea && textarea.value !== mountedValueRef.current) adoptDomValue(textarea)
+  }, [textareaRef, adoptDomValue])
 
   // Selection one change ago, used to infer which edge of a range moved. Kept
   // current by the `selectionchange` listener below — which fires on EVERY
@@ -1175,7 +1194,7 @@ export function usePromptEditor({
 
     // Portable chip links (`[label](sim:kind/id)`) re-create their chip on
     // paste-back. Rewrite each link span to its `@label ` token (the trailing
-    // space is REQUIRED so useContextManagement's sync effect doesn't purge the
+    // space is REQUIRED so useContextManagement's pruning doesn't purge the
     // freshly-added context) and register the contexts directly.
     const pastedText = pastedPlainText
     const links = contextsEnabledRef.current ? parseChipLinks(pastedText) : []
@@ -1198,7 +1217,7 @@ export function usePromptEditor({
         pastedContexts.push(ctx)
         // Insert the kind-correct token (skill EM-SPACE sentinel, slash `/`, `@`
         // else) so the chip re-renders with its proper trigger glyph and the
-        // context-sync effect (keyed on the same per-kind prefix) keeps it. Append
+        // context pruning (keyed on the same per-kind prefix) keeps it. Append
         // a single separator ONLY when the next source char is non-whitespace
         // (chip→chip / chip→word); existing whitespace and end-of-string already
         // supply the boundary, so re-pasting never accumulates spaces.
@@ -1312,7 +1331,7 @@ export function usePromptEditor({
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       // When the selection holds a portable chip (skill or resource) we take over
       // the clipboard, so the selected text must be removed here (default prevented).
-      // Either way the context-sync effect prunes contexts whose token is now gone.
+      // Either way the context pruning drops contexts whose token is now gone.
       if (!writeSanitizedClipboard(e)) return
       const textarea = e.currentTarget
       const start = textarea.selectionStart ?? 0
