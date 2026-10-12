@@ -193,7 +193,9 @@ function parseChatHistory(value: unknown): MothershipChatHistory {
     `${chatContext}.activeStreamId must be a string or null`
   )
 
-  const mode = getMothershipChatResponseSchema.shape.chat.shape.mode.parse(chat.mode)
+  // Workflow-panel fallback (`GET /api/mothership/chat?chatId=`) historically
+  // omitted `mode`; treat that as agent rather than failing the whole history load.
+  const mode = getMothershipChatResponseSchema.shape.chat.shape.mode.parse(chat.mode ?? 'agent')
 
   return {
     id: chat.id,

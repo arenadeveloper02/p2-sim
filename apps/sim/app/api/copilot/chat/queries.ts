@@ -30,6 +30,7 @@ function transformChat(chat: {
   id: string
   title: string | null
   model: string | null
+  mode?: 'agent' | 'assistant' | 'plan'
   messages: unknown
   config?: unknown
   conversationId?: string | null
@@ -41,6 +42,9 @@ function transformChat(chat: {
     id: chat.id,
     title: chat.title,
     model: chat.model,
+    // Required by `parseChatHistory` on the workflow-panel fallback path
+    // (`GET /api/mothership/chats/:id` 404s for `type: 'copilot'`, then loads here).
+    mode: chat.mode ?? 'agent',
     messages: Array.isArray(chat.messages) ? chat.messages : [],
     messageCount: Array.isArray(chat.messages) ? chat.messages.length : 0,
     config: chat.config || null,

@@ -45,7 +45,9 @@ export const GET = withRouteHandler(
       const { chatId } = paramsResult.data.params
 
       const chat = await getAccessibleCopilotChatWithMessages(chatId, userId, { principal })
-      if (!chat || chat.type !== 'mothership') {
+      // Home chats are `mothership`; workflow-panel chats are `copilot`. Both
+      // surfaces load history through this route (and `useMothershipChatHistory`).
+      if (!chat || (chat.type !== 'mothership' && chat.type !== 'copilot')) {
         return NextResponse.json({ success: false, error: 'Chat not found' }, { status: 404 })
       }
 
