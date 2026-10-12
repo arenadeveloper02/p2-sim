@@ -9,6 +9,8 @@ import {
   knowledgeBase,
   outboxEvent,
   permissions,
+  project,
+  projectWorkspace,
   user,
   userTableDefinitions,
   workflow,
@@ -28,6 +30,8 @@ import { withWorkspaceInvocationScope } from '@/lib/core/application/workspace-i
 import { processOutboxEventById } from '@/lib/core/outbox/service'
 import * as workflowMcpSync from '@/lib/mcp/workflow-mcp-sync'
 import { createScopedCliTransport } from '@/lib/mothership/agent-cli/scoped-transport'
+import { getProjectMembershipPhase } from '@/lib/projects/environment-source'
+import { createProjectRecord } from '@/lib/projects/membership'
 import { readWorkflowVersion } from '@/lib/workflows/application/read-workflow-version'
 import { workflowDeploymentOutboxHandlers } from '@/lib/workflows/deployment-outbox'
 import {
@@ -144,12 +148,24 @@ describe('authorized fork and sync against PostgreSQL', () => {
       createdAt: now,
       updatedAt: now,
     })
-    await db.insert(workspace).values({
-      id: sourceWorkspaceId,
-      name: 'Fork source fixture',
-      ownerId: userId,
-      billedAccountUserId: userId,
-      allowPersonalApiKeys: true,
+    await db.transaction(async (tx) => {
+      const phase = await getProjectMembershipPhase(tx)
+      const projectId = await createProjectRecord(tx, {
+        name: 'Fork source fixture',
+        ownerId: userId,
+        organizationId: null,
+      })
+      await tx.insert(workspace).values({
+        id: sourceWorkspaceId,
+        projectId: phase === 'column' ? projectId : null,
+        name: 'Fork source fixture',
+        ownerId: userId,
+        billedAccountUserId: userId,
+        allowPersonalApiKeys: true,
+      })
+      if (phase === 'connector') {
+        await tx.insert(projectWorkspace).values({ projectId, workspaceId: sourceWorkspaceId })
+      }
     })
     await db.insert(permissions).values({
       id: generateId(),
@@ -185,6 +201,7 @@ describe('authorized fork and sync against PostgreSQL', () => {
   afterAll(async () => {
     for (const id of createdWorkspaceIds) await db.delete(workspace).where(eq(workspace.id, id))
     await db.delete(workspace).where(eq(workspace.id, sourceWorkspaceId))
+    await db.delete(project).where(eq(project.ownerId, userId))
     await db.delete(user).where(eq(user.id, userId))
     await db.$client.end()
   })

@@ -10,21 +10,8 @@ import {
   useRef,
   useState,
 } from 'react'
-import {
-  Chip,
-  ChipSwitch,
-  cn,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  Tooltip,
-  toast,
-} from '@sim/emcn'
-import { ChevronDown, Paperclip, Plus, Slash } from '@sim/emcn/icons'
+import { Chip, cn, Tooltip, toast } from '@sim/emcn'
+import { Paperclip, Plus, Slash } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/mothership/chat/attachment-preview'
@@ -57,78 +44,16 @@ import { useFileAttachments } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
 import { useChatInputFocus } from '@/hooks/use-chat-input-focus'
+import { useHydrated } from '@/hooks/use-hydrated'
+import { isMobileViewport } from '@/hooks/use-is-mobile'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useVoiceInput } from '@/hooks/use-voice-input'
-import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
-import {
-  getLocalCopilotCatalogEntriesForGroup,
-  getLocalCopilotCatalogEntry,
-  isLocalCopilotCatalogId,
-  LOCAL_COPILOT_PROVIDER_GROUPS,
-  type LocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
 import { type DraftPayload, useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 
 const logger = createLogger('UserInput')
-
-interface LocalCopilotModelPickerProps {
-  catalogId: LocalCopilotCatalogId
-  onCatalogIdChange: (id: LocalCopilotCatalogId) => void
-}
-
-/**
- * Single Local Copilot model dropdown with Claude / Gemini / Bedrock section headers.
- */
-function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotModelPickerProps) {
-  const selectedLabel = getLocalCopilotCatalogEntry(catalogId)?.label ?? 'Claude'
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type='button'
-          aria-label='Local Copilot model'
-          className={cn(
-            'ml-1 inline-flex h-7 items-center gap-0.5 rounded-[10px] bg-[var(--surface-5)] px-2.5',
-            'text-[var(--text-primary)] text-sm dark:bg-[var(--surface-4)]',
-            'hover-hover:bg-[var(--surface-2)] dark:hover-hover:bg-[var(--surface-6)]'
-          )}
-        >
-          {selectedLabel}
-          <ChevronDown className='size-[12px] text-[var(--text-muted)]' />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align='start' side='top' className='min-w-[14rem]'>
-        <DropdownMenuRadioGroup
-          value={catalogId}
-          onValueChange={(value) => {
-            if (isLocalCopilotCatalogId(value)) {
-              onCatalogIdChange(value)
-            }
-          }}
-        >
-          {LOCAL_COPILOT_PROVIDER_GROUPS.map((group, groupIndex) => {
-            const entries = getLocalCopilotCatalogEntriesForGroup(group.id)
-            return (
-              <div key={group.id}>
-                {groupIndex > 0 ? <DropdownMenuSeparator /> : null}
-                <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
-                {entries.map((entry) => (
-                  <DropdownMenuRadioItem key={entry.id} value={entry.id}>
-                    {entry.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </div>
-            )
-          })}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
 
 interface UserInputProps {
   requestMode?: 'agent' | 'plan'
@@ -179,29 +104,12 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 ) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { navigateToSettings } = useSettingsNavigation()
-  const {
-    chatId,
-    userId,
-    onContextAdd,
-    onContextRemove,
-    canSwitchCopilotBackend,
-    copilotBackend,
-    setCopilotBackend,
-    localCopilotCatalogId,
-    setLocalCopilotCatalogId,
-  } = useChatSurface()
-
-  const showLocalModelPicker =
-    Boolean(canSwitchCopilotBackend) &&
-    copilotBackend === 'local' &&
-    localCopilotCatalogId !== undefined &&
-    setLocalCopilotCatalogId !== undefined
-
-  const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
-
+  const { userId, onContextAdd, onContextRemove } = useChatSurface()
+  // Server HTML cannot see the stored draft; hydration renders without it and the mount restore applies it.
+  const canReadStoredDraft = useHydrated()
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
-    if (!draftScopeKey) return ''
+    if (!canReadStoredDraft || !draftScopeKey) return ''
     const text = useMothershipDraftsStore.getState().drafts[draftScopeKey]?.text
     return typeof text === 'string' ? text : ''
   })
@@ -295,14 +203,17 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     }
     if (restoredContexts) editor.setContexts(restoredContexts)
     if (restoredFiles) files.restoreAttachedFiles(restoredFiles)
-    if (caretText !== null) {
+    // Text typed before hydration wins over the saved draft, caret included.
+    const typedBeforeHydration = initialValue === '' && editor.getValue() !== ''
+    if (caretText !== null && !typedBeforeHydration) {
+      if (initialValue === '') editor.setValue(caretText, { seed: true })
       const textarea = textareaRef.current
       if (textarea) {
-        textarea.focus()
+        if (!isMobileViewport()) textarea.focus()
         textarea.setSelectionRange(caretText.length, caretText.length)
       }
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only restore
+  }, []) // intentional mount-only restore
 
   const isFirstSaveRef = useRef(true)
   const draftSaveTimerRef = useRef<number | null>(null)
@@ -687,10 +598,14 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
       <PromptEditor
         editor={editor}
-        placeholder='Ask Areana to '
+        aria-label='Message'
+        placeholder='Ask Arena to '
         onSubmit={handleEnterSubmit}
         onArrowUpOnEmpty={handleArrowUpOnEmpty}
-        className={cn('max-h-[200px]', isInitialView && 'min-h-[56px]')}
+        className={cn(
+          'max-h-[200px] max-md:max-h-[min(200px,calc(var(--mobile-viewport-height,100dvh)*0.25))]',
+          isInitialView && 'min-h-[56px] max-md:min-h-0'
+        )}
       />
 
       <InputToolbar
@@ -729,33 +644,6 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
               </Tooltip.Trigger>
               <Tooltip.Content side='top'>Skills</Tooltip.Content>
             </Tooltip.Root>
-            {canSwitchCopilotBackend && copilotBackend && setCopilotBackend ? (
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <div className='ml-1'>
-                    <ChipSwitch
-                      value={copilotBackend}
-                      onChange={setCopilotBackend}
-                      aria-label='Copilot backend'
-                      options={[
-                        { value: 'local', label: 'Local' },
-                        { value: 'external', label: 'Cloud' },
-                      ]}
-                    />
-                  </div>
-                </Tooltip.Trigger>
-                <Tooltip.Content side='top'>
-                  Local runs Arena Copilot in your deployment. Cloud uses external Mothership.
-                </Tooltip.Content>
-              </Tooltip.Root>
-            ) : null}
-            {showLocalModelPicker && localCopilotCatalogId && setLocalCopilotCatalogId ? (
-              <LocalCopilotModelPicker
-                catalogId={localCopilotCatalogId}
-                onCatalogIdChange={setLocalCopilotCatalogId}
-              />
-            ) : null}
-            {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
             {onModeChange && (
               <ConversationModeSelector value={requestMode} onChange={handleModeChange} />
             )}

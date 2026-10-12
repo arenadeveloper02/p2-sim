@@ -14,6 +14,7 @@ import { kimiProvider } from '@/providers/kimi'
 import { litellmProvider } from '@/providers/litellm'
 import { metaProvider } from '@/providers/meta'
 import { mistralProvider } from '@/providers/mistral'
+import { nebiusProvider } from '@/providers/nebius'
 import { nvidiaProvider } from '@/providers/nvidia'
 import { ollamaProvider } from '@/providers/ollama'
 import { ollamaCloudProvider } from '@/providers/ollama-cloud'
@@ -56,6 +57,7 @@ const providerRegistry: Record<ProviderId, ProviderConfig> = {
   fireworks: fireworksProvider,
   together: togetherProvider,
   baseten: basetenProvider,
+  nebius: nebiusProvider,
   ollama: ollamaProvider,
   sambanova: sambanovaProvider,
   'ollama-cloud': ollamaCloudProvider,

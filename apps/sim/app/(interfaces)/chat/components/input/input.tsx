@@ -2,7 +2,16 @@
 
 import type React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Badge, Button, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
+import {
+  Badge,
+  Button,
+  cn,
+  handleKeyboardActivation,
+  scrollFadeAttributes,
+  scrollFadeClass,
+  Tooltip,
+  useScrollEdges,
+} from '@sim/emcn'
 import { ArrowUp, Paperclip, StopFilled, X } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
@@ -13,6 +22,7 @@ import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_HEIGHT_CLASS,
 } from '@/app/(interfaces)/chat/constants'
+import { isTouchMobileViewport } from '@/hooks/use-is-mobile'
 
 const logger = createLogger('ChatInput')
 
@@ -63,12 +73,14 @@ export const ChatInput: React.FC<{
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const attachmentsRef = useRef<HTMLDivElement>(null)
   const [inputValue, setInputValue] = useState('')
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [uploadErrors, setUploadErrors] = useState<string[]>([])
   const [dragCounter, setDragCounter] = useState(0)
   const [isMultiLineInput, setIsMultiLineInput] = useState(false)
   const isDragOver = dragCounter > 0
+  const attachmentEdges = useScrollEdges(attachmentsRef, { enabled: attachedFiles.length > 0 })
 
   // When parent injects text (e.g. "Ask this in chat"), append it + space and focus the input.
   useEffect(() => {
@@ -112,16 +124,27 @@ export const ChatInput: React.FC<{
   const handleFileSelect = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
 
+    const newFiles: AttachedFile[] = []
     const maxSize = 10 * 1024 * 1024
     const maxFiles = 15
-    const preparedFiles: AttachedFile[] = []
     const errors: string[] = []
 
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const file = selectedFiles[i]
+    for (const file of Array.from(selectedFiles)) {
+      if (attachedFiles.length + newFiles.length >= maxFiles) {
+        errors.push(`Maximum of ${maxFiles} files allowed`)
+        break
+      }
 
       if (file.size > maxSize) {
         errors.push(`${file.name} is too large (max 10MB)`)
+        continue
+      }
+
+      const isDuplicate = attachedFiles.some(
+        (existing) => existing.name === file.name && existing.size === file.size
+      )
+      if (isDuplicate) {
+        errors.push(`${file.name} already added`)
         continue
       }
 
@@ -139,7 +162,7 @@ export const ChatInput: React.FC<{
         }
       }
 
-      preparedFiles.push({
+      newFiles.push({
         id: generateId(),
         name: file.name,
         size: file.size,
@@ -149,38 +172,14 @@ export const ChatInput: React.FC<{
       })
     }
 
-    setAttachedFiles((current) => {
-      if (preparedFiles.length === 0) return current
-
-      const remainingSlots = Math.max(0, maxFiles - current.length)
-      if (remainingSlots === 0) {
-        errors.push(`Maximum of ${maxFiles} files allowed`)
-        return current
-      }
-
-      const next: AttachedFile[] = [...current]
-      for (const candidate of preparedFiles) {
-        if (next.length >= maxFiles) break
-
-        const isDuplicate = next.some(
-          (existingFile) =>
-            existingFile.name === candidate.name && existingFile.size === candidate.size
-        )
-        if (isDuplicate) {
-          errors.push(`${candidate.name} already added`)
-          continue
-        }
-
-        next.push(candidate)
-      }
-
-      return next
-    })
+    if (newFiles.length > 0) {
+      setAttachedFiles((prev) => [...prev, ...newFiles])
+    }
 
     if (errors.length > 0) {
       setUploadErrors(errors)
-    } else if (preparedFiles.length > 0) {
-      setUploadErrors([]) // Clear errors when files are successfully added
+    } else if (newFiles.length > 0) {
+      setUploadErrors([])
     }
   }
 
@@ -200,7 +199,12 @@ export const ChatInput: React.FC<{
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (
+        e.key === 'Enter' &&
+        !e.shiftKey &&
+        !e.nativeEvent.isComposing &&
+        !isTouchMobileViewport()
+      ) {
         e.preventDefault()
         handleSubmit()
       }
@@ -425,43 +429,54 @@ export const ChatInput: React.FC<{
               )}
 
               {attachedFiles.length > 0 && (
-                <div className='mb-1.5 flex flex-wrap gap-1.5'>
-                  {attachedFiles.map((file) => (
-                    <Tooltip.Root key={file.id}>
-                      <Tooltip.Trigger asChild>
-                        <div className='group relative size-[56px] shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-3)]'>
-                          {file.dataUrl ? (
-                            <img
-                              src={file.dataUrl}
-                              alt={file.name}
-                              className='size-full object-cover'
-                            />
-                          ) : (
-                            <div className='flex size-full flex-col items-center justify-center gap-0.5 text-[var(--text-muted)]'>
-                              <Paperclip className='size-[18px]' />
-                              <span className='max-w-[48px] truncate px-[2px] text-[9px]'>
-                                {file.name.split('.').pop()}
+                <div
+                  ref={attachmentsRef}
+                  className={cn(
+                    'mb-1.5 max-md:max-h-24 max-md:overflow-y-auto max-md:overscroll-contain',
+                    scrollFadeClass
+                  )}
+                  {...scrollFadeAttributes(attachmentEdges)}
+                >
+                  <div className='flex flex-wrap gap-1.5'>
+                    {attachedFiles.map((file) => (
+                      <Tooltip.Root key={file.id}>
+                        <Tooltip.Trigger asChild>
+                          <div className='group relative size-[56px] shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-3)]'>
+                            {file.dataUrl ? (
+                              <img
+                                src={file.dataUrl}
+                                alt={file.name}
+                                className='size-full object-cover'
+                              />
+                            ) : (
+                              <div className='flex size-full flex-col items-center justify-center gap-0.5 text-[var(--text-muted)]'>
+                                <Paperclip className='size-[18px]' />
+                                <span className='max-w-[48px] truncate px-[2px] text-[9px]'>
+                                  {file.name.split('.').pop()}
+                                </span>
+                              </div>
+                            )}
+                            <Button
+                              variant='ghost'
+                              aria-label={`Remove ${file.name}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemoveFile(file.id)
+                              }}
+                              className='absolute top-[2px] right-[2px] size-11 items-start justify-end p-0 focus-visible:opacity-100 md:pointer-fine:size-[16px] md:pointer-fine:opacity-0 md:pointer-fine:group-hover:opacity-100'
+                            >
+                              <span className='flex size-7 items-center justify-center rounded-full bg-black/60 text-white md:pointer-fine:size-4'>
+                                <X className='size-[10px]' />
                               </span>
-                            </div>
-                          )}
-                          <Button
-                            variant='ghost'
-                            aria-label={`Remove ${file.name}`}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRemoveFile(file.id)
-                            }}
-                            className='absolute top-[2px] right-[2px] size-[16px] rounded-full bg-black/60 p-0 text-white opacity-0 hover-hover:text-white group-hover:opacity-100'
-                          >
-                            <X className='size-[10px]' />
-                          </Button>
-                        </div>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content side='top'>
-                        <p className='max-w-[200px] truncate'>{file.name}</p>
-                      </Tooltip.Content>
-                    </Tooltip.Root>
-                  ))}
+                            </Button>
+                          </div>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content side='top'>
+                          <p className='max-w-[200px] truncate'>{file.name}</p>
+                        </Tooltip.Content>
+                      </Tooltip.Root>
+                    ))}
+                  </div>
                 </div>
               )}
 

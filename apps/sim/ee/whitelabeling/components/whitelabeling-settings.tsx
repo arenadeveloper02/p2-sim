@@ -7,24 +7,20 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import Image from 'next/image'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
-import { STARTER_PLAN } from '@/lib/billing/arena/constants'
-import { isMaxTier } from '@/lib/billing/plan-helpers'
+import { useSettingsUnsavedGuard } from '@/components/settings/use-settings-unsaved-guard'
 import { HEX_COLOR_REGEX } from '@/lib/branding'
 import type { OrganizationWhitelabelSettings } from '@/lib/branding/types'
-import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { DropZone } from '@/app/workspace/[workspaceId]/components/drop-zone'
 import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/settings/hooks/use-profile-picture-upload'
-import { useSettingsUnsavedGuard } from '@/app/workspace/[workspaceId]/settings/hooks/use-settings-unsaved-guard'
 import { SettingRow } from '@/ee/components/setting-row'
 import {
   useUpdateWhitelabelSettings,
   useWhitelabelSettings,
   type WhitelabelSettingsPayload,
 } from '@/ee/whitelabeling/hooks/whitelabel'
-import { useOrganizationBilling } from '@/hooks/queries/organization'
 import { useWorkspacesQuery } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WhitelabelingSettings')
@@ -103,7 +99,6 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
   const [privacyUrl, setPrivacyUrl] = useState(initialSettings.privacyUrl ?? '')
   const [logoUrl, setLogoUrl] = useState<string | null>(initialSettings.logoUrl ?? null)
   const [wordmarkUrl, setWordmarkUrl] = useState<string | null>(initialSettings.wordmarkUrl ?? null)
-  const [faviconUrl, setFaviconUrl] = useState<string | null>(initialSettings.faviconUrl ?? null)
   const [savedBrandName, setSavedBrandName] = useState(initialSettings.brandName ?? '')
   const [savedPrimaryColor, setSavedPrimaryColor] = useState(initialSettings.primaryColor ?? '')
   const [savedPrimaryHoverColor, setSavedPrimaryHoverColor] = useState(
@@ -123,9 +118,6 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
   const [savedWordmarkUrl, setSavedWordmarkUrl] = useState<string | null>(
     initialSettings.wordmarkUrl ?? null
   )
-  const [savedFaviconUrl, setSavedFaviconUrl] = useState<string | null>(
-    initialSettings.faviconUrl ?? null
-  )
 
   const logoUpload = useProfilePictureUpload({
     currentImage: logoUrl,
@@ -143,14 +135,6 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
     workspaceId: uploadWorkspaceId,
   })
 
-  const faviconUpload = useProfilePictureUpload({
-    currentImage: faviconUrl,
-    onUpload: (url) => setFaviconUrl(url),
-    onError: (error) => toast.error(error),
-    context: 'workspace-logos',
-    workspaceId: uploadWorkspaceId,
-  })
-
   const hasChanges =
     brandName !== savedBrandName ||
     primaryColor !== savedPrimaryColor ||
@@ -162,13 +146,18 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
     termsUrl !== savedTermsUrl ||
     privacyUrl !== savedPrivacyUrl ||
     (logoUpload.previewUrl || null) !== savedLogoUrl ||
-    (wordmarkUpload.previewUrl || null) !== savedWordmarkUrl ||
-    (faviconUpload.previewUrl || null) !== savedFaviconUrl
+    (wordmarkUpload.previewUrl || null) !== savedWordmarkUrl
 
-  useSettingsUnsavedGuard({ isDirty: hasChanges })
+  const isUploading = logoUpload.isUploading || wordmarkUpload.isUploading
+  const saving = updateSettings.isPending || isUploading
+  useSettingsUnsavedGuard({
+    isDirty: hasChanges,
+    navigationBlocked: saving,
+    onDiscard: handleDiscard,
+  })
 
   async function handleSave() {
-    if (!orgId) return
+    if (!orgId || saving) return
 
     const colorFields: Array<[string, string]> = [
       ['Primary color', primaryColor],
@@ -188,7 +177,6 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
       brandName: brandName || null,
       logoUrl: logoUpload.previewUrl || null,
       wordmarkUrl: wordmarkUpload.previewUrl || null,
-      faviconUrl: faviconUpload.previewUrl || null,
       primaryColor: primaryColor || null,
       primaryHoverColor: primaryHoverColor || null,
       accentColor: accentColor || null,
@@ -212,7 +200,6 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
       setSavedPrivacyUrl(privacyUrl)
       setSavedLogoUrl(logoUpload.previewUrl || null)
       setSavedWordmarkUrl(wordmarkUpload.previewUrl || null)
-      setSavedFaviconUrl(faviconUpload.previewUrl || null)
       toast.success('Whitelabeling settings saved.')
     } catch (error) {
       logger.error('Failed to save whitelabel settings', { error })
@@ -221,6 +208,9 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
   }
 
   function handleDiscard() {
+    if (saving) return
+    logoUpload.reset()
+    wordmarkUpload.reset()
     setBrandName(savedBrandName)
     setPrimaryColor(savedPrimaryColor)
     setPrimaryHoverColor(savedPrimaryHoverColor)
@@ -232,14 +222,11 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
     setPrivacyUrl(savedPrivacyUrl)
     setLogoUrl(savedLogoUrl)
     setWordmarkUrl(savedWordmarkUrl)
-    setFaviconUrl(savedFaviconUrl)
   }
 
-  const isUploading =
-    logoUpload.isUploading || wordmarkUpload.isUploading || faviconUpload.isUploading
   const actions = saveDiscardActions({
     dirty: hasChanges,
-    saving: updateSettings.isPending,
+    saving,
     saveDisabled: isUploading,
     onSave: handleSave,
     onDiscard: handleDiscard,
@@ -251,7 +238,7 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
         <div className='flex flex-col gap-5'>
           <SettingRow
             label='Brand name'
-            description='Replaces "Arena AI" in the sidebar and select UI elements.'
+            description='Replaces "Sim" in the sidebar and select UI elements.'
           >
             <ChipInput
               value={brandName}
@@ -267,8 +254,14 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
               labelTooltip='Shown in the collapsed sidebar. Square image — PNG, JPEG, or SVG, max 5MB.'
             >
               <div className='flex items-center gap-4'>
-                <DropZone onDrop={logoUpload.handleFileDrop}>
+                <DropZone
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    if (!saving) logoUpload.handleFileDrop(event)
+                  }}
+                >
                   <UploadPreviewButton
+                    disabled={saving}
                     onClick={logoUpload.handleThumbnailClick}
                     loading={logoUpload.isUploading}
                     aria-label={logoUpload.previewUrl ? 'Change logo' : 'Upload logo'}
@@ -290,6 +283,7 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
                   <Button
                     variant='ghost'
                     size='sm'
+                    disabled={saving}
                     onClick={logoUpload.handleRemove}
                     aria-label='Remove logo'
                     className='text-[var(--text-muted)] text-small hover:text-[var(--text-primary)]'
@@ -301,101 +295,72 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
                   ref={logoUpload.fileInputRef}
                   type='file'
                   accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
-                  onChange={logoUpload.handleFileChange}
+                  disabled={saving}
+                  onChange={(event) => {
+                    if (!saving) logoUpload.handleFileChange(event)
+                  }}
                   className='hidden'
                 />
               </div>
             </SettingRow>
+
             <SettingRow
-              label='Favicon'
-              labelTooltip='Browser tab icon. Square PNG or SVG (32×32 or 64×64 recommended). Optional — falls back to your logo when unset.'
+              label='Wordmark'
+              labelTooltip='Shown in the expanded sidebar. Wide image — PNG, JPEG, or SVG, max 5MB.'
             >
               <div className='flex items-center gap-4'>
-                <DropZone onDrop={faviconUpload.handleFileDrop}>
+                <DropZone
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    if (!saving) wordmarkUpload.handleFileDrop(event)
+                  }}
+                  className='min-w-0 flex-1'
+                >
                   <UploadPreviewButton
-                    onClick={faviconUpload.handleThumbnailClick}
-                    loading={faviconUpload.isUploading}
-                    aria-label={faviconUpload.previewUrl ? 'Change favicon' : 'Upload favicon'}
-                    title={faviconUpload.previewUrl ? 'Change favicon' : 'Upload favicon'}
+                    disabled={saving}
+                    onClick={wordmarkUpload.handleThumbnailClick}
+                    loading={wordmarkUpload.isUploading}
+                    aria-label={wordmarkUpload.previewUrl ? 'Change wordmark' : 'Upload wordmark'}
+                    title={wordmarkUpload.previewUrl ? 'Change wordmark' : 'Upload wordmark'}
+                    className='w-full'
                   >
-                    {faviconUpload.previewUrl ? (
+                    {wordmarkUpload.previewUrl ? (
                       <Image
-                        src={faviconUpload.previewUrl}
-                        alt='Favicon'
+                        src={wordmarkUpload.previewUrl}
+                        alt='Wordmark'
                         fill
-                        sizes='64px'
-                        className='object-contain p-1'
+                        sizes='(max-width: 768px) 50vw, 384px'
+                        className='object-contain p-2'
                         unoptimized
                       />
                     ) : null}
                   </UploadPreviewButton>
                 </DropZone>
-                {faviconUpload.previewUrl && (
+                {wordmarkUpload.previewUrl && (
                   <Button
                     variant='ghost'
                     size='sm'
-                    onClick={faviconUpload.handleRemove}
-                    aria-label='Remove favicon'
+                    disabled={saving}
+                    onClick={wordmarkUpload.handleRemove}
+                    aria-label='Remove wordmark'
                     className='text-[var(--text-muted)] text-small hover:text-[var(--text-primary)]'
                   >
                     <X className='size-[14px]' />
                   </Button>
                 )}
                 <input
-                  ref={faviconUpload.fileInputRef}
+                  ref={wordmarkUpload.fileInputRef}
                   type='file'
                   accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
-                  onChange={faviconUpload.handleFileChange}
+                  disabled={saving}
+                  onChange={(event) => {
+                    if (!saving) wordmarkUpload.handleFileChange(event)
+                  }}
                   className='hidden'
                 />
               </div>
             </SettingRow>
           </div>
-          <SettingRow
-            label='Wordmark'
-            labelTooltip='Shown in the expanded sidebar. Wide image — PNG, JPEG, or SVG, max 5MB.'
-          >
-            <div className='flex items-center gap-4'>
-              <DropZone onDrop={wordmarkUpload.handleFileDrop} className='min-w-0 flex-1'>
-                <UploadPreviewButton
-                  onClick={wordmarkUpload.handleThumbnailClick}
-                  loading={wordmarkUpload.isUploading}
-                  aria-label={wordmarkUpload.previewUrl ? 'Change wordmark' : 'Upload wordmark'}
-                  title={wordmarkUpload.previewUrl ? 'Change wordmark' : 'Upload wordmark'}
-                  className='w-full'
-                >
-                  {wordmarkUpload.previewUrl ? (
-                    <Image
-                      src={wordmarkUpload.previewUrl}
-                      alt='Wordmark'
-                      fill
-                      sizes='(max-width: 768px) 50vw, 384px'
-                      className='object-contain p-2'
-                      unoptimized
-                    />
-                  ) : null}
-                </UploadPreviewButton>
-              </DropZone>
-              {wordmarkUpload.previewUrl && (
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  onClick={wordmarkUpload.handleRemove}
-                  aria-label='Remove wordmark'
-                  className='text-[var(--text-muted)] text-small hover:text-[var(--text-primary)]'
-                >
-                  <X className='size-[14px]' />
-                </Button>
-              )}
-              <input
-                ref={wordmarkUpload.fileInputRef}
-                type='file'
-                accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
-                onChange={wordmarkUpload.handleFileChange}
-                className='hidden'
-              />
-            </div>
-          </SettingRow>
         </div>
       </SettingsSection>
 
@@ -468,29 +433,13 @@ function WhitelabelingForm({ initialSettings, orgId, uploadWorkspaceId }: Whitel
   )
 }
 
-/**
- * Gates on the whitelabel read, which is what saving enforces. Arena Starter and
- * Max stay open on top of that flag.
- */
+/** Gates on the entitlement returned by the whitelabel read — the same check saving enforces. */
 export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSettingsProps) {
-  const { billingEnabled } = useDeploymentShape()
   const { data: workspaces } = useWorkspacesQuery(true)
   const uploadWorkspaceId = workspaces?.find((workspace) => workspace.organizationId === orgId)?.id
-  const {
-    data: organizationBillingData,
-    isPending: organizationBillingLoading,
-    error: organizationBillingError,
-  } = useOrganizationBilling(orgId, { enabled: billingEnabled })
   const { data: whitelabel, error: settingsError, isLoading } = useWhitelabelSettings(orgId)
 
-  const organizationBilling = organizationBillingData?.data
-  const hasArenaPlan =
-    organizationBilling?.subscriptionState === 'active' &&
-    !organizationBilling.billingBlocked &&
-    (organizationBilling.subscriptionPlan === STARTER_PLAN ||
-      isMaxTier(organizationBilling.subscriptionPlan))
-
-  if (isLoading || (billingEnabled && organizationBillingLoading)) {
+  if (isLoading) {
     return (
       <SettingsPanel
         actions={saveDiscardActions({
@@ -506,21 +455,13 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
 
   if (!whitelabel) {
     return (
-      <SettingsEmptyState tone='error'>
+      <SettingsEmptyState>
         {getErrorMessage(settingsError, 'Failed to load whitelabeling settings')}
       </SettingsEmptyState>
     )
   }
 
-  if (organizationBillingError && billingEnabled && !whitelabel.isEnterprise) {
-    return (
-      <SettingsEmptyState tone='error'>
-        {getErrorMessage(organizationBillingError, 'Failed to load organization billing')}
-      </SettingsEmptyState>
-    )
-  }
-
-  if (!whitelabel.isEnterprise && !(billingEnabled && hasArenaPlan)) {
+  if (!whitelabel.isEnterprise) {
     return (
       <SettingsEmptyState>Whitelabeling requires an active Enterprise plan.</SettingsEmptyState>
     )

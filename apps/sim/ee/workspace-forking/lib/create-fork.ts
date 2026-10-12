@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { permissions, workflow, workspace } from '@sim/db/schema'
+import { permissions, projectWorkspace, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { PermissionType } from '@sim/platform-authz/workspace'
 import { getErrorMessage } from '@sim/utils/errors'
@@ -7,14 +7,17 @@ import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import type { Workspace } from '@/lib/api/contracts/workspaces'
 import { enqueueOutboxEvent } from '@/lib/core/outbox/service'
+import { getProjectMembershipPhase } from '@/lib/projects/environment-source'
+import { requireForkProject } from '@/lib/projects/membership'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
-import { buildNewWorkflowRow } from '@/lib/workflows/persistence/new-workflow-row'
+import { insertNewWorkflowRow } from '@/lib/workflows/persistence/new-workflow-row'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import {
   collectReferencedDocumentIds,
   collectReferencedFileFolderPaths,
 } from '@/lib/workflows/references/reference-scan'
 import type { ForkRemapKind } from '@/lib/workflows/references/remap-references'
+import { WORKSPACE_OPERATION_OBSERVE_EVENT } from '@/lib/workspaces/operations/outbox-events'
 import {
   findWorkspaceOperationReceipt,
   insertWorkspaceOperationReceipt,
@@ -208,6 +211,7 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
     workflowMcpServers: [],
   }
   const transaction = await db.transaction(async (tx) => {
+    const phase = await getProjectMembershipPhase(tx)
     await setForkLockTimeout(tx)
     if (admission) {
       await lockWorkspaceOperationRequest(tx, admission.workspaceId, admission.requestId)
@@ -231,6 +235,8 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
         409
       )
     }
+    const parentProject = await requireForkProject(tx, source.id)
+    await setForkLockTimeout(tx)
     if (admission) {
       await lockForkRevision(tx, { sourceWorkspaceId: source.id })
       await assertForkPreviewFresh(tx, { sourceWorkspaceId: source.id }, admission)
@@ -248,6 +254,7 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
     const [currentSource] = await tx
       .select({
         organizationId: workspace.organizationId,
+        archivedAt: workspace.archivedAt,
         forkSyncNewWorkflowsExcluded: workspace.forkSyncNewWorkflowsExcluded,
       })
       .from(workspace)
@@ -284,8 +291,8 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
        */
       .for('no key update')
       .limit(1)
-    if (!currentSource) {
-      throw new ForkError('Source workspace no longer exists', 404)
+    if (!currentSource || currentSource.archivedAt) {
+      throw new ForkError('Source workspace is missing or archived', 404)
     }
     if ((currentSource.organizationId ?? null) !== (policy.organizationId ?? null)) {
       throw new ForkError(
@@ -298,6 +305,7 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
 
     await tx.insert(workspace).values({
       id: childWorkspaceId,
+      projectId: phase === 'column' ? (parentProject?.id ?? null) : null,
       name: childName,
       ownerId: userId,
       organizationId: policy.organizationId,
@@ -310,6 +318,12 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
       createdAt: now,
       updatedAt: now,
     })
+
+    if (phase === 'connector' && parentProject) {
+      await tx
+        .insert(projectWorkspace)
+        .values({ projectId: parentProject.id, workspaceId: childWorkspaceId })
+    }
 
     const sourcePermissions = await tx
       .select({ userId: permissions.userId, permissionType: permissions.permissionType })
@@ -502,17 +516,15 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
     // starter "New workspace" creates. Any copied resources still land alongside it.
     if (workflowsCopied === 0) {
       const defaultWorkflowId = generateId()
-      await tx.insert(workflow).values(
-        await buildNewWorkflowRow(tx, {
-          id: defaultWorkflowId,
-          userId,
-          workspaceId: childWorkspaceId,
-          folderId: null,
-          name: 'default-agent',
-          description: 'Your first workflow - start building here!',
-          now,
-        })
-      )
+      await insertNewWorkflowRow(tx, {
+        id: defaultWorkflowId,
+        userId,
+        workspaceId: childWorkspaceId,
+        folderId: null,
+        name: 'default-agent',
+        description: 'Your first workflow - start building here!',
+        now,
+      })
       const { workflowState } = buildDefaultWorkflowArtifacts()
       await saveWorkflowToNormalizedTables(
         defaultWorkflowId,
@@ -618,7 +630,7 @@ export async function createFork(params: CreateForkParams): Promise<CreateForkRe
           requestId: admission.requestId,
         })
       }
-      await enqueueOutboxEvent(tx, 'workspace.operation.observe', {
+      await enqueueOutboxEvent(tx, WORKSPACE_OPERATION_OBSERVE_EVENT, {
         workspaceId: report.workspaceId,
         operationId: report.operationId,
       })

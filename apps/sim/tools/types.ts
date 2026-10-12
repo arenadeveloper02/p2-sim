@@ -18,6 +18,7 @@ export type BYOKProviderId =
   | 'fireworks'
   | 'together'
   | 'baseten'
+  | 'nebius'
   | 'ollama-cloud'
   | 'kie'
   | 'falai'
@@ -82,6 +83,7 @@ export interface OutputProperty {
   items?: {
     type: OutputType
     description?: string
+    nullable?: boolean
     properties?: Record<string, OutputProperty>
   }
 }
@@ -135,6 +137,8 @@ export interface OAuthConfig {
   personalTokenSupported?: false
   /** Restricts execution to one stored credential kind after authorized token resolution. */
   credentialKind?: 'oauth' | 'service-account'
+  /** Retry one rejected internal operation after re-authorizing its saved credential. */
+  retryOnUnauthorized?: boolean
   /** Token-response fields that must replace any caller-supplied tool parameter of the same name. */
   authoritativeParams?: readonly (
     | 'apiDomain'
@@ -142,6 +146,7 @@ export interface OAuthConfig {
     | 'cloudId'
     | 'credentialType'
     | 'domain'
+    | 'idToken'
     | 'instanceUrl'
     | 'realmId'
     | 'quickBooksEnvironment'
@@ -323,6 +328,16 @@ export interface ToolConfig<P = any, R = any> {
    * Usage is billed according to the pricing config.
    */
   hosting?: ToolHostingConfig<P>
+
+  /**
+   * Makes this tool's declared `timeout` param the execution deadline, in milliseconds.
+   *
+   * A caller may pass `params.timeout` to bound any tool that does not declare one. A tool that
+   * declares its own `timeout` param owns that value instead — usually a provider field in
+   * seconds or a duration string, which as a millisecond deadline would abort the request almost
+   * immediately — so the executor treats it as the deadline only when this is set.
+   */
+  timeoutParamIsDeadline?: true
 }
 
 export interface TableRow {

@@ -1,9 +1,8 @@
 'use client'
 
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Chip,
-  ChipConfirmModal,
   ChipTag,
   chipContentIconClass,
   chipVariants,
@@ -14,9 +13,9 @@ import {
   useScrollEdges,
 } from '@sim/emcn'
 import { ArrowUpRight, Building, ChevronLeft, Lock } from '@sim/emcn/icons'
-import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import {
+  type DesktopSettingsSurface,
   getOrganizationSettingsHref,
   getSettingsPermissionConfigKey,
   isSelfHostedOverrideEnabled,
@@ -24,13 +23,19 @@ import {
 } from '@/components/settings/navigation'
 import { SettingsIntentLink } from '@/components/settings/settings-intent-link'
 import { useSettingsNavigationState } from '@/components/settings/settings-navigation-provider'
+import { usePendingSettingsSelection } from '@/components/settings/use-pending-settings-selection'
+import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
+import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
+import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
-import { sectionConfig } from '@/app/workspace/[workspaceId]/settings/navigation'
-import { warmSettingsSection } from '@/app/workspace/[workspaceId]/settings/section-warmers'
-import { useVisibleSettingsNavigation } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/use-visible-settings-navigation'
+import {
+  allNavigationItems,
+  sectionConfig,
+} from '@/app/workspace/[workspaceId]/settings/navigation'
 import { SidebarSection } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-section'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-tooltip'
 import {
@@ -40,6 +45,10 @@ import {
   SIDEBAR_RAIL_CHIP_CLASS,
   SIDEBAR_SECTION_GAP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
+import { useWorkspaceAccessRequestFeatures } from '@/ee/access-requests/components/permission-access-boundary'
+import { useSSOProviders } from '@/ee/sso/hooks/sso'
+import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-available'
+import { useGeneralSettings } from '@/hooks/queries/general-settings'
 import { useInboxConfig } from '@/hooks/queries/inbox'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -48,31 +57,11 @@ import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 interface SettingsSidebarProps {
   isCollapsed?: boolean
   showCollapsedTooltips?: boolean
-  /**
-   * When set, Back closes the settings list without leaving the current page.
-   * Used when More opens the list before any settings route is selected.
-   */
-  onClose?: () => void
-}
-
-function warmArenaSettingsSection(section: SettingsSection) {
-  if (section === 'general') {
-    void import('@/app/workspace/[workspaceId]/settings/components/general/general')
-    return
-  }
-  if (section === 'arena-billing') {
-    void import('@/app/workspace/[workspaceId]/settings/components/billing-usage')
-    return
-  }
-  if (section === 'usage') {
-    void import('@/app/workspace/[workspaceId]/settings/components/usage/usage')
-  }
 }
 
 export function SettingsSidebar({
   isCollapsed = false,
   showCollapsedTooltips = false,
-  onClose,
 }: SettingsSidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
@@ -81,77 +70,226 @@ export function SettingsSidebar({
   const workspaceId = params.workspaceId as string
   const pathname = usePathname()
   const router = useRouter()
-  const queryClient = useQueryClient()
 
   const requestLeave = useSettingsDirtyStore((s) => s.requestLeave)
-  const confirmLeave = useSettingsDirtyStore((s) => s.confirmLeave)
-  const cancelLeave = useSettingsDirtyStore((s) => s.cancelLeave)
-  const pendingLeave = useSettingsDirtyStore((s) => s.pendingLeave)
-  const showDiscardDialog = pendingLeave !== null
 
   const scrollEdges = useScrollEdges(scrollContainerRef, {
     contentRef: scrollContentRef,
     enabled: !isCollapsed,
   })
+  const [desktopSurfaces, setDesktopSurfaces] = useState<Record<DesktopSettingsSurface, boolean>>({
+    settings: false,
+    browser: false,
+    terminal: false,
+  })
 
+  const { data: session } = useSession()
   const hostContext = useWorkspaceHostContext()
   const deployment = useDeploymentShape()
+  const { hosted, billingEnabled } = deployment
+  const { data: generalSettings } = useGeneralSettings()
   const { data: inboxConfig } = useInboxConfig(workspaceId)
-  const navigationItems = useVisibleSettingsNavigation(workspaceId)
+  const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
+    enabled: !hosted,
+  })
+
   const { config: permissionConfig } = usePermissionConfig()
-  const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
-  const inboxEntitled = inboxConfig?.entitled ?? false
+  const accessRequests = useWorkspaceAccessRequestFeatures()
+  const accessRequestsEnabled = accessRequests.data?.enabled === true
+  const forkingAvailable = useForkingAvailable(workspaceId)
+  const { workspacePermissions, userPermissions } = useWorkspacePermissionsContext()
+  // The server-seeded viewer permission, read directly: the derived admin flag waits on the client
+  // session. Offline mode still withdraws admin; without the viewer field, fall back to the flag.
+  const viewerPermission = workspacePermissions?.viewer?.permissionType
+  const canAdminWorkspace = viewerPermission
+    ? viewerPermission === 'admin' && !userPermissions.isOfflineMode
+    : userPermissions.canAdmin
+
+  const userId = session?.user?.id
+
+  const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
   const organizationSettingsId =
     hostContext.features?.organizationSearch && hostContext.viewer.isHostOrganizationMember
       ? hostContext.hostOrganizationId
       : null
+  const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
+  const inboxEntitled = inboxConfig?.entitled ?? false
+  const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
+  const isEnterprisePlan = subscriptionAccess.isEnterprise
 
-  const sidebarItems = useMemo(() => {
-    if (!organizationSettingsId) return navigationItems
-    return navigationItems.filter((item) => !ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id))
-  }, [navigationItems, organizationSettingsId])
+  const isSuperUser = session?.user?.role === 'admin'
+
+  const isSSOProviderOwner =
+    hosted || !userId || isLoadingSSO
+      ? null
+      : (ssoProvidersData?.providers?.some((provider) => provider.userId === userId) ?? false)
+
+  const navigationItems = useMemo(() => {
+    return allNavigationItems.filter((item) => {
+      if (
+        hostContext.hostOrganizationId &&
+        ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) &&
+        (organizationSettingsId || !hostContext.viewer.isHostOrganizationMember)
+      ) {
+        return false
+      }
+      if (item.id === 'connected-accounts') {
+        return Boolean(
+          hostContext.hostOrganizationId &&
+            isOrgAdminOrOwner &&
+            hostContext.features?.credentialGroups
+        )
+      }
+      if (item.id === 'requests') {
+        return Boolean(hostContext.hostOrganizationId)
+      }
+      if (item.id === 'organization') {
+        return Boolean(
+          hostContext.hostOrganizationId && hostContext.viewer.isHostOrganizationMember
+        )
+      }
+      if (item.requiresSelfHosted && hosted) {
+        return false
+      }
+
+      if (item.requiresDesktopSurface && !desktopSurfaces[item.requiresDesktopSurface]) {
+        return false
+      }
+
+      if (item.hideWhenBillingDisabled && !billingEnabled) {
+        return false
+      }
+
+      if (item.id === 'billing' && !canViewWorkspaceBillingSettings(hostContext, userId)) {
+        return false
+      }
+
+      if (item.hideForEnterprise && isEnterprisePlan) {
+        return false
+      }
+
+      if (item.id === 'secrets' && permissionConfig.hideSecretsTab && !accessRequestsEnabled) {
+        return false
+      }
+      if (item.id === 'apikeys' && permissionConfig.hideApiKeysTab && !accessRequestsEnabled) {
+        return false
+      }
+      if (item.id === 'inbox' && permissionConfig.hideInboxTab && !accessRequestsEnabled) {
+        return false
+      }
+      if (item.id === 'mcp' && permissionConfig.disableMcpTools && !accessRequestsEnabled) {
+        return false
+      }
+      if (
+        item.id === 'custom-tools' &&
+        permissionConfig.disableCustomTools &&
+        !accessRequestsEnabled
+      ) {
+        return false
+      }
+      if (item.id === 'sandboxes' && permissionConfig.hideSandboxesTab && !accessRequestsEnabled) {
+        return false
+      }
+      if (item.id === 'forks' && !(forkingAvailable && canAdminWorkspace)) {
+        return false
+      }
+      if (item.id === 'custom-blocks' && !hostContext.hostOrganizationId) {
+        return false
+      }
+
+      if (isSelfHostedOverrideEnabled(item.selfHostedOverride, deployment)) {
+        /**
+         * Org-plane sections route through the organization gate in
+         * `settings/[section]/page.tsx` (host organization + org-admin viewer),
+         * which 404s other viewers — mirror it here so the item never links to
+         * a dead page.
+         */
+        if (ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) && !isOrgAdminOrOwner) {
+          return false
+        }
+        if (item.id === 'sso') {
+          const hasProviders = (ssoProvidersData?.providers?.length ?? 0) > 0
+          return !hasProviders || isSSOProviderOwner === true
+        }
+        return true
+      }
+
+      const orgAdminSatisfied = isOrgAdminOrOwner || item.allowNonOrgAdmin
+
+      if (
+        item.requiresEnterprise &&
+        (!hasEnterprisePlan || !orgAdminSatisfied) &&
+        !item.showWhenLocked
+      ) {
+        return false
+      }
+
+      if (item.requiresMax && !subscriptionAccess.hasUsableMaxAccess && !item.showWhenLocked) {
+        return false
+      }
+
+      if (item.requiresHosted && !hosted) {
+        return false
+      }
+
+      const superUserModeEnabled = generalSettings?.superUserModeEnabled ?? false
+      const effectiveSuperUser = isSuperUser && superUserModeEnabled
+      if (item.requiresSuperUser && !effectiveSuperUser) {
+        return false
+      }
+
+      if (item.requiresAdminRole && !isSuperUser) {
+        return false
+      }
+
+      return true
+    })
+  }, [
+    deployment,
+    hosted,
+    billingEnabled,
+    hasEnterprisePlan,
+    isEnterprisePlan,
+    subscriptionAccess.hasUsableMaxAccess,
+    hostContext,
+    userId,
+    isOrgAdminOrOwner,
+    organizationSettingsId,
+    isSSOProviderOwner,
+    ssoProvidersData?.providers?.length,
+    permissionConfig,
+    accessRequestsEnabled,
+    isSuperUser,
+    generalSettings?.superUserModeEnabled,
+    forkingAvailable,
+    canAdminWorkspace,
+    desktopSurfaces,
+  ])
 
   const segments = pathname?.split('/') ?? []
   const settingsIndex = segments.indexOf('settings')
-  const routeSection: SettingsSection | null =
+  const routeSection: SettingsSection =
     settingsIndex !== -1 && segments[settingsIndex + 1]
       ? (segments[settingsIndex + 1] as SettingsSection)
-      : null
-  const { pendingSection, navigateToSection, signalIntent } = useSettingsNavigationState()
-  const activeSection = (pendingSection as SettingsSection | null) ?? routeSection
+      : 'general'
+  const { activeSection, navigateToSection } = usePendingSettingsSelection(routeSection)
+  const { signalIntent } = useSettingsNavigationState()
 
   const { popSettingsReturnUrl, getSettingsHref } = useSettingsNavigation()
 
   const handleBack = useCallback(() => {
-    if (onClose) {
-      onClose()
-      return
-    }
     requestLeave(() => {
       router.push(popSettingsReturnUrl(`/workspace/${workspaceId}`))
     })
-  }, [onClose, requestLeave, router, popSettingsReturnUrl, workspaceId])
+  }, [requestLeave, router, popSettingsReturnUrl, workspaceId])
 
-  const handleConfirmDiscard = useCallback(() => {
-    confirmLeave()
-  }, [confirmLeave])
-
-  const handleCancelDiscard = useCallback(() => {
-    cancelLeave()
-  }, [cancelLeave])
-
-  const warmSection = useCallback(
-    (section: SettingsSection) => {
-      signalIntent(section)
-      warmSettingsSection(
-        queryClient,
-        { workspaceId, billingOrganizationId: hostContext.hostOrganizationId },
-        section
-      )
-      warmArenaSettingsSection(section)
-    },
-    [hostContext.hostOrganizationId, queryClient, signalIntent, workspaceId]
-  )
+  useEffect(() => {
+    setDesktopSurfaces({
+      settings: hasDesktopSettings(),
+      browser: hasBrowserAgent(),
+      terminal: hasTerminal(),
+    })
+  }, [])
 
   return (
     <>
@@ -194,7 +332,7 @@ export function SettingsSidebar({
             .map(({ key, title }) => ({
               key,
               title,
-              items: sidebarItems
+              items: navigationItems
                 .filter((item) => item.section === key)
                 .sort((left, right) => left.order - right.order),
             }))
@@ -213,10 +351,12 @@ export function SettingsSidebar({
                   {key === 'organization' && organizationSettingsId && (
                     <SidebarTooltip label='Organization' enabled={showCollapsedTooltips}>
                       <SettingsIntentLink
+                        data-settings-navigation='managed'
                         href={getOrganizationSettingsHref(organizationSettingsId, 'members')}
                         className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
                         onNavigate={(event) => {
-                          if (!useSettingsDirtyStore.getState().isDirty) return
+                          const { isDirty, navigationBlocked } = useSettingsDirtyStore.getState()
+                          if (!isDirty && !navigationBlocked) return
                           event.preventDefault()
                           requestLeave(() =>
                             router.push(
@@ -241,9 +381,9 @@ export function SettingsSidebar({
                     const active = activeSection === item.id
                     const accessFeature = getSettingsPermissionConfigKey(item.id)
                     const permissionRestricted = accessFeature
-                      ? Boolean(permissionConfig[accessFeature])
+                      ? permissionConfig[accessFeature]
                       : false
-                    const section = item.id
+                    const section = item.id as SettingsSection
                     const href = getSettingsHref({ section })
                     const selfHostedUnlocked = isSelfHostedOverrideEnabled(
                       item.selfHostedOverride,
@@ -295,6 +435,7 @@ export function SettingsSidebar({
                       </a>
                     ) : (
                       <SettingsIntentLink
+                        data-settings-navigation='managed'
                         href={href}
                         replace
                         scroll={false}
@@ -303,22 +444,14 @@ export function SettingsSidebar({
                           permissionRestricted ? `${item.label}: access required` : undefined
                         }
                         className={itemClassName}
-                        onIntent={() => {
-                          if (permissionRestricted) return
-                          warmSection(section)
-                        }}
+                        onIntent={() => !permissionRestricted && signalIntent(section)}
                         onNavigate={(event) => {
                           if (active) {
                             event.preventDefault()
                             return
                           }
                           event.preventDefault()
-                          const preview = section === routeSection ? null : section
-                          if (!useSettingsDirtyStore.getState().isDirty) {
-                            navigateToSection(preview, href)
-                            return
-                          }
-                          requestLeave(() => navigateToSection(preview, href))
+                          requestLeave(() => navigateToSection(section, href))
                         }}
                       >
                         {content}
@@ -340,19 +473,6 @@ export function SettingsSidebar({
             ))}
         </div>
       </div>
-
-      <ChipConfirmModal
-        open={showDiscardDialog}
-        onOpenChange={(open) => !open && handleCancelDiscard()}
-        srTitle='Unsaved changes'
-        title='Unsaved changes'
-        text='You have unsaved changes. Are you sure you want to discard them?'
-        dismissLabel='Keep editing'
-        confirm={{
-          label: 'Discard changes',
-          onClick: handleConfirmDiscard,
-        }}
-      />
     </>
   )
 }

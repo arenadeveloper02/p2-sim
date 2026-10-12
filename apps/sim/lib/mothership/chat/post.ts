@@ -1,12 +1,8 @@
-import { type Context as OtelContext, context as otelContextApi } from '@opentelemetry/api'
+import { context as otelContextApi } from '@opentelemetry/api'
 import type { SessionPrincipal } from '@sim/auth/principal'
-import { db } from '@sim/db'
-import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { truncate } from '@sim/utils/string'
-import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
@@ -20,7 +16,6 @@ import {
 } from '@/lib/api/contracts/mothership-resources'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import {
   resolveBillingAttribution,
   resolveOrganizationBillingAttribution,
@@ -37,6 +32,7 @@ import { loadCopilotSearchIntegrations } from '@/lib/mothership/application/load
 import { chatOperations } from '@/lib/mothership/application/operations'
 import { resolveInvocationWorkspace } from '@/lib/mothership/application/workspace-target'
 import { admitChatTurn } from '@/lib/mothership/chat/application/admit-turn'
+import { ChatSendSupersededError } from '@/lib/mothership/chat/application/send-superseded'
 import {
   type AssistantImageContent,
   prepareOrganizationChatAttachments,
@@ -56,10 +52,8 @@ import {
   loadChatMcpServerIds,
   resolveOrCreateChat,
 } from '@/lib/mothership/chat/lifecycle'
-import { appendCopilotChatMessages } from '@/lib/mothership/chat/messages-store'
 import { authorizeOrganizationChat } from '@/lib/mothership/chat/organization-chats'
 import { buildCopilotRequestPayload } from '@/lib/mothership/chat/payload'
-import { buildPersistedUserMessage } from '@/lib/mothership/chat/persisted-message'
 import {
   processContextsServer,
   resolveActiveResourceContext,
@@ -70,9 +64,11 @@ import {
   MAX_TABLE_SELECTION_ROWS,
   safeBrowserSelectionUrl,
 } from '@/lib/mothership/chat/selection-context'
-import { finalizeAssistantTurn } from '@/lib/mothership/chat/terminal-state'
-import { chatPubSub, publishChatStatusChanged } from '@/lib/mothership/chat-status'
-import { COPILOT_REQUEST_MODES, MOTHERSHIP_CHAT_ID_HEADER } from '@/lib/mothership/constants'
+import {
+  COPILOT_REQUEST_MODES,
+  MOTHERSHIP_CHAT_ID_HEADER,
+  MOTHERSHIP_DESKTOP_EXECUTOR_HEADER,
+} from '@/lib/mothership/constants'
 import { prepareCopilotEnvironmentContext } from '@/lib/mothership/environment-context'
 import { isMothershipModelSelectorEnabled, isPlanModeEnabled } from '@/lib/mothership/feature-flags'
 import { AssistantSearchLevel } from '@/lib/mothership/generated/assistant'
@@ -82,10 +78,7 @@ import {
   ModelSelectionSchema,
   PROTOCOL_VERSION,
 } from '@/lib/mothership/generated/protocol'
-import {
-  CopilotChatPersistOutcome,
-  CopilotTransport,
-} from '@/lib/mothership/generated/trace-attribute-values-v1'
+import { CopilotTransport } from '@/lib/mothership/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/mothership/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/mothership/generated/trace-spans-v1'
 import { resolveMothershipModelSettings } from '@/lib/mothership/model-options'
@@ -98,7 +91,6 @@ import {
   releasePendingChatStream,
 } from '@/lib/mothership/request/session'
 import { getLocalChatStreamLease } from '@/lib/mothership/request/session/abort'
-import { buildUsageUpgradeContent } from '@/lib/mothership/request/tools/usage-upgrade'
 import type { ExecutionContext } from '@/lib/mothership/request/types'
 import { persistChatResources } from '@/lib/mothership/resources/persistence'
 import { searchResourceMatchesOwner } from '@/lib/mothership/resources/search'
@@ -117,19 +109,10 @@ import {
   isWorkspaceAccessDeniedError,
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
-import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
-import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
-import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
-import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import {
-  remapLegacyLocalCopilotCatalogId,
-  resolveLocalCopilotRequestCatalogId,
-} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 const logger = createLogger('UnifiedChatAPI')
-const DEFAULT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
+const DEFAULT_MODEL = 'claude-opus-4-8'
 const CHAT_SELECTION_TEXT_MAX_LENGTH = 100_000
 const CHAT_SELECTION_SOURCE_URL_MAX_LENGTH = 8_192
 const CHAT_SELECTION_SOURCE_TITLE_MAX_LENGTH = 512
@@ -152,6 +135,7 @@ const GENERIC_RESOURCE_TITLE: Record<z.infer<typeof ResourceAttachmentSchema>['t
   integration: 'Integration',
   file: 'File',
   dashboard: 'Dashboard',
+  test: 'Test',
   knowledgebase: 'Knowledge Base',
   folder: 'Folder',
   filefolder: 'File Folder',
@@ -187,31 +171,6 @@ function dropUnaddressableAttachments(value: unknown): unknown {
     const id = (resource as { id?: unknown } | null)?.id
     return typeof id !== 'string' || hasAddressableId(id)
   })
-}
-
-/**
- * Home chat sends an open canvas as a resource tab, not `workflowId`.
- * Local Copilot needs the id so the live graph lands in system context after refresh.
- */
-function resolveOpenWorkflowIdForLocalCopilot(params: {
-  branchWorkflowId?: string
-  chatWorkflowId?: string | null
-  resourceAttachments?: Array<{ type: string; id: string; active?: boolean }>
-  chatResources?: unknown
-}): string | undefined {
-  const fromBranch = params.branchWorkflowId?.trim()
-  if (fromBranch) return fromBranch
-
-  const attachments = params.resourceAttachments ?? []
-  const workflows = attachments.filter((attachment) => attachment.type === 'workflow')
-  const active = workflows.find((attachment) => attachment.active) ?? workflows[0]
-  if (active?.id) return active.id
-
-  const fromChatResources = extractWorkflowIdFromResources(params.chatResources)
-  if (fromChatResources) return fromChatResources
-
-  const fromChat = params.chatWorkflowId?.trim()
-  return fromChat || undefined
 }
 
 /** Non-strings pass through for the schema to reject; strings are sanitized. */
@@ -352,7 +311,6 @@ const ChatMessageSchema = z
     contexts: z.array(ChatContextSchema).max(MAX_CHAT_CONTEXTS).optional(),
     commands: z.array(z.string()).optional(),
     userTimezone: z.string().optional(),
-    copilotBackend: z.enum(['local', 'external']).optional(),
     effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
     modelSelection: ModelSelectionSchema.optional(),
     clientCapabilities: z.array(z.string()).optional(),
@@ -360,6 +318,11 @@ const ChatMessageSchema = z
       .object({
         localFilesystem: z.boolean().optional(),
         localFiles: z.boolean().optional(),
+        localReadClaims: z.boolean().optional(),
+        /** The composer's desktop install, offered for its background executor. */
+        deviceId: z.string().uuid().optional(),
+        /** The background executor protocol version the desktop speaks. */
+        executor: z.number().int().min(1).max(1000).optional(),
         browser: z.boolean().optional(),
         terminal: z.boolean().optional(),
         terminals: z
@@ -421,6 +384,20 @@ const ChatMessageSchema = z
   )
 
 type UnifiedChatRequest = z.infer<typeof ChatMessageSchema>
+
+/**
+ * The desktop a turn asks its background executor to run on. Only a desktop composer that speaks
+ * the executor protocol and switched on at least one desktop surface asks; Assistant turns have
+ * no desktop tools.
+ */
+function backgroundExecutorDeviceId(body: UnifiedChatRequest): string | undefined {
+  const desktop = body.desktopCapabilities
+  if (body.mode === 'assistant' || !desktop?.deviceId || !desktop.executor) return undefined
+  return desktop.browser || desktop.terminal || desktop.localFiles || desktop.localFilesystem
+    ? desktop.deviceId
+    : undefined
+}
+
 type BrowserSessions = NonNullable<UnifiedChatRequest['desktopCapabilities']>['browserSessions']
 type Terminals = NonNullable<UnifiedChatRequest['desktopCapabilities']>['terminals']
 type UnifiedChatBranch =
@@ -699,130 +676,6 @@ async function resolveAgentContexts(params: {
   return agentContexts
 }
 
-/**
- * Existing Local chats created under the hosted Opus default still store
- * `claude-opus-4-8`. Rewrite that leftover onto the generic Claude picker id
- * so follow-up turns and `copilot_messages.model` stop carrying the old id.
- */
-async function migrateLegacyLocalCopilotChatModel(
-  chatId: string,
-  userId: string
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({ model: copilotChats.model })
-    .from(copilotChats)
-    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
-    .limit(1)
-
-  const storedModel = row?.model ?? undefined
-  const remapped = remapLegacyLocalCopilotCatalogId(storedModel)
-  if (!remapped) return storedModel
-
-  await db
-    .update(copilotChats)
-    .set({ model: remapped, updatedAt: new Date() })
-    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
-
-  return storedModel
-}
-
-async function persistUserMessage(params: {
-  chatId?: string
-  userMessageId: string
-  message: string
-  fileAttachments?: UnifiedChatRequest['fileAttachments']
-  contexts?: UnifiedChatRequest['contexts']
-  workspaceId?: string
-  notifyWorkspaceStatus: boolean
-  organizationId?: string
-  userId?: string
-  requestMode?: 'assistant' | 'agent'
-  /**
-   * Root context for the mothership request. When present the persist
-   * span is created explicitly under it, which avoids relying on
-   * AsyncLocalStorage propagation — some upstream awaits (Next.js
-   * framework frames, Turbopack-instrumented I/O) can swap the active
-   * store out from under us in dev, which would otherwise leave this
-   * span parented to the about-to-be-dropped Next.js HTTP span.
-   */
-  parentOtelContext?: OtelContext
-}): Promise<void> {
-  const {
-    chatId,
-    userMessageId,
-    message,
-    fileAttachments,
-    contexts,
-    workspaceId,
-    organizationId,
-    userId,
-    notifyWorkspaceStatus,
-    parentOtelContext,
-  } = params
-  if (!chatId) return
-
-  return withCopilotSpan(
-    TraceSpan.CopilotChatPersistUserMessage,
-    {
-      [TraceAttr.DbSystem]: 'postgresql',
-      [TraceAttr.DbSqlTable]: 'copilot_chats',
-      [TraceAttr.ChatId]: chatId,
-      [TraceAttr.ChatUserMessageId]: userMessageId,
-      [TraceAttr.ChatMessageBytes]: message.length,
-      [TraceAttr.ChatFileAttachmentCount]: fileAttachments?.length ?? 0,
-      [TraceAttr.ChatContextCount]: contexts?.length ?? 0,
-      ...(workspaceId ? { [TraceAttr.WorkspaceId]: workspaceId } : {}),
-    },
-    async (span) => {
-      const userMsg = buildPersistedUserMessage({
-        id: userMessageId,
-        content: message,
-        requestMode: params.requestMode,
-        fileAttachments,
-        contexts,
-      })
-
-      const updated = await db.transaction(async (tx) => {
-        const [row] = await tx
-          .update(copilotChats)
-          .set({
-            conversationId: userMessageId,
-            updatedAt: new Date(),
-          })
-          .where(eq(copilotChats.id, chatId))
-          .returning({ model: copilotChats.model })
-
-        if (!row) return null
-
-        await appendCopilotChatMessages(
-          chatId,
-          [userMsg],
-          { streamId: userMessageId, chatModel: row.model ?? null },
-          tx
-        )
-        return row
-      })
-
-      span.setAttribute(
-        TraceAttr.ChatPersistOutcome,
-        updated ? CopilotChatPersistOutcome.Appended : CopilotChatPersistOutcome.ChatNotFound
-      )
-
-      if (notifyWorkspaceStatus && updated) {
-        publishChatStatusChanged(
-          { workspaceId, organizationId, userId },
-          {
-            chatId,
-            type: 'started',
-            streamId: userMessageId,
-          }
-        )
-      }
-    },
-    parentOtelContext
-  )
-}
-
 async function buildInitialExecutionContext(params: {
   userId: string
   workflowId?: string
@@ -891,8 +744,6 @@ async function resolveBranch(params: {
   model?: string
   mode?: UnifiedChatRequest['mode']
   provider?: string
-  /** When Local, workspace branch embeds this catalog id in the request payload. */
-  localCatalogId?: string
 }): Promise<UnifiedChatBranch | NextResponse> {
   const {
     authenticatedUserId,
@@ -904,7 +755,6 @@ async function resolveBranch(params: {
     model,
     mode,
     provider,
-    localCatalogId,
   } = params
 
   if (organizationId) {
@@ -1041,9 +891,9 @@ async function resolveBranch(params: {
     kind: 'workspace',
     workspaceId: requestedWorkspaceId,
     workspacePermission,
-    effectiveModel: localCatalogId || DEFAULT_MODEL,
+    effectiveModel: DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: localCatalogId || DEFAULT_MODEL,
+    titleModel: DEFAULT_MODEL,
     notifyChatStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload({
@@ -1053,7 +903,7 @@ async function resolveBranch(params: {
         principal,
         userMessageId: payloadParams.userMessageId,
         mode: mode ?? 'agent',
-        model: localCatalogId || '',
+        model: '',
         contexts: payloadParams.contexts,
         workspaceContext: payloadParams.workspaceContext,
         assistantSearch: payloadParams.assistantSearch,
@@ -1091,9 +941,9 @@ const CHAT_SEND_IDEMPOTENCY_PROVIDER = 'user-message'
 /**
  * Claims this send so a retry of it can be recognised.
  *
- * Fails open: a missed deduplication costs a duplicate chat and turn, but
- * refusing the send loses the user's message. Returns `undefined` when the
- * store is unreachable, which sends normally with no claim to finalize.
+ * Fails closed: the claim is stored in Postgres (`chatSendIdempotency` forces
+ * database storage), so a store failure throws and the send is answered with a
+ * 500 rather than run without deduplication.
  *
  * The key is scoped to the caller — `userMessageId` is client-supplied, so an
  * unscoped one would let a user probe another's sends for their chat id.
@@ -1158,41 +1008,15 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     const authenticatedUserEmail = session.user.email
 
     const body = ChatMessageSchema.parse(await req.json())
-    const requestedCopilotBackend = parseCopilotBackendPreference(body.copilotBackend)
-    const { hasAccess, localOnly, defaultModel } =
-      await getLocalCopilotUserAccess(authenticatedUserId)
-    const userAllowedForLocal = hasAccess || localOnly
-    // Local-only users are pinned to Local regardless of any stored or forged
-    // `external` preference, mirroring the server-side routing guard so chat
-    // title generation and routing never leak to the cloud mothership.
-    const copilotBackend: CopilotBackendPreference | undefined = localOnly
-      ? 'local'
-      : requestedCopilotBackend === 'local' && userAllowedForLocal
-        ? 'local'
-        : requestedCopilotBackend === 'external'
-          ? 'external'
-          : userAllowedForLocal
-            ? 'local'
-            : 'external'
-
-    let localCatalogId: string | undefined
-    if (copilotBackend === 'local') {
-      const storedChatModel = body.chatId
-        ? await migrateLegacyLocalCopilotChatModel(body.chatId, authenticatedUserId)
-        : undefined
-      localCatalogId = resolveLocalCopilotRequestCatalogId(
-        body.model?.trim(),
-        defaultModel,
-        storedChatModel
-      )
-    }
-
-    if (body.mode !== 'assistant' && copilotBackend !== 'local') {
-      const [modelSelectorEnabled, planEnabled] = await Promise.all([
+    // Admission records a send's own effort as the chat's explicit choice.
+    const effortChoice = body.mode === 'assistant' ? undefined : body.effort
+    let modelSelectorEnabled = false
+    if (body.mode !== 'assistant') {
+      const [selectorEnabled, planEnabled] = await Promise.all([
         isMothershipModelSelectorEnabled(),
         body.mode === 'plan' ? isPlanModeEnabled() : false,
       ])
-      Object.assign(body, resolveMothershipModelSettings(body, modelSelectorEnabled))
+      modelSelectorEnabled = selectorEnabled
       if (body.mode === 'plan' && !planEnabled)
         return createBadRequestResponse('Plan mode is disabled')
     }
@@ -1261,7 +1085,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             model: body.model,
             mode: body.mode,
             provider: body.provider,
-            ...(localCatalogId ? { localCatalogId } : {}),
           }),
         activeOtelRoot.context
       )
@@ -1383,6 +1206,17 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           return NextResponse.json({ error: 'Chat not found' }, { status: 404 })
         }
       }
+      if (body.mode !== 'assistant')
+        Object.assign(
+          body,
+          resolveMothershipModelSettings(
+            {
+              effort: effortChoice ?? currentChat?.effort ?? undefined,
+              modelSelection: body.modelSelection,
+            },
+            modelSelectorEnabled
+          )
+        )
 
       let pendingStreamWaitMs = 0
       if (actualChatId) {
@@ -1429,107 +1263,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       })
 
       const workspaceId = branch.workspaceId
-
-      if (branch.goRoute === '/api/mothership') {
-        const usage = await checkMothershipUsageLimits(authenticatedUserId, workspaceId)
-        if (usage.isExceeded) {
-          const errorMessage =
-            usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.'
-
-          // Persist the blocked turn so mid-chat context and first-message chats
-          // survive refresh / navigation. Release the stream lock so the same
-          // chat can accept a follow-up once credits are restored.
-          if (actualChatId) {
-            try {
-              await persistUserMessage({
-                chatId: actualChatId,
-                userMessageId,
-                message: body.message,
-                fileAttachments: body.fileAttachments,
-                contexts: normalizedContexts,
-                workspaceId,
-                notifyWorkspaceStatus: branch.notifyChatStatus,
-                parentOtelContext: activeOtelRoot.context,
-              })
-
-              await finalizeAssistantTurn({
-                chatId: actualChatId,
-                userMessageId,
-                assistantMessage: {
-                  id: generateId(),
-                  role: 'assistant',
-                  content: buildUsageUpgradeContent(errorMessage, { scope: usage.scope }),
-                  timestamp: new Date().toISOString(),
-                },
-                streamMarkerPolicy: 'active-or-cleared',
-              })
-
-              if (branch.notifyChatStatus && workspaceId) {
-                chatPubSub?.publishStatusChanged({
-                  workspaceId,
-                  chatId: actualChatId,
-                  type: 'completed',
-                  streamId: userMessageId,
-                })
-              }
-
-              // New chats are created with a null title; set a cheap local title
-              // so the sidebar isn't stuck on "New Chat" (skip Go title gen —
-              // credits are already exhausted).
-              if (chatIsNew) {
-                const title = truncate(body.message.trim(), 60).trim()
-                if (title) {
-                  await db
-                    .update(copilotChats)
-                    .set({ title, updatedAt: new Date() })
-                    .where(eq(copilotChats.id, actualChatId))
-                }
-
-                // Same event POST /api/mothership/chats emits so sidebar SSE
-                // subscribers refresh the Chats list without waiting for a reload.
-                if (branch.notifyChatStatus && workspaceId) {
-                  chatPubSub?.publishStatusChanged({
-                    workspaceId,
-                    chatId: actualChatId,
-                    type: 'created',
-                  })
-                }
-              }
-            } catch (persistError) {
-              logger.error('Failed to persist usage-limit turn', {
-                chatId: actualChatId,
-                error: getErrorMessage(persistError),
-              })
-            }
-          }
-
-          if (chatStreamLockAcquired && actualChatId) {
-            await releasePendingChatStream(actualChatId, userMessageId)
-            chatStreamLockAcquired = false
-          }
-
-          activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 402)
-          activeOtelRoot.finish('error')
-
-          // Re-read title for the response when we set it above; fall back to
-          // a truncated user message so the client can seed the sidebar row.
-          const responseTitle =
-            chatIsNew && actualChatId
-              ? truncate(body.message.trim(), 60).trim() || undefined
-              : undefined
-
-          return NextResponse.json(
-            {
-              error: errorMessage,
-              scope: usage.scope,
-              ...(actualChatId ? { chatId: actualChatId } : {}),
-              ...(responseTitle ? { title: responseTitle } : {}),
-            },
-            { status: 402 }
-          )
-        }
-      }
-
       // The workspace branch already resolved this permission (and gated on it)
       // during branch resolution; reuse it instead of querying again.
       const userPermissionPromise =
@@ -1728,19 +1461,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         activeOtelRoot.span.setAttribute(TraceAttr.WorkspaceId, workspaceId)
       }
 
-      const localOpenWorkflowId =
-        copilotBackend === 'local'
-          ? resolveOpenWorkflowIdForLocalCopilot({
-              branchWorkflowId: branch.kind === 'workflow' ? branch.workflowId : undefined,
-              chatWorkflowId:
-                currentChat && 'workflowId' in currentChat ? currentChat.workflowId : null,
-              resourceAttachments: body.resourceAttachments,
-              chatResources:
-                currentChat && 'resources' in currentChat ? currentChat.resources : undefined,
-            })
-          : undefined
-      const orchestratorWorkflowId =
-        localOpenWorkflowId ?? (branch.kind === 'workflow' ? branch.workflowId : undefined)
       const clientToolPickupExpected =
         body.mode === 'assistant'
           ? false
@@ -1748,12 +1468,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             ? body.clientCapabilities.includes('workflow-tool-pickup')
             : true
       const requestPayload = { ...preparedPayload, protocolVersion: PROTOCOL_VERSION }
-      if (
-        orchestratorWorkflowId &&
-        !(typeof requestPayload.workflowId === 'string' && requestPayload.workflowId.trim())
-      ) {
-        requestPayload.workflowId = orchestratorWorkflowId
-      }
       const lease = actualChatId ? getLocalChatStreamLease(actualChatId, userMessageId) : undefined
       const runController = lease ? { id: runId, token: lease.value } : undefined
       let admittedRun: Awaited<ReturnType<typeof admitChatTurn.execute>> | undefined
@@ -1791,6 +1505,9 @@ export async function handleUnifiedChatPost(req: NextRequest) {
               requestMode: body.mode,
             },
             notifyWorkspaceStatus: branch.notifyChatStatus,
+            // The effort this turn actually runs at, so the stored pick is always one it can use.
+            effortChoice: effortChoice && body.effort,
+            desktopDeviceId: backgroundExecutorDeviceId(body),
           },
         })
         // Admission committed. A failure to attach this HTTP sink must leave the turn recoverable.
@@ -1800,7 +1517,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         requestPayload,
         admittedRun,
         userId: authenticatedUserId,
-        userEmail: authenticatedUserEmail,
         streamId: userMessageId,
         executionId,
         runId,
@@ -1815,9 +1531,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         otelRoot: activeOtelRoot,
         orchestrateOptions: {
           userId: authenticatedUserId,
-          userEmail: authenticatedUserEmail,
-          copilotBackend,
-          ...(orchestratorWorkflowId ? { workflowId: orchestratorWorkflowId } : {}),
+          ...(branch.kind === 'workflow' ? { workflowId: branch.workflowId } : {}),
           ...(workspaceId ? { workspaceId } : {}),
           ...(branch.kind === 'organization' ? { organizationId: branch.organizationId } : {}),
           chatId: actualChatId,
@@ -1829,6 +1543,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           // Executor routing is decided HERE, once per turn, from the caller's declared
           // capabilities — dispatch never discovers client absence by burning a grace timer.
           clientToolPickupExpected,
+          desktopClaimsLocalReads: body.desktopCapabilities?.localReadClaims === true,
           executionContext,
           billingAttribution: executionContext.billingAttribution,
           onComplete: buildOnComplete({
@@ -1889,6 +1604,9 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           ...SSE_RESPONSE_HEADERS,
           traceparent: rootTraceparent,
           ...(actualChatId ? { [MOTHERSHIP_CHAT_ID_HEADER]: actualChatId } : {}),
+          ...(admittedRun?.desktopDeviceId
+            ? { [MOTHERSHIP_DESKTOP_EXECUTOR_HEADER]: 'device' }
+            : {}),
         },
       })
     }) // end otelContextApi.with
@@ -1911,6 +1629,15 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     }
 
     const applicationError = asOrchestrationError(error)
+    /* Another attempt with this id holds its claim and may admit the turn. Answer
+       as a duplicate (naming this id), so the client keeps the message under it
+       rather than reading a refusal it could edit into a second turn. */
+    if (applicationError instanceof ChatSendSupersededError) {
+      return NextResponse.json(
+        { error: 'This message was already sent.', activeStreamId: userMessageId },
+        { status: 409 }
+      )
+    }
     if (applicationError?.code === 'forbidden' || applicationError?.code === 'not_found') {
       return NextResponse.json({ error: 'Conversation access denied' }, { status: 403 })
     }

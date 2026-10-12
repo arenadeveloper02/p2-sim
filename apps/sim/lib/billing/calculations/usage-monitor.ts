@@ -184,7 +184,7 @@ async function checkUsageStatusUncached(
         : await getHighestPrioritySubscription(userId)
 
     const limit = await getUserUsageLimit(userId, sub)
-    logger.info('Using stored usage limit', { userId, limit })
+    logger.debug('Using stored usage limit', { userId, limit })
 
     const subIsOrgScoped = isOrgScopedSubscription(sub, userId)
     const scope: 'user' | 'organization' = subIsOrgScoped ? 'organization' : 'user'
@@ -289,7 +289,7 @@ function buildUsageData(params: {
   const isExceeded = currentUsage >= limit
   const isWarning = !isExceeded && percentUsed >= WARNING_THRESHOLD
 
-  logger.info('Final usage statistics', {
+  logger.debug('Final usage statistics', {
     currentUsage,
     limit,
     percentUsed,

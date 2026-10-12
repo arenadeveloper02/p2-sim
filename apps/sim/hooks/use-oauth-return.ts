@@ -35,7 +35,7 @@ import {
   handleUnipileHostedRedirect,
   readAndClearUnipileHostedRedirectParams,
 } from '@/lib/unipile/hosted-return-client'
-import { oauthConnectionsKeys } from '@/hooks/queries/oauth/oauth-connections'
+import { oauthConnectionsKeys } from '@/hooks/queries/oauth/connections'
 import {
   organizationCredentialKeys,
   workspaceCredentialKeys,

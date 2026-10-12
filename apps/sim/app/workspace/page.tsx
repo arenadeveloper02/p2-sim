@@ -21,6 +21,7 @@ import {
   UPGRADE_REASON_PARAM,
 } from '@/lib/billing/upgrade-reasons'
 import { isLocalLoginEnabled } from '@/lib/core/config/env-flags'
+import { ApplicationLoading } from '@/app/_shell/application-loading'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
 import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
@@ -196,21 +197,7 @@ export default function WorkspacePage() {
     )
   }
 
-  return (
-    <div className='desktop-title-bar-page flex w-full items-center justify-center'>
-      <DesktopTitleBarLane />
-      <div
-        className='size-[18px] animate-spin rounded-full'
-        style={{
-          background:
-            'conic-gradient(from 0deg, hsl(var(--muted-foreground)) 0deg 120deg, transparent 120deg 180deg, hsl(var(--muted-foreground)) 180deg 300deg, transparent 300deg 360deg)',
-          mask: 'radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px))',
-          WebkitMask:
-            'radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px))',
-        }}
-      />
-    </div>
-  )
+  return <ApplicationLoading />
 }
 
 async function handleWorkflowRedirect(

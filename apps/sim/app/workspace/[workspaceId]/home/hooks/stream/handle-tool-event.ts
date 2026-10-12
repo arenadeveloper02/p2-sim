@@ -1,8 +1,8 @@
 import { isCurrentBrowserToolName } from '@sim/browser-protocol'
 import { isTerminalToolName } from '@sim/terminal-protocol'
+import { toRecordOrNull } from '@sim/utils/object'
 import { isDesktopApp } from '@/lib/desktop'
 import {
-  MothershipStreamV1ToolExecutor,
   MothershipStreamV1ToolPhase,
   MothershipStreamV1ToolStatus,
 } from '@/lib/mothership/generated/mothership-stream-v1'
@@ -16,12 +16,11 @@ import {
   extractResourcesFromToolResult,
   isResourceToolName,
 } from '@/lib/mothership/resources/extraction'
-import type { MothershipResource } from '@/lib/mothership/resources/types'
 import {
   isClientExecutedToolCall,
-  isDesktopExecutedToolCall,
   isWorkflowToolName,
 } from '@/lib/mothership/tools/client-executed-tools'
+import { isDesktopToolCall } from '@/lib/mothership/tools/desktop-tools'
 import { invalidateResourceQueries } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
 import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
 import {
@@ -37,7 +36,7 @@ import {
 } from '@/app/workspace/[workspaceId]/home/hooks/stream/turn-model'
 import { resolveFileResourceSelectionId } from '@/app/workspace/[workspaceId]/home/resource-view-policy'
 import { deploymentKeys } from '@/hooks/queries/deployments'
-import { oauthCredentialKeys } from '@/hooks/queries/oauth/oauth-credentials'
+import { oauthCredentialKeys } from '@/hooks/queries/oauth/credentials'
 import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 import { folderKeys } from '@/hooks/queries/utils/folder-keys'
 import { invalidateWorkflowLists } from '@/hooks/queries/utils/invalidate-workflow-lists'
@@ -45,39 +44,11 @@ import { invalidateSelectorQueries } from '@/hooks/queries/utils/selector-keys'
 
 type ToolEvent = Extract<PersistedStreamEventEnvelope, { type: 'tool' }>
 
-/**
- * True when the call frame is meant to run in the browser. Arena Copilot emits
- * workflow tools with `executor: go` while it already runs them server-side —
- * those frames must not trigger a second client execution that would fail
- * binding checks on `/api/workflows/.../execute`.
- */
-function isClientExecutableToolCall(payload: ToolEvent['payload']): boolean {
-  if (!('executor' in payload)) return false
-  if (payload.executor === MothershipStreamV1ToolExecutor.client) return true
-  const ui = 'ui' in payload ? payload.ui : undefined
-  return ui?.clientExecutable === true
-}
-
 /** The display agent id for a tool's owning span (undefined on the main lane). */
 function agentIdForSpan(ctx: StreamLoopContext, spanId: string): string | undefined {
   if (spanId === MAIN_SPAN) return undefined
   const agent = ctx.state.model.nodes.get(spanId)
   return agent?.kind === 'agent' ? agent.agentId : undefined
-}
-
-/** Opens a newly created/written workspace resource in the mothership panel. */
-function surfaceCreatedResource(ctx: StreamLoopContext, resource: MothershipResource): void {
-  const { deps } = ctx
-  invalidateResourceQueries(deps.queryClient, deps.workspaceId, resource.type, resource.id)
-  if (resource.type === 'file') {
-    deps.promoteFileResource(resource.id, resource.title)
-    deps.onResourceEventRef.current?.(
-      resolveFileResourceSelectionId(deps.resourcesRef.current, resource.id, deps.workspaceId)
-    )
-    return
-  }
-  deps.addResource(resource)
-  deps.onResourceEventRef.current?.(resource.id)
 }
 
 /**
@@ -124,15 +95,15 @@ function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode, replay
       ? extractResourcesFromToolResult(name, params, output)
       : []
   for (const resource of extractedResources) {
-    surfaceCreatedResource(ctx, resource)
+    invalidateResourceQueries(deps.queryClient, deps.workspaceId, resource.type, resource.id)
   }
 
-  if (!replay && (name === ApplyFileEdit.id || name === PrepareFileEdit.id) && isSuccess) {
-    const out = output as Record<string, unknown> | undefined
-    const editData =
-      out && typeof out.data === 'object' && out.data !== null
-        ? (out.data as Record<string, unknown>)
-        : undefined
+  const isFileEdit = name === ApplyFileEdit.id || name === PrepareFileEdit.id
+  const editData = isFileEdit ? toRecordOrNull(toRecordOrNull(output)?.data) : null
+  /** A file another resource owns (a test's source) never opens as a file tab. */
+  const editedFileIsTab = editData?.fileTab !== false
+
+  if (!replay && isFileEdit && isSuccess && editedFileIsTab) {
     const editedFileId =
       (typeof editData?.id === 'string' ? editData.id : undefined) ??
       deps.previewSessionRef.current?.fileId
@@ -141,7 +112,11 @@ function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode, replay
         (typeof editData?.name === 'string' ? editData.name : undefined) ??
         deps.previewSessionRef.current?.fileName ??
         'File'
-      surfaceCreatedResource(ctx, { type: 'file', id: editedFileId, title: editedFileName })
+      deps.promoteFileResource(editedFileId, editedFileName)
+      deps.onResourceEventRef.current?.(
+        resolveFileResourceSelectionId(deps.resourcesRef.current, editedFileId, deps.workspaceId)
+      )
+      invalidateResourceQueries(deps.queryClient, deps.workspaceId, 'file', editedFileId)
     }
   }
 
@@ -165,9 +140,15 @@ function runToolResultSideEffects(ctx: StreamLoopContext, node: ToolNode, replay
     if (name === PrepareFileEdit.id) {
       deps.removePreviewSessionImmediate(node.id)
     }
-    const fileResource = extractedResources.find((r) => r.type === 'file')
+    const fileResource = editedFileIsTab
+      ? extractedResources.find((r) => r.type === 'file')
+      : undefined
     if (fileResource) {
-      surfaceCreatedResource(ctx, fileResource)
+      deps.promoteFileResource(fileResource.id, fileResource.title)
+      deps.onResourceEventRef.current?.(
+        resolveFileResourceSelectionId(deps.resourcesRef.current, fileResource.id, deps.workspaceId)
+      )
+      invalidateResourceQueries(deps.queryClient, deps.workspaceId, 'file', fileResource.id)
     } else if (calledBy !== FILE_SUBAGENT_ID) {
       deps.setResources((rs) => rs.filter((r) => r.id !== 'streaming-file'))
     }
@@ -215,12 +196,14 @@ export function handleToolEvent(ctx: StreamLoopContext, parsed: ToolEvent): void
   const isPartial =
     payload.partial === true || payload.status === MothershipStreamV1ToolStatus.generating
   const args = payload.arguments as Record<string, unknown> | undefined
-  // A web tab leaves desktop-only tools to the desktop app. Arena also skips frames the
-  // server already executed (`executor: go` without a client-executable flag).
+  // Every client tailing the chat sees the call. A client without the desktop app leaves desktop
+  // tools to it: its answer could only be an error, and that error would beat the real result.
+  // A turn a desktop's background executor runs belongs to that desktop: this view only shows it.
+  const isDesktopCall = isDesktopToolCall(name, args)
   const shouldStartClientTool =
-    isClientExecutableToolCall(payload) &&
     isClientExecutedToolCall(name, args) &&
-    (isDesktopApp() || !isDesktopExecutedToolCall(name, args)) &&
+    (isDesktopApp() || !isDesktopCall) &&
+    !(isDesktopCall && deps.options.desktopToolsOnDevice) &&
     !isPartial &&
     !deps.options.suppressedWorkflowToolStartIds?.has(rawId) &&
     node?.kind === 'tool' &&

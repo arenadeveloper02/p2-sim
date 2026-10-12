@@ -154,6 +154,11 @@ export async function waitForToolConfirmation(
   options: {
     acceptStatus?: (status: AsyncConfirmationState['status']) => boolean
     executionScope?: { runId: string; userId: string }
+    /**
+     * Settles the call if a deadline only the server enforces has passed, on every durable check:
+     * at subscribe, on each wake-up, and on the poll. Its settlement wakes this wait.
+     */
+    settleOverdue?: () => Promise<unknown>
   } = {}
 ): Promise<AsyncConfirmationState | null> {
   const acceptStatus = options.acceptStatus ?? (() => true)

@@ -26,6 +26,7 @@ import {
   requireBillingAttributionHeader,
 } from '@/lib/billing/core/billing-attribution'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
+import { logFailureOnce } from '@/lib/core/errors/failure-log'
 import {
   createTimeoutAbortController,
   getTimeoutErrorMessage,
@@ -1670,10 +1671,11 @@ async function handleExecutePost(
           return payloadTooLargeResponse()
         }
 
-        reqLogger.error(
-          'Non-SSE execution failed',
-          loggingSession.projectDiagnosticError(error, { isTimeout: executionTimedOut })
-        )
+        logFailureOnce(reqLogger, 'Non-SSE execution failed', error, {
+          metadata: () =>
+            loggingSession.projectDiagnosticError(error, { isTimeout: executionTimedOut }),
+          executionId,
+        })
 
         const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
         const status = executionTimedOut ? 408 : getExecutionErrorStatus(error)
@@ -2532,10 +2534,10 @@ async function handleExecutePost(
             ? getTimeoutErrorMessage(timeoutController.timeoutMs)
             : getErrorMessage(error, 'Unknown error')
 
-          reqLogger.error(
-            'SSE execution failed',
-            loggingSession.projectDiagnosticError(error, { isTimeout })
-          )
+          logFailureOnce(reqLogger, 'SSE execution failed', error, {
+            metadata: () => loggingSession.projectDiagnosticError(error, { isTimeout }),
+            executionId,
+          })
 
           const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
           let compactErrorLogs: BlockLog[] | undefined

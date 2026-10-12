@@ -27,6 +27,7 @@ export type ProviderId =
   | 'fireworks'
   | 'together'
   | 'baseten'
+  | 'nebius'
   | 'vllm'
   | 'sambanova'
   | 'litellm'

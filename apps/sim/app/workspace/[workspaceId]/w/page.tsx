@@ -5,15 +5,17 @@ import { Chip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { ReactFlowProvider } from '@xyflow/react'
 import { useParams, useRouter } from 'next/navigation'
+import { ApplicationLoading } from '@/app/_shell/application-loading'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { Panel, Terminal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components'
 import { useWorkflowOperations } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
-import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import { useWorkflows } from '@/hooks/queries/workflows'
 
 const logger = createLogger('WorkflowsPage')
 
 export default function WorkflowsPage() {
+  const brand = useOrgBrandConfig()
   const router = useRouter()
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -90,7 +92,7 @@ export default function WorkflowsPage() {
               )}
             </div>
           ) : (
-            <WorkspaceConicLoader />
+            <ApplicationLoading brand={brand} fullScreen={false} />
           )}
         </div>
         <ReactFlowProvider>

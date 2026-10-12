@@ -87,7 +87,7 @@ const grafanaTelemetry = grafanaFullyConfigured
 export default defineConfig({
   project: env.TRIGGER_PROJECT_ID!,
   runtime: 'node-24',
-  logLevel: 'log',
+  logLevel: 'info',
   // Keep in sync with EXECUTION_TIMEOUT_ASYNC_* (seconds). Default 5400 = 90 min.
   maxDuration: Number.parseInt(env.EXECUTION_TIMEOUT_ASYNC_ENTERPRISE || '5400', 10) || 5400,
   retries: {
@@ -165,6 +165,10 @@ export default defineConfig({
           './lib/execution/sandbox/bundles/pptxgenjs.cjs',
           './lib/execution/sandbox/bundles/docx.cjs',
           './lib/execution/sandbox/bundles/pdf-lib.cjs',
+          './lib/internal/oracledb/oracle-worker.cjs',
+          './scripts/oracledb-patch-self-test.cjs',
+          './scripts/verify-oracledb-patch.cjs',
+          '../../node_modules/oracledb/**/*',
         ],
       }),
       additionalPackages({

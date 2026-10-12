@@ -4,6 +4,7 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { BrandedLayout } from '@/components/branded-layout'
+import { SettingsNavigationGuard } from '@/components/settings/settings-navigation-guard'
 import {
   creditsPerDollarHtmlAttributes,
   setCreditsPerDollar,
@@ -38,6 +39,7 @@ import '@/app/_styles/globals.css'
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  interactiveWidget: 'resizes-content',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#ffffff' },
     { media: '(prefers-color-scheme: dark)', color: '#0c0c0c' },
@@ -52,6 +54,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const themeCSS = generateThemeCSS()
   const application = (
     <ToastProvider>
+      <SettingsNavigationGuard />
       <DesktopUpdateNotification />
       <PasteAdmissionGuard />
       <PostHogProvider consentRequired={isHosted}>

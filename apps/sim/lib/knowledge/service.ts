@@ -38,9 +38,10 @@ import {
 } from '@/lib/core/resource-scope'
 import { resourceScopeCondition } from '@/lib/core/resource-scope.server'
 import { generateRestoreName } from '@/lib/core/utils/restore-name'
+import { textArrayLiteral } from '@/lib/db/arrays'
 import { findActiveFolder, resolveRestoredFolderId } from '@/lib/folders/queries'
 import { isKnowledgeMemberAccessAvailable } from '@/lib/knowledge/access/availability'
-import { knowledgeAccessCondition, textArrayLiteral } from '@/lib/knowledge/access/predicate'
+import { knowledgeAccessCondition } from '@/lib/knowledge/access/predicate'
 import type { KnowledgeAccessProvider } from '@/lib/knowledge/access/types'
 import { mirrorsSourceAcls } from '@/lib/knowledge/connectors/access-modes'
 import {
@@ -1227,7 +1228,9 @@ export async function restoreKnowledgeBase(
     try {
       await db.transaction(async (tx) => {
         if (kb.organizationId) await lockOrganizationSearchApproval(tx, kb.organizationId)
-        await tx.execute(sql`SELECT 1 FROM knowledge_base WHERE id = ${knowledgeBaseId} FOR UPDATE`)
+        await tx.execute(
+          sql`SELECT 1 FROM knowledge_base WHERE id = ${knowledgeBaseId} FOR NO KEY UPDATE`
+        )
 
         attemptedRestoreName = await generateRestoreName(kb.name, async (candidate) => {
           if (!kb.workspaceId) return false

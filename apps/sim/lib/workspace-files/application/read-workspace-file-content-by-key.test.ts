@@ -76,11 +76,9 @@ describe('readWorkspaceFileContentByKey', () => {
       })
     ).resolves.toEqual({ file, content: Buffer.from('source') })
 
-    expect(mocks.getMetadata).toHaveBeenCalledWith(file.key)
-    expect(mocks.loadContext).toHaveBeenCalledWith(file.id, { includeChatUploads: true })
     expect(mocks.getFile).toHaveBeenCalledWith(file.workspaceId, file.id, {
       throwOnError: true,
-      includeChatUploads: true,
+      includeOwnedFiles: true,
     })
     expect(mocks.fetchContent).toHaveBeenCalledWith(file, {
       maxBytes: MAX_BUFFERED_TRANSFER_BYTES,
@@ -108,11 +106,11 @@ describe('readWorkspaceFileContentByKey', () => {
     ).resolves.toEqual({ file })
 
     expect(mocks.getMetadata).toHaveBeenCalledWith(file.key)
-    expect(mocks.loadContext).toHaveBeenCalledWith(file.id, { includeChatUploads: true })
+    expect(mocks.loadContext).toHaveBeenCalledWith(file.id, undefined)
     expect(mocks.resolvePermission).not.toHaveBeenCalled()
     expect(mocks.getFile).toHaveBeenCalledWith(file.workspaceId, file.id, {
       throwOnError: true,
-      includeChatUploads: true,
+      includeOwnedFiles: true,
     })
     expect(mocks.fetchContent).not.toHaveBeenCalled()
   })
@@ -163,49 +161,6 @@ describe('readWorkspaceFileContentByKey', () => {
 
     expect(mocks.loadContext).not.toHaveBeenCalled()
     expect(mocks.resolvePermission).not.toHaveBeenCalled()
-    expect(mocks.getFile).not.toHaveBeenCalled()
-  })
-
-  it('serves a mothership chat attachment stored under a workspace/ key', async () => {
-    const mothershipFile = { ...file, name: 'chat-upload.pdf' }
-    mocks.getMetadata.mockResolvedValue({
-      id: mothershipFile.id,
-      workspaceId: mothershipFile.workspaceId,
-      key: mothershipFile.key,
-      context: 'mothership',
-    })
-    mocks.getFile.mockResolvedValue(mothershipFile)
-
-    await expect(
-      readWorkspaceFileContentByKey.execute({
-        principal,
-        input: { key: mothershipFile.key, assertedWorkspaceId: mothershipFile.workspaceId },
-      })
-    ).resolves.toEqual({ file: mothershipFile, content: Buffer.from('source') })
-
-    expect(mocks.loadContext).toHaveBeenCalledWith(mothershipFile.id, { includeChatUploads: true })
-    expect(mocks.getFile).toHaveBeenCalledWith(mothershipFile.workspaceId, mothershipFile.id, {
-      throwOnError: true,
-      includeChatUploads: true,
-    })
-  })
-
-  it('conceals a non-workspace-scoped context before authorization', async () => {
-    mocks.getMetadata.mockResolvedValue({
-      id: file.id,
-      workspaceId: file.workspaceId,
-      key: file.key,
-      context: 'knowledge-base',
-    })
-
-    await expect(
-      readWorkspaceFileRecordByKey.execute({
-        principal,
-        input: { key: file.key, assertedWorkspaceId: file.workspaceId },
-      })
-    ).rejects.toMatchObject({ code: 'not_found' })
-
-    expect(mocks.loadContext).not.toHaveBeenCalled()
     expect(mocks.getFile).not.toHaveBeenCalled()
   })
 })

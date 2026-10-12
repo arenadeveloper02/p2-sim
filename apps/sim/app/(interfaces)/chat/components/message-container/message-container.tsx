@@ -312,7 +312,7 @@ export function ChatMessageContainer({
       ) : null}
 
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20'>
+        <div className='-translate-x-1/2 absolute bottom-4 left-1/2 z-20 md:bottom-16'>
           <Button
             onClick={scrollToBottom}
             size='sm'

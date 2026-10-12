@@ -70,7 +70,7 @@ const TIMEZONE_OPTIONS = getTimezoneOptions()
  * to grid) so they line up as one column instead of three differently-sized
  * pills. Wide enough for the longest common timezone label.
  */
-const DROPDOWN_TRIGGER_CLASS = 'w-[240px] shrink-0'
+const DROPDOWN_TRIGGER_CLASS = 'w-full shrink-0 md:w-[240px]'
 
 /**
  * Extracts initials from a user's name.
@@ -434,7 +434,7 @@ export function General({ hideProfile = false }: GeneralProps) {
 
         <SettingsSection label='Preferences'>
           <div className='flex flex-col gap-4'>
-            <div className='flex items-center justify-between'>
+            <div className='flex flex-col gap-2 md:flex-row md:items-center md:justify-between'>
               <Label>Theme</Label>
               <div className={DROPDOWN_TRIGGER_CLASS}>
                 <ChipSelect
@@ -454,7 +454,7 @@ export function General({ hideProfile = false }: GeneralProps) {
               </div>
             </div>
 
-            <div className='flex items-center justify-between gap-4'>
+            <div className='flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4'>
               <Label>Timezone</Label>
               <div className={DROPDOWN_TRIGGER_CLASS}>
                 <ChipCombobox
@@ -559,7 +559,7 @@ export function General({ hideProfile = false }: GeneralProps) {
               />
             </div>
 
-            <div className='flex items-center justify-between'>
+            <div className='flex flex-col gap-2 md:flex-row md:items-center md:justify-between'>
               <Label>Snap to grid</Label>
               <div className={DROPDOWN_TRIGGER_CLASS}>
                 <ChipSelect

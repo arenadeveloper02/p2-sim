@@ -121,7 +121,7 @@ import { useDeployWorkflow } from '@/hooks/queries/deployments'
 import { useDynamicSubBlockOptionDisplayName } from '@/hooks/queries/dynamic-subblock-options'
 import { useHubSpotAccountDisplayName } from '@/hooks/queries/hubspot-accounts'
 import { useMcpToolServers, useMcpToolsQuery } from '@/hooks/queries/mcp'
-import { useCredentialName } from '@/hooks/queries/oauth/oauth-credentials'
+import { useCredentialName } from '@/hooks/queries/oauth/credentials'
 import { useSandboxes } from '@/hooks/queries/sandboxes'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
 import { useSkills } from '@/hooks/queries/skills'
@@ -910,9 +910,12 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       workflow_id: currentWorkflowId,
       kind: sunset.kind,
     })
-    sendMothershipMessage(sunset.prompt, [
-      { kind: 'workflow_block', workflowId: currentWorkflowId, blockId: id, label: name },
-    ])
+    sendMothershipMessage({
+      content: sunset.prompt,
+      contexts: [
+        { kind: 'workflow_block', workflowId: currentWorkflowId, blockId: id, label: name },
+      ],
+    })
   }
 
   const canonicalIndex = useMemo(

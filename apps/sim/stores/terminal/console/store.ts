@@ -481,7 +481,7 @@ const notifyBlockError = ({
       action: getDeploymentShape().chatEnabled
         ? {
             label: 'Fix in Chat',
-            onClick: () => sendMothershipMessage(copilotMessage),
+            onClick: () => sendMothershipMessage({ content: copilotMessage }),
           }
         : undefined,
     })

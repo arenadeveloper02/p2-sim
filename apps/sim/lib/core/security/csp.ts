@@ -1,3 +1,4 @@
+import { CHANGELOG_MEDIA_ORIGIN } from '../../changelog/media'
 import { CONSENT_BACKEND_URL } from '../../consent/constants'
 import { env, envBoolean, getEnv } from '../config/env'
 import { isDev, isHosted, isReactGrabEnabled } from '../config/env-flags'
@@ -152,6 +153,8 @@ const STATIC_CONNECT_SRC = [
   'https://*.thearena.ai',
   'wss://*.thearena.ai',
   'http://127.0.0.1:8010',
+  CHANGELOG_MEDIA_ORIGIN,
+  'https://api.browser-use.com',
   'https://api.elevenlabs.io',
   'wss://api.elevenlabs.io',
   'https://api.exa.ai',
@@ -246,7 +249,7 @@ const buildTimeCSPDirectives: CSPDirectives = {
 
   'img-src': [...STATIC_IMG_SRC, ...(isDev ? ['*'] : [])],
 
-  'media-src': ["'self'", 'blob:'],
+  'media-src': ["'self'", 'blob:', CHANGELOG_MEDIA_ORIGIN],
   'worker-src': ["'self'", 'blob:'],
   'font-src': ["'self'", 'https://fonts.gstatic.com'],
 

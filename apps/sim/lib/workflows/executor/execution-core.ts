@@ -14,6 +14,8 @@ import type { Edge } from '@xyflow/react'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { type EffectivePiiRedaction, resolveEffectivePiiRedaction } from '@/lib/billing/retention'
+import { logFailureOnce } from '@/lib/core/errors/failure-log'
+import { UserFailure } from '@/lib/core/errors/user-failure'
 import {
   getExecutionDeadlineAt,
   getTimeoutErrorMessage,
@@ -43,6 +45,7 @@ import {
   loadDeployedWorkflowState,
   loadWorkflowDeploymentVersionState,
   loadWorkflowFromNormalizedTables,
+  type NormalizedWorkflowData,
 } from '@/lib/workflows/persistence/utils'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
@@ -54,6 +57,7 @@ import type {
   ChildWorkflowContext,
   ContextExtensions,
   ExecutionCallbacks,
+  ExecutionTestHooks,
   IterationContext,
   SerializableExecutionState,
 } from '@/executor/execution/types'
@@ -139,10 +143,17 @@ export interface ExecuteWorkflowCoreOptions {
   includeFileBase64?: boolean
   base64MaxBytes?: number
   stopAfterBlockId?: string
+  testHooks?: ExecutionTestHooks
   /** Trusted encrypted provenance captured by a server-only pre-execution boundary. */
   trustedInitialResolvedSecretTraceProvenance?: ResolvedSecretTraceProvenanceV1
   /** Immutable deployment admitted by the durable parent log for a resumed execution. */
   resumeDeploymentVersionId?: string
+  /**
+   * Draft state the caller already loaded for this draft-state run. Reused instead of
+   * reading the draft tables again, so the graph that executes is the snapshot the
+   * caller validated its trigger and output selectors against.
+   */
+  draftState?: NormalizedWorkflowData
   /**
    * Environment the caller already resolved for this run, reused instead of loading
    * and decrypting it again. Used only when it was resolved for exactly the
@@ -658,9 +669,10 @@ async function executeWorkflowCoreImpl(
     abortSignal,
     includeFileBase64,
     base64MaxBytes,
-    stopAfterBlockId,
+    testHooks,
     runFromBlock,
     resumeDeploymentVersionId,
+    draftState,
   } = options
   loggingSession.setExecutionDeadlineAt(getExecutionDeadlineAt(abortSignal))
   const { metadata, input, workflowVariables, selectedOutputs } = snapshot
@@ -673,6 +685,8 @@ async function executeWorkflowCoreImpl(
     throw new Error(`Execution metadata missing workspaceId for workflow ${workflowId}`)
   }
   const resumeFromSnapshot = metadata.resumeFromSnapshot === true
+  const stopAfterBlockId =
+    options.stopAfterBlockId ?? (resumeFromSnapshot ? metadata.stopAfterBlockId : undefined)
   if (!resumeFromSnapshot && resumeDeploymentVersionId !== undefined) {
     throw new Error('Deployment version authority can only be supplied for a resumed execution')
   }
@@ -755,7 +769,7 @@ async function executeWorkflowCoreImpl(
       }
 
       if (useDraftState) {
-        const draftData = await loadWorkflowFromNormalizedTables(workflowId)
+        const draftData = draftState ?? (await loadWorkflowFromNormalizedTables(workflowId))
 
         if (!draftData) {
           throw new Error('Workflow not found or not yet saved')
@@ -1026,9 +1040,7 @@ async function executeWorkflowCoreImpl(
       const startBlock = TriggerUtils.findStartBlock(mergedStates, executionKind, false)
 
       if (!startBlock) {
-        const errorMsg = 'No start block found. Add a start block to this workflow.'
-        logger.error(`[${requestId}] ${errorMsg}`)
-        throw new Error(errorMsg)
+        throw new UserFailure('No start block found. Add a start block to this workflow.')
       }
 
       resolvedTriggerBlockId = startBlock.blockId
@@ -1072,6 +1084,14 @@ async function executeWorkflowCoreImpl(
         resolvedStopAfterBlockId = buildLoopSentinelEndId(stopAfterBlockId)
       } else if (serializedWorkflow.parallels?.[stopAfterBlockId]) {
         resolvedStopAfterBlockId = buildParallelSentinelEndId(stopAfterBlockId)
+      } else if (
+        !serializedWorkflow.blocks.some((block) => block.id === stopAfterBlockId && block.enabled)
+      ) {
+        // The engine stops on an exact node id and skips disabled blocks, so an absent or
+        // disabled target would run everything.
+        throw new Error(
+          `Stop block ${stopAfterBlockId} is not an enabled block in the workflow being executed`
+        )
       }
     }
 
@@ -1385,12 +1405,20 @@ async function executeWorkflowCoreImpl(
       ...(workflowInputResolvedSecretTraceProvenance
         ? { workflowInputResolvedSecretTraceProvenance }
         : {}),
-      metadata,
+      metadata: {
+        ...metadata,
+        stopAfterBlockId,
+        stopAfterBlockReached:
+          resumeFromSnapshot &&
+          stopAfterBlockId !== undefined &&
+          snapshot.state?.completedPauseContexts?.includes(stopAfterBlockId) === true,
+      },
       startRunMetadata,
       abortSignal,
       includeFileBase64,
       base64MaxBytes,
       stopAfterBlockId: resolvedStopAfterBlockId,
+      ...(testHooks ? { testHooks } : {}),
       onChildWorkflowInstanceReady,
       callChain: metadata.callChain,
       // The live block stream has a single known, authenticated Sim viewer only on
@@ -1484,15 +1512,16 @@ async function executeWorkflowCoreImpl(
 
     return result
   } catch (error: unknown) {
-    const errorCause = describeErrorCause(error)
-    logger.error(
-      `[${requestId}] Execution failed:`,
-      projectResolvedSecretDiagnosticError(
-        error,
-        resolvedSecretTraceRegistry,
-        errorCause ? { cause: errorCause } : undefined
-      )
-    )
+    logFailureOnce(logger, `[${requestId}] Execution failed:`, error, {
+      metadata: () => {
+        const errorCause = describeErrorCause(error)
+        return projectResolvedSecretDiagnosticError(error, resolvedSecretTraceRegistry, {
+          workflowId,
+          ...(errorCause ? { cause: errorCause } : {}),
+        })
+      },
+      executionId,
+    })
 
     await waitForLifecycleCallbacks()
 

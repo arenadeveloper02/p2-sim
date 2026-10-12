@@ -22,7 +22,7 @@ const NotificationStatusMock = {
  *
  * @example
  * ```ts
- * import { copilotHttpMockFns } from '@sim/testing'
+ * import { copilotHttpMockFns } from '@sim/testing/mocks/copilot-http.mock'
  *
  * copilotHttpMockFns.mockAuthenticateCopilotRequestSessionOnly.mockResolvedValue({
  *   userId: 'user-1',
