@@ -2374,6 +2374,7 @@ export const ShopifyBlock: BlockConfig = {
       description: 'Pagination info (hasNextPage, hasPreviousPage, startCursor, endCursor)',
     },
     deletedId: { type: 'string', description: 'ID of deleted resource' },
+    success: { type: 'boolean', description: 'Operation success status' },
   },
 }
 

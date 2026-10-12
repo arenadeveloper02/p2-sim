@@ -6,6 +6,7 @@ import { AgentPhoneBlock, AgentPhoneBlockMeta } from '@/blocks/blocks/agentphone
 import { AgiloftBlock, AgiloftBlockMeta } from '@/blocks/blocks/agiloft'
 import { AhrefsBlock, AhrefsBlockMeta } from '@/blocks/blocks/ahrefs'
 import { AirtableBlock, AirtableBlockMeta } from '@/blocks/blocks/airtable'
+import { AirweaveBlock, AirweaveBlockMeta } from '@/blocks/blocks/airweave'
 import { AlgoliaBlock, AlgoliaBlockMeta } from '@/blocks/blocks/algolia'
 import { AmplitudeBlock, AmplitudeBlockMeta } from '@/blocks/blocks/amplitude'
 import { ApiBlock } from '@/blocks/blocks/api'
@@ -404,6 +405,7 @@ import { ZoomInfoBlock, ZoomInfoBlockMeta } from '@/blocks/blocks/zoominfo'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 
 const ARENA_CUSTOM_BLOCK_REGISTRY: Record<string, BlockConfig> = {
+  airweave: AirweaveBlock,
   arena: ArenaBlock,
   bing_ads: BingAdsBlock,
   facebook_ads: FacebookAdsBlock,
@@ -807,6 +809,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
  */
 
 const ARENA_CUSTOM_BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
+  airweave: AirweaveBlockMeta,
   facebook_ads: FacebookAdsBlockMeta,
   unipile: UnipileBlockMeta,
 }
