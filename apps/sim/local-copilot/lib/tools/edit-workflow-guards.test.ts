@@ -1,10 +1,14 @@
 /**
  * @vitest-environment node
  */
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockSanitizeForCopilot } = vi.hoisted(() => ({
+  mockSanitizeForCopilot: vi.fn((value: unknown) => value),
+}))
 
 vi.mock('@/lib/workflows/sanitization/json-sanitizer', () => ({
-  sanitizeForCopilot: (value: unknown) => value,
+  sanitizeForCopilot: mockSanitizeForCopilot,
 }))
 
 vi.mock('@/lib/copilot/chat/document-format-guidance', () => ({
@@ -32,7 +36,13 @@ import {
   detectMandatoryFollowUp,
   editWorkflowNeedsFollowUp,
   formatToolResultForLlm,
+  isAlreadyCopilotSanitizedWorkflowState,
 } from '@/local-copilot/lib/tools/format-tool-result'
+
+beforeEach(() => {
+  mockSanitizeForCopilot.mockClear()
+  mockSanitizeForCopilot.mockImplementation((value: unknown) => value)
+})
 
 describe('editWorkflowNeedsFollowUp precondition gates', () => {
   it('does not treat get_blocks_metadata gate as a bare edit repair', () => {
@@ -64,6 +74,72 @@ describe('editWorkflowNeedsFollowUp precondition gates', () => {
     })
     const followUp = detectMandatoryFollowUp('edit_workflow', formatted)
     expect(followUp?.resolveWith).toEqual(['get_workflow_context', 'edit_workflow'])
+  })
+})
+
+describe('edit_workflow already-sanitized workflowState', () => {
+  const copilotShapedState = {
+    blocks: {
+      '48ddd46d-7f95-46ac-be50-faacb8bae6f5': {
+        type: 'schedule',
+        name: 'Schedule',
+        enabled: true,
+        inputs: { scheduleType: 'custom' },
+        connections: { source: 'd3647959-e47b-4c3f-b87f-9ecc9bb230e9' },
+      },
+    },
+  }
+
+  it('detects Copilot-shaped workflowState', () => {
+    expect(isAlreadyCopilotSanitizedWorkflowState(copilotShapedState)).toBe(true)
+    expect(
+      isAlreadyCopilotSanitizedWorkflowState({
+        blocks: {
+          'block-1': {
+            type: 'function',
+            name: 'Fetch',
+            subBlocks: { code: { id: 'code', type: 'code', value: '1' } },
+          },
+        },
+        edges: [],
+      })
+    ).toBe(false)
+  })
+
+  it('passes through Copilot-shaped workflowState without re-sanitizing', () => {
+    mockSanitizeForCopilot.mockImplementation(() => {
+      throw new TypeError('Object.entries requires that input parameter not be null or undefined')
+    })
+
+    const formatted = formatToolResultForLlm('edit_workflow', {
+      success: true,
+      partialApply: true,
+      workflowState: copilotShapedState,
+      skippedItems: [
+        {
+          type: 'block_not_found',
+          operationType: 'delete',
+          blockId: 'schedule-trigger-1',
+          reason: 'Block "schedule-trigger-1" does not exist',
+          details: {
+            suggestions: [
+              {
+                blockId: '48ddd46d-7f95-46ac-be50-faacb8bae6f5',
+                blockName: 'Schedule',
+                blockType: 'schedule',
+              },
+            ],
+          },
+        },
+      ],
+    })
+
+    expect(mockSanitizeForCopilot).not.toHaveBeenCalled()
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(parsed.copilotSanitizedWorkflowState).toEqual(copilotShapedState)
+    expect(parsed.needsFollowUpEdit).toBe(true)
+    expect(String(parsed.followUpHint)).toContain('48ddd46d-7f95-46ac-be50-faacb8bae6f5')
+    expect(String(parsed.followUpHint)).toMatch(/Do not invent ids/i)
   })
 })
 

@@ -145,6 +145,91 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * True when `workflowState` is already Copilot-shaped (`sanitizeForCopilot` output),
+ * not a full editor {@link WorkflowState}. Re-sanitizing Copilot blocks used to
+ * crash with `Object.entries(undefined)` because they lack `subBlocks`.
+ */
+export function isAlreadyCopilotSanitizedWorkflowState(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  const blocks = record.blocks
+  if (!blocks || typeof blocks !== 'object' || Array.isArray(blocks)) return false
+
+  const blockValues = Object.values(blocks as Record<string, unknown>)
+  if (blockValues.length === 0) {
+    // Empty Copilot payload is `{ blocks: {} }` with no edges array.
+    return !Array.isArray(record.edges)
+  }
+
+  for (const block of blockValues) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue
+    const entry = block as Record<string, unknown>
+    if ('subBlocks' in entry) return false
+    if (typeof entry.type === 'string') return true
+  }
+
+  return false
+}
+
+function resolveCopilotSanitizedWorkflowState(workflowState: unknown): unknown {
+  if (!workflowState || typeof workflowState !== 'object') return undefined
+  if (isAlreadyCopilotSanitizedWorkflowState(workflowState)) {
+    return workflowState
+  }
+  const state = workflowState as WorkflowState
+  return sanitizeForCopilot({
+    blocks: state.blocks ?? {},
+    edges: state.edges ?? [],
+    loops: state.loops ?? {},
+    parallels: state.parallels ?? {},
+  })
+}
+
+/**
+ * Pulls model-facing hints from `block_not_found` skipped items that include
+ * `details.suggestions` (from the edit engine).
+ */
+function formatBlockNotFoundFollowUpHint(skippedItems: unknown): string | undefined {
+  if (!Array.isArray(skippedItems) || skippedItems.length === 0) return undefined
+
+  const lines: string[] = []
+  for (const item of skippedItems) {
+    const row = asRecord(item)
+    if (row.type !== 'block_not_found') continue
+    const details = asRecord(row.details)
+    const suggestions = Array.isArray(details.suggestions) ? details.suggestions : []
+    const missingId = typeof row.blockId === 'string' ? row.blockId : 'unknown'
+    if (suggestions.length === 0) {
+      if (typeof row.reason === 'string' && row.reason.trim()) {
+        lines.push(row.reason.trim())
+      }
+      continue
+    }
+    const listed = suggestions
+      .map((suggestion) => {
+        const entry = asRecord(suggestion)
+        const id = typeof entry.blockId === 'string' ? entry.blockId : ''
+        const name = typeof entry.blockName === 'string' ? entry.blockName : ''
+        const type = typeof entry.blockType === 'string' ? entry.blockType : ''
+        if (!id) return null
+        return `block_id="${id}" (name "${name || id}", type ${type || 'unknown'})`
+      })
+      .filter((value): value is string => Boolean(value))
+    if (listed.length === 1) {
+      lines.push(
+        `Missing block "${missingId}" — delete/edit using ${listed[0]} instead. Do not invent ids.`
+      )
+    } else if (listed.length > 1) {
+      lines.push(
+        `Missing block "${missingId}" — candidates: ${listed.join('; ')}. Use a real block_id.`
+      )
+    }
+  }
+
+  return lines.length > 0 ? lines.join(' ') : undefined
+}
+
+/**
  * Builds the value passed into {@link formatToolResultForLlm} so failures with
  * an empty `result` still surface `error`, and bare success does not become `{}`.
  */
@@ -193,10 +278,7 @@ const FILE_TOOLS_NEEDING_EMPTY_GUARD = new Set([
  * When a file tool succeeds with a near-empty body, add an explicit hint so the
  * model does not invent "tools returned empty results."
  */
-function guardEmptyFileToolPayload(
-  toolName: string,
-  formatted: unknown
-): unknown {
+function guardEmptyFileToolPayload(toolName: string, formatted: unknown): unknown {
   if (!FILE_TOOLS_NEEDING_EMPTY_GUARD.has(toolName)) return formatted
   const record = asRecord(formatted)
   const keys = Object.keys(record).filter(
@@ -615,21 +697,19 @@ export function formatToolResultForLlm(
     const next: Record<string, unknown> = { ...rest }
 
     if (workflowState && typeof workflowState === 'object') {
-      const state = workflowState as WorkflowState
-      next.copilotSanitizedWorkflowState = sanitizeForCopilot({
-        blocks: state.blocks ?? {},
-        edges: state.edges ?? [],
-        loops: state.loops ?? {},
-        parallels: state.parallels ?? {},
-      })
+      // edit_workflow already returns sanitizeForCopilot(graph) under workflowState.
+      // Pass that through — re-sanitizing Copilot-shaped blocks crashes.
+      next.copilotSanitizedWorkflowState = resolveCopilotSanitizedWorkflowState(workflowState)
     } else if (record.copilotSanitizedWorkflowState) {
       next.copilotSanitizedWorkflowState = record.copilotSanitizedWorkflowState
     }
 
     if (editWorkflowNeedsFollowUp(record)) {
       next.needsFollowUpEdit = true
-      next.followUpHint =
-        'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
+      const blockNotFoundHint = formatBlockNotFoundFollowUpHint(record.skippedItems)
+      next.followUpHint = blockNotFoundHint
+        ? `${blockNotFoundHint} Call edit_workflow again with corrected operations before finishing.`
+        : 'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
     } else if (classifyEditWorkflowPrecondition(record)) {
       const kind = classifyEditWorkflowPrecondition(record)!
       next.needsFollowUpEdit = true
@@ -658,8 +738,7 @@ export function formatToolResultForLlm(
       // offload. The model already has workflowId + startBlockId.
       next.copilotSanitizedWorkflowState = undefined
       next.needsFollowUpPopulate = true
-      next.followUpHint =
-        `New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.`
+      next.followUpHint = `New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.`
     }
 
     formatted = next
@@ -671,8 +750,8 @@ export function formatToolResultForLlm(
       ...record,
       followUpHint:
         metadataKeys.length === 0
-          ? 'No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent\'s tools array — do not add them as canvas blocks.'
-          : 'If you just created a workflow, call edit_workflow now to add blocks. To attach Image Generator / Chart Generator / Exa to an existing Agent, edit that Agent\'s tools array (type image_generator_v2 / chart_generator / exa) and update its messages/prompt so it chooses those tools from the user question — do not add those as canvas blocks and do not add a Function block as a substitute. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+          ? "No block metadata returned for the requested ids (often sunset/legacy names). Retry with current successors (e.g. image_generator → image_generator_v2, gmail → gmail_v2). To attach Image/Chart/Exa/etc. to an Agent, edit that Agent's tools array — do not add them as canvas blocks."
+          : "If you just created a workflow, call edit_workflow now to add blocks. To attach Image Generator / Chart Generator / Exa to an existing Agent, edit that Agent's tools array (type image_generator_v2 / chart_generator / exa) and update its messages/prompt so it chooses those tools from the user question — do not add those as canvas blocks and do not add a Function block as a substitute. Do not load_copilot_artifact unless a specific field id is missing from this result.",
     }
   } else if (toolName === 'edit_content') {
     const record = asRecord(result)
