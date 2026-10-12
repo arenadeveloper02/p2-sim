@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { env } from '@/lib/core/config/env'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken, email: createdBy } = tokenObject
+  const { userId, email: createdBy } = tokenObject
 
   const payload = {
     ...restData,
@@ -21,13 +22,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const res = await fetch(`${arenaBackendBaseUrl}/sol/v1/tasks/updated`, {
+    const res = await arenaFetch(userId, '/sol/v1/tasks/updated', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
 
@@ -36,6 +33,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json({ error: 'Failed to create task', details: error }, { status: 500 })
   }
 }

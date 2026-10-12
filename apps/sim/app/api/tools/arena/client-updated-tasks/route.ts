@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 const logger = createLogger('ArenaClientUpdatedTasksAPI')
@@ -43,23 +43,14 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken } = tokenObject
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const url = new URL(`${arenaBackendBaseUrl}/sol/v1/tasks/client/updated`)
-    url.searchParams.set('cid', cid)
-    url.searchParams.set('period', period)
-    url.searchParams.set('pageNumber', String(resolvedPageNumber))
-    url.searchParams.set('pageSize', String(resolvedPageSize))
-    logger.info(`Arena client updated tasks request URL: ${url.toString()}`)
+    const path = `/sol/v1/tasks/client/updated?cid=${encodeURIComponent(cid)}&period=${encodeURIComponent(period)}&pageNumber=${resolvedPageNumber}&pageSize=${resolvedPageSize}`
+    logger.info('Arena client updated tasks request', { path })
 
-    const res = await fetch(url.toString(), {
+    const res = await arenaFetch(tokenObject.userId, path, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
     })
 
     const responseData = await res.json()
@@ -73,6 +64,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json(
       { error: 'Failed to get updated tasks', details: error },
       { status: 500 }

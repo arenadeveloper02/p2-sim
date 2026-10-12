@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 export async function GET(req: NextRequest) {
@@ -30,21 +30,16 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken } = tokenObject
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const arenaUrl = new URL(`${arenaBackendBaseUrl}/sol/v1/tasks/get-my-tasks`)
-    if (withinMinutes !== undefined) {
-      arenaUrl.searchParams.set('withinMinutes', String(withinMinutes))
-    }
+    const path =
+      withinMinutes !== undefined
+        ? `/sol/v1/tasks/get-my-tasks?withinMinutes=${encodeURIComponent(String(withinMinutes))}`
+        : '/sol/v1/tasks/get-my-tasks'
 
-    const res = await fetch(arenaUrl.toString(), {
+    const res = await arenaFetch(tokenObject.userId, path, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
     })
 
     const responseData = await res.json()
@@ -57,6 +52,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json({ error: 'Failed to get my tasks', details: error }, { status: 500 })
   }
 }

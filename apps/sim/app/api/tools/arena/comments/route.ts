@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 const logger = createLogger('ArenaCommentsAPI')
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken, email: userEmail } = tokenObject
+  const { userId, email: userEmail } = tokenObject
 
   const payload = {
     ...restData,
@@ -27,13 +27,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const res = await fetch(`${arenaBackendBaseUrl}/project/commentattachmentservice/addcomment`, {
+    const res = await arenaFetch(userId, '/project/commentattachmentservice/addcomment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         accept: '*/*',
-        authorisation: arenaToken || '',
       },
       body: JSON.stringify(payload),
     })
@@ -55,6 +53,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     logger.error('Add comment failed: unexpected error', { error, workflowId })
     return NextResponse.json({ error: 'Failed to add comment', details: error }, { status: 500 })
   }

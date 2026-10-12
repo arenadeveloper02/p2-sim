@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 export async function GET(req: NextRequest) {
@@ -17,16 +17,11 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken } = tokenObject
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const res = await fetch(`${arenaBackendBaseUrl}/sol/v1/tasks/get-my-overdue-tasks`, {
+    const res = await arenaFetch(tokenObject.userId, '/sol/v1/tasks/get-my-overdue-tasks', {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
     })
 
     const responseData = await res.json()
@@ -39,6 +34,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json(
       { error: 'Failed to get my overdue tasks', details: error },
       { status: 500 }

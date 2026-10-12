@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 export async function POST(req: NextRequest) {
@@ -12,19 +12,14 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken } = tokenObject
   const payload = {
     ...restData,
   }
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const res = await fetch(`${arenaBackendBaseUrl}/sol/v1/agentic/save-summary`, {
+    const res = await arenaFetch(tokenObject.userId, '/sol/v1/agentic/save-summary', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
 
@@ -39,6 +34,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json({ error: 'Failed to save summary', details: error }, { status: 500 })
   }
 }

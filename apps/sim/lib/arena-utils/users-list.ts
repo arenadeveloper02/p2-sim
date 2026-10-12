@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { arenaFetch } from '@/lib/arena/fetch'
 
 const logger = createLogger('ArenaUsersList')
 
@@ -12,17 +13,10 @@ export interface ArenaUserListItem {
  * Fetches the list of Arena users (all users when allUsers=true).
  * Used during comment execution to map to/cc emails to user IDs.
  */
-export async function fetchArenaUsersList(
-  arenaToken: string,
-  baseUrl: string
-): Promise<ArenaUserListItem[]> {
-  const url = `${baseUrl}/sol/v1/users/list?allUsers=true`
-  const res = await fetch(url, {
+export async function fetchArenaUsersList(userId: string): Promise<ArenaUserListItem[]> {
+  const res = await arenaFetch(userId, '/sol/v1/users/list?allUsers=true', {
     method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      authorisation: arenaToken || '',
-    },
+    headers: { Accept: 'application/json' },
   })
 
   if (!res.ok) {

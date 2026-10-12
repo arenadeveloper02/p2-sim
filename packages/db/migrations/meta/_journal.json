@@ -2535,6 +2535,13 @@
       "when": 1789700848145,
       "tag": "0361_workspace_file_search_backfill_keyset",
       "breakpoints": true
+    },
+    {
+      "idx": 362,
+      "version": "7",
+      "when": 1789720000000,
+      "tag": "0362_user_arena_details_refresh_token",
+      "breakpoints": true
     }
   ]
 }

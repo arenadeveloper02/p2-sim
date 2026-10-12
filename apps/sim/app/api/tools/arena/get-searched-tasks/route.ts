@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 interface GetSearchedTasksBody {
@@ -25,16 +25,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken } = tokenObject
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const res = await fetch(`${arenaBackendBaseUrl}/sol/v1/tasks/get-searched-tasks`, {
+    const res = await arenaFetch(tokenObject.userId, '/sol/v1/tasks/get-searched-tasks', {
       method: 'POST',
       headers: {
         Accept: '*/*',
         'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
       },
       body: JSON.stringify({
         clientName: clientName?.trim() ?? '',
@@ -55,6 +52,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json(
       { error: 'Failed to fetch searched tasks', details: error },
       { status: 500 }

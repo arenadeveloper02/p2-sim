@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { env } from '@/lib/core/config/env'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
+import { arenaBackendBaseUrl } from '@/lib/arena/tokens'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 const logger = createLogger('ArenaConversationSummaryAPI')
@@ -23,31 +24,37 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required field: taskId' }, { status: 400 })
   }
 
-  let arenaToken = headerToken ?? ''
-  if (!arenaToken) {
-    const tokenObject = await getArenaToken(req, workflowId ?? undefined)
-    if (tokenObject.found === false) {
-      return NextResponse.json(
-        { error: 'Failed to get conversation summary', details: tokenObject.reason },
-        { status: 400 }
-      )
-    }
-    arenaToken = tokenObject.arenaToken
-  }
+  const path = `/sol/v1/agentic/conversation-summary?taskId=${encodeURIComponent(taskId)}`
 
   try {
-    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const url = new URL(`${arenaBackendBaseUrl}/sol/v1/agentic/conversation-summary`)
-    url.searchParams.set('taskId', taskId)
-    logger.info(`Arena conversation summary request URL: ${url.toString()}`)
+    let res: Response
 
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        authorisation: arenaToken || '',
-      },
-    })
+    if (workflowId) {
+      const tokenObject = await getArenaToken(req, workflowId)
+      if (tokenObject.found === false) {
+        return NextResponse.json(
+          { error: 'Failed to get conversation summary', details: tokenObject.reason },
+          { status: 400 }
+        )
+      }
+      logger.info('Arena conversation summary request', { path })
+      res = await arenaFetch(tokenObject.userId, path, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      })
+    } else {
+      // Legacy: caller-supplied access token (no refresh). Prefer workflowId + SSO tokens.
+      const url = `${arenaBackendBaseUrl()}${path}`
+      logger.info('Arena conversation summary request (header token)', { path })
+      res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          authorisation: headerToken || '',
+        },
+        cache: 'no-store',
+      })
+    }
 
     const responseData = await res.json()
 
@@ -60,6 +67,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     return NextResponse.json(
       { error: 'Failed to get conversation summary', details: error },
       { status: 500 }

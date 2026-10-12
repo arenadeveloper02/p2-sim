@@ -1,11 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { ArenaAuthError, arenaFetch } from '@/lib/arena/fetch'
 import {
   buildEmailToUserMap,
   fetchArenaUsersList,
   parseCommaSeparated,
 } from '@/lib/arena-utils/users-list'
-import { env } from '@/lib/core/config/env'
 import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 const logger = createLogger('ArenaCommentsUpdatedAPI')
@@ -40,9 +40,8 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { arenaToken, email: userEmail } = tokenObject
+  const { userId, email: userEmail } = tokenObject
 
-  const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL || ''
   let comment = restData.comment ?? ''
   let userMentionedIds: string[] = Array.isArray(restData.userMentionedIds)
     ? restData.userMentionedIds
@@ -52,7 +51,7 @@ export async function POST(req: NextRequest) {
   const ccRaw = typeof restData.cc === 'string' ? restData.cc.trim() : ''
 
   if (toRaw || ccRaw) {
-    const users = await fetchArenaUsersList(arenaToken, arenaBackendBaseUrl)
+    const users = await fetchArenaUsersList(userId)
     const emailToUser = buildEmailToUserMap(users)
 
     const toEmails = parseCommaSeparated(toRaw)
@@ -99,18 +98,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const res = await fetch(
-      `${arenaBackendBaseUrl}/project/commentattachmentservice/addcomment-updated`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          accept: '*/*',
-          authorisation: arenaToken || '',
-        },
-        body: JSON.stringify(payload),
-      }
-    )
+    const res = await arenaFetch(userId, '/project/commentattachmentservice/addcomment-updated', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        accept: '*/*',
+      },
+      body: JSON.stringify(payload),
+    })
 
     const responseData = await res.json()
 
@@ -129,6 +124,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {
+    if (error instanceof ArenaAuthError) {
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
     logger.error('Add comment (updated) failed: unexpected error', { error, workflowId })
     return NextResponse.json({ error: 'Failed to add comment', details: error }, { status: 500 })
   }

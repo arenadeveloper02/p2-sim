@@ -3,6 +3,7 @@ import { user, userArenaDetails } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getValidArenaAccessToken } from '@/lib/arena/tokens'
 import { getSession } from '@/lib/auth'
 import { verifyInternalToken } from '@/lib/auth/internal'
 import { getArenaTokenByWorkflowId } from '@/app/api/tools/arena/utils/db-utils'
@@ -73,8 +74,7 @@ async function resolveAuthorizedUserId(
 }
 
 /**
- * Resolves the Arena token in-process using the same logic as the get-token route (session or internal token, then DB).
- * No HTTP request to the get-token API.
+ * Resolves a usable Arena access token (refreshing when needed) for the authorized user.
  */
 export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTokenResponse> {
   const resolved = await resolveAuthorizedUserId(req)
@@ -102,7 +102,6 @@ export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTok
 
   const details = await db
     .select({
-      arenaToken: userArenaDetails.arenaToken,
       timezone: userArenaDetails.timezone,
       persona: userArenaDetails.persona,
     })
@@ -110,7 +109,8 @@ export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTok
     .where(eq(userArenaDetails.userIdRef, userId))
     .limit(1)
 
-  if (details.length === 0 || !details[0].arenaToken) {
+  const arenaToken = await getValidArenaAccessToken(userId)
+  if (!arenaToken) {
     return { found: false, reason: 'Arena token not found for user' }
   }
 
@@ -119,9 +119,9 @@ export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTok
     userId,
     name,
     email,
-    arenaToken: details[0].arenaToken,
-    timezone: details[0].timezone ?? null,
-    persona: details[0].persona ?? null,
+    arenaToken,
+    timezone: details[0]?.timezone ?? null,
+    persona: details[0]?.persona ?? null,
   }
 }
 

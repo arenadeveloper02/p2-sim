@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { parseArenaTokenPair, persistArenaTokens } from '@/lib/arena/tokens'
 import {
   arenaSsoAudience,
   createArenaSsoHandoffToken,
@@ -37,6 +38,15 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       logger.warn('SSO redeem ok but Sim user missing')
       return errorRedirect('missing-user')
+    }
+
+    const tokenPair = parseArenaTokenPair(redeemed)
+    if (tokenPair) {
+      await persistArenaTokens(userId, tokenPair.accessToken, tokenPair.refreshToken)
+    } else {
+      logger.warn(
+        'SSO redeem ok but token pair missing; Arena block calls will fail until re-login'
+      )
     }
 
     const handoffToken = await createArenaSsoHandoffToken(userId)
