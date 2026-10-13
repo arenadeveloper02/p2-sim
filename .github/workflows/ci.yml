@@ -61,7 +61,11 @@ jobs:
     name: Build GHCR Branch Images
     needs: [resolve-ghcr-tag]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/version-6.1-main' || github.ref == 'refs/heads/version-6.2-main' || startsWith(github.ref, 'refs/heads/upstream-sync/'))
-    runs-on: ubuntu-latest
+    # Only the app image needs the large runner. next build exhausts the free
+    # 16 GB runner (exit 137) at any heap ceiling. Realtime and migrations stay
+    # on ubuntu-latest. Same CI_PROVIDER choice as the checks build job.
+    runs-on: >-
+      ${{ matrix.dockerfile == './docker/app.Dockerfile' && ((vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-16vcpu-ubuntu-2404' || 'linux-x64-8-core') || 'ubuntu-latest' }}
     permissions:
       actions: write
       contents: read

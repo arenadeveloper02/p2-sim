@@ -110,7 +110,11 @@ jobs:
   build-ghcr-images:
     name: Build GHCR Images
     needs: [secret-scan, reserve-image-tag]
-    runs-on: ubuntu-latest
+    # Only the app image needs the large runner. next build exhausts the free
+    # 16 GB runner (exit 137) at any heap ceiling. Realtime and migrations stay
+    # on ubuntu-latest. Same CI_PROVIDER choice as the checks build job.
+    runs-on: >-
+      ${{ matrix.dockerfile == './docker/app.Dockerfile' && ((vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-16vcpu-ubuntu-2404' || 'linux-x64-8-core') || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
