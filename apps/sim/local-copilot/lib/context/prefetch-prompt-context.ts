@@ -1,8 +1,15 @@
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
+import { listChatUploads } from '@/lib/copilot/tools/handlers/upload-file-reader'
 import {
   type CopilotChatConfig,
   loadCopilotChatConfig,
 } from '@/local-copilot/lib/context/chat-config'
+import {
+  chatUploadsToAttachmentRefs,
+  formatChatUploadsInventorySystemMessage,
+  mergeFileAttachmentRefs,
+  shouldAutoInlinePriorChatUploads,
+} from '@/local-copilot/lib/context/chat-uploads'
 import { loadRelevantSkillGuidance } from '@/local-copilot/lib/context/relevant-skills'
 import { type CopilotTaskState, parseTaskState } from '@/local-copilot/lib/context/task-state'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
@@ -29,6 +36,10 @@ export interface SettledPromptContextPrefetch {
   userTurn: ChatMessage
   taskState: CopilotTaskState | null
   chatConfig: CopilotChatConfig | null
+  /** System note listing chat-scoped uploads (pointers only). */
+  chatUploadsInventory: string | null
+  /** True when proceed heuristic auto-inlined prior uploads into the user turn. */
+  autoInlinedPriorUploads: boolean
 }
 
 export interface PromptContextPrefetch {
@@ -53,12 +64,39 @@ export interface PromptContextPrefetch {
 export function startPromptContextPrefetch(
   input: PromptContextPrefetchInput
 ): PromptContextPrefetch {
-  const userTurnPromise = buildLocalCopilotUserTurn({
-    message: input.message,
-    ...(input.contexts?.length ? { contexts: input.contexts } : {}),
-    ...(input.fileAttachments?.length ? { fileAttachments: input.fileAttachments } : {}),
-    ...(input.chatId ? { chatId: input.chatId } : {}),
+  const uploadsPromise = input.chatId
+    ? listChatUploads(input.chatId).catch(() => [])
+    : Promise.resolve([])
+
+  const hasCurrentAttachments =
+    Boolean(input.fileAttachments?.length) ||
+    Boolean(input.contexts?.some((entry) => entry.type === 'uploaded_file'))
+
+  const userTurnPrepPromise = uploadsPromise.then(async (uploads) => {
+    const autoInline = shouldAutoInlinePriorChatUploads({
+      message: input.message,
+      hasCurrentAttachments,
+      priorUploadCount: uploads.length,
+    })
+    const priorRefs = autoInline ? chatUploadsToAttachmentRefs(uploads) : []
+    const fileAttachments = autoInline
+      ? mergeFileAttachmentRefs(input.fileAttachments, priorRefs)
+      : input.fileAttachments
+
+    const userTurn = await buildLocalCopilotUserTurn({
+      message: input.message,
+      ...(input.contexts?.length ? { contexts: input.contexts } : {}),
+      ...(fileAttachments?.length ? { fileAttachments } : {}),
+      ...(input.chatId ? { chatId: input.chatId } : {}),
+    })
+
+    return {
+      userTurn,
+      chatUploadsInventory: formatChatUploadsInventorySystemMessage(uploads),
+      autoInlinedPriorUploads: autoInline,
+    }
   })
+
   const chatConfigPromise: Promise<CopilotChatConfig | null> = input.chatId
     ? loadCopilotChatConfig(input.chatId, input.userId).catch(() => null)
     : Promise.resolve(null)
@@ -108,18 +146,20 @@ export function startPromptContextPrefetch(
         toolsHaveSkillCatalog = true
         toolsPromise = resolveTools(undefined)
       }
-      const [relevantSkills, allTools, userTurn, chatConfig] = await Promise.all([
+      const [relevantSkills, allTools, userTurnPrep, chatConfig] = await Promise.all([
         skillsPromise,
         toolsPromise ?? resolveTools(undefined),
-        userTurnPromise,
+        userTurnPrepPromise,
         chatConfigPromise,
       ])
       return {
         relevantSkills,
         allTools,
-        userTurn,
+        userTurn: userTurnPrep.userTurn,
         taskState: chatConfig ? parseTaskState(chatConfig.taskState) : null,
         chatConfig,
+        chatUploadsInventory: userTurnPrep.chatUploadsInventory,
+        autoInlinedPriorUploads: userTurnPrep.autoInlinedPriorUploads,
       }
     },
   }
