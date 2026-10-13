@@ -18,6 +18,87 @@ import { getLoginRedirectUrl, isSearchIndexableHost } from './lib/core/utils/url
 const logger = createLogger('Proxy')
 
 /**
+ * Next.js client navigations (`?_rsc=`, `RSC: 1`) are fetches with custom headers.
+ * A cross-origin 302 makes the browser preflight the Arena hub, and a redirected
+ * preflight is forbidden. Those requests bounce same-origin first; the page then
+ * performs a document navigation to `/sso/sim-resume`.
+ */
+function isNextFlightRequest(request: NextRequest): boolean {
+  return (
+    request.headers.has('rsc') ||
+    request.headers.has('next-router-prefetch') ||
+    request.headers.has('next-router-segment-prefetch') ||
+    request.nextUrl.searchParams.has('_rsc')
+  )
+}
+
+/**
+ * Same-origin relative path from a header value. Rejects scheme-relative and
+ * absolute URLs so a forged `Next-Url` / Referer cannot leave this app.
+ */
+function sameOriginRelativePath(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed?.startsWith('/') || trimmed.startsWith('//')) return null
+  return trimmed
+}
+
+/** Deployed chat embeds under `/chat/*` are public — no Better Auth session. */
+function isPublicChatPath(pathname: string): boolean {
+  return pathname === '/chat' || pathname.startsWith('/chat/')
+}
+
+/**
+ * Soft-nav destination for a flight when it targets a public chat page.
+ * Next often prefetches `/?_rsc=…` while `Next-Url` (or Referer) holds `/chat/…`.
+ */
+function pathOnly(relativePath: string): string {
+  const queryIndex = relativePath.indexOf('?')
+  return queryIndex === -1 ? relativePath : relativePath.slice(0, queryIndex)
+}
+
+function flightPublicChatDestination(request: NextRequest): string | null {
+  const nextUrlPath = sameOriginRelativePath(request.headers.get('next-url'))
+  if (nextUrlPath && isPublicChatPath(pathOnly(nextUrlPath))) {
+    return nextUrlPath
+  }
+
+  const referer = request.headers.get('referer')?.trim()
+  if (!referer) return null
+  try {
+    const ref = new URL(referer)
+    const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
+    if (!appBase || ref.origin !== new URL(appBase).origin) return null
+    if (!isPublicChatPath(ref.pathname)) return null
+    return `${ref.pathname}${ref.search}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Public URL to resume after Arena SSO. Drops Next's `_rsc` cache key so the
+ * user does not land back on a flight URL.
+ */
+function publicReturnTo(request: NextRequest): string | null {
+  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
+  if (!appBase) return null
+
+  let pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
+
+  // Soft navigations often hit `/?_rsc=…` while `Next-Url` holds the real path.
+  if (isNextFlightRequest(request) && request.nextUrl.pathname === '/') {
+    const nextUrlPath = sameOriginRelativePath(request.headers.get('next-url'))
+    if (nextUrlPath && nextUrlPath !== '/') {
+      pathWithSearch = nextUrlPath
+    }
+  }
+
+  const returnTo = new URL(pathWithSearch, `${appBase}/`)
+  returnTo.searchParams.delete('_rsc')
+  return returnTo.href
+}
+
+/**
  * No Better Auth session: send the browser to Arena hub to mint an SSO code.
  * Local login (dev, or NEXT_PUBLIC_LOCAL_LOGIN_ENABLED) falls back to `/login`.
  * Otherwise falls back to `/session-required` when the hub URL cannot be resolved.
@@ -29,9 +110,12 @@ function redirectUnauthenticated(request: NextRequest): NextResponse {
   if (isLocalLoginEnabled) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
-  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
-  const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
-  const returnTo = appBase ? new URL(pathWithSearch, `${appBase}/`).href : null
+  const returnTo = publicReturnTo(request)
+  if (isNextFlightRequest(request)) {
+    const bounce = new URL('/auth/arena-sso-redirect', request.url)
+    if (returnTo) bounce.searchParams.set('returnTo', returnTo)
+    return NextResponse.redirect(bounce)
+  }
   const resume = returnTo ? buildArenaSimResumeUrl(returnTo, request.nextUrl.hostname) : null
   if (resume) {
     return NextResponse.redirect(resume)
@@ -322,6 +406,13 @@ function handleRootPathRedirects(
     return null
   }
 
+  // Public chat must not require a session. Next often prefetches `/?_rsc=…`
+  // with `Next-Url: /chat/…` while the user is already on a public chat page —
+  // bouncing that flight to Arena SSO is wrong and wipes the deep link.
+  if (isNextFlightRequest(request) && flightPublicChatDestination(request)) {
+    return NextResponse.next()
+  }
+
   return redirectUnauthenticated(request)
 }
 
@@ -461,20 +552,17 @@ export function proxy(request: NextRequest) {
     return applyIndexingPolicy(request, response)
   }
 
-  // `/chat/*` requires a Better Auth session, same as `/workspace` — Arena SSO
-  // resume when missing (configured hub, e.g. app.thearena.ai /sso/sim-resume).
-  if (url.pathname.startsWith('/chat/')) {
-    if (!hasActiveSession) {
-      return track(request, redirectUnauthenticated(request))
-    }
-    const response = NextResponse.next()
-    response.headers.set('Content-Security-Policy', generateRuntimeCSP())
-    response.headers.set('X-Content-Type-Options', 'nosniff')
-    return track(request, response)
+  // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
+  if (isPublicChatPath(url.pathname)) {
+    return applyIndexingPolicy(request, NextResponse.next())
   }
 
-  // Arena redirect SSO callback / error — no Better Auth session yet
-  if (url.pathname === '/auth/arena-sso-callback' || url.pathname === '/auth/arena-sso-error') {
+  // Arena redirect SSO callback / error / flight bounce — no Better Auth session yet
+  if (
+    url.pathname === '/auth/arena-sso-callback' ||
+    url.pathname === '/auth/arena-sso-error' ||
+    url.pathname === '/auth/arena-sso-redirect'
+  ) {
     return track(request, NextResponse.next())
   }
 
@@ -553,6 +641,7 @@ export const config = {
     '/session-required',
     '/auth/arena-sso-callback',
     '/auth/arena-sso-error',
+    '/auth/arena-sso-redirect',
     '/api/:path*', // Runtime CORS
     // Catch-all for other pages, excluding static assets and public directories
     '/((?!api/|api$|_next/static|_next/image|ingest|favicon.ico|logo/|landing/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
