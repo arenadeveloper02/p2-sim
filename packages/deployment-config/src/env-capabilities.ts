@@ -13,7 +13,14 @@ import {
   SANDBOX_RELEASE_GENERATION_ERROR,
 } from '@sim/utils/sandbox-references'
 
-export type EnvCapabilityValue = string | number | boolean | null | undefined
+export type EnvCapabilityValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  /** Arena (and some deployments) parse comma/JSON lists into string arrays. */
+  | readonly string[]
 
 export const CORE_CONFIGURATION_KEYS = [
   'DATABASE_URL',
@@ -1510,6 +1517,8 @@ export const OAUTH_CLIENT_CAPABILITIES = {
   spotify: ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET'],
   monday: ['MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'],
   trello: ['TRELLO_API_KEY'],
+  'facebook-ads': ['FB_CLIENT_ID', 'FB_CLIENT_SECRET'],
+  'unipile-linkedin': ['UNIPILE_API_KEY'],
   'zoho-desk': ['ZOHO_CLIENT_ID', 'ZOHO_CLIENT_SECRET'],
 } as const
 
