@@ -18,6 +18,34 @@ import { getLoginRedirectUrl, isSearchIndexableHost } from './lib/core/utils/url
 const logger = createLogger('Proxy')
 
 /**
+ * Next.js client navigations (`?_rsc=`, `RSC: 1`) are fetches with custom headers.
+ * A cross-origin 302 makes the browser preflight the Arena hub, and a redirected
+ * preflight is forbidden. Those requests bounce same-origin first; the page then
+ * performs a document navigation to `/sso/sim-resume`.
+ */
+function isNextFlightRequest(request: NextRequest): boolean {
+  return (
+    request.headers.has('rsc') ||
+    request.headers.has('next-router-prefetch') ||
+    request.headers.has('next-router-segment-prefetch') ||
+    request.nextUrl.searchParams.has('_rsc')
+  )
+}
+
+/**
+ * Public URL to resume after Arena SSO. Drops Next's `_rsc` cache key so the
+ * user does not land back on a flight URL.
+ */
+function publicReturnTo(request: NextRequest): string | null {
+  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
+  if (!appBase) return null
+  const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
+  const returnTo = new URL(pathWithSearch, `${appBase}/`)
+  returnTo.searchParams.delete('_rsc')
+  return returnTo.href
+}
+
+/**
  * No Better Auth session: send the browser to Arena hub to mint an SSO code.
  * Local login (dev, or NEXT_PUBLIC_LOCAL_LOGIN_ENABLED) falls back to `/login`.
  * Otherwise falls back to `/session-required` when the hub URL cannot be resolved.
@@ -29,9 +57,12 @@ function redirectUnauthenticated(request: NextRequest): NextResponse {
   if (isLocalLoginEnabled) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
-  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
-  const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
-  const returnTo = appBase ? new URL(pathWithSearch, `${appBase}/`).href : null
+  const returnTo = publicReturnTo(request)
+  if (isNextFlightRequest(request)) {
+    const bounce = new URL('/auth/arena-sso-redirect', request.url)
+    if (returnTo) bounce.searchParams.set('returnTo', returnTo)
+    return NextResponse.redirect(bounce)
+  }
   const resume = returnTo ? buildArenaSimResumeUrl(returnTo, request.nextUrl.hostname) : null
   if (resume) {
     return NextResponse.redirect(resume)
@@ -467,7 +498,11 @@ export function proxy(request: NextRequest) {
   }
 
   // Arena redirect SSO callback / error — no Better Auth session yet
-  if (url.pathname === '/auth/arena-sso-callback' || url.pathname === '/auth/arena-sso-error') {
+  if (
+    url.pathname === '/auth/arena-sso-callback' ||
+    url.pathname === '/auth/arena-sso-error' ||
+    url.pathname === '/auth/arena-sso-redirect'
+  ) {
     return track(request, NextResponse.next())
   }
 
@@ -546,6 +581,7 @@ export const config = {
     '/session-required',
     '/auth/arena-sso-callback',
     '/auth/arena-sso-error',
+    '/auth/arena-sso-redirect',
     '/api/:path*', // Runtime CORS
     // Catch-all for other pages, excluding static assets and public directories
     '/((?!api/|api$|_next/static|_next/image|ingest|favicon.ico|logo/|landing/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
