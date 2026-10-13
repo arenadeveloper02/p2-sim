@@ -556,12 +556,14 @@ export async function createCredentialRecord(
           updatedAt: now,
         })
 
-        await ensureBilledAccountCredentialMembership({
-          credentialId,
-          workspaceId,
-          invitedBy: userId,
-          tx,
-        })
+        if (scope.kind === 'workspace') {
+          await ensureBilledAccountCredentialMembership({
+            credentialId,
+            workspaceId: scope.workspaceId,
+            invitedBy: userId,
+            tx,
+          })
+        }
       }
 
       return { success: true as const }

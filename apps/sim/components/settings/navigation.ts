@@ -168,6 +168,8 @@ export interface UnifiedSettingsNavigationItem {
   requiresEnterprise?: boolean
   requiresMax?: boolean
   requiresHosted?: boolean
+  /** Visible only on a team (or higher) plan to an organization admin. */
+  requiresTeam?: boolean
   /**
    * The inverse of {@link UnifiedSettingsNavigationItem.requiresHosted}: the
    * section exists only on a self-hosted deployment and is absent on Sim Cloud,

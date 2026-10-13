@@ -13,6 +13,8 @@ export interface AssistantChatFile {
   size: number
   type: string
   context?: string
+  /** Legacy inline payload; prefer storage key / URL when present. */
+  base64?: string
 }
 
 export interface AssistantGeneratedImage {

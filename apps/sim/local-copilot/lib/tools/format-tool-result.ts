@@ -5,7 +5,7 @@ import { documentLayoutFollowUpHint } from '@/lib/mothership/chat/document-forma
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getBlock } from '@/blocks/registry'
 import { MAX_POPULATE_EDITS } from '@/local-copilot/lib/agent/limits'
-import type { ArtifactStore } from '@/local-copilot/lib/context/artifacts'
+import type { ArtifactStore, ArtifactStub } from '@/local-copilot/lib/context/artifacts'
 import {
   LOAD_COPILOT_ARTIFACT_TOOL_NAME,
   maybeOffloadToolResult,
@@ -231,10 +231,10 @@ const FOLLOW_UP_FIELD_KEYS = [
  */
 function copyFollowUpFields(
   source: unknown,
-  stub: Record<string, unknown>
+  stub: Record<string, unknown> | ArtifactStub
 ): Record<string, unknown> {
   const record = asRecord(source)
-  const next = { ...stub }
+  const next: Record<string, unknown> = { ...stub }
   for (const key of FOLLOW_UP_FIELD_KEYS) {
     if (record[key] !== undefined) next[key] = record[key]
   }

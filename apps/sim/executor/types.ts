@@ -381,6 +381,8 @@ interface ExecutionMetadata {
   capabilityGovernedUserId?: string | null
   principal?: WorkflowExecutionPrincipal
   executionId?: string
+  /** Root of the execution lineage tree; self when this run has no parent. */
+  rootExecutionId?: string
   triggerType?: string
   triggerBlockId?: string
   useDraftState?: boolean

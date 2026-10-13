@@ -917,6 +917,7 @@ export async function getEnrolledManagedOAuthCredentials(
       displayName: `${row.displayName} (${row.groupName})`,
       role: 'member' as const,
       type: 'managed_oauth' as const,
+      ownerUserId: userId,
       updatedAt: row.updatedAt,
       connectedAt: row.grantedAt ?? row.createdAt,
     }))

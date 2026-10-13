@@ -606,3 +606,12 @@ export function buildMimeMessage(params: BuildMimeMessageParams): string {
 
   return joinMimeParts(messageParts)
 }
+
+/**
+ * Adapts a legacy Gmail payload to an upstream v2 response generic.
+ * The runtime shape stays the legacy content and metadata payload.
+ */
+export function castGmailResponse<R>(response: unknown): R {
+  // double-cast-allowed: v2 wrappers still return the legacy content and metadata payload
+  return response as unknown as R
+}

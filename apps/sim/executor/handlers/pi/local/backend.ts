@@ -93,7 +93,7 @@ async function runLocalAgent(
       noTools: 'builtin',
       customTools,
       modelRuntime,
-      settingsManager: sdk.SettingsManager.inMemory({ cacheWarming: 'off' }),
+      settingsManager: sdk.SettingsManager.inMemory(),
       sessionManager: sdk.SessionManager.inMemory(isolatedDir),
     })
 

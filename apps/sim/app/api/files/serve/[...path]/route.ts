@@ -382,16 +382,32 @@ export const GET = withRouteHandler(
             userId: authResult.userId,
             authType: authResult.authType ?? 'hybrid',
           })
+          const executionOptions: ServeOptions = {
+            raw,
+            preview: false,
+            versioned,
+            ifNoneMatch: request.headers.get('if-none-match'),
+          }
+          const knowledgeAccess =
+            authResult.authType === AuthType.SESSION ? ('user' as const) : undefined
           if (isUsingCloudStorage()) {
             return await handleCloudProxy(
               cloudKey,
               authResult.userId,
-              raw,
-              versioned,
-              request.signal
+              executionOptions,
+              request.signal,
+              'execution',
+              knowledgeAccess
             )
           }
-          return await handleLocalFile(cloudKey, authResult.userId, raw, versioned, request.signal)
+          return await handleLocalFile(
+            cloudKey,
+            authResult.userId,
+            executionOptions,
+            request.signal,
+            'execution',
+            knowledgeAccess
+          )
         }
 
         const deployedChatOk = await canAccessAgentGeneratedImageViaDeployedChat(
@@ -835,7 +851,11 @@ async function handleAgentGeneratedImageLocal(
       throw new FileNotFoundError(`File not found: ${filename}`)
     }
 
-    const fileBuffer = await readFile(filePath)
+    const fileBuffer = await readLocalFileWithinLimit(
+      filePath,
+      MAX_BUFFERED_TRANSFER_BYTES,
+      'served file'
+    )
     const contentType = getContentType(filename)
 
     logger.info('Agent-generated image served locally', {
@@ -864,7 +884,11 @@ async function handleDeployedChatExecutionFileLocal(filename: string): Promise<N
       throw new FileNotFoundError(`File not found: ${filename}`)
     }
 
-    const fileBuffer = await readFile(filePath)
+    const fileBuffer = await readLocalFileWithinLimit(
+      filePath,
+      MAX_BUFFERED_TRANSFER_BYTES,
+      'served file'
+    )
     const contentType = getContentType(filename)
 
     logger.info('Execution file served locally for deployed chat', {
@@ -889,6 +913,7 @@ async function handleDeployedChatExecutionFileCloud(cloudKey: string): Promise<N
     const fileBuffer = await downloadFile({
       key: cloudKey,
       context: 'execution',
+      maxBytes: MAX_BUFFERED_TRANSFER_BYTES,
     })
 
     const originalFilename = cloudKey.split('/').pop() || 'download'
@@ -918,6 +943,7 @@ async function handleAgentGeneratedImageCloud(
     const fileBuffer = await downloadFile({
       key: cloudKey,
       context: 'agent-generated-images',
+      maxBytes: MAX_BUFFERED_TRANSFER_BYTES,
     })
 
     const originalFilename = cloudKey.split('/').pop() || 'download'

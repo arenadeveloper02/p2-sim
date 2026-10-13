@@ -1127,18 +1127,16 @@ async function executeLocalCopilotToolInner(
     case 'get_execution_logs': {
       const limit = typeof args.limit === 'number' ? args.limit : 10
       const executionId = typeof args.executionId === 'string' ? args.executionId : undefined
-      const { listLogs } = await import('@/lib/logs/list-logs')
-      const logs = await listLogs(
-        {
-          workspaceId: ctx.workspaceId,
-          ...(ctx.workflowId ? { workflowIds: ctx.workflowId } : {}),
-          limit,
-          executionId,
-          sortBy: 'date',
-          sortOrder: 'desc',
-        },
-        ctx.userId
-      )
+      const { readLogs } = await import('@/lib/logs/list-logs')
+      const logs = await readLogs({
+        workspaceId: ctx.workspaceId,
+        ...(ctx.workflowId ? { workflowIds: ctx.workflowId } : {}),
+        limit,
+        executionId,
+        sortBy: 'date',
+        sortOrder: 'desc',
+        hideCostInfo: false,
+      })
       return { toolName, success: true, result: logs }
     }
 
@@ -1155,12 +1153,13 @@ async function executeLocalCopilotToolInner(
 
       let logDetail = null
       if (executionId) {
-        const { fetchLogDetail } = await import('@/lib/logs/fetch-log-detail')
-        logDetail = await fetchLogDetail({
-          userId: ctx.userId,
+        const { readLogDetail } = await import('@/lib/logs/fetch-log-detail')
+        logDetail = await readLogDetail({
+          viewerUserId: ctx.userId,
           workspaceId: ctx.workspaceId,
           lookupColumn: 'executionId',
           lookupValue: executionId,
+          hideCostInfo: false,
         })
       }
 

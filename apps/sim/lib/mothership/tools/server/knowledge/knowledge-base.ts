@@ -30,7 +30,7 @@ import {
   updateKnowledgeConnector,
 } from '@/lib/knowledge/application/connectors'
 import {
-  bulkDeleteKnowledgeDocuments,
+  deleteKnowledgeDocument,
   type KnowledgeDocumentTagValueAssignment,
   updateKnowledgeDocument,
 } from '@/lib/knowledge/application/documents'
@@ -688,18 +688,37 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
           }
 
           assertNotAborted()
-          const { knowledgeBaseId, deleted, deletedDocuments, failed } =
-            await executeCopilotKnowledgeUseCase(context, bulkDeleteKnowledgeDocuments, {
-              knowledgeBaseId: args.knowledgeBaseId,
-              documentIds: docIds,
-              assertedWorkspaceId: workspaceId,
-              cancellationSignal: context.userStopSignal,
-              source: 'agent',
-            })
+          const deleted: string[] = []
+          const deletedDocuments: Array<{ id: string; filename: string }> = []
+          const failed: string[] = []
+          for (const documentId of docIds) {
+            assertNotAborted()
+            try {
+              const result = await executeCopilotKnowledgeUseCase(
+                context,
+                deleteKnowledgeDocument,
+                {
+                  knowledgeBaseId: args.knowledgeBaseId,
+                  documentId,
+                  assertedWorkspaceId: workspaceId,
+                  source: 'agent',
+                }
+              )
+              deleted.push(result.id)
+              deletedDocuments.push({ id: result.id, filename: result.filename })
+            } catch (error) {
+              const classified = asOrchestrationError(error)
+              if (classified && classified.code !== 'internal') {
+                failed.push(documentId)
+                continue
+              }
+              throw error
+            }
+          }
           captureKnowledgeDocumentsDeleted(
             context.userId,
             workspaceId,
-            knowledgeBaseId,
+            args.knowledgeBaseId,
             deletedDocuments.length
           )
           assertNotAborted()
@@ -707,7 +726,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
           return {
             success: deleted.length > 0,
             message: `Deleted ${deleted.length} document(s)${failed.length > 0 ? `, ${failed.length} failed` : ''}`,
-            data: { knowledgeBaseId, deleted, failed },
+            data: { knowledgeBaseId: args.knowledgeBaseId, deleted, failed },
           }
         }
 

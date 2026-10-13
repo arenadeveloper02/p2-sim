@@ -337,7 +337,19 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     stateCallbackUrl.searchParams.set(OAUTH_CREDENTIAL_DRAFT_CALLBACK_PARAM, connectionDraftId)
     const scopes = getPerRequestOAuthLinkScopes(providerId)
 
-    const linkResponse = await auth.api.oAuth2LinkAccount({
+    const linkApi = auth.api as typeof auth.api & {
+      oAuth2LinkAccount: (input: {
+        body: {
+          providerId: string
+          callbackURL: string
+          scopes?: string[]
+          errorCallbackURL?: string
+        }
+        headers: Headers
+        asResponse: true
+      }) => Promise<Response>
+    }
+    const linkResponse = await linkApi.oAuth2LinkAccount({
       body: {
         providerId,
         callbackURL: stateCallbackUrl.toString(),

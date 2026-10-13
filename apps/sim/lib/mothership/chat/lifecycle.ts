@@ -2,7 +2,10 @@ import { type Principal, resolvePrincipalSubjectUserId } from '@sim/auth/princip
 import { db } from '@sim/db'
 import { copilotChats, copilotMessages } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
+import {
+  authorizeWorkflowByWorkspacePermission,
+  getActiveWorkflowRecord,
+} from '@sim/platform-authz/workflow'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { asOrchestrationError } from '@/lib/core/orchestration/types'
 import {

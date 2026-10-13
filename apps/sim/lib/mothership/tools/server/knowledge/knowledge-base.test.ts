@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockAddWorkspaceFiles,
   mockBulkDeleteKnowledgeBases,
-  mockBulkDeleteKnowledgeDocuments,
+  mockDeleteKnowledgeDocument,
   mockCaptureServerEvent,
   mockCreateKnowledgeBase,
   mockDeleteKnowledgeConnector,
@@ -40,7 +40,7 @@ const {
   return {
     mockAddWorkspaceFiles: vi.fn(),
     mockBulkDeleteKnowledgeBases: vi.fn(),
-    mockBulkDeleteKnowledgeDocuments: vi.fn(),
+    mockDeleteKnowledgeDocument: vi.fn(),
     mockCaptureServerEvent: vi.fn(),
     mockCreateKnowledgeBase: vi.fn(),
     mockDeleteKnowledgeConnector: vi.fn(),
@@ -64,6 +64,7 @@ const {
       addWorkspaceFiles: defineOperation('knowledge.documents.add_workspace_files', 'write'),
       bulkDelete: defineOperation('knowledge.bulk_delete', 'write'),
       bulkDeleteDocuments: defineOperation('knowledge.documents.bulk_delete', 'write'),
+      deleteDocument: defineOperation('knowledge.documents.delete', 'write'),
       create: defineOperation('knowledge.create', 'write'),
       createConnector: defineOperation('knowledge.connectors.create', 'write'),
       createTag: defineOperation('knowledge.tags.create', 'write'),
@@ -129,9 +130,9 @@ vi.mock('@/lib/knowledge/application/knowledge-bases', () => ({
   },
 }))
 vi.mock('@/lib/knowledge/application/documents', () => ({
-  bulkDeleteKnowledgeDocuments: {
-    operation: knowledgeOperations.bulkDeleteDocuments,
-    execute: mockBulkDeleteKnowledgeDocuments,
+  deleteKnowledgeDocument: {
+    operation: knowledgeOperations.deleteDocument,
+    execute: mockDeleteKnowledgeDocument,
   },
   updateKnowledgeDocument: {
     operation: knowledgeOperations.updateDocument,
@@ -250,12 +251,14 @@ describe('manage_knowledge_base trusted application delegation', () => {
       notFound: [],
       failed: [],
     })
-    mockBulkDeleteKnowledgeDocuments.mockResolvedValue({
+    mockDeleteKnowledgeDocument.mockImplementation(async ({ input }) => ({
+      id: input.documentId,
       knowledgeBaseId: KNOWLEDGE_BASE.id,
-      deleted: ['document-1'],
-      failed: [],
-      deletedDocuments: [],
-    })
+      workspaceId: 'workspace-1',
+      filename: `${input.documentId}.pdf`,
+      fileSize: 42,
+      mimeType: 'application/pdf',
+    }))
     mockAddWorkspaceFiles.mockResolvedValue({
       knowledgeBaseId: KNOWLEDGE_BASE.id,
       knowledgeBaseName: KNOWLEDGE_BASE.name,
@@ -546,18 +549,19 @@ describe('manage_knowledge_base trusted application delegation', () => {
   })
 
   it('delegates document deletion and retains partial batch results', async () => {
-    mockBulkDeleteKnowledgeDocuments.mockResolvedValueOnce({
-      knowledgeBaseId: KNOWLEDGE_BASE.id,
-      deleted: ['document-1'],
-      failed: ['missing'],
-      deletedDocuments: [
-        {
-          id: 'document-1',
-          filename: 'guide.pdf',
-          fileSize: 42,
-          mimeType: 'application/pdf',
-        },
-      ],
+    const { OrchestrationError } = await import('@/lib/core/orchestration/types')
+    mockDeleteKnowledgeDocument.mockImplementation(async ({ input }) => {
+      if (input.documentId === 'missing') {
+        throw new OrchestrationError('not_found', 'Document not found')
+      }
+      return {
+        id: input.documentId,
+        knowledgeBaseId: KNOWLEDGE_BASE.id,
+        workspaceId: 'workspace-1',
+        filename: 'guide.pdf',
+        fileSize: 42,
+        mimeType: 'application/pdf',
+      }
     })
 
     const result = await knowledgeBaseServerTool.execute(
@@ -572,8 +576,8 @@ describe('manage_knowledge_base trusted application delegation', () => {
       success: true,
       data: { deleted: ['document-1'], failed: ['missing'] },
     })
-    expectDelegatedPrincipal(mockBulkDeleteKnowledgeDocuments.mock.calls[0][0])
-    expect(mockBulkDeleteKnowledgeDocuments).toHaveBeenCalledOnce()
+    expectDelegatedPrincipal(mockDeleteKnowledgeDocument.mock.calls[0][0])
+    expect(mockDeleteKnowledgeDocument).toHaveBeenCalledTimes(2)
     expect(mockCaptureServerEvent).toHaveBeenCalledWith(
       'external-admin',
       'knowledge_base_document_deleted',
@@ -933,7 +937,7 @@ describe('manage_knowledge_base trusted application delegation', () => {
       expect(result.message).toContain('Maximum is 100')
       expect(mockReadKnowledgeBase).not.toHaveBeenCalled()
       expect(mockBulkDeleteKnowledgeBases).not.toHaveBeenCalled()
-      expect(mockBulkDeleteKnowledgeDocuments).not.toHaveBeenCalled()
+      expect(mockDeleteKnowledgeDocument).not.toHaveBeenCalled()
       expect(mockAddWorkspaceFiles).not.toHaveBeenCalled()
     }
   )

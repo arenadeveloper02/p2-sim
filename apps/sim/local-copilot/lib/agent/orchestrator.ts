@@ -1666,7 +1666,15 @@ export async function* runLocalCopilotAgent(
         const formattedToolResult = formatToolResultForLlm(call.name, outcome.output, {
           artifactStore: toolCtx.artifactStore,
         })
-        for (const followUp of outcome.result?.pendingFollowUps ?? []) {
+        const outcomeFollowUps =
+          'result' in outcome &&
+          outcome.result &&
+          typeof outcome.result === 'object' &&
+          'pendingFollowUps' in outcome.result &&
+          Array.isArray(outcome.result.pendingFollowUps)
+            ? outcome.result.pendingFollowUps
+            : []
+        for (const followUp of outcomeFollowUps) {
           pendingFollowUps = [
             ...pendingFollowUps.filter((item) => item.id !== followUp.id),
             followUp,

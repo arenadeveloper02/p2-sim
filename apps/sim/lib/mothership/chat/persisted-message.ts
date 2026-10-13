@@ -433,7 +433,18 @@ export function buildPersistedAssistantMessage(
   }
 
   if (result.geminiModelPartRounds && result.geminiModelPartRounds.length > 0) {
-    message.geminiModelPartRounds = result.geminiModelPartRounds
+    message.geminiModelPartRounds = result.geminiModelPartRounds.map((round) =>
+      round.map((part) => {
+        if (!('functionCall' in part)) return part
+        return {
+          ...part,
+          functionCall: {
+            ...part.functionCall,
+            id: part.functionCall.id ?? generateId(),
+          },
+        }
+      })
+    )
   }
 
   if (!result.success && !result.cancelled) {

@@ -326,62 +326,9 @@ async function buildThreadedStructure(
   }
 }
 
-export const gmailAdvancedSearchTool: ToolConfig<
-  GmailAdvancedSearchParams,
-  GmailAdvancedSearchResponse
-> = {
-  id: 'gmail_advanced_search',
-  name: 'Gmail Advanced Search',
-  description:
-    'Search emails in Gmail with full content and attachment parsing, returning threaded conversations',
-  version: '1.0.0',
-
-  oauth: {
-    required: true,
-    provider: 'google-email',
-  },
-
-  params: {
-    accessToken: {
-      type: 'string',
-      required: true,
-      visibility: 'hidden',
-      description: 'Access token for Gmail API',
-    },
-    query: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Search query for emails',
-    },
-    maxResults: {
-      type: 'number',
-      required: false,
-      visibility: 'user-only',
-      description: 'Maximum number of results to return (default: 5)',
-    },
-    includeAttachments: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-only',
-      description: 'Include and parse attachments (default: false)',
-    },
-    clientName: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Client name for tracking and summarization',
-    },
-  },
-
-  // Request config is required but not used when directExecution is provided
-  request: {
-    url: '/api/tools/gmail/advanced_search',
-    method: 'GET',
-    headers: () => ({}),
-  },
-
-  directExecution: async (params: GmailAdvancedSearchParams) => {
+export async function executeGmailAdvancedSearchDirect(
+  params: GmailAdvancedSearchParams
+): Promise<GmailAdvancedSearchResponse> {
     const { query, accessToken, maxResults = 5, includeAttachments = false, clientName } = params
 
     // Search for messages
@@ -539,7 +486,62 @@ export const gmailAdvancedSearchTool: ToolConfig<
         error: error.message || 'Failed to process search results',
       }
     }
+  }
+
+export const gmailAdvancedSearchTool: ToolConfig<
+  GmailAdvancedSearchParams,
+  GmailAdvancedSearchResponse
+> = {
+  id: 'gmail_advanced_search',
+  name: 'Gmail Advanced Search',
+  description:
+    'Search emails in Gmail with full content and attachment parsing, returning threaded conversations',
+  version: '1.0.0',
+
+  oauth: {
+    required: true,
+    provider: 'google-email',
   },
+
+  params: {
+    accessToken: {
+      type: 'string',
+      required: true,
+      visibility: 'hidden',
+      description: 'Access token for Gmail API',
+    },
+    query: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Search query for emails',
+    },
+    maxResults: {
+      type: 'number',
+      required: false,
+      visibility: 'user-only',
+      description: 'Maximum number of results to return (default: 5)',
+    },
+    includeAttachments: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-only',
+      description: 'Include and parse attachments (default: false)',
+    },
+    clientName: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Client name for tracking and summarization',
+    },
+  },
+
+  request: {
+    url: '/api/tools/gmail/advanced_search',
+    method: 'GET',
+    headers: () => ({}),
+  },
+
 
   outputs: {
     results: {
@@ -562,6 +564,5 @@ export const gmailAdvancedSearchV2Tool: ToolConfig<
   oauth: gmailAdvancedSearchTool.oauth,
   params: gmailAdvancedSearchTool.params,
   request: gmailAdvancedSearchTool.request,
-  directExecution: gmailAdvancedSearchTool.directExecution,
   outputs: gmailAdvancedSearchTool.outputs,
 }

@@ -5,7 +5,7 @@ import { db } from '@sim/db'
 import * as schema from '@sim/db/schema'
 import { createLogger, setRequestAuth } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
-import { type BetterAuthOptions, betterAuth, type User } from 'better-auth'
+import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth, type User } from 'better-auth'
 import {
   APIError,
   createAuthMiddleware,
@@ -1955,7 +1955,8 @@ export const auth = betterAuth({
         ]
       : []),
     nextCookies(),
-  ],
+    // Conditional spreads + oauth-provider init widen past BetterAuthPlugin.
+  ] as BetterAuthPlugin[],
 })
 
 async function getSessionImpl() {

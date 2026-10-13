@@ -9,6 +9,22 @@ import { projectLogFiles } from '@/lib/logs/files'
 
 export const revalidate = 0
 
+type V2CostItems = NonNullable<NonNullable<V2LogDetail['cost']>['items']>
+
+/**
+ * v2 cost lines are `fixed` | `model` | `tool`. Ledger rows billed as `external`
+ * are integration calls, so they publish as `tool`.
+ */
+function toV2CostItems(items: CostLedger['items']): V2CostItems {
+  return items.map((item) => ({
+    category: item.category === 'external' ? 'tool' : item.category,
+    description: item.description,
+    cost: item.cost,
+    ...(item.inputTokens !== undefined ? { inputTokens: item.inputTokens } : {}),
+    ...(item.outputTokens !== undefined ? { outputTokens: item.outputTokens } : {}),
+  }))
+}
+
 /**
  * The run's cost as the contract defines it, from the projected total and the
  * itemized ledger.
@@ -21,8 +37,9 @@ function buildCostProjection(
   costTotal: string | null,
   costLedger: CostLedger | null
 ): V2LogDetail['cost'] {
-  if (costTotal != null) return { total: Number(costTotal), items: costLedger?.items ?? null }
-  if (costLedger) return { total: costLedger.total, items: costLedger.items }
+  const items = costLedger ? toV2CostItems(costLedger.items) : null
+  if (costTotal != null) return { total: Number(costTotal), items }
+  if (costLedger) return { total: costLedger.total, items }
   return null
 }
 

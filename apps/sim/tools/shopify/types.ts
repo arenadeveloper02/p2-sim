@@ -1029,7 +1029,7 @@ interface ShopifyInventoryLevel {
   }
 }
 
-interface ShopifyBaseParams {
+export interface ShopifyBaseParams {
   accessToken: string
   shopDomain?: string
   /** Store domain resolved from a service-account credential */

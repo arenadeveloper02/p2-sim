@@ -18,7 +18,6 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
-  DateInput,
   DocumentTagEntry,
   Dropdown,
   EvalInput,
@@ -41,7 +40,6 @@ import {
   type SelectorOverrides,
   ShortInput,
   SkillInput,
-  SlackDateInput,
   SlackDateRangeSelector,
   SliderInput,
   SortBuilder,
@@ -1018,31 +1016,6 @@ function SubBlockComponent({
           />
         )
 
-      case 'date-input':
-        // Use Slack-specific date input for Slack blocks with date fields
-        if (blockType === 'slack' && (config.id === 'fromDate' || config.id === 'toDate')) {
-          return (
-            <SlackDateInput
-              blockId={blockId}
-              subBlockId={config.id}
-              placeholder={config.placeholder}
-              isPreview={isPreview}
-              previewValue={previewValue as any}
-              disabled={isDisabled}
-            />
-          )
-        }
-        return (
-          <DateInput
-            blockId={blockId}
-            subBlockId={config.id}
-            placeholder={config.placeholder}
-            isPreview={isPreview}
-            previewValue={previewValue as any}
-            disabled={isDisabled}
-          />
-        )
-
       case 'file-upload':
         return (
           <FileUpload
@@ -1537,7 +1510,6 @@ function SubBlockComponent({
           onCopy: handleCopy,
         },
         labelSuffix,
-        false,
         externalLink,
         dependencyContext
       )}

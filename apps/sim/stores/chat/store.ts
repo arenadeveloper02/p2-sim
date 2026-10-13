@@ -323,7 +323,7 @@ export const useChatStore = create<ChatState>()(
       }),
       {
         name: 'chat-store',
-        storage: safeStorageAdapter,
+        storage: safeStorageAdapter as unknown as PersistStorage<unknown>,
         version: 1,
         /**
          * v0 stored messages newest-first; v1 stores them in insertion

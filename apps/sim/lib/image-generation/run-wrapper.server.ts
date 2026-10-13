@@ -345,7 +345,7 @@ export async function runImageGenerationWrapper(
     MAX_CONCURRENT_GENERATIONS,
     async (index) => {
       try {
-        const executionParams = {
+        const executionParams: Record<string, unknown> = {
           ...buildExecutionParams(executionToolId, resolvedBaseParams),
           ...(originalPrompt ? { prompt: originalPrompt } : {}),
         }
@@ -364,9 +364,8 @@ export async function runImageGenerationWrapper(
           ? await executeTool(executionToolId, executionParams, executeOptions)
           : await executeTool(executionToolId, executionParams)
         if (isGptImage2) {
-          const output = isRecord((result as ToolResult).output)
-            ? (result as ToolResult).output
-            : {}
+          const rawOutput = (result as ToolResult).output
+          const output: Record<string, unknown> = isRecord(rawOutput) ? rawOutput : {}
           logGptImage2Wrapper('tool execution completed', {
             executionToolId,
             index,

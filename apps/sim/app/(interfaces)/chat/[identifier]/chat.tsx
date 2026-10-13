@@ -433,7 +433,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // Scroll to show only the user's message and loading indicator (if message exists)
     if (userMessageId) {
       setTimeout(() => {
-        scrollToMessage(userMessageId!, true)
+        scrollToMessage(userMessageId!)
       }, 100)
     }
 

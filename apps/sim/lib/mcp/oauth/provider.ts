@@ -4,6 +4,8 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js'
+
+type ClientInformationWithIssuer = OAuthClientInformationMixed & { issuer?: string }
 import { db } from '@sim/db'
 import { mcpServers } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -24,8 +26,11 @@ import {
   saveClientInformation as saveClientInformationDb,
   saveCodeVerifier as saveCodeVerifierDb,
   saveState,
+  type StoredOAuthTokens,
   saveTokens as saveTokensDb,
 } from '@/lib/mcp/oauth/storage'
+
+export type { StoredOAuthTokens }
 import { isSearchProviderEnabled } from '@/lib/sim-search/live/provider-rollout'
 
 const logger = createLogger('SimMcpOauthProvider')
@@ -56,9 +61,9 @@ export interface PreregisteredClient {
  * them from its own server, so they are bound to it.
  */
 export function withPinnedIssuer(
-  tokens: OAuthTokens | undefined,
+  tokens: StoredOAuthTokens | undefined,
   preregistered: PreregisteredClient | undefined
-): OAuthTokens | undefined {
+): StoredOAuthTokens | undefined {
   if (!tokens || tokens.issuer || !preregistered?.issuer) return tokens
   return { ...tokens, issuer: preregistered.issuer }
 }
@@ -115,7 +120,7 @@ export class SimMcpOauthProvider implements OAuthClientProvider {
 
   clientInformation(): OAuthClientInformationMixed | undefined {
     if (this.preregistered) {
-      return {
+      const info: ClientInformationWithIssuer = {
         client_id: this.preregistered.clientId,
         client_secret: this.preregistered.clientSecret,
         redirect_uris: [this.redirectUrl],
@@ -124,8 +129,9 @@ export class SimMcpOauthProvider implements OAuthClientProvider {
         token_endpoint_auth_method:
           this.preregistered.tokenEndpointAuthMethod ??
           (this.preregistered.clientSecret ? 'client_secret_post' : 'none'),
-        issuer: this.preregistered.issuer ?? this.row.tokens?.issuer,
+        issuer: this.preregistered.issuer ?? (this.row.tokens as StoredOAuthTokens | null)?.issuer,
       }
+      return info
     }
     return this.row.clientInformation ?? undefined
   }

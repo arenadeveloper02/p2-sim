@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import { materializeLargeValueRefSyncOrThrow } from '@/lib/execution/payloads/cache'
 import { isLargeArrayManifest } from '@/lib/execution/payloads/large-array-manifest-metadata'
 import { isLargeValueRef } from '@/lib/execution/payloads/large-value-ref'
@@ -25,13 +26,12 @@ export function extractFieldsFromSchema(schema: any): Field[] {
   if (Array.isArray(schema.fields)) {
     return schema.fields
       .filter(
-        (field): field is { name: string; type?: string; description?: string } =>
-          field &&
-          typeof field === 'object' &&
-          typeof field.name === 'string' &&
-          field.name.trim() !== ''
+        (field: unknown): field is { name: string; type?: string; description?: string } => {
+          if (!isRecordLike(field)) return false
+          return typeof field.name === 'string' && field.name.trim() !== ''
+        }
       )
-      .map((field) => ({
+      .map((field: { name: string; type?: string; description?: string }) => ({
         name: field.name.trim(),
         type: field.type || 'string',
         description: field.description,

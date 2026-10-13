@@ -72,6 +72,11 @@ export const handleRunEvent: StreamHandler = (event, context) => {
     return
   }
 
+  // Arena local-copilot live-status events reuse type `run` without a mothership `kind`.
+  if (!('kind' in event.payload)) {
+    return
+  }
+
   if (event.payload.kind === MothershipStreamV1RunKind.checkpoint_pause) {
     const frames = (event.payload.frames ?? []).map((frame) => ({
       parentToolCallId: frame.parentToolCallId,

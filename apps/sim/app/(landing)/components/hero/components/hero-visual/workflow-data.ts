@@ -1,10 +1,10 @@
-import type { ComponentType, SVGProps } from 'react'
 import { CsvIcon, DocxIcon, MarkdownIcon, PdfIcon } from '@sim/emcn/icons'
 import type {
   BLOCK_DIMENSIONS,
   CONNECTION_KNOB_PEAK_PX,
   HANDLE_POSITIONS,
 } from '@sim/workflow-renderer'
+import type { BlockIcon } from '@/blocks/types'
 import { AgentIcon, GithubIcon, JiraIcon } from '@/components/icons'
 
 /**
@@ -18,7 +18,8 @@ import { AgentIcon, GithubIcon, JiraIcon } from '@/components/icons'
  * bounding box of that space; the stage scales it to fit the hero panel.
  */
 
-type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
+/** Accepts Lucide/SVG icons and Arena Next-Image wrappers (e.g. AgentIcon). */
+type IconComponent = BlockIcon
 
 /** A single field row inside a block card (label → value), faithful to the real WorkflowBlock. */
 export interface BlockRow {

@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useSettingsIntentHandler } from '@/components/settings/settings-navigation-provider'
 import { SettingsPendingSection } from '@/components/settings/settings-pending-section'
-import { useSettingsBeforeUnload } from '@/components/settings/use-settings-before-unload'
+import { useSettingsBrowserNavigation } from '@/components/settings/use-settings-browser-navigation'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import {
   resolveSettingsSection,
@@ -32,7 +32,7 @@ interface SettingsLayoutShellProps {
  * client boundary that wraps every section.
  */
 export function SettingsLayoutShell({ children }: SettingsLayoutShellProps) {
-  useSettingsBeforeUnload()
+  useSettingsBrowserNavigation()
   const queryClient = useQueryClient()
   const hostContext = useWorkspaceHostContext()
   const workspaceId = hostContext.workspace.id

@@ -714,6 +714,9 @@ export class ExecutionEngine {
     // Response blocks should have edges to sentinel end (they're terminal nodes)
     const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
 
+    // Terminal blocks (Response blocks or blocks with no outgoing edges) indicate iteration completion
+    const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
+
     // If this is a terminal block inside a loop, ensure the loop's sentinel end gets triggered
     // Terminal blocks (Response blocks or blocks with no outgoing edges) indicate iteration completion
     // When they complete, the iteration is done and loop should continue
@@ -743,7 +746,7 @@ export class ExecutionEngine {
               {
                 loopId,
                 terminalNodeId: nodeId,
-                blockType: blockType || 'unknown',
+                blockType: node.block.metadata?.id || 'unknown',
                 sentinelEndId,
                 hadEdgeToSentinelEnd: node.outgoingEdges.size > 0,
                 incomingEdgesCount: sentinelEndNode.incomingEdges.size,
@@ -995,14 +998,10 @@ export class ExecutionEngine {
         if (agentInputs.memoryType) {
           try {
             const { memoryService } = await import('@/executor/handlers/agent/memory')
-            const lastUserMsg = { role: 'user' as const, content: userPrompt }
-            await memoryService.appendToMemory(
-              this.context,
-              agentInputs,
-              { role: 'assistant', content: intentResult.skipResponse },
-              firstAgentBlock.id,
-              lastUserMsg
-            )
+            await memoryService.appendToMemory(this.context, agentInputs, {
+              role: 'assistant',
+              content: intentResult.skipResponse,
+            })
           } catch (memoryError) {
             logger.warn('Failed to persist skip response to memory', { error: memoryError })
           }

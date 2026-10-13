@@ -6,6 +6,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq } from 'drizzle-orm'
 import { decryptSecret } from '@/lib/core/security/encryption'
+import type { StoredOAuthTokens } from '@/lib/mcp/oauth/provider'
 import { loadOauthRow } from '@/lib/mcp/oauth/storage'
 import { createSsrfGuardedMcpFetch } from '@/lib/mcp/pinned-fetch'
 
@@ -41,10 +42,11 @@ export async function revokeMcpOauthTokens(
     const info = await discoverOAuthServerInfo(server.url, { fetchFn: ssrfGuardedFetch }).catch(
       () => undefined
     )
+    const tokens = row.tokens as StoredOAuthTokens
     if (
       !info ||
-      !row.tokens.issuer ||
-      !isSameAuthorizationServer(row.tokens.issuer, info.authorizationServerUrl)
+      !tokens.issuer ||
+      !isSameAuthorizationServer(tokens.issuer, info.authorizationServerUrl)
     ) {
       return
     }

@@ -562,7 +562,7 @@ async function bufferFromImageUrl(url: string): Promise<{ buffer: Buffer; conten
     }
   }
 
-  const urlValidation = await validateUrlWithDNS(url, 'imageUrl')
+  const urlValidation = await validateUrlWithDNS(url, 'imageUrl', 'contentFetch')
   if (!urlValidation.isValid || !urlValidation.resolvedIP) {
     throw new Error(urlValidation.error || 'Generated image URL failed validation')
   }
@@ -571,6 +571,7 @@ async function bufferFromImageUrl(url: string): Promise<{ buffer: Buffer; conten
     method: 'GET',
     maxResponseBytes: MAX_IMAGE_BYTES,
     timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
+    profile: 'contentFetch',
   })
   if (!imageResponse.ok) {
     await readResponseTextWithLimit(imageResponse, {

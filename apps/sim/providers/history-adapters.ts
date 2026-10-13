@@ -118,6 +118,7 @@ export const providerHistoryProtocols: Record<
   baseten: 'chat-completions',
   nebius: 'chat-completions',
   vllm: 'chat-completions',
+  sambanova: 'chat-completions',
   litellm: 'chat-completions',
 }
 

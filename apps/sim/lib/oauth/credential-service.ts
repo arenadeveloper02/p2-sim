@@ -1206,7 +1206,10 @@ async function readStoredChain(accountId: string): Promise<StoredChain | undefin
  * chain another writer just rotated carries one, and a token that has already expired is no
  * answer at all.
  */
-function usableStoredToken(stored: StoredChain, providerId: string): string | null {
+function usableStoredToken(
+  stored: Pick<StoredChain, 'accessToken' | 'accessTokenExpiresAt'>,
+  providerId: string
+): string | null {
   return stored.accessToken && !isOAuthAccessTokenExpiring(stored.accessTokenExpiresAt, providerId)
     ? stored.accessToken
     : null
@@ -1583,6 +1586,10 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
         alias: accountTokens.alias,
         updatedAt: accountTokens.updatedAt,
         providerAccountId: sql<string | null>`NULL`.as('provider_account_id'),
+        oauthConfig: sql<string | null>`NULL`.as('oauth_config'),
+        refreshRevokedAt: sql<Date | null>`NULL`.as('refresh_revoked_at'),
+        refreshRevokedCode: sql<string | null>`NULL`.as('refresh_revoked_code'),
+        refreshRevokedTokenHash: sql<string | null>`NULL`.as('refresh_revoked_token_hash'),
       })
       .from(accountTokens)
       .where(eq(accountTokens.providerId, providerId))

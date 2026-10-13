@@ -5,7 +5,7 @@ import type {
   SemrushOrganicPositionsParams,
   SemrushOrganicPositionsResponse,
 } from '@/tools/semrush/types'
-import type { ToolConfig } from '@/tools/types'
+import type { ToolConfig, ToolHostingConfig } from '@/tools/types'
 
 const logger = createLogger('SemrushOrganicPositionsTool')
 
@@ -19,7 +19,7 @@ export const semrushOrganicPositionsTool: ToolConfig<
     'Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Requires a Semrush API key configured on the block.',
   version: '1.0.0',
 
-  hosting: semrushHosting,
+  hosting: semrushHosting as unknown as ToolHostingConfig<SemrushOrganicPositionsParams>,
 
   params: {
     apiKey: {

@@ -85,6 +85,8 @@ export interface ChatMessage {
   type: 'user' | 'assistant'
   timestamp: Date
   isInitialMessage?: boolean
+  /** User bubble summarizing Start Block form values (not a typed chat query) */
+  isStartBlockInputsSummary?: boolean
   isStreaming?: boolean
   /** Model thinking text (agent-events-v1). Chrome only when non-empty. */
   thinking?: string

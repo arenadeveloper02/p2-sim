@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { evaluateUrl, isLiftableByVouching, policyDefersToAddress } from '@sim/security/egress'
-import { isIpLiteral, unwrapIpv6Brackets } from '@sim/security/ssrf'
+import { isIpLiteral, isPrivateIp, unwrapIpv6Brackets } from '@sim/security/ssrf'
 import {
   describeEgressDenial,
   type EgressProfile,
@@ -545,18 +545,7 @@ export function validateExternalUrl(
 }
 
 export function isPrivateOrReservedIP(ip: string): boolean {
-  try {
-    if (!ipaddr.isValid(ip)) {
-      return true
-    }
-
-    const addr = ipaddr.process(ip)
-    const range = addr.range()
-
-    return range !== 'unicast'
-  } catch {
-    return true
-  }
+  return isPrivateIp(ip)
 }
 
 /**

@@ -791,7 +791,13 @@ export const ToolInput = memo(function ToolInput({
         .filter(([, param]) => isUserFacingToolParam(param))
         .map(([id, param]) => ({ id, visibility: param.visibility }))
 
-      const initialParams = buildInitialAgentToolParams(toolBlock.type, userFacingParams)
+      const initialParams: Record<string, string> = {}
+      for (const [key, value] of Object.entries(
+        buildInitialAgentToolParams(toolBlock.type, userFacingParams)
+      )) {
+        if (value === undefined || value === null) continue
+        initialParams[key] = encodeToolParamValue(value)
+      }
 
       initialSubBlocks.subBlocks.forEach((sb) => {
         if (initialParams[sb.id] !== undefined) return

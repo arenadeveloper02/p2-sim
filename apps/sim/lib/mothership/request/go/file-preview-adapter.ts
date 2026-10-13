@@ -801,7 +801,7 @@ export async function processFilePreviewStreamEvent(input: {
       lastSnapshotAt: previewUpdate.lastSnapshotAt,
     })
 
-    await emitPreviewEvent(streamEvent, options, {
+    await emitPreviewEvent(streamEvent, options, context, {
       toolCallId: nextSession.toolCallId,
       toolName: 'prepare_file_edit',
       previewPhase: 'file_preview_content',

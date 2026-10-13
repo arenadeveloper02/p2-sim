@@ -728,7 +728,11 @@ export async function deleteCredentialRecord(
   }
 
   if (credentialRow.type === 'oauth') {
-    if (credentialRow.providerId === UNIPILE_LINKEDIN_PROVIDER_ID && credentialRow.accountId) {
+    if (
+      credentialRow.providerId === UNIPILE_LINKEDIN_PROVIDER_ID &&
+      credentialRow.accountId &&
+      credentialRow.createdBy
+    ) {
       const unipileAccounts = await listAccountsToDisconnect({
         userId: credentialRow.createdBy,
         provider: UNIPILE_LINKEDIN_PROVIDER_ID,

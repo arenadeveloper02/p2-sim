@@ -12,6 +12,7 @@ import type {
 } from '@/providers/types'
 import {
   calculateCost,
+  isFunctionToolCall,
   prepareToolExecution,
   prepareToolsWithUsageControl,
   trackForcedToolUsage,
@@ -274,7 +275,9 @@ export async function executeChatCompletionsProviderRequest(
 
       const toolsStartTime = Date.now()
 
-      const toolExecutionPromises = toolCallsInResponse.map(async (toolCall) => {
+      const toolExecutionPromises = toolCallsInResponse
+        .filter(isFunctionToolCall)
+        .map(async (toolCall) => {
         const toolCallStartTime = Date.now()
         const toolName = toolCall.function.name
 
@@ -285,7 +288,12 @@ export async function executeChatCompletionsProviderRequest(
             return null
           }
 
-          const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+          const { toolParams, executionParams } = prepareToolExecution(
+            tool,
+            toolArgs,
+            request,
+            toolCall.id
+          )
           const result = await executeTool(toolName, executionParams)
           const toolCallEndTime = Date.now()
 
@@ -322,9 +330,9 @@ export async function executeChatCompletionsProviderRequest(
       currentMessages.push({
         role: 'assistant',
         content: null,
-        tool_calls: toolCallsInResponse.map((tc) => ({
+        tool_calls: toolCallsInResponse.filter(isFunctionToolCall).map((tc) => ({
           id: tc.id,
-          type: 'function',
+          type: 'function' as const,
           function: {
             name: tc.function.name,
             arguments: tc.function.arguments,

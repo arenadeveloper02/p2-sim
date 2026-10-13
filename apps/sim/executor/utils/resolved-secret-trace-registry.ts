@@ -69,6 +69,7 @@ export type ResolvedSecretIncompletenessReason =
   | 'knowledge-result-provenance-unavailable'
   | 'knowledge-row-missing'
   | 'knowledge-row-content-mismatch'
+  | 'knowledge-response-capacity-exceeded'
   | 'table-result-provenance-unavailable'
   /**
    * A table result carried run-state or enrichment error text, captured from executor output that
@@ -157,6 +158,7 @@ const ORIGINATING_FAULT_REASONS = new Set<ResolvedSecretIncompletenessReason>([
   'client-tool-seal-failed',
   'knowledge-row-missing',
   'knowledge-row-content-mismatch',
+  'knowledge-response-capacity-exceeded',
   'mothership-response-unreadable',
   'structural-input-root-unprojected',
   'backfill-checkpoint-unusable',

@@ -65,7 +65,6 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
   const userId = session?.user?.id
   const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
   const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
-  const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
   const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
   const isEnterprisePlan = subscriptionAccess.isEnterprise
   const isSuperUser = session?.user?.role === 'admin'
@@ -109,10 +108,7 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
         return false
       }
 
-      if (
-        (item.id === 'billing' || item.id === 'arena-billing') &&
-        !canManageWorkspaceBilling(hostContext, userId)
-      ) {
+      if (item.id === 'arena-billing' && !canManageWorkspaceBilling(hostContext, userId)) {
         return false
       }
 
@@ -158,10 +154,6 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
 
       const orgAdminSatisfied = isOrgAdminOrOwner || item.allowNonOrgAdmin
 
-      if (item.requiresTeam && (!hasTeamPlan || !orgAdminSatisfied)) {
-        return false
-      }
-
       if (
         item.requiresEnterprise &&
         (!hasEnterprisePlan || !orgAdminSatisfied) &&
@@ -195,7 +187,6 @@ export function useVisibleSettingsNavigation(workspaceId: string): NavigationIte
       return true
     })
   }, [
-    hasTeamPlan,
     hasEnterprisePlan,
     isEnterprisePlan,
     subscriptionAccess.hasUsableMaxAccess,

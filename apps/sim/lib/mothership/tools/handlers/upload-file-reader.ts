@@ -10,7 +10,7 @@ import {
   MAX_TEXT_READ_BYTES,
   readFileRecord,
 } from '@/lib/mothership/vfs/file-reader'
-import { decodeVfsSegment, encodeVfsSegment } from '@/lib/mothership/vfs/path-utils'
+import { decodeVfsSegmentSafe, encodeVfsSegment } from '@/lib/vfs/path'
 import { getServePathPrefix } from '@/lib/uploads'
 import {
   fetchWorkspaceFileBuffer,
@@ -56,12 +56,7 @@ async function isActualArchiveUpload(record: WorkspaceFileRecord): Promise<boole
  * fall back to encoding the raw name.
  */
 function canonicalUploadKey(name: string): string {
-  let decoded = name
-  try {
-    decoded = decodeVfsSegment(name)
-  } catch {
-    decoded = name
-  }
+  const decoded = decodeVfsSegmentSafe(name)
   try {
     return encodeVfsSegment(decoded)
   } catch {

@@ -473,7 +473,7 @@ export default function ArenaCopilotMarkdownRenderer({
 
       // Images
       img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
-        if (src && renderImage) {
+        if (typeof src === 'string' && renderImage) {
           return <>{renderImage({ src, alt })}</>
         }
 

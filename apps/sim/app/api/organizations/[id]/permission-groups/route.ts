@@ -25,7 +25,19 @@ export const GET = defineInternalJsonRoute({
   errorPolicy: internalPermissionGroupErrorPolicy,
   mapInput: ({ params }) => ({ organizationId: params.id }),
   useCase: listPermissionGroups,
-  present: ({ data }) => ({ permissionGroups: data.map(presentPermissionGroup) }),
+  present: ({ data }) => ({
+    permissionGroups: data.map((group) => {
+      const source = group as typeof group & {
+        creatorName?: string | null
+        creatorEmail?: string | null
+      }
+      return presentPermissionGroup({
+        ...source,
+        creatorName: source.creatorName ?? null,
+        creatorEmail: source.creatorEmail ?? null,
+      })
+    }),
+  }),
 })
 
 export const POST = defineInternalJsonRoute({

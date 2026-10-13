@@ -16,6 +16,7 @@ import {
 } from '@/lib/mothership/tool-executor/types'
 import type {
   CancelWorkflowRunParams,
+  CreateWorkflowParams,
   GenerateApiKeyParams,
   RunBlockParams,
   RunFromBlockParams,
@@ -27,15 +28,19 @@ import {
   boundRunResultForModel,
   presentWorkflowLogsForModel,
 } from '@/lib/mothership/tools/workflow-output'
+import { decodeVfsPathSegments, encodeVfsPathSegments } from '@/lib/vfs/path'
 import { cancelWorkflowRun } from '@/lib/workflows/application/cancel-run'
+import { createWorkflow } from '@/lib/workflows/application/create-workflow'
 import {
   runBlockFromCopilot,
   runFromBlockFromCopilot,
   runWorkflowFromCopilot,
   runWorkflowUntilBlockFromCopilot,
 } from '@/lib/workflows/application/run-workflow-from-copilot'
+import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { hasExecutionResult, readAttemptedExecutionId } from '@/executor/utils/errors'
 import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowMutations')
 
@@ -84,7 +89,7 @@ function settledPhase(status: ExecutionResultStatus): ToolEffectPhase {
     : TOOL_EFFECT_PHASE.performed
 }
 
-type ExecutionResultStatus = 'completed' | 'paused' | 'cancelled' | undefined
+type ExecutionResultStatus = 'completed' | 'paused' | 'cancelled' | 'skipped' | undefined
 
 /** `undefined`, `null`, or a keyless object: a run whose top-level output says nothing. */
 function isEmptyOutput(value: unknown): boolean {
@@ -261,6 +266,17 @@ function assertWorkflowMutationNotAborted(
   }
 }
 
+/**
+ * Strip the `workflows/` VFS prefix from a folder path, returning the
+ * folder-relative remainder. `workflows` (or an empty path) maps to the
+ * workspace root and yields an empty string.
+ */
+function workflowFolderRelativePath(rawPath: string): string {
+  const trimmed = rawPath.trim().replace(/^\/+|\/+$/g, '')
+  if (!trimmed || trimmed === 'workflows') return ''
+  return trimmed.startsWith('workflows/') ? trimmed.slice('workflows/'.length) : trimmed
+}
+
 export async function executeCreateWorkflow(
   params: CreateWorkflowParams,
   context: ExecutionContext
@@ -288,9 +304,14 @@ export async function executeCreateWorkflow(
 
     assertWorkflowMutationNotAborted(context)
 
+    const description =
+      typeof params?.description === 'string' && params.description.trim()
+        ? params.description.trim()
+        : undefined
     const result = await executeCopilotWorkflowUseCase(context, createWorkflow, {
       workspaceId,
       name,
+      ...(description ? { description } : {}),
       ...(canonicalFolderPath !== undefined ? { folderPath: canonicalFolderPath } : { folderId }),
     })
     const copilotSanitizedWorkflowState = sanitizeForCopilot({

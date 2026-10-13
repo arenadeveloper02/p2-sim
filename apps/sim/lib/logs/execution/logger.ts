@@ -927,7 +927,7 @@ export class ExecutionLogger {
           tokens: { input: number; output: number; total: number }
         }
       >
-      charges?: Record<string, { total: number }>
+      charges?: Record<string, { total: number; toolName?: string }>
       external?: Record<
         string,
         {
@@ -1008,6 +1008,9 @@ export class ExecutionLogger {
 
     const level = levelOverride ?? (hasErrors ? 'error' : 'info')
     const status = statusOverride ?? (hasErrors ? 'failed' : 'completed')
+
+    // For resume executions, rebuild trace spans from the aggregated logs
+    const mergedTraceSpans = traceSpans
 
     const executionCost = {
       total: costSummary.totalCost,
@@ -1589,7 +1592,7 @@ export class ExecutionLogger {
           tokens: { input: number; output: number; total: number }
         }
       >
-      charges?: Record<string, { total: number }>
+      charges?: Record<string, { total: number; toolName?: string }>
       external?: Record<
         string,
         {

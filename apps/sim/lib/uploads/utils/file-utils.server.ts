@@ -408,6 +408,7 @@ export async function downloadFileFromStorage(
 }
 
 export interface DownloadFileForDeliveryOptions {
+  maxBytes: number
   raw?: boolean
   signal?: AbortSignal
   ownerKey?: string
@@ -421,9 +422,12 @@ export async function downloadFileForDelivery(
   userFile: UserFile,
   requestId: string,
   logger: Logger,
-  options: DownloadFileForDeliveryOptions = {}
+  options: DownloadFileForDeliveryOptions
 ): Promise<{ buffer: Buffer; contentType: string }> {
-  const buffer = await downloadFileFromStorage(userFile, requestId, logger)
+  const buffer = await downloadFileFromStorage(userFile, requestId, logger, {
+    maxBytes: options.maxBytes,
+    signal: options.signal,
+  })
 
   const { compileDocumentIfNeeded, getWorkspaceIdForCompile } = await import(
     '@/lib/uploads/utils/compile-document'

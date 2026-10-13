@@ -39,7 +39,7 @@ import {
   inlineChatImageUrl,
   isInlineFileReference,
 } from '@/lib/mothership/chat/inline-image-reference'
-import { decodeVfsSegmentSafe } from '@/lib/mothership/vfs/path-utils'
+import { decodeVfsSegmentSafe } from '@/lib/vfs/path'
 import { inter } from '@/app/_styles/fonts/inter/inter'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'

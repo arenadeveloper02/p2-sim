@@ -3,6 +3,16 @@
  * Replaces Record<string, any> with specific shapes based on actual property access.
  */
 
+export interface CreateWorkflowParams {
+  name?: string
+  description?: string
+  workspaceId?: string
+  /** Canonical workflow-folder VFS path, for example `workflows/Dream`. */
+  folderPath?: string
+  /** Legacy executor input. New tool calls use folderPath and resolve the ID internally. */
+  folderId?: string
+}
+
 export interface RunWorkflowParams {
   workflowId?: string
   workflow_input?: unknown

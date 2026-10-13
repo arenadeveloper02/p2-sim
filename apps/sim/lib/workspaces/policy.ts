@@ -515,18 +515,19 @@ export async function getWorkspaceCreationPolicy({
   }
 
   if (!organizationId) {
-    return {
-      canCreate: false,
-      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
-      organizationId: null,
-      billedAccountUserId: userId,
-      isPersonal: false,
-      maxWorkspaces: null,
-      currentWorkspaceCount: 0,
-      reason: 'You must belong to an organization to create a workspace.',
-      status: 403,
-      observedOrganizationId: membership?.organizationId ?? null,
-    }
+      return {
+        canCreate: false,
+        workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+        organizationId: null,
+        billedAccountUserId: userId,
+        isPersonal: false,
+        maxWorkspaces: null,
+        currentWorkspaceCount: 0,
+        reason: 'You must belong to an organization to create a workspace.',
+        status: 403,
+        observedOrganizationId: membership?.organizationId ?? null,
+        governingPermissionGroupOrganizationId,
+      }
   }
 
   if (activeOrganizationId && !orgRole) {

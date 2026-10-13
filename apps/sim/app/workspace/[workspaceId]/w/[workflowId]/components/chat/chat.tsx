@@ -1,7 +1,16 @@
 'use client'
 
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  type KeyboardEvent,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import {
+  Badge,
   Button,
   ComposerActionButton,
   cn,
@@ -1212,7 +1221,7 @@ export function Chat() {
               variant='outline'
               className='flex-none cursor-pointer whitespace-nowrap rounded-[6px]'
               title='Re-run with new inputs'
-              onMouseDown={(e) => {
+              onMouseDown={(e: MouseEvent) => {
                 e.stopPropagation()
                 handleRerun()
               }}

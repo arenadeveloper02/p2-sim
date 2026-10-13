@@ -784,15 +784,17 @@ export async function transformBlockTool(
   // Fallback: Direct registry access if getAllBlocks() doesn't include the block
   if (!blockDef && block.type === 'gmail_v2') {
     try {
-      const { registry } = require('@/blocks/registry')
+      const { getBlockRegistry } = require('@/blocks/registry')
+      const registry = getBlockRegistry?.()
       if (registry?.gmail_v2) {
         blockDef = registry.gmail_v2
       }
     } catch {
       try {
         const registryModule = await import('@/blocks/registry')
-        if (registryModule?.registry?.gmail_v2) {
-          blockDef = registryModule.registry.gmail_v2
+        const registry = registryModule.getBlockRegistry?.()
+        if (registry?.gmail_v2) {
+          blockDef = registry.gmail_v2
         }
       } catch {
         // Both failed, will return null below

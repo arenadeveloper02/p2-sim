@@ -106,7 +106,6 @@ function isAssistantProseBlock(block: PersistedContentBlock): boolean {
 
 function isMainThinkingBlock(block: PersistedContentBlock): boolean {
   if (block.lane === 'subagent') return false
-  if (block.type === 'thinking') return Boolean(block.content?.trim())
   return (
     block.type === MothershipStreamV1EventType.text &&
     block.channel === MothershipStreamV1TextChannel.thinking &&

@@ -48,8 +48,12 @@ function normalizeOperationInputReferences(
   }
 
   if (params.nestedNodes) {
+    const nestedNodes = params.nestedNodes as Record<
+      string,
+      { inputs?: Record<string, unknown> } | undefined
+    >
     params.nestedNodes = Object.fromEntries(
-      Object.entries(params.nestedNodes).map(([childId, childBlock]) => {
+      Object.entries(nestedNodes).map(([childId, childBlock]) => {
         if (!childBlock?.inputs) return [childId, childBlock]
         return [
           childId,

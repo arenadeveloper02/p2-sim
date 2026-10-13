@@ -212,7 +212,7 @@ function toItemRecords(
     case 'skills':
       return (snapshot.skills ?? []) as unknown as Array<Record<string, unknown>>
     case 'jobs':
-      return (snapshot.jobs ?? []) as unknown as Array<Record<string, unknown>>
+      return []
     case 'integrations':
       return (snapshot.integrations ?? []) as unknown as Array<Record<string, unknown>>
     case 'mcpServers':

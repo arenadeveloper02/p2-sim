@@ -10,7 +10,6 @@ import { generateId } from '@sim/utils/id'
 import { filterUndefined, sortObjectKeysDeep, toRecord } from '@sim/utils/object'
 import { APIError } from 'better-auth/api'
 import { and, count, eq } from 'drizzle-orm'
-import type { auth } from '@/lib/auth'
 import type { SsoProviderConfig } from '@/lib/auth/sso/provider-adapter'
 import { lockSsoProvider } from '@/lib/auth/sso/provider-lock'
 import type { DbOrTx } from '@/lib/db/types'
@@ -208,7 +207,7 @@ export function createSsoProviderRepository(
       })
     },
     async update(
-      input: NonNullable<Parameters<typeof auth.api.updateSSOProvider>[0]>['body'],
+      input: ReturnType<(typeof plugin.endpoints.updateSSOProvider.options.body)['parse']>,
       options: SsoProviderUpdateOptions = {}
     ) {
       const body = plugin.endpoints.updateSSOProvider.options.body.parse(input)

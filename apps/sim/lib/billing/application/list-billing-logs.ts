@@ -55,7 +55,7 @@ export const listBillingLogs = defineAuthorizedBillingReadUseCase({
   requestedWorkspaceId: (input: ListBillingLogsInput) => input.workspaceId,
   execute: async ({ principal, input, scope }): Promise<ListBillingLogsResult> => {
     const query = {
-      source: input.source,
+      ...(input.source?.length ? { sources: input.source } : {}),
       startDate: input.startDate,
       endDate: input.endDate,
       limit: input.limit,

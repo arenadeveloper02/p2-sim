@@ -1258,14 +1258,6 @@ function MessageContentInner({
     return () => clearTimeout(timeout)
   }, [visibleStreamActivityKey, isStreaming])
 
-  let lastAgentGroupIndex = -1
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i]?.type === 'agent_group') {
-      lastAgentGroupIndex = i
-      break
-    }
-  }
-
   const lastSegment = segments[segments.length - 1]
   // The reveal tail is the last TEXT segment — a stopped block appends AFTER
   // the text that is still visibly draining, and treating the turn as settled
@@ -1378,7 +1370,6 @@ function MessageContentInner({
                   onPendingTagChange={
                     i === revealTailIndex ? handleTrailingPendingTagChange : undefined
                   }
-                  isCurrentSection={i === lastAgentGroupIndex}
                 />
               )
             case 'agent_group': {
@@ -1437,7 +1428,7 @@ function MessageContentInner({
               showShimmer ? 'opacity-100' : 'opacity-0'
             )}
           >
-            <PendingTagIndicator label={thinkingLabel} />
+            <PendingTagIndicator label={thinkingLabel ?? ''} />
           </div>
         </div>
       ) : // The settled tail takes the slot's place in the SAME render and at the

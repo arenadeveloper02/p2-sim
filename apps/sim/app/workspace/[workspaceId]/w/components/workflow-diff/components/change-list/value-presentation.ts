@@ -339,6 +339,15 @@ const PRESENTATIONS = {
   ),
   'column-selector': selections,
   modal: { kind: 'json' },
+  'mention-input': text,
+  'arena-project-selector': selections,
+  'arena-group-selector': selections,
+  'arena-assignee-selector': selections,
+  'arena-task-selector': selections,
+  'arena-states-selector': selections,
+  'arena-client-selector': selections,
+  'slack-client-selector': selections,
+  'slack-channel-selector': selections,
 } satisfies Record<SubBlockType, PresentationDefinition>
 
 export function getSubBlockPresentationKind(

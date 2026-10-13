@@ -11,22 +11,29 @@ import {
   type PreregisteredClient,
   withPinnedIssuer,
 } from '@/lib/mcp/oauth/provider'
-import { clearClient, type McpOauthRow, saveClientInformation } from '@/lib/mcp/oauth/storage'
+import {
+  clearClient,
+  type McpOauthRow,
+  saveClientInformation,
+  type StoredOAuthTokens,
+} from '@/lib/mcp/oauth/storage'
+
+type ClientInformationWithIssuer = OAuthClientInformationMixed & { issuer?: string }
 
 interface ManagedMcpOauthProviderInit {
   clientRow: McpOauthRow
   preregistered?: PreregisteredClient
-  tokens?: OAuthTokens
+  tokens?: StoredOAuthTokens
   codeVerifier?: string
-  onSaveTokens: (tokens: OAuthTokens | null) => Promise<void>
+  onSaveTokens: (tokens: StoredOAuthTokens | null) => Promise<void>
 }
 
 /** Shares server client registration while keeping grant tokens scoped to one enrollment. */
 export class ManagedMcpOauthProvider implements OAuthClientProvider {
   private readonly clientRow: McpOauthRow
   private readonly preregistered?: PreregisteredClient
-  private readonly onSaveTokens: (tokens: OAuthTokens | null) => Promise<void>
-  private currentTokens?: OAuthTokens
+  private readonly onSaveTokens: (tokens: StoredOAuthTokens | null) => Promise<void>
+  private currentTokens?: StoredOAuthTokens
   private currentState?: string
   private currentCodeVerifier?: string
 
@@ -73,7 +80,7 @@ export class ManagedMcpOauthProvider implements OAuthClientProvider {
 
   clientInformation(): OAuthClientInformationMixed | undefined {
     if (!this.preregistered) return this.clientRow.clientInformation ?? undefined
-    return {
+    const info: ClientInformationWithIssuer = {
       client_id: this.preregistered.clientId,
       client_secret: this.preregistered.clientSecret,
       redirect_uris: [this.redirectUrl],
@@ -84,6 +91,7 @@ export class ManagedMcpOauthProvider implements OAuthClientProvider {
         (this.preregistered.clientSecret ? 'client_secret_post' : 'none'),
       issuer: this.preregistered.issuer ?? this.currentTokens?.issuer,
     }
+    return info
   }
 
   async saveClientInformation(info: OAuthClientInformationMixed): Promise<void> {
@@ -97,8 +105,9 @@ export class ManagedMcpOauthProvider implements OAuthClientProvider {
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
-    await this.onSaveTokens(tokens)
-    this.currentTokens = tokens
+    const stored = tokens as StoredOAuthTokens
+    await this.onSaveTokens(stored)
+    this.currentTokens = stored
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {

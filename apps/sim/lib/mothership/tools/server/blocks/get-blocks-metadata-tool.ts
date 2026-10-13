@@ -33,6 +33,7 @@ import {
 import { getBlock } from '@/blocks/registry'
 import { AuthMode, type BlockConfig, type SubBlockConfig } from '@/blocks/types'
 import { isHiddenUnder, overlayVisibility } from '@/blocks/visibility/context'
+import { PROVIDER_DEFINITIONS } from '@/providers/models'
 
 /**
  * Resolves a requested block id to the registry entry Copilot may write.

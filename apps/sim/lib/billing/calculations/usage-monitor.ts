@@ -385,8 +385,9 @@ export async function checkBillingEntityBlocked(
 
 /**
  * Self-hosted mothership/copilot cap: compares only {@link COPILOT_USAGE_SOURCES}
- * ledger cost (plus the legacy copilot baseline on `user_stats`) against a
- * per-user limit on `user_stats.current_usage_limit`. Workflow and other non-copilot usage is
+ * ledger cost against a per-user limit on `user_stats.current_usage_limit`.
+ * Current-period usage lives on the ledger after `user_stats` dropped
+ * `currentPeriodCopilotCost`. Workflow and other non-copilot usage is
  * excluded so operators can meter hosted Go without capping local execution.
  */
 export async function checkSelfHostedMothershipUsageLimits(userId: string): Promise<{
@@ -407,7 +408,6 @@ export async function checkSelfHostedMothershipUsageLimits(userId: string): Prom
 
     const [stats] = await db
       .select({
-        currentPeriodCopilotCost: userStats.currentPeriodCopilotCost,
         currentUsageLimit: userStats.currentUsageLimit,
       })
       .from(userStats)
@@ -423,13 +423,11 @@ export async function checkSelfHostedMothershipUsageLimits(userId: string): Prom
       }
     }
 
-    const baseline = toNumber(toDecimal(stats.currentPeriodCopilotCost))
-    const ledgerUsage = await getBillingPeriodUsageCost(
+    const currentUsage = await getBillingPeriodUsageCost(
       { type: 'user', id: userId },
       defaultBillingPeriod(),
       COPILOT_USAGE_SOURCES
     )
-    const currentUsage = baseline + ledgerUsage
 
     const limit = stats.currentUsageLimit
       ? toNumber(toDecimal(stats.currentUsageLimit))

@@ -1,15 +1,14 @@
 import { type Principal, requirePrincipalSubjectUserId } from '@sim/auth/principal'
 import { db } from '@sim/db'
-import type { auth } from '@/lib/auth'
 import { configuredSsoPlugin } from '@/lib/auth/sso/plugin'
 import { isSsoEnabled } from '@/lib/core/config/env-flags'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import type { DbOrTx } from '@/lib/db/types'
 
 /** Registration input accepted by the configured Better Auth SSO plugin. */
-export type SsoProviderConfig = NonNullable<
-  Parameters<typeof auth.api.registerSSOProvider>[0]
->['body']
+export type SsoProviderConfig = ReturnType<
+  (typeof configuredSsoPlugin.endpoints.registerSSOProvider.options.body)['parse']
+>
 
 /** Creates a common writer after the application operation has authorized the acting user. */
 export async function ssoProviderWriter(

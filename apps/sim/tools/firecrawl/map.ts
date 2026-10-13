@@ -67,7 +67,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
     },
   },
 
-  hosting: firecrawlHosting(),
+  hosting: firecrawlHosting<MapParams>(),
 
   timeoutParamIsDeadline: true,
 

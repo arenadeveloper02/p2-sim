@@ -1899,8 +1899,17 @@ export interface HubSpotListAssociationsResponse extends ToolResponse {
 //   output: { cart: HubSpotCrmObject; cartId: string; success: boolean }
 // }
 
+type HubSpotPagedResultsResponse = ToolResponse & {
+  output: {
+    results: HubSpotCrmObject[]
+    paging: HubSpotPaging | null
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+
 export type HubSpotListCommercePaymentsParams = HubSpotListCartsParams
-export type HubSpotListCommercePaymentsResponse = HubSpotListCartsResponse
+export type HubSpotListCommercePaymentsResponse = HubSpotPagedResultsResponse
 
 export interface HubSpotGetCommercePaymentParams {
   accessToken: string
@@ -1918,7 +1927,7 @@ export interface HubSpotGetCommercePaymentResponse extends ToolResponse {
 }
 
 export type HubSpotListSubscriptionsParams = HubSpotListCartsParams
-export type HubSpotListSubscriptionsResponse = HubSpotListCartsResponse
+export type HubSpotListSubscriptionsResponse = HubSpotPagedResultsResponse
 
 export interface HubSpotGetSubscriptionParams {
   accessToken: string

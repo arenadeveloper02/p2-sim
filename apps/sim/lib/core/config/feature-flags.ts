@@ -129,7 +129,8 @@ function fallbackFlags(): FeatureFlagsConfig {
   for (const [name, def] of Object.entries(FEATURE_FLAGS) as Array<
     [string, FeatureFlagDefinition]
   >) {
-    flags[name] = { enabled: isTruthy(env[def.fallback]) }
+    const fallback = env[def.fallback]
+    flags[name] = { enabled: isTruthy(Array.isArray(fallback) ? undefined : fallback) }
   }
   return flags
 }

@@ -208,7 +208,8 @@ async function fetchKnowledgeDocuments(
       limit,
       offset,
       enabledFilter,
-      tagFilters: tagFilters && tagFilters.length > 0 ? tagFilters : undefined,
+      tagFilters:
+        tagFilters && tagFilters.length > 0 ? JSON.stringify(tagFilters) : undefined,
     },
     signal,
   })

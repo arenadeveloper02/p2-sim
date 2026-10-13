@@ -42,6 +42,7 @@ import { overlayVisibility } from '@/blocks/visibility/context'
 import { BlockType, EDGE, normalizeName } from '@/executor/constants'
 import {
   getHostedModels,
+  getModelSunsetStatus,
   isAutoModel,
   isCustomModelId,
   isKnownModelId,

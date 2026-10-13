@@ -656,7 +656,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                             {row.label}
                           </span>
                           <span className='flex-shrink-0 font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
-                            {formatApportionedCreditCost(row.credits, row.dollars)}
+                            {formatApportionedCreditCost(row.credits, row.dollars > 0)}
                           </span>
                         </div>
                       ))}

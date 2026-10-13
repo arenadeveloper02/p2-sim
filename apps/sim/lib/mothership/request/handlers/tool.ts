@@ -592,10 +592,9 @@ async function handleCallPhase(
   }
 
   const registered = context.toolCalls.get(toolCallId)
+  const toolPayload = data as unknown as { thoughtSignature?: unknown }
   const thoughtSignature =
-    typeof (data as { thoughtSignature?: unknown }).thoughtSignature === 'string'
-      ? (data as { thoughtSignature: string }).thoughtSignature
-      : undefined
+    typeof toolPayload.thoughtSignature === 'string' ? toolPayload.thoughtSignature : undefined
   if (thoughtSignature && registered) registered.thoughtSignature = thoughtSignature
   if (registered && data.workspaceId) registered.targetWorkspaceId = data.workspaceId
   if (isPartial || data.replay) return

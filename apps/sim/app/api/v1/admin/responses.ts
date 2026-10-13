@@ -34,7 +34,7 @@ export function singleResponse<T>(data: T): NextResponse<AdminSingleResponse<T>>
 /**
  * Create an error response
  */
-function errorResponse(
+export function errorResponse(
   code: string,
   message: string,
   status: number,

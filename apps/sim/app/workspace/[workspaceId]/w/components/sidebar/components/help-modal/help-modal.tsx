@@ -62,7 +62,7 @@ interface SubmitHelpVariables {
   data: FormValues
   images: ImageWithPreview[]
   workflowId?: string
-  workspaceId: string
+  workspaceId?: string
   onOpenChange?: (open: boolean) => void
 }
 

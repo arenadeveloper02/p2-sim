@@ -926,12 +926,12 @@ export const useWorkflowStore = create<WorkflowStore>()(
             const configuredSubblock = getBlock(block.type)?.subBlocks?.find(
               (subBlock) => subBlock.id === subblockId
             )
-            expectedType =
-              typeof currentSubBlock?.type === 'string' &&
-              currentSubBlock.type.length > 0 &&
-              currentSubBlock.type !== 'unknown'
-                ? currentSubBlock.type
+            const storedType = currentSubBlock?.type as string | undefined
+            expectedType = (
+              typeof storedType === 'string' && storedType.length > 0 && storedType !== 'unknown'
+                ? storedType
                 : (configuredSubblock?.type ?? 'short-input')
+            ) as SubBlockState['type']
           }
 
           if (valuesEqual && currentSubBlock?.type === expectedType) {

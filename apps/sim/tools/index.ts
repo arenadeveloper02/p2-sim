@@ -810,7 +810,7 @@ interface HostedKeyInjectionResult {
  * using the runner's first accessible workspace credential for the tool's provider.
  */
 async function injectOAuthCredentialFromUserContextIfNeeded(
-  tool: ToolConfig,
+  tool: ExecutableToolConfig,
   params: Record<string, any>,
   executionContext: ExecutionContext | undefined,
   requestId: string
@@ -2418,66 +2418,12 @@ async function executeToolImplementation(
             contextParams.authStyle = data.authStyle
           }
         }
-
-        if (operationContext?.requestMode === 'assistant') {
-          await registerAssistantCredentialSecrets(resolvedSecretTraceRegistry, [
-            data.accessToken,
-            data.idToken,
-          ])
-        }
-        const useUserToken = Boolean(tool.oauth?.useUserToken || contextParams.useUserToken)
-        const hasIdToken = Boolean(data.idToken && data.idToken.trim() !== '')
-
-        if (useUserToken && hasIdToken && data.idToken) {
-          contextParams.accessToken = data.idToken
-          contextParams.userToken = data.idToken
-          logger.info(`[${requestId}] Using user token for ${toolId}`)
-        } else {
-          contextParams.accessToken = data.accessToken
-          if (data.idToken) {
-            contextParams.idToken = data.idToken
-          }
-        }
-        if (operationContext?.requestMode === 'assistant') {
-          const tokenParam = assistantConnectedAccountTokenParam(tool)
-          if (tokenParam) contextParams[tokenParam] = contextParams.accessToken
-        }
-        if (data.credentialType && tool.oauth?.authoritativeParams?.includes('credentialType')) {
-          contextParams.credentialType = data.credentialType
-        }
-
-        if (data.instanceUrl) {
-          contextParams.instanceUrl = data.instanceUrl
-        }
-        if (data.apiDomain && !contextParams.apiDomain) {
-          contextParams.apiDomain = data.apiDomain
-        }
-        if (data.cloudId && !contextParams.cloudId) {
-          contextParams.cloudId = data.cloudId
-        }
-        if (data.domain && !contextParams.domain) {
-          contextParams.domain = data.domain
-        }
-        if (data.realmId && tool.oauth?.authoritativeParams?.includes('realmId')) {
-          contextParams.realmId = data.realmId
-        }
-        if (
-          data.quickBooksEnvironment &&
-          tool.oauth?.authoritativeParams?.includes('quickBooksEnvironment')
-        ) {
-          contextParams.quickBooksEnvironment = data.quickBooksEnvironment
-        }
-        if (data.authStyle && !contextParams.authStyle) {
-          contextParams.authStyle = data.authStyle
-        }
-
         await resolveCredential(effectiveSignal)
         if (tool.oauth?.retryOnUnauthorized && tool.operation) {
           refreshCredential = resolveCredential
         }
 
-        // Avoid passing token-selection hints downstream.
-        contextParams.useUserToken = undefined
+        logger.info(`[${requestId}] Successfully got access token for ${toolId}`)
 
         // Preserve credential for downstream transforms while removing it from request payload
         // so we don't leak it to external services.
@@ -2672,7 +2618,65 @@ async function executeToolImplementation(
                               ? true
                               : params.arenaMode,
                         })
-                    : tool.directExecution
+                    : normalizedToolId === 'gmail_advanced_search' ||
+                        normalizedToolId === 'gmail_advanced_search_v2'
+                      ? async (params: Record<string, any>) => {
+                          const { executeGmailAdvancedSearchDirect } = await import(
+                            '@/tools/gmail/advanced_search'
+                          )
+                          return executeGmailAdvancedSearchDirect(
+                            params as Parameters<typeof executeGmailAdvancedSearchDirect>[0]
+                          )
+                        }
+                      : normalizedToolId === 'chart_validate'
+                        ? async (params: Record<string, any>) => {
+                            const { executeChartValidateDirect } = await import(
+                              '@/tools/chart_generation/validate'
+                            )
+                            return executeChartValidateDirect(
+                              params as Parameters<typeof executeChartValidateDirect>[0]
+                            )
+                          }
+                        : normalizedToolId === 'google_drive_search'
+                          ? async (params: Record<string, any>) => {
+                              const { executeGoogleDriveSearchDirect } = await import(
+                                '@/tools/google_drive/search'
+                              )
+                              return executeGoogleDriveSearchDirect(
+                                params as Parameters<typeof executeGoogleDriveSearchDirect>[0]
+                              )
+                            }
+                          : normalizedToolId === 'google_slides_create_from_template'
+                            ? async (params: Record<string, any>) => {
+                                const { executeCreateFromTemplateDirect } = await import(
+                                  '@/tools/google_slides/create_from_template'
+                                )
+                                return executeCreateFromTemplateDirect(
+                                  params as Parameters<typeof executeCreateFromTemplateDirect>[0]
+                                )
+                              }
+                            : normalizedToolId === 'p2_docs_get_template_schema'
+                              ? async (params: Record<string, any>) => {
+                                  const { executeGetTemplateSchemaDirect } = await import(
+                                    '@/tools/p2_docs/get_template_schema'
+                                  )
+                                  return executeGetTemplateSchemaDirect(params)
+                                }
+                              : normalizedToolId === 'p2_docs_get_p2_users'
+                                ? async (params: Record<string, any>) => {
+                                    const { executeGetP2UsersDirect } = await import(
+                                      '@/tools/p2_docs/get_p2_users'
+                                    )
+                                    return executeGetP2UsersDirect(params)
+                                  }
+                                : normalizedToolId === 'p2_docs_get_presentation_icons'
+                                  ? async (params: Record<string, any>) => {
+                                      const { executeGetPresentationIconsDirect } = await import(
+                                        '@/tools/p2_docs/get_presentation_icons'
+                                      )
+                                      return executeGetPresentationIconsDirect(params)
+                                    }
+                                  : undefined
       if (directExecution) {
         logger.info(`[${requestId}] Using directExecution for ${toolId}`)
         if (
@@ -2736,6 +2740,10 @@ async function executeToolImplementation(
           duration: endTime.getTime() - startTime.getTime(),
         },
       }
+    }
+
+    if (isInternalToolConfig(tool)) {
+      throw new Error(`Internal tool ${toolId} must execute in-process`)
     }
 
     const result = hostedKeyInfo.isUsingHostedKey

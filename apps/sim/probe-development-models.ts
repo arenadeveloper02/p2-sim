@@ -36,7 +36,6 @@ for (const { model, maxTokens } of candidates) {
       model,
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: 'Reply with {"ok": true}' }],
-      // @ts-expect-error output_config is a beta field
       output_config: {
         format: { type: 'json_schema', schema: transformJSONSchema(schema) },
       },

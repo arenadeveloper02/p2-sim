@@ -14,10 +14,9 @@ export function handleTextEvent(scope: ToolScope): StreamHandler {
       return
     }
 
+    const textPayload = event.payload as unknown as { thoughtSignature?: unknown }
     const thoughtSignature =
-      typeof (event.payload as { thoughtSignature?: unknown }).thoughtSignature === 'string'
-        ? (event.payload as { thoughtSignature: string }).thoughtSignature
-        : undefined
+      typeof textPayload.thoughtSignature === 'string' ? textPayload.thoughtSignature : undefined
     const chunk = event.payload.text
     if (!chunk && !thoughtSignature) {
       return

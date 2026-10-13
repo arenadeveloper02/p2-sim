@@ -1081,6 +1081,8 @@ export function useChat(
   const recoveringClientWorkflowToolIdsRef = useRef<Set<string> | null>(null)
   const recoveringClientWorkflowToolIds = (recoveringClientWorkflowToolIdsRef.current ??= new Set())
   const isHomePage = pathname.endsWith('/home')
+  const isEmbedPageRef = useRef(pathname.endsWith('/embed'))
+  isEmbedPageRef.current = pathname.endsWith('/embed')
 
   const setTransportIdle = useCallback(() => {
     sendingRef.current = false
@@ -2336,6 +2338,7 @@ export function useChat(
       }
       const clearStreamResourceActivity = () => clearResourceActivity(activityTracker, true)
       const ctx = createStreamLoopContext({
+        isEmbedPageRef,
         citedSourcesEnabled: requestModeRef.current === 'assistant',
         refreshRoute: () => router.refresh(),
         viewerId,

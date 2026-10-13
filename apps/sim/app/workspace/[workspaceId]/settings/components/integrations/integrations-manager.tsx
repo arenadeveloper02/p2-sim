@@ -57,14 +57,14 @@ import {
   type WorkspaceCredential,
   type WorkspaceCredentialRole,
 } from '@/hooks/queries/credentials'
+import { useSettingsUnsavedGuard } from '@/components/settings/use-settings-unsaved-guard'
 import {
   useConnectOAuthService,
   useDisconnectOAuthService,
   useOAuthConnections,
-} from '@/hooks/queries/oauth/oauth-connections'
+} from '@/hooks/queries/oauth/connections'
 import { useCanUseZoomAdmin, useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
-import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 const logger = createLogger('IntegrationsManager')
 
@@ -321,14 +321,10 @@ export function IntegrationsManager() {
 
   const isDetailsDirty = isDescriptionDirty || isDisplayNameDirty
 
-  const setNavGuardDirty = useSettingsDirtyStore((s) => s.setDirty)
-  const resetNavGuard = useSettingsDirtyStore((s) => s.reset)
-
-  useEffect(() => {
-    setNavGuardDirty(isDetailsDirty)
-  }, [isDetailsDirty, setNavGuardDirty])
-
-  useEffect(() => () => resetNavGuard(), [resetNavGuard])
+  useSettingsUnsavedGuard({
+    isDirty: isDetailsDirty,
+    navigationBlocked: updateCredential.isPending,
+  })
 
   const handleSaveDetails = async () => {
     if (!selectedCredential || !isSelectedAdmin || !isDetailsDirty || updateCredential.isPending)

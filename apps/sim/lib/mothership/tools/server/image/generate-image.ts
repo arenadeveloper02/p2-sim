@@ -1,6 +1,6 @@
 import { GoogleGenAI, type Part } from '@google/genai'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { OrchestrationError } from '@/lib/core/orchestration/types'
 import {
@@ -93,7 +93,7 @@ function buildOutputPath(
 }
 
 async function fetchReferenceImageUrl(url: string): Promise<{ data: string; mimeType: string }> {
-  const validation = await validateUrlWithDNS(url, 'imageUrl')
+  const validation = await validateUrlWithDNS(url, 'imageUrl', 'contentFetch')
   if (!validation.isValid || !validation.resolvedIP) {
     throw new Error(validation.error || 'Reference image URL failed validation')
   }
@@ -101,6 +101,7 @@ async function fetchReferenceImageUrl(url: string): Promise<{ data: string; mime
   const response = await secureFetchWithPinnedIP(url, validation.resolvedIP, {
     method: 'GET',
     maxResponseBytes: MAX_REFERENCE_IMAGE_BYTES,
+    profile: 'contentFetch',
   })
 
   if (!response.ok) {

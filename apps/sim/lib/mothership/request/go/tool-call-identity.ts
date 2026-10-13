@@ -77,15 +77,21 @@ export function scopeProviderToolCallEvent(
     mapped.payload = { ...scoped.payload, toolCallId: scopeId(scoped.payload.toolCallId) }
     return mapped
   }
-  if (scoped.type === 'run' && scoped.payload.kind === 'checkpoint_pause') {
+  // Arena synthetic local-status `run` events have no `kind`; narrow before mapping.
+  if (
+    scoped.type === 'run' &&
+    'kind' in scoped.payload &&
+    scoped.payload.kind === 'checkpoint_pause'
+  ) {
+    const pausePayload = scoped.payload
     return {
       ...scoped,
       payload: {
-        ...scoped.payload,
-        pendingToolCallIds: scoped.payload.pendingToolCallIds.map(scopeId),
-        ...(scoped.payload.frames
+        ...pausePayload,
+        pendingToolCallIds: pausePayload.pendingToolCallIds.map(scopeId),
+        ...(pausePayload.frames
           ? {
-              frames: scoped.payload.frames.map((frame) => ({
+              frames: pausePayload.frames.map((frame) => ({
                 ...frame,
                 parentToolCallId: scopeId(frame.parentToolCallId),
                 pendingToolIds: frame.pendingToolIds.map(scopeId),

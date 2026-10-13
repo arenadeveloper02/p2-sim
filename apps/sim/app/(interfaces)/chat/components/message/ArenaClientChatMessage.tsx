@@ -43,6 +43,7 @@ import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/c
 import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
 import type {
   ChatAttachment,
+  ChatOutputSegment,
   ChatToolCall,
   KnowledgeRef,
   KnowledgeResultChunk,
@@ -91,6 +92,8 @@ export interface ChatMessage {
   toolCalls?: ChatToolCall[]
   /** True while any tool chip is still `running`. */
   isToolStreaming?: boolean
+  /** Per selected-output live state while a deployment streams block outputs. */
+  outputSegments?: ChatOutputSegment[]
   executionId?: string
   liked?: boolean | null
   attachments?: ChatAttachment[]
@@ -623,7 +626,7 @@ export const ArenaClientChatMessage = memo(
       )
     }, [cleanTextContent])
 
-    const timestampLabel = formatRelativeTime(message.timestamp)
+    const timestampLabel = formatRelativeTime(message.timestamp.toISOString())
 
     const handleCopy = () => {
       const contentToCopy =

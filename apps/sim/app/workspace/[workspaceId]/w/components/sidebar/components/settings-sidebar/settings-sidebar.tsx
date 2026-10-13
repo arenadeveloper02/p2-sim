@@ -57,11 +57,14 @@ import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 interface SettingsSidebarProps {
   isCollapsed?: boolean
   showCollapsedTooltips?: boolean
+  /** Closes an in-sidebar settings preview without leaving the current page. */
+  onClose?: () => void
 }
 
 export function SettingsSidebar({
   isCollapsed = false,
   showCollapsedTooltips = false,
+  onClose,
 }: SettingsSidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
@@ -279,9 +282,13 @@ export function SettingsSidebar({
 
   const handleBack = useCallback(() => {
     requestLeave(() => {
+      if (onClose) {
+        onClose()
+        return
+      }
       router.push(popSettingsReturnUrl(`/workspace/${workspaceId}`))
     })
-  }, [requestLeave, router, popSettingsReturnUrl, workspaceId])
+  }, [onClose, requestLeave, router, popSettingsReturnUrl, workspaceId])
 
   useEffect(() => {
     setDesktopSurfaces({

@@ -725,7 +725,7 @@ export class LoggingSession {
       >
       // Non-model billable charges (standalone tool/integration costs). Carried
       // through so the partition can't be silently dropped at this boundary.
-      charges?: Record<string, { total: number }>
+      charges?: Record<string, { total: number; toolName?: string }>
       external?: Record<
         string,
         {
@@ -753,7 +753,7 @@ export class LoggingSession {
     finalizationPath: ExecutionFinalizationPath
     completionFailure?: string
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<void> {
     const executionState = this.withResolvedSecretTraceProvenance(
       params.executionState,
@@ -1387,7 +1387,8 @@ export class LoggingSession {
         traceSpans: traceSpans || [],
         workflowInput,
         finalChatOutput,
-        status: 'skipped',
+        // Persisted vocabulary has no `skipped`; keep Arena skip semantics via finalOutput.
+        status: 'completed',
       })
 
       this.completed = true
@@ -1799,6 +1800,7 @@ export class LoggingSession {
     isError: boolean
     finalizationPath: ExecutionFinalizationPath
     finalOutput?: Record<string, unknown>
+    executionState?: SerializableExecutionState
     status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<void> {
     if (this.completed || this.completing) {

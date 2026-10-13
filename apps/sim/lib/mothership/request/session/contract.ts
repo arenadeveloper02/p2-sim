@@ -133,6 +133,8 @@ export interface SyntheticFilePreviewEventEnvelope {
 export const LOCAL_STATUS_PHASE = 'agent_live_status' as const
 
 export interface SyntheticLocalStatusPayload {
+  /** Absent so local status is not a Go run-kind checkpoint. */
+  kind?: undefined
   message: string
   statusPhase: typeof LOCAL_STATUS_PHASE
   toolCallId?: string

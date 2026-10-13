@@ -389,7 +389,7 @@ export function FileUpload({
     ? Boolean(parsedReferenceValue?.includeStartFiles)
     : value === START_FILES_REF
   const filesArray = useCombinedChatReferenceMode
-    ? ((parsedReferenceValue?.workspaceFiles as UploadedFile[]) ?? [])
+    ? ((parsedReferenceValue?.workspaceFiles as unknown as UploadedFile[]) ?? [])
     : isUsingStartFiles
       ? []
       : Array.isArray(value)
@@ -770,7 +770,7 @@ export function FileUpload({
             workspaceMap.set(key, file)
           })
           filesToAdd.forEach((file) => {
-            workspaceMap.set(file.path, file)
+            workspaceMap.set(file.path, file as unknown as Record<string, unknown>)
           })
           applyReferenceValue({
             ...parsedReferenceValue,
@@ -796,7 +796,9 @@ export function FileUpload({
         if (useCombinedChatReferenceMode && parsedReferenceValue) {
           applyReferenceValue({
             includeStartFiles: false,
-            workspaceFiles: uploadedFiles[0] ? [uploadedFiles[0]] : [],
+            workspaceFiles: uploadedFiles[0]
+              ? [uploadedFiles[0] as unknown as Record<string, unknown>]
+              : [],
             conversationImages: [],
           })
         } else {
@@ -849,7 +851,7 @@ export function FileUpload({
           const key = String(file.path || file.url || file.name)
           workspaceMap.set(key, file)
         })
-        workspaceMap.set(uploadedFile.path, uploadedFile)
+        workspaceMap.set(uploadedFile.path, uploadedFile as unknown as Record<string, unknown>)
         applyReferenceValue({
           ...parsedReferenceValue,
           workspaceFiles: Array.from(workspaceMap.values()),
@@ -871,7 +873,7 @@ export function FileUpload({
       if (useCombinedChatReferenceMode && parsedReferenceValue) {
         applyReferenceValue({
           includeStartFiles: false,
-          workspaceFiles: [uploadedFile],
+          workspaceFiles: [uploadedFile as unknown as Record<string, unknown>],
           conversationImages: [],
         })
       } else {
@@ -1220,7 +1222,7 @@ export function FileUpload({
           {showConversationPicker && (
             <ConversationImagePicker
               messages={chatMessages}
-              workflowId={activeWorkflowId}
+              workflowId={activeWorkflowId ?? undefined}
               selectedConversationImages={conversationImages}
               onToggleConversationImage={handleToggleConversationImage}
               disabled={disabled}

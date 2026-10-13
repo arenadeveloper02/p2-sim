@@ -686,6 +686,7 @@ export async function runKnowledgeSearch({
     const similarity = hasQuery ? 1 - row.distance : 1
     return {
       embeddingId: row.id,
+      chunkId: row.id,
       knowledgeBaseId: row.knowledgeBaseId,
       documentId: row.documentId,
       documentName: document?.filename ?? null,

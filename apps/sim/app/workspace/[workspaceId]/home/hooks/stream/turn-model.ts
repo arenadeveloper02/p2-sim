@@ -668,6 +668,7 @@ export function reduceEvent(model: TurnModel, envelope: PersistedStreamEventEnve
     }
     case MothershipStreamV1EventType.run: {
       const payload = envelope.payload
+      if (!('kind' in payload)) break
       const kind = payload.kind
       if (kind === 'task_armed' || kind === 'task_delivered') {
         const id = `task:${payload.taskId}`

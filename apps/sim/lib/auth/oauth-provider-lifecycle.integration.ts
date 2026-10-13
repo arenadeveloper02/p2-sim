@@ -4,6 +4,7 @@ import { auditMock, auditMockFns } from '@sim/testing/mocks/audit.mock'
 import { envFlagsMock } from '@sim/testing/mocks/env-flags.mock'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
+import type { BetterAuthOptions } from 'better-auth'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@sim/audit', () => auditMock)
@@ -56,7 +57,7 @@ async function loadRuntime() {
         consentPage: '/oauth/consent',
         disableJwtPlugin: true,
         scopes: ['offline_access', 'api:read', 'api:write'],
-      }),
+      }) as unknown as NonNullable<BetterAuthOptions['plugins']>[number],
     ],
   })
   const sql = postgres(databaseUrl, { max: 1 })

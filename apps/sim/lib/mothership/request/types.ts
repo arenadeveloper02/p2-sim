@@ -212,6 +212,11 @@ export interface StreamingContext {
   isInThinkingBlock: boolean
   subAgentContent: Record<string, string>
   subAgentToolCalls: Record<string, ToolCallState[]>
+  /**
+   * Parent toolCallIds that already opened a `subagent` content block this turn.
+   * Prevents duplicate lane headers when span start is retransmitted.
+   */
+  openSubagentParents?: Set<string>
   pendingContent: string
   streamComplete: boolean
   wasAborted: boolean
@@ -231,7 +236,7 @@ export interface StreamingContext {
     Array<
       | { text: string; thought?: boolean; thoughtSignature?: string }
       | {
-          functionCall: { id: string; name: string; args: Record<string, unknown> }
+          functionCall: { id?: string; name: string; args: Record<string, unknown> }
           thoughtSignature?: string
         }
     >

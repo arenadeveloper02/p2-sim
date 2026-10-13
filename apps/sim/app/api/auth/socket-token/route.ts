@@ -100,7 +100,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     // and then fails in the realtime server with "Session not found" — the
     // socket retries that forever. A fresh read turns that into a clean 401
     // the client can re-authenticate from.
-    const response = await auth.api.generateOneTimeToken({
+    const tokenApi = auth.api as typeof auth.api & {
+      generateOneTimeToken: (input: {
+        headers: typeof hdrs
+        query: { disableCookieCache: boolean }
+      }) => Promise<{ token?: string } | null>
+    }
+    const response = await tokenApi.generateOneTimeToken({
       headers: hdrs,
       query: { disableCookieCache: true },
     })

@@ -205,7 +205,13 @@ describe('authentication audit history in PostgreSQL', () => {
   })
 
   it('records an accepted email OTP login without retaining the OTP or session token', async () => {
-    const otp = await auth.api.createVerificationOTP({ body: { email, type: 'sign-in' } })
+    const otp = await (
+      auth.api as unknown as {
+        createVerificationOTP: (input: {
+          body: { email: string; type: 'sign-in' }
+        }) => Promise<string>
+      }
+    ).createVerificationOTP({ body: { email, type: 'sign-in' } })
     const response = await auth.handler(request('/sign-in/email-otp', { email, otp }))
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { token: string }
@@ -216,7 +222,13 @@ describe('authentication audit history in PostgreSQL', () => {
   })
 
   it('records a rejected email OTP as an anonymous attempt against the account', async () => {
-    await auth.api.createVerificationOTP({ body: { email, type: 'sign-in' } })
+    await (
+      auth.api as unknown as {
+        createVerificationOTP: (input: {
+          body: { email: string; type: 'sign-in' }
+        }) => Promise<string>
+      }
+    ).createVerificationOTP({ body: { email, type: 'sign-in' } })
     const response = await auth.handler(request('/sign-in/email-otp', { email, otp: 'incorrect' }))
     expect(response.status).toBe(400)
     const entry = await expectEvent('auth.login_failed', null)

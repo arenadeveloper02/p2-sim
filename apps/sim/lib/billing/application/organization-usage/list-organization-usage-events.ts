@@ -81,7 +81,7 @@ export const listOrganizationUsageEvents = defineAuthorizedOrganizationUsageUseC
       // One derivation for both predicates, so this list covers exactly the rows the
       // summary and breakdowns aggregate over.
       ...usageWindowLedgerFilter(window),
-      ...(input.source?.length ? { source: input.source } : {}),
+      ...(input.source?.length ? { sources: input.source } : {}),
       limit: input.limit,
       ...(input.cursor ? { cursor: input.cursor } : {}),
       ...(input.keyset
