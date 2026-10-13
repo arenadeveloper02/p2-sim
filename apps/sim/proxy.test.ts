@@ -1,15 +1,43 @@
 /**
  * @vitest-environment node
  */
-import { createEnvMock } from '@sim/testing'
-import type { NextRequest } from 'next/server'
-import { describe, expect, it, vi } from 'vitest'
+import { createEnvMock, envFlagsMock } from '@sim/testing'
+import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const flags = vi.hoisted(() => ({
+  localLoginEnabled: false,
+  authDisabled: false,
+}))
 
 vi.mock('@/lib/core/config/env', () =>
-  createEnvMock({ NEXT_PUBLIC_APP_URL: 'https://app.sim.test' })
+  createEnvMock({
+    NEXT_PUBLIC_APP_URL: 'https://app.sim.test',
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL: 'https://test.thearena.ai',
+  })
 )
 
-import { resolveApiCorsPolicy } from '@/proxy'
+vi.mock('@/lib/core/config/env-flags', () => ({
+  ...envFlagsMock,
+  get isLocalLoginEnabled() {
+    return flags.localLoginEnabled
+  },
+  get isAuthDisabled() {
+    return flags.authDisabled
+  },
+}))
+
+vi.mock('./lib/analytics/profound', () => ({
+  sendToProfound: vi.fn(),
+}))
+
+vi.mock('better-auth/cookies', () => ({
+  getSessionCookie: vi.fn(() => null),
+}))
+
+vi.unmock('@/lib/core/utils/urls')
+
+import { isNextFlightRequest, proxy, resolveApiCorsPolicy } from '@/proxy'
 
 const EXPOSED_HEADERS =
   'Retry-After, WWW-Authenticate, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-Id, X-Run-Id'
@@ -213,5 +241,60 @@ describe('resolveApiCorsPolicy', () => {
         expect(policy.credentials).toBe(false)
       }
     }
+  })
+})
+
+describe('isNextFlightRequest', () => {
+  it('detects the _rsc query used by App Router flight fetches', () => {
+    const request = new NextRequest(
+      'https://test-agent.thearena.ai/?_rsc=Hr_6tAbth98CyXxl'
+    )
+    expect(isNextFlightRequest(request)).toBe(true)
+  })
+
+  it('detects RSC / prefetch headers', () => {
+    expect(
+      isNextFlightRequest(
+        new NextRequest('https://test-agent.thearena.ai/', {
+          headers: { rsc: '1' },
+        })
+      )
+    ).toBe(true)
+    expect(
+      isNextFlightRequest(
+        new NextRequest('https://test-agent.thearena.ai/', {
+          headers: { 'next-router-prefetch': '1' },
+        })
+      )
+    ).toBe(true)
+  })
+
+  it('is false for ordinary document navigations', () => {
+    expect(isNextFlightRequest(new NextRequest('https://test-agent.thearena.ai/'))).toBe(false)
+  })
+})
+
+describe('proxy unauthenticated Arena resume', () => {
+  beforeEach(() => {
+    flags.localLoginEnabled = false
+    flags.authDisabled = false
+  })
+
+  it('keeps RSC prefetch of / on the same origin (avoids CORS to Arena sim-resume)', async () => {
+    const response = await proxy(new NextRequest('https://app.sim.test/?_rsc=Hr_6tAbth98CyXxl'))
+    expect(response.status).toBe(307)
+    const location = new URL(response.headers.get('location')!)
+    expect(location.origin).toBe('https://app.sim.test')
+    expect(location.pathname).toBe('/session-required')
+    expect(location.searchParams.get('returnTo')).toBe('https://app.sim.test/')
+  })
+
+  it('still sends document navigations to Arena sim-resume', async () => {
+    const response = await proxy(new NextRequest('https://app.sim.test/'))
+    expect(response.status).toBe(307)
+    const location = new URL(response.headers.get('location')!)
+    expect(location.origin).toBe('https://test.thearena.ai')
+    expect(location.pathname).toBe('/sso/sim-resume')
+    expect(location.searchParams.get('returnTo')).toBe('https://app.sim.test/')
   })
 })

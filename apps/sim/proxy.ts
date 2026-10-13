@@ -18,9 +18,40 @@ import { getLoginRedirectUrl, isSearchIndexableHost } from './lib/core/utils/url
 const logger = createLogger('Proxy')
 
 /**
+ * Next App Router RSC / prefetch / soft-navigation fetches. These must not be
+ * redirected cross-origin to Arena: the browser follows the Location, then
+ * treats the Arena response as CORS (and blocks OPTIONS that redirect).
+ */
+export function isNextFlightRequest(request: NextRequest): boolean {
+  if (request.nextUrl.searchParams.has('_rsc')) return true
+  const headers = request.headers
+  return (
+    headers.get('rsc') === '1' ||
+    headers.has('next-router-state-tree') ||
+    headers.get('next-router-prefetch') === '1' ||
+    headers.has('next-url')
+  )
+}
+
+/** App return URL for SSO resume; strips Next flight query noise (`_rsc`). */
+function buildAppReturnTo(request: NextRequest): string | null {
+  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
+  if (!appBase) return null
+  const returnUrl = new URL(
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+    `${appBase}/`
+  )
+  returnUrl.searchParams.delete('_rsc')
+  return returnUrl.href
+}
+
+/**
  * No Better Auth session: send the browser to Arena hub to mint an SSO code.
  * Local login (dev, or NEXT_PUBLIC_LOCAL_LOGIN_ENABLED) falls back to `/login`.
  * Otherwise falls back to `/session-required` when the hub URL cannot be resolved.
+ *
+ * Document navigations may bounce straight to Arena. RSC / prefetch requests
+ * stay same-origin (`/session-required`) so the client can hard-navigate.
  *
  * `returnTo` uses `NEXT_PUBLIC_APP_URL` + path — not `request.nextUrl.href`, which
  * becomes `https://0.0.0.0:3000/...` when the container sets `HOSTNAME=0.0.0.0`.
@@ -29,9 +60,17 @@ function redirectUnauthenticated(request: NextRequest): NextResponse {
   if (isLocalLoginEnabled) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
-  const appBase = getEnv('NEXT_PUBLIC_APP_URL')?.trim()?.replace(/\/$/, '')
-  const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`
-  const returnTo = appBase ? new URL(pathWithSearch, `${appBase}/`).href : null
+  const returnTo = buildAppReturnTo(request)
+
+  // Soft nav / Link prefetch: same-origin only (see isNextFlightRequest).
+  if (isNextFlightRequest(request)) {
+    const sessionRequired = new URL(ARENA_SSO_SESSION_REQUIRED_PATH, request.url)
+    if (returnTo) {
+      sessionRequired.searchParams.set('returnTo', returnTo)
+    }
+    return NextResponse.redirect(sessionRequired)
+  }
+
   const resume = returnTo ? buildArenaSimResumeUrl(returnTo, request.nextUrl.hostname) : null
   if (resume) {
     return NextResponse.redirect(resume)
