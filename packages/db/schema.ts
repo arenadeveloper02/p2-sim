@@ -5195,6 +5195,84 @@ export const chatPromptFeedback = pgTable(
   })
 )
 
+/**
+ * Arena-owned transcript for a deployed agent. Keyed by the Arena user and the
+ * dashboard `public_uuid`, not by a Sim session. The workflow execute call does
+ * not write these rows.
+ */
+export const arenaAgentThread = pgTable(
+  'arena_agent_thread',
+  {
+    id: text('id').primaryKey(),
+    arenaUserId: text('arena_user_id').notNull(),
+    publicUuid: text('public_uuid').notNull(),
+    chatSlug: text('chat_slug').notNull(),
+    chatId: text('chat_id').notNull(),
+    title: text('title'),
+    pinnedAt: timestamp('pinned_at'),
+    archivedAt: timestamp('archived_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userDashboardChatUnique: unique('arena_agent_thread_user_dashboard_chat_unique').on(
+      table.arenaUserId,
+      table.publicUuid,
+      table.chatSlug,
+      table.chatId
+    ),
+    userDashboardIdx: index('arena_agent_thread_user_dashboard_idx').on(
+      table.arenaUserId,
+      table.publicUuid,
+      table.chatSlug
+    ),
+  })
+)
+
+export const arenaAgentMessage = pgTable(
+  'arena_agent_message',
+  {
+    id: text('id').primaryKey(),
+    arenaUserId: text('arena_user_id').notNull(),
+    publicUuid: text('public_uuid').notNull(),
+    chatSlug: text('chat_slug').notNull(),
+    chatId: text('chat_id').notNull(),
+    role: text('role').notNull(),
+    content: text('content').notNull(),
+    executionId: text('execution_id'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    roleCheck: check('arena_agent_message_role_check', sql`${table.role} in ('user', 'assistant')`),
+    dashboardThreadIdx: index('arena_agent_message_dashboard_idx').on(
+      table.arenaUserId,
+      table.publicUuid,
+      table.chatSlug,
+      table.chatId,
+      table.createdAt
+    ),
+  })
+)
+
+export const arenaAgentFeedback = pgTable(
+  'arena_agent_feedback',
+  {
+    id: text('id').primaryKey(),
+    arenaUserId: text('arena_user_id').notNull(),
+    publicUuid: text('public_uuid').notNull(),
+    executionId: text('execution_id').notNull(),
+    liked: boolean('liked'),
+    comment: text('comment'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userExecutionUnique: unique('arena_agent_feedback_user_execution_unique').on(
+      table.arenaUserId,
+      table.executionId
+    ),
+  })
+)
+
 export const userArenaDetails = pgTable(
   'user_arena_details',
   {

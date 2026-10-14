@@ -61,9 +61,7 @@ export const ARENA_SERVER_TOOL_SCHEMA_ALIASES: Readonly<
 
 /** Maps an Arena-facing tool name to the in-process server/handler/schema id. */
 export function toServerRegistryToolName(toolName: string): string {
-  return (
-    ARENA_TO_SERVER_REGISTRY_TOOL_NAME[toolName as ArenaAliasedServerToolName] ?? toolName
-  )
+  return ARENA_TO_SERVER_REGISTRY_TOOL_NAME[toolName as ArenaAliasedServerToolName] ?? toolName
 }
 
 export function isArenaFilePipelineTool(toolName: string): boolean {

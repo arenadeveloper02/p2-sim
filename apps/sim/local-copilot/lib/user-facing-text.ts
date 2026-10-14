@@ -374,7 +374,6 @@ export function buildWorkflowBuildSoftCompleteSystemMessage(): string {
   )
 }
 
-
 /**
  * True when prose only narrates inspecting a file (read/grep/see) without
  * claiming a completed fix — including multi-sentence bridges that exceed the
@@ -556,7 +555,6 @@ export function buildUnresolvedFollowUpClosingMessage(
   }
   return 'I made partial progress but still need another step to finish the request. Please continue in chat.'
 }
-
 
 /**
  * System nudge when research/factual intent settled without a live web search.

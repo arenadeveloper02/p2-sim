@@ -131,7 +131,9 @@ export function buildWorkflowBuildChatAppendix(
 
   if (createdWithoutPopulate) {
     const fromTools = synthesizeAssistantSummaryFromTools(
-      records.filter((record) => record.name === 'create_workflow' || record.name === 'edit_workflow')
+      records.filter(
+        (record) => record.name === 'create_workflow' || record.name === 'edit_workflow'
+      )
     )
     if (fromTools) return fromTools
     return (
@@ -159,7 +161,6 @@ export function buildWorkflowBuildChatAppendix(
 
   return null
 }
-
 
 /**
  * True for log/debug tools that gather failure evidence but do not themselves
