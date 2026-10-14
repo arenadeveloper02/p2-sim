@@ -15,6 +15,7 @@ import {
   workspace,
   workspaceFileVersion,
 } from '@sim/db/schema'
+import { deleteWorkspaceFixture, insertWorkspaceFixture } from '@sim/db/testing/workspace-fixtures'
 import { envFlagsMock } from '@sim/testing/mocks/env-flags.mock'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray } from 'drizzle-orm'
@@ -73,10 +74,10 @@ describe('chat-delegated file version history', () => {
 
   afterAll(async () => {
     if (extraWorkspaceIds.length > 0)
-      await db.delete(workspace).where(inArray(workspace.id, extraWorkspaceIds))
+      await deleteWorkspaceFixture(db, inArray(workspace.id, extraWorkspaceIds))
     for (const ids of fixtures) {
       await db.delete(auditLog).where(eq(auditLog.workspaceId, ids.workspaceId))
-      await db.delete(workspace).where(eq(workspace.id, ids.workspaceId))
+      await deleteWorkspaceFixture(db, eq(workspace.id, ids.workspaceId))
       await db.delete(organization).where(eq(organization.id, ids.organizationId))
       await db.delete(user).where(inArray(user.id, [ids.aliceId, ids.bobId]))
     }
@@ -303,7 +304,7 @@ describe('chat-delegated file version history', () => {
     const fixture = await seedVersionedFile()
     const otherWorkspaceId = generateId()
     extraWorkspaceIds.push(otherWorkspaceId)
-    await db.insert(workspace).values({
+    await insertWorkspaceFixture(db, {
       id: otherWorkspaceId,
       organizationId: fixture.organizationId,
       name: 'Second workspace',
@@ -376,15 +377,17 @@ describe('chat-delegated file version history', () => {
 
   it('withholds a historical version whose secret provenance is unknown', async () => {
     const fixture = await seedVersionedFile({ status: 'unknown' })
+    const registry = registryFor(fixture, fixture.bobId)
 
     const response = await chatTransport(
       fixture,
       fixture.bobId,
-      registryFor(fixture, fixture.bobId)
+      registry
     )(`/api/v2/files/${fixture.fileId}/versions/2/text?workspaceId=${fixture.workspaceId}`)
 
-    expect(response.status).toBe(503)
+    expect(response.status).toBe(403)
     expect(await response.text()).not.toContain(SECRET)
+    expect(registry.isPermanentlyIncomplete()).toBe(false)
   })
 
   it('keeps a secret redacted after Chat reverts the file to the version holding it', async () => {

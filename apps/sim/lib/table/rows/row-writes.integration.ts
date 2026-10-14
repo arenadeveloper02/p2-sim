@@ -44,6 +44,7 @@ import { lockUniqueColumns, lockUniqueValues } from '@/lib/table/rows/unique-loc
 import { getTableById } from '@/lib/table/service'
 import { getOrCreateTableSnapshot } from '@/lib/table/snapshot-cache'
 import type { ColumnDefinition, JsonValue, RowData, TableDefinition } from '@/lib/table/types'
+import { checkBatchUniqueConstraintsDb } from '@/lib/table/validation'
 
 const url = readTestDatabaseUrl()
 if (process.env.DATABASE_URL !== url) {
@@ -87,7 +88,7 @@ async function createTable(columns: ColumnDefinition[]): Promise<TableDefinition
 
 async function seedRows(
   tableId: string,
-  rows: Array<{ id: string; data: RowData; orderKey: string | null }>
+  rows: Array<{ id: string; data: RowData; orderKey: string | null; position?: number }>
 ) {
   await db.insert(userTableRows).values(rows.map((row) => ({ ...row, tableId, workspaceId })))
 }
@@ -208,8 +209,11 @@ describe('table row writes against real PostgreSQL', () => {
   beforeAll(async () => {
     await control`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
       VALUES (${userId}, 'Row write fixture', ${`${userId}@example.test`}, true, now(), now())`
-    await control`INSERT INTO workspace (id, name, owner_id, billed_account_user_id)
-      VALUES (${workspaceId}, 'Row write fixtures', ${userId}, ${userId})`
+    await control.begin(async (tx) => {
+      await tx`INSERT INTO project (id, name, owner_id) VALUES (${workspaceId}, 'Fixture project', ${userId})`
+      await tx`INSERT INTO workspace (id, project_id, name, owner_id, billed_account_user_id)
+        VALUES (${workspaceId}, ${workspaceId}, 'Row write fixtures', ${userId}, ${userId})`
+    })
   })
 
   beforeEach(() => {
@@ -217,7 +221,10 @@ describe('table row writes against real PostgreSQL', () => {
   })
 
   afterAll(async () => {
-    await control`DELETE FROM workspace WHERE id = ${workspaceId}`
+    await control.begin(async (tx) => {
+      await tx`DELETE FROM workspace WHERE id = ${workspaceId}`
+      await tx`DELETE FROM project WHERE id = ${workspaceId}`
+    })
     await control`DELETE FROM "user" WHERE id = ${userId}`
     await control.end()
   })
@@ -475,6 +482,33 @@ describe('table row writes against real PostgreSQL', () => {
       expect(await storedCount(table.id, { email: 'dup@example.test' })).toBe(1)
     })
 
+    it('rejects the second of two concurrent batches over the value-lock cap that share a value', async () => {
+      const table = await createTable(uniqueColumns)
+      const batch = (prefix: string) => () =>
+        batchInsertRows(
+          {
+            tableId: table.id,
+            workspaceId,
+            rows: [
+              ...Array.from({ length: 100 }, (_, i) => ({ email: `${prefix}-${i}@example.test` })),
+              { email: 'shared@example.test' },
+            ],
+            secretProvenance: undefined,
+            capabilityGovernedUserId: null,
+          },
+          table,
+          'unique-race'
+        )
+
+      const results = await raceUnderHeldDefinitionRow(table.id, [batch('left'), batch('right')], {
+        onDefinitionRow: 1,
+        onValueLock: 1,
+      })
+
+      expect(fulfilled(results)).toBe(1)
+      expect(await storedCount(table.id, { email: 'shared@example.test' })).toBe(1)
+    })
+
     it('rejects an import batch racing a single insert of the same value', async () => {
       const table = await createTable(uniqueColumns)
 
@@ -692,6 +726,162 @@ describe('table row writes against real PostgreSQL', () => {
         expect(await storedCount(table.id, { meta: { x: 1 } })).toBe(1)
       })
     })
+  })
+
+  describe('batch unique check across many values', () => {
+    /** Seeds `cells` at positions 0.., which the conflict messages report one-based. */
+    const seedAt = (tableId: string, cells: RowData[]) =>
+      seedRows(
+        tableId,
+        cells.map((data, position) => ({
+          id: `${tableId}-${position}`,
+          data,
+          orderKey: `a${position}`,
+          position,
+        }))
+      )
+
+    /**
+     * Index and sequential scans this backend has counted on `user_table_rows`, by relation. The
+     * counters are the backend's unflushed statistics, which can still hold scans from earlier
+     * transactions on the same pooled connection, so callers diff two readings.
+     */
+    async function rowScans(trx: DbTransaction): Promise<Map<string, number>> {
+      const scans = await trx.execute<{ relname: string; scans: number }>(sql`
+        SELECT c.relname, pg_stat_get_xact_numscans(c.oid)::int AS scans
+        FROM pg_class c
+        WHERE c.oid = 'user_table_rows'::regclass
+          OR c.oid IN (SELECT indexrelid FROM pg_index WHERE indrelid = 'user_table_rows'::regclass)`)
+      return new Map(scans.map((row) => [row.relname, row.scans]))
+    }
+
+    /** Runs the check in a transaction and returns its result with the scans the check alone ran. */
+    const checkWithScans = (table: TableDefinition, rows: RowData[]) =>
+      db.transaction(async (trx) => {
+        // A parallel worker's scans are not counted in the leader's transaction statistics.
+        await trx.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`)
+        const before = await rowScans(trx)
+        const result = await checkBatchUniqueConstraintsDb(table.id, rows, table.schema, trx)
+        const scans: Record<string, number> = {}
+        for (const [relname, count] of await rowScans(trx)) {
+          const ran = count - (before.get(relname) ?? 0)
+          if (ran > 0) scans[relname] = ran
+        }
+        return { result, scans }
+      })
+
+    it('reports stored and in-batch conflicts across every probe group', async () => {
+      const table = await createTable([
+        { id: 'email', name: 'email', type: 'string', unique: true },
+        { id: 'meta', name: 'meta', type: 'json', unique: true },
+      ])
+      await seedAt(table.id, [
+        { email: 'first@example.test' },
+        { email: 'middle@example.test' },
+        { email: 'last@example.test' },
+        { meta: { a: 1, b: 2 } },
+        { meta: [1, 2] },
+      ])
+      const rows: RowData[] = Array.from({ length: 260 }, (_, i) => ({
+        email: `new-${i}@example.test`,
+      }))
+      rows[0] = { email: 'new-0@example.test', meta: { b: 2, a: 1 } }
+      rows[1] = { email: 'new-1@example.test', meta: { a: 1 } }
+      rows[2] = { email: 'new-2@example.test', meta: [2, 1] }
+      rows[3] = { email: 'first@example.test', meta: [1, 2] }
+      rows[7] = { email: null }
+      rows[8] = {}
+      rows[130] = { email: 'middle@example.test' }
+      rows[200] = { email: 'new-5@example.test' }
+      rows[259] = { email: 'last@example.test' }
+
+      expect((await checkWithScans(table, rows)).result).toEqual({
+        valid: false,
+        errors: [
+          {
+            row: 0,
+            errors: [
+              'Column "meta" must be unique. Value "[object Object]" already exists in row 4',
+            ],
+          },
+          {
+            row: 3,
+            errors: [
+              'Column "email" must be unique. Value "first@example.test" already exists in row 1',
+              'Column "meta" must be unique. Value "1,2" already exists in row 5',
+            ],
+          },
+          {
+            row: 130,
+            errors: [
+              'Column "email" must be unique. Value "middle@example.test" already exists in row 2',
+            ],
+          },
+          {
+            row: 200,
+            errors: [
+              'Column "email" must be unique. Value "new-5@example.test" duplicates row 6 in batch',
+            ],
+          },
+          {
+            row: 259,
+            errors: [
+              'Column "email" must be unique. Value "last@example.test" already exists in row 3',
+            ],
+          },
+        ],
+      })
+    })
+
+    it('matches an expiration by instant in one pass over the table', async () => {
+      const table = await createTable([
+        { id: 'expires', name: 'expires', type: 'ttl', unique: true },
+      ])
+      await seedAt(table.id, [{ expires: '2024-01-31T00:00:00-00:00' }])
+      const rows: RowData[] = Array.from({ length: 30 }, (_, i) => ({
+        expires: `2025-01-${String(i + 1).padStart(2, '0')}T00:00:00-00:00`,
+      }))
+      rows[27] = { expires: '2024-01-31T01:00:00+01:00' }
+      rows[28] = { expires: null }
+
+      const { result, scans } = await checkWithScans(table, rows)
+
+      expect(result).toEqual({
+        valid: false,
+        errors: [
+          {
+            row: 27,
+            errors: [
+              'Column "expires" must be unique. Value "2024-01-31T01:00:00+01:00" already exists in row 1',
+            ],
+          },
+        ],
+      })
+      expect(Object.values(scans).reduce((sum, count) => sum + count, 0)).toBe(1)
+    })
+
+    it('probes the containment index once per value on a large table', async () => {
+      const table = await createTable([
+        { id: 'email', name: 'email', type: 'string', unique: true },
+      ])
+      await control`INSERT INTO user_table_rows (id, table_id, workspace_id, data, position, order_key)
+        SELECT ${table.id}::text || '-' || i, ${table.id}, ${workspaceId},
+          jsonb_build_object('email', 'stored-' || i || '@example.test'), i, 'a' || i
+        FROM generate_series(0, 39999) AS i`
+      try {
+        await control`ANALYZE user_table_rows`
+        const rows: RowData[] = Array.from({ length: 260 }, (_, i) => ({
+          email: i % 10 === 0 ? `stored-${i * 100}@example.test` : `new-${i}@example.test`,
+        }))
+
+        const { result, scans } = await checkWithScans(table, rows)
+
+        expect(result.errors).toHaveLength(26)
+        expect(scans).toEqual({ user_table_rows_tenant_data_gin_idx: 260 })
+      } finally {
+        await control`DELETE FROM user_table_rows WHERE table_id = ${table.id}`
+      }
+    }, 60_000)
   })
 
   describe('writers validate against the live schema, not their snapshot', () => {
@@ -1986,6 +2176,204 @@ describe('table row writes against real PostgreSQL', () => {
           after = { orderKey: last.orderKey, id: last.id }
         }
         expect(exported).toEqual(expected)
+      }
+    })
+  })
+
+  describe('bounded row reads', () => {
+    /**
+     * A custom sort is read once as ids and its rows fetched by id in byte-sized batches, so the
+     * page must still be the view's order — ties broken by `order_key` then `id`, NULL and missing
+     * cells last — across every batch boundary and from a mid-view offset. A 120-row limit drains
+     * in at least two batches (the first is capped at 51 rows); an unbounded drain from the offset
+     * outgrows its first id pass (205 ids) and has to read the order again from where it stopped.
+     */
+    it('drains a custom sort across batches in the order of the whole view', async () => {
+      const table = await createTable([
+        { id: 'score', name: 'score', type: 'number' },
+        ...textColumns('name'),
+      ])
+      const fixtures = Array.from({ length: 260 }, (_, index) => {
+        const data: RowData = { name: `n${index}` }
+        if (index % 9 === 0) data.score = null
+        else if (index % 4 !== 0) data.score = index % 5
+        return {
+          id: `${table.id}-${String(index).padStart(3, '0')}`,
+          data,
+          orderKey: index % 7 === 0 ? null : `a${index % 3}`,
+        }
+      })
+      await seedRows(table.id, fixtures)
+      const score = (row: (typeof fixtures)[number]) =>
+        typeof row.data.score === 'number' ? row.data.score : null
+      const expected = [...fixtures]
+        .sort((left, right) => {
+          const [l, r] = [score(left), score(right)]
+          if (l !== r) return l === null ? 1 : r === null ? -1 : r - l
+          if (left.orderKey !== right.orderKey) {
+            if (left.orderKey === null) return 1
+            if (right.orderKey === null) return -1
+            return left.orderKey < right.orderKey ? -1 : 1
+          }
+          return left.id < right.id ? -1 : 1
+        })
+        .map((row) => row.id)
+
+      for (const offset of [0, 37]) {
+        const page = await queryRows(
+          table,
+          {
+            sort: { score: 'desc' },
+            limit: 120,
+            offset,
+            includeTotal: false,
+            withExecutions: false,
+          },
+          'sorted-drain'
+        )
+        expect(page.rows.map((row) => row.id)).toEqual(expected.slice(offset, offset + 120))
+        expect(page.nextCursor).not.toBeNull()
+      }
+
+      const rest = await queryRows(
+        table,
+        { sort: { score: 'desc' }, offset: 37, includeTotal: false, withExecutions: false },
+        'sorted-drain'
+      )
+      expect(rest.rows.map((row) => row.id)).toEqual(expected.slice(37))
+      expect(rest.nextCursor).toBeNull()
+    })
+
+    /**
+     * The selection is applied in SQL; the response must still keep exactly the selected keys a
+     * row wrote, JSON nulls included, in the caller's order rather than JSONB's key order.
+     */
+    it('narrows row data to the selected columns exactly as returned without a selection', async () => {
+      const table = await createTable(textColumns('b', 'c', 'other'))
+      const nested = { a: 'ü "q"', z: [1, { k: null }] }
+      await seedRows(table.id, [
+        { id: `${table.id}-0`, data: { b: null, c: nested, other: 'x' }, orderKey: 'a0' },
+        { id: `${table.id}-1`, data: { other: 'only' }, orderKey: 'a1' },
+      ])
+
+      const page = await queryRows(
+        table,
+        {
+          columnIds: new Set(['c', 'b', 'missing']),
+          includeTotal: false,
+          withExecutions: false,
+        },
+        'projection'
+      )
+
+      expect(page.rows.map((row) => JSON.stringify(row.data))).toEqual([
+        JSON.stringify({ c: nested, b: null }),
+        JSON.stringify({}),
+      ])
+    })
+
+    /**
+     * A cursor past keyed rows reads through the keyed/unkeyed `UNION ALL` seek, so both branches
+     * must project alike: every page — keyed rows, then the NULL-`order_key` tail — keeps exactly
+     * the selected keys.
+     */
+    it('projects every page read through a keyset cursor, keyed rows and unkeyed tail alike', async () => {
+      const table = await createTable(textColumns('b', 'c', 'other'))
+      const id = (suffix: string) => `${table.id}-${suffix}`
+      await seedRows(table.id, [
+        { id: id('k0'), data: { b: 'k0', c: [0], other: 'x' }, orderKey: 'a0' },
+        { id: id('k1'), data: { c: { k: 1 }, other: 'x' }, orderKey: 'a1' },
+        { id: id('k2'), data: { b: null, other: 'x' }, orderKey: 'a2' },
+        { id: id('u0'), data: { b: 'u0', c: 'u', other: 'x' }, orderKey: null },
+        { id: id('u1'), data: { other: 'only' }, orderKey: null },
+      ])
+      const expected = [
+        [id('k0'), { c: [0], b: 'k0' }],
+        [id('k1'), { c: { k: 1 } }],
+        [id('k2'), { b: null }],
+        [id('u0'), { c: 'u', b: 'u0' }],
+        [id('u1'), {}],
+      ].map(([rowId, data]) => [rowId, JSON.stringify(data)])
+
+      for (const limit of [1, 2]) {
+        const paged: string[][] = []
+        let cursor: ReturnType<typeof decodeCursor> | undefined
+        do {
+          const page = await queryRows(
+            table,
+            {
+              ...cursor,
+              limit,
+              columnIds: new Set(['c', 'b']),
+              includeTotal: false,
+              withExecutions: false,
+            },
+            'projected-keyset-paging'
+          )
+          paged.push(...page.rows.map((row) => [row.id, JSON.stringify(row.data)]))
+          cursor = page.nextCursor ? decodeCursor(page.nextCursor) : undefined
+        } while (cursor)
+        expect(paged).toEqual(expected)
+      }
+    })
+
+    /**
+     * A sorted drain reads its order as ids and then fetches those rows in separate statements. A
+     * writer that commits between the two must not leak into the page: a deleted row still counts
+     * as the witness that more rows follow, and a re-scored row keeps the value it was ordered by.
+     * Under READ COMMITTED the page lost its witness (a null cursor with rows left) and returned
+     * rows out of order.
+     */
+    it('drains a custom sort in one snapshot while a writer commits between its statements', async () => {
+      const table = await createTable([{ id: 'score', name: 'score', type: 'number' }])
+      const id = (suffix: string) => `${table.id}-${suffix}`
+      await seedRows(
+        table.id,
+        ['a', 'b', 'c', 'd'].map((suffix, index) => ({
+          id: id(suffix),
+          data: { score: 40 - index * 10 },
+          orderKey: `a${index}`,
+        }))
+      )
+
+      const transaction = db.transaction.bind(db)
+      const spy = vi.spyOn(db, 'transaction').mockImplementation((callback, config) =>
+        transaction((tx) => {
+          const select = tx.select.bind(tx)
+          let selects = 0
+          tx.select = ((...args: Parameters<typeof select>) => {
+            const builder = select(...args)
+            if (++selects !== 1) return builder
+            const from = builder.from.bind(builder)
+            builder.from = ((source: Parameters<typeof from>[0]) => {
+              const query = from(source)
+              const execute = query.execute.bind(query)
+              query.execute = (async (...executeArgs: Parameters<typeof execute>) => {
+                const result = await execute(...executeArgs)
+                await control`DELETE FROM user_table_rows WHERE id = ${id('c')}`
+                await control`UPDATE user_table_rows SET data = '{"score": 0}'::jsonb WHERE id = ${id('a')}`
+                return result
+              }) as typeof execute
+              return query
+            }) as typeof from
+            return builder
+          }) as typeof select
+          return callback(tx)
+        }, config)
+      )
+      try {
+        const page = await queryRows(
+          table,
+          { sort: { score: 'desc' }, limit: 2, includeTotal: false, withExecutions: false },
+          'sorted-snapshot'
+        )
+        expect(page.rows.map((row) => [row.id, row.data.score])).toEqual([
+          [id('a'), 40],
+          [id('b'), 30],
+        ])
+        expect(page.nextCursor).not.toBeNull()
+      } finally {
+        spy.mockRestore()
       }
     })
   })
