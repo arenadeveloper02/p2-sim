@@ -16,10 +16,10 @@ permissions:
 jobs:
   secret-scan:
     name: Secret Scan
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -45,7 +45,7 @@ jobs:
   # Resolve auto-incrementing GHCR tag for the production image branch (0.0.N)
   resolve-ghcr-tag:
     name: Resolve GHCR Tag
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.event_name == 'push' && (github.ref == 'refs/heads/version-4.2-prod' || github.ref == 'refs/heads/version-5-prod' || github.ref == 'refs/heads/version-5-main')
     permissions:
       contents: read
@@ -54,7 +54,7 @@ jobs:
       image_tag: ${{ steps.tag.outputs.image_tag }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
 
       - name: Compute next GHCR tag
         id: tag
@@ -69,7 +69,7 @@ jobs:
   # Detect if this is a version release commit (e.g., "v0.5.24: ...")
   detect-version:
     name: Detect Version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.event_name == 'push'
     outputs:
       version: ${{ steps.extract.outputs.version }}
@@ -163,7 +163,7 @@ jobs:
     name: Build GHCR Branch Images
     needs: [secret-scan, resolve-ghcr-tag]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/version-4.2-prod' || github.ref == 'refs/heads/version-5-prod' || github.ref == 'refs/heads/version-5-main')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       actions: write
       contents: read
@@ -180,7 +180,7 @@ jobs:
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -189,8 +189,8 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Generate tags
         id: meta
@@ -216,15 +216,13 @@ jobs:
           free -h
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=${{ matrix.dockerfile }}-amd64
-          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
@@ -234,7 +232,7 @@ jobs:
   build-dev:
     name: Build Dev ECR
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       actions: write
       contents: read
@@ -272,7 +270,7 @@ jobs:
             ecr_repo_secret: ECR_PII
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -290,8 +288,8 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Resolve ECR repo name
         id: ecr-repo
@@ -322,7 +320,7 @@ jobs:
           free -h
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -345,7 +343,7 @@ jobs:
       preview_branch: ${{ steps.target.outputs.preview_branch }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: useblacksmith/checkout@v1 # v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -414,7 +412,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       actions: write
       contents: read
@@ -439,7 +437,7 @@ jobs:
             ecr_repo_secret: ECR_PII
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -464,8 +462,8 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Resolve ECR repo name
         id: ecr-repo
@@ -742,7 +740,7 @@ jobs:
   build-ghcr-arm64:
     name: Build ARM64 (GHCR Only)
     needs: [secret-scan, detect-version]
-    runs-on: ubuntu-24.04-arm
+    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       actions: write
@@ -762,7 +760,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -771,8 +769,8 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Generate ARM64 tags
         id: meta
@@ -806,15 +804,13 @@ jobs:
           free -h
 
       - name: Build and push ARM64 to GHCR
-        uses: docker/build-push-action@v6
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=${{ matrix.dockerfile }}-arm64
-          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-arm64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
@@ -823,7 +819,7 @@ jobs:
   # Create GHCR multi-arch manifests (only for main, after both builds)
   create-ghcr-manifests:
     name: Create GHCR Manifests
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [build-amd64, build-ghcr-arm64, detect-version]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
@@ -1156,12 +1152,12 @@ jobs:
   # Check if docs changed
   check-docs-changes:
     name: Check Docs Changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       docs_changed: ${{ steps.filter.outputs.docs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 2 # Need at least 2 commits to detect changes
       - uses: dorny/paths-filter@v4
@@ -1208,7 +1204,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
 
