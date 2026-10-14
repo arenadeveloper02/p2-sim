@@ -180,6 +180,47 @@ describe('office empty-shell create_file results', () => {
   })
 })
 
+describe('recoverable workspace_file patch failures', () => {
+  it('marks search_not_found as mandatory patch-repair follow-up', () => {
+    const formatted = formatToolResultForLlm('workspace_file', {
+      success: false,
+      errorType: 'search_not_found',
+      recoverable: true,
+      message: 'Patch failed: search string not found in file "dashboard.html".',
+      data: {
+        id: 'file-1',
+        name: 'dashboard.html',
+        vfsPath: 'files/dashboard.html',
+        operation: 'patch',
+        suggestedNextTools: ['read', 'grep', 'workspace_file'],
+      },
+    })
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(parsed.needsFollowUpPatchRepair).toBe(true)
+    expect(parsed.recoverable).toBe(true)
+    expect(String(parsed.followUpHint)).toMatch(/read or grep/i)
+    expect(String(parsed.followUpHint)).toMatch(/Do not tell the user the file is missing/i)
+
+    const followUp = detectMandatoryFollowUp('workspace_file', formatted)
+    expect(followUp?.id).toBe('workspace_file:patch-repair')
+    expect(followUp?.resolveWith).toEqual(['read', 'grep', 'workspace_file'])
+  })
+
+  it('marks truncated search failures as patch-repair follow-up', () => {
+    const formatted = formatToolResultForLlm('workspace_file', {
+      success: false,
+      errorType: 'search_looks_truncated',
+      message: 'Patch failed: search string looks copied from a truncated read',
+      data: { operation: 'patch', name: 'page.html' },
+    })
+    const parsed = JSON.parse(formatted) as Record<string, unknown>
+    expect(parsed.needsFollowUpPatchRepair).toBe(true)
+
+    const followUp = detectMandatoryFollowUp('workspace_file', formatted)
+    expect(followUp?.resolveWith).toContain('read')
+  })
+})
+
 describe('coalesceToolExecutionPayloadForLlm', () => {
   it('surfaces top-level error when result is empty', () => {
     const payload = coalesceToolExecutionPayloadForLlm({

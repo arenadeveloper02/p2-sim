@@ -304,11 +304,21 @@ const FOLLOW_UP_FIELD_KEYS = [
   'needsFollowUpWrite',
   'needsFollowUpWorkspaceFile',
   'needsFollowUpEditContent',
+  'needsFollowUpPatchRepair',
   'needsFollowUpRun',
   'needsOAuthConnect',
   'followUpHint',
   'editPrecondition',
 ] as const
+
+const RECOVERABLE_PATCH_ERROR_TYPES = new Set([
+  'search_not_found',
+  'search_ambiguous',
+  'search_looks_truncated',
+])
+
+const PATCH_REPAIR_FOLLOW_UP_HINT =
+  'Patch search did not match the live file (stale/truncated/ambiguous search — file is still there). Call read or grep on the file path NOW, take a short unique live substring for search, then workspace_file operation=patch once. Do not reuse the previous search. Do not regenerate the whole file. Do not tell the user the file is missing or that the edit permanently failed.'
 
 /**
  * Copies mandatory-follow-up flags onto an artifact stub so offload cannot
@@ -671,7 +681,18 @@ export function formatToolResultForLlm(
     const record = asRecord(result)
     const data = asRecord(record.data)
     const operation = typeof data.operation === 'string' ? data.operation : ''
+    const errorType = typeof record.errorType === 'string' ? record.errorType : ''
     if (
+      record.success === false &&
+      (record.recoverable === true || RECOVERABLE_PATCH_ERROR_TYPES.has(errorType))
+    ) {
+      formatted = {
+        ...record,
+        recoverable: true,
+        needsFollowUpPatchRepair: true,
+        followUpHint: PATCH_REPAIR_FOLLOW_UP_HINT,
+      }
+    } else if (
       record.success !== false &&
       (operation === 'append' || operation === 'update' || operation === 'patch')
     ) {
@@ -870,6 +891,14 @@ function detectMandatoryFollowUpFromRecord(
     }
   }
 
+  if (parsed.needsFollowUpPatchRepair === true) {
+    return {
+      id: 'workspace_file:patch-repair',
+      hint: hint ?? PATCH_REPAIR_FOLLOW_UP_HINT,
+      resolveWith: ['read', 'grep', 'workspace_file'],
+    }
+  }
+
   if (parsed.needsFollowUpEdit === true) {
     const precondition =
       parsed.editPrecondition === 'metadata' ||
@@ -975,7 +1004,10 @@ export function resolveMandatoryFollowUps(
   }
 
   if (toolName === 'workspace_file') {
-    next = next.filter((item) => item.id !== 'create_file:workspace-file')
+    next = next.filter(
+      (item) =>
+        item.id !== 'create_file:workspace-file' && item.id !== 'workspace_file:patch-repair'
+    )
   }
 
   if (toolName === 'create_file') {

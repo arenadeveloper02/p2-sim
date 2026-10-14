@@ -85,6 +85,24 @@ const FILE_MUTATION_TOOL_NAMES = new Set([
   'move_file',
 ])
 
+const RECOVERABLE_WORKSPACE_FILE_PATCH_ERROR_TYPES = new Set([
+  'search_not_found',
+  'search_ambiguous',
+  'search_looks_truncated',
+])
+
+/**
+ * True when workspace_file patch failed in a recoverable way (stale/truncated search).
+ * Those messages must not be dumped into the user-facing chat bubble.
+ */
+function isRecoverableWorkspaceFilePatchFailure(record: ToolTurnRecord): boolean {
+  if (record.name !== 'workspace_file') return false
+  const payload = asRecord(record.result)
+  if (payload.recoverable === true) return true
+  const errorType = typeof payload.errorType === 'string' ? payload.errorType : ''
+  return RECOVERABLE_WORKSPACE_FILE_PATCH_ERROR_TYPES.has(errorType)
+}
+
 const WORKFLOW_MUTATION_TOOL_NAMES = new Set(['create_workflow', 'edit_workflow'])
 
 const RUN_OUTPUT_MAX_CHARS = 6_000
@@ -131,7 +149,9 @@ export function buildWorkflowBuildChatAppendix(
 
   if (createdWithoutPopulate) {
     const fromTools = synthesizeAssistantSummaryFromTools(
-      records.filter((record) => record.name === 'create_workflow' || record.name === 'edit_workflow')
+      records.filter(
+        (record) => record.name === 'create_workflow' || record.name === 'edit_workflow'
+      )
     )
     if (fromTools) return fromTools
     return (
@@ -159,7 +179,6 @@ export function buildWorkflowBuildChatAppendix(
 
   return null
 }
-
 
 /**
  * True for log/debug tools that gather failure evidence but do not themselves
@@ -708,6 +727,11 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
       continue
     }
 
+    // Recoverable patch misses are for the agent loop — never echo "Patch failed…" to chat.
+    if (isRecoverableWorkspaceFilePatchFailure(record)) {
+      continue
+    }
+
     // Specialist domains (`workflow`, `run`, …) and other tools often finish with
     // only a `message` / findings payload. Without this, mothership can settle with
     // zero renderable prose (specialist tool names are absorbed as empty groups).
@@ -742,6 +766,10 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     !turnHasFileMutationTools(records)
   ) {
     return buildFileInspectionChatAppendix(records)
+  }
+
+  if (parts.length === 0 && records.some(isRecoverableWorkspaceFilePatchFailure)) {
+    return 'I need another look at the live file to finish that edit. Please try again if it did not complete.'
   }
 
   const summary = parts
