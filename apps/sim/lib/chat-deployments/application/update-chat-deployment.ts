@@ -246,8 +246,7 @@ export const updateChatDeployment = defineAuthorizedWorkspaceUseCase({
         input.deploymentType === 'app' ? (input.redirectUrl?.trim() ?? null) : null
     }
     if (input.includeThinking !== undefined) values.includeThinking = input.includeThinking
-    /** Partial updates keep the stored value; a row predating the column reads false. */
-    values.includeToolCalls = input.includeToolCalls ?? existing.includeToolCalls ?? false
+    if (input.includeToolCalls !== undefined) values.includeToolCalls = input.includeToolCalls
 
     const updated = await updateChatDeploymentRow(existing.id, values).catch(
       chatIdentifierUniquenessConflict(values.identifier ?? existing.identifier)

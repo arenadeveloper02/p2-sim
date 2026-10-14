@@ -7,7 +7,7 @@ import {
   queueTableRows,
   resetDbChainMock,
 } from '@sim/testing/mocks/database.mock'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ON_DEMAND_UNLIMITED, USAGE_LEDGER_STATEMENT_TIMEOUT_MS } from '@/lib/billing/constants'
 
 const { schemaTables } = vi.hoisted(() => ({
@@ -57,9 +57,14 @@ const mockGetOrgUsageLimit = billingUsageMockFns.mockGetOrgUsageLimit
 const { eq: mockEq, gte: mockGte, isNull: mockIsNull, lt: mockLt, or: mockOr } = drizzleOrmMock
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
   resetDbChainMock()
   mockGetOrgUsageLimit.mockResolvedValue({ limit: 2000 })
   mockGetOrganizationSubscription.mockResolvedValue({ plan: 'enterprise', seats: 1 })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 afterAll(() => {

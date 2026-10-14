@@ -131,7 +131,7 @@ const nextConfig: NextConfig = {
     ],
   },
   typescript: {
-    ignoreBuildErrors: isTruthy(env.DOCKER_BUILD),
+    ignoreBuildErrors: isTruthy(env.DOCKER_BUILD) || isTruthy(env.NEXT_BUILD_SKIP_TYPE_CHECK),
   },
   output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
   serverExternalPackages: [

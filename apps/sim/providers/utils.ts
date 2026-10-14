@@ -1770,7 +1770,8 @@ export function isDeepResearchModel(model: string): boolean {
   return MODELS_WITH_DEEP_RESEARCH.includes(model.toLowerCase())
 }
 
-export function isGemini3Model(model: string): boolean {
+/** Accepts bare Gemini IDs, google/ or vertex/ prefixes, and Google publisher resource names. */
+export function isGemini3OrLaterModel(model: string): boolean {
   const normalized = model
     .toLowerCase()
     .replace(/^vertex\//, '')
@@ -1778,7 +1779,7 @@ export function isGemini3Model(model: string): boolean {
       /^(?:google\/|(?:projects\/[^/]+\/locations\/[^/]+\/)?publishers\/google\/models\/)/,
       ''
     )
-  return normalized.startsWith('gemini-3')
+  return Number(normalized.match(/^gemini-(\d+)(?:[.-]|$)/)?.[1]) >= 3
 }
 
 /**

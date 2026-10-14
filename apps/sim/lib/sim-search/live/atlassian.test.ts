@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readAtlassian, searchAtlassian } from '@/lib/sim-search/live/atlassian'
+import { previewConfluence, readAtlassian, searchAtlassian } from '@/lib/sim-search/live/atlassian'
 import { NativeSearchError } from '@/lib/sim-search/live/http'
 import type { NativeClient } from '@/lib/sim-search/live/types'
 
@@ -180,5 +180,68 @@ describe('Confluence live documents', () => {
     ])
     expect(page.message).toContain('cannot be read')
     expect(page.partial).toBe(true)
+  })
+
+  it('keeps the search excerpt when a previewed page body has no text', async () => {
+    const page = (value: string) =>
+      client({ [`${v2}/pages/7`]: { id: '7', title: 'Diagram', body: { view: { value } } } })
+    const document = {
+      id: '7',
+      kind: 'page',
+      container: 'cloud',
+      title: 'Diagram',
+      url: '',
+      content: '',
+    }
+    expect(await previewConfluence(page('<img src="x.png">'), document)).toBeUndefined()
+    expect(await previewConfluence(page('<p>Rollout steps</p>'), document)).toBe('Rollout steps')
+  })
+})
+
+describe('Jira any-term search', () => {
+  const issues = {
+    '/ex/jira/cloud/rest/api/3/search/jql': {
+      issues: [
+        { key: 'ENG-1', fields: { summary: 'Token creator role request' } },
+        { key: 'ENG-2', fields: { summary: 'Role request form' } },
+      ],
+    },
+  }
+  const query = { query: 'glean token creator role request', limit: 25, scopes: [] }
+
+  it('keeps only issues holding at least half the query terms', async () => {
+    const page = await searchAtlassian(client(issues), 'jira', { ...query, textMatch: 'any' })
+    expect(page.documents.map((document) => document.id)).toEqual(['ENG-1'])
+  })
+
+  it('counts only the summary and description, not the added status line', async () => {
+    const api = client({
+      '/ex/jira/cloud/rest/api/3/search/jql': {
+        issues: [{ key: 'ENG-3', fields: { summary: 'Release update', status: { name: 'Open' } } }],
+      },
+    })
+    const page = await searchAtlassian(api, 'jira', {
+      query: 'release status update owner timeline',
+      limit: 25,
+      scopes: [],
+      textMatch: 'any',
+    })
+    expect(page.documents).toEqual([])
+  })
+
+  it('keeps every issue an all-terms search returns', async () => {
+    const page = await searchAtlassian(client(issues), 'jira', query)
+    expect(page.documents.map((document) => document.id)).toEqual(['ENG-1', 'ENG-2'])
+  })
+
+  it('leaves a Confluence any-term search to its relevance ranking', async () => {
+    const api = client({
+      '/ex/confluence/cloud/wiki/rest/api/search': {
+        results: [{ content: { id: '5', type: 'page', title: 'Role request form' } }],
+        _links: {},
+      },
+    })
+    const page = await searchAtlassian(api, 'confluence', { ...query, textMatch: 'any' })
+    expect(page.documents.map((document) => document.id)).toEqual(['5'])
   })
 })

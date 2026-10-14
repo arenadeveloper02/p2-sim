@@ -73,6 +73,7 @@ import {
   type KnowledgeQueryScope,
   knowledgeKeys,
 } from '@/hooks/queries/utils/knowledge-keys'
+import { recentlyDeletedKeys } from '@/hooks/queries/utils/recently-deleted-keys'
 import { searchSourceKeys } from '@/hooks/queries/utils/search-source-keys'
 
 const logger = createLogger('KnowledgeQueries')
@@ -208,8 +209,7 @@ async function fetchKnowledgeDocuments(
       limit,
       offset,
       enabledFilter,
-      tagFilters:
-        tagFilters && tagFilters.length > 0 ? JSON.stringify(tagFilters) : undefined,
+      tagFilters: tagFilters && tagFilters.length > 0 ? JSON.stringify(tagFilters) : undefined,
     },
     signal,
   })
@@ -1222,6 +1222,7 @@ export function useRestoreKnowledgeBase() {
       })
     },
     onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: recentlyDeletedKeys.lists() })
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.lists() })
     },
   })

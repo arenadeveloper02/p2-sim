@@ -146,6 +146,8 @@ export default defineConfig({
       // breaks inside the worker bundle; it must load from node_modules.
       'pdfjs-dist',
       '@napi-rs/canvas',
+      // Native libvips binding; knowledge processing reads and downscales images with it.
+      'sharp',
     ],
     extensions: [
       syncEnvVars(() => [
@@ -182,6 +184,7 @@ export default defineConfig({
           '@daytona/sdk',
           'pdfjs-dist',
           '@napi-rs/canvas',
+          'sharp',
         ],
       }),
     ],
