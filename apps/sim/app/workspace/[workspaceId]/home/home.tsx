@@ -22,7 +22,6 @@ import {
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { ChatResourcePanel } from '@/app/workspace/[workspaceId]/home/components/chat-resource-panel'
-import { RESOURCE_HEADER_CLASSES } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-tabs/resource-tab-controls'
 import { SuggestedActions } from '@/app/workspace/[workspaceId]/home/components/suggested-actions'
 import { HomeFallback } from '@/app/workspace/[workspaceId]/home/home-fallback'
 import { sendPayload } from '@/app/workspace/[workspaceId]/home/hooks/send-queue-policy'
@@ -38,13 +37,7 @@ import { getWorkspaceFilesQueryOptions, useWorkspaceFiles } from '@/hooks/querie
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useLocalCopilotCatalogSelection } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
-import {
-  ChatSurfaceProvider,
-  CreditsChip,
-  MothershipChat,
-  UserInput,
-  type UserInputHandle,
-} from './components'
+import { ChatSurfaceProvider, MothershipChat, UserInput, type UserInputHandle } from './components'
 import { getMothershipUseChatOptions, useChat } from './hooks'
 import type {
   FileAttachmentForApi,
@@ -193,12 +186,7 @@ function HomeContent({ chatId, userName, userId }: HomeProps) {
     getCurrentRequestId,
   } = chat
   const panel = useChatResourcePanel(chat, controller, userId)
-  const {
-    isResourceCollapsed,
-    skipResourceTransition,
-    addResourceFromUser,
-    prepareResourceViewForAgentTurn,
-  } = panel
+  const { addResourceFromUser, prepareResourceViewForAgentTurn } = panel
 
   useEffect(() => {
     wasSendingRef.current = false
@@ -426,25 +414,6 @@ function HomeContent({ chatId, userName, userId }: HomeProps) {
   return (
     <ChatResourcePanel workspaceId={workspaceId} chat={chat} panel={panel}>
       <div className='relative flex h-full min-w-0 flex-1 flex-col md:min-w-[min(480px,50%)]'>
-        {showEmptyState && (
-          <div
-            className={cn(
-              'z-10',
-              RESOURCE_HEADER_CLASSES.overlay,
-              // Collapsed, the expand toggle overlays this corner, so the chip
-              // yields the fixed reserve; open, the toggle lives in the panel's
-              // corner and the chip takes the standard end inset itself.
-              isResourceCollapsed
-                ? RESOURCE_HEADER_CLASSES.adjacentEndPosition
-                : RESOURCE_HEADER_CLASSES.endPosition,
-              skipResourceTransition
-                ? 'transition-none'
-                : 'transition-[right] duration-200 [transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]'
-            )}
-          >
-            <CreditsChip />
-          </div>
-        )}
         {showEmptyState ? (
           <div className='h-full overflow-y-auto [scrollbar-gutter:stable_both-edges]'>
             {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}

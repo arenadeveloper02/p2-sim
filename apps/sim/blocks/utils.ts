@@ -56,9 +56,31 @@ export function getModelOptions() {
   return buildModelOptions(false)
 }
 
-/** Agent supports both conversational and native evaluation models. */
+const OPENROUTER_MODEL_PREFIX = 'openrouter/' as const
+
+/**
+ * OpenRouter models with zero prompt and completion pricing (from `/api/providers/openrouter/models`).
+ */
+function isFreeOpenRouterModel(modelId: string): boolean {
+  if (!modelId.startsWith(OPENROUTER_MODEL_PREFIX)) {
+    return true
+  }
+
+  const info = useProvidersStore.getState().openRouterModelInfo[modelId]
+  const pricing = info?.pricing
+  if (!pricing) {
+    return false
+  }
+
+  return pricing.input === 0 && pricing.output === 0
+}
+
+/**
+ * Model options for the Agent block: same as {@link getModelOptions}, including evaluation
+ * models, but OpenRouter entries are limited to models OpenRouter reports as free.
+ */
 export function getAgentModelOptions() {
-  return buildModelOptions(true)
+  return buildModelOptions(true).filter((opt) => isFreeOpenRouterModel(opt.id))
 }
 
 function buildModelOptions(includeEvaluation: boolean) {
