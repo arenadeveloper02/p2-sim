@@ -475,9 +475,16 @@ export function proxy(request: NextRequest) {
     return applyIndexingPolicy(request, response)
   }
 
-  // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
+  // `/chat/*` requires a Better Auth session, same as `/workspace` — Arena SSO
+  // resume when missing (configured hub, e.g. app.thearena.ai /sso/sim-resume).
   if (url.pathname.startsWith('/chat/')) {
-    return applyIndexingPolicy(request, NextResponse.next())
+    if (!hasActiveSession) {
+      return track(request, redirectUnauthenticated(request))
+    }
+    const response = NextResponse.next()
+    response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    return track(request, response)
   }
 
   // Arena redirect SSO callback / error — no Better Auth session yet
