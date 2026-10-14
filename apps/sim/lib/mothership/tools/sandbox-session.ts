@@ -56,15 +56,21 @@ function containsSessionCredential(value: unknown, matcher: ResolvedSecretMatche
   return false
 }
 
-/** Public runtime and private bootstrap share an immutable release directory. */
+/**
+ * Public runtime and private bootstrap share an immutable release directory.
+ *
+ * `turbopackIgnore` keeps this cwd-relative read out of the file trace. An
+ * unscoped `process.cwd()` otherwise sweeps the whole project into every route
+ * that imports this module. `runtime.js` is copied by `outputFileTracingIncludes`.
+ */
 async function workbenchCli(
   userId: string,
   signal?: AbortSignal
 ): Promise<NonNullable<SandboxSessionRequest['cli']>> {
   const cwd = process.cwd()
   const path = resolve(
-    cwd,
-    cwd.endsWith('/apps/sim')
+    /* turbopackIgnore: true */ cwd,
+    /* turbopackIgnore: true */ cwd.endsWith('/apps/sim')
       ? '../../packages/sim-cli/dist/runtime.js'
       : 'packages/sim-cli/dist/runtime.js'
   )

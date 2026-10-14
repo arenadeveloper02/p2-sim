@@ -64,6 +64,11 @@ const MAX_INTERACTIVE_WORKSPACES = 1000
  * Best-effort browser launch. Failure is not an error: the URL is always printed
  * first, so a headless box, an SSH session, or a machine with no handler just
  * falls through to the user pasting it somewhere.
+ *
+ * `turbopackIgnore` on both `spawn` inputs. The command is a platform binary
+ * (`open`, `xdg-open`, or `cmd`) and `args` carries the handoff URL. The app
+ * build reaches this file through `sim/embed`, and either dynamic input is
+ * traced as a file pattern over the whole app tree.
  */
 function openBrowser(url: string): void {
   /**
@@ -81,7 +86,10 @@ function openBrowser(url: string): void {
       : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]]
 
   try {
-    const child = spawn(command, args, { stdio: 'ignore', detached: true })
+    const child = spawn(/* turbopackIgnore: true */ command, /* turbopackIgnore: true */ args, {
+      stdio: 'ignore',
+      detached: true,
+    })
     child.on('error', () => {})
     child.unref()
   } catch {}
