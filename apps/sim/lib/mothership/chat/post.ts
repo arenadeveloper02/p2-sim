@@ -1,8 +1,11 @@
 import { context as otelContextApi } from '@opentelemetry/api'
 import type { SessionPrincipal } from '@sim/auth/principal'
+import { db } from '@sim/db'
+import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
@@ -109,6 +112,17 @@ import {
   isWorkspaceAccessDeniedError,
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
+import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
+import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
+import {
+  type CopilotBackendPreference,
+  parseCopilotBackendPreference,
+} from '@/local-copilot/lib/copilot-backend-preference'
+import {
+  isLocalCopilotCatalogId,
+  remapLegacyLocalCopilotCatalogId,
+  resolveLocalCopilotRequestCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 const logger = createLogger('UnifiedChatAPI')
@@ -311,6 +325,7 @@ const ChatMessageSchema = z
     contexts: z.array(ChatContextSchema).max(MAX_CHAT_CONTEXTS).optional(),
     commands: z.array(z.string()).optional(),
     userTimezone: z.string().optional(),
+    copilotBackend: z.enum(['local', 'external']).optional(),
     effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
     modelSelection: ModelSelectionSchema.optional(),
     clientCapabilities: z.array(z.string()).optional(),
@@ -978,6 +993,69 @@ function duplicateChatSendResponse(claim: AtomicClaimResult, userMessageId: stri
   )
 }
 
+/**
+ * Home chat sends an open canvas as a resource tab, not `workflowId`.
+ * Arena Copilot needs the id so the live graph lands in system context after refresh.
+ */
+function resolveOpenWorkflowIdForLocalCopilot(params: {
+  branchWorkflowId?: string
+  chatWorkflowId?: string | null
+  resourceAttachments?: Array<{ type: string; id: string; active?: boolean }>
+  chatResources?: unknown
+}): string | undefined {
+  const fromBranch = params.branchWorkflowId?.trim()
+  if (fromBranch) return fromBranch
+
+  const attachments = params.resourceAttachments ?? []
+  const workflows = attachments.filter((attachment) => attachment.type === 'workflow')
+  const active = workflows.find((attachment) => attachment.active) ?? workflows[0]
+  if (active?.id) return active.id
+
+  const fromChatResources = extractWorkflowIdFromResources(params.chatResources)
+  if (fromChatResources) return fromChatResources
+
+  const fromChat = params.chatWorkflowId?.trim()
+  return fromChat || undefined
+}
+
+/**
+ * Existing Local chats created under the hosted Opus default still store
+ * `claude-opus-4-8`. Rewrite that leftover onto the generic Claude picker id
+ * so follow-up turns stop carrying the old id. Returns the model as stored
+ * before the rewrite so the first turn can remap it.
+ */
+async function migrateLegacyLocalCopilotChatModel(
+  chatId: string,
+  userId: string
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ model: copilotChats.model })
+    .from(copilotChats)
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+    .limit(1)
+
+  const storedModel = row?.model ?? undefined
+  const remapped = remapLegacyLocalCopilotCatalogId(storedModel)
+  if (!remapped) return storedModel
+
+  await db
+    .update(copilotChats)
+    .set({ model: remapped, updatedAt: new Date() })
+    .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+
+  return storedModel
+}
+
+function resolveRequestedCopilotBackend(
+  requested: CopilotBackendPreference | undefined,
+  access: { hasAccess: boolean; localOnly: boolean }
+): CopilotBackendPreference {
+  if (access.localOnly) return 'local'
+  if (!access.hasAccess) return 'external'
+  if (requested === 'external') return 'external'
+  return 'local'
+}
+
 export async function handleUnifiedChatPost(req: NextRequest) {
   let actualChatId: string | undefined
   let userMessageId = ''
@@ -1008,6 +1086,22 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     const authenticatedUserEmail = session.user.email
 
     const body = ChatMessageSchema.parse(await req.json())
+    const localAccess = await getLocalCopilotUserAccess(authenticatedUserId)
+    const copilotBackend = resolveRequestedCopilotBackend(
+      parseCopilotBackendPreference(body.copilotBackend),
+      localAccess
+    )
+    let localCatalogId: string | undefined
+    if (copilotBackend === 'local') {
+      const storedChatModel = body.chatId
+        ? await migrateLegacyLocalCopilotChatModel(body.chatId, authenticatedUserId)
+        : undefined
+      localCatalogId = resolveLocalCopilotRequestCatalogId(
+        isLocalCopilotCatalogId(body.model) ? body.model : undefined,
+        localAccess.defaultModel,
+        storedChatModel
+      )
+    }
     // Admission records a send's own effort as the chat's explicit choice.
     const effortChoice = body.mode === 'assistant' ? undefined : body.effort
     let modelSelectorEnabled = false
@@ -1468,6 +1562,25 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             ? body.clientCapabilities.includes('workflow-tool-pickup')
             : true
       const requestPayload = { ...preparedPayload, protocolVersion: PROTOCOL_VERSION }
+      const localOpenWorkflowId =
+        copilotBackend === 'local' && branch.kind !== 'organization' && body.mode !== 'assistant'
+          ? resolveOpenWorkflowIdForLocalCopilot({
+              branchWorkflowId: branch.kind === 'workflow' ? branch.workflowId : undefined,
+              chatWorkflowId: currentChat?.workflowId,
+              resourceAttachments: body.resourceAttachments,
+              chatResources: currentChat?.resources,
+            })
+          : undefined
+      if (localOpenWorkflowId && !requestPayload.workflowId) {
+        requestPayload.workflowId = localOpenWorkflowId
+      }
+      // Arena Copilot still reads `model` as the catalog id. Hosted ChatRequest
+      // replaced that field with `modelSelection`, which this path does not use.
+      if (localCatalogId && branch.kind !== 'organization') {
+        Object.assign(requestPayload, { model: localCatalogId })
+      }
+      const orchestratorWorkflowId =
+        localOpenWorkflowId ?? (branch.kind === 'workflow' ? branch.workflowId : undefined)
       const lease = actualChatId ? getLocalChatStreamLease(actualChatId, userMessageId) : undefined
       const runController = lease ? { id: runId, token: lease.value } : undefined
       let admittedRun: Awaited<ReturnType<typeof admitChatTurn.execute>> | undefined
@@ -1531,7 +1644,8 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         otelRoot: activeOtelRoot,
         orchestrateOptions: {
           userId: authenticatedUserId,
-          ...(branch.kind === 'workflow' ? { workflowId: branch.workflowId } : {}),
+          copilotBackend,
+          ...(orchestratorWorkflowId ? { workflowId: orchestratorWorkflowId } : {}),
           ...(workspaceId ? { workspaceId } : {}),
           ...(branch.kind === 'organization' ? { organizationId: branch.organizationId } : {}),
           chatId: actualChatId,

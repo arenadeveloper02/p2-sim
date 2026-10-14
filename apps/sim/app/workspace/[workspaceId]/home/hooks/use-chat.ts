@@ -135,6 +135,7 @@ import { getWorkflowById, getWorkflows } from '@/hooks/queries/utils/workflow-ca
 import { getWorkflowListQueryOptions } from '@/hooks/queries/utils/workflow-list-query'
 import { workflowKeys } from '@/hooks/queries/workflows'
 import { snapAllSmoothText } from '@/hooks/use-smooth-text'
+import { DEFAULT_LOCAL_COPILOT_CATALOG_ID } from '@/local-copilot/lib/model-catalog'
 import { useChatPanelStore } from '@/stores/chat-panel/store'
 import { useMothershipEffortStore } from '@/stores/mothership-effort/store'
 import {
@@ -678,6 +679,10 @@ export interface UseChatOptions {
   projectsDesktopTabs?: boolean
   /** Fired when the server's `traceparent` response header arrives, before any stream content. */
   onRequestStarted?: (info: { requestId: string; userMessageId: string }) => void
+  /** Home and workflow chat: user-selected local vs external copilot backend. */
+  getCopilotBackend?: () => 'local' | 'external'
+  /** Local Copilot catalog id to send when the backend is local. */
+  getLocalCopilotCatalogId?: () => string
 }
 
 interface ActiveStreamRecovery {
@@ -701,6 +706,8 @@ export function getMothershipUseChatOptions(
     | 'activeResourceState'
     | 'onRequestStarted'
     | 'requestMode'
+    | 'getCopilotBackend'
+    | 'getLocalCopilotCatalogId'
   > = {}
 ): UseChatOptions {
   return {
@@ -714,7 +721,13 @@ export function getMothershipUseChatOptions(
 export function getWorkflowCopilotUseChatOptions(
   options: Pick<
     UseChatOptions,
-    'workflowId' | 'onToolResult' | 'onTitleUpdate' | 'onStreamEnd' | 'onRequestStarted'
+    | 'workflowId'
+    | 'onToolResult'
+    | 'onTitleUpdate'
+    | 'onStreamEnd'
+    | 'onRequestStarted'
+    | 'getCopilotBackend'
+    | 'getLocalCopilotCatalogId'
   > = {}
 ): UseChatOptions {
   return {
@@ -788,6 +801,10 @@ export function useChat(
   onStreamEndRef.current = options?.onStreamEnd
   const onRequestStartedRef = useRef(options?.onRequestStarted)
   onRequestStartedRef.current = options?.onRequestStarted
+  const getCopilotBackendRef = useRef(options?.getCopilotBackend)
+  const getLocalCopilotCatalogIdRef = useRef(options?.getLocalCopilotCatalogId)
+  getCopilotBackendRef.current = options?.getCopilotBackend
+  getLocalCopilotCatalogIdRef.current = options?.getLocalCopilotCatalogId
 
   const getCurrentRequestId = useCallback(() => {
     const traceId = streamTraceparentRef.current?.split('-')[1] ?? ''
@@ -1792,6 +1809,8 @@ export function useChat(
 
   const recoverPendingClientWorkflowTools = useCallback(
     async (nextMessages: ChatMessage[]) => {
+      // Arena Copilot runs workflow tools on the server and never leaves a client binding.
+      if (getCopilotBackendRef.current?.() === 'local') return
       const pending: ToolCallInfo[] = []
 
       for (const message of nextMessages) {
@@ -3949,6 +3968,15 @@ export function useChat(
             // subagent) — the server gates the features on these flags.
             ...desktopChatCapabilities,
             userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ...(getCopilotBackendRef.current
+              ? { copilotBackend: getCopilotBackendRef.current() }
+              : {}),
+            ...(getCopilotBackendRef.current?.() === 'local'
+              ? {
+                  model:
+                    getLocalCopilotCatalogIdRef.current?.() ?? DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+                }
+              : {}),
             ...(options?.requestMode !== 'assistant'
               ? {
                   modelSelection: resolveMothershipModelSettings(

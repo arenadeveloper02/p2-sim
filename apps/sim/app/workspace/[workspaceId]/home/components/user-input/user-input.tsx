@@ -10,8 +10,21 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Chip, cn, Tooltip, toast } from '@sim/emcn'
-import { Paperclip, Plus, Slash } from '@sim/emcn/icons'
+import {
+  Chip,
+  ChipSwitch,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Tooltip,
+  toast,
+} from '@sim/emcn'
+import { ChevronDown, Paperclip, Plus, Slash } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/mothership/chat/attachment-preview'
@@ -48,12 +61,76 @@ import { useHydrated } from '@/hooks/use-hydrated'
 import { isMobileViewport } from '@/hooks/use-is-mobile'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useVoiceInput } from '@/hooks/use-voice-input'
+import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
+import {
+  getLocalCopilotCatalogEntriesForGroup,
+  getLocalCopilotCatalogEntry,
+  isLocalCopilotCatalogId,
+  LOCAL_COPILOT_PROVIDER_GROUPS,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import { type DraftPayload, useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 
 const logger = createLogger('UserInput')
+
+interface LocalCopilotModelPickerProps {
+  catalogId: LocalCopilotCatalogId
+  onCatalogIdChange: (id: LocalCopilotCatalogId) => void
+}
+
+/**
+ * Single Local Copilot model dropdown with Claude / Gemini / Vertex / Bedrock headers.
+ */
+function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotModelPickerProps) {
+  const selectedLabel = getLocalCopilotCatalogEntry(catalogId)?.label ?? 'Claude'
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type='button'
+          aria-label='Local Copilot model'
+          className={cn(
+            'ml-1 inline-flex h-7 items-center gap-0.5 rounded-[10px] bg-[var(--surface-5)] px-2.5',
+            'text-[var(--text-primary)] text-sm dark:bg-[var(--surface-4)]',
+            'hover-hover:bg-[var(--surface-2)] dark:hover-hover:bg-[var(--surface-6)]'
+          )}
+        >
+          {selectedLabel}
+          <ChevronDown className='size-[12px] text-[var(--text-muted)]' />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start' side='top' className='min-w-[14rem]'>
+        <DropdownMenuRadioGroup
+          value={catalogId}
+          onValueChange={(value) => {
+            if (isLocalCopilotCatalogId(value)) {
+              onCatalogIdChange(value)
+            }
+          }}
+        >
+          {LOCAL_COPILOT_PROVIDER_GROUPS.map((group, groupIndex) => {
+            const entries = getLocalCopilotCatalogEntriesForGroup(group.id)
+            return (
+              <div key={group.id}>
+                {groupIndex > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
+                {entries.map((entry) => (
+                  <DropdownMenuRadioItem key={entry.id} value={entry.id}>
+                    {entry.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </div>
+            )
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 interface UserInputProps {
   requestMode?: 'agent' | 'plan'
@@ -104,7 +181,23 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 ) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { navigateToSettings } = useSettingsNavigation()
-  const { userId, onContextAdd, onContextRemove } = useChatSurface()
+  const {
+    chatId,
+    userId,
+    onContextAdd,
+    onContextRemove,
+    canSwitchCopilotBackend,
+    copilotBackend,
+    setCopilotBackend,
+    localCopilotCatalogId,
+    setLocalCopilotCatalogId,
+  } = useChatSurface()
+  const showLocalModelPicker =
+    Boolean(canSwitchCopilotBackend) &&
+    copilotBackend === 'local' &&
+    localCopilotCatalogId !== undefined &&
+    setLocalCopilotCatalogId !== undefined
+  const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
   // Server HTML cannot see the stored draft; hydration renders without it and the mount restore applies it.
   const canReadStoredDraft = useHydrated()
   const [initialValue] = useState(() => {
@@ -647,8 +740,36 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
             {onModeChange && (
               <ConversationModeSelector value={requestMode} onChange={handleModeChange} />
             )}
+            {canSwitchCopilotBackend && copilotBackend && setCopilotBackend ? (
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <div className='ml-1'>
+                    <ChipSwitch
+                      value={copilotBackend}
+                      onChange={setCopilotBackend}
+                      aria-label='Copilot backend'
+                      options={[
+                        { value: 'local', label: 'Local' },
+                        { value: 'external', label: 'Cloud' },
+                      ]}
+                    />
+                  </div>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>
+                  Local runs Arena Copilot in your deployment. Cloud uses external Mothership.
+                </Tooltip.Content>
+              </Tooltip.Root>
+            ) : null}
+            {showLocalModelPicker && localCopilotCatalogId && setLocalCopilotCatalogId ? (
+              <LocalCopilotModelPicker
+                catalogId={localCopilotCatalogId}
+                onCatalogIdChange={setLocalCopilotCatalogId}
+              />
+            ) : null}
+            {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
           </>
         }
+        showModelSelector={copilotBackend !== 'local'}
         voiceControl={
           isSttSupported && (
             <MicButton

@@ -6,13 +6,13 @@ import { ArrowLeft, PanelLeft } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
+import type { WorkspaceSearchFilters } from '@/lib/api/contracts/knowledge'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   LandingPromptStorage,
   type LandingWorkflowSeed,
   LandingWorkflowSeedStorage,
 } from '@/lib/core/utils/browser-storage'
-import type { WorkspaceSearchFilters } from '@/lib/api/contracts/knowledge'
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { useMarkMothershipChatRead } from '@/hooks/queries/mothership-chats'
@@ -181,6 +181,8 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
     getMothershipUseChatOptions({
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
+      getCopilotBackend: () => copilotBackend,
+      getLocalCopilotCatalogId: () => localCopilotCatalogId,
     })
   )
   setActiveResourceIdRef.current = setActiveResourceId
