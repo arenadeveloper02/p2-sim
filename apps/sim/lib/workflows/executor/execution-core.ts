@@ -626,10 +626,35 @@ async function executeWorkflowCoreImpl(
       }
     }
 
+    /**
+     * Deployed chat already cleared `validateChatAuth`. Membership must not
+     * gate secret resolution for that surface — the visitor may have agent
+     * access without a workspace seat, and a stale owner pointer must not
+     * fail the run either.
+     */
+    const deployedChatWorkspaceAccess = isDeployedChat
+      ? {
+          exists: true,
+          hasAccess: true,
+          canWrite: false,
+          canAdmin: true,
+          workspace: null,
+          permission: 'admin' as const,
+        }
+      : undefined
+
     const [workflowState, env] = await Promise.all([
       withDatabaseReadRetry(loadWorkflowState, { label: 'loadWorkflowState' }),
       withDatabaseReadRetry(
-        () => getExecutionEnvironment(personalEnvUserId, workspaceEnvUserId, providedWorkspaceId),
+        () =>
+          getExecutionEnvironment(
+            personalEnvUserId,
+            workspaceEnvUserId,
+            providedWorkspaceId,
+            deployedChatWorkspaceAccess
+              ? { workspaceAccess: deployedChatWorkspaceAccess }
+              : undefined
+          ),
         { label: 'getExecutionEnvironment' }
       ),
     ])

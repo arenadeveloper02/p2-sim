@@ -70,6 +70,7 @@ const {
 }))
 
 const getPersonalAndWorkspaceEnvMock = environmentUtilsMockFns.mockGetPersonalAndWorkspaceEnv
+const getExecutionEnvironmentMock = environmentUtilsMockFns.mockGetExecutionEnvironment
 
 afterAll(resetEnvironmentUtilsMock)
 
@@ -2178,7 +2179,18 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       loggingSession: loggingSession as any,
     })
 
-    expect(getPersonalAndWorkspaceEnvMock).toHaveBeenCalledWith('workflow-owner', 'workspace-1')
+    expect(getExecutionEnvironmentMock).toHaveBeenCalledWith(
+      'workflow-owner',
+      'workflow-owner',
+      'workspace-1',
+      {
+        workspaceAccess: expect.objectContaining({
+          exists: true,
+          hasAccess: true,
+          canAdmin: true,
+        }),
+      }
+    )
     expect(getPersonalAndWorkspaceEnvMock).not.toHaveBeenCalledWith(
       'logged-in-viewer',
       'workspace-1'
@@ -2217,7 +2229,18 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       loggingSession: loggingSession as any,
     })
 
-    expect(getPersonalAndWorkspaceEnvMock).toHaveBeenCalledWith('workflow-owner', 'workspace-1')
+    expect(getExecutionEnvironmentMock).toHaveBeenCalledWith(
+      'workflow-owner',
+      'workflow-owner',
+      'workspace-1',
+      {
+        workspaceAccess: expect.objectContaining({
+          exists: true,
+          hasAccess: true,
+          canAdmin: true,
+        }),
+      }
+    )
     expect(getPersonalAndWorkspaceEnvMock).not.toHaveBeenCalledWith('billing-actor', 'workspace-1')
   })
 
