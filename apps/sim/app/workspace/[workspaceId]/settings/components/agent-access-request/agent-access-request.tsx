@@ -1,7 +1,15 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Checkbox, Chip, ChipTag, cn, toast } from '@sim/emcn'
+import {
+  Checkbox,
+  Chip,
+  ChipButtonGroup,
+  ChipButtonGroupItem,
+  ChipTag,
+  cn,
+  toast,
+} from '@sim/emcn'
 import { ArrowLeft } from '@sim/emcn/icons'
 import { getErrorMessage } from '@sim/utils/errors'
 import Link from 'next/link'
@@ -26,13 +34,22 @@ const COLUMNS = [
   { key: 'requested_user_email', label: 'Requested by' },
   { key: 'workflow_id', label: 'Workflow ID' },
   { key: 'workspace_id', label: 'Workspace ID' },
-  { key: 'approved_by', label: 'Approved by' },
+  { key: 'approved_by', label: 'Approved by / Rejected by' },
   { key: 'created_at', label: 'Created' },
   { key: 'updated_at', label: 'Updated' },
 ] as const satisfies ReadonlyArray<{
   key: keyof AgentAccessRequestRow
   label: string
 }>
+
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'open', label: 'Open' },
+  { value: 'done', label: 'Done' },
+  { value: 'cancelled', label: 'Cancelled' },
+] as const
+
+type StatusFilter = (typeof STATUS_FILTERS)[number]['value']
 
 interface AgentAccessRequestProps {
   /**
@@ -42,9 +59,22 @@ interface AgentAccessRequestProps {
   standalone?: boolean
 }
 
+/** Collapses API aliases (`approved` → `done`, `declined` → `cancelled`). */
+function normalizeStatus(status: string): string {
+  const normalized = status.trim().toLowerCase()
+  if (normalized === 'approved') return 'done'
+  if (normalized === 'declined') return 'cancelled'
+  return normalized
+}
+
 function isSelectableRow(row: AgentAccessRequestRow): boolean {
-  const status = row.status.trim().toLowerCase()
+  const status = normalizeStatus(row.status)
   return status === 'open' || status === 'cancelled'
+}
+
+function matchesStatusFilter(row: AgentAccessRequestRow, filter: StatusFilter): boolean {
+  if (filter === 'all') return true
+  return normalizeStatus(row.status) === filter
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -72,14 +102,12 @@ function statusTagProps(status: string): {
   variant: 'workflow' | 'gray'
   tone?: 'blue' | 'green' | 'orange' | 'neutral'
 } {
-  switch (status.trim().toLowerCase()) {
+  switch (normalizeStatus(status)) {
     case 'open':
       return { variant: 'workflow', tone: 'blue' }
     case 'done':
-    case 'approved':
       return { variant: 'workflow', tone: 'green' }
     case 'cancelled':
-    case 'declined':
       return { variant: 'workflow', tone: 'orange' }
     default:
       return { variant: 'gray' }
@@ -108,12 +136,25 @@ export function AgentAccessRequest({ standalone = false }: AgentAccessRequestPro
   } = useAgentAccessRequests(workspaceId)
   const approveMutation = useApproveAgentAccessRequests(workspaceId)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
-  const selectableRows = useMemo(() => (rows ?? []).filter(isSelectableRow), [rows])
+  const filteredRows = useMemo(
+    () => (rows ?? []).filter((row) => matchesStatusFilter(row, statusFilter)),
+    [rows, statusFilter]
+  )
+  const selectableRows = useMemo(() => filteredRows.filter(isSelectableRow), [filteredRows])
   const selectedCount = selectedIds.size
   const allSelectableSelected =
     selectableRows.length > 0 && selectableRows.every((row) => selectedIds.has(row.id))
   const canDecide = selectedCount > 0 && Boolean(approvedByEmail) && !approveMutation.isPending
+
+  const changeStatusFilter = (value: string) => {
+    const next = STATUS_FILTERS.some((filter) => filter.value === value)
+      ? (value as StatusFilter)
+      : 'all'
+    setStatusFilter(next)
+    setSelectedIds(new Set())
+  }
 
   const toggleRow = (rowId: string, checked: boolean) => {
     setSelectedIds((previous) => {
@@ -154,6 +195,16 @@ export function AgentAccessRequest({ standalone = false }: AgentAccessRequestPro
     )
   }
 
+  const statusFilterControls = (
+    <ChipButtonGroup value={statusFilter} onValueChange={changeStatusFilter}>
+      {STATUS_FILTERS.map((filter) => (
+        <ChipButtonGroupItem key={filter.value} value={filter.value}>
+          {filter.label}
+        </ChipButtonGroupItem>
+      ))}
+    </ChipButtonGroup>
+  )
+
   const body = isPending ? (
     <SettingsEmptyState>Loading agent access requests...</SettingsEmptyState>
   ) : isError ? (
@@ -164,109 +215,119 @@ export function AgentAccessRequest({ standalone = false }: AgentAccessRequestPro
     <SettingsEmptyState>No agent access requests.</SettingsEmptyState>
   ) : (
     <div className='flex flex-col gap-3'>
-      <p className='text-[var(--text-muted)] text-sm'>
-        {selectedCount > 0
-          ? `${selectedCount} selected — choose Approve or Cancel.`
-          : 'Select open or cancelled requests, then Approve or Cancel.'}
-      </p>
-      <div className='overflow-hidden rounded-xl border border-[var(--border-1)] bg-[var(--bg)]'>
-        <div className='overflow-x-auto'>
-          <table className='w-full min-w-[56rem] border-collapse text-left text-small'>
-            <thead>
-              <tr className='border-[var(--border-1)] border-b bg-[var(--surface-2)]'>
-                <th className='w-10 px-4 py-3'>
-                  <Checkbox
-                    checked={allSelectableSelected}
-                    disabled={selectableRows.length === 0 || approveMutation.isPending}
-                    onCheckedChange={(checked) => toggleAllSelectable(checked === true)}
-                    aria-label='Select all open or cancelled requests'
-                  />
-                </th>
-                {COLUMNS.map((column) => (
-                  <th
-                    key={column.key}
-                    className='whitespace-nowrap px-4 py-3 font-normal text-[var(--text-muted)]'
-                  >
-                    {column.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const selectable = isSelectableRow(row)
-                const checked = selectedIds.has(row.id)
-                return (
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      'border-[var(--border-1)] border-b last:border-b-0',
-                      selectable && 'hover:bg-[var(--surface-hover)]',
-                      checked && 'bg-[var(--surface-2)]'
-                    )}
-                  >
-                    <td className='px-4 py-3 align-middle'>
-                      <Checkbox
-                        checked={checked}
-                        disabled={!selectable || approveMutation.isPending}
-                        onCheckedChange={(next) => toggleRow(row.id, next === true)}
-                        aria-label={`Select ${row.agent_name}`}
-                      />
-                    </td>
-                    {COLUMNS.map((column) => {
-                      if (column.key === 'status') {
-                        return (
-                          <td key={column.key} className='whitespace-nowrap px-4 py-3'>
-                            <ChipTag {...statusTagProps(row.status)}>{row.status}</ChipTag>
-                          </td>
-                        )
-                      }
-
-                      if (column.key === 'requested_user_email') {
-                        const name = row.requested_user_name?.trim()
-                        return (
-                          <td key={column.key} className='max-w-[240px] px-4 py-3'>
-                            <div className='min-w-0'>
-                              <p className='truncate text-[var(--text-body)]'>
-                                {name || row.requested_user_email || '—'}
-                              </p>
-                              {name ? (
-                                <p className='truncate text-[12px] text-[var(--text-muted)]'>
-                                  {row.requested_user_email}
-                                </p>
-                              ) : null}
-                            </div>
-                          </td>
-                        )
-                      }
-
-                      const value = formatCellValue(column.key, row[column.key])
-                      return (
-                        <td
-                          key={column.key}
-                          className={cn(
-                            'px-4 py-3 text-[var(--text-body)]',
-                            column.key === 'agent_name' && 'max-w-[200px] font-medium',
-                            (column.key === 'workflow_id' ||
-                              column.key === 'workspace_id' ||
-                              column.key === 'approved_by') &&
-                              'max-w-[180px] font-mono text-[12px] text-[var(--text-secondary)]',
-                            (column.key === 'created_at' || column.key === 'updated_at') &&
-                              'whitespace-nowrap text-[var(--text-secondary)]'
-                          )}
-                          title={value}
-                        >
-                          <span className='block truncate'>{value}</span>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
+        {statusFilterControls}
+        <p className='text-[var(--text-muted)] text-sm'>
+          {selectedCount > 0
+            ? `${selectedCount} selected — choose Approve or Cancel.`
+            : 'Select open or cancelled requests, then Approve or Cancel. Done rows are view-only.'}
+        </p>
       </div>
+      {filteredRows.length === 0 ? (
+        <SettingsEmptyState>
+          No {statusFilter === 'all' ? '' : `${statusFilter} `}agent access requests.
+        </SettingsEmptyState>
+      ) : (
+        <div className='overflow-hidden rounded-xl border border-[var(--border-1)] bg-[var(--bg)]'>
+          <div className='overflow-x-auto'>
+            <table className='w-full min-w-[56rem] border-collapse text-left text-small'>
+              <thead>
+                <tr className='border-[var(--border-1)] border-b bg-[var(--surface-2)]'>
+                  <th className='w-10 px-4 py-3'>
+                    <Checkbox
+                      checked={allSelectableSelected}
+                      disabled={selectableRows.length === 0 || approveMutation.isPending}
+                      onCheckedChange={(checked) => toggleAllSelectable(checked === true)}
+                      aria-label='Select all open or cancelled requests in this filter'
+                    />
+                  </th>
+                  {COLUMNS.map((column) => (
+                    <th
+                      key={column.key}
+                      className='whitespace-nowrap px-4 py-3 font-normal text-[var(--text-muted)]'
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row) => {
+                  const selectable = isSelectableRow(row)
+                  const checked = selectedIds.has(row.id)
+                  const displayStatus = normalizeStatus(row.status)
+                  return (
+                    <tr
+                      key={row.id}
+                      className={cn(
+                        'border-[var(--border-1)] border-b last:border-b-0',
+                        selectable && 'hover:bg-[var(--surface-hover)]',
+                        checked && 'bg-[var(--surface-2)]'
+                      )}
+                    >
+                      <td className='px-4 py-3 align-middle'>
+                        <Checkbox
+                          checked={checked}
+                          disabled={!selectable || approveMutation.isPending}
+                          onCheckedChange={(next) => toggleRow(row.id, next === true)}
+                          aria-label={`Select ${row.agent_name}`}
+                        />
+                      </td>
+                      {COLUMNS.map((column) => {
+                        if (column.key === 'status') {
+                          return (
+                            <td key={column.key} className='whitespace-nowrap px-4 py-3'>
+                              <ChipTag {...statusTagProps(row.status)}>{displayStatus}</ChipTag>
+                            </td>
+                          )
+                        }
+
+                        if (column.key === 'requested_user_email') {
+                          const name = row.requested_user_name?.trim()
+                          return (
+                            <td key={column.key} className='max-w-[240px] px-4 py-3'>
+                              <div className='min-w-0'>
+                                <p className='truncate text-[var(--text-body)]'>
+                                  {name || row.requested_user_email || '—'}
+                                </p>
+                                {name ? (
+                                  <p className='truncate text-[12px] text-[var(--text-muted)]'>
+                                    {row.requested_user_email}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </td>
+                          )
+                        }
+
+                        const value = formatCellValue(column.key, row[column.key])
+                        return (
+                          <td
+                            key={column.key}
+                            className={cn(
+                              'px-4 py-3 text-[var(--text-body)]',
+                              column.key === 'agent_name' && 'max-w-[200px] font-medium',
+                              (column.key === 'workflow_id' ||
+                                column.key === 'workspace_id' ||
+                                column.key === 'approved_by') &&
+                                'max-w-[180px] font-mono text-[12px] text-[var(--text-secondary)]',
+                              (column.key === 'created_at' || column.key === 'updated_at') &&
+                                'whitespace-nowrap text-[var(--text-secondary)]'
+                            )}
+                            title={value}
+                          >
+                            <span className='block truncate'>{value}</span>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 

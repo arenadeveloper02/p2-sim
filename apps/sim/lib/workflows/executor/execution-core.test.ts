@@ -2146,7 +2146,7 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     expect(getPersonalAndWorkspaceEnvMock).not.toHaveBeenCalledWith('workflow-owner', 'workspace-1')
   })
 
-  it('keeps deployed-chat personal vars on the workflow owner when sessionUserId is set', async () => {
+  it('keeps deployed-chat env on the workflow owner even when the viewer has no workspace access', async () => {
     const snapshot = {
       ...createSnapshot(),
       metadata: {
@@ -2183,6 +2183,42 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       'logged-in-viewer',
       'workspace-1'
     )
+  })
+
+  it('does not authorize deployed-chat env against the billing actor', async () => {
+    const snapshot = {
+      ...createSnapshot(),
+      metadata: {
+        ...createSnapshot().metadata,
+        triggerType: 'chat',
+        isClientSession: false,
+        sessionUserId: undefined,
+        userId: 'billing-actor',
+        workflowUserId: 'workflow-owner',
+      },
+    }
+
+    getPersonalAndWorkspaceEnvMock.mockResolvedValue({
+      personalEncrypted: {},
+      workspaceEncrypted: {},
+      personalDecrypted: {},
+      workspaceDecrypted: {},
+    })
+    safeStartMock.mockResolvedValue(true)
+    executorExecuteMock.mockResolvedValue({
+      output: { done: true },
+      logs: [],
+      metadata: { duration: 123, startTime: 'start', endTime: 'end' },
+    })
+
+    await executeWorkflowCore({
+      snapshot: snapshot as any,
+      callbacks: {},
+      loggingSession: loggingSession as any,
+    })
+
+    expect(getPersonalAndWorkspaceEnvMock).toHaveBeenCalledWith('workflow-owner', 'workspace-1')
+    expect(getPersonalAndWorkspaceEnvMock).not.toHaveBeenCalledWith('billing-actor', 'workspace-1')
   })
 
   it('resolves personal vars as the workflow owner and workspace vars as the actor', async () => {
