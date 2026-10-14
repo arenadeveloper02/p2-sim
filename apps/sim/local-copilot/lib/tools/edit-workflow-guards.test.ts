@@ -31,12 +31,15 @@ vi.mock('@/triggers/constants', () => ({
 
 import { fingerprintToolCall } from '@/local-copilot/lib/agent/tool-stagnation'
 import {
+  canEnterToolRound,
+  canForceMandatoryFollowUp,
   classifyEditWorkflowPrecondition,
   coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUp,
   editWorkflowNeedsFollowUp,
   formatToolResultForLlm,
   isAlreadyCopilotSanitizedWorkflowState,
+  type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
 
 beforeEach(() => {
@@ -289,5 +292,68 @@ describe('edit_workflow stagnation fingerprints', () => {
       result
     )
     expect(a).not.toBe(b)
+  })
+})
+
+describe('write-critical follow-up round budget', () => {
+  const editContentFollowUp: MandatoryFollowUp = {
+    id: 'workspace_file:edit-content',
+    hint: 'Call edit_content next',
+    resolveWith: ['edit_content'],
+  }
+  const oauthFollowUp: MandatoryFollowUp = {
+    id: 'edit_workflow:oauth',
+    hint: 'Connect OAuth',
+    resolveWith: ['oauth_get_auth_link'],
+  }
+
+  it('allows overflow rounds only when edit_content follow-up is pending', () => {
+    expect(
+      canEnterToolRound({
+        round: 20,
+        maxToolRounds: 20,
+        maxForcedFollowUpRounds: 6,
+        pendingFollowUps: [editContentFollowUp],
+      })
+    ).toBe(true)
+    expect(
+      canEnterToolRound({
+        round: 20,
+        maxToolRounds: 20,
+        maxForcedFollowUpRounds: 6,
+        pendingFollowUps: [oauthFollowUp],
+      })
+    ).toBe(false)
+    expect(
+      canEnterToolRound({
+        round: 26,
+        maxToolRounds: 20,
+        maxForcedFollowUpRounds: 6,
+        pendingFollowUps: [editContentFollowUp],
+      })
+    ).toBe(false)
+  })
+
+  it('forces edit_content follow-up on the last normal round', () => {
+    expect(
+      canForceMandatoryFollowUp({
+        round: 19,
+        maxToolRounds: 20,
+        maxForcedFollowUpRounds: 6,
+        forcedFollowUpRounds: 0,
+        pendingFollowUps: [editContentFollowUp],
+        postBuildAllows: true,
+      })
+    ).toBe(true)
+    expect(
+      canForceMandatoryFollowUp({
+        round: 19,
+        maxToolRounds: 20,
+        maxForcedFollowUpRounds: 6,
+        forcedFollowUpRounds: 0,
+        pendingFollowUps: [oauthFollowUp],
+        postBuildAllows: true,
+      })
+    ).toBe(false)
   })
 })

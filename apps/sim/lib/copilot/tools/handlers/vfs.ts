@@ -33,6 +33,47 @@ import {
 
 const logger = createLogger('VfsTools')
 
+/** Dynamic inspection suffixes that are already content/view paths — do not append `/content`. */
+const WORKSPACE_FILE_VIEW_SUFFIXES = new Set([
+  'content',
+  'style',
+  'compiled-check',
+  'compiled',
+  'render',
+  'extract',
+])
+
+/**
+ * Bare `files/<leaf.ext>` (and recently-deleted equivalents) resolve to metadata
+ * (~dozen lines). Models treat that as the file and waste rounds with huge
+ * offsets. Redirect text-like leaves to `/content` so `read` returns bytes.
+ */
+export function resolveWorkspaceFileContentReadPath(path: string): string {
+  const prefixes = ['files/', 'recently-deleted/files/'] as const
+  for (const prefix of prefixes) {
+    if (!path.startsWith(prefix)) continue
+    const rest = path.slice(prefix.length)
+    if (!rest || rest.endsWith('/')) return path
+
+    const segments = rest.split('/').filter(Boolean)
+    if (segments.length === 0) return path
+
+    const last = segments[segments.length - 1] ?? ''
+    if (WORKSPACE_FILE_VIEW_SUFFIXES.has(last)) return path
+
+    let decoded = last
+    try {
+      decoded = decodeURIComponent(last)
+    } catch {
+      // keep raw last segment
+    }
+    // Folders and extensionless nodes stay metadata; only file-like leaves redirect.
+    if (!/\.[a-zA-Z0-9]{1,16}$/.test(decoded)) return path
+    return `${path.replace(/\/+$/, '')}/content`
+  }
+  return path
+}
+
 /**
  * Materialize the workspace VFS inside the viewer's block-visibility context so
  * the static component files stamped into it exclude blocks gated for this
@@ -491,14 +532,24 @@ export async function executeVfsRead(
 
     const vfs = await getGatedVFS(context)
 
+    // Bare `files/<leaf.ext>` is metadata-only; redirect to `/content` so the
+    // model receives file bytes (offset/limit then page the real line count).
+    const contentPath = resolveWorkspaceFileContentReadPath(path)
+    if (contentPath !== path) {
+      logger.info('vfs_read redirected bare file leaf to content', {
+        requested: path,
+        resolved: contentPath,
+      })
+    }
+
     // Plain canonical file leaves are metadata resources. Dynamic file content
     // and inspection paths use explicit suffixes like /content, /style,
     // /compiled-check, or /compiled.
     const shouldReadDynamicFileContent =
-      /^recently-deleted\/files\/.+\/content$/.test(path) ||
-      /^files\/.+\/(?:content|style|compiled-check|compiled|render|extract)$/.test(path)
+      /^recently-deleted\/files\/.+\/content$/.test(contentPath) ||
+      /^files\/.+\/(?:content|style|compiled-check|compiled|render|extract)$/.test(contentPath)
     const fileEnvelope = shouldReadDynamicFileContent
-      ? await vfs.readFileContentWithProvenance(path)
+      ? await vfs.readFileContentWithProvenance(contentPath)
       : null
     const fileContent = fileEnvelope?.value
     if (fileContent) {
@@ -516,7 +567,7 @@ export async function executeVfsRead(
         serializedResultSize(windowedFileContent) > TOOL_RESULT_MAX_INLINE_CHARS
       ) {
         logger.warn('File read result too large', {
-          path,
+          path: contentPath,
           hasAttachment: isAttachment,
           contentLength: fileContent.content.length,
           serializedSize: serializedResultSize(windowedFileContent),
@@ -526,8 +577,8 @@ export async function executeVfsRead(
           success: false,
           error:
             offset !== undefined || limit !== undefined
-              ? `The requested window is still too large to return inline. Reduce limit (fewer lines per page) — e.g. read({path: "${path}", offset: ${offset ?? 0}, limit: 200}).`
-              : `Read result too large to return inline. Page it — read({path: "${path}", offset: 0, limit: 500}) — or locate the relevant section first with grep({pattern: "...", path: "${path}"}), then read({path: "${path}", offset: <line>, limit: <lines>}). Avoid catch-all greps or full-file reads because they waste context window.`,
+              ? `The requested window is still too large to return inline. Reduce limit (fewer lines per page) — e.g. read({path: "${contentPath}", offset: ${offset ?? 0}, limit: 200}).`
+              : `Read result too large to return inline. Page it — read({path: "${contentPath}", offset: 0, limit: 500}) — or locate the relevant section first with grep({pattern: "...", path: "${contentPath}"}), then read({path: "${contentPath}", offset: <line>, limit: <lines>}). Avoid catch-all greps or full-file reads because they waste context window.`,
         }
       }
       const provenanceView =
@@ -551,7 +602,7 @@ export async function executeVfsRead(
         return { success: false, error: fileContent.error }
       }
       logger.debug('vfs_read resolved workspace file', {
-        path,
+        path: contentPath,
         totalLines: fileContent.totalLines,
         hasAttachment: isAttachment,
         offset,

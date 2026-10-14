@@ -183,6 +183,8 @@ import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/
 import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
+  canEnterToolRound,
+  canForceMandatoryFollowUp,
   clearLocalFileIntentChannel,
   coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUpFromExecution,
@@ -999,9 +1001,23 @@ export async function* runLocalCopilotAgent(
 
   const needsLiveSearch = intent.primary === 'research' || intent.secondary.includes('research')
 
-  for (let round = 0; round < maxToolRounds; round++) {
+  // Overflow past maxToolRounds is reserved for write-critical follow-ups
+  // (workspace_file → edit_content) so prepare-without-apply cannot stall on
+  // the last normal round.
+  const maxRoundExclusive = maxToolRounds + MAX_FORCED_FOLLOW_UP_ROUNDS
+  for (let round = 0; round < maxRoundExclusive; round++) {
     if (stagnationStopMessage) break
     if (postBuildToolMode === 'done') break
+    if (
+      !canEnterToolRound({
+        round,
+        maxToolRounds,
+        maxForcedFollowUpRounds: MAX_FORCED_FOLLOW_UP_ROUNDS,
+        pendingFollowUps,
+      })
+    ) {
+      break
+    }
 
     const midTurnSpend = assertSpendCapAllows({
       isExceeded: usageLimits.isExceeded,
@@ -1315,11 +1331,14 @@ export async function* runLocalCopilotAgent(
     if (pendingToolCalls.length === 0) {
       const shouldForceOauthFollowUp =
         postBuildToolMode === 'oauth_only' && pendingFollowUpsAreOauthOnly(pendingFollowUps)
-      const canForceFollowUp =
-        pendingFollowUps.length > 0 &&
-        forcedFollowUpRounds < MAX_FORCED_FOLLOW_UP_ROUNDS &&
-        round < maxToolRounds - 1 &&
-        (postBuildToolMode === 'all' || shouldForceOauthFollowUp)
+      const canForceFollowUp = canForceMandatoryFollowUp({
+        round,
+        maxToolRounds,
+        maxForcedFollowUpRounds: MAX_FORCED_FOLLOW_UP_ROUNDS,
+        forcedFollowUpRounds,
+        pendingFollowUps,
+        postBuildAllows: postBuildToolMode === 'all' || shouldForceOauthFollowUp,
+      })
 
       if (canForceFollowUp) {
         forcedFollowUpRounds += 1
@@ -1339,6 +1358,7 @@ export async function* runLocalCopilotAgent(
           forcedFollowUpRounds,
           pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
           postBuildToolMode,
+          overflowRound: round >= maxToolRounds,
         })
         continue
       }

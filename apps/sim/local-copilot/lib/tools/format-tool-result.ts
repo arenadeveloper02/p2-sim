@@ -985,6 +985,64 @@ function detectMandatoryFollowUpFromRecord(
 }
 
 /**
+ * Follow-ups that must still run after `workspace_file` / `create_file` even
+ * when the normal tool-round budget is exhausted — otherwise the turn ends with
+ * prepare-without-apply (no `edit_content`).
+ */
+export const WRITE_CRITICAL_FOLLOW_UP_IDS = new Set([
+  'workspace_file:edit-content',
+  'create_file:write',
+  'create_file:workspace-file',
+  'workspace_file:patch-repair',
+])
+
+/**
+ * True when a pending follow-up must complete a file write pipeline.
+ */
+export function hasWriteCriticalFollowUp(pending: MandatoryFollowUp[]): boolean {
+  return pending.some((item) => WRITE_CRITICAL_FOLLOW_UP_IDS.has(item.id))
+}
+
+/**
+ * Whether the agent loop may start another model round. Overflow past
+ * `maxToolRounds` is reserved for write-critical mandatory follow-ups.
+ */
+export function canEnterToolRound(options: {
+  round: number
+  maxToolRounds: number
+  maxForcedFollowUpRounds: number
+  pendingFollowUps: MandatoryFollowUp[]
+}): boolean {
+  if (options.round < options.maxToolRounds) return true
+  if (options.round >= options.maxToolRounds + options.maxForcedFollowUpRounds) return false
+  return hasWriteCriticalFollowUp(options.pendingFollowUps)
+}
+
+/**
+ * Whether to inject a mandatory-follow-up continuation when the model stopped
+ * with no tools. Write-critical follow-ups may use the last normal round and
+ * overflow rounds; other follow-ups keep the historical `maxToolRounds - 1` cap.
+ */
+export function canForceMandatoryFollowUp(options: {
+  round: number
+  maxToolRounds: number
+  maxForcedFollowUpRounds: number
+  forcedFollowUpRounds: number
+  pendingFollowUps: MandatoryFollowUp[]
+  postBuildAllows: boolean
+}): boolean {
+  if (options.pendingFollowUps.length === 0) return false
+  if (!options.postBuildAllows) return false
+  if (options.forcedFollowUpRounds >= options.maxForcedFollowUpRounds) return false
+
+  const hardCeil = options.maxToolRounds + options.maxForcedFollowUpRounds
+  if (options.round >= hardCeil - 1) return false
+
+  if (options.round < options.maxToolRounds - 1) return true
+  return hasWriteCriticalFollowUp(options.pendingFollowUps)
+}
+
+/**
  * Removes satisfied follow-ups after a resolving tool succeeds.
  */
 export function resolveMandatoryFollowUps(

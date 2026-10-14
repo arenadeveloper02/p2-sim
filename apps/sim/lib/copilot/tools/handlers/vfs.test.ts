@@ -52,7 +52,40 @@ vi.mock('./upload-file-reader', () => ({
 
 import { WorkspaceFileGrepError } from '@/lib/copilot/vfs/operations'
 import { readPlaceholder } from '@/lib/copilot/vfs/read-placeholders'
-import { executeVfsGlob, executeVfsGrep, executeVfsRead } from './vfs'
+import {
+  executeVfsGlob,
+  executeVfsGrep,
+  executeVfsRead,
+  resolveWorkspaceFileContentReadPath,
+} from './vfs'
+
+describe('resolveWorkspaceFileContentReadPath', () => {
+  it('redirects bare file leaves to /content', () => {
+    expect(resolveWorkspaceFileContentReadPath('files/client-dashboard (20).html')).toBe(
+      'files/client-dashboard (20).html/content'
+    )
+    expect(resolveWorkspaceFileContentReadPath('files/client-dashboard%20(20).html')).toBe(
+      'files/client-dashboard%20(20).html/content'
+    )
+    expect(resolveWorkspaceFileContentReadPath('files/nested/app.js')).toBe(
+      'files/nested/app.js/content'
+    )
+    expect(resolveWorkspaceFileContentReadPath('recently-deleted/files/old.css')).toBe(
+      'recently-deleted/files/old.css/content'
+    )
+  })
+
+  it('leaves content/view paths and folders unchanged', () => {
+    expect(resolveWorkspaceFileContentReadPath('files/page.html/content')).toBe(
+      'files/page.html/content'
+    )
+    expect(resolveWorkspaceFileContentReadPath('files/page.html/style')).toBe(
+      'files/page.html/style'
+    )
+    expect(resolveWorkspaceFileContentReadPath('files/My Folder')).toBe('files/My Folder')
+    expect(resolveWorkspaceFileContentReadPath('uploads/report.html')).toBe('uploads/report.html')
+  })
+})
 
 const OVERSIZED_INLINE_CONTENT = 'x'.repeat(TOOL_RESULT_MAX_INLINE_CHARS + 1)
 
@@ -84,6 +117,30 @@ const GREP_CTX = {
   copilotToolExecution: true,
 }
 const GREP_CTX_CHAT = { ...GREP_CTX, chatId: 'chat-1' }
+
+describe('vfs_read bare leaf redirect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    importWorkspaceFileSecretProvenanceForModelView.mockResolvedValue(true)
+  })
+
+  it('reads file bytes when the model passes bare files/<leaf>.html', async () => {
+    const vfs = makeVfs()
+    const lines = Array.from({ length: 40 }, (_, i) => `line-${i}`).join('\n')
+    vfs.readFileContent.mockResolvedValue({ content: lines, totalLines: 40 })
+    getOrMaterializeVFS.mockResolvedValue(vfs)
+
+    const result = await executeVfsRead(
+      { path: 'files/client-dashboard (20).html', offset: 0, limit: 5 },
+      GREP_CTX
+    )
+
+    expect(result.success).toBe(true)
+    expect(vfs.readFileContent).toHaveBeenCalledWith('files/client-dashboard (20).html/content')
+    expect(vfs.read).not.toHaveBeenCalled()
+    expect((result.output as { content?: string })?.content).toContain('line-0')
+  })
+})
 
 describe('vfs handlers oversize policy', () => {
   beforeEach(() => {
@@ -286,19 +343,35 @@ describe('vfs handlers oversize policy', () => {
     expect((result.output as { content?: string })?.content).toBe(content)
   })
 
-  it('reads canonical file leaf metadata without fetching dynamic content', async () => {
+  it('redirects bare files/<leaf.ext> to /content instead of metadata', async () => {
     const vfs = makeVfs()
-    vfs.read.mockReturnValue({
-      content: '{"id":"wf_123","vfsPath":"files/report.csv"}',
-      totalLines: 1,
+    vfs.readFileContent.mockResolvedValue({
+      content: 'a,b\n1,2',
+      totalLines: 2,
     })
     getOrMaterializeVFS.mockResolvedValue(vfs)
 
     const result = await executeVfsRead({ path: 'files/report.csv' }, GREP_CTX)
 
     expect(result.success).toBe(true)
+    expect(vfs.readFileContent).toHaveBeenCalledWith('files/report.csv/content')
+    expect(vfs.read).not.toHaveBeenCalled()
+    expect((result.output as { content?: string })?.content).toBe('a,b\n1,2')
+  })
+
+  it('reads extensionless folder leaves as metadata without fetching content', async () => {
+    const vfs = makeVfs()
+    vfs.read.mockReturnValue({
+      content: '{"kind":"folder","vfsPath":"files/Reports"}',
+      totalLines: 1,
+    })
+    getOrMaterializeVFS.mockResolvedValue(vfs)
+
+    const result = await executeVfsRead({ path: 'files/Reports' }, GREP_CTX)
+
+    expect(result.success).toBe(true)
     expect(vfs.readFileContent).not.toHaveBeenCalled()
-    expect(vfs.read).toHaveBeenCalledWith('files/report.csv', undefined, undefined)
+    expect(vfs.read).toHaveBeenCalledWith('files/Reports', undefined, undefined)
   })
 
   it('materializes VFS reads with the request secret policy', async () => {
