@@ -162,6 +162,7 @@ jobs:
           free -h
 
       - name: Build and push images
+        id: build
         uses: useblacksmith/build-push-action@v2
         with:
           context: .
@@ -173,6 +174,22 @@ jobs:
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
           sbom: false
+
+      - name: Publish image tag to run summary
+        env:
+          IMAGE_REF: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "::notice title=Published image::${IMAGE_REF}"
+          {
+            echo "### Published \`${IMAGE_REF##*/}\`"
+            echo '```'
+            echo "docker pull ${IMAGE_REF}"
+            echo '```'
+            if [[ -n "${DIGEST}" ]]; then
+              echo "Digest: \`${DIGEST}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   release-failed-tag:
     name: Release tag on failure
