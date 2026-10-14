@@ -41,6 +41,7 @@ const CLOUD_TO_ARENA_TOOL_NAME: Readonly<Record<string, string>> = {
   manage_knowledge_base: 'knowledge_base',
   web_search: 'search_online',
   run_function: 'function_execute',
+  save_upload: 'materialize_file',
 }
 
 export type ResolvedLocalCopilotToolName =
