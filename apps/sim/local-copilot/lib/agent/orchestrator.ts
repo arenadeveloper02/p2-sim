@@ -63,6 +63,11 @@ import {
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
 } from '@/local-copilot/lib/config'
+import {
+  formatActiveDocumentsSystemMessage,
+  persistActiveDocuments,
+  updateActiveDocumentsFromTurn,
+} from '@/local-copilot/lib/context/active-documents'
 import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
   buildLocalCopilotContext,
@@ -506,8 +511,18 @@ export async function* runLocalCopilotAgent(
     tokenCountModel
   )
 
-  const { relevantSkills, allTools, userTurn, chatConfig, chatUploadsInventory } = settledPrefetch
+  const {
+    relevantSkills,
+    allTools,
+    userTurn,
+    chatConfig,
+    chatUploadsInventory,
+    activeDocuments,
+    activeEditTarget,
+    currentRequestUploadPaths,
+  } = settledPrefetch
   let taskState = settledPrefetch.taskState
+  let activeDocumentsState = activeDocuments
   if (relevantSkills.names.length > 0) {
     logger.info('Arena Copilot loaded relevant workspace skills', {
       workspaceId: params.workspaceId,
@@ -617,6 +632,23 @@ export async function* runLocalCopilotAgent(
           ]
         : []),
       ...(taskState ? [formatTaskStateSystemMessage(taskState)] : []),
+      ...(activeDocumentsState
+        ? [formatActiveDocumentsSystemMessage(activeDocumentsState, activeEditTarget)]
+        : activeEditTarget.preferredPath || activeEditTarget.candidates.length > 0
+          ? [
+              formatActiveDocumentsSystemMessage(
+                {
+                  documents: activeEditTarget.candidates.map((path) => ({
+                    path,
+                    role: 'upload' as const,
+                    lastTouchedAt: new Date().toISOString(),
+                  })),
+                  preferredPath: activeEditTarget.preferredPath,
+                },
+                activeEditTarget
+              ),
+            ]
+          : []),
       ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
       ...(recentFailuresMessage ? [recentFailuresMessage] : []),
       ...(chatUploadsInventory ? [{ role: 'system' as const, content: chatUploadsInventory }] : []),
@@ -2899,6 +2931,18 @@ export async function* runLocalCopilotAgent(
     if (nextTask) {
       taskState = nextTask
       await persistTaskState(params.chatId, params.userId, nextTask).catch(() => undefined)
+    }
+
+    const nextActiveDocuments = updateActiveDocumentsFromTurn({
+      previous: activeDocumentsState,
+      currentTurnUploadPaths: currentRequestUploadPaths,
+      toolRecords: turnToolRecords,
+    })
+    if (nextActiveDocuments) {
+      activeDocumentsState = nextActiveDocuments
+      await persistActiveDocuments(params.chatId, params.userId, nextActiveDocuments).catch(
+        () => undefined
+      )
     }
 
     const evidenced = mergeSessionMemoryEvidence(sessionMemory, {

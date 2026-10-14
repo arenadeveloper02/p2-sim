@@ -1,6 +1,13 @@
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
 import { listChatUploads } from '@/lib/copilot/tools/handlers/upload-file-reader'
 import {
+  type ActiveDocumentsState,
+  parseActiveDocumentsState,
+  pathsFromCurrentTurnUploads,
+  type ResolvedActiveEditTarget,
+  resolveActiveEditTarget,
+} from '@/local-copilot/lib/context/active-documents'
+import {
   type CopilotChatConfig,
   loadCopilotChatConfig,
 } from '@/local-copilot/lib/context/chat-config'
@@ -36,6 +43,12 @@ export interface SettledPromptContextPrefetch {
   userTurn: ChatMessage
   taskState: CopilotTaskState | null
   chatConfig: CopilotChatConfig | null
+  /** Durable chat-scoped edit targets from prior creates/edits. */
+  activeDocuments: ActiveDocumentsState | null
+  /** Resolved preferred edit path for this turn (new uploads win; proceed re-inline does not). */
+  activeEditTarget: ResolvedActiveEditTarget
+  /** Upload paths attached on this request (not prior proceed auto-inline). */
+  currentRequestUploadPaths: string[]
   /** System note listing chat-scoped uploads (pointers only). */
   chatUploadsInventory: string | null
   /** True when proceed heuristic auto-inlined prior uploads into the user turn. */
@@ -90,16 +103,23 @@ export function startPromptContextPrefetch(
       ...(input.chatId ? { chatId: input.chatId } : {}),
     })
 
+    const currentRequestUploadPaths = pathsFromCurrentTurnUploads({
+      fileAttachments: input.fileAttachments,
+      contexts: input.contexts,
+    })
+
     return {
       userTurn,
       chatUploadsInventory: formatChatUploadsInventorySystemMessage(uploads),
       autoInlinedPriorUploads: autoInline,
+      currentRequestUploadPaths,
     }
   })
 
   const chatConfigPromise: Promise<CopilotChatConfig | null> = input.chatId
     ? loadCopilotChatConfig(input.chatId, input.userId).catch(() => null)
     : Promise.resolve(null)
+
   const sandboxPromise = hasWorkspaceSandboxAccess(input.workspaceId).catch(() => false)
 
   let skillsPromise: Promise<Awaited<ReturnType<typeof loadRelevantSkillGuidance>>> | null = null
@@ -152,12 +172,23 @@ export function startPromptContextPrefetch(
         userTurnPrepPromise,
         chatConfigPromise,
       ])
+      const activeDocuments = chatConfig
+        ? parseActiveDocumentsState(chatConfig.activeDocuments)
+        : null
+      const activeEditTarget = resolveActiveEditTarget({
+        state: activeDocuments,
+        currentTurnPaths: userTurnPrep.currentRequestUploadPaths,
+        message: input.message,
+      })
       return {
         relevantSkills,
         allTools,
         userTurn: userTurnPrep.userTurn,
         taskState: chatConfig ? parseTaskState(chatConfig.taskState) : null,
         chatConfig,
+        activeDocuments,
+        activeEditTarget,
+        currentRequestUploadPaths: userTurnPrep.currentRequestUploadPaths,
         chatUploadsInventory: userTurnPrep.chatUploadsInventory,
         autoInlinedPriorUploads: userTurnPrep.autoInlinedPriorUploads,
       }

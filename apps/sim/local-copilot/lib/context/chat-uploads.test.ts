@@ -7,8 +7,11 @@ import {
   formatAttachmentHistoryStub,
   formatAttachmentHistoryStubs,
   formatChatUploadsInventorySystemMessage,
+  formatOversizedUploadInlineNote,
+  LOCAL_COPILOT_AUTO_INLINE_TEXT_MAX_BYTES,
   mergeFileAttachmentRefs,
   shouldAutoInlinePriorChatUploads,
+  shouldAutoInlineTextUploadBody,
 } from '@/local-copilot/lib/context/chat-uploads'
 
 describe('formatAttachmentHistoryStubs', () => {
@@ -46,6 +49,32 @@ describe('formatChatUploadsInventorySystemMessage', () => {
     expect(message).toContain('Chat uploads already available')
     expect(message).toContain('uploads/Screens.pdf')
     expect(message).toMatch(/Never ask the user to re-upload/)
+    expect(message).toMatch(/not fully inlined/i)
+  })
+})
+
+describe('shouldAutoInlineTextUploadBody', () => {
+  it('allows bodies at or under the soft cap', () => {
+    expect(shouldAutoInlineTextUploadBody(0)).toBe(true)
+    expect(shouldAutoInlineTextUploadBody(LOCAL_COPILOT_AUTO_INLINE_TEXT_MAX_BYTES)).toBe(true)
+  })
+
+  it('rejects bodies above the soft cap', () => {
+    expect(shouldAutoInlineTextUploadBody(LOCAL_COPILOT_AUTO_INLINE_TEXT_MAX_BYTES + 1)).toBe(false)
+  })
+})
+
+describe('formatOversizedUploadInlineNote', () => {
+  it('points at uploads/ without embedding file bytes', () => {
+    const note = formatOversizedUploadInlineNote({
+      filename: 'dashboard.html',
+      size: 63_000,
+      mediaType: 'text/html',
+    })
+    expect(note).toContain('dashboard.html')
+    expect(note).toContain('uploads/dashboard.html')
+    expect(note).toMatch(/too large to inline/i)
+    expect(note).not.toContain('<html')
   })
 })
 

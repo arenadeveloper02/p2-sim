@@ -9,6 +9,45 @@ export const CHAT_UPLOADS_INVENTORY_SYSTEM_PREFIX =
 export const MAX_AUTO_INLINE_PRIOR_UPLOADS = 8
 
 /**
+ * Soft cap for auto-inlining text upload bodies into the current user turn.
+ * Larger files stay as inventory/pointer notes; the model must read/grep them.
+ * Applies to all text-like uploads (html/md/txt/json/csv/pdf extract), not HTML-only.
+ */
+export const LOCAL_COPILOT_AUTO_INLINE_TEXT_MAX_BYTES = 24_000
+
+/**
+ * True when a text upload body is small enough to embed in the user turn.
+ */
+export function shouldAutoInlineTextUploadBody(byteLength: number): boolean {
+  return (
+    Number.isFinite(byteLength) &&
+    byteLength >= 0 &&
+    byteLength <= LOCAL_COPILOT_AUTO_INLINE_TEXT_MAX_BYTES
+  )
+}
+
+/**
+ * Pointer note when a text upload is too large to dump into the prompt.
+ */
+export function formatOversizedUploadInlineNote(params: {
+  filename: string
+  size?: number
+  mediaType?: string
+}): string {
+  const sizePart =
+    typeof params.size === 'number' && Number.isFinite(params.size) && params.size >= 0
+      ? ` (${formatByteSize(params.size)})`
+      : ''
+  const media = params.mediaType?.trim()
+  const mediaPart = media ? ` [${media}]` : ''
+  return [
+    `File "${params.filename}"${sizePart}${mediaPart} is too large to inline into this turn.`,
+    `It is available at uploads/${params.filename} — call read("uploads/${params.filename}") or grep, then edit with workspace_file patch.`,
+    'Do not ask the user to re-upload. Do not invent file contents from memory.',
+  ].join(' ')
+}
+
+/**
  * Short history stub for a persisted attachment — pointers only, no file bytes.
  */
 export function formatAttachmentHistoryStub(params: {
@@ -65,7 +104,7 @@ export function formatChatUploadsInventorySystemMessage(
   return [
     CHAT_UPLOADS_INVENTORY_SYSTEM_PREFIX,
     ...lines,
-    'These files are already attached to this chat. Use read("uploads/<filename>") (or tool equivalents) when you need their contents. Never ask the user to re-upload a file that appears here.',
+    'These files are already attached to this chat. Use read("uploads/<filename>") (or tool equivalents) when you need their contents. Large text/HTML uploads are not fully inlined into the prompt — read/grep them, then patch. Never ask the user to re-upload a file that appears here.',
   ].join('\n')
 }
 
