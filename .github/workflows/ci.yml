@@ -60,7 +60,8 @@ jobs:
     name: Build GHCR Branch Images
     needs: [resolve-ghcr-tag]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/version-6.1-main' || github.ref == 'refs/heads/version-6.2-main' || startsWith(github.ref, 'refs/heads/upstream-sync/'))
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # App next build needs the 64 GB runner. Migrations and realtime fit in 16 GB.
+    runs-on: ${{ matrix.runner }}
     permissions:
       actions: write
       contents: read
@@ -71,10 +72,13 @@ jobs:
         include:
           - dockerfile: ./docker/app.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
+            runner: blacksmith-16vcpu-ubuntu-2404
           - dockerfile: ./docker/db.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
+            runner: blacksmith-4vcpu-ubuntu-2404
           - dockerfile: ./docker/realtime.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
+            runner: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout code
         uses: useblacksmith/checkout@v1
@@ -95,22 +99,6 @@ jobs:
           IMAGE_TAG="${{ needs.resolve-ghcr-tag.outputs.image_tag }}"
           GHCR_IMAGE="${{ matrix.ghcr_image }}"
           echo "tags=${GHCR_IMAGE}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Add swap
-        run: |
-          SWAPFILE=/mnt/gh-actions-swap
-          if sudo swapon --show=NAME | awk -v file="$SWAPFILE" '$1 == file { found = 1 } END { exit !found }'; then
-            echo "$SWAPFILE is already active"
-            free -h
-            exit 0
-          fi
-          sudo swapoff "$SWAPFILE" 2>/dev/null || true
-          sudo rm -f "$SWAPFILE"
-          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=20480 status=none
-          sudo chmod 600 "$SWAPFILE"
-          sudo mkswap "$SWAPFILE"
-          sudo swapon "$SWAPFILE"
-          free -h
 
       - name: Build and push
         uses: useblacksmith/build-push-action@v2
