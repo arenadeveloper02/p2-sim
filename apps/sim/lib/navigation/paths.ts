@@ -22,6 +22,9 @@ export const WORKSPACES_PATH = '/workspace'
 /** Opens full settings in the viewer's most recent accessible workspace. */
 export const WORKSPACE_SETTINGS_PATH = `${WORKSPACES_PATH}?redirect=settings`
 
+/** Platform-admin agent access request inbox (`NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS`). */
+export const AGENT_ACCESS_REQUEST_PATH = '/agent-access-request'
+
 /** Root of the organization surface; `/o` alone resolves like {@link APP_ENTRY_PATH}. */
 const ORGANIZATIONS_PATH = '/o'
 

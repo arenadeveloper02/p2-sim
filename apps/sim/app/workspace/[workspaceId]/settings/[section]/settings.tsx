@@ -8,6 +8,7 @@ import { getSettingsPermissionConfigKey } from '@/components/settings/navigation
 import { useSession } from '@/lib/auth/auth-client'
 import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isPlatformAdminEmail } from '@/lib/permissions/platform-admin-emails'
 import { captureEvent } from '@/lib/posthog/client'
 import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -15,6 +16,7 @@ import { General } from '@/app/workspace/[workspaceId]/settings/components/gener
 import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import {
   getSettingsSectionMeta,
+  isPlatformAdminEmailSettingsSection,
   isPlatformAdminSettingsSection,
   type SettingsSection,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -26,6 +28,11 @@ const SkillShare = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/skill-share/skill-share').then(
     (m) => m.SkillShare
   )
+)
+const AgentAccessRequest = dynamic(() =>
+  import(
+    '@/app/workspace/[workspaceId]/settings/components/agent-access-request/agent-access-request'
+  ).then((m) => m.AgentAccessRequest)
 )
 const ApiKeys = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/api-keys/api-keys').then(
@@ -166,6 +173,7 @@ function SettingsPageContent({ section }: SettingsPageProps) {
   const posthog = usePostHog()
 
   const isAdminRole = session?.user?.role === 'admin'
+  const isListedPlatformAdminEmail = isPlatformAdminEmail(session?.user?.email)
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
 
@@ -181,7 +189,11 @@ function SettingsPageContent({ section }: SettingsPageProps) {
         ? 'usage'
         : isPlatformAdminSettingsSection(normalizedSection) && !sessionLoading && !isAdminRole
           ? 'general'
-          : normalizedSection
+          : isPlatformAdminEmailSettingsSection(normalizedSection) &&
+              !sessionLoading &&
+              !isListedPlatformAdminEmail
+            ? 'general'
+            : normalizedSection
   const organizationId = hostContext.hostOrganizationId
   const meta = getSettingsSectionMeta(effectiveSection)
 
@@ -265,6 +277,7 @@ function SettingsPageContent({ section }: SettingsPageProps) {
       {effectiveSection === 'self-host' && <SelfHost />}
       {effectiveSection === 'admin' && <Admin />}
       {effectiveSection === 'skill-share' && <SkillShare />}
+      {effectiveSection === 'agent-access-request' && <AgentAccessRequest />}
       {effectiveSection === 'mothership' && <Mothership />}
     </SettingsSectionProvider>
   )

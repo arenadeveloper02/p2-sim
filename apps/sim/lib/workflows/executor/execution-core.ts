@@ -516,11 +516,16 @@ async function executeWorkflowCoreImpl(
      * private namespace it would be reasonable to lend — such a workflow runs on
      * workspace secrets alone.
      *
-     * Deployed chat still uses the workflow owner's personal namespace even when
-     * `sessionUserId` is set. That id is for Arena token lookup, not personal env.
+     * Deployed chat is authorized by `validateChatAuth` (allowedEmails / password /
+     * SSO), not workspace membership. `sessionUserId` is for Arena token lookup
+     * only. Both personal and workspace env resolve as the workflow owner so a
+     * non-member visitor with agent access cannot trip the workspace ACL.
      */
-    const identifiedCallerUserId =
-      metadata.triggerType !== 'chat' && metadata.isClientSession && metadata.sessionUserId
+    const isDeployedChat = metadata.triggerType === 'chat'
+
+    const identifiedCallerUserId = isDeployedChat
+      ? undefined
+      : metadata.isClientSession && metadata.sessionUserId
         ? metadata.sessionUserId
         : metadata.enforceCredentialAccess
           ? metadata.userId
@@ -541,8 +546,12 @@ async function executeWorkflowCoreImpl(
      * key, schedule, webhook, or anonymous public-API call, where no caller is
      * identifiable. Deriving it again here would only risk disagreeing with the
      * principal layer.
+     *
+     * Deployed chat is the exception: always the workflow owner (see above).
      */
-    const workspaceEnvUserId = metadata.userId || personalEnvUserId
+    const workspaceEnvUserId = isDeployedChat
+      ? personalEnvUserId
+      : metadata.userId || personalEnvUserId
     if (!workspaceEnvUserId) {
       throw new Error('Missing execution actor in execution metadata')
     }
@@ -617,10 +626,35 @@ async function executeWorkflowCoreImpl(
       }
     }
 
+    /**
+     * Deployed chat already cleared `validateChatAuth`. Membership must not
+     * gate secret resolution for that surface — the visitor may have agent
+     * access without a workspace seat, and a stale owner pointer must not
+     * fail the run either.
+     */
+    const deployedChatWorkspaceAccess = isDeployedChat
+      ? {
+          exists: true,
+          hasAccess: true,
+          canWrite: false,
+          canAdmin: true,
+          workspace: null,
+          permission: 'admin' as const,
+        }
+      : undefined
+
     const [workflowState, env] = await Promise.all([
       withDatabaseReadRetry(loadWorkflowState, { label: 'loadWorkflowState' }),
       withDatabaseReadRetry(
-        () => getExecutionEnvironment(personalEnvUserId, workspaceEnvUserId, providedWorkspaceId),
+        () =>
+          getExecutionEnvironment(
+            personalEnvUserId,
+            workspaceEnvUserId,
+            providedWorkspaceId,
+            deployedChatWorkspaceAccess
+              ? { workspaceAccess: deployedChatWorkspaceAccess }
+              : undefined
+          ),
         { label: 'getExecutionEnvironment' }
       ),
     ])

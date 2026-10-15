@@ -6,6 +6,10 @@ import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import {
+  hasAgentEmailAccess,
+  hasAllowedEmailStartingWithAtSymbol,
+} from '@/lib/chat/agent-email-access'
+import {
   getAgentDepartmentLabelMap,
   labelFromDepartmentMap,
   resolveAgentDepartmentValue,
@@ -30,25 +34,6 @@ interface AgentChatRow {
   deploymentType?: string | null
   redirectUrl?: string | null
   arenaPath?: string | null
-}
-
-/**
- * Returns true when allowedEmails has at least one string whose first character is '@'
- * (e.g. '@position2.com', '@northstar'). Ignores email-style entries (e.g. saiteja.s@position2.com).
- */
-function hasAllowedEmailStartingWithAtSymbol(
-  allowedEmails: unknown,
-  userEmailDomain: string
-): boolean {
-  const list = Array.isArray(allowedEmails) ? allowedEmails : []
-  const commonEmailDomains = ['@gmail.com', '@yahoo.com', '@hotmail.com', '@outlook.com']
-  return list.some(
-    (entry) =>
-      typeof entry === 'string' &&
-      entry.length > 0 &&
-      entry.startsWith(userEmailDomain) &&
-      !commonEmailDomains.includes(userEmailDomain)
-  )
 }
 
 /** Maps a DB row to the response agent list item shape. */
@@ -81,6 +66,24 @@ function toAgentListItem(
 }
 
 type AgentListItem = ReturnType<typeof toAgentListItem>
+
+type AgentListItemWithDisabled = AgentListItem & { disabled: boolean }
+
+/**
+ * Parses GENERIC_AGENTS_WORKSPACE_ID query param (JSON string array of workspace IDs).
+ * Example: `["bd10ec38-de06-4f44-bf2e-566c151556a2"]`
+ */
+function parseGenericAgentsWorkspaceIds(raw: string | null): string[] {
+  if (!raw?.trim()) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+  } catch {
+    logger.warn('Invalid GENERIC_AGENTS_WORKSPACE_ID query param; expected JSON string array')
+    return []
+  }
+}
 
 /** Maps chat rows to list items, attaching unique workflow block types in one query. */
 async function toAgentListItems(
@@ -149,10 +152,10 @@ function sortAgentListByWorkflowOrder<T extends { workflow_id: string }>(
 /**
  * Builds workflow ID order: recently used first, then remaining agents in stable order.
  */
-async function sortAgentListByRecentUsage(
-  agentList: AgentListItem[],
+async function sortAgentListByRecentUsage<T extends { workflow_id: string }>(
+  agentList: T[],
   userId: string
-): Promise<AgentListItem[]> {
+): Promise<T[]> {
   const workflowIds = agentList.map((row) => row.workflow_id)
   const recentUsedAgents = await getRecentUsedAgentsFromLogs(workflowIds, userId)
   const orderedWorkflowIds = recentUsedAgents.map((r) => r.workflowId)
@@ -190,16 +193,27 @@ const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
 /**
  * Fetches active chats with their workflow and author metadata.
  *
- * Shared across tabs: joins workflow + author email. Chat deployments remain
- * listable even when the same workflow also has an active schedule or webhook,
- * since chat runs use triggerType=chat independently of those automations.
+ * Shared across tabs: joins workflow + author email. Only returns agents whose
+ * workflow is deployed (`workflow.isDeployed`) and whose chat deployment is
+ * active (`chat.isActive` — deployed as chat). Chat deployments remain listable
+ * even when the same workflow also has an active schedule or webhook, since
+ * chat runs use triggerType=chat independently of those automations.
  */
 async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promise<AgentChatRow[]> {
   /**
    * `whereConditions` is a Drizzle SQL expression assembled by the caller.
    * Keeping this typed as `SQL<unknown>` avoids leaking complex query generics throughout the file,
    * while still retaining type-safety (no `any`) at the boundary.
+   *
+   * Always require an active chat deployment on a deployed workflow, then AND
+   * any tab-specific filters from the caller.
    */
+  const deployedAsChatConditions = and(eq(chat.isActive, true), eq(workflow.isDeployed, true))
+  const combinedWhere =
+    whereConditions !== undefined
+      ? and(deployedAsChatConditions, whereConditions)
+      : deployedAsChatConditions
+
   return await db
     .select({
       chatId: chat.id,
@@ -220,7 +234,7 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
     .innerJoin(user, eq(workflow.userId, user.id))
-    .where(whereConditions)
+    .where(combinedWhere)
     .orderBy(desc(chat.updatedAt))
 }
 
@@ -242,9 +256,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
 
   const creatorUserId = userRecord[0].id
 
-  const chats = await fetchAgentChats(
-    and(eq(chat.isActive, true), eq(workflow.userId, creatorUserId))
-  )
+  const chats = await fetchAgentChats(eq(workflow.userId, creatorUserId))
 
   /**
    * Core logic: for the "myagents" tab we keep the current behavior:
@@ -277,12 +289,8 @@ async function fetchSharedWithMeChats(
 ): Promise<AgentChatRow[]> {
   const sharedWhereConditions =
     departmentValue !== undefined
-      ? and(
-          eq(chat.isActive, true),
-          eq(chat.department, departmentValue),
-          ne(workflow.userId, userId)
-        )
-      : and(eq(chat.isActive, true), ne(workflow.userId, userId))
+      ? and(eq(chat.department, departmentValue), ne(workflow.userId, userId))
+      : ne(workflow.userId, userId)
 
   const chats = await fetchAgentChats(sharedWhereConditions)
 
@@ -316,13 +324,25 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
   return NextResponse.json({ success: true, agentList, count: agentList.length }, { status: 200 })
 }
 
+interface GlobalAgentsListOptions {
+  /** When true with genericWorkspaceIds, merge deployed chat agents from those workspaces. */
+  onlyAgentAccess?: boolean
+  /** Workspace IDs from GENERIC_AGENTS_WORKSPACE_ID whose deployed chat agents are always listed. */
+  genericWorkspaceIds?: string[]
+}
+
 /**
  * Returns global agents (domain-wide allowedEmails) combined with shared-with-me agents,
  * sorted by the requesting user's recent chat usage.
+ *
+ * When `onlyAgentAccess` is set with `genericWorkspaceIds`, also merges all deployed
+ * chat agents from those workspaces and adds `disabled` on every item:
+ * `false` when emailId or the user's domain is in allowedEmails, otherwise `true`.
  */
 async function getGlobalAgentsList(
   emailId: string,
-  departmentValue: string | undefined
+  departmentValue: string | undefined,
+  options: GlobalAgentsListOptions = {}
 ): Promise<NextResponse> {
   const userRecord = await db
     .select({ id: user.id })
@@ -336,11 +356,11 @@ async function getGlobalAgentsList(
   }
 
   const userId = userRecord[0].id
+  const { onlyAgentAccess = false, genericWorkspaceIds = [] } = options
+  const shouldMergeGenericAgents = onlyAgentAccess && genericWorkspaceIds.length > 0
 
   const globalWhereConditions =
-    departmentValue !== undefined
-      ? and(eq(chat.isActive, true), eq(chat.department, departmentValue))
-      : eq(chat.isActive, true)
+    departmentValue !== undefined ? eq(chat.department, departmentValue) : undefined
   const userEmailDomain = `@${emailId.split('@')[1]}`
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
@@ -356,11 +376,39 @@ async function getGlobalAgentsList(
   const sharedAgentList = await toAgentListItems(sharedChats, departmentLabelMap)
 
   const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
-  const agentList = await sortAgentListByRecentUsage(mergedAgentList, userId)
-
-  logger.info(
-    `agentsList (global): returning ${agentList.length} chats for ${emailId} (${globalAgentList.length} global + ${sharedAgentList.length} shared, deduped)`
+  let agentList: AgentListItem[] | AgentListItemWithDisabled[] = await sortAgentListByRecentUsage(
+    mergedAgentList,
+    userId
   )
+
+  if (shouldMergeGenericAgents) {
+    const accessibleGlobalRows = globalChats.filter((row) =>
+      hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain)
+    )
+    const genericRows = await fetchAgentChats(inArray(workflow.workspaceId, genericWorkspaceIds))
+
+    const allowedEmailsByChatId = new Map<string, unknown>()
+    for (const row of [...accessibleGlobalRows, ...sharedChats, ...genericRows]) {
+      allowedEmailsByChatId.set(row.chatId, row.allowedEmails)
+    }
+
+    const genericAgentList = await toAgentListItems(genericRows, departmentLabelMap)
+    const mergedWithGeneric = mergeAgentListsById(mergedAgentList, genericAgentList)
+    const sortedMerged = await sortAgentListByRecentUsage(mergedWithGeneric, userId)
+
+    agentList = sortedMerged.map((item) => ({
+      ...item,
+      disabled: !hasAgentEmailAccess(allowedEmailsByChatId.get(item.id), emailId),
+    }))
+
+    logger.info(
+      `agentsList (global+onlyAgentAccess): returning ${agentList.length} chats for ${emailId} (${globalAgentList.length} global + ${sharedAgentList.length} shared + ${genericAgentList.length} generic workspaces, deduped)`
+    )
+  } else {
+    logger.info(
+      `agentsList (global): returning ${agentList.length} chats for ${emailId} (${globalAgentList.length} global + ${sharedAgentList.length} shared, deduped)`
+    )
+  }
 
   return NextResponse.json({ success: true, agentList, count: agentList.length }, { status: 200 })
 }
@@ -371,6 +419,9 @@ async function getGlobalAgentsList(
  *        tabName=myagents — returns agents created by user or in allowedEmails; requires emailId.
  *        tabName=sharedwithme — returns agents where emailId is in allowedEmails (exact or domain) but NOT created by this user; requires emailId.
  * Optional for global: departmentName — filters both global and shared-with-me agents by department.
+ * Optional for global: onlyAgentAccess=true & GENERIC_AGENTS_WORKSPACE_ID=<JSON string[]> —
+ *   also merges deployed chat agents from those workspaces and adds `disabled` per item
+ *   (`false` when emailId or user domain is in allowedEmails, else `true`).
  */
 export async function GET(request: NextRequest) {
   const authError = verifyCronAuth(request, 'Schedule execution')
@@ -413,8 +464,15 @@ export async function GET(request: NextRequest) {
 
       const departmentName = searchParams.get('departmentName')
       const departmentValue = await resolveAgentDepartmentValue(departmentName)
+      const onlyAgentAccess = searchParams.get('onlyAgentAccess') === 'true'
+      const genericWorkspaceIds = parseGenericAgentsWorkspaceIds(
+        searchParams.get('GENERIC_AGENTS_WORKSPACE_ID')
+      )
 
-      return await getGlobalAgentsList(emailId.trim(), departmentValue)
+      return await getGlobalAgentsList(emailId.trim(), departmentValue, {
+        onlyAgentAccess,
+        genericWorkspaceIds,
+      })
     }
 
     return NextResponse.json({ success: true, agentList: [], count: 0 }, { status: 200 })
