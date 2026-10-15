@@ -29,6 +29,8 @@ import {
 import { rejectOfficeFileViaSandbox } from '@/local-copilot/lib/tools/reject-office-via-sandbox'
 import {
   ARENA_ALIASED_SERVER_TOOL_NAMES,
+  ARENA_DUAL_REGISTERED_SERVER_TOOL_NAMES,
+  ARENA_FILE_PIPELINE_TOOL_NAMES,
   isArenaFilePipelineTool,
   toServerRegistryToolName,
 } from '@/local-copilot/lib/tools/resolve-tool-name-alias'
@@ -117,9 +119,11 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
       '@/lib/copilot/tools/registry/server-tool-adapter'
     )
     for (const arenaName of ARENA_ALIASED_SERVER_TOOL_NAMES) {
-      // function_execute is handled via executeTool('run_function') on fallthrough —
-      // it is not a ServerToolAdapter route.
-      if (arenaName === 'function_execute') continue
+      // Schema-only aliases (function_execute → run_function, materialize_file →
+      // save_upload) execute via executeTool fallthrough — not ServerToolAdapter.
+      if (!(ARENA_DUAL_REGISTERED_SERVER_TOOL_NAMES as readonly string[]).includes(arenaName)) {
+        continue
+      }
       if (hasHandler(arenaName)) continue
       const serverName = toServerRegistryToolName(arenaName)
       if (
@@ -481,17 +485,19 @@ export async function executeMothershipDelegatedTool(
   }
 
   // Remaining delegated tools are sim-/go-routed with registered handlers
-  // (run_workflow, list_integration_tools, function_execute, …).
+  // (run_workflow, list_integration_tools, function_execute → run_function,
+  // materialize_file → save_upload, …).
   logger.info('Delegating Mothership tool', {
     toolName,
+    serverToolName,
     workflowId: workflowId ?? null,
     hasBillingAttribution: Boolean(ctx.billingAttribution),
     billingEntityType: ctx.billingAttribution?.billingEntity.type ?? null,
     workspaceId: ctx.workspaceId,
   })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
-  // Always execute under the Cloud/handler id (run_function, …) while keeping
-  // the Arena leaf name on the tool result for the model.
+  // Always execute under the Cloud/handler id (run_function, save_upload, …)
+  // while keeping the Arena leaf name on the tool result for the model.
   let result = await executeTool(
     serverToolName,
     enrichedArgs,

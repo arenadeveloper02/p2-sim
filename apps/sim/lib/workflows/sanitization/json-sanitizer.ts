@@ -280,12 +280,14 @@ function isToolInput(value: unknown): value is ToolInput {
  * already handled by `sanitizeWorkflowForSharing`.
  */
 function sanitizeSubBlocks(
-  subBlocks: BlockState['subBlocks'],
+  subBlocks: BlockState['subBlocks'] | null | undefined,
   hiddenIds: ReadonlySet<string>
 ): Record<string, string | number | string[][] | object> {
   const sanitized: Record<string, string | number | string[][] | object> = {}
 
-  Object.entries(subBlocks).forEach(([key, subBlock]) => {
+  // Copilot-shaped blocks (already sanitized) have `inputs` instead of `subBlocks`.
+  // Guard so a mistaken re-sanitize cannot throw Object.entries(undefined).
+  Object.entries(subBlocks ?? {}).forEach(([key, subBlock]) => {
     if (hiddenIds.has(key)) return
 
     // Skip null/undefined values

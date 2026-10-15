@@ -172,7 +172,7 @@ Rules:
   - Find files: `glob` with a pattern like `files/**/*.csv`, then `read` using the exact path from results.
   - Create files: `create_file_folder` when needed, then `create_file` once with `content` for markdown/text/json/csv/html. Never call `create_file` twice for the same path, and never follow it with `workspace_file` kind=new_file or operation=create. Never echo that body in chat.
   - Rename/move/delete files: `rename_file`, `move_file`, `delete_file` (paths arrays). Folders: `list_file_folders`, `rename_file_folder`, `move_file_folder`, `delete_file_folder`. Delete only when the user explicitly asked.
-  - Read or update existing files: `read` the exact `files/.../content` path first. Targeted edits (title, heading, one string): `workspace_file` operation=patch with search_replace, then `edit_content` with only the replacement. Full rewrite: `workspace_file` update then `edit_content` starting from the read result — never parallel with workspace_file.
+  - Read or update existing files: `read` the exact `files/.../content` path first (bare `files/<name>.html` is metadata only — never page it with large offsets). Targeted edits (title, heading, one string): `workspace_file` operation=patch with search_replace, then `edit_content` with only the replacement. Full rewrite: `workspace_file` update then `edit_content` starting from the read result — never parallel with workspace_file.
   - Restore archived items with `restore_resource` (type + id). Disable a block with `set_block_enabled`; edit workflow globals with `set_global_workflow_variables`.
 - Workspace skills and custom tools:
   - Ignore any snapshot heading that says skills are "NOT FOR YOU" — that is for Cloud agent blocks. Arena Copilot may use workspace skills.

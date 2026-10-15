@@ -13,6 +13,8 @@ export const ARENA_TO_SERVER_REGISTRY_TOOL_NAME = {
   knowledge_base: 'manage_knowledge_base',
   search_online: 'web_search',
   function_execute: 'run_function',
+  /** Promotes chat `uploads/…` into workspace `files/…` (Cloud id: save_upload). */
+  materialize_file: 'save_upload',
 } as const
 
 export type ArenaAliasedServerToolName = keyof typeof ARENA_TO_SERVER_REGISTRY_TOOL_NAME
@@ -33,12 +35,14 @@ export const ARENA_ALIASED_SERVER_TOOL_NAMES = [
   'knowledge_base',
   'search_online',
   'function_execute',
+  'materialize_file',
 ] as const satisfies readonly ArenaAliasedServerToolName[]
 
 /**
  * Arena leaf names that are dual-registered on the server tool router (same
- * handler as the Cloud id). `function_execute` is intentionally excluded —
- * it executes via `executeTool('run_function')`, not ServerToolAdapter.
+ * handler as the Cloud id). `function_execute` / `materialize_file` are
+ * intentionally excluded — they execute via `executeTool('run_function' |
+ * 'save_upload')`, not ServerToolAdapter.
  */
 export const ARENA_DUAL_REGISTERED_SERVER_TOOL_NAMES = [
   'create_file',

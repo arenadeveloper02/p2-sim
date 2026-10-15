@@ -6,6 +6,7 @@ import {
   normalizeBlockRetryTries,
   normalizeBlockRetryWaitMs,
 } from '@sim/workflow-types/workflow'
+import { applyImageGeneratorDefaultPairing } from '@/lib/image-generation/block-model-config'
 import { isIntegrationDeploymentAvailableForVisibility } from '@/lib/integrations/availability.server'
 import { MCP_SERVER_ADVANCED_TOOL_TYPE } from '@/lib/mcp/shared'
 import { capabilityDeniedBy } from '@/lib/permission-groups/capability-assertions'
@@ -227,22 +228,53 @@ export function createBlockFromParams(
     })
   }
 
-  // Set up subBlocks from block configuration
+  // Set up subBlocks from block configuration. Seed declared defaults the same
+  // way the canvas does (`prepareBlockState`) so Copilot-created Agent blocks
+  // get Model=`gpt-5` (and other defaultValue / value() fields) without the
+  // model having to pass them. Permission-denied model/operation defaults are
+  // left empty — same veto as the editor's isSeededValueAllowed path.
   if (blockConfig) {
+    const isSeededValueAllowed = createSubBlockInputGate({
+      blockType: params.type,
+      permissionConfig,
+      blockId,
+      operationType: 'add',
+      skippedItems: skippedItems ?? [],
+    })
     blockConfig.subBlocks.forEach((subBlock) => {
       if (!blockState.subBlocks[subBlock.id]) {
+        let seedValue: unknown = null
+        if (typeof subBlock.value === 'function') {
+          try {
+            seedValue = subBlock.value({})
+          } catch {
+            seedValue = null
+          }
+        } else if (subBlock.defaultValue !== undefined) {
+          seedValue = structuredClone(subBlock.defaultValue)
+        }
+
+        if (
+          typeof seedValue === 'string' &&
+          seedValue !== '' &&
+          !isSeededValueAllowed(subBlock.id, seedValue)
+        ) {
+          seedValue = null
+        }
+
         blockState.subBlocks[subBlock.id] = {
           id: subBlock.id,
           type: subBlock.type,
-          value:
-            subBlock.hidden && subBlock.defaultValue !== undefined
-              ? structuredClone(subBlock.defaultValue)
-              : null,
+          value: seedValue,
         }
       } else {
         blockState.subBlocks[subBlock.id].type = subBlock.type
       }
     })
+
+    if (params.type === 'image_generator_v2') {
+      applyImageGeneratorDefaultPairing(blockState.subBlocks)
+    }
 
     const defaultModes = buildDefaultCanonicalModes(blockConfig.subBlocks)
     if (Object.keys(defaultModes).length > 0) {

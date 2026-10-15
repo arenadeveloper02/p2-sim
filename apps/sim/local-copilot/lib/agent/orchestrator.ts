@@ -63,6 +63,11 @@ import {
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
 } from '@/local-copilot/lib/config'
+import {
+  formatActiveDocumentsSystemMessage,
+  persistActiveDocuments,
+  updateActiveDocumentsFromTurn,
+} from '@/local-copilot/lib/context/active-documents'
 import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
   buildLocalCopilotContext,
@@ -178,6 +183,8 @@ import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/
 import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
+  canEnterToolRound,
+  canForceMandatoryFollowUp,
   clearLocalFileIntentChannel,
   coalesceToolExecutionPayloadForLlm,
   detectMandatoryFollowUpFromExecution,
@@ -506,12 +513,29 @@ export async function* runLocalCopilotAgent(
     tokenCountModel
   )
 
-  const { relevantSkills, allTools, userTurn, chatConfig } = settledPrefetch
+  const {
+    relevantSkills,
+    allTools,
+    userTurn,
+    chatConfig,
+    chatUploadsInventory,
+    activeDocuments,
+    activeEditTarget,
+    currentRequestUploadPaths,
+  } = settledPrefetch
   let taskState = settledPrefetch.taskState
+  let activeDocumentsState = activeDocuments
   if (relevantSkills.names.length > 0) {
     logger.info('Arena Copilot loaded relevant workspace skills', {
       workspaceId: params.workspaceId,
       skillNames: relevantSkills.names,
+    })
+  }
+  if (settledPrefetch.autoInlinedPriorUploads) {
+    logger.info('Arena Copilot auto-inlined prior chat uploads for proceed turn', {
+      workspaceId: params.workspaceId,
+      chatId: params.chatId ?? null,
+      messageChars: params.message.length,
     })
   }
 
@@ -610,8 +634,26 @@ export async function* runLocalCopilotAgent(
           ]
         : []),
       ...(taskState ? [formatTaskStateSystemMessage(taskState)] : []),
+      ...(activeDocumentsState
+        ? [formatActiveDocumentsSystemMessage(activeDocumentsState, activeEditTarget)]
+        : activeEditTarget.preferredPath || activeEditTarget.candidates.length > 0
+          ? [
+              formatActiveDocumentsSystemMessage(
+                {
+                  documents: activeEditTarget.candidates.map((path) => ({
+                    path,
+                    role: 'upload' as const,
+                    lastTouchedAt: new Date().toISOString(),
+                  })),
+                  preferredPath: activeEditTarget.preferredPath,
+                },
+                activeEditTarget
+              ),
+            ]
+          : []),
       ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
       ...(recentFailuresMessage ? [recentFailuresMessage] : []),
+      ...(chatUploadsInventory ? [{ role: 'system' as const, content: chatUploadsInventory }] : []),
       ...(pinnedConstraints.length > 0
         ? [formatSessionConstraintsSystemMessage(pinnedConstraints)]
         : []),
@@ -959,9 +1001,23 @@ export async function* runLocalCopilotAgent(
 
   const needsLiveSearch = intent.primary === 'research' || intent.secondary.includes('research')
 
-  for (let round = 0; round < maxToolRounds; round++) {
+  // Overflow past maxToolRounds is reserved for write-critical follow-ups
+  // (workspace_file → edit_content) so prepare-without-apply cannot stall on
+  // the last normal round.
+  const maxRoundExclusive = maxToolRounds + MAX_FORCED_FOLLOW_UP_ROUNDS
+  for (let round = 0; round < maxRoundExclusive; round++) {
     if (stagnationStopMessage) break
     if (postBuildToolMode === 'done') break
+    if (
+      !canEnterToolRound({
+        round,
+        maxToolRounds,
+        maxForcedFollowUpRounds: MAX_FORCED_FOLLOW_UP_ROUNDS,
+        pendingFollowUps,
+      })
+    ) {
+      break
+    }
 
     const midTurnSpend = assertSpendCapAllows({
       isExceeded: usageLimits.isExceeded,
@@ -1275,11 +1331,14 @@ export async function* runLocalCopilotAgent(
     if (pendingToolCalls.length === 0) {
       const shouldForceOauthFollowUp =
         postBuildToolMode === 'oauth_only' && pendingFollowUpsAreOauthOnly(pendingFollowUps)
-      const canForceFollowUp =
-        pendingFollowUps.length > 0 &&
-        forcedFollowUpRounds < MAX_FORCED_FOLLOW_UP_ROUNDS &&
-        round < maxToolRounds - 1 &&
-        (postBuildToolMode === 'all' || shouldForceOauthFollowUp)
+      const canForceFollowUp = canForceMandatoryFollowUp({
+        round,
+        maxToolRounds,
+        maxForcedFollowUpRounds: MAX_FORCED_FOLLOW_UP_ROUNDS,
+        forcedFollowUpRounds,
+        pendingFollowUps,
+        postBuildAllows: postBuildToolMode === 'all' || shouldForceOauthFollowUp,
+      })
 
       if (canForceFollowUp) {
         forcedFollowUpRounds += 1
@@ -1299,6 +1358,7 @@ export async function* runLocalCopilotAgent(
           forcedFollowUpRounds,
           pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
           postBuildToolMode,
+          overflowRound: round >= maxToolRounds,
         })
         continue
       }
@@ -2891,6 +2951,18 @@ export async function* runLocalCopilotAgent(
     if (nextTask) {
       taskState = nextTask
       await persistTaskState(params.chatId, params.userId, nextTask).catch(() => undefined)
+    }
+
+    const nextActiveDocuments = updateActiveDocumentsFromTurn({
+      previous: activeDocumentsState,
+      currentTurnUploadPaths: currentRequestUploadPaths,
+      toolRecords: turnToolRecords,
+    })
+    if (nextActiveDocuments) {
+      activeDocumentsState = nextActiveDocuments
+      await persistActiveDocuments(params.chatId, params.userId, nextActiveDocuments).catch(
+        () => undefined
+      )
     }
 
     const evidenced = mergeSessionMemoryEvidence(sessionMemory, {

@@ -3,6 +3,8 @@ import {
   getReferenceImageModelIds,
   IMAGE_BLOCK_ALL_MODEL_OPTIONS,
   IMAGE_BLOCK_PROVIDER_OPTIONS,
+  IMAGE_GENERATOR_DEFAULT_MODEL,
+  IMAGE_GENERATOR_DEFAULT_PROVIDER,
   normalizeImageModelId,
   OPENAI_IMAGE_MODEL_IDS,
   reconcileImageProviderAndModel,
@@ -570,7 +572,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       searchable: true,
       commandSearchable: true,
       clearable: true,
-      value: () => '',
+      defaultValue: IMAGE_GENERATOR_DEFAULT_PROVIDER,
     },
     {
       id: 'model',
@@ -581,7 +583,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       searchable: true,
       commandSearchable: true,
       clearable: true,
-      value: () => '',
+      defaultValue: IMAGE_GENERATOR_DEFAULT_MODEL,
     },
     {
       id: 'prompt',
