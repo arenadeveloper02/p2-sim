@@ -6,6 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { hasAgentEmailAccess } from '@/lib/chat/agent-email-access'
 import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
+import { withLoggedInEmailOnVideoAgentUrl } from '@/lib/chat/video-agent-redirect'
 import { getUniqueBlockNamesByWorkflowId } from '@/lib/chat/workflow-block-names'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
@@ -84,9 +85,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       status: 'published',
       identifier: row.identifier,
       deployment_type: row.deploymentType === 'app' ? 'app' : 'chat',
-      redirect_url:
-        appRedirectUrl ??
-        `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
+      redirect_url: appRedirectUrl
+        ? withLoggedInEmailOnVideoAgentUrl(appRedirectUrl, emailId)
+        : `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
       arena_path: row.arenaPath?.trim() || null,
       block_names: blockNamesByWorkflowId.get(row.workflowId) ?? [],
       disabled: !hasAgentEmailAccess(row.allowedEmails, emailId),
