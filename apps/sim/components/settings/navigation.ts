@@ -50,6 +50,13 @@ export function isPlatformAdminSettingsSection(section: string): boolean {
 }
 
 /**
+ * Settings pages only emails listed in `NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS` may open.
+ */
+export function isPlatformAdminEmailSettingsSection(section: string): boolean {
+  return section === 'agent-access-request'
+}
+
+/**
  * Settings a self-hoster needs from the managed service: their profile, what
  * they pay for, and the Chat keys their own deployment authenticates with.
  */
@@ -130,6 +137,7 @@ export type UnifiedSettingsSection =
   | 'sandboxes'
   | 'admin'
   | 'skill-share'
+  | 'agent-access-request'
   | 'sessions'
   | 'security'
   | 'data-retention'
@@ -175,6 +183,8 @@ export interface UnifiedSettingsNavigationItem {
   selfHostedOverride?: SelfHostedOverride
   requiresSuperUser?: boolean
   requiresAdminRole?: boolean
+  /** Visible only when the viewer's email is in `NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS`. */
+  requiresPlatformAdminEmail?: boolean
   requiresDesktopSurface?: DesktopSettingsSurface
   /** Visible only to workspace admins (`viewer.isAdmin`). */
   requiresWorkspaceAdmin?: boolean
@@ -906,6 +916,17 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
     planes: {
       account: { id: 'skill-share', group: 'platform', order: 5 },
+    },
+  },
+  {
+    label: 'Agent access requests',
+    icon: ClipboardList,
+    unified: {
+      id: 'agent-access-request',
+      description: 'Review and approve agent access requests.',
+      group: 'platform',
+      order: 2,
+      requiresPlatformAdminEmail: true,
     },
   },
   // {

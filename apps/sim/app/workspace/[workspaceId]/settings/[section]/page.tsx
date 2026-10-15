@@ -6,10 +6,12 @@ import { PermissionAccessBoundary } from '@/components/access-requests/permissio
 import { EmptyState } from '@/components/empty-state/empty-state'
 import {
   getOrganizationSettingsHref,
+  isPlatformAdminEmailSettingsSection,
   isPlatformAdminSettingsSection,
   UNIFIED_TO_ORGANIZATION_SECTION,
 } from '@/components/settings/navigation'
 import { getSession } from '@/lib/auth'
+import { isPlatformAdminEmail } from '@/lib/permissions/platform-admin-emails'
 import { isPlatformAdmin } from '@/lib/permissions/super-user'
 import { authorizeWorkspaceSettingsSection } from '@/lib/settings/application/workspace-section-access'
 import { getWorkspaceHostContextForViewer } from '@/lib/workspaces/host-context'
@@ -77,6 +79,10 @@ export default async function WorkspaceSettingsSectionPage({
 
   if (isPlatformAdminSettingsSection(parsed)) {
     if (!(await isPlatformAdmin(session.user.id))) notFound()
+  }
+
+  if (isPlatformAdminEmailSettingsSection(parsed)) {
+    if (!isPlatformAdminEmail(session.user.email)) notFound()
   }
 
   const organizationSection = UNIFIED_TO_ORGANIZATION_SECTION[parsed]
