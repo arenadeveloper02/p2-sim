@@ -4,7 +4,7 @@ import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@sim/emcn'
 import { AlertTriangle, Check, Download, Expand, X } from 'lucide-react'
 import { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
-import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
+import { isUserFileDisplayMetadata, isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 
 export { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 
@@ -1256,6 +1256,38 @@ export function isImageUrlLine(s: string): boolean {
   return extractImageUrlFromLine(s) !== null
 }
 
+function chatImageFileUrl(value: unknown): string | null {
+  if (!isUserFileWithMetadata(value) && !isUserFileDisplayMetadata(value)) {
+    return null
+  }
+  const file = value as { type: string; url: string }
+  if (!file.type.startsWith('image/')) {
+    return null
+  }
+  const url = file.url.trim()
+  return url || null
+}
+
+/** A selected `image` file, or an `images` array of them, is shown as pictures only. */
+function chatImageFileUrls(value: unknown): string[] | null {
+  const single = chatImageFileUrl(value)
+  if (single) {
+    return [single]
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+  const urls: string[] = []
+  for (const item of value) {
+    const url = chatImageFileUrl(item)
+    if (!url) {
+      return null
+    }
+    urls.push(url)
+  }
+  return urls
+}
+
 /**
  * Resolves assistant message text into deduped image URLs and remaining markdown prose.
  * Handles: (1) multiple outputs joined with \\n\\n (same URL twice from content+image picks),
@@ -1272,6 +1304,10 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
     try {
       const o = JSON.parse(t) as Record<string, unknown>
       if (o && typeof o === 'object' && !Array.isArray(o)) {
+        const fileUrls = chatImageFileUrls(o)
+        if (fileUrls) {
+          return { urls: fileUrls, prose: '' }
+        }
         const jsonUrls: string[] = []
         const jSeen = new Set<string>()
         if (typeof o.image === 'string') addUniqueImageUrl(o.image, jSeen, jsonUrls)
@@ -1309,6 +1345,10 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
   if (t.startsWith('[')) {
     try {
       const parsed = JSON.parse(t) as unknown
+      const fileUrls = chatImageFileUrls(parsed)
+      if (fileUrls) {
+        return { urls: fileUrls, prose: '' }
+      }
       const urls = parseImageUrlArray(parsed)
       if (urls.length > 0) {
         return { urls, prose: '' }
@@ -1323,6 +1363,10 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
     if (fencedMatch?.[1]) {
       try {
         const parsed = JSON.parse(fencedMatch[1]) as unknown
+        const fileUrls = chatImageFileUrls(parsed)
+        if (fileUrls) {
+          return { urls: fileUrls, prose: '' }
+        }
         const urls = parseImageUrlArray(parsed)
         if (urls.length > 0) {
           return { urls, prose: '' }

@@ -116,6 +116,54 @@ describe('resolveMessageImagesAndProse', () => {
     expect(prose).toContain(phone)
   })
 
+  it('renders a selected image file without its base64 payload', () => {
+    const raw = JSON.stringify(
+      {
+        id: 'file_1',
+        name: 'generated.png',
+        url: IMAGE_URL,
+        size: 128,
+        type: 'image/png',
+        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      },
+      null,
+      2
+    )
+
+    const { urls, prose } = resolveMessageImagesAndProse(raw)
+
+    expect(urls).toEqual([IMAGE_URL])
+    expect(prose).toBe('')
+  })
+
+  it('renders a selected images array without base64 payloads', () => {
+    const raw = `\`\`\`json\n${JSON.stringify([
+      {
+        id: 'file-1',
+        name: 'one.png',
+        url: IMAGE_URL,
+        key: 'agent-generated-images/wf/user/one.png',
+        size: 10,
+        type: 'image/png',
+        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      },
+      {
+        id: 'file-2',
+        name: 'two.png',
+        url: IMAGE_URL_2,
+        key: 'agent-generated-images/wf/user/two.png',
+        size: 10,
+        type: 'image/png',
+        base64: '/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxMTEhUTExMWFRUXGBcY',
+      },
+    ])}\n\`\`\``
+
+    const { urls, prose } = resolveMessageImagesAndProse(raw)
+
+    expect(urls).toEqual([IMAGE_URL, IMAGE_URL_2])
+    expect(prose).toBe('')
+  })
+
   it('extracts image URLs from JSON content payloads', () => {
     const raw = JSON.stringify({
       content: `Here are options:\n- ${IMAGE_URL}\n- ${IMAGE_URL_2}`,
