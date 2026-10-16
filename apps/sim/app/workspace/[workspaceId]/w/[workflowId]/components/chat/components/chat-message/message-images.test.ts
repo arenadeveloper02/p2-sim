@@ -124,7 +124,8 @@ describe('resolveMessageImagesAndProse', () => {
         url: IMAGE_URL,
         size: 128,
         type: 'image/png',
-        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        base64:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       },
       null,
       2
@@ -145,7 +146,8 @@ describe('resolveMessageImagesAndProse', () => {
         key: 'agent-generated-images/wf/user/one.png',
         size: 10,
         type: 'image/png',
-        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        base64:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       },
       {
         id: 'file-2',
@@ -162,6 +164,45 @@ describe('resolveMessageImagesAndProse', () => {
 
     expect(urls).toEqual([IMAGE_URL, IMAGE_URL_2])
     expect(prose).toBe('')
+  })
+
+  it('hides inline base64 when an edited image URL is also present', () => {
+    const payload =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const raw = `Updated the background.\n\n${IMAGE_URL}\n\ndata:image/png;base64,${payload}`
+
+    const { urls, prose } = resolveMessageImagesAndProse(raw)
+
+    expect(urls).toEqual([IMAGE_URL])
+    expect(prose).toBe('Updated the background.')
+  })
+
+  it('drops a fenced image-file dump that echoes base64 beside the reply', () => {
+    const payload =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const raw = [
+      'Updated the sky.',
+      '',
+      '```json',
+      JSON.stringify(
+        {
+          id: 'file_1',
+          name: 'generated.png',
+          url: IMAGE_URL,
+          size: 128,
+          type: 'image/png',
+          base64: payload,
+        },
+        null,
+        2
+      ),
+      '```',
+    ].join('\n')
+
+    const { urls, prose } = resolveMessageImagesAndProse(raw)
+
+    expect(urls).toEqual([IMAGE_URL])
+    expect(prose).toBe('Updated the sky.')
   })
 
   it('extracts image URLs from JSON content payloads', () => {
@@ -195,6 +236,19 @@ describe('mergeToolOutputImageUrls', () => {
     expect(prose).toContain('```html')
     expect(prose).toContain(sample)
     expect(prose).not.toContain(IMAGE_URL)
+  })
+
+  it('hides base64 echoed in content when the image field already has a URL', () => {
+    const payload =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+    const { uniqueUrls, prose } = mergeToolOutputImageUrls(
+      IMAGE_URL,
+      `Here is the edit.\n\n${payload}`
+    )
+
+    expect(uniqueUrls).toEqual([IMAGE_URL])
+    expect(prose).toBe('Here is the edit.')
   })
 
   it('merges image URLs from agent content text with list markers', () => {

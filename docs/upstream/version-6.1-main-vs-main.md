@@ -171,6 +171,8 @@ The wrap is incomplete today. [use-chat-streaming.ts](apps/sim/app/(interfaces)/
 
 The workflow floating chat in [chat.tsx](apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/chat/chat.tsx) can wrap the same way. Keep their shell (`processStreamingResponse`, the composer, drag and resize) and call one presenter from `processStreamingResponse` after the `final` event and from `handleWorkflowResponse` for a finished run. Their `ChatClient` in [chat.tsx](apps/sim/app/(interfaces)/chat/[identifier]/chat.tsx) is not mounted, so fixes inside that file do not reach Arena. Arena receives those fixes only by calling the shared input, message list, and streaming hook.
 
+The builder panel header is the same kind of seam. Upstream's [panel.tsx](apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/panel.tsx) owns Deploy and Run (in-builder execution). Arena's [launch-deployed-chat.tsx](apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/launch-deployed-chat.tsx) is a separate file that renders **Launch** only when chat status reports a chat or app deployment. Take upstream's panel, then put `<LaunchDeployedChat>` back after the Run chip. Do not fold Launch into Run, and do not rename Run to Test.
+
 ## 3. Local copilot
 
 ### Overrides
@@ -559,7 +561,7 @@ Take upstream `ci.yml`, `package.json`, and `next.config.ts` as the base. Our GH
 | Area | Overlap count | Default class | Do this |
 |---|---|---|---|
 | `apps/sim/lib` | 228 | Take upstream, re-apply seams from sections 3–7 | Highest count. Mostly copilot, billing, oauth, workflows, uploads. |
-| `apps/sim/app` | 176 | Take upstream UI shell | Exception: deployed chat page and chat route (section 2). |
+| `apps/sim/app` | 176 | Take upstream UI shell | Exception: deployed chat page and chat route (section 2). After taking upstream `panel.tsx`, put `LaunchDeployedChat` back beside Run. |
 | `apps/sim/tools` | 33 | Take upstream tool, keep our new files | Registry import is the seam. |
 | `apps/sim/blocks` | 26 | Take upstream block files | Re-register exclusive blocks. |
 | `apps/sim/executor` | 22 | Take upstream engine | Re-apply Response-in-loop only. |
