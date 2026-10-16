@@ -35,6 +35,9 @@ const SelfHost = dynamic(() => SECTION_MODULES['self-host']().then((m) => m.Self
 const Billing = dynamic(() => SECTION_MODULES.billing().then((m) => m.Billing))
 const Teammates = dynamic(() => SECTION_MODULES.teammates().then((m) => m.Teammates))
 const TeamManagement = dynamic(() => SECTION_MODULES.organization().then((m) => m.TeamManagement))
+const OAuthAppsSettings = dynamic(() =>
+  SECTION_MODULES['oauth-apps']().then((m) => m.OAuthAppsSettings)
+)
 const WorkflowMcpServers = dynamic(() =>
   SECTION_MODULES['workflow-mcp-servers']().then((m) => m.WorkflowMcpServers)
 )
@@ -154,6 +157,7 @@ function SettingsPageContent({ section }: SettingsPageProps) {
           billingHref={`/workspace/${hostContext.workspace.id}/settings/billing`}
         />
       )}
+      {effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}
       {effectiveSection === 'sso' && organizationId && <SSO organizationId={organizationId} />}
       {effectiveSection === 'data-retention' && organizationId && (
         <DataRetentionSettings organizationId={organizationId} />
