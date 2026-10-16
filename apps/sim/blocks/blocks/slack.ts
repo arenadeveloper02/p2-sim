@@ -3548,11 +3548,20 @@ const SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS = new Set(
 )
 
 /**
- * Adapts a v1 subblock for slack_v2's merged credential picker: fields gated on
- * the removed `authMethod` dropdown now depend on the single `credential` field.
+ * Adapts a v1 subblock for slack_v2's merged credential picker.
+ *
+ * Arena keeps the `authMethod` dropdown (Sim Bot bot-token vs Custom Bot user-token
+ * on an OAuth account). List/Agent ops that require a service-account custom bot hide
+ * both `authMethod` and the shared credential picker.
  */
 function adaptSubBlockForV2(sb: SubBlockConfig): SubBlockConfig {
-  const { dependsOn, condition, ...rest } = sb
+  const { condition, ...rest } = sb
+  if (sb.id === 'authMethod') {
+    return {
+      ...sb,
+      condition: { field: 'operation', value: [...SLACK_V2_CUSTOM_BOT_OPERATIONS], not: true },
+    }
+  }
   if (sb.id === 'credential') {
     return {
       ...rest,
@@ -3564,6 +3573,7 @@ function adaptSubBlockForV2(sb: SubBlockConfig): SubBlockConfig {
         serviceAccountGroup: 'Custom bots',
         serviceAccountConnect: 'Set up a custom bot',
       },
+      dependsOn: ['authMethod'],
       condition: { field: 'operation', value: [...SLACK_V2_CUSTOM_BOT_OPERATIONS], not: true },
     }
   }
@@ -3571,13 +3581,14 @@ function adaptSubBlockForV2(sb: SubBlockConfig): SubBlockConfig {
     return {
       ...rest,
       placeholder: 'Enter credential ID',
+      dependsOn: ['authMethod'],
       condition: { field: 'operation', value: [...SLACK_V2_CUSTOM_BOT_OPERATIONS], not: true },
     }
   }
   if (sb.id === 'channel' || sb.id === 'manualChannel') {
     return {
       ...sb,
-      dependsOn: ['credential'],
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: (values?: Record<string, unknown>) => {
         if (SLACK_V2_CUSTOM_BOT_OPERATIONS.includes(values?.operation as never)) {
           return { field: 'operation', value: [...SLACK_V2_CUSTOM_BOT_OPERATIONS], not: true }
@@ -3618,9 +3629,6 @@ function adaptSubBlockForV2(sb: SubBlockConfig): SubBlockConfig {
         value: ['set_suggested_prompts', 'set_agent_suggested_prompts'],
       },
     }
-  }
-  if (dependsOn && !Array.isArray(dependsOn) && dependsOn.all?.includes('authMethod')) {
-    return { ...sb, dependsOn: ['credential'] }
   }
   return sb
 }
@@ -4077,7 +4085,8 @@ function getSlackV2ListSubBlocks(): SubBlockConfig[] {
 export function getSlackV2ActionSubBlocks(): SubBlockConfig[] {
   const sharedSubBlocks = SlackBlock.subBlocks.flatMap((sb) => {
     if (SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS.has(sb.id)) return []
-    if (sb.id === 'operation' || sb.id === 'authMethod') return []
+    // v2 supplies its own operation dropdown; keep Arena `authMethod` for useUserToken.
+    if (sb.id === 'operation') return []
     const adapted = adaptSubBlockForV2(sb)
     const originalCondition = adapted.condition
     return [
@@ -4153,7 +4162,8 @@ export function getSlackV2OperationSentences() {
   }
 }
 
-const { authMethod: _authMethod, useUserToken: _useUserToken, ...slackV2Inputs } = SlackBlock.inputs
+/** Includes Arena `authMethod` / `useUserToken` so OAuth Sim Bot vs user-token selection works. */
+const slackV2Inputs = SlackBlock.inputs
 
 /**
  * Slack actions and triggers with reusable credentials. App-scoped operations use
@@ -4457,6 +4467,8 @@ export const SlackV2Block: BlockConfig = {
 
         return {
           ...baseParams,
+          // Agent Sessions always use a service-account custom bot (bot token).
+          useUserToken: false,
           credential: params.agentCredentialId,
           channel: params.agentChannelId,
           threadTs: params.agentThreadTs,

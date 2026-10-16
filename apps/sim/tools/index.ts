@@ -2379,19 +2379,35 @@ async function executeToolImplementation(
           for (const paramId of credentialTool.oauth?.authoritativeParams ?? []) {
             contextParams[paramId] = undefined
           }
-          contextParams.accessToken = data.accessToken
+
+          // Arena Slack: Custom Bot / search tools can request the OAuth user token
+          // (`idToken` / xoxp-) instead of the bot token (`accessToken` / xoxb-).
+          const useUserToken = Boolean(
+            credentialTool.oauth?.useUserToken || contextParams.useUserToken
+          )
+          const hasIdToken = Boolean(data.idToken && data.idToken.trim() !== '')
+          if (useUserToken && hasIdToken && data.idToken) {
+            contextParams.accessToken = data.idToken
+            contextParams.userToken = data.idToken
+            logger.info(
+              `[${requestId}] Using user token for ${toolId} (${data.idToken.substring(0, 10)}...)`
+            )
+          } else {
+            contextParams.accessToken = data.accessToken
+            if (data.idToken) {
+              contextParams.idToken = data.idToken
+            }
+          }
+
           if (operationContext?.requestMode === 'assistant') {
             const tokenParam = assistantConnectedAccountTokenParam(credentialTool)
-            if (tokenParam) contextParams[tokenParam] = data.accessToken
+            if (tokenParam) contextParams[tokenParam] = contextParams.accessToken
           }
           if (
             data.credentialType &&
             credentialTool.oauth?.authoritativeParams?.includes('credentialType')
           ) {
             contextParams.credentialType = data.credentialType
-          }
-          if (data.idToken) {
-            contextParams.idToken = data.idToken
           }
           if (data.instanceUrl) {
             contextParams.instanceUrl = data.instanceUrl
@@ -2417,6 +2433,8 @@ async function executeToolImplementation(
           if (data.authStyle && !contextParams.authStyle) {
             contextParams.authStyle = data.authStyle
           }
+
+          contextParams.useUserToken = undefined
         }
         await resolveCredential(effectiveSignal)
         if (tool.oauth?.retryOnUnauthorized && tool.operation) {
