@@ -48,6 +48,8 @@ export const SECTION_MODULES = {
   teammates: () => import('@/app/workspace/[workspaceId]/settings/components/teammates/teammates'),
   organization: () =>
     import('@/app/workspace/[workspaceId]/settings/components/team-management/team-management'),
+  'oauth-apps': () =>
+    import('@/app/workspace/[workspaceId]/settings/components/oauth-apps/oauth-apps'),
   'workflow-mcp-servers': () =>
     import(
       '@/app/workspace/[workspaceId]/settings/components/workflow-mcp-servers/workflow-mcp-servers'
