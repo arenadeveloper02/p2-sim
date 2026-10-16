@@ -58,6 +58,7 @@ import {
   Editor,
   Toolbar,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components'
+import { LaunchDeployedChat } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/launch-deployed-chat'
 import {
   usePanelResize,
   useUsageLimits,
@@ -943,6 +944,8 @@ export const Panel = memo(function Panel() {
                   <span className='col-start-1 row-start-1'>{isExecuting ? 'Stop' : 'Run'}</span>
                 </span>
               </Chip>
+              {/* Arena: Launch opens a deployed chat or app. Keep this beside Run on upstream panel merges. */}
+              <LaunchDeployedChat workflowId={activeWorkflowId} workspaceId={workspaceId} />
             </div>
           </div>
 
