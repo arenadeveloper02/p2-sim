@@ -5,6 +5,10 @@ import {
 import { generateId } from '@sim/utils/id'
 import type { Mock } from 'vitest'
 import { describe, expect, it, vi } from 'vitest'
+import {
+  IMAGE_GENERATOR_DEFAULT_MODEL,
+  IMAGE_GENERATOR_DEFAULT_PROVIDER,
+} from '@/lib/image-generation/block-model-config'
 import { DEFAULT_PERMISSION_GROUP_CONFIG } from '@/lib/permission-groups/fields'
 import {
   applyBlockRetry,
@@ -32,6 +36,7 @@ mockGetAllBlocks.mockImplementation(() => [
   slackBlockConfig,
   webhookBlockConfig,
   gatedOperationBlockConfig,
+  imageGeneratorV2BlockConfig,
 ])
 mockGetBlock.mockImplementation((type: string) => blocksByType[type])
 
@@ -48,7 +53,7 @@ const agentBlockConfig = {
     },
   },
   subBlocks: [
-    { id: 'model', type: 'combobox', defaultValue: 'claude-sonnet-5-5' },
+    { id: 'model', type: 'combobox', defaultValue: 'gpt-5' },
     { id: 'responseFormat', type: 'response-format' },
     { id: 'tools', type: 'tool-input' },
   ],
@@ -136,15 +141,33 @@ const gatedOperationBlockConfig = {
   },
 }
 
+const imageGeneratorV2BlockConfig = {
+  type: 'image_generator_v2',
+  name: 'Image Generator',
+  outputs: {},
+  subBlocks: [
+    { id: 'provider', type: 'combobox', defaultValue: IMAGE_GENERATOR_DEFAULT_PROVIDER },
+    { id: 'model', type: 'combobox', defaultValue: IMAGE_GENERATOR_DEFAULT_MODEL },
+    { id: 'prompt', type: 'long-input' },
+  ],
+}
+
 const blocksByType: Record<string, unknown> = {
   api: apiBlockConfig,
   agent: agentBlockConfig,
-  mothership: { ...agentBlockConfig, type: 'mothership' },
+  mothership: {
+    ...agentBlockConfig,
+    type: 'mothership',
+    subBlocks: agentBlockConfig.subBlocks.map((subBlock) =>
+      subBlock.id === 'model' ? { ...subBlock, defaultValue: 'claude-sonnet-5-5' } : subBlock
+    ),
+  },
   condition: conditionBlockConfig,
   knowledge: knowledgeBlockConfig,
   slack: slackBlockConfig,
   generic_webhook: webhookBlockConfig,
   gated: gatedOperationBlockConfig,
+  image_generator_v2: imageGeneratorV2BlockConfig,
 }
 
 describe('createBlockFromParams', () => {
@@ -293,7 +316,7 @@ describe('createBlockFromParams', () => {
     expect(filters[0].id).toEqual(expect.any(String))
   })
 
-  it('seeds hidden compatibility defaults on programmatically created blocks', () => {
+  it('seeds declared defaults on programmatically created blocks (canvas parity)', () => {
     const block = createBlockFromParams('api-1', {
       type: 'api',
       name: 'API',
@@ -301,7 +324,96 @@ describe('createBlockFromParams', () => {
     })
 
     expect(block.subBlocks.redirectPolicyVersion.value).toBe('standard-v1')
-    expect(block.subBlocks.sendCredentialsOnCrossOriginRedirect.value).toBeNull()
+    expect(block.subBlocks.sendCredentialsOnCrossOriginRedirect.value).toBe(true)
+  })
+
+  it('seeds Agent model defaultValue when Copilot omits inputs.model', () => {
+    const block = createBlockFromParams('agent-1', {
+      type: 'agent',
+      name: 'My Agent',
+      triggerMode: false,
+    })
+
+    expect(block.subBlocks.model.value).toBe('gpt-5')
+  })
+
+  it('keeps an explicit Agent model from Copilot inputs', () => {
+    const block = createBlockFromParams('agent-1', {
+      type: 'agent',
+      name: 'My Agent',
+      inputs: { model: 'claude-sonnet-5' },
+      triggerMode: false,
+    })
+
+    expect(block.subBlocks.model.value).toBe('claude-sonnet-5')
+  })
+
+  it('leaves Agent model empty when the declared default is permission-denied', () => {
+    const skippedItems: SkippedItem[] = []
+    const block = createBlockFromParams(
+      'agent-1',
+      {
+        type: 'agent',
+        name: 'My Agent',
+        triggerMode: false,
+      },
+      undefined,
+      undefined,
+      {
+        ...DEFAULT_PERMISSION_GROUP_CONFIG,
+        deniedModels: ['gpt-5'],
+      },
+      skippedItems
+    )
+
+    expect(block.subBlocks.model.value).toBeNull()
+    expect(skippedItems.some((item) => item.type === 'model_not_allowed')).toBe(true)
+  })
+
+  it('seeds Image Generator provider+model defaults when Copilot omits them', () => {
+    const block = createBlockFromParams('image-1', {
+      type: 'image_generator_v2',
+      name: 'Image Generator',
+      triggerMode: false,
+    })
+
+    expect(block.subBlocks.provider.value).toBe(IMAGE_GENERATOR_DEFAULT_PROVIDER)
+    expect(block.subBlocks.model.value).toBe(IMAGE_GENERATOR_DEFAULT_MODEL)
+  })
+
+  it('keeps explicit Image Generator provider/model from Copilot inputs', () => {
+    const block = createBlockFromParams('image-1', {
+      type: 'image_generator_v2',
+      name: 'Image Generator',
+      inputs: { provider: 'openai', model: 'gpt-image-2' },
+      triggerMode: false,
+    })
+
+    expect(block.subBlocks.provider.value).toBe('openai')
+    expect(block.subBlocks.model.value).toBe('gpt-image-2')
+  })
+
+  it('clears Image Generator provider+model together when the default model is denied', () => {
+    const skippedItems: SkippedItem[] = []
+    const block = createBlockFromParams(
+      'image-1',
+      {
+        type: 'image_generator_v2',
+        name: 'Image Generator',
+        triggerMode: false,
+      },
+      undefined,
+      undefined,
+      {
+        ...DEFAULT_PERMISSION_GROUP_CONFIG,
+        deniedModels: [IMAGE_GENERATOR_DEFAULT_MODEL],
+      },
+      skippedItems
+    )
+
+    expect(block.subBlocks.provider.value).toBeNull()
+    expect(block.subBlocks.model.value).toBeNull()
+    expect(skippedItems.some((item) => item.type === 'model_not_allowed')).toBe(true)
   })
 
   /**
@@ -320,7 +432,7 @@ describe('createBlockFromParams', () => {
     expect(block.subBlocks.token.value).not.toBe('')
     expect(block.subBlocks.webhookUrlDisplay.value).toBeNull()
     expect(block.subBlocks.signingSecret.value).toBeNull()
-    expect(block.subBlocks.requireAuth.value).toBeNull()
+    expect(block.subBlocks.requireAuth.value).toBe(true)
   })
 
   it('never overrides an explicit input with a seeded default', () => {

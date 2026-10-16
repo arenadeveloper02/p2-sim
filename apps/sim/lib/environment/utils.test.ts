@@ -462,6 +462,45 @@ describe('getExecutionEnvironment', () => {
       getExecutionEnvironment('departed-owner', 'departed-payer', 'workspace-1')
     ).rejects.toThrow('Access denied to workspace workspace-1')
   })
+  it('skips membership checks when a trusted workspaceAccess grant is provided', async () => {
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: true,
+      hasAccess: false,
+      canWrite: false,
+      canAdmin: false,
+    })
+    queueTableRows(environment, [{ variables: { PERSONAL_KEY: 'personal-cipher' } }])
+    queueTableRows(workspaceEnvironment, [{ variables: { WORKSPACE_KEY: 'workspace-cipher' } }])
+
+    const snapshot = await getExecutionEnvironment('non-member', 'non-member', 'workspace-1', {
+      workspaceAccess: {
+        exists: true,
+        hasAccess: true,
+        canWrite: false,
+        canAdmin: true,
+        workspace: null,
+        permission: 'admin',
+      },
+    })
+
+    expect(mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(snapshot.personalDecrypted).toEqual({ PERSONAL_KEY: 'plain:personal-cipher' })
+    expect(snapshot.workspaceDecrypted).toEqual({ WORKSPACE_KEY: 'plain:workspace-cipher' })
+  })
+
+  /** A workspace that is gone is a different fact from one an identity may not read. */
+  it('raises when the workspace no longer exists', async () => {
+    mockCheckWorkspaceAccess.mockResolvedValue({
+      exists: false,
+      hasAccess: false,
+      canWrite: false,
+      canAdmin: false,
+    })
+
+    await expect(getExecutionEnvironment('owner-1', 'actor-1', 'workspace-1')).rejects.toThrow(
+      'Workspace workspace-1 does not exist'
+    )
+  })
 })
 
 describe('upsertWorkspaceEnvVars', () => {

@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { type WorkspaceFileRow, workspaceFiles } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { and, desc, eq, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, or } from 'drizzle-orm'
 import { isZipShaped } from '@/lib/file-parsers/zip-guard'
 import {
   type FileReadResult,
@@ -10,7 +10,6 @@ import {
   MAX_TEXT_READ_BYTES,
   readFileRecord,
 } from '@/lib/mothership/vfs/file-reader'
-import { decodeVfsSegmentSafe, encodeVfsSegment } from '@/lib/vfs/path'
 import { getServePathPrefix } from '@/lib/uploads'
 import {
   fetchWorkspaceFileBuffer,
@@ -19,6 +18,7 @@ import {
 import type { WorkspaceFileSecretProvenanceEnvelope } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { getWorkspaceFileSize } from '@/lib/uploads/shared/types'
 import { buildArchiveExtractGuidance, isArchiveFileName } from '@/lib/uploads/utils/file-utils'
+import { decodeVfsSegmentSafe, encodeVfsSegment } from '@/lib/vfs/path'
 
 const logger = createLogger('UploadFileReader')
 
@@ -137,6 +137,31 @@ async function findMothershipUploadRowByChatAndName(
 
   const segmentKey = canonicalUploadKey(fileName)
   return allRows.find((r) => canonicalUploadKey(vfsName(r)) === segmentKey) ?? null
+}
+
+/** Lists chat-scoped uploads for one chat, oldest first. */
+export async function listChatUploads(chatId: string): Promise<WorkspaceFileRecord[]> {
+  try {
+    const rows = await db
+      .select()
+      .from(workspaceFiles)
+      .where(
+        and(
+          eq(workspaceFiles.chatId, chatId),
+          eq(workspaceFiles.context, 'mothership'),
+          isNull(workspaceFiles.deletedAt)
+        )
+      )
+      .orderBy(asc(workspaceFiles.uploadedAt), asc(workspaceFiles.id))
+
+    return rows.map(toWorkspaceFileRecord)
+  } catch (err) {
+    logger.warn('Failed to list chat uploads', {
+      chatId,
+      error: toError(err).message,
+    })
+    return []
+  }
 }
 
 /**

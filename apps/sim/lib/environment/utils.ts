@@ -481,13 +481,29 @@ function toWorkspaceOnlySnapshot(
  * run to the owner's broader secret selection, which is the opposite of what an
  * infrastructure error should do — those propagate and fail the run.
  */
+export interface GetExecutionEnvironmentOptions {
+  /**
+   * When set, membership is not re-checked against either identity. Callers that
+   * already authorized the run by a non-membership gate (deployed chat
+   * `validateChatAuth`) pass a trusted grant so a visitor or a stale owner
+   * pointer cannot fail secret resolution with `Access denied to workspace`.
+   */
+  workspaceAccess?: WorkspaceAccess
+}
+
 export async function getExecutionEnvironment(
   personalUserId: string | undefined,
   workspaceUserId: string,
-  workspaceId?: string
+  workspaceId?: string,
+  options?: GetExecutionEnvironmentOptions
 ): Promise<EnvironmentResolutionSnapshot> {
+  const trustedAccess = options?.workspaceAccess
+  const envOptions = trustedAccess ? { workspaceAccess: trustedAccess } : undefined
+
   if (personalUserId === undefined) {
-    return toWorkspaceOnlySnapshot(await getPersonalAndWorkspaceEnv(workspaceUserId, workspaceId))
+    return toWorkspaceOnlySnapshot(
+      await getPersonalAndWorkspaceEnv(workspaceUserId, workspaceId, envOptions)
+    )
   }
 
   /**
@@ -526,16 +542,48 @@ export async function getExecutionEnvironment(
   if (workspaceUserId === personalUserId) {
     const [suspended, snapshot] = await Promise.all([
       personalIdentitySuspended,
-      getPersonalAndWorkspaceEnv(personalUserId, workspaceId),
+      getPersonalAndWorkspaceEnv(personalUserId, workspaceId, envOptions),
     ])
     return suspended ? withholdPersonalSlice(snapshot) : snapshot
   }
 
   if (!workspaceId) {
     if (await personalIdentitySuspended) {
-      return withholdPersonalSlice(await getPersonalAndWorkspaceEnv(workspaceUserId, workspaceId))
+      return withholdPersonalSlice(
+        await getPersonalAndWorkspaceEnv(workspaceUserId, workspaceId, envOptions)
+      )
     }
-    return getPersonalAndWorkspaceEnv(personalUserId, workspaceId)
+    return getPersonalAndWorkspaceEnv(personalUserId, workspaceId, envOptions)
+  }
+
+  if (trustedAccess) {
+    if (await personalIdentitySuspended) {
+      return withholdPersonalSlice(
+        await getPersonalAndWorkspaceEnv(workspaceUserId, workspaceId, envOptions)
+      )
+    }
+    const [personal, actor] = await Promise.all([
+      getPersonalAndWorkspaceEnv(personalUserId, workspaceId, envOptions),
+      getPersonalAndWorkspaceEnv(workspaceUserId, workspaceId, envOptions),
+    ])
+    const decryptionFailures = [
+      ...new Set([
+        ...personal.decryptionFailures.filter((key) => key in personal.personalEncrypted),
+        ...actor.decryptionFailures.filter((key) => key in actor.workspaceEncrypted),
+      ]),
+    ]
+    return {
+      personalEncrypted: personal.personalEncrypted,
+      workspaceEncrypted: actor.workspaceEncrypted,
+      personalDecrypted: personal.personalDecrypted,
+      workspaceDecrypted: actor.workspaceDecrypted,
+      personalOwners: personal.personalOwners,
+      conflicts: Object.keys(personal.personalEncrypted).filter(
+        (key) => key in actor.workspaceEncrypted
+      ),
+      decryptionFailures,
+      workspaceUnredactedKeys: actor.workspaceUnredactedKeys,
+    }
   }
 
   const personalAccessRead = checkWorkspaceAccess(workspaceId, personalUserId)

@@ -21,6 +21,12 @@ import { workflowMcpServersQueryOptions } from '@/hooks/queries/workflow-mcp-ser
  */
 export const SECTION_MODULES = {
   admin: () => import('@/app/workspace/[workspaceId]/settings/components/admin/admin'),
+  'skill-share': () =>
+    import('@/app/workspace/[workspaceId]/settings/components/skill-share/skill-share'),
+  'agent-access-request': () =>
+    import(
+      '@/app/workspace/[workspaceId]/settings/components/agent-access-request/agent-access-request'
+    ),
   apikeys: () => import('@/app/workspace/[workspaceId]/settings/components/api-keys/api-keys'),
   byok: () => import('@/app/workspace/[workspaceId]/settings/components/byok/byok'),
   forks: () => import('@/ee/workspace-forking/components/forks'),

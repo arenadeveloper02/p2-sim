@@ -374,7 +374,6 @@ export function buildWorkflowBuildSoftCompleteSystemMessage(): string {
   )
 }
 
-
 /**
  * True when prose only narrates inspecting a file (read/grep/see) without
  * claiming a completed fix — including multi-sentence bridges that exceed the
@@ -397,9 +396,11 @@ export function isFileInspectionBridgeNarration(text: string): boolean {
  */
 export function buildFileEditContinuationMessage(): string {
   return (
-    '[System] You already read/grepped the workspace file (and maybe load_copilot_artifact) ' +
-    'but have not applied the fix. Call workspace_file (patch/update) then edit_content NOW with the ' +
-    'corrected code. Do not dump HTML/JS into chat. Do not stop on Thinking after inspection tools.'
+    '[System] You already read/grepped (and maybe load_copilot_artifact) but have not applied the fix. ' +
+    'STOP paging the source with more offset/limit reads. Call workspace_file (patch/update) then ' +
+    'edit_content NOW — one targeted patch into the destination (e.g. empty KPIs shell / insert anchor). ' +
+    'Prefer a single fat edit with the needed markup/seed data over reassembling the standalone via many reads. ' +
+    'Do not dump HTML/JS into chat. Do not end the turn on Thinking after inspection tools.'
   )
 }
 
@@ -556,7 +557,6 @@ export function buildUnresolvedFollowUpClosingMessage(
   }
   return 'I made partial progress but still need another step to finish the request. Please continue in chat.'
 }
-
 
 /**
  * System nudge when research/factual intent settled without a live web search.

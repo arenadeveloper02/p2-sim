@@ -6,6 +6,7 @@ import {
   normalizeBlockRetryTries,
   normalizeBlockRetryWaitMs,
 } from '@sim/workflow-types/workflow'
+import { applyImageGeneratorDefaultPairing } from '@/lib/image-generation/block-model-config'
 import { isIntegrationDeploymentAvailableForVisibility } from '@/lib/integrations/availability.server'
 import { MCP_SERVER_ADVANCED_TOOL_TYPE } from '@/lib/mcp/shared'
 import { capabilityDeniedBy } from '@/lib/permission-groups/capability-assertions'
@@ -257,9 +258,20 @@ export function createBlockFromParams(
     })
   }
 
-  // Set up subBlocks from block configuration
+  // Set up subBlocks from block configuration. Seed declared defaults the same
+  // way the canvas does (`prepareBlockState`) so Copilot-created Agent blocks
+  // get Model=`gpt-5` (and other defaultValue / value() fields) without the
+  // model having to pass them. Permission-denied model/operation defaults are
+  // left empty — same veto as the editor's isSeededValueAllowed path.
   if (blockConfig) {
     const isSeededValueAllowed = createSeededValueGate(params.type, permissionConfig)
+    const isDeclaredDefaultAllowed = createSubBlockInputGate({
+      blockType: params.type,
+      permissionConfig,
+      blockId,
+      operationType: 'add',
+      skippedItems: skippedItems ?? [],
+    })
     const writtenValues: Record<string, unknown> = Object.fromEntries(
       Object.entries(blockState.subBlocks).map(([key, subBlock]: [string, any]) => [
         key,
@@ -272,17 +284,32 @@ export function createBlockFromParams(
           params.type === 'agent' && subBlock.id === 'model'
             ? resolveAvailableAgentDefaultModel(permissionConfig)
             : null
+        let value =
+          agentDefault ?? resolveSeededSubBlockValue(subBlock, writtenValues, isSeededValueAllowed)
+        if (value == null && subBlock.defaultValue !== undefined && !subBlock.hidden) {
+          let seedValue: unknown = structuredClone(subBlock.defaultValue)
+          if (
+            typeof seedValue === 'string' &&
+            seedValue !== '' &&
+            !isDeclaredDefaultAllowed(subBlock.id, seedValue)
+          ) {
+            seedValue = null
+          }
+          value = seedValue
+        }
         blockState.subBlocks[subBlock.id] = {
           id: subBlock.id,
           type: subBlock.type,
-          value:
-            agentDefault ??
-            resolveSeededSubBlockValue(subBlock, writtenValues, isSeededValueAllowed),
+          value,
         }
       } else {
         blockState.subBlocks[subBlock.id].type = subBlock.type
       }
     })
+
+    if (params.type === 'image_generator_v2') {
+      applyImageGeneratorDefaultPairing(blockState.subBlocks)
+    }
 
     const defaultModes = buildDefaultCanonicalModes(blockConfig.subBlocks)
     if (Object.keys(defaultModes).length > 0) {

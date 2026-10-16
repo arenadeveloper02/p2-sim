@@ -7,6 +7,7 @@
  * Import from the specific contract file instead.
  */
 export * from './admin'
+export * from './agent-access-requests'
 export * from './api-keys'
 export * from './audit-logs'
 export * from './byok-keys'
@@ -48,11 +49,11 @@ export {
   type UsageActorTypeValue,
   type UsageChargeTypeValue,
   type UsageLogSourceValue,
+  usageActorTypeSchema,
+  usageChargeTypeSchema,
   type WorkspaceUsageAnalytics,
   type WorkspaceUsageAnalyticsQuery,
   type WorkspaceUsageAnalyticsQueryOutput,
-  usageActorTypeSchema,
-  usageChargeTypeSchema,
   workspaceUsageAnalyticsQuerySchema,
   workspaceUsageAnalyticsResponseSchema,
   workspaceUsagePeriodSchema,

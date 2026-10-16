@@ -14,6 +14,7 @@ import { getDeploymentShape } from '@/lib/core/config/deployment-shape'
 import { canOpenOrganizationSettingsSection } from '@/lib/organizations/settings-access'
 import type { BooleanPermissionGroupConfigKey } from '@/lib/permission-groups/features'
 import { isOrganizationPermissionRegimeActive } from '@/lib/permission-groups/resolve.server'
+import { isUserListedPlatformAdminEmail } from '@/lib/permissions/platform-admin-emails.server'
 import { isPlatformAdmin } from '@/lib/permissions/super-user'
 import { authorizeOrganizationSettingsSection } from '@/lib/settings/application/organization-section-access'
 import { isCustomBlocksEligibleForOrganization } from '@/lib/workflows/custom-blocks/operations'
@@ -155,14 +156,21 @@ export async function authorizeWorkspaceSettingsSection(
   input: AuthorizeWorkspaceSettingsSectionInput
 ): Promise<WorkspaceSettingsSectionAccess> {
   const requiresPlatformAdmin = input.section === 'admin' || input.section === 'mothership'
-  const [access, viewerIsPlatformAdmin] = await Promise.all([
+  const requiresPlatformAdminEmail = input.section === 'agent-access-request'
+  const [access, viewerIsPlatformAdmin, viewerIsListedPlatformAdminEmail] = await Promise.all([
     checkWorkspaceAccess(input.workspaceId, input.userId),
     requiresPlatformAdmin ? isPlatformAdmin(input.userId) : Promise.resolve(false),
+    requiresPlatformAdminEmail
+      ? isUserListedPlatformAdminEmail(input.userId)
+      : Promise.resolve(false),
   ])
   if (!access.exists || !access.hasAccess || !access.workspace || !access.permission) {
     return { allowed: false, disposition: 'not-found' }
   }
   if (requiresPlatformAdmin && !viewerIsPlatformAdmin) {
+    return { allowed: false, disposition: 'not-found' }
+  }
+  if (requiresPlatformAdminEmail && !viewerIsListedPlatformAdminEmail) {
     return { allowed: false, disposition: 'not-found' }
   }
 

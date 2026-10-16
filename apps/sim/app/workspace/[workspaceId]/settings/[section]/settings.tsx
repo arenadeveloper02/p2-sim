@@ -1,14 +1,20 @@
 'use client'
 
+import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { getSettingsPermissionConfigKey } from '@/components/settings/navigation'
 import { useSession } from '@/lib/auth/auth-client'
+import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { useDeploymentShape } from '@/lib/core/config/deployment-shape'
+import { isPlatformAdminEmail } from '@/lib/permissions/platform-admin-emails'
+import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
 import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import {
   getSettingsSectionMeta,
+  isPlatformAdminEmailSettingsSection,
+  isPlatformAdminSettingsSection,
   type SettingsSection,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { SECTION_MODULES } from '@/app/workspace/[workspaceId]/settings/section-warmers'
@@ -16,6 +22,10 @@ import { PermissionAccessBoundary } from '@/ee/access-requests/components/permis
 import { useCaptureWhenReady } from '@/hooks/use-capture-when-ready'
 
 const Admin = dynamic(() => SECTION_MODULES.admin().then((m) => m.Admin))
+const SkillShare = dynamic(() => SECTION_MODULES['skill-share']().then((m) => m.SkillShare))
+const AgentAccessRequest = dynamic(() =>
+  SECTION_MODULES['agent-access-request']().then((m) => m.AgentAccessRequest)
+)
 const ApiKeys = dynamic(() => SECTION_MODULES.apikeys().then((m) => m.ApiKeys))
 const BYOK = dynamic(() => SECTION_MODULES.byok().then((m) => m.BYOK))
 const Forks = dynamic(() => SECTION_MODULES.forks().then((m) => m.Forks))
@@ -84,16 +94,25 @@ function SettingsPageContent({ section }: SettingsPageProps) {
   const { billingEnabled } = useDeploymentShape()
 
   const isAdminRole = session?.user?.role === 'admin'
+  const isListedPlatformAdminEmail = isPlatformAdminEmail(session?.user?.email)
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
+  const isBillingSection = normalizedSection === 'billing' || normalizedSection === 'arena-billing'
+  const canManageBilling = canManageWorkspaceBilling(hostContext, session?.user?.id)
+  const billingRedirectToUsage =
+    billingEnabled && isBillingSection && !sessionLoading && !canManageBilling
   const effectiveSection =
     !billingEnabled && normalizedSection === 'billing'
       ? 'general'
-      : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
-        ? 'general'
-        : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
+      : billingRedirectToUsage
+        ? 'usage'
+        : isPlatformAdminSettingsSection(normalizedSection) && !sessionLoading && !isAdminRole
           ? 'general'
-          : normalizedSection
+          : isPlatformAdminEmailSettingsSection(normalizedSection) &&
+              !sessionLoading &&
+              !isListedPlatformAdminEmail
+            ? 'general'
+            : normalizedSection
   const organizationId = hostContext.hostOrganizationId
   const meta = getSettingsSectionMeta(effectiveSection)
 
@@ -102,6 +121,12 @@ function SettingsPageContent({ section }: SettingsPageProps) {
     sessionLoading ? null : { plane: 'workspace', section: effectiveSection },
     effectiveSection
   )
+
+  useEffect(() => {
+    if (sessionLoading) return
+    const label = effectiveSection.charAt(0).toUpperCase() + effectiveSection.slice(1)
+    void settingsPageTabSwitchEvent({ Tabs: label })
+  }, [effectiveSection, sessionLoading])
 
   return (
     <SettingsSectionProvider section={effectiveSection} meta={meta ?? undefined}>
@@ -177,6 +202,8 @@ function SettingsPageContent({ section }: SettingsPageProps) {
       {effectiveSection === 'recently-deleted' && <RecentlyDeleted />}
       {effectiveSection === 'self-host' && <SelfHost />}
       {effectiveSection === 'admin' && <Admin />}
+      {effectiveSection === 'skill-share' && <SkillShare />}
+      {effectiveSection === 'agent-access-request' && <AgentAccessRequest />}
       {effectiveSection === 'mothership' && <Mothership />}
     </SettingsSectionProvider>
   )

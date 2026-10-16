@@ -49,6 +49,7 @@ import {
 } from '@/lib/workflows/persistence/utils'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
+import type { WorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { withCustomBlockOverlay } from '@/blocks/custom/server-overlay'
 import { Executor } from '@/executor'
 import type { ExecutionSnapshot } from '@/executor/execution/snapshot'
@@ -517,11 +518,15 @@ function resolveExecutionEnvironmentIdentities(
    * private namespace it would be reasonable to lend — such a workflow runs on
    * workspace secrets alone.
    *
-   * Deployed chat still uses the workflow owner's personal namespace even when
-   * `sessionUserId` is set. That id is for Arena token lookup, not personal env.
+   * Deployed chat is authorized by `validateChatAuth` (allowed emails, password,
+   * or SSO), not workspace membership. `sessionUserId` is for Arena token lookup
+   * only. Both personal and workspace env resolve as the workflow owner so a
+   * non-member visitor with agent access cannot trip the workspace ACL.
    */
-  const identifiedCallerUserId =
-    metadata.triggerType !== 'chat' && metadata.isClientSession && metadata.sessionUserId
+  const isDeployedChat = metadata.triggerType === 'chat'
+  const identifiedCallerUserId = isDeployedChat
+    ? undefined
+    : metadata.isClientSession && metadata.sessionUserId
       ? metadata.sessionUserId
       : metadata.enforceCredentialAccess
         ? metadata.userId
@@ -542,8 +547,12 @@ function resolveExecutionEnvironmentIdentities(
    * key, schedule, webhook, or anonymous public-API call, where no caller is
    * identifiable. Deriving it again here would only risk disagreeing with the
    * principal layer.
+   *
+   * Deployed chat is the exception: always the workflow owner.
    */
-  const workspaceEnvUserId = metadata.userId || personalEnvUserId
+  const workspaceEnvUserId = isDeployedChat
+    ? personalEnvUserId
+    : metadata.userId || personalEnvUserId
   if (!workspaceEnvUserId) {
     throw new Error('Missing execution actor in execution metadata')
   }
@@ -575,12 +584,28 @@ interface ExecutionReads {
   piiPolicyRow: Promise<Awaited<ReturnType<typeof readPiiPolicyRow>>>
 }
 
+/**
+ * Deployed chat already cleared `validateChatAuth`. Membership must not gate
+ * secret resolution for that surface — the visitor may have agent access
+ * without a workspace seat, and a stale owner pointer must not fail the run.
+ */
+const DEPLOYED_CHAT_WORKSPACE_ACCESS: WorkspaceAccess = {
+  exists: true,
+  hasAccess: true,
+  canWrite: false,
+  canAdmin: true,
+  workspace: null,
+  permission: 'admin',
+}
+
 function startExecutionReads(
   options: ExecuteWorkflowCoreOptions,
   workspaceId: string,
   { personalEnvUserId, workspaceEnvUserId }: ExecutionEnvironmentIdentities
 ): ExecutionReads {
   const { preloadedEnvironment } = options
+  const trustedWorkspaceAccess =
+    options.snapshot.metadata.triggerType === 'chat' ? DEPLOYED_CHAT_WORKSPACE_ACCESS : undefined
   const environment =
     preloadedEnvironment &&
     preloadedEnvironment.personalUserId === personalEnvUserId &&
@@ -588,7 +613,13 @@ function startExecutionReads(
     preloadedEnvironment.workspaceId === workspaceId
       ? Promise.resolve(preloadedEnvironment.snapshot)
       : withDatabaseReadRetry(
-          () => getExecutionEnvironment(personalEnvUserId, workspaceEnvUserId, workspaceId),
+          () =>
+            getExecutionEnvironment(
+              personalEnvUserId,
+              workspaceEnvUserId,
+              workspaceId,
+              trustedWorkspaceAccess ? { workspaceAccess: trustedWorkspaceAccess } : undefined
+            ),
           { label: 'getExecutionEnvironment' }
         )
   const piiPolicyRow = withDatabaseReadRetry(() => readPiiPolicyRow(workspaceId), {

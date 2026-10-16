@@ -8,7 +8,11 @@ import {
   MothershipStreamV1TextChannel,
   MothershipStreamV1ToolOutcome,
 } from '@/lib/mothership/generated/mothership-stream-v1'
-import { assistantMessageToChatHistory } from '@/local-copilot/lib/mothership-history'
+import {
+  assistantMessageToChatHistory,
+  formatPersistedUserMessageForLocalHistory,
+  mothershipMessagesToChatHistory,
+} from '@/local-copilot/lib/mothership-history'
 
 describe('assistantMessageToChatHistory', () => {
   it('replays unsigned tool turns as structured toolCalls (Claude/Bedrock history)', () => {
@@ -205,5 +209,34 @@ describe('assistantMessageToChatHistory', () => {
         ],
       },
     ])
+  })
+})
+
+describe('mothershipMessagesToChatHistory user attachment stubs', () => {
+  it('appends pointer stubs for persisted fileAttachments without inlining bytes', () => {
+    const user: PersistedMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'Confirm you understand before analyzing the screens.',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      fileAttachments: [
+        {
+          id: 'f1',
+          key: 'uploads/key',
+          filename: 'Screens.pdf',
+          media_type: 'application/pdf',
+          size: 12_345,
+        },
+      ],
+    }
+
+    const content = formatPersistedUserMessageForLocalHistory(user)
+    expect(content).toContain('Confirm you understand')
+    expect(content).toContain('[Attached: Screens.pdf')
+    expect(content).toContain('read("uploads/Screens.pdf")')
+    expect(content).not.toContain('Contents of "Screens.pdf"')
+
+    const history = mothershipMessagesToChatHistory([user])
+    expect(history).toEqual([{ role: 'user', content }])
   })
 })

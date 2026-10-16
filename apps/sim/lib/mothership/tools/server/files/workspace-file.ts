@@ -1,7 +1,6 @@
 import type { Principal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
-import { truncate } from '@sim/utils/string'
 import { isDocSandboxEnabled } from '@/lib/core/config/env-flags'
 import { asOrchestrationError } from '@/lib/core/orchestration/types'
 import { runSandboxTask } from '@/lib/execution/sandbox/run-task'
@@ -43,6 +42,7 @@ import { storeCompiledDoc } from './doc-compiled-store'
 import { buildEmbeddedImageRefWarning } from './embedded-image-refs'
 import { ensureCopilotFileFolderPath } from './file-folder-application'
 import { storeFileIntent } from './file-intent-store'
+import { validateSearchReplaceForPatch } from './patch-search-replace'
 
 const logger = createLogger('WorkspaceFileServerTool')
 
@@ -106,6 +106,9 @@ type WorkspaceFileResult = {
   success: boolean
   message: string
   data?: Record<string, unknown>
+  /** Structured patch failure — Local Copilot uses this for recoverable follow-up. */
+  errorType?: string
+  recoverable?: boolean
 }
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -779,21 +782,25 @@ export const workspaceFileServerTool: BaseServerTool<WorkspaceFileArgs, Workspac
           const existingContent = currentBuffer.toString('utf-8')
 
           if (normalized.edit.strategy === 'search_replace') {
-            const search = normalized.edit.search
-            const firstIdx = existingContent.indexOf(search)
-            if (firstIdx === -1) {
+            const validation = validateSearchReplaceForPatch({
+              search: normalized.edit.search,
+              existingContent,
+              replaceAll: normalized.edit.replaceAll,
+              fileName: fileRecord.name,
+            })
+            if (!validation.ok) {
               return {
                 success: false,
-                message: `Patch failed: search string not found in file "${fileRecord.name}". Search: "${truncate(search, 100)}"`,
-              }
-            }
-            if (
-              !normalized.edit.replaceAll &&
-              existingContent.indexOf(search, firstIdx + 1) !== -1
-            ) {
-              return {
-                success: false,
-                message: `Patch failed: search string is ambiguous — found at multiple locations in "${fileRecord.name}". Use a longer unique search string or replaceAll.`,
+                errorType: validation.errorType,
+                recoverable: true,
+                message: validation.message,
+                data: {
+                  id: fileRecord.id,
+                  name: fileRecord.name,
+                  vfsPath,
+                  operation: 'patch',
+                  suggestedNextTools: ['read', 'grep', 'workspace_file'],
+                },
               }
             }
           } else if (normalized.edit.strategy === 'anchored') {

@@ -631,3 +631,49 @@ describe('prepareBlockState — permission-group seed veto', () => {
     ])
   })
 })
+
+describe('prepareBlockState — image_generator_v2 default pairing', () => {
+  const imageGeneratorBlock = {
+    name: 'Image Generator',
+    description: '',
+    icon: () => null,
+    outputs: {},
+    tools: { access: ['image_generate'] },
+    subBlocks: [
+      { id: 'provider', type: 'combobox', defaultValue: 'gemini' },
+      { id: 'model', type: 'combobox', defaultValue: 'gemini-3.1-flash-image-preview' },
+      { id: 'prompt', type: 'long-input' },
+    ],
+  }
+
+  afterEach(() => {
+    vi.mocked(getBlock).mockReset()
+  })
+
+  it('seeds Gemini provider and Nano Banana 2 model together', () => {
+    vi.mocked(getBlock).mockReturnValueOnce(imageGeneratorBlock as never)
+    const block = prepareBlockState({
+      id: 'img-1',
+      type: 'image_generator_v2',
+      name: 'Image Generator',
+      position: { x: 0, y: 0 },
+    })
+
+    expect(block.subBlocks.provider.value).toBe('gemini')
+    expect(block.subBlocks.model.value).toBe('gemini-3.1-flash-image-preview')
+  })
+
+  it('clears provider when the default model is vetoed', () => {
+    vi.mocked(getBlock).mockReturnValueOnce(imageGeneratorBlock as never)
+    const block = prepareBlockState({
+      id: 'img-1',
+      type: 'image_generator_v2',
+      name: 'Image Generator',
+      position: { x: 0, y: 0 },
+      isSeededValueAllowed: (subBlockId) => subBlockId !== 'model',
+    })
+
+    expect(block.subBlocks.provider.value).toBeNull()
+    expect(block.subBlocks.model.value).toBeNull()
+  })
+})

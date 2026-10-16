@@ -281,3 +281,32 @@ describe('sanitizeForCopilot credential-routed trigger routing', () => {
     expect(result.blocks['slack-1'].inputs ?? {}).not.toHaveProperty(TRIGGER_WEBHOOK_URL_FIELD)
   })
 })
+
+describe('sanitizeForCopilot Copilot-shaped re-entry', () => {
+  it('does not throw when blocks lack subBlocks (already-sanitized payload)', () => {
+    // edit_workflow returns sanitizeForCopilot(graph) under workflowState; a second
+    // sanitize used to crash with Object.entries(undefined) on missing subBlocks.
+    const alreadySanitized = {
+      blocks: {
+        'schedule-1': {
+          type: 'schedule',
+          name: 'Schedule',
+          enabled: true,
+          inputs: { scheduleType: 'custom' },
+          connections: { source: 'fn-1' },
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    } as unknown as WorkflowState
+
+    expect(() => sanitizeForCopilot(alreadySanitized)).not.toThrow()
+    const result = sanitizeForCopilot(alreadySanitized)
+    expect(result.blocks['schedule-1']).toMatchObject({
+      type: 'schedule',
+      name: 'Schedule',
+      enabled: true,
+    })
+  })
+})

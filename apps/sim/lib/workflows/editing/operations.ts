@@ -9,6 +9,10 @@ import { getBlock } from '@/blocks/registry'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
 import {
+  formatMissingBlockSuggestionReason,
+  suggestBlocksForMissingId,
+} from './block-id-suggestions'
+import {
   applyBlockRetry,
   applyTriggerConfigToBlockSubblocks,
   createBlockFromParams,
@@ -346,11 +350,13 @@ export function handleDeleteOperation(op: EditWorkflowOperation, ctx: OperationC
   const { block_id } = op
 
   if (!modifiedState.blocks[block_id]) {
+    const suggestions = suggestBlocksForMissingId(block_id, modifiedState.blocks)
     logSkippedItem(skippedItems, {
       type: 'block_not_found',
       operationType: 'delete',
       blockId: block_id,
-      reason: `Block "${block_id}" does not exist and cannot be deleted`,
+      reason: formatMissingBlockSuggestionReason(block_id, suggestions, 'deleted'),
+      ...(suggestions.length > 0 ? { details: { suggestions } } : {}),
     })
     return
   }
@@ -394,11 +400,13 @@ export function handleEditOperation(op: EditWorkflowOperation, ctx: OperationCon
   const { block_id, params } = op
 
   if (!modifiedState.blocks[block_id]) {
+    const suggestions = suggestBlocksForMissingId(block_id, modifiedState.blocks)
     logSkippedItem(skippedItems, {
       type: 'block_not_found',
       operationType: 'edit',
       blockId: block_id,
-      reason: `Block "${block_id}" does not exist and cannot be edited`,
+      reason: formatMissingBlockSuggestionReason(block_id, suggestions, 'edited'),
+      ...(suggestions.length > 0 ? { details: { suggestions } } : {}),
     })
     return
   }

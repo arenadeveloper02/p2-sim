@@ -9,6 +9,7 @@
  * workspace route for a function only the canvas drop handler calls.
  */
 
+import { applyImageGeneratorDefaultPairing } from '@/lib/image-generation/block-model-config'
 import type { SeedValueGate } from '@/lib/permission-groups/operation-access'
 import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { createDefaultInputFormatField } from '@/lib/workflows/input-format'
@@ -127,6 +128,10 @@ export function prepareBlockState(options: PrepareBlockStateOptions): BlockState
         value: initialValue as SubBlockState['value'],
       }
     })
+
+    if (type === 'image_generator_v2') {
+      applyImageGeneratorDefaultPairing(subBlocks)
+    }
   }
 
   const isTriggerCapable = hasTriggerCapability(blockConfig)
