@@ -95,7 +95,7 @@ const STYLES = {
       divider: 'border-[var(--border)]',
     },
     inverted: {
-      text: ' dark:text-[var(--text-primary)]',
+      text: 'text-white dark:text-[var(--text-primary)]',
       section: 'text-[var(--text-muted-inverse)]',
       search: 'text-[var(--text-muted-inverse)] dark:text-[var(--text-muted)]',
       searchInput:
@@ -129,9 +129,9 @@ const STYLES = {
     },
     inverted: {
       active:
-        'dark:bg-[var(--surface-inverted-hover)] bg-[var(--surface-active)] text-black [&_svg]:text-black dark:text-[var(--text-primary)] dark:[&_svg]:text-[var(--text-primary)]',
+        'bg-[var(--surface-inverted-hover)] text-white [&_svg]:text-white dark:text-[var(--text-primary)] dark:[&_svg]:text-[var(--text-primary)]',
       hover:
-        'hover-hover:dark:bg-[var(--surface-inverted-hover)] hover-hover:bg-[var(--surface-active)] dark:hover-hover:text-white hover-hover:text-black hover-hover:[&_svg]:text-black dark:hover-hover:text-[var(--text-primary)] dark:hover-hover:[&_svg]:text-[var(--text-primary)]',
+        'hover-hover:bg-[var(--surface-inverted-hover)] hover-hover:text-white hover-hover:[&_svg]:text-white dark:hover-hover:text-[var(--text-primary)] dark:hover-hover:[&_svg]:text-[var(--text-primary)]',
     },
   },
 } as const

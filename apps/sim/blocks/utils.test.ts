@@ -17,16 +17,24 @@ const {
   mockGetBaseModelProviders: vi.fn(() => ({})),
 }))
 
-const { mockProviders } = vi.hoisted(() => ({
+const emptyProviderState = () => ({ models: [] as string[], isLoading: false })
+
+const { mockProviders, mockOpenRouterModelInfo } = vi.hoisted(() => ({
   mockProviders: {
     value: {
       base: { models: [] as string[], isLoading: false },
       ollama: { models: [] as string[], isLoading: false },
+      'ollama-cloud': { models: [] as string[], isLoading: false },
       vllm: { models: [] as string[], isLoading: false },
       litellm: { models: [] as string[], isLoading: false },
       openrouter: { models: [] as string[], isLoading: false },
       fireworks: { models: [] as string[], isLoading: false },
+      together: { models: [] as string[], isLoading: false },
+      baseten: { models: [] as string[], isLoading: false },
     },
+  },
+  mockOpenRouterModelInfo: {
+    value: {} as Record<string, { pricing?: { input: number; output: number } }>,
   },
 }))
 
@@ -52,6 +60,9 @@ vi.mock('@/stores/providers/store', () => ({
       get providers() {
         return mockProviders.value
       },
+      get openRouterModelInfo() {
+        return mockOpenRouterModelInfo.value
+      },
     }),
   },
 }))
@@ -60,6 +71,7 @@ vi.mock('@/lib/oauth/utils', () => oauthUtilsMock)
 
 import {
   BUILT_IN_TOOL_TYPES,
+  getAgentModelOptions,
   getApiKeyCondition,
   getSerializedModelProviderId,
   parseOptionalBooleanInput,
@@ -119,13 +131,17 @@ describe('getApiKeyCondition / shouldRequireApiKeyForModel', () => {
   beforeEach(() => {
     setEnvFlags({ isHosted: false, isAzureConfigured: false, isOllamaConfigured: false })
     mockProviders.value = {
-      base: { models: [], isLoading: false },
-      ollama: { models: [], isLoading: false },
-      vllm: { models: [], isLoading: false },
-      litellm: { models: [], isLoading: false },
-      openrouter: { models: [], isLoading: false },
-      fireworks: { models: [], isLoading: false },
+      base: emptyProviderState(),
+      ollama: emptyProviderState(),
+      'ollama-cloud': emptyProviderState(),
+      vllm: emptyProviderState(),
+      litellm: emptyProviderState(),
+      openrouter: emptyProviderState(),
+      fireworks: emptyProviderState(),
+      together: emptyProviderState(),
+      baseten: emptyProviderState(),
     }
+    mockOpenRouterModelInfo.value = {}
     mockGetHostedModels.mockReturnValue([])
     mockGetProviderModels.mockReturnValue([])
     mockGetBaseModelProviders.mockReturnValue({})
@@ -262,5 +278,49 @@ describe('getSerializedModelProviderId', () => {
   it('never throws when the resolver rejects the model', () => {
     expect(() => getSerializedModelProviderId('totally-unknown-model')).not.toThrow()
     expect(getSerializedModelProviderId('totally-unknown-model')).toBe('openai')
+  })
+})
+
+describe('getAgentModelOptions', () => {
+  beforeEach(() => {
+    setEnvFlags({ isHosted: false, isAzureConfigured: false, isOllamaConfigured: false })
+    mockProviders.value = {
+      base: emptyProviderState(),
+      ollama: emptyProviderState(),
+      'ollama-cloud': emptyProviderState(),
+      vllm: emptyProviderState(),
+      litellm: emptyProviderState(),
+      openrouter: emptyProviderState(),
+      fireworks: emptyProviderState(),
+      together: emptyProviderState(),
+      baseten: emptyProviderState(),
+    }
+    mockOpenRouterModelInfo.value = {}
+  })
+
+  it('keeps only free OpenRouter models and leaves non-OpenRouter models intact', () => {
+    mockProviders.value.base.models = [
+      'claude-sonnet-4-5',
+      'azure-anthropic/claude-sonnet-4-5',
+      'gemini-3-pro-image-preview',
+    ]
+    mockProviders.value.openrouter.models = [
+      'openrouter/free-model',
+      'openrouter/paid-model',
+      'openrouter/unknown-pricing',
+    ]
+    mockOpenRouterModelInfo.value = {
+      'openrouter/free-model': { pricing: { input: 0, output: 0 } },
+      'openrouter/paid-model': { pricing: { input: 1, output: 2 } },
+    }
+
+    const ids = getAgentModelOptions().map((option) => option.id)
+
+    expect(ids).toContain('claude-sonnet-4-5')
+    expect(ids).toContain('azure-anthropic/claude-sonnet-4-5')
+    expect(ids).toContain('gemini-3-pro-image-preview')
+    expect(ids).toContain('openrouter/free-model')
+    expect(ids).not.toContain('openrouter/paid-model')
+    expect(ids).not.toContain('openrouter/unknown-pricing')
   })
 })

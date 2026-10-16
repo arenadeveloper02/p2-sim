@@ -61,9 +61,11 @@ const ALL_ENTITLEMENTS = {
 }
 
 describe('settings navigation boundaries', () => {
-  it('keeps Custom Blocks out of the Arena settings catalog', () => {
+  it('keeps Custom Blocks and Workspace forks out of the Arena settings catalog', () => {
     expect(buildUnifiedSettingsCatalog().find(({ id }) => id === 'custom-blocks')).toBeUndefined()
     expect(WORKSPACE_SETTINGS_ITEMS.find(({ id }) => id === 'custom-blocks')).toBeUndefined()
+    expect(buildUnifiedSettingsCatalog().find(({ id }) => id === 'forks')).toBeUndefined()
+    expect(WORKSPACE_SETTINGS_ITEMS.find(({ id }) => id === 'forks')).toBeUndefined()
   })
 
   it('resolves self-hosted overrides against the deployment shape, never on Sim Cloud', () => {

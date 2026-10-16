@@ -1038,6 +1038,14 @@ async function executeWorkflowCoreImpl(
       executionActor: metadata.executionActor,
     })
 
+    // File/Knowledge tools bind through a live durable execution log. Continuing
+    // without one surfaces as an opaque "Authentication required" on those blocks.
+    if (!loggingStarted && !skipLogCreation) {
+      throw new Error(
+        `Failed to start execution logging for workflow ${workflowId} (execution ${executionId})`
+      )
+    }
+
     // Use edges directly - trigger-to-trigger edges are prevented at creation time
     const filteredEdges = edges
 

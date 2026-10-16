@@ -1006,6 +1006,87 @@ describe('ExecutionEngine', () => {
       expect(executedNodes).not.toContain('after-slow')
     })
 
+    it('routes to the block after an empty forEach when the sentinel start exits early', async () => {
+      const loopId = 'loop-empty'
+      const sentinelStartId = buildLoopSentinelStartId(loopId)
+      const sentinelEndId = buildSentinelEndId(loopId)
+
+      const startNode = createMockNode('start', 'starter')
+      const sentinelStart = createMockNode(sentinelStartId, 'loop_sentinel')
+      sentinelStart.metadata = {
+        isSentinel: true,
+        sentinelType: 'start',
+        subflowId: loopId,
+        subflowType: 'loop',
+      }
+
+      const sentinelEnd = createMockNode(sentinelEndId, 'loop_sentinel')
+      sentinelEnd.metadata = {
+        isSentinel: true,
+        sentinelType: 'end',
+        subflowId: loopId,
+        subflowType: 'loop',
+      }
+      sentinelEnd.incomingEdges.add('from-body')
+      sentinelEnd.outgoingEdges.set('exit', {
+        target: 'after-loop',
+        sourceHandle: EDGE.LOOP_EXIT,
+      })
+
+      const afterLoop = createMockNode('after-loop', 'function')
+      const bodyNode = createMockNode('body', 'function')
+      bodyNode.metadata = { isLoopNode: true, subflowId: loopId, subflowType: 'loop' }
+
+      startNode.outgoingEdges.set('to-loop', { target: sentinelStartId })
+
+      const dag = createMockDAG([startNode, sentinelStart, bodyNode, sentinelEnd, afterLoop])
+      const context = createMockContext()
+
+      const edgeManager = createMockEdgeManager((node, output) => {
+        if (node.id === 'start') return [sentinelStartId]
+        if (node.id === sentinelEndId && output?.selectedRoute === EDGE.LOOP_EXIT) {
+          return ['after-loop']
+        }
+        return []
+      })
+
+      const executedNodes: string[] = []
+      const nodeOrchestrator = {
+        executionCount: 0,
+        executeNode: vi.fn().mockImplementation(async (_ctx: ExecutionContext, nodeId: string) => {
+          executedNodes.push(nodeId)
+          nodeOrchestrator.executionCount++
+          if (nodeId === sentinelStartId) {
+            return {
+              nodeId,
+              output: {
+                sentinelStart: true,
+                shouldExit: true,
+                selectedRoute: EDGE.LOOP_EXIT,
+                totalIterations: 0,
+              },
+              isFinalOutput: false,
+            }
+          }
+          if (nodeId === 'after-loop') {
+            return { nodeId, output: { continued: true }, isFinalOutput: true }
+          }
+          return { nodeId, output: {}, isFinalOutput: false }
+        }),
+        handleNodeCompletion: vi.fn(),
+      } as unknown as MockNodeOrchestrator
+
+      const engine = new ExecutionEngine(context, dag, edgeManager, nodeOrchestrator)
+      const result = await engine.run('start')
+
+      expect(result.success).toBe(true)
+      expect(executedNodes).toContain(sentinelStartId)
+      expect(executedNodes).toContain('after-loop')
+      expect(executedNodes).not.toContain('body')
+      expect(result.output).toEqual({ continued: true })
+      expect(sentinelEnd.incomingEdges.size).toBe(0)
+    })
+
     it('should continue loop iterations when a Response block fires inside a loop', async () => {
       const loopId = 'loop1'
       const sentinelEndId = buildSentinelEndId(loopId)

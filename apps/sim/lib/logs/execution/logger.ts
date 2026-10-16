@@ -109,6 +109,8 @@ const EXECUTION_LOG_IDLE_TIMEOUT_MS = 5_000
 // (favor waiting over dropping a charge); only trips on a pathological lock hold.
 const USAGE_RECONCILE_LOCK_TIMEOUT_MS = 10_000
 const FOREIGN_KEY_VIOLATION = '23503'
+/** Postgres: ON CONFLICT target has no matching unique/exclusion constraint. */
+const INVALID_ON_CONFLICT_TARGET = '42P10'
 /** The log's snapshot foreign key as Postgres names it (identifiers are cut at 63 bytes). */
 const STATE_SNAPSHOT_FOREIGN_KEY = 'workflow_execution_logs_state_snapshot_id_workflow_execution_sn'
 
@@ -648,47 +650,65 @@ export class ExecutionLogger {
     execLog.debug('Starting workflow execution')
 
     const insertRunningLog = async (stateSnapshotId: string) => {
-      const [inserted] = await execDb
-        .insert(workflowExecutionLogs)
-        .values({
-          id: generateId(),
-          workflowId,
-          workspaceId,
-          executionId,
-          stateSnapshotId,
-          deploymentVersionId: deploymentVersionId ?? null,
-          level: 'info',
-          status: 'running',
-          trigger: trigger.type,
-          startedAt: new Date(),
-          endedAt: null,
-          totalDurationMs: null,
-          executionDeadlineAt: executionDeadlineAt ?? null,
-          executionData: {
-            secretProjectionVersion: SECRET_PROJECTION_VERSION,
-            environment,
-            trigger,
-            ...(billingAttribution ? { billingAttribution } : {}),
-            ...(trigger.data?.correlation ? { correlation: trigger.data.correlation } : {}),
-            hasTraceSpans: false,
-            traceSpanCount: 0,
-          },
-          userId: userId || null,
-          isExternalChat: isExternalChat ?? false,
-          chatId: chatId || null,
-          conversationId: conversationId || null,
-          initialInput: initialInput || null,
-          parentExecutionId: lineage?.parentExecutionId ?? null,
-          rootExecutionId: lineage?.rootExecutionId ?? executionId,
-          triggeringChatId: lineage?.triggeringChatId ?? null,
-          triggeringRunId: lineage?.triggeringRunId ?? null,
-          actorUserId: executionActor?.actorUserId ?? null,
-          actorType: executionActor?.actorType ?? null,
-          apiKeyId: executionActor?.apiKeyId ?? null,
-        })
-        .onConflictDoNothing({ target: workflowExecutionLogs.executionId })
-        .returning({ id: workflowExecutionLogs.id })
-      return inserted
+      const values = {
+        id: generateId(),
+        workflowId,
+        workspaceId,
+        executionId,
+        stateSnapshotId,
+        deploymentVersionId: deploymentVersionId ?? null,
+        level: 'info',
+        status: 'running',
+        trigger: trigger.type,
+        startedAt: new Date(),
+        endedAt: null,
+        totalDurationMs: null,
+        executionDeadlineAt: executionDeadlineAt ?? null,
+        executionData: {
+          secretProjectionVersion: SECRET_PROJECTION_VERSION,
+          environment,
+          trigger,
+          ...(billingAttribution ? { billingAttribution } : {}),
+          ...(trigger.data?.correlation ? { correlation: trigger.data.correlation } : {}),
+          hasTraceSpans: false,
+          traceSpanCount: 0,
+        },
+        userId: userId || null,
+        isExternalChat: isExternalChat ?? false,
+        chatId: chatId || null,
+        conversationId: conversationId || null,
+        initialInput: initialInput || null,
+        parentExecutionId: lineage?.parentExecutionId ?? null,
+        rootExecutionId: lineage?.rootExecutionId ?? executionId,
+        triggeringChatId: lineage?.triggeringChatId ?? null,
+        triggeringRunId: lineage?.triggeringRunId ?? null,
+        actorUserId: executionActor?.actorUserId ?? null,
+        actorType: executionActor?.actorType ?? null,
+        apiKeyId: executionActor?.apiKeyId ?? null,
+      }
+      try {
+        const [inserted] = await execDb
+          .insert(workflowExecutionLogs)
+          .values(values)
+          .onConflictDoNothing({ target: workflowExecutionLogs.executionId })
+          .returning({ id: workflowExecutionLogs.id })
+        return inserted
+      } catch (error) {
+        // Environments that lost `workflow_execution_logs_execution_id_unique`
+        // reject ON CONFLICT; a plain insert still creates the durable row File
+        // and Knowledge tools need to bind. Idempotency is weaker until the
+        // unique index is restored.
+        if (getPostgresErrorCode(error) !== INVALID_ON_CONFLICT_TARGET) throw error
+        execLog.warn(
+          'Execution log ON CONFLICT target missing; inserting without idempotency guard',
+          { executionId }
+        )
+        const [inserted] = await execDb
+          .insert(workflowExecutionLogs)
+          .values(values)
+          .returning({ id: workflowExecutionLogs.id })
+        return inserted
+      }
     }
 
     let snapshot = await snapshotService.resolveSnapshot(workflowId, workflowState)
