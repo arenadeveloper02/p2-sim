@@ -330,9 +330,9 @@ export const SlackBlock: BlockConfig = {
       },
     },
   },
-  // Superseded by slack_v2, but stays discoverable until v2 GAs — hiding both
-  // would leave no Slack block in the toolbar while v2 is preview-gated. At v2
-  // GA this becomes `hideFromToolbar: true` (superseded-version paradigm).
+  /** Existing workflows keep resolving v1 while discovery uses slack_v2. */
+  hideFromToolbar: true,
+  sunset: { status: 'legacy', replacedBy: 'slack_v2' },
   subBlocks: [
     {
       id: 'operation',
@@ -3377,8 +3377,7 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
     },
   },
   // Trigger capabilities moved to slack_v2 so the trigger surfaces once.
-  // Legacy webhook trigger stays available while slack_v2 (which hosts the
-  // redesigned slack_oauth trigger) is preview-gated; drops at v2 GA.
+  // Legacy webhook trigger stays available for existing v1 blocks.
   triggers: {
     enabled: true,
     available: ['slack_webhook'],
