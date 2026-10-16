@@ -469,13 +469,14 @@ export const ArenaClientChatMessage = memo(
               ? imgRaw.replace(/\s+/g, '')
               : ''
 
+          const chartsInText = txtRaw ? resolveEChartsOptionsFromContent(txtRaw) : null
+          const textForImages = chartsInText ? stripEChartsJsonFromContent(txtRaw) : txtRaw
           const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(
             imgRaw,
-            txtRaw,
+            textForImages,
             o.images
           )
           const proseTrim = proseWithoutUrlLines.trim()
-          const txtTrim = txtRaw.trim()
 
           const showS3 =
             o.s3UploadFailed === true && (uniqueUrls.length > 0 || Boolean(imageBase64))
@@ -484,6 +485,9 @@ export const ArenaClientChatMessage = memo(
             return (
               <>
                 {proseTrim ? renderStringContent(proseTrim) : null}
+                {chartsInText?.map((option, index) => (
+                  <ChatEChartsRenderer key={index} option={option} />
+                ))}
                 {showS3 && <S3UploadFailedAlert />}
                 {uniqueUrls.map((url) => (
                   <div key={normalizeImageUrlForCompare(url)} className='w-full'>
@@ -508,8 +512,18 @@ export const ArenaClientChatMessage = memo(
             )
           }
 
-          if (txtTrim) {
-            return renderStringContent(txtTrim)
+          if (txtRaw.trim()) {
+            if (chartsInText) {
+              return (
+                <>
+                  {proseTrim ? renderStringContent(proseTrim) : null}
+                  {chartsInText.map((option, index) => (
+                    <ChatEChartsRenderer key={index} option={option} />
+                  ))}
+                </>
+              )
+            }
+            return renderStringContent(txtRaw.trim())
           }
 
           return (

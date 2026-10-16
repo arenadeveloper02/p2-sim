@@ -2,6 +2,11 @@
 
 import { Button, Tooltip } from '@sim/emcn'
 import { ArrowLeft, ThumbsDown, ThumbsUp } from 'lucide-react'
+import {
+  resolveEChartsOptionsFromContent,
+  stripEChartsJsonFromContent,
+} from '@/lib/chart-generation/echarts-option'
+import { ChatEChartsRenderer } from '@/app/(interfaces)/chat/components/message/components/chat-echarts-renderer'
 import MarkdownRenderer from '@/app/(interfaces)/chat/components/message/components/markdown-renderer'
 
 interface FeedbackItem {
@@ -86,6 +91,28 @@ const getFeedbackTags = (item: FeedbackItem) => {
   if (tooShort) tags.push({ label: 'Too Short', color: 'bg-blue-100 text-blue-800' })
 
   return { tags, comment }
+}
+
+interface FeedbackResponseProps {
+  content: string
+}
+
+/** Saved replies include the same chart JSON the live chat renders as ECharts. */
+function FeedbackResponse({ content }: FeedbackResponseProps) {
+  const charts = resolveEChartsOptionsFromContent(content)
+  if (!charts) {
+    return <MarkdownRenderer content={content} />
+  }
+
+  const prose = stripEChartsJsonFromContent(content)
+  return (
+    <>
+      {prose ? <MarkdownRenderer content={prose} /> : null}
+      {charts.map((option, index) => (
+        <ChatEChartsRenderer key={index} option={option} />
+      ))}
+    </>
+  )
 }
 
 export function FeedbackView({
@@ -184,7 +211,7 @@ export function FeedbackView({
                         </div>
                         <div className='rounded-[16px] bg-[var(--surface-5)] px-4 py-3'>
                           <div className='text-[var(--color-ds-text-primary)] text-sm'>
-                            <MarkdownRenderer content={response} />
+                            <FeedbackResponse content={response} />
                           </div>
                         </div>
                       </div>
